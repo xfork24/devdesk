@@ -238,8 +238,7 @@ impl NativeTools {
             if !db.is_file() {
                 continue;
             }
-            let c = Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-                .map_err(storage)?;
+            let c = connection_pool::ManagedConnection::read_only(&db)?;
             disabled.extend(
                 load_table::<Value>(&c, "governance_records")?
                     .into_iter()

@@ -32,9 +32,61 @@ impl Drop for Permit {
     }
 }
 
-struct ManagedConnection {
+pub(crate) struct ManagedConnection {
     connection: Connection,
     _permit: Permit,
+}
+impl ManagedConnection {
+    pub fn open(path: &Path) -> Result<Self> {
+        Self::open_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
+        )
+    }
+
+    pub fn read_only(path: &Path) -> Result<Self> {
+        Self::open_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+    }
+
+    fn open_flags(path: &Path, flags: OpenFlags) -> Result<Self> {
+        let _span = performance::Span::new("sqlite.connection_budget_wait");
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let permit = loop {
+            if let Some(permit) = Permit::acquire() {
+                break permit;
+            }
+            evict_idle();
+            if Instant::now() >= deadline {
+                return Err(err("storage_busy", "数据库连接预算已用尽"));
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        };
+        // Reserve before opening: initialization and standalone readers also count.
+        let connection = Connection::open_with_flags(path, flags).map_err(storage)?;
+        connection
+            .execute_batch("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=25;")
+            .map_err(storage)?;
+        if flags.contains(OpenFlags::SQLITE_OPEN_READ_ONLY) {
+            connection
+                .execute_batch("PRAGMA query_only=ON;")
+                .map_err(storage)?;
+        }
+        Ok(Self {
+            connection,
+            _permit: permit,
+        })
+    }
+}
+impl Deref for ManagedConnection {
+    type Target = Connection;
+    fn deref(&self) -> &Connection {
+        &self.connection
+    }
+}
+impl DerefMut for ManagedConnection {
+    fn deref_mut(&mut self) -> &mut Connection {
+        &mut self.connection
+    }
 }
 #[derive(Default)]
 struct Available {
@@ -64,30 +116,33 @@ struct PoolInner {
 pub(crate) struct ConnectionPool(Arc<PoolInner>);
 impl ConnectionPool {
     /// Initialization and schema validation finish before the pool is published.
-    pub fn new(path: &Path, initial: Connection) -> Result<Self> {
-        let permit = Permit::acquire().or_else(|| {
-            evict_idle();
-            Permit::acquire()
-        });
-        let permit = permit.ok_or_else(|| err("storage_busy", "数据库连接预算已用尽"))?;
-        initial
-            .execute_batch("PRAGMA foreign_keys=ON;")
-            .map_err(storage)?;
+    pub fn new(path: &Path, initial: ManagedConnection) -> Result<Self> {
+        Self::with_initial(path, initial, false)
+    }
+
+    pub fn read_only(path: &Path) -> Result<Self> {
+        Self::with_initial(path, ManagedConnection::read_only(path)?, true)
+    }
+
+    fn with_initial(path: &Path, initial: ManagedConnection, read_only: bool) -> Result<Self> {
+        // Schema initialization may use a longer busy timeout; runtime leases do not.
         initial
             .busy_timeout(Duration::from_millis(25))
             .map_err(storage)?;
         let inner = Arc::new(PoolInner {
             path: path.to_owned(),
             readers: Lane::new(4),
-            submitters: Lane::new(2),
+            submitters: Lane::new(if read_only { 0 } else { 2 }),
         });
         {
-            let mut available = inner.submitters.available.lock().map_err(storage)?;
+            let lane = if read_only {
+                &inner.readers
+            } else {
+                &inner.submitters
+            };
+            let mut available = lane.available.lock().map_err(storage)?;
             available.created = 1;
-            available.idle.push(ManagedConnection {
-                connection: initial,
-                _permit: permit,
-            });
+            available.idle.push(initial);
         }
         let mut pools = POOLS
             .get_or_init(Default::default)
@@ -259,7 +314,7 @@ mod tests {
     use super::*;
 
     fn pool(path: &Path) -> ConnectionPool {
-        let conn = Connection::open(path).unwrap();
+        let conn = ManagedConnection::open(path).unwrap();
         conn.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS values_at(id INTEGER PRIMARY KEY, value INTEGER); INSERT OR IGNORE INTO values_at VALUES(1,0);").unwrap();
         ConnectionPool::new(path, conn).unwrap()
     }

@@ -1,13 +1,8 @@
 //! Read-only, AgentID-scoped projection over authoritative project stores.
 use super::*;
-use rusqlite::OpenFlags;
 
 fn projects(root: &Path) -> Result<Vec<Project>> {
-    let conn = Connection::open_with_flags(
-        root.join("global.sqlite3"),
-        OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .map_err(storage)?;
+    let conn = connection_pool::ManagedConnection::read_only(&root.join("global.sqlite3"))?;
     let mut query = conn
         .prepare("SELECT project FROM project_catalog WHERE project IS NOT NULL ORDER BY id")
         .map_err(storage)?;

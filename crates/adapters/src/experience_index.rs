@@ -15,10 +15,8 @@ pub(super) fn entries(
         }
         Some(id) => SqliteStore::project_path(root, id)?.join("engineering.sqlite3"),
     };
-    let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-        .map_err(storage)?;
-    conn.execute_batch("PRAGMA query_only=ON; PRAGMA busy_timeout=5000; BEGIN;")
-        .map_err(storage)?;
+    let conn = connection_pool::ManagedConnection::read_only(&path)?;
+    conn.execute_batch("BEGIN;").map_err(storage)?;
     let mut query=conn.prepare("SELECT data FROM governance_records WHERE type='experience' AND json_extract(data,'$.agent_instance_id')=?1 ORDER BY rowid").map_err(storage)?;
     let mut rows = query
         .query_map([agent], |r| r.get::<_, String>(0))

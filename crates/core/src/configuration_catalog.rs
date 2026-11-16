@@ -33,6 +33,10 @@ pub fn catalog_record(record: &ConfigurationRecord) -> bool {
     record.is_definition() || CATALOG_RECORD_KINDS.contains(&record.r#type.as_str())
 }
 
+/// An adapter may attach its memory reservation to the view's complete lifetime.
+/// Old views can remain pinned by readers after eviction from the current cache.
+pub trait SnapshotAllocation: Send + Sync {}
+
 pub struct ConfigurationCatalogSnapshot {
     pub revision: u64,
     pub fingerprint: String,
@@ -49,6 +53,7 @@ pub struct ConfigurationCatalogSnapshot {
     archived_standards: BTreeMap<String, bool>,
     health: std::sync::OnceLock<Result<Value>>,
     memo: std::sync::Mutex<crate::configuration_queries::QueryMemo>,
+    _allocation: Option<Box<dyn SnapshotAllocation>>,
 }
 impl ConfigurationCatalogSnapshot {
     pub fn new(mut state: EngineeringState, revision: u64, repository_ready: bool) -> Result<Self> {
@@ -74,6 +79,7 @@ impl ConfigurationCatalogSnapshot {
             archived_standards: Default::default(),
             health: Default::default(),
             memo: Default::default(),
+            _allocation: None,
         };
         let mut members: BTreeMap<(&str, &str), &ConfigurationRecord> = BTreeMap::new();
         for (index, record) in snapshot.state.governance.iter().enumerate() {
@@ -160,6 +166,10 @@ impl ConfigurationCatalogSnapshot {
             );
         }
         Ok(snapshot)
+    }
+    pub fn with_allocation(mut self, allocation: impl SnapshotAllocation + 'static) -> Self {
+        self._allocation = Some(Box::new(allocation));
+        self
     }
     pub fn record(&self, reference: &str) -> Option<&ConfigurationRecord> {
         self.references

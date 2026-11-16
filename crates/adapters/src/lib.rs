@@ -112,13 +112,9 @@ impl SqliteStore {
     }
     pub fn read_project_snapshot(data_root: &Path, project_id: &str) -> Result<EngineeringState> {
         let root = Self::project_path(data_root, project_id)?;
-        let conn = Connection::open_with_flags(
-            root.join("engineering.sqlite3"),
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-        )
-        .map_err(storage)?;
-        conn.execute_batch("PRAGMA query_only=ON; PRAGMA busy_timeout=5000; BEGIN;")
-            .map_err(storage)?;
+        let conn =
+            connection_pool::ManagedConnection::read_only(&root.join("engineering.sqlite3"))?;
+        conn.execute_batch("BEGIN;").map_err(storage)?;
         let state = Self::load(&conn)?;
         require(
             state.projects.iter().all(|p| p.id == project_id),
@@ -155,10 +151,8 @@ impl SqliteStore {
     }
     pub fn read_global_discussion_snapshot(data_root: &Path) -> Result<EngineeringState> {
         let path = Self::global_discussion_path(data_root)?.join("engineering.sqlite3");
-        let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .map_err(storage)?;
-        conn.execute_batch("PRAGMA query_only=ON; PRAGMA busy_timeout=5000; BEGIN;")
-            .map_err(storage)?;
+        let conn = connection_pool::ManagedConnection::read_only(&path)?;
+        conn.execute_batch("BEGIN;").map_err(storage)?;
         Self::load(&conn)
     }
     pub fn project_path(data_root: &Path, project_id: &str) -> Result<PathBuf> {
@@ -417,8 +411,8 @@ fn lock_dataset(path: &Path) -> Result<(PathBuf, File)> {
     Ok((root, lock))
 }
 
-fn open_engineering_connection(path: &Path) -> Result<Connection> {
-    let connection = Connection::open(path).map_err(storage)?;
+fn open_engineering_connection(path: &Path) -> Result<connection_pool::ManagedConnection> {
+    let connection = connection_pool::ManagedConnection::open(path)?;
     let version: u32 = connection
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
@@ -623,9 +617,6 @@ impl EngineeringStore for SqliteStore {
         store_changes::pending_tools(&*self.connection.read()?)
     }
     fn configuration_snapshot(&self) -> Result<std::sync::Arc<ConfigurationCatalogSnapshot>> {
-        if let Some(snapshot) = self.catalog_cache.current()? {
-            return Ok(snapshot);
-        }
         self.catalog_cache.read(&*self.connection.read()?, true)
     }
     fn workflow_runtime_pending(&self, kind: ports::WorkflowRuntimeWork) -> Result<bool> {

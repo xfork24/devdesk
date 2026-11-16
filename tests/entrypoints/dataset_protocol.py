@@ -18,7 +18,7 @@ environment.pop("DEVDESK_ACCESS_TOKEN", None)
 with tempfile.TemporaryDirectory(prefix="devdesk-protocol-") as temp:
     root = Path(temp)
     for index, (marker, version) in enumerate([
-        ("devdesk-schema-v1\n", 14), ("devdesk-source-v2\n", 15), ("devdesk-source-flat-v1\n", 18), ("devdesk-profile-runtime-v2\n", 16), ("devdesk-profile-runtime-v2\n", 18), ("devdesk-source-v2-standard-v1\n", 16),
+        ("devdesk-schema-v1\n", 14), ("devdesk-source-v2\n", 15), ("devdesk-source-flat-v1\n", 18), ("devdesk-profile-runtime-v2\n", 16), ("devdesk-profile-runtime-v2\n", 18), ("devdesk-profile-runtime-v2\n", 19), ("devdesk-source-v2-standard-v1\n", 16),
     ]):
         data = root / f"incompatible-{index}"
         data.mkdir()
@@ -68,7 +68,7 @@ with tempfile.TemporaryDirectory(prefix="devdesk-protocol-") as temp:
                 assert capabilities["setup_required"] is False
                 assert (data / ".devdesk-dataset").read_text() == "devdesk-profile-runtime-v2\n"
                 with sqlite3.connect(data / "global.sqlite3") as conn:
-                    assert conn.execute("PRAGMA user_version").fetchone()[0] == 19
+                    assert conn.execute("PRAGMA user_version").fetchone()[0] == 20
                     assert conn.execute("SELECT count(*) FROM source_definitions").fetchone()[0] > 0
                 post("/shutdown", {})
                 assert child.wait(timeout=15) == 0

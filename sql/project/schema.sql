@@ -324,4 +324,19 @@ CREATE TABLE orchestration_leases (
 );
 CREATE UNIQUE INDEX orchestration_root_writer ON orchestration_leases(root_instance_id) WHERE root_instance_id IS NOT NULL;
 
+-- A database clock identifies committed catalog snapshots across pooled connections.
+-- This is a read-model token, never an optimistic write precondition for a project.
+CREATE TABLE catalog_clock(id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL CHECK(revision>0));
+INSERT INTO catalog_clock VALUES(1,1);
+CREATE TRIGGER catalog_source_insert AFTER INSERT ON source_definitions BEGIN UPDATE catalog_clock SET revision=revision+1 WHERE id=1; END;
+CREATE TRIGGER catalog_governance_insert AFTER INSERT ON governance_records WHEN NEW.type IN ('project_configuration','work_configuration','integration_project_configuration','workflow_draft','agent_instance','agent_instance_retirement','skill_package','role_retirement','configuration_retirement','template_catalog_state','template_catalog_member','standard_archive','standard_derivation','integration_discovery','integration_disabled','integration_operation','harness_materialization','permission_origin','permission_file_origin','permission_source_selection','permission_binding','permission_assignment') BEGIN UPDATE catalog_clock SET revision=revision+1 WHERE id=1; END;
+CREATE TRIGGER catalog_governance_update AFTER UPDATE ON governance_records WHEN NEW.type IN ('project_configuration','work_configuration','integration_project_configuration','workflow_draft','agent_instance','agent_instance_retirement','skill_package','role_retirement','configuration_retirement','template_catalog_state','template_catalog_member','standard_archive','standard_derivation','integration_discovery','integration_disabled','integration_operation','harness_materialization','permission_origin','permission_file_origin','permission_source_selection','permission_binding','permission_assignment') BEGIN UPDATE catalog_clock SET revision=revision+1 WHERE id=1; END;
+CREATE TRIGGER catalog_governance_delete AFTER DELETE ON governance_records WHEN OLD.type IN ('project_configuration','work_configuration','integration_project_configuration','workflow_draft','agent_instance','agent_instance_retirement','skill_package','role_retirement','configuration_retirement','template_catalog_state','template_catalog_member','standard_archive','standard_derivation','integration_discovery','integration_disabled','integration_operation','harness_materialization','permission_origin','permission_file_origin','permission_source_selection','permission_binding','permission_assignment') BEGIN UPDATE catalog_clock SET revision=revision+1 WHERE id=1; END;
+CREATE TRIGGER catalog_projects_insert AFTER INSERT ON projects BEGIN UPDATE catalog_clock SET revision=revision+1 WHERE id=1; END;
+CREATE TRIGGER catalog_projects_update AFTER UPDATE ON projects BEGIN UPDATE catalog_clock SET revision=revision+1 WHERE id=1; END;
+CREATE TRIGGER catalog_projects_delete AFTER DELETE ON projects BEGIN UPDATE catalog_clock SET revision=revision+1 WHERE id=1; END;
+CREATE TRIGGER catalog_repository_worktrees_insert AFTER INSERT ON repository_worktrees WHEN NEW.kind='mainline' BEGIN UPDATE catalog_clock SET revision=revision+1 WHERE id=1; END;
+CREATE TRIGGER catalog_repository_worktrees_update AFTER UPDATE ON repository_worktrees WHEN OLD.kind='mainline' OR NEW.kind='mainline' BEGIN UPDATE catalog_clock SET revision=revision+1 WHERE id=1; END;
+CREATE TRIGGER catalog_repository_worktrees_delete AFTER DELETE ON repository_worktrees WHEN OLD.kind='mainline' BEGIN UPDATE catalog_clock SET revision=revision+1 WHERE id=1; END;
+
 COMMIT;

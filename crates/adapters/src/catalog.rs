@@ -43,12 +43,12 @@ impl GlobalStore {
             !root.join("engineering.sqlite3").exists(),
             "旧单库数据集已不再支持，请使用当前分库布局",
         )?;
-        let connection = Connection::open(root.join("global.sqlite3")).map_err(storage)?;
+        let connection = connection_pool::ManagedConnection::open(&root.join("global.sqlite3"))?;
         let version: u32 = connection
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(storage)?;
         require(
-            version == 0 || version == 19,
+            version == 0 || version == 20,
             "数据集协议不兼容；请使用新的空数据目录",
         )?;
         connection
@@ -417,9 +417,6 @@ impl EngineeringStore for GlobalStore {
         store_changes::pending_tools(&*self.connection.read()?)
     }
     fn configuration_snapshot(&self) -> Result<std::sync::Arc<ConfigurationCatalogSnapshot>> {
-        if let Some(snapshot) = self.catalog_cache.current()? {
-            return Ok(snapshot);
-        }
         self.catalog_cache.read(&*self.connection.read()?, false)
     }
     fn root(&self) -> String {
