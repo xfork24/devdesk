@@ -641,6 +641,9 @@ impl Engine {
         Ok(())
     }
     pub fn drive_tool_calls(&self) -> Result<()> {
+        if !self.store.has_pending_tool_calls()? {
+            return Ok(());
+        }
         // Reconcile late persisted receipts on every tick; never redispatch an unknown call.
         self.recover_tool_receipts()?;
         let Some(executor) = &self.tool_executor else {

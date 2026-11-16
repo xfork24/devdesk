@@ -18,6 +18,7 @@ use axum::{
     },
     routing::{get, post},
 };
+use devdesk_core::EngineeringStore;
 use devdesk_domain::{Error, HARNESS_PROVIDERS, err};
 use futures_util::stream;
 use serde_json::{Value, json};
@@ -240,34 +241,63 @@ async fn static_file(request: Request) -> Response {
 async fn rpc(
     State(app): State<Arc<App>>,
     request: std::result::Result<Json<Value>, axum::extract::rejection::JsonRejection>,
-) -> Json<Value> {
-    let request = match request {
-        Ok(Json(value)) => value,
-        Err(_) => {
-            return Json(
+) -> Response {
+    let request =
+        match request {
+            Ok(Json(value)) => value,
+            Err(_) => return Json(
                 json!({"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error"}}),
-            );
-        }
-    };
+            )
+            .into_response(),
+        };
     let id = request.get("id").cloned().unwrap_or(Value::Null);
     if request["jsonrpc"] != "2.0" || !request["method"].is_string() || request.get("id").is_none()
     {
         return Json(
             json!({"jsonrpc":"2.0","id":id,"error":{"code":-32600,"message":"Invalid request"}}),
-        );
+        )
+        .into_response();
     }
+    static SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let measure = performance_logging();
+    let request_id = SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let submitted = std::time::Instant::now();
     let method = request["method"].as_str().unwrap().to_string();
     let params = request.get("params").cloned().unwrap_or(json!({}));
-    let a = app.clone();
-    let result = tokio::task::spawn_blocking(move || -> devdesk_domain::Result<Value> {
-        a.workspace()?.dispatch(&method, params)
-    })
-    .await;
-    let result = result.unwrap_or_else(|e| Err(err("internal", e.to_string())));
-    Json(match result {
-        Ok(result) => json!({"jsonrpc":"2.0","id":id,"result":result}),
-        Err(e) => json!({"jsonrpc":"2.0","id":id,"error":failure(e)}),
-    })
+    let fallback_id = id.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let trace = measure.then(devdesk_adapters::performance::Trace::start);
+        devdesk_adapters::performance::record("worker.queue_wait", submitted.elapsed().as_secs_f64()*1000.0);
+        let result = {
+            let _span = devdesk_adapters::performance::Span::new("rpc.dispatch");
+            app.workspace().and_then(|w| w.dispatch(&method, params))
+        };
+        let success = result.is_ok();
+        let response = match result {
+            Ok(result) => json!({"jsonrpc":"2.0","id":id,"result":result}),
+            Err(e) => json!({"jsonrpc":"2.0","id":id,"error":failure(e)}),
+        };
+        let body = {
+            let _span = devdesk_adapters::performance::Span::new("rpc.serialize");
+            serde_json::to_vec(&response).expect("JSON RPC value")
+        };
+        let milliseconds = submitted.elapsed().as_secs_f64()*1000.0;
+        if let Some(trace) = trace {
+            eprintln!("{}",json!({"type":"performance","request_id":request_id,"method":method.chars().take(120).collect::<String>(),"success":success,"response_bytes":body.len(),"request_ms":milliseconds,"measurement":trace.finish()}));
+        }
+        (body, milliseconds)
+    }).await;
+    match result {
+        Ok((body, milliseconds)) => {
+            let mut response = ([(header::CONTENT_TYPE,"application/json")],body).into_response();
+            if measure {
+                response.headers_mut().insert("server-timing",HeaderValue::from_str(&format!("rpc;dur={milliseconds:.3}")).expect("numeric timing"));
+                response.headers_mut().insert("x-devdesk-request-id",HeaderValue::from_str(&request_id.to_string()).expect("numeric request id"));
+            }
+            response
+        }
+        Err(e) => Json(json!({"jsonrpc":"2.0","id":fallback_id,"error":failure(err("internal",e.to_string()))})).into_response(),
+    }
 }
 async fn setup(State(app): State<Arc<App>>, Json(p): Json<Value>) -> Json<Value> {
     let mut current = app.workspace.write().unwrap();
@@ -375,34 +405,84 @@ async fn events(
         .and_then(|(_, n)| n.parse::<u64>().ok())
         .or_else(|| p.get("cursor").and_then(|s| s.parse().ok()))
         .unwrap_or(0);
+    let notify = Arc::new(tokio::sync::Notify::new());
+    let listener: Arc<dyn Fn() + Send + Sync> = {
+        let notify = notify.clone();
+        Arc::new(move || notify.notify_one())
+    };
+    engine.store.subscribe_changes(Arc::downgrade(&listener));
+    if let Ok(workspace) = app.workspace() {
+        workspace
+            .global
+            .subscribe_changes(Arc::downgrade(&listener));
+    }
     let stream = stream::unfold(
-        (app, engine, scope, cursor, VecDeque::<Value>::new()),
-        |(app, engine, scope, mut cursor, mut queue)| async move {
+        (
+            app,
+            engine,
+            scope,
+            cursor,
+            VecDeque::<Value>::new(),
+            notify,
+            listener,
+            None::<Value>,
+        ),
+        |(app, engine, scope, mut cursor, mut queue, notify, listener, mut last_version)| async move {
             loop {
                 if app.stopping.load(Ordering::Relaxed) {
                     return None;
                 }
                 if let Some(mut value) = queue.pop_front() {
-                    cursor = value["id"].as_u64().unwrap_or(cursor);
                     value["project_id"] = json!(scope);
+                    let mut event = Event::default();
+                    if let Some(id) = value["id"].as_u64() {
+                        cursor = id;
+                        event = event.id(format!("{scope}:{cursor}"));
+                    }
                     return Some((
-                        Ok::<_, std::convert::Infallible>(
-                            Event::default()
-                                .id(format!("{scope}:{cursor}"))
-                                .data(value.to_string()),
+                        Ok::<_, std::convert::Infallible>(event.data(value.to_string())),
+                        (
+                            app,
+                            engine,
+                            scope,
+                            cursor,
+                            queue,
+                            notify,
+                            listener,
+                            last_version,
                         ),
-                        (app, engine, scope, cursor, queue),
                     ));
                 }
-                if let Ok(Value::Array(values)) =
-                    engine.query("query.events", &json!({"cursor":cursor,"limit":100}), 4)
-                {
-                    queue.extend(values);
+                let read_engine = engine.clone();
+                let read_app = app.clone();
+                let read = tokio::task::spawn_blocking(move || -> devdesk_domain::Result<_> {
+                    let values = read_engine.store.events_after(cursor, 100)?;
+                    let version = read_app.workspace()?.configuration_version(&read_engine)?;
+                    Ok((values, version))
+                })
+                .await;
+                if let Ok(Ok((values, version))) = read {
+                    if last_version.as_ref() != Some(&version) {
+                        queue.push_back(
+                            json!({"kind":"configuration.changed","configuration_version":version}),
+                        );
+                        last_version = Some(version.clone());
+                    }
+                    for value in values {
+                        let mut value = json!(value);
+                        value["configuration_version"] = version.clone();
+                        queue.push_back(value);
+                    }
                     if !queue.is_empty() {
                         continue;
                     }
                 }
-                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                // Commit notifications provide low latency; the bounded retry repairs missed notifications.
+                tokio::select! {
+                    _=notify.notified()=>{},
+                    _=tokio::time::sleep(std::time::Duration::from_secs(1))=>{},
+                    _=app.shutdown.notified()=>{},
+                }
             }
         },
     );
@@ -474,9 +554,17 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     let access_token = connection_key(listen, public_url.is_some(), token)?;
+    let startup = performance_logging().then(devdesk_adapters::performance::Trace::start);
     let workspace = option("--data")
         .map(|p| Workspace::open(&PathBuf::from(p)))
-        .transpose()?;
+        .transpose();
+    if let Some(trace) = startup {
+        eprintln!(
+            "{}",
+            json!({"type":"performance","context":"startup","success":workspace.is_ok(),"measurement":trace.finish()})
+        );
+    }
+    let workspace = workspace?;
     let listener = tokio::net::TcpListener::bind((listen, port)).await?;
     let origin = match public_url {
         Some(origin) => origin,
@@ -499,25 +587,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         stopping: AtomicBool::new(false),
         shutdown: tokio::sync::Notify::new(),
     });
-    let router = Router::new()
-        .route("/connection", get(connection))
-        .route("/session", post(session).layer(DefaultBodyLimit::max(4096)))
-        .route(
-            "/rpc",
-            post(rpc).layer(DefaultBodyLimit::max(4 * 1024 * 1024)),
-        )
-        .route(
-            "/oauth/integrations/callback",
-            get(integration_oauth_callback),
-        )
-        .route("/setup", post(setup))
-        .route("/shutdown", post(shutdown))
-        .route("/capabilities", get(capabilities))
-        .route("/events", get(events))
-        .route("/artifacts/{id}", get(artifact))
-        .fallback(static_file)
-        .layer(middleware::from_fn_with_state(app.clone(), guard))
-        .with_state(app.clone());
+    let router = router(app.clone());
     let scheduler = app.clone();
     let task = tokio::spawn(async move {
         let mut timer = tokio::time::interval(std::time::Duration::from_millis(75));
@@ -601,4 +671,34 @@ mod connection_tests {
             assert!(connection_origin(invalid).is_err(), "{invalid}");
         }
     }
+}
+
+fn router(app: Arc<App>) -> Router {
+    Router::new()
+        .route("/connection", get(connection))
+        .route("/session", post(session).layer(DefaultBodyLimit::max(4096)))
+        .route(
+            "/rpc",
+            post(rpc).layer(DefaultBodyLimit::max(4 * 1024 * 1024)),
+        )
+        .route(
+            "/oauth/integrations/callback",
+            get(integration_oauth_callback),
+        )
+        .route("/setup", post(setup))
+        .route("/shutdown", post(shutdown))
+        .route("/capabilities", get(capabilities))
+        .route("/events", get(events))
+        .route("/artifacts/{id}", get(artifact))
+        .fallback(static_file)
+        .layer(middleware::from_fn_with_state(app.clone(), guard))
+        .with_state(app.clone())
+}
+
+#[cfg(test)]
+mod loading_performance;
+
+fn performance_logging() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("DEVDESK_PERF_LOG").is_ok_and(|value| value == "1"))
 }

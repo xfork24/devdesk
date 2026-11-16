@@ -832,6 +832,7 @@ impl Engine {
         }
         Some((|| {
             let s = self.store.snapshot()?;
+            let _span = self.store.observe_query("catalog.filter_and_project");
             if method == "query.roles" {
                 let all = s
                     .governance

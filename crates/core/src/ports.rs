@@ -356,6 +356,9 @@ pub trait PullRequests: Send + Sync {
 }
 
 pub trait EngineeringStore: Send + Sync {
+    fn observe_query(&self, _stage: &'static str) -> Box<dyn QueryObservation> {
+        Box::new(())
+    }
     /// Lookup through the same idempotency contract without creating a missing operation.
     fn replay(&self, id: &str, fingerprint: &str) -> Result<Option<Value>> {
         let mut missing = false;
@@ -370,6 +373,33 @@ pub trait EngineeringStore: Send + Sync {
         Ok(true)
     }
     fn snapshot(&self) -> Result<EngineeringState>;
+    fn events_after(&self, cursor: u64, limit: usize) -> Result<Vec<devdesk_domain::Event>> {
+        Ok(self
+            .snapshot()?
+            .events
+            .into_iter()
+            .filter(|event| event.id > cursor)
+            .take(limit.clamp(1, 100))
+            .collect())
+    }
+    /// Weak listeners are invoked after commit and after releasing the store's locks.
+    fn subscribe_changes(&self, _listener: std::sync::Weak<dyn Fn() + Send + Sync>) {}
+    fn has_pending_tool_calls(&self) -> Result<bool> {
+        Ok(true)
+    }
+    /// Adapters override this with a configuration-only, immutable cached read model.
+    fn configuration_snapshot(&self) -> Result<Arc<crate::ConfigurationCatalogSnapshot>> {
+        let state = self.snapshot()?;
+        let ready = state
+            .repository_worktrees
+            .iter()
+            .any(|w| w.kind == devdesk_domain::WorktreeKind::Mainline);
+        Ok(Arc::new(crate::ConfigurationCatalogSnapshot::new(
+            crate::catalog_projection(&state),
+            0,
+            ready,
+        )?))
+    }
     fn transact(
         &self,
         key: Option<(&str, &str)>,
@@ -380,6 +410,9 @@ pub trait EngineeringStore: Send + Sync {
         None
     }
 }
+/// Synchronous query scope supplied by an outer diagnostics adapter.
+pub trait QueryObservation {}
+impl QueryObservation for () {}
 pub trait ArtifactStore: Send + Sync {
     fn seal_scoped(&self, owner: &MaterialOwner, category: &str, body: &str) -> Result<Artifact> {
         match owner {

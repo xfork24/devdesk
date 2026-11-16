@@ -8,10 +8,30 @@ pub(super) fn is_source(r: &ConfigurationRecord) -> bool {
 }
 
 pub(super) fn load_records(conn: &Connection) -> Result<Vec<ConfigurationRecord>> {
-    let mut records: Vec<ConfigurationRecord> = load_table::<Value>(conn, "governance_records")?
-        .into_iter()
-        .map(ConfigurationRecord::from_storage)
-        .collect::<Result<_>>()?;
+    load_records_selected(conn, false)
+}
+pub(super) fn load_catalog_records(conn: &Connection) -> Result<Vec<ConfigurationRecord>> {
+    load_records_selected(conn, true)
+}
+fn load_records_selected(conn: &Connection, catalog: bool) -> Result<Vec<ConfigurationRecord>> {
+    let _span = performance::Span::new("source.load_records");
+    let filter = if catalog {
+        format!(
+            "type IN ({})",
+            CATALOG_RECORD_KINDS
+                .iter()
+                .map(|k| format!("'{k}'"))
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+    } else {
+        "1".into()
+    };
+    let mut records: Vec<ConfigurationRecord> =
+        load_table_filtered::<Value>(conn, "governance_records", &filter)?
+            .into_iter()
+            .map(ConfigurationRecord::from_storage)
+            .collect::<Result<_>>()?;
     let mut query = conn
         .prepare(
             "SELECT type,identity,revision,name,scope,refs,data FROM source_definitions ORDER BY rowid",
@@ -41,6 +61,7 @@ pub(super) fn load_records(conn: &Connection) -> Result<Vec<ConfigurationRecord>
             refs: serde_json::from_str(&refs).map_err(storage)?,
             data: serde_json::from_str(&data).map_err(storage)?,
         };
+        let _span = performance::Span::new("source.validate_and_hash");
         records.push(definition.into_record()?);
     }
     for index in 0..records.len() {
@@ -130,6 +151,7 @@ pub(super) fn restore_records(
     state: &mut EngineeringState,
     memo: &mut std::collections::BTreeMap<String, Value>,
 ) -> Result<()> {
+    let _span = performance::Span::new("source.restore_records");
     let snapshot = state.clone();
     for record in &mut state.governance {
         if !is_source(record) {

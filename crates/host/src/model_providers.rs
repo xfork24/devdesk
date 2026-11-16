@@ -6,7 +6,8 @@ impl Workspace {
     /// All published model providers as `(source reference, facts)` pairs, with
     /// catalog capacities attached when a harness covers them.
     pub(super) fn model_provider_facts(&self) -> Result<Vec<(Id, ProviderFacts)>> {
-        let state = self.configuration.store.snapshot()?;
+        let catalog = self.configuration.store.configuration_snapshot()?;
+        let state = &catalog.state;
         let mut facts = Vec::new();
         let mut seen = std::collections::BTreeSet::new();
         for r in state.governance.iter().filter(|r| {

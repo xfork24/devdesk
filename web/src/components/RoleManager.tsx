@@ -44,7 +44,7 @@ export function RoleManager({
         limit: 100,
         include_history: true,
       }),
-      request("query.workspace", {
+      request("query.project_directory", {
         project_offset: 0,
         limit: 100,
       }),

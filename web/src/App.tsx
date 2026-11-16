@@ -176,6 +176,8 @@ const routeTab = routeTabValue(route);
 function App() {
   const catalogGeneration = useCatalogGeneration();
   const requestGeneration = useRef(0);
+  const activePage = useRef({ tab: routeTab, featureId: "" });
+  const configurationVersion = useRef("");
   const workspaceLoads = useRef(0);
   const workspaceRefreshQueued = useRef(false);
   const refreshWorkspace = useRef<() => void>(() => {});
@@ -187,6 +189,7 @@ function App() {
   const [projectId, setProjectId] = useState("");
   const [featureId, setFeatureId] = useState(route.get("feature_id") || "");
   const [tab, setTab] = useState(routeTab);
+  activePage.current = { tab, featureId };
   const [error, setError] = useState("");
   const [connection, setConnection] = useState("连接中");
   const [dialog, setDialog] = useState<DialogSpec>();
@@ -416,18 +419,33 @@ function App() {
             setData(undefined);
             return;
           }
-          const d = await rpc("query.workspace", {
-            project_id: projectId || undefined,
-            feature_id: obsoleteRoute ? undefined : featureId || undefined,
-            offset: featurePage * 50,
-            project_offset: projectPage * 50,
-            github_only: true,
-            limit: 50,
-            detail_pages: detailPages,
-            work_filter: workFilter,
-            task_id: obsoleteRoute ? undefined : taskFilter || undefined,
-          });
+          const configurationPage =
+            [
+              "projects",
+              "workflows",
+              "actors",
+              "components",
+              "discussion",
+            ].includes(tab) &&
+            !featureId &&
+            !taskFilter;
+          const d = await rpc(
+            configurationPage ? "query.ui_bootstrap" : "query.workspace",
+            {
+              project_id: projectId || undefined,
+              feature_id: obsoleteRoute ? undefined : featureId || undefined,
+              offset: featurePage * 50,
+              project_offset: projectPage * 50,
+              github_only: true,
+              limit: 50,
+              detail_pages: detailPages,
+              work_filter: workFilter,
+              task_id: obsoleteRoute ? undefined : taskFilter || undefined,
+            },
+          );
           if (generation !== requestGeneration.current) return;
+          if (d.catalog_version)
+            configurationVersion.current = JSON.stringify(d.catalog_version);
           setData(d);
         }
       } catch (e) {
@@ -451,6 +469,7 @@ function App() {
       detailPages,
       workFilter,
       taskFilter,
+      tab,
     ],
   );
   refreshWorkspace.current = () => {
@@ -474,7 +493,35 @@ function App() {
     stream.onopen = () => {
       if (!kernelStopped.current) setConnection("已连接");
     };
-    stream.onmessage = () => {
+    stream.onmessage = (message) => {
+      try {
+        const value: Row = JSON.parse(message.data);
+        const page = activePage.current;
+        if (
+          [
+            "projects",
+            "workflows",
+            "actors",
+            "components",
+            "discussion",
+          ].includes(page.tab) &&
+          !page.featureId
+        ) {
+          const version = value.configuration_version
+            ? JSON.stringify(value.configuration_version)
+            : "";
+          const changed = version && version !== configurationVersion.current;
+          if (
+            !changed &&
+            !/^(project|repository|workspace|runtime|settings)\./.test(
+              value.kind || "",
+            )
+          )
+            return;
+        }
+      } catch {
+        /* Older or interrupted event payloads still trigger a refresh. */
+      }
       if (!timer)
         timer = setTimeout(() => {
           timer = undefined;
@@ -488,7 +535,7 @@ function App() {
       stream.close();
       if (timer) clearTimeout(timer);
     };
-  }, [load, projectId, caps?.setup_required]);
+  }, [projectId, caps?.setup_required]);
   const detail = data?.detail;
   const f = detail?.feature;
   const projects: Row[] = (data?.projects || []).filter(

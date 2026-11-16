@@ -276,6 +276,7 @@ fn restore_reference(
     value: &Value,
     memo: &mut BTreeMap<String, Value>,
 ) -> Result<Value> {
+    let _span = performance::Span::new("source.restore_reference");
     match value["$source"].as_str() {
         Some("literal") => Ok(value["value"].clone()),
         Some("source_definition") => Ok(json!(
