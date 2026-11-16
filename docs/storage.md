@@ -2,6 +2,8 @@
 
 本文描述数据集结构、三库分工、幂等与恢复模型及升级策略。表结构清单见 [SQL 说明](../sql/README.md)，配置存储语义见 [源配置与执行解析](source-configuration.md)。
 
+已确认的并发重构继续使用 SQLite：独立读快照、资源级版本比较与短事务提交、无应用层全局/项目串行写锁，视图允许最终一致。当前单连接/写锁和共享项目选择尚未替换；本文以下描述现行实现，目标结构见 [底层重构方案](plans/single-host-concurrency/PLAN.md)，容量门禁见 [100 前端验收合同](plans/single-host-concurrency/ACCEPTANCE.md)。
+
 ## 数据集总览
 
 一个数据集目录（`--data`）以 `.devdesk-dataset` 标记（内容 `devdesk-profile-runtime-v2`）并施加独占写锁（`.devdesk.lock`）；同一数据集同时只能有一个可写进程。

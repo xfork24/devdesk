@@ -2,8 +2,11 @@
 
 每个计划使用 `docs/plans/<计划名>/PLAN.md`，同目录只保留 Markdown 契约、执行报告和验收说明。日志、JSON、截图、补丁和临时测试文件不保存为计划交付物；源码回归测试仍在 crates、tests、web/tests。
 
+待实施方案必须明确标注状态，不能作为已实现的 API 或已通过的验收；核心设计约束同时记录在 [架构设计](../design.md) 和 [仓库指南](../../AGENT.md)。
+
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
+| [单 Host SQLite 底层并发重构](single-host-concurrency/PLAN.md) | [工作流运行时 100 前端验收合同](single-host-concurrency/ACCEPTANCE.md) | 方案已整理，P0–P6 待实施、待验收；独立前端项目上下文、并发读、所有修改入口的资源级乐观校验、SQLite 短事务、最终一致视图与事件分发 |
 | [配置加载优化](configuration-loading-performance/PLAN.md) | [性能分析](configuration-loading-performance/ANALYSIS.md)、[W0–W3 实施与验收](configuration-loading-performance/EXECUTION.md) | W0–W3 已完成；配置专用快照、一致视图、轻量 SSE 与启动；debug/release 同条件各页面 30 次对比和回归通过，W4–W7 待实施 |
 | [配置归属、权限简化、本地安装与讨论展示](configuration-permissions-runtime-discussion/PLAN.md) | [实施与定向验收](configuration-permissions-runtime-discussion/EXECUTION.md)；已实施 | 整合六项需求及两项调整：项目工具接入说明、Profile 直用并删除执行授权、Harness/Sandbox 拆分及运行资源删除、本地安装与登录反馈、Workflow 内嵌调度、讨论原始信息新标签页及增量消息简化 |
 | [Agent 完整能力与自由讨论及经验访问](agent-capabilities-discussion-experience/PLAN.md) | [实施验收](agent-capabilities-discussion-experience/EXECUTION.md)、[合并回归](agent-capabilities-discussion-experience/MERGE.md) | 已合并本地 main，合并回归通过；统一 Agent 完整能力装配；Workflow 只负责调度；支持无项目对话及 Agent 在当前对话中读取现有经验，修复工具裁剪引发的权限冲突 |

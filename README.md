@@ -2,6 +2,8 @@
 
 DevDesk 是本地软件工程工作台：Rust 内核管理配置、工作流和权威执行事实，React Web 提供操作入口，SQLite 按项目保存工程数据与历史。它通过 GitHub 仓库、Git worktree、Linux Docker worker 和 Codex / DeepSeek Harness 执行实际工作；平台发布只创建 GitHub PR，不自动合入。
 
+核心性能约束是单 Host 在工作流运行时支撑至少 100 个活跃并发前端：各前端独立选择项目，读取并发执行，写入用乐观版本校验保护，显示允许最终一致。当前 SQLite 底层并发重构处于方案阶段，尚未完成该能力验收，见 [设计约束](docs/design.md#单-host-并发与性能设计约束)、[实施计划](docs/plans/single-host-concurrency/PLAN.md) 和 [100 前端验收标准](docs/plans/single-host-concurrency/ACCEPTANCE.md)。
+
 工作方法由不可变配置源组合：Role 定义职责，Skill 定义方法，Step 定义任务，Spec 定义检查，Delivery 定义交付合同，Standard 固定规范闭包。项目和具体工作显式采用确切修订，运行冻结输入、权限、资源与接入选择；修改默认配置不会覆写已有运行。
 
 ## 启动
@@ -73,10 +75,11 @@ npm --prefix web ci
 | 代码规范 | [Rust 代码规范](docs/code-standards-rust.md)、[Web 代码规范](docs/code-standards-web.md) |
 | 代码阅读 | [crates 总览与文件索引](docs/crates/overview.md)、[完整执行链](docs/crates/execution-flows.md) |
 | 概念与结构 | [领域规范](docs/domain.md)、[结构合同](docs/contracts.md)、[架构设计](docs/design.md) |
+| 并发重构 | [SQLite 底层重构方案与阶段计划](docs/plans/single-host-concurrency/PLAN.md)、[工作流运行时 100 前端验收合同](docs/plans/single-host-concurrency/ACCEPTANCE.md)（待实施、待验收） |
 | 流程与规范 | [工作流与编排](docs/workflow-orchestration.md)、[源配置与执行解析](docs/source-configuration.md) |
 | 操作与会话 | [Web 工作台](docs/web-workbench.md)、[讨论与经验](docs/conversations.md)、[真实工程接入](docs/real-engineering.md) |
 | 执行与接入 | [适配器契约](docs/real-adapter-contract.md)、[工具与技能](docs/tool-skill-integrations.md)、[模型服务商](docs/model-providers.md) |
 | 权限与部署 | [运行时权限](docs/permissions.md)、[系统凭据](docs/system-credentials.md)、[运行包说明](docs/run-binary.md) |
 | 协议与存储 | [本地协议](docs/protocol.md)、[存储布局](docs/storage.md)、[Schema](schemas/README.md)、[SQL](sql/README.md) |
 
-`docs/` 根目录 Markdown 描述当前实现；[docs/plans/](docs/plans/README.md) 保存历史计划、合同和验收记录，原始路径、SHA、测试结果只属于当时执行，不保证临时产物仍存在。
+`docs/` 根目录 Markdown 描述当前实现和明确标记的设计约束；[docs/plans/](docs/plans/README.md) 保存待实施方案、合同和历史验收，未实施内容不代表当前能力，原始路径、SHA、测试结果只属于当时执行，不保证临时产物仍存在。

@@ -46,6 +46,12 @@ python3 tests/performance/configuration_loading.py --test-binary target/debug/de
 # 优化后 RPC 采样增加 --assert-configuration-isolation，检查完整快照与事务次数为零。
 ```
 
+## 单 Host 并发验收设计
+
+[底层并发重构方案](../docs/plans/single-host-concurrency/PLAN.md) 和 [100 前端验收合同](../docs/plans/single-host-concurrency/ACCEPTANCE.md) 定义待实施的并发测试入口、数据规模、负载与门禁。目标是单 Host/SQLite 在工作流持续推进时支持 100 个活跃 Web 前端，覆盖同项目热点、多项目独立选择、持续混合读写、突发竞争与重连。现有 `configuration_loading.py` 关闭调度器，只能作为离线查询基准，不能代替该验收。
+
+正式容量成绩使用固定 release Host/Web、独立数据集、独立负载发生器和实际工作流推进证据；可控原生端口夹具与真实 Docker/Git 执行分别出具结果。测试脚本、100 前端浏览器队列及正式验收尚待实施，不能将文档门禁记作通过。
+
 ## 真实资源检查
 
 ```bash
