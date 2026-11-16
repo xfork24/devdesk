@@ -42,7 +42,9 @@ DEVDESK_E2E_PORT=4329 npm --prefix web run test:e2e
 ```bash
 cargo test --locked -p devdesk-host --no-run
 python3 tests/performance/configuration_loading.py --test-binary target/debug/deps/devdesk_host-实际摘要 --dataset /独立数据库副本 --output /全新证据目录 --samples 30
-# 浏览器采样增加 --browser；release 使用 cargo test --release --no-run 产生的测试二进制。
+# 同进程切页加 --browser；每次重载浏览器配置缓存加 --cold-browser。
+# 慢/失败模型目录同条件夹具加 --model-conditions；每条件 samples 次。
+# release 使用 cargo test --release --no-run 产生的测试二进制。
 # 优化后 RPC 采样增加 --assert-configuration-isolation，检查完整快照与事务次数为零。
 node --test tests/entrypoints/configuration_query_cache.mjs
 cargo test -p devdesk-adapters --test configuration_catalog configuration_source_scaling -- --ignored --exact --nocapture
