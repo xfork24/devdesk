@@ -18,6 +18,38 @@ impl InvocationContext {
     pub(crate) fn actor(&self) -> &WorkflowActor {
         &self.actor
     }
+    pub(crate) fn require_project(&self, project: &str) -> Result<()> {
+        if self.project_id.as_deref() != Some(project) {
+            return Err(err("invalid_scope", "调用上下文与 Project 不一致"));
+        }
+        Ok(())
+    }
+    pub(crate) fn prepare_record(
+        &self,
+        method: &str,
+        command: &Command,
+    ) -> crate::concurrency::ResourceChange {
+        let mut row = crate::governance::record(
+            "command_context",
+            command.command_id.clone(),
+            self.project_id
+                .as_ref()
+                .map_or(Scope::global(), Scope::project),
+            method.into(),
+            1,
+            None,
+            json!({"context":self,"target":command.target,"request_digest":command_fingerprint(method,command)}),
+            true,
+        );
+        row.id = format!(
+            "command-context:{}",
+            configuration_hash(&command.command_id)
+        );
+        crate::concurrency::ResourceChange {
+            resource: crate::concurrency::ResourceKey::new("governance", &row.id),
+            value: row.to_storage(),
+        }
+    }
     pub(crate) fn record(&self, s: &mut EngineeringState, method: &str, c: &Command) -> Result<()> {
         if let Some(project) = &self.project_id {
             require(

@@ -7,6 +7,7 @@ mod catalog_sync;
 pub mod concurrency;
 mod configuration_catalog;
 pub mod credential_updates;
+pub mod project_updates;
 pub mod read_models;
 pub mod rpc_contracts;
 pub mod runtime_registry;
