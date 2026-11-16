@@ -1,6 +1,17 @@
 import { ActionButton, ActionForm, ActionSelect } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useState,
+  useSyncExternalStore,
+  type FormEvent,
+  type ReactNode,
+} from "react";
+import {
+  getModelEpoch,
+  subscribeModels,
+  readModelCatalog,
+} from "../configuration-client";
 import { type Request, type Row } from "./rpc-types";
 
 export type ModelProvider = {
@@ -266,67 +277,88 @@ export function ModelFields({
   const [error, setError] = useState("");
   const [source, setSource] = useState("");
   const [revision, setRevision] = useState(0);
+  const modelEpoch = useSyncExternalStore(subscribeModels, getModelEpoch);
+  const [readAt, setReadAt] = useState(0);
   const codex = data.provider === "openai";
   const ollama = data.provider === "ollama";
   const selected = providers.find((provider) => provider.id === data.provider);
 
   useEffect(() => {
-    const changed = () => setRevision((value) => value + 1);
-    window.addEventListener("devdesk:runtime-options-changed", changed);
-    return () =>
-      window.removeEventListener("devdesk:runtime-options-changed", changed);
-  }, []);
-
-  useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
     setLoading(true);
     setCandidates([]);
     setError("");
     setSource("");
+    setReadAt(0);
+    const accept = (result: Row) => {
+      if (controller.signal.aborted) return;
+      setCandidates(result.models || []);
+      setReadAt(result.read_at || 0);
+      setSource(
+        codex
+          ? "Codex 账号模型目录"
+          : result.source === "provider_endpoint"
+            ? "服务商账号模型目录"
+            : result.source === "host_endpoint"
+              ? "Ollama 服务模型目录"
+              : "当前 DSH 版本支持的模型目录",
+      );
+    };
     const timer = window.setTimeout(
       () => {
-        request(
-          codex ? "codex.auth.models" : "models.list",
-          codex
-            ? {}
-            : {
-                model_provider: data.provider,
-                ...(ollama && data.endpoint ? { endpoint: data.endpoint } : {}),
-              },
+        void request(
+          "query.model_catalog_identity",
+          {
+            model_provider: data.provider,
+            ...(ollama && data.endpoint ? { endpoint: data.endpoint } : {}),
+          },
+          { signal: controller.signal },
         )
-          .then((result) => {
-            if (!active) return;
-            const models = (result.models || []).map((model: Row) => ({
-              ...model,
-              id: model.model || model.id,
-            }));
-            setCandidates(models);
-            if (!models.length)
-              setError("模型目录为空，请检查后端服务或账号配置后刷新。");
-            setSource(
-              codex
-                ? "Codex 账号模型目录"
-                : result.source === "provider_endpoint"
-                  ? "服务商账号模型目录"
-                  : result.source === "host_endpoint"
-                    ? "Ollama 服务模型目录"
-                    : "当前 DSH 版本支持的模型目录",
+          .then(async (identity) => {
+            if (controller.signal.aborted) return;
+            if (!identity.available) {
+              setSource("已保存标识与版本声明目录；登录或配置凭据后可刷新");
+              return;
+            }
+            const result = await readModelCatalog(
+              request,
+              data.provider,
+              ollama ? data.endpoint : undefined,
+              identity.identity,
+              identity.installation_id,
+              { signal: controller.signal, fresh: revision > 0 },
+              accept,
             );
+            accept(result);
           })
           .catch((error) => {
-            if (active) setError(String(error));
+            if (!controller.signal.aborted) setError(String(error));
           })
           .finally(() => {
-            if (active) setLoading(false);
+            if (!controller.signal.aborted) setLoading(false);
           });
       },
       ollama ? 300 : 0,
     );
     return () => {
-      active = false;
+      controller.abort();
       window.clearTimeout(timer);
     };
-  }, [request, data.provider, data.endpoint, codex, ollama, revision]);
+  }, [
+    request,
+    data.provider,
+    data.endpoint,
+    codex,
+    ollama,
+    revision,
+    modelEpoch,
+  ]);
+
+  const choices: Candidate[] = [...(selected?.models || []), ...candidates];
+  if (data.model) choices.push({ id: data.model });
+  const available = [
+    ...new Map(choices.map((model) => [model.id, model])).values(),
+  ];
 
   return (
     <div className="full-width model-fields">
@@ -356,9 +388,8 @@ export function ModelFields({
             aria-label="模型标识"
             value={data.model || ""}
             required
-            disabled={loading}
             onChange={(event) => {
-              const candidate = candidates.find(
+              const candidate = available.find(
                 (model) => model.id === event.target.value,
               );
               if (candidate)
@@ -374,15 +405,9 @@ export function ModelFields({
             }}
           >
             <option value="" disabled>
-              {loading ? "正在读取模型目录…" : "请选择模型"}
+              请选择模型
             </option>
-            {data.model &&
-              !candidates.some((model) => model.id === data.model) && (
-                <option value={data.model} disabled>
-                  {data.model}（当前目录未返回，保留已保存标识）
-                </option>
-              )}
-            {candidates.map((model) => (
+            {available.map((model) => (
               <option key={model.id} value={model.id}>
                 {model.id}
                 {model.displayName && model.displayName !== model.id
@@ -408,7 +433,16 @@ export function ModelFields({
           {error}
         </p>
       )}
-      {source && <p className="muted">{source} · 读取目录不会发起推理。</p>}
+      {loading && (
+        <p role="status">正在后台刷新模型目录，已保存配置可继续编辑。</p>
+      )}
+      {source && (
+        <p className="muted">
+          {source}
+          {readAt ? ` · ${new Date(readAt).toLocaleTimeString()}` : ""} ·
+          读取目录不会发起推理。
+        </p>
+      )}
       {!codex && (
         <>
           {[

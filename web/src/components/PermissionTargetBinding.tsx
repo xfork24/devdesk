@@ -1,3 +1,4 @@
+import { useReadRequest } from "./use-read-request";
 import { useState } from "react";
 import { ActionButton, ActionSelect } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
@@ -22,7 +23,13 @@ export function PermissionTargetBinding(props: Props) {
   );
 }
 
-function TargetBinding({ request, projectId, targetRef, kind }: Props) {
+function TargetBinding({
+  request: parentRequest,
+  projectId,
+  targetRef,
+  kind,
+}: Props) {
+  const request = useReadRequest(parentRequest);
   const { catalog, error, reload } = usePermissionResources(
     request,
     projectId,

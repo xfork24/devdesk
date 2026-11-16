@@ -103,6 +103,7 @@ async function githubFixture(page: Page) {
       case "query.standard_catalog":
         result = { records: [] };
         break;
+      case "query.configuration_index":
       case "query.configurations":
         result = {
           records: [

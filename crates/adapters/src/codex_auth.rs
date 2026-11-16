@@ -48,6 +48,26 @@ pub struct CodexAuthentication {
 }
 
 impl CodexAuthentication {
+    /// Read-only identity probe: no program, keychain access, or account archival.
+    /// Token refresh does not change an account's catalog identity.
+    pub fn catalog_account_identity(&self) -> Result<Option<String>> {
+        let path = self.home.join("auth.json");
+        reject_symlink(&path)?;
+        let bytes = match fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(storage(e)),
+        };
+        let value: Value = serde_json::from_slice(&bytes).map_err(storage)?;
+        let Some(account) = value["tokens"]["account_id"].as_str() else {
+            return Ok(None);
+        };
+        let owner = value["tokens"]["login_owner_id"]
+            .as_str()
+            .unwrap_or(account);
+        configuration_digest(&json!([self.home, account, owner])).map(Some)
+    }
+
     /// A stable account/login-owner reference, independent of token refresh values.
     /// Only opaque references reach configuration records; tokens stay in private native files.
     pub fn credential_reference(&self) -> Result<String> {
@@ -358,5 +378,31 @@ for line in sys.stdin:
         assert_eq!(first, recovered);
         let value: Value = serde_json::from_slice(&fs::read(&receipt).unwrap()).unwrap();
         assert_eq!(value["requests"], 1);
+    }
+}
+
+#[cfg(test)]
+mod catalog_identity_tests {
+    use super::*;
+    #[test]
+    fn catalog_probe_is_read_only_and_account_bound_not_token_bound() {
+        let dir = tempfile::tempdir().unwrap();
+        let auth = CodexAuthentication::new(dir.path()).unwrap();
+        assert!(auth.catalog_account_identity().unwrap().is_none());
+        let write = |account: &str, token: &str| {
+            fs::write(
+                auth.home.join("auth.json"),
+                json!({"tokens":{"account_id":account,"access_token":token}}).to_string(),
+            )
+            .unwrap()
+        };
+        write("one", "first");
+        let one = auth.catalog_account_identity().unwrap();
+        write("one", "refreshed");
+        assert_eq!(one, auth.catalog_account_identity().unwrap());
+        write("two", "next");
+        assert_ne!(one, auth.catalog_account_identity().unwrap());
+        assert!(!dir.path().join("credentials/codex-accounts").exists());
+        assert!(auth.worker.lock().unwrap().is_none());
     }
 }

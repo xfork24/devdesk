@@ -55,6 +55,7 @@ impl Workspace {
         if !matches!(
             method,
             "query.model_providers"
+                | "query.model_catalog_identity"
                 | "models.list"
                 | "credentials.status"
                 | "credentials.configure"
@@ -66,7 +67,9 @@ impl Workspace {
         Some((|| {
             let allowed: &[&str] = match method {
                 "query.model_providers" => &["project_id"],
-                "models.list" => &["project_id", "model_provider", "endpoint"],
+                "models.list" | "query.model_catalog_identity" => {
+                    &["project_id", "model_provider", "endpoint"]
+                }
                 "credentials.configure" => &["project_id", "provider", "model_provider", "api_key"],
                 _ => &["project_id", "provider", "model_provider"],
             };
@@ -92,6 +95,46 @@ impl Workspace {
                     })
                     .collect();
                 return Ok(json!({"providers": providers}));
+            }
+            if method == "query.model_catalog_identity" {
+                let provider = params["model_provider"].as_str().unwrap_or("openai");
+                let (account, available, facts) = if provider == "openai" {
+                    let account = self.codex_auth.catalog_account_identity()?;
+                    (json!(account), account.is_some(), Value::Null)
+                } else {
+                    let p = self.selected_provider(params)?;
+                    let reference = self.global.model_credential_reference(&p)?;
+                    let available =
+                        !(p.kind == ProviderKind::CloudSubscription && p.native && p.requires_key)
+                            || reference.is_some();
+                    (json!(reference), available, json!(p))
+                };
+                let snapshot = self.configuration.store.configuration_snapshot()?;
+                let harnesses: Vec<_> = snapshot
+                    .state
+                    .governance
+                    .iter()
+                    .filter(|r| {
+                        r.r#type == "harness" && template_record_current(&snapshot.state, r)
+                    })
+                    .map(|r| (&r.id, &r.content_hash))
+                    .collect();
+                let installations = self.global.runtime_installations()?;
+                let installation = installations.iter().find(|i| i.key.provider == HarnessProvider::Codex && i.key.os == std::env::consts::OS && i.key.arch == std::env::consts::ARCH && snapshot.state.governance.iter().any(|r| r.r#type=="harness" && r.data["provider"]=="codex" && r.data["runtime_version"]==i.key.version && template_record_current(&snapshot.state,r)) && matches!(&i.artifact,RuntimeArtifact::Executable{canonical_path,..} if Path::new(canonical_path).is_file()));
+                let available = available && (provider != "openai" || installation.is_some());
+                let identity = configuration_hash(&(
+                    "model-catalog/v1",
+                    &self.catalog_instance,
+                    provider,
+                    &params["endpoint"],
+                    account,
+                    facts,
+                    harnesses,
+                    &installations,
+                ));
+                return Ok(
+                    json!({"identity":identity,"available":available,"installation_id":installation.map(|i|&i.id)}),
+                );
             }
             let p = self.selected_provider(params)?;
             if method == "models.list" {

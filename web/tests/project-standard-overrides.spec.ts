@@ -139,6 +139,7 @@ test("Standard 决定入口，项目覆盖保存来源与差异并在重载后�
     await expect(source.locator("option")).toHaveCount(
       baseline.nodes.filter((node: any) => node.kind === type).length + 1,
     );
+    await target.focus();
     await expect(target.locator("option")).toHaveCount(available.total + 1);
   }
   const overrideBoxes = await panel

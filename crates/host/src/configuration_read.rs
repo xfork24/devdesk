@@ -5,6 +5,10 @@ pub(super) fn directory_query(method: &str) -> bool {
     matches!(
         method,
         "query.configurations"
+            | "query.configuration_index"
+            | "query.configuration_records"
+            | "query.standard"
+            | "query.project_standard_preview"
             | "query.roles"
             | "query.capabilities"
             | "query.workflows"
@@ -205,6 +209,9 @@ impl Workspace {
             let local = match method {
                 "query.configuration_defaults" | "query.template_catalog" => false,
                 "query.project_configuration" => true,
+                "query.configuration_index"
+                | "query.configuration_records"
+                | "query.project_standard_preview" => project.is_some() || params["local"] == true,
                 "query.integrations"
                 | "query.integration_bindings"
                 | "query.permission_resources" => project.is_some() || params["local"] == true,
@@ -233,8 +240,33 @@ impl Workspace {
                 global.clone()
             };
             let pinned = engine.at_configuration(view.clone());
-            let mut result = if method == "query.configuration_defaults" {
-                pinned.configuration_defaults(project)?
+            let mut compute_params = params.clone();
+            if matches!(method, "query.standard" | "query.project_standard_preview") {
+                compute_params.as_object_mut().map(|p| p.remove("view"));
+            }
+            let runtime_key = if method == "query.permission_resources" {
+                json!({"installations":self.global.runtime_installations()?,"assets":devdesk_adapters::permissions::asset_digests()})
+            } else {
+                Value::Null
+            };
+            let key = configuration_hash(&(
+                "configuration-query/v1",
+                method,
+                &compute_params,
+                runtime_key,
+            ));
+            let mut computed = false;
+            let mut result = view.cached_query(key, || {
+                computed = true;
+                let _compile = performance::Span::new("catalog.query_build");
+                let value = if method == "query.configuration_index" {
+                configuration_index(&view, params, project)?
+            } else if method == "query.configuration_records" {
+                configuration_records(&view, params, project)?
+            } else if method == "query.configuration_defaults" {
+                if params["view"]=="selection" {pinned.configuration_default_selection(project)?}else{pinned.configuration_defaults(project)?}
+            } else if method=="query.project_configuration" && params["view"]=="selection" {
+                project_configuration_context(&view,project)?
             } else if method == "query.template_catalog" {
                 let info = template_bundle_info()?;
                 json!({"generation":template_catalog_generation(&view.state),"bundle_version":info["bundle_version"],"bundle_hash":info["bundle_hash"],"current_bundle_version":template_catalog_state(&view.state).map(|r|&r.data["bundle_version"]),"counts":template_catalog_counts(&view.state)})
@@ -249,8 +281,21 @@ impl Workspace {
             } else if local && matches!(method, "query.configurations" | "query.workflows") {
                 local_directory(&view, &global, method, params, project)?
             } else {
-                pinned.query(method, params, self.global.concurrency()?)?
+                pinned.query(method, &compute_params, self.global.concurrency()?)?
             };
+                Ok(value)
+            })?;
+            performance::record(
+                if computed {
+                    "catalog.memo_miss"
+                } else {
+                    "catalog.memo_hit"
+                },
+                0.0,
+            );
+            if params["view"] == "summary" {
+                summarize_configuration_result(method, &mut result);
+            }
             // Sources and rows come from the same pinned view, including project-only and historical revisions.
             let sources = result["records"]
                 .as_array()
@@ -270,7 +315,12 @@ impl Workspace {
                     "catalog_generation".into(),
                     json!(template_catalog_generation(&global.state)),
                 );
-                object.insert("template_sources".into(), json!(sources));
+                if !matches!(
+                    method,
+                    "query.configuration_index" | "query.configuration_records"
+                ) {
+                    object.insert("template_sources".into(), json!(sources));
+                }
                 object.insert("catalog_version".into(),json!({"host":self.catalog_instance,"global":global.revision,"project":if local {view.revision}else{0},"project_sources":clock}));
             }
             Ok(result)
@@ -341,6 +391,123 @@ fn local_directory(
 mod tests {
     use super::*;
     use crate::workspace::tests::create;
+
+    #[test]
+    fn thin_catalog_exact_records_and_memo_respect_committed_versions() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
+        let project = create(&w, "thin configuration");
+        let index = w.dispatch("query.configuration_index", json!({})).unwrap();
+        assert!(
+            serde_json::to_vec(&index).unwrap().len() < 80 * 1024,
+            "index bytes {}",
+            index.to_string().len()
+        );
+        for row in index["records"].as_array().unwrap() {
+            assert!(row["data"]["instructions"].is_null());
+            assert!(row["data"]["steps"].is_null());
+            assert!(row["data"]["installations"].is_null());
+        }
+        let role = index["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["type"] == "role")
+            .unwrap();
+        let detail = w
+            .dispatch("query.configuration_records", json!({"refs":[role["id"]]}))
+            .unwrap();
+        assert!(detail["records"][0]["data"]["instructions"].is_string());
+        let params = json!({"project_id":project,"view":"selection"});
+        let first = w
+            .dispatch("query.configuration_defaults", params.clone())
+            .unwrap();
+        let trace = performance::Trace::start();
+        let second = w.dispatch("query.configuration_defaults", params).unwrap();
+        let measured = trace.finish();
+        assert_eq!(first, second);
+        assert!(first["records"].is_null());
+        assert_eq!(measured["spans"]["catalog.memo_hit"]["calls"], 1);
+        assert!(measured["spans"]["project.full_snapshot"].is_null());
+        let published=w.dispatch("role.create",json!({"command_id":id(),"payload":{"name":"another role","scope":"global","data":{"instructions":"body only on selection"}}})).unwrap();
+        let after = w.dispatch("query.configuration_index", json!({})).unwrap();
+        assert_ne!(index["index_version"], after["index_version"]);
+        let stale = w
+            .dispatch(
+                "query.configuration_index",
+                json!({"offset":1,"index_version":index["index_version"]}),
+            )
+            .unwrap_err();
+        assert_eq!(stale.code, "catalog_changed");
+        assert!(
+            after["records"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r["id"] == published["id"])
+        );
+        let identity = w
+            .dispatch(
+                "query.model_catalog_identity",
+                json!({"model_provider":"openai"}),
+            )
+            .unwrap();
+        assert_eq!(identity["available"], false);
+        assert!(identity["identity"].is_string());
+    }
+
+    #[test]
+    fn index_scope_history_and_record_visibility_are_exact() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
+        let project = create(&w, "scope");
+        let owned=w.dispatch("role.create",json!({"command_id":id(),"project_id":project,"payload":{"name":"private","scope":format!("project:{project}"),"data":{"instructions":"private body"}}})).unwrap();
+        let global = w
+            .dispatch("query.configuration_index", json!({"kind":"role"}))
+            .unwrap();
+        // The global administration catalog intentionally sees all sources. A project must not.
+        assert!(
+            global["records"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r["id"] == owned["id"])
+        );
+        let snapshot = w.configuration.store.configuration_snapshot().unwrap();
+        let other = id();
+        let isolated =
+            configuration_index(&snapshot, &json!({"kind":"role"}), Some(&other)).unwrap();
+        assert!(
+            !isolated["records"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r["id"] == owned["id"])
+        );
+        assert!(
+            configuration_records(&snapshot, &json!({"refs":[owned["id"]]}), Some(&other)).is_err()
+        );
+        let local = w
+            .dispatch(
+                "query.configuration_index",
+                json!({"kind":"role","project_id":project,"scope":format!("project:{project}")}),
+            )
+            .unwrap();
+        assert!(
+            local["records"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r["id"] == owned["id"])
+        );
+        let detail = w
+            .dispatch(
+                "query.configuration_records",
+                json!({"refs":[owned["id"]],"project_id":project}),
+            )
+            .unwrap();
+        assert_eq!(detail["records"][0]["data"]["instructions"], "private body");
+    }
 
     #[test]
     fn directory_read_does_not_wait_for_definition_writer_or_restore_history() {

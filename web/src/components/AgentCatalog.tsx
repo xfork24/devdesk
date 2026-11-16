@@ -1,3 +1,4 @@
+import { useReadRequest, ignoreCancelledRefresh } from "./use-read-request";
 import { ActionButton, ActionForm, ActionSelect } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
 import { ModelFields, type ModelProvider } from "./DshProviderSettings";
@@ -20,6 +21,7 @@ import {
   sourcePayload,
   latest,
   loadCatalog,
+  loadConfigurationRecord,
   templateSourceLabel,
   loadIntegrationRecords,
   useDraft,
@@ -168,7 +170,7 @@ export function AgentCatalog({
 }
 export function ResourceEditor({
   kind,
-  request,
+  request: parentRequest,
   project,
   installations,
   revision,
@@ -183,6 +185,7 @@ export function ResourceEditor({
   additionalEditor?: { label: string; content: ReactNode };
   detailFooter?: (record: Row | undefined) => ReactNode;
 }) {
+  const request = useReadRequest(parentRequest);
   const [showAdditionalEditor, setShowAdditionalEditor] = useState(false);
   const {
     error,
@@ -202,6 +205,8 @@ export function ResourceEditor({
     `devdesk:source-flat-v1:resource:${project?.id || "global"}:${kind}`,
     () => ({ selected: "", name: "", scope: "global", data: initial(kind) }),
   );
+  const choice = useRef<AbortController | null>(null);
+  useEffect(() => () => choice.current?.abort(), []);
   const load = useCallback(async () => {
     const [records, modelProviders, integrationResources] = await Promise.all([
       loadCatalog(request, project?.id, ["harness", "sandbox"].includes(kind)),
@@ -231,6 +236,48 @@ export function ResourceEditor({
   }, [load, revision, setError]);
   const old = records.find((r) => r.id === draft.selected),
     data = draft.data;
+  const detailRefs = JSON.stringify([
+    ...new Set([
+      ...(draft.selected && (!old || old._index) ? [draft.selected] : []),
+      ...(kind === "agent" &&
+      data.role_ref &&
+      (!records.find((r) => r.id === data.role_ref) ||
+        records.find((r) => r.id === data.role_ref)?._index)
+        ? [data.role_ref]
+        : []),
+      ...(kind === "capability"
+        ? [data.model_ref, data.harness_ref].filter(
+            (id) => id && !records.some((r) => r.id === id),
+          )
+        : []),
+    ]),
+  ]);
+  useEffect(() => {
+    const refs: string[] = JSON.parse(detailRefs);
+    if (!refs.length) return;
+    const controller = new AbortController();
+    void Promise.all(
+      refs.map((id) =>
+        loadConfigurationRecord(
+          request,
+          { id, _index: true },
+          project?.id,
+          controller.signal,
+        ),
+      ),
+    )
+      .then((rows) => {
+        if (!controller.signal.aborted)
+          setRecords((old) => [
+            ...old.filter((r) => !refs.includes(r.id)),
+            ...rows,
+          ]);
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) setError(String(error));
+      });
+    return () => controller.abort();
+  }, [detailRefs, request, project?.id, setError]);
   const projectInstallations = installations.filter(
     (r) => r.key?.provider === data.provider && isProjectRuntimeInstallation(r),
   );
@@ -278,27 +325,42 @@ export function ResourceEditor({
     </label>
   );
   const choose = useCallback(
-    (row: Row) => {
-      setShowAdditionalEditor(false);
-      let value = sourceContent(row);
-      if (kind === "agent") {
-        value = {
-          role_ref: value.role_ref || "",
-          capability_ref: value.capability_ref || "",
-        };
+    async (row: Row) => {
+      choice.current?.abort();
+      const controller = new AbortController();
+      choice.current = controller;
+      try {
+        row = await loadConfigurationRecord(
+          request,
+          row,
+          project?.id,
+          controller.signal,
+        );
+        if (controller.signal.aborted || row.type !== kind) return;
+        setRecords((rows) => [...rows.filter((r) => r.id !== row.id), row]);
+        setShowAdditionalEditor(false);
+        let value = sourceContent(row);
+        if (kind === "agent") {
+          value = {
+            role_ref: value.role_ref || "",
+            capability_ref: value.capability_ref || "",
+          };
+        }
+        setDraft({
+          selected: row.id,
+          name: row.name,
+          scope: row.scope === "global" ? "global" : "project",
+          data: value,
+        });
+        const params = new URLSearchParams(location.search);
+        params.set("config_object", row.id);
+        history.replaceState(null, "", `?${params}`);
+        setMessage("");
+      } catch (error) {
+        if (!controller.signal.aborted) setError(String(error));
       }
-      setDraft({
-        selected: row.id,
-        name: row.name,
-        scope: row.scope === "global" ? "global" : "project",
-        data: value,
-      });
-      const params = new URLSearchParams(location.search);
-      params.set("config_object", row.id);
-      history.replaceState(null, "", `?${params}`);
-      setMessage("");
     },
-    [kind, setDraft, setMessage],
+    [kind, setDraft, setMessage, request, project?.id, setError],
   );
   const routeConsumed = useRef(false);
   useEffect(() => {
@@ -312,7 +374,11 @@ export function ResourceEditor({
         kind === "agent" && instance
           ? instance.data.agent_revision_id
           : selected;
-      const row = records.find((r) => r.id === revision && r.type === kind);
+      const row = records.find((r) => r.id === revision && r.type === kind) || {
+        id: revision,
+        type: kind,
+        _index: true,
+      };
       if (row) {
         routeConsumed.current = true;
         if (draft.selected !== row.id) choose(row);
@@ -379,7 +445,7 @@ export function ResourceEditor({
         params.set("config_object", row.id);
         history.replaceState(null, "", `?${params}`);
       }
-      await load();
+      await load().catch(ignoreCancelledRefresh);
       setMessage(
         remove ? "已停用；历史保留。" : "新修订已保存，已有使用方保持原引用。",
       );
@@ -423,6 +489,7 @@ export function ResourceEditor({
               captureFeedback();
 
               setShowAdditionalEditor(false);
+              choice.current?.abort();
               const params = new URLSearchParams(location.search);
               params.delete("config_object");
               history.replaceState(null, "", `?${params}`);
@@ -1088,7 +1155,7 @@ export function ResourceEditor({
                           package: pkg,
                         },
                       });
-                      await load();
+                      await load().catch(ignoreCancelledRefresh);
                       choose(row);
                       setMessage("Skill 已复制，材料和工具依赖保留。");
                     } catch (e) {

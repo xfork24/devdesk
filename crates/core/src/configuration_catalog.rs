@@ -35,6 +35,7 @@ pub fn catalog_record(record: &ConfigurationRecord) -> bool {
 
 pub struct ConfigurationCatalogSnapshot {
     pub revision: u64,
+    pub fingerprint: String,
     pub state: Arc<EngineeringState>,
     pub repository_ready: bool,
     references: BTreeMap<String, usize>,
@@ -42,6 +43,7 @@ pub struct ConfigurationCatalogSnapshot {
     heads: BTreeMap<(String, String), u64>,
     origins: BTreeMap<String, Value>,
     health: std::sync::OnceLock<Result<Value>>,
+    memo: std::sync::Mutex<crate::configuration_queries::QueryMemo>,
 }
 impl ConfigurationCatalogSnapshot {
     pub fn new(mut state: EngineeringState, revision: u64, repository_ready: bool) -> Result<Self> {
@@ -49,6 +51,11 @@ impl ConfigurationCatalogSnapshot {
         state.refresh_configuration_views()?;
         let mut snapshot = Self {
             revision,
+            fingerprint: configuration_hash(&(
+                &state.governance,
+                &state.projects,
+                repository_ready,
+            )),
             state: Arc::new(state),
             repository_ready,
             references: BTreeMap::new(),
@@ -56,6 +63,7 @@ impl ConfigurationCatalogSnapshot {
             heads: BTreeMap::new(),
             origins: BTreeMap::new(),
             health: Default::default(),
+            memo: Default::default(),
         };
         for (index, record) in snapshot.state.governance.iter().enumerate() {
             snapshot.references.insert(record.id.clone(), index);
@@ -111,6 +119,19 @@ impl ConfigurationCatalogSnapshot {
     }
     pub fn origin(&self, reference: &str) -> Option<&Value> {
         self.origins.get(reference)
+    }
+    pub fn cached_query(
+        &self,
+        key: String,
+        build: impl FnOnce() -> Result<Value>,
+    ) -> Result<Value> {
+        if let Some(value) = self.memo.lock().unwrap().get(&key) {
+            return Ok(value);
+        }
+        // Expensive work never holds the catalog or memo lock. Concurrent readers can use other keys.
+        let value = build()?;
+        self.memo.lock().unwrap().insert(key, &value);
+        Ok(value)
     }
 }
 
@@ -230,6 +251,14 @@ pub fn compose_configuration_catalog(
             }
         }
         copy_template_catalog(&global.state, &mut state)?;
+        // Shared mutable drafts are read from their owning store, never published by a reader.
+        for draft in global
+            .records("workflow_draft")
+            .filter(|r| r.scope == Scope::global())
+        {
+            state.governance.retain(|r| r.id != draft.id);
+            state.governance.push(draft.clone());
+        }
     }
 
     ConfigurationCatalogSnapshot::new(state, local.revision, local.repository_ready)

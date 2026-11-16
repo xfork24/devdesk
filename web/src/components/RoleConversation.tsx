@@ -1,9 +1,10 @@
+import { useReadRequest } from "./use-read-request";
 import { ReadableValue } from "./reading";
 import { ConversationContent } from "./ConversationContent";
 import { ActionButton, ActionForm, ActionSelect } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
 import { ExecutionTaskDetails } from "./WorkflowTaskPreview";
-import { loadCatalog } from "./configuration-state";
+import { loadCatalog, decodeConfigurationIndex } from "./configuration-state";
 import { MarkdownField } from "./configuration-ui";
 import { type Request, type Row } from "./rpc-types";
 import { AgentExperience } from "./AgentExperience";
@@ -40,9 +41,10 @@ export function RoleConversation({
   onLocateExperience,
   initialOwner,
   initialSession,
-  request,
+  request: parentRequest,
   refresh,
 }: Props) {
+  const request = useReadRequest(parentRequest);
   const {
     error,
     setError,
@@ -284,9 +286,11 @@ export function RoleConversation({
           const page = await request("query.discussion_agents", {
             offset,
             limit: 100,
+            view: "index",
           });
           for (const row of page.records)
-            if (!rows.some((r) => r.id === row.id)) rows.push(row);
+            if (!rows.some((r) => r.id === row.id))
+              rows.push(decodeConfigurationIndex(row));
           offset += page.records.length;
           if (offset >= page.total || !page.records.length) break;
         }
@@ -726,7 +730,31 @@ export function RoleConversation({
               </div>
               <p>Agent 经验：检索与读取，可在当前讨论中按需使用。</p>
             </details>
-            <details>
+            <details
+              onToggle={(event) => {
+                const target = running || composite;
+                if (!event.currentTarget.open || !target?._index) return;
+                void request(
+                  global
+                    ? "query.discussion_agents"
+                    : "query.configuration_records",
+                  {
+                    refs: [target.id],
+                    ...(global ? {} : { project_id: project.id, local: true }),
+                  },
+                )
+                  .then((result) =>
+                    setCatalog((rows) =>
+                      rows.map(
+                        (row) =>
+                          result.records.find((r: Row) => r.id === row.id) ||
+                          row,
+                      ),
+                    ),
+                  )
+                  .catch((error) => setError(String(error)));
+              }}
+            >
               <summary>Role / Capability 及定义 Scope</summary>
               <pre>{JSON.stringify(running || composite, null, 2)}</pre>
             </details>

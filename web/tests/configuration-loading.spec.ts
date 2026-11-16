@@ -162,3 +162,110 @@ test("项目预览后台刷新保留可操作表单与角色绑定", async ({ pa
     await page.unrouteAll({ behavior: "wait" });
   }
 });
+
+test("配置索引跨页复用，正文只在选择对象后读取", async ({ page }) => {
+  const methods: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().endsWith("/rpc")) methods.push(r.postDataJSON().method);
+  });
+  await page.goto("/?tab=actors");
+  const list = page
+    .getByRole("region", { name: "角色管理" })
+    .locator(".configuration-list button:has(strong)");
+  await expect(list.first()).toBeVisible();
+  expect(methods).not.toContain("query.configurations");
+  expect(methods).not.toContain("query.configuration_records");
+  await list.first().click();
+  await expect(page.getByLabel("Role 名称", { exact: true })).not.toHaveValue(
+    "",
+  );
+  await expect
+    .poll(
+      () => methods.filter((m) => m === "query.configuration_records").length,
+    )
+    .toBe(1);
+  const indexes = methods.filter(
+    (m) => m === "query.configuration_index",
+  ).length;
+  await page.getByRole("button", { name: "流程与规范", exact: true }).click();
+  await expect(
+    page
+      .getByRole("region", { name: "工作流程管理" })
+      .locator(".configuration-list button:has(strong)")
+      .first(),
+  ).toBeVisible();
+  const afterB = methods.filter(
+    (m) => m === "query.configuration_index",
+  ).length;
+  await page
+    .getByRole("button", { name: /^角色与(?:Agent|代理)$/, exact: true })
+    .click();
+  await expect(list.first()).toBeVisible();
+  expect(methods.filter((m) => m === "query.configuration_index").length).toBe(
+    afterB,
+  );
+  expect(afterB).toBeGreaterThanOrEqual(indexes);
+  expect(methods).not.toContain("query.workflows");
+});
+
+test("模型目录慢或失败时仍能编辑；切回复用，换账号隔离", async ({ page }) => {
+  let account = "one",
+    calls = 0,
+    release!: () => void,
+    fail = false;
+  const held = new Promise<void>((done) => (release = done));
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    if (call.method === "query.model_catalog_identity")
+      return route.fulfill({
+        json: {
+          jsonrpc: "2.0",
+          id: call.id,
+          result: { identity: account, available: true },
+        },
+      });
+    if (call.method !== "codex.auth.models") return route.fallback();
+    calls++;
+    await held;
+    return route.fulfill({
+      json: {
+        jsonrpc: "2.0",
+        id: call.id,
+        ...(fail
+          ? { error: { message: "offline" } }
+          : { result: { models: [{ model: `private-${account}` }] } }),
+      },
+    });
+  });
+  await page.goto("/?tab=components&config_tab=model");
+  const panel = page.getByRole("region", { name: "Model 管理" });
+  await expect(
+    panel.locator(".configuration-list button:has(strong)").first(),
+  ).toBeVisible();
+  await panel.getByRole("button", { name: /GPT-6.1 Sol High/ }).click();
+  const select = page.getByLabel("模型标识", { exact: true });
+  await expect(select).toBeEnabled();
+  await expect(select).not.toHaveValue("");
+  await page.getByLabel("名称", { exact: true }).fill("目录未完成仍可编辑");
+  await expect.poll(() => calls).toBe(1);
+  release();
+  await expect(select.locator('option[value="private-one"]')).toHaveCount(1);
+  await page.getByRole("tab", { name: "Harness", exact: true }).click();
+  await page.getByRole("tab", { name: "Model", exact: true }).click();
+  await expect(select.locator('option[value="private-one"]')).toHaveCount(1);
+  expect(calls).toBe(1);
+  account = "two";
+  fail = true;
+  await page.getByRole("button", { name: "刷新模型目录", exact: true }).click();
+  await expect(select.locator('option[value="private-one"]')).toHaveCount(0);
+  await expect(page.getByText(/offline/)).toBeVisible();
+  await expect(select).toBeEnabled();
+  const failed = calls;
+  await page.getByRole("tab", { name: "Harness", exact: true }).click();
+  await page.getByRole("tab", { name: "Model", exact: true }).click();
+  await expect(page.getByText(/offline/)).toBeVisible();
+  expect(calls).toBe(failed);
+  await expect(page.getByLabel("名称", { exact: true })).toHaveValue(
+    "目录未完成仍可编辑",
+  );
+});

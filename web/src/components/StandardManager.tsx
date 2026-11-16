@@ -1,3 +1,4 @@
+import { useReadRequest, ignoreCancelledRefresh } from "./use-read-request";
 import { useEffect, useState } from "react";
 import { ActionButton } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
@@ -208,12 +209,13 @@ export function StandardDetail({ snapshot }: { snapshot: Row }) {
 }
 
 export function StandardManager({
-  request,
+  request: parentRequest,
   project,
 }: {
   request: Request;
   project?: Row;
 }) {
+  const request = useReadRequest(parentRequest);
   const [records, setRecords] = useState<Row[]>([]);
   const [selected, setSelected] = useState(
     () => new URLSearchParams(location.search).get("standard_id") || "",
@@ -258,28 +260,32 @@ export function StandardManager({
     setUsage(undefined);
     setDiff(undefined);
     if (!selected) return;
-    void Promise.all([
-      request("query.standard", {
-        id: selected,
-        project_id: project?.id,
-        limit: 1000,
-      }),
-      request("query.standard_usage", {
-        id: selected,
-        project_id: project?.id,
-      }),
-    ])
-      .then(([value, uses]) => {
-        if (active) {
-          setSnapshot(value);
-          setUsage(uses);
-        }
+    const controller = new AbortController();
+    void request(
+      "query.standard",
+      { id: selected, project_id: project?.id, limit: 1000 },
+      { signal: controller.signal },
+    )
+      .then((value) => {
+        if (active) setSnapshot(value);
       })
-      .catch((e) => {
-        if (active) setError(String(e));
+      .catch((error) => {
+        if (active) setError(String(error));
+      });
+    void request(
+      "query.standard_usage",
+      { id: selected, project_id: project?.id },
+      { signal: controller.signal },
+    )
+      .then((value) => {
+        if (active) setUsage(value);
+      })
+      .catch((error) => {
+        if (active) setError(String(error));
       });
     return () => {
       active = false;
+      controller.abort();
     };
   }, [selected, project?.id, request, setError]);
   async function act(action: () => Promise<void>) {
@@ -394,7 +400,7 @@ export function StandardManager({
                       scope: project ? `project:${project.id}` : "global",
                     },
                   });
-                  await load();
+                  await load().catch(ignoreCancelledRefresh);
                   setSelected(row.id);
                   setCandidate(undefined);
                   setBase("");
@@ -430,7 +436,7 @@ export function StandardManager({
                   payload: { archived: !snapshot.archived },
                 });
                 setSnapshot({ ...snapshot, archived: !snapshot.archived });
-                await load();
+                await load().catch(ignoreCancelledRefresh);
               })
             }
           >

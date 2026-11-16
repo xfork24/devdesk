@@ -1,8 +1,14 @@
+import { useReadRequest, ignoreCancelledRefresh } from "./use-read-request";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { ActionButton, ActionSelect } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
-import { latest, loadCatalog, useDraft } from "./configuration-state";
+import {
+  latest,
+  loadCatalog,
+  loadConfigurationRecord,
+  useDraft,
+} from "./configuration-state";
 import { MarkdownField, RevisionSelect } from "./configuration-ui";
 import { type Request, type Row } from "./rpc-types";
 import {
@@ -73,7 +79,12 @@ function replacePort(
   );
 }
 
-export function WorkflowManager({ request, project, refresh }: Props) {
+export function WorkflowManager({
+  request: parentRequest,
+  project,
+  refresh,
+}: Props) {
+  const request = useReadRequest(parentRequest);
   const {
     error,
     setError,
@@ -106,34 +117,26 @@ export function WorkflowManager({ request, project, refresh }: Props) {
   const editorRef = useRef<HTMLElement>(null);
   const epoch = useRef(0),
     routeSelected = useRef(false);
+  const choice = useRef<AbortController | null>(null);
+  useEffect(() => () => choice.current?.abort(), []);
   const invalidate = useCallback(() => {
     epoch.current += 1;
   }, []);
   const load = useCallback(async () => {
     const current = ++epoch.current;
-    const [catalog, workflows, defaults] = await Promise.all([
+    const [catalog, defaults] = await Promise.all([
       loadCatalog(request, project?.id),
-      (async () => {
-        const records: Row[] = [];
-        for (let offset = 0; ;) {
-          const page = await request("query.workflows", {
-            local: !!project?.id,
-            project_id: project?.id,
-            offset,
-            limit: 100,
-            include_history: true,
-          });
-          records.push(...page.records);
-          offset += page.records.length;
-          if (offset >= page.total || !page.records.length) return { records };
-        }
-      })(),
-      request("query.configuration_defaults", { project_id: project?.id }),
+      request("query.configuration_defaults", {
+        project_id: project?.id,
+        view: "selection",
+      }),
     ]);
     if (epoch.current !== current) return;
     setAuthoring(defaults.authoring);
     setRecords(catalog);
-    setRows(workflows.records || []);
+    setRows(
+      catalog.filter((r) => ["workflow", "workflow_draft"].includes(r.type)),
+    );
   }, [request, project?.id]);
   useEffect(() => {
     void load().catch((error) => setError(String(error)));
@@ -142,32 +145,54 @@ export function WorkflowManager({ request, project, refresh }: Props) {
     };
   }, [invalidate, load, setError]);
   const choose = useCallback(
-    (row: Row) => {
-      const document =
-        row.type === "workflow_draft" ? row.data.document : row.data;
-      setDraft({
-        selected: row.id,
-        revision: row.revision,
-        name: row.name,
-        scope: row.scope === "global" ? "global" : "project",
-        view: "editor",
-        editing: row.type === "workflow_draft",
-        node: "workflow",
-        document: structuredClone(document),
-        expandedStages: [],
-      });
-      setValidation(undefined);
-      const params = new URLSearchParams(location.search);
-      params.set("workflow_id", row.id);
-      history.replaceState(null, "", `?${params}`);
+    async (row: Row) => {
+      choice.current?.abort();
+      const controller = new AbortController();
+      choice.current = controller;
+      try {
+        row = await loadConfigurationRecord(
+          request,
+          row,
+          project?.id,
+          controller.signal,
+        );
+        if (
+          controller.signal.aborted ||
+          !["workflow", "workflow_draft"].includes(row.type)
+        )
+          return;
+        epoch.current++;
+        setRows((rows) => [...rows.filter((r) => r.id !== row.id), row]);
+        const document =
+          row.type === "workflow_draft" ? row.data.document : row.data;
+        setDraft({
+          selected: row.id,
+          revision: row.revision,
+          name: row.name,
+          scope: row.scope === "global" ? "global" : "project",
+          view: "editor",
+          editing: row.type === "workflow_draft",
+          node: "workflow",
+          document: structuredClone(document),
+          expandedStages: [],
+        });
+        setValidation(undefined);
+        const params = new URLSearchParams(location.search);
+        params.set("workflow_id", row.id);
+        history.replaceState(null, "", `?${params}`);
+      } catch (error) {
+        if (!controller.signal.aborted) setError(String(error));
+      }
     },
-    [setDraft],
+    [setDraft, request, project?.id, setError],
   );
   useEffect(() => {
     if (!rows.length || routeSelected.current) return;
     routeSelected.current = true;
     const selected = new URLSearchParams(location.search).get("workflow_id");
-    const row = rows.find((row) => row.id === selected);
+    const row =
+      rows.find((row) => row.id === selected) ||
+      (selected ? { id: selected, _index: true } : undefined);
     if (row && (draft.selected !== row.id || draft.view !== "editor"))
       choose(row);
   }, [rows, choose, draft.selected, draft.view]);
@@ -254,7 +279,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
     const params = new URLSearchParams(location.search);
     params.set("workflow_id", saved.id);
     history.replaceState(null, "", `?${params}`);
-    await load();
+    await load().catch(ignoreCancelledRefresh);
     setMessage("流程草稿已保存。");
     return saved;
   }
@@ -342,6 +367,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
           type="button"
           onClick={() => {
             capture();
+            choice.current?.abort();
             setDraft({
               selected: "",
               revision: 1,
@@ -482,7 +508,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                       undefined,
                       { base_revision_id: draft.selected },
                     );
-                    await load();
+                    await load().catch(ignoreCancelledRefresh);
                     choose(row);
                   })
                 }
@@ -513,8 +539,8 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                         {},
                         row.revision,
                       );
-                      await load();
-                      choose(published);
+                      await load().catch(ignoreCancelledRefresh);
+                      await choose(published);
                       await refresh();
                       setMessage("流程已发布。");
                     })

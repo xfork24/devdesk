@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getConfigurationSession } from "../configuration-client";
 import { useCatalogGeneration } from "../template-catalog";
 import type { Row, Request } from "./rpc-types";
 export const templateSourceLabel = (row?: Row) =>
@@ -23,36 +24,59 @@ export async function loadCatalog(
   request: Request,
   projectId?: string,
   includeArchived = false,
+  kind?: string,
+  includeHistory = false,
 ) {
   const result: Row[] = [];
   let offset = 0;
-  let generation: number | undefined;
+  let generation: string | undefined;
   for (;;) {
-    const page = await request("query.configurations", {
+    const page = await request("query.configuration_index", {
       include_archived: includeArchived,
       local: !!projectId,
       project_id: projectId,
       offset,
-      limit: 100,
-      include_history: true,
+      limit: 1000,
+      include_history: includeHistory,
+      kind,
+      index_version: generation,
     });
-    if (generation !== undefined && page.catalog_generation !== generation)
+    if (generation !== undefined && page.index_version !== generation)
       throw new Error("模板目录已变化，请重新载入");
-    generation = page.catalog_generation;
-    result.push(
-      ...page.records.map((row: Row) => ({
-        ...row,
-        template_source: page.template_sources?.[row.id],
-      })),
-    );
+    generation = page.index_version;
+    result.push(...page.records.map(decodeConfigurationIndex));
     offset += page.records.length;
     if (offset >= page.total || page.records.length === 0) break;
   }
-  const standards = await request("query.standard_catalog", {
-    project_id: projectId,
-    include_archived: includeArchived,
-  });
-  return [...result.filter((r) => r.type !== "standard"), ...standards.records];
+  return result;
+}
+export function decodeConfigurationIndex(row: Row): Row {
+  if (!row.hash) return row; // Structural RPC fixtures and existing complete records retain their wire shape.
+  return {
+    ...row,
+    definition_id: row.identity || row.id.replace(/:[1-9]\d*$/, ""),
+    content_hash: row.hash,
+    data: row.data || {},
+    template_source: { origin: row.origin },
+    template_archived: !!row.archived,
+    _index: true,
+  };
+}
+export async function loadConfigurationRecord(
+  request: Request,
+  row: Row,
+  projectId?: string,
+  signal?: AbortSignal,
+): Promise<Row> {
+  if (!row._index && row.data) return row;
+  const result = await request(
+    "query.configuration_records",
+    { refs: [row.id], project_id: projectId, local: !!projectId },
+    { signal },
+  );
+  const record = result.records.find((r: Row) => r.id === row.id);
+  if (!record) throw new Error("配置修订已不可用");
+  return record;
 }
 export async function loadIntegrationRecords(
   request: Request,
@@ -85,6 +109,15 @@ export async function loadIntegrationRecords(
 export function useDraft<T>(key: string, initial: () => T) {
   const generation = useCatalogGeneration();
   key = generation > 1 ? `${key}:catalog:${generation}` : key;
+  const session = getConfigurationSession();
+  try {
+    const ownerKey = `${key}:dataset-owner`;
+    const owner = localStorage.getItem(ownerKey);
+    if (!owner) localStorage.setItem(ownerKey, session);
+    else if (owner !== session) key = `${key}:dataset:${session}`;
+  } catch {
+    key = `${key}:dataset:${session}`;
+  }
   const cache = useRef<Record<string, T>>({});
   const [value, rawSet] = useState<T>(() => {
     try {

@@ -1,22 +1,30 @@
+import { useReadRequest, ignoreCancelledRefresh } from "./use-read-request";
 import { ActionButton, ActionForm, ActionSelect } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
 import { ProjectIntegrationBindings } from "./ProjectIntegrationBindings";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { loadCatalog, useDraft } from "./configuration-state";
+import {
+  decodeConfigurationIndex,
+  loadCatalog,
+  useDraft,
+} from "./configuration-state";
 import { RevisionSelect } from "./configuration-ui";
 import { StandardDiff, StandardDetail } from "./StandardManager";
 import { type Row, type Request } from "./rpc-types";
 export function ProjectManager({
-  request,
+  request: parentRequest,
   project,
   onOpen,
   refresh,
+  bootstrap,
 }: {
   request: Request;
   project?: Row;
   onOpen: (id: string) => Promise<unknown>;
   refresh: () => Promise<unknown>;
+  bootstrap?: Row;
 }) {
+  const request = useReadRequest(parentRequest);
   const {
     error,
     setError,
@@ -31,7 +39,6 @@ export function ProjectManager({
     [records, setRecords] = useState<Row[]>([]),
     [configuration, setConfiguration] = useState<Row>(),
     [defaults, setDefaults] = useState<Row>(),
-    [health, setHealth] = useState<Row>(),
     [requirements, setRequirements] = useState<Row>(),
     [busy, setBusy] = useState(false);
   const [orchestration, setOrchestration] = useState<Row>({ mode: "agent" });
@@ -40,6 +47,8 @@ export function ProjectManager({
   const [previewError, setPreviewError] = useState("");
   const [baseline, setBaseline] = useState<Row>();
   const [savedStandard, setSavedStandard] = useState<Row>();
+  const [showPreviewDetails, setShowPreviewDetails] = useState(false);
+  const health = bootstrap;
   const [overrideKind, setOverrideKind] = useState("");
   const [overrideSource, setOverrideSource] = useState("");
   const [overrideReplacement, setOverrideReplacement] = useState("");
@@ -68,23 +77,21 @@ export function ProjectManager({
   const load = useCallback(async () => {
     const ticket = ++loadGeneration.current;
     const [workspace, records, configuration, preset] = await Promise.all([
-      request("query.ui_bootstrap", { limit: 100, project_id: project?.id }),
+      request("query.project_directory", { limit: 100, project_offset: 0 }),
       loadCatalog(request, project?.id),
       project?.id
-        ? request("query.project_configuration", { project_id: project?.id })
+        ? request("query.project_configuration", {
+            project_id: project?.id,
+            view: "selection",
+          })
         : Promise.resolve({}),
       request("query.configuration_defaults", {
         project_id: project?.id,
+        view: "selection",
       }).catch(() => undefined),
     ]);
     if (ticket !== loadGeneration.current) return;
-    const saved = configuration.configuration?.data.standard_ref
-      ? await request("query.standard", {
-          id: configuration.configuration.data.standard_ref,
-          project_id: project?.id,
-          limit: 1000,
-        })
-      : undefined;
+    const saved = configuration.standard;
     if (ticket !== loadGeneration.current) return;
     setProjects(workspace.projects || []);
     if (!orchestrationEdited.current)
@@ -101,7 +108,7 @@ export function ProjectManager({
       ...records,
       ...(configuration.pinned_records ?? [])
         .filter((row: Row) => !ids.has(row.id))
-        .map((row: Row) => ({ ...row, template_archived: true })),
+        .map((row: Row) => decodeConfigurationIndex(row)),
     ]);
     setConfiguration(
       configuration.configuration
@@ -112,7 +119,6 @@ export function ProjectManager({
         : undefined,
     );
     setDefaults(preset);
-    setHealth(workspace);
     setSavedStandard(saved);
     if (configuration.configuration?.data.workflow_ref)
       setDraft((current) =>
@@ -187,22 +193,16 @@ export function ProjectManager({
     }
     setPreviewError("");
     if (!project?.id || !draft.standard_ref) return;
-    void Promise.all([
-      request("query.standard", {
-        id: draft.standard_ref,
-        project_id: project.id,
-        limit: 1000,
-      }),
-      request("query.project_standard_preview", {
-        project_id: project.id,
-        standard_ref: draft.standard_ref,
-        standard_overrides: draft.standard_overrides,
-        harness_permission_ref: draft.harness_permission_ref || undefined,
-      }),
-    ])
-      .then(([source, result]) => {
+    void request("query.project_standard_preview", {
+      project_id: project.id,
+      standard_ref: draft.standard_ref,
+      standard_overrides: draft.standard_overrides,
+      harness_permission_ref: draft.harness_permission_ref || undefined,
+      view: showPreviewDetails ? "full" : "summary",
+    })
+      .then((result) => {
         if (active) {
-          setBaseline(source);
+          setBaseline(result.baseline);
           setPreview(result);
           setRequirements(result.requirements);
         }
@@ -219,6 +219,7 @@ export function ProjectManager({
     draft.standard_ref,
     draft.standard_overrides,
     draft.harness_permission_ref,
+    showPreviewDetails,
   ]);
   const managerRole = records.find(
     (r) => r.type === "role" && r.id === defaults?.orchestrator_role_ref,
@@ -257,7 +258,7 @@ export function ProjectManager({
       setConfiguration(row);
       setDraft((current) => ({ ...current, source_configuration_id: row.id }));
       await refresh();
-      await load();
+      await load().catch(ignoreCancelledRefresh);
       setMessage(
         draft.standard_overrides.length
           ? "项目专属规范快照已保存；已有 Feature 的冻结版本保持不变。"
@@ -582,7 +583,11 @@ export function ProjectManager({
               ))}
             </details>
             {preview && (
-              <details>
+              <details
+                onToggle={(event) =>
+                  setShowPreviewDetails(event.currentTarget.open)
+                }
+              >
                 <summary>保存前查看来源与差异</summary>
                 <p>
                   基础版本：{draft.standard_ref} ·{" "}
@@ -592,7 +597,11 @@ export function ProjectManager({
                   已有 Feature 不会随项目配置变化。
                 </p>
                 <StandardDiff diff={preview.provenance.diff} />
-                <StandardDetail snapshot={preview.snapshot} />
+                {showPreviewDetails && !preview.summary ? (
+                  <StandardDetail snapshot={preview.snapshot} />
+                ) : showPreviewDetails ? (
+                  <p>正在读取规范详情…</p>
+                ) : null}
               </details>
             )}
             <p>
@@ -666,60 +675,63 @@ export function ProjectManager({
                   setDraft({ ...draft, sandbox_permission_ref })
                 }
               />
-              <label>
-                编排角色
-                <select
-                  aria-label="编排角色"
-                  value={draft.orchestrator_role_ref}
-                  onChange={(e) =>
-                    setDraft({
-                      ...draft,
-                      orchestrator_role_ref: e.target.value,
-                    })
-                  }
-                >
-                  <option value="">仅手动操作工作流</option>
-                  {records
-                    .filter(
+              <div className="project-configuration-row project-orchestration-agent-fields">
+                <label>
+                  编排角色
+                  <select
+                    aria-label="编排角色"
+                    value={draft.orchestrator_role_ref}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        orchestrator_role_ref: e.target.value,
+                      })
+                    }
+                  >
+                    <option value="">仅手动操作工作流</option>
+                    {records
+                      .filter(
+                        (r) =>
+                          r.type === "role" &&
+                          managerRole &&
+                          r.definition_id === managerRole.definition_id,
+                      )
+                      .map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                {draft.orchestrator_role_ref && (
+                  <RevisionSelect
+                    label="编排 Agent"
+                    records={records.filter(
                       (r) =>
-                        r.type === "role" &&
-                        managerRole &&
-                        r.definition_id === managerRole.definition_id,
-                    )
-                    .map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.name}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              {draft.orchestrator_role_ref && (
-                <RevisionSelect
-                  label="编排 Agent"
-                  records={records.filter(
-                    (r) =>
-                      r.type === "agent" &&
-                      records.some(
-                        (role) =>
-                          role.type === "role" &&
-                          role.id === r.role_ref &&
-                          role.id === draft.orchestrator_role_ref,
-                      ),
-                  )}
-                  value={
-                    draft.role_agent_bindings[draft.orchestrator_role_ref] || ""
-                  }
-                  onChange={(value) =>
-                    setDraft({
-                      ...draft,
-                      role_agent_bindings: {
-                        ...draft.role_agent_bindings,
-                        [draft.orchestrator_role_ref]: value,
-                      },
-                    })
-                  }
-                />
-              )}
+                        r.type === "agent" &&
+                        records.some(
+                          (role) =>
+                            role.type === "role" &&
+                            role.id === r.role_ref &&
+                            role.id === draft.orchestrator_role_ref,
+                        ),
+                    )}
+                    value={
+                      draft.role_agent_bindings[draft.orchestrator_role_ref] ||
+                      ""
+                    }
+                    onChange={(value) =>
+                      setDraft({
+                        ...draft,
+                        role_agent_bindings: {
+                          ...draft.role_agent_bindings,
+                          [draft.orchestrator_role_ref]: value,
+                        },
+                      })
+                    }
+                  />
+                )}
+              </div>
             </div>
             <p className="muted">
               项目管理与流程编排仅由项目经理角色承担；其他角色负责流程中的专业步骤。

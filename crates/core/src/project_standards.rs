@@ -324,6 +324,8 @@ impl Engine {
             "不能预览其他项目的快照",
         )?;
         let base = text(p, "standard_ref")?;
+        let base_snapshot = standard_snapshot(&state, &base, &Scope::project(&project))?;
+        let baseline = json!({"nodes":base_snapshot.nodes.iter().map(|n|json!({"reference":n.reference,"kind":n.kind,"name":n.name})).collect::<Vec<_>>(),"default_workflow_ref":standard_default_workflow(&state,&base,&Scope::project(&project)).ok()});
         let result = materialize_project_standard(
             &mut state,
             &project,
@@ -348,7 +350,7 @@ impl Engine {
         )?;
         let hash = configuration_hash(&(&result.entry, &result.provenance, &context));
         Ok(
-            json!({"standard_ref":result.standard.id,"default_workflow_ref":result.entry,"snapshot":result.snapshot,"provenance":result.provenance,"preview_hash":hash,"harness_permission_ref":context,
+            json!({"standard_ref":result.standard.id,"baseline":baseline,"default_workflow_ref":result.entry,"snapshot":result.snapshot,"provenance":result.provenance,"preview_hash":hash,"harness_permission_ref":context,
             "requirements":{"roles":plan.roles.values().collect::<Vec<_>>(),"specification_view":plan.specification_view}}),
         )
     }

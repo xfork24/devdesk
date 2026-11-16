@@ -364,12 +364,29 @@ impl Workspace {
             let records = experience::discussion_catalog(Path::new(&self.global.root()))?;
             let offset = params["offset"].as_u64().unwrap_or(0) as usize;
             let limit = params["limit"].as_u64().unwrap_or(100).clamp(1, 100) as usize;
+            let requested: Option<Vec<String>> = params
+                .get("refs")
+                .map(|v| serde_json::from_value(v.clone()))
+                .transpose()
+                .map_err(|e| err("invalid_params", e.to_string()))?;
+            require(
+                requested.as_ref().is_none_or(|refs| refs.len() <= 64),
+                "一次最多读取 64 个确切修订",
+            )?;
+            let records: Vec<_> = records
+                .into_iter()
+                .filter(|r| requested.as_ref().is_none_or(|refs| refs.contains(&r.id)))
+                .collect();
             let page = records
                 .iter()
                 .skip(offset)
                 .take(limit)
                 .map(|r| {
-                    let mut row = json!(r);
+                    let mut row = if params["view"] == "index" {
+                        configuration_selection_record(r)
+                    } else {
+                        json!(r)
+                    };
                     if r.r#type == "agent_instance"
                         && let Some(project) = r
                             .scope

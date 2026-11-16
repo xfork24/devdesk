@@ -1,11 +1,17 @@
+import { useReadRequest, ignoreCancelledRefresh } from "./use-read-request";
 import { ActionButton, ActionForm, ActionSelect } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { latest, useDraft } from "./configuration-state";
+import {
+  latest,
+  loadCatalog,
+  loadConfigurationRecord,
+  useDraft,
+} from "./configuration-state";
 import { MarkdownField } from "./configuration-ui";
 import { type Row, type Request } from "./rpc-types";
 export function RoleManager({
-  request,
+  request: parentRequest,
   project,
   onChanged,
 }: {
@@ -13,6 +19,7 @@ export function RoleManager({
   project?: Row;
   onChanged?: () => void;
 }) {
+  const request = useReadRequest(parentRequest);
   const {
     error,
     setError,
@@ -36,25 +43,17 @@ export function RoleManager({
     `devdesk:v4:roles:${project?.id || "global"}`,
     empty,
   );
+  const choice = useRef<AbortController | null>(null);
+  useEffect(() => () => choice.current?.abort(), []);
   const load = useCallback(async () => {
     const [roles, workspace] = await Promise.all([
-      request("query.roles", {
-        local: !!project?.id,
-        project_id: project?.id,
-        limit: 100,
-        include_history: true,
-      }),
+      loadCatalog(request, project?.id, false, "role"),
       request("query.project_directory", {
         project_offset: 0,
         limit: 100,
       }),
     ]);
-    setRows(
-      (roles.records || []).map((row: Row) => ({
-        ...row,
-        template_source: roles.template_sources?.[row.id],
-      })),
-    );
+    setRows(roles);
     setProjects(workspace.projects || []);
   }, [request, project?.id]);
   useEffect(() => {
@@ -67,31 +66,47 @@ export function RoleManager({
     };
   }, [load, setError]);
   const choose = useCallback(
-    (row: Row) => {
-      setDraft({
-        selected: row.id,
-        name: row.name,
-        instructions: row.data.instructions,
-        visibility: {
-          kind:
-            row.data.visibility?.kind ||
-            (row.scope === "global" ? "global" : "projects"),
-          project_ids:
-            row.data.visibility?.project_ids ||
-            [row.scope.split(":")[1]].filter(Boolean),
-        },
-      });
-      const params = new URLSearchParams(location.search);
-      params.set("config_object", row.id);
-      history.replaceState(null, "", `?${params}`);
+    async (row: Row) => {
+      choice.current?.abort();
+      const controller = new AbortController();
+      choice.current = controller;
+      try {
+        row = await loadConfigurationRecord(
+          request,
+          row,
+          project?.id,
+          controller.signal,
+        );
+        if (controller.signal.aborted || row.type !== "role") return;
+        setRows((rows) => [...rows.filter((r) => r.id !== row.id), row]);
+        setDraft({
+          selected: row.id,
+          name: row.name,
+          instructions: row.data.instructions,
+          visibility: {
+            kind:
+              row.data.visibility?.kind ||
+              (row.scope === "global" ? "global" : "projects"),
+            project_ids:
+              row.data.visibility?.project_ids ||
+              [row.scope.split(":")[1]].filter(Boolean),
+          },
+        });
+        const params = new URLSearchParams(location.search);
+        params.set("config_object", row.id);
+        history.replaceState(null, "", `?${params}`);
+      } catch (error) {
+        if (!controller.signal.aborted) setError(String(error));
+      }
     },
-    [setDraft],
+    [setDraft, request, project?.id, setError],
   );
   const routeConsumed = useRef(false);
   useEffect(() => {
     if (routeConsumed.current || !rows.length) return;
     const id = new URLSearchParams(location.search).get("config_object");
-    const row = rows.find((r) => r.id === id);
+    const row =
+      rows.find((r) => r.id === id) || (id ? { id, _index: true } : undefined);
     if (row) {
       routeConsumed.current = true;
       if (draft.selected !== row.id) choose(row);
@@ -138,7 +153,7 @@ export function RoleManager({
         params.set("config_object", role.id);
         history.replaceState(null, "", `?${params}`);
       }
-      await load();
+      await load().catch(ignoreCancelledRefresh);
       onChanged?.();
       setMessage(
         remove
@@ -170,6 +185,7 @@ export function RoleManager({
               const params = new URLSearchParams(location.search);
               params.delete("config_object");
               history.replaceState(null, "", `?${params}`);
+              choice.current?.abort();
               setDraft(empty());
             }}
           >

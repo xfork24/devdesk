@@ -1,4 +1,6 @@
 import type { Row } from "./rpc-types";
+import { ConfigurationScope } from "./configuration-scope";
+import { loadCatalog } from "./configuration-state";
 import { ActionButton, ActionSelect } from "./ActionFeedback";
 import {
   lazy,
@@ -7,6 +9,8 @@ import {
   useId,
   useRef,
   useState,
+  useContext,
+  useCallback,
   type ReactNode,
 } from "react";
 const RenderMarkdown = lazy(() => import("./MarkdownPreview"));
@@ -20,9 +24,72 @@ type RevisionSelectProps = {
 );
 export function RevisionSelect(props: RevisionSelectProps) {
   const { label, records, value, multiple = false, required = false } = props;
+  const scope = useContext(ConfigurationScope);
+  const family = records[0]?.type;
+  const [focused, setFocused] = useState(false);
+  const [history, setHistory] = useState<Row[]>([]);
+  const [historyError, setHistoryError] = useState("");
+  const historyOwner = useRef({
+    active: true,
+    ticket: 0,
+    controller: undefined as AbortController | undefined,
+  });
+  useEffect(() => {
+    const owner = {
+      active: true,
+      ticket: 0,
+      controller: undefined as AbortController | undefined,
+    };
+    historyOwner.current = owner;
+    setHistory([]);
+    setHistoryError("");
+    return () => {
+      owner.active = false;
+      owner.controller?.abort();
+    };
+  }, [scope?.request, scope?.projectId, family]);
+  const loadHistory = useCallback(async () => {
+    if (
+      !scope ||
+      !records.length ||
+      history.length ||
+      historyOwner.current.controller
+    )
+      return;
+    const owner = historyOwner.current;
+    const controller = new AbortController();
+    owner.controller = controller;
+    const ticket = ++owner.ticket;
+    try {
+      const rows = await loadCatalog(
+        (method, params, options) =>
+          scope.request(method, params, {
+            ...options,
+            signal: controller.signal,
+          }),
+        scope.projectId,
+        records.some((r) => r.archived || r.template_archived),
+        records[0].type,
+        true,
+      );
+      if (owner.active && ticket === owner.ticket) setHistory(rows);
+    } catch (error) {
+      if (
+        owner.active &&
+        !controller.signal.aborted &&
+        (!(error instanceof Error) || error.name !== "AbortError")
+      )
+        setHistoryError(String(error));
+    } finally {
+      owner.controller = undefined;
+    }
+  }, [scope, records, history.length]);
+  useEffect(() => {
+    if (focused) void loadHistory();
+  }, [focused, loadHistory]);
   const ids = Array.isArray(value) ? value : [value];
   const options = [
-    ...new Map(records.map((row) => [row.id, row])).values(),
+    ...new Map([...history, ...records].map((row) => [row.id, row])).values(),
   ].sort(
     (a, b) =>
       String(a.definition_id).localeCompare(String(b.definition_id)) ||
@@ -40,6 +107,8 @@ export function RevisionSelect(props: RevisionSelectProps) {
         multiple={multiple}
         required={required}
         value={value}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         onChange={(e) => {
           if (props.multiple) {
             props.onChange(
@@ -65,6 +134,7 @@ export function RevisionSelect(props: RevisionSelectProps) {
             </option>
           ))}
       </ActionSelect>
+      {historyError && <span role="alert">{historyError}</span>}
     </label>
   );
 }

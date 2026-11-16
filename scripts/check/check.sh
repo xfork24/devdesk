@@ -6,7 +6,7 @@ cd "$(dirname "$0")/../.."
 python3 tests/entrypoints/permission_schema.py
 ./scripts/check/check-defaults.sh
 ./scripts/check/check-architecture.sh
-node --test tests/entrypoints/ci_workflow_gate.mjs
+node --test tests/entrypoints/ci_workflow_gate.mjs tests/entrypoints/configuration_query_cache.mjs
 ./scripts/check/check-style.sh
 cargo test --workspace --locked
 cargo build --locked -p devdesk-host

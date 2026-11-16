@@ -22,15 +22,35 @@ import {
 } from "./components/action-feedback";
 import "./browser-compat";
 import { ProjectManager } from "./components/ProjectManager";
+import { ConfigurationScope } from "./components/configuration-scope";
+import {
+  configurationMutation,
+  foregroundRequest,
+  getConfigurationSession,
+  invalidateConfigurationQueries,
+  invalidateModelCatalogs,
+  modelMutation,
+  observeConfigurationResponse,
+  observeConfigurationVersion,
+  prefetchConfiguration,
+  readConfiguration,
+  subscribeConfigurationSession,
+} from "./configuration-client";
 import React, {
   useState,
   useEffect,
   useCallback,
   useRef,
+  useMemo,
+  useSyncExternalStore,
   FormEvent,
 } from "react";
 import { MarkdownField, MarkdownPreview } from "./components/configuration-ui";
-import { type Row } from "./components/rpc-types";
+import {
+  type Row,
+  type Request,
+  type RequestOptions,
+} from "./components/rpc-types";
 import {
   Layers3,
   LayoutDashboard,
@@ -64,6 +84,20 @@ import {
   KernelAuthentication,
   KernelConnection,
 } from "./components/KernelConnection";
+
+function ConfigurationMain({
+  scope,
+  children,
+}: {
+  scope: React.ContextType<typeof ConfigurationScope>;
+  children: React.ReactNode;
+}) {
+  return (
+    <ConfigurationScope.Provider value={scope}>
+      <main>{children}</main>
+    </ConfigurationScope.Provider>
+  );
+}
 
 type Field = {
   key: string;
@@ -104,38 +138,71 @@ const labels: Record<string, string> = {
 const pretty = (v: unknown) => JSON.stringify(v, null, 2);
 const short = (id: string) => id?.slice(0, 8) || "—";
 let sequence = 0;
-async function rpc(method: string, params: Row = {}) {
+async function rpc(
+  method: string,
+  params: Row = {},
+  options: RequestOptions = {},
+): ReturnType<Request> {
   if (isTemplateMutation(method)) {
     if (getCatalogGeneration() === undefined)
       await rpc("query.template_catalog");
     params = { ...params, expected_catalog_generation: getCatalogGeneration() };
   }
 
-  const res = await fetch("/rpc", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: ++sequence, method, params }),
-    signal: AbortSignal.timeout(
-      ["session.open", "runtime.prepare", "codex.auth.models"].includes(method)
-        ? 25 * 60 * 1000
-        : method === "codex.auth.start"
-          ? 5 * 60 * 1000
-          : 30000,
-    ),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status} · 内核连接失败`);
-  const data = await res.json();
-  if (data.error)
-    throw new Error(`${data.error.data?.code || ""} · ${data.error.message}`);
-  observeCatalogGeneration(
-    data.result?.catalog_generation ??
-      (["query.template_catalog", "configuration.templates.reset"].includes(
-        method,
-      )
-        ? data.result?.generation
-        : undefined),
-  );
-  return data.result;
+  if (!options.prefetch) foregroundRequest(true);
+  try {
+    const result = await readConfiguration(
+      method,
+      params,
+      async (signal) => {
+        const res = await fetch("/rpc", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: ++sequence,
+            method,
+            params,
+          }),
+          signal: AbortSignal.any([
+            signal,
+            AbortSignal.timeout(
+              ["session.open", "runtime.prepare", "codex.auth.models"].includes(
+                method,
+              )
+                ? 25 * 60 * 1000
+                : method === "codex.auth.start"
+                  ? 5 * 60 * 1000
+                  : 30000,
+            ),
+          ]),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status} · 内核连接失败`);
+        const data = await res.json();
+        if (data.error)
+          throw new Error(
+            `${data.error.data?.code || ""} · ${data.error.message}`,
+          );
+        return data.result;
+      },
+      options,
+    );
+    const reset = observeConfigurationResponse(result, params);
+    observeCatalogGeneration(
+      result?.catalog_generation ??
+        (["query.template_catalog", "configuration.templates.reset"].includes(
+          method,
+        )
+          ? result?.generation
+          : undefined),
+      reset,
+    );
+    if (configurationMutation(method)) invalidateConfigurationQueries();
+    if (modelMutation(method)) invalidateModelCatalogs();
+    return result;
+  } finally {
+    if (!options.prefetch) foregroundRequest(false);
+  }
 }
 function Badge({ value }: { value: string }) {
   return (
@@ -187,20 +254,51 @@ function App() {
   const [data, setData] = useState<Row>();
   const configurationReadVersion = JSON.stringify(data?.catalog_version);
   // Refresh editor reads on a committed configuration change while retaining their draft/feedback state.
-  const configurationReader = useRef({
-    version: configurationReadVersion,
-    request: rpc,
-  });
-  if (configurationReader.current.version !== configurationReadVersion)
-    configurationReader.current = {
-      version: configurationReadVersion,
-      request: (method: string, params: Row = {}) => rpc(method, params),
-    };
-  const configurationRequest = configurationReader.current.request;
   const [caps, setCaps] = useState<Row>();
   const [projectId, setProjectId] = useState("");
   const [featureId, setFeatureId] = useState(route.get("feature_id") || "");
   const [tab, setTab] = useState(routeTab);
+  const configurationSession = useSyncExternalStore(
+    subscribeConfigurationSession,
+    getConfigurationSession,
+  );
+  const configurationReader = useMemo(() => {
+    const controller = new AbortController();
+    return {
+      scope: `${tab}:${projectId}:${configurationReadVersion}:${configurationSession}`,
+      controller,
+      request: (
+        method: string,
+        params: Row = {},
+        options: RequestOptions = {},
+      ) =>
+        rpc(
+          method,
+          params,
+          options.shared ||
+            !/^(query\.|models\.list|codex\.auth\.models)/.test(method)
+            ? options
+            : {
+                ...options,
+                signal: options.signal
+                  ? AbortSignal.any([options.signal, controller.signal])
+                  : controller.signal,
+              },
+        ),
+    };
+  }, [tab, projectId, configurationReadVersion, configurationSession]);
+  useEffect(
+    () => () => configurationReader.controller.abort(),
+    [configurationReader],
+  );
+  const configurationRequest = configurationReader.request;
+  const configurationScope = useMemo(
+    () => ({
+      request: configurationRequest,
+      projectId: projectId || undefined,
+    }),
+    [configurationRequest, projectId],
+  );
   const [error, setError] = useState("");
   const [connection, setConnection] = useState("连接中");
   const [dialog, setDialog] = useState<DialogSpec>();
@@ -501,6 +599,19 @@ function App() {
     stream.onmessage = (message) => {
       try {
         const value: Row = JSON.parse(message.data);
+        observeConfigurationVersion(value.configuration_version, projectId);
+        if (
+          /^(project|repository|workspace|runtime|settings)\./.test(
+            value.kind || "",
+          )
+        )
+          invalidateConfigurationQueries();
+        if (
+          /^(runtime|credentials|codex\.auth|harness|model_provider|model_catalog)\./.test(
+            value.kind || "",
+          )
+        )
+          invalidateModelCatalogs();
         const page = activePage.current;
         if (
           ["projects", "workflows", "actors", "components"].includes(
@@ -882,6 +993,38 @@ function App() {
               key={id}
               className={tab === id ? "nav active" : "nav"}
               onClick={() => setTab(id)}
+              onMouseEnter={() => {
+                if (
+                  [
+                    "projects",
+                    "workflows",
+                    "actors",
+                    "components",
+                    "discussion",
+                  ].includes(id)
+                )
+                  prefetchConfiguration(
+                    rpc,
+                    projectId || undefined,
+                    id === "actors" ? "role" : undefined,
+                  );
+              }}
+              onFocus={() => {
+                if (
+                  [
+                    "projects",
+                    "workflows",
+                    "actors",
+                    "components",
+                    "discussion",
+                  ].includes(id)
+                )
+                  prefetchConfiguration(
+                    rpc,
+                    projectId || undefined,
+                    id === "actors" ? "role" : undefined,
+                  );
+              }}
             >
               <Icon size={18} />
               {title}
@@ -920,7 +1063,7 @@ function App() {
             </span>
           </div>
         </header>
-        <main>
+        <ConfigurationMain scope={configurationScope}>
           {error && (
             <div className="error" role="alert">
               <AlertTriangle size={16} />
@@ -1520,7 +1663,7 @@ function App() {
           )}
           {data && ["workflows", "components"].includes(tab) && (
             <ConfigurationPage
-              key={`${tab}:${projectId}:${catalogGeneration}`}
+              key={`${tab}:${projectId}:${catalogGeneration}:${configurationSession}`}
               group={tab === "workflows" ? "processes" : "foundations"}
               request={configurationRequest}
               project={project}
@@ -1530,7 +1673,7 @@ function App() {
           )}
           {data && ["actors", "definitions"].includes(tab) && (
             <AgentCatalog
-              key={`actors:${projectId}:${catalogGeneration}`}
+              key={`actors:${projectId}:${catalogGeneration}:${configurationSession}`}
               request={configurationRequest}
               project={project}
               installations={data.runtime_installations || []}
@@ -1539,7 +1682,8 @@ function App() {
           )}
           {data && tab === "projects" && (
             <ProjectManager
-              key={`project-manager:${projectId || "global"}:${catalogGeneration}`}
+              key={`project-manager:${projectId || "global"}:${catalogGeneration}:${configurationSession}`}
+              bootstrap={data}
               request={configurationRequest}
               project={project}
               refresh={load}
@@ -1737,7 +1881,7 @@ function App() {
           <footer>
             DevDesk 0.2 <span>工程内核 · 持久化历史 · GitHub 工程接入</span>
           </footer>
-        </main>
+        </ConfigurationMain>
       </div>
       {dialog && (
         <CommandDialog

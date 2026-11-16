@@ -17,7 +17,9 @@ const pending = new Set();
 const polls = new Set(['runtime.preparation_status', 'query.session', 'query.agent_experience']);
 await page.route('**/rpc', async route => {
   const call = route.request().postDataJSON();
-  if (['codex.auth.models', 'models.list'].includes(call.method)) {
+  if (call.method === 'query.model_catalog_identity') {
+    await route.fulfill({json:{jsonrpc:'2.0',id:call.id,result:{identity:'performance-fixture',available:true}}});
+  } else if (['codex.auth.models', 'models.list'].includes(call.method)) {
     await route.fulfill({ json: { jsonrpc: '2.0', id: call.id, result: { models: [], source: 'performance_fixture' } } });
   } else await route.continue();
 });
@@ -58,11 +60,17 @@ try {
   const names = ['项目管理', '流程与规范', '角色与Agent', '基础组件', '角色讨论'];
   for (let sample = 0; sample < samples; sample++) for (const name of names) {
     phase = { sample, page: name }; start = Date.now();
-    await page.getByRole('button', { name: name === '角色与Agent' ? /^角色与(?:Agent|代理)$/ : name, exact: true }).click(); await settle();
+    await page.getByRole('button', { name: name === '角色与Agent' ? /^角色与(?:Agent|代理)$/ : name, exact: true }).click();
+    if (name === '项目管理') await page.waitForFunction(()=>[...document.querySelectorAll('[aria-label="项目配置"] button')].some(b=>b.textContent.includes('保存项目配置') && !b.disabled));
+    else if (name === '角色讨论') await page.locator('select[aria-label="讨论角色"] option[value]:not([value=""])').first().waitFor({state:'attached'});
+    else await page.getByRole('region',{name: name === '流程与规范' ? '工作流程管理' : name === '角色与Agent' ? '角色管理' : 'Model 管理', exact:true}).locator('.configuration-list button strong').first().waitFor();
+    await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+    const ui_ms=Date.now()-start;
+    await settle();
     const rows = trace.filter(r => r.sample === sample && r.page === name && !polls.has(r.method) && !['codex.auth.models','models.list'].includes(r.method));
     const finite = rows.filter(r => Number.isFinite(r.end_ms));
     if (rows.some(r => r.error || r.failure)) throw Error(JSON.stringify(rows.filter(r => r.error || r.failure)));
-    navigation.push({ sample, page: name, data_ms: Math.max(0, ...finite.map(r => r.end_ms)), requests: rows.length, bytes: finite.reduce((n,r) => n+r.bytes,0), settled_ms: Date.now()-start });
+    navigation.push({ sample, page: name, ui_ms, data_ms: Math.max(0, ...finite.map(r => r.end_ms)), requests: rows.length, bytes: finite.reduce((n,r) => n+r.bytes,0), settled_ms: Date.now()-start });
     save();
   }
   await page.screenshot({ path: output + '/page.png', fullPage: true });

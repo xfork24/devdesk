@@ -238,6 +238,14 @@ async fn static_file(request: Request) -> Response {
         None => (StatusCode::NOT_FOUND, "Not found").into_response(),
     }
 }
+// HTTP cancellation can skip queued read work. Already-running synchronous compilers
+// finish normally; mutating commands always retain their existing completion semantics.
+struct ReadLifetime(Arc<AtomicBool>);
+impl Drop for ReadLifetime {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+}
 async fn rpc(
     State(app): State<Arc<App>>,
     request: std::result::Result<Json<Value>, axum::extract::rejection::JsonRejection>,
@@ -264,13 +272,17 @@ async fn rpc(
     let submitted = std::time::Instant::now();
     let method = request["method"].as_str().unwrap().to_string();
     let params = request.get("params").cloned().unwrap_or(json!({}));
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let _lifetime = ReadLifetime(cancelled.clone());
+    let read = method.starts_with("query.")
+        || matches!(method.as_str(), "models.list" | "codex.auth.models");
     let fallback_id = id.clone();
     let result = tokio::task::spawn_blocking(move || {
         let trace = measure.then(devdesk_adapters::performance::Trace::start);
         devdesk_adapters::performance::record("worker.queue_wait", submitted.elapsed().as_secs_f64()*1000.0);
         let result = {
             let _span = devdesk_adapters::performance::Span::new("rpc.dispatch");
-            app.workspace().and_then(|w| w.dispatch(&method, params))
+            if read && cancelled.load(Ordering::Relaxed) { Err(devdesk_domain::err("cancelled", "读取已取消")) } else { app.workspace().and_then(|w| w.dispatch(&method, params)) }
         };
         let success = result.is_ok();
         let response = match result {

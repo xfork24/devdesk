@@ -203,6 +203,7 @@ test("已有 Feature 只在执行与交付显式启动，创建入口仍在工�
       case "query.project_configuration":
         result = { configuration: null };
         break;
+      case "query.configuration_index":
       case "query.configurations":
         result = { records: [], total: 0 };
         break;
@@ -404,6 +405,7 @@ test("Spec 验收后展示待确认产物，人工确认绑定当前执行和输
         result = { configuration: null, history: [] };
         break;
       case "query.standard_catalog":
+      case "query.configuration_index":
       case "query.configurations":
         result = { records: [] };
         break;

@@ -9,6 +9,12 @@ pub(crate) fn role_deleted(s: &EngineeringState, role: &ConfigurationRecord) -> 
 
 impl Engine {
     pub fn configuration_defaults(&self, project: Option<&str>) -> Result<Value> {
+        self.configuration_defaults_view(project, true)
+    }
+    pub fn configuration_default_selection(&self, project: Option<&str>) -> Result<Value> {
+        self.configuration_defaults_view(project, false)
+    }
+    fn configuration_defaults_view(&self, project: Option<&str>, full: bool) -> Result<Value> {
         let s = self.store.snapshot()?;
         let mut defaults = current_template_defaults(&s)
             .ok_or_else(|| err("configuration_required", "模板目录尚未初始化"))?;
@@ -28,25 +34,27 @@ impl Engine {
             "workflow",
             &scope,
         )?;
-        defaults["records"] = json!(
-            crate::templates::pinned_template_records(&s, Some(&defaults))
-                .into_iter()
-                .filter(|r| configuration_visible(&s, r, project))
-                .collect::<Vec<_>>()
-        );
-        defaults["sandboxes"] = json!(
-            s.sandboxes
-                .iter()
-                .filter(|b| json!(b.id) == defaults["sandbox_ref"])
-                .collect::<Vec<_>>()
-        );
-        defaults["materializations"] = json!(
-            s.governance
-                .iter()
-                .filter(|r| r.r#type == "harness_materialization"
-                    && json!(r.definition_id) == defaults["harness_ref"])
-                .collect::<Vec<_>>()
-        );
+        if full {
+            defaults["records"] = json!(
+                crate::templates::pinned_template_records(&s, Some(&defaults))
+                    .into_iter()
+                    .filter(|r| configuration_visible(&s, r, project))
+                    .collect::<Vec<_>>()
+            );
+            defaults["sandboxes"] = json!(
+                s.sandboxes
+                    .iter()
+                    .filter(|b| json!(b.id) == defaults["sandbox_ref"])
+                    .collect::<Vec<_>>()
+            );
+            defaults["materializations"] = json!(
+                s.governance
+                    .iter()
+                    .filter(|r| r.r#type == "harness_materialization"
+                        && json!(r.definition_id) == defaults["harness_ref"])
+                    .collect::<Vec<_>>()
+            );
+        }
         defaults["catalog_generation"] = json!(template_catalog_generation(&s));
         Ok(defaults)
     }

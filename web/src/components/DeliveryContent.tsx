@@ -1,3 +1,6 @@
+import { useContext, useEffect, useState } from "react";
+import { ConfigurationScope } from "./configuration-scope";
+import { loadConfigurationRecord } from "./configuration-state";
 import { MarkdownPreview } from "./configuration-ui";
 import { type Row } from "./rpc-types";
 import { LazyDetails, ReadableValue } from "./reading";
@@ -11,34 +14,77 @@ export function DeliverySpecPreview({
 }) {
   return (
     <div aria-label="交付内容标准">
-      {references.map((id) => {
-        const spec = records.find((r) => r.id === id && r.type === "spec");
-        return (
-          <details key={id}>
-            <summary>
-              {spec?.name || "规范不可用"} · {id}
-            </summary>
-            {spec ? (
-              <>
-                <MarkdownPreview text={spec.data.body || ""} />
-                <ul>
-                  {(spec.data.checks || []).map((c: Row) => (
-                    <li key={c.key}>
-                      <strong>{c.name}</strong>：{c.instructions}
-                      {c.evidence_required && " · 需定位证据"}
-                    </li>
-                  ))}
-                </ul>
-              </>
-            ) : (
-              <p role="alert">冻结规范不可用。</p>
-            )}
-          </details>
-        );
-      })}
+      {references.map((id) => (
+        <ConfigurationSpec
+          key={id}
+          id={id}
+          record={records.find((r) => r.id === id && r.type === "spec")}
+        />
+      ))}
     </div>
   );
 }
+function ConfigurationSpec({ id, record }: { id: string; record?: Row }) {
+  const scope = useContext(ConfigurationScope);
+  const [loaded, setLoaded] = useState<Row>();
+  const [error, setError] = useState("");
+  const [lifetime] = useState(() => ({
+    controller: undefined as AbortController | undefined,
+  }));
+  useEffect(() => () => lifetime.controller?.abort(), [lifetime]);
+  const spec = loaded || record;
+  return (
+    <details
+      onToggle={(event) => {
+        if (!event.currentTarget.open) {
+          lifetime.controller?.abort();
+          lifetime.controller = undefined;
+          return;
+        }
+        if (!scope || !spec?._index || lifetime.controller) return;
+        const controller = new AbortController();
+        lifetime.controller = controller;
+        void loadConfigurationRecord(
+          scope.request,
+          spec,
+          scope.projectId,
+          controller.signal,
+        )
+          .then((row) => {
+            if (!controller.signal.aborted) setLoaded(row);
+          })
+          .catch((error) => {
+            if (!controller.signal.aborted) setError(String(error));
+          })
+          .finally(() => {
+            if (lifetime.controller === controller)
+              lifetime.controller = undefined;
+          });
+      }}
+    >
+      <summary>
+        {spec?.name || "规范不可用"} · {id}
+      </summary>
+      {error && <p role="alert">{error}</p>}
+      {spec && !spec._index ? (
+        <>
+          <MarkdownPreview text={spec.data.body || ""} />
+          <ul>
+            {(spec.data.checks || []).map((c: Row) => (
+              <li key={c.key}>
+                <strong>{c.name}</strong>：{c.instructions}
+                {c.evidence_required && " · 需定位证据"}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p>{spec ? "正在加载内容…" : "冻结规范不可用。"}</p>
+      )}
+    </details>
+  );
+}
+
 export function ReportBody({ value }: { value: unknown }) {
   if (!value || typeof value !== "object" || Array.isArray(value))
     return <ReadableValue value={value} />;

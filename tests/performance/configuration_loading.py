@@ -60,6 +60,8 @@ def main():
         groups = {}
         for row in rows:
             key = row["method"] + ":" + str(row.get("params", {}).get("offset", 0))
+            if row.get("params", {}).get("view"): key += ":" + row["params"]["view"]
+            if row["method"] == "query.configuration_index": key += ":" + ("project" if row["params"].get("project_id") else "global")
             groups.setdefault(key, []).append(row)
         summary = {}
         for key, group in groups.items():

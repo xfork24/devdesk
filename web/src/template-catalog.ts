@@ -3,10 +3,10 @@ import { useSyncExternalStore } from "react";
 let generation: number | undefined;
 const listeners = new Set<() => void>();
 export const getCatalogGeneration = () => generation;
-export function observeCatalogGeneration(value: unknown) {
+export function observeCatalogGeneration(value: unknown, reset = false) {
   if (
     typeof value !== "number" ||
-    (generation !== undefined && value <= generation)
+    (!reset && generation !== undefined && value <= generation)
   )
     return;
   generation = value;

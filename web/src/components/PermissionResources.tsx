@@ -1,3 +1,4 @@
+import { useReadRequest } from "./use-read-request";
 import { ActionButton, ActionSelect, ActionInput } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
 import { useEffect, useRef, useState } from "react";
@@ -18,7 +19,12 @@ type Props = {
   projectId?: string;
 };
 
-export function PermissionResources({ request, refresh, projectId }: Props) {
+export function PermissionResources({
+  request: parentRequest,
+  refresh,
+  projectId,
+}: Props) {
+  const request = useReadRequest(parentRequest);
   const {
     message,
     setMessage,

@@ -104,6 +104,7 @@ async function fixture(page: Page, failure?: "catalog" | "defaults") {
       case "query.project_configuration":
         result = { configuration: null };
         break;
+      case "query.configuration_index":
       case "query.configurations":
         result = { records: [], total: 0 };
         break;
@@ -123,7 +124,7 @@ async function fixture(page: Page, failure?: "catalog" | "defaults") {
         return route.fallback();
     }
     if (
-      (failure === "catalog" && call.method === "query.configurations") ||
+      (failure === "catalog" && call.method === "query.configuration_index") ||
       (failure === "defaults" && call.method === "query.project_configuration")
     ) {
       await new Promise((resolve) => setTimeout(resolve, 200));
@@ -217,7 +218,7 @@ test("paused root manager adopts exact successor sources through the Human resum
         messages: [],
         decisions: [],
       };
-    } else if (call.method === "query.configurations") {
+    } else if (call.method === "query.configuration_index") {
       result = {
         records: [
           {
@@ -387,7 +388,7 @@ for (const catalogState of ["pending", "failed"] as const) {
     await page.route("**/rpc", async (route) => {
       const call = route.request().postDataJSON();
       let result: any;
-      if (call.method === "query.configurations") {
+      if (call.method === "query.configuration_index") {
         if (catalogState === "pending") await blocked;
         return route.fulfill({
           json: {

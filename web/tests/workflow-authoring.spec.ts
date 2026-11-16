@@ -186,6 +186,8 @@ test("原生工具目录提供独立当前入口且不编辑 Schema", async ({ p
 test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保留草稿", async ({
   page,
 }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
   const runtimeRequests: string[] = [];
   page.on("request", (request) => {
     if (request.method() === "POST" && request.url().endsWith("/rpc")) {
@@ -261,6 +263,7 @@ test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保
     page.getByRole("button", { name: "实际模型与工具验证", exact: true }),
   ).toHaveCount(0);
   expect(runtimeRequests).toEqual([]);
+  expect(pageErrors).toEqual([]);
   await page.getByLabel("名称", { exact: true }).fill(agentName + " · 未保存");
   await page.reload();
   await expect(
@@ -854,6 +857,7 @@ test("配置选择器可主动采用未选过的历史中间修订", async ({ pa
   await page.getByRole("button", { name: "角色与代理", exact: true }).click();
   await page.getByRole("tab", { name: "Capability", exact: true }).click();
   const skills = page.getByLabel("Skills", { exact: true });
+  await skills.focus();
   await expect(skills.locator(`option[value^="${identity}:"]`)).toHaveCount(3);
   await skills.selectOption(`${identity}:2`);
   await expect(skills).toHaveValues([`${identity}:2`]);
