@@ -99,3 +99,13 @@ test('bursts of committed versions retry reads within a bounded budget',async()=
  });
  assert.equal(result,'fresh');assert.equal(attempts,4);
 });
+test('project previews reuse exact inputs and invalidate on the next committed version',async()=>{
+ client.invalidateConfigurationQueries();let calls=0;
+ const load=async()=>({preview_hash:String(++calls)});
+ const params={project_id:'p',standard_ref:'s:1',standard_overrides:[],view:'summary'};
+ assert.deepEqual(await client.readConfiguration('query.project_standard_preview',params,load),{preview_hash:'1'});
+ assert.deepEqual(await client.readConfiguration('query.project_standard_preview',params,load),{preview_hash:'1'});
+ client.invalidateConfigurationQueries();
+ assert.deepEqual(await client.readConfiguration('query.project_standard_preview',params,load),{preview_hash:'2'});
+ assert.deepEqual(await client.readConfiguration('query.project_standard_preview',{...params,view:'full'},load),{preview_hash:'3'});
+});

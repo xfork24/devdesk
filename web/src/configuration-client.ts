@@ -113,6 +113,7 @@ const cachedMethods = new Set([
   "query.configuration_records",
   "query.configuration_defaults",
   "query.project_configuration",
+  "query.project_standard_preview",
   "query.project_directory",
   "query.ui_bootstrap",
   "query.standard",
