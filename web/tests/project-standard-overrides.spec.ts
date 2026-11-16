@@ -82,8 +82,12 @@ test("Standard 决定入口，项目覆盖保存来源与差异并在重载后�
       return { x, y, width };
     }),
   );
-  expect(orchestrationBoxes).toHaveLength(4);
-  expect(new Set(orchestrationBoxes.map((box) => box.y)).size).toBe(1);
+  expect(orchestrationBoxes).toHaveLength(6);
+  expect(new Set(orchestrationBoxes.slice(0, 4).map((box) => box.y)).size).toBe(
+    1,
+  );
+  expect(new Set(orchestrationBoxes.slice(4).map((box) => box.y)).size).toBe(1);
+  expect(orchestrationBoxes[4].y).toBeGreaterThan(orchestrationBoxes[0].y);
   const roles = panel.getByRole("group", { name: "流程所需 Role → Agent" });
   const roleBoxes = await roles.locator("select").evaluateAll((nodes) =>
     nodes.map((node) => {

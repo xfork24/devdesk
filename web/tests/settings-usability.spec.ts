@@ -104,19 +104,24 @@ test("反馈位于当前行左侧且无背景框，新建入口位于左侧顶�
         page.locator(".configuration-list").getByRole("button").first(),
       ).toHaveText(`新建 ${tab}`);
       if (tab === "Harness") {
-        const version = page.getByRole("combobox", {
-          name: "运行资源精确修订",
+        const version = page.getByRole("textbox", {
+          name: "Harness 发行版本",
           exact: true,
         });
         await expect(version).toBeVisible();
-        await expect(version.locator("option")).toContainText([
-          "请选择运行资源",
-          "0.167.0",
-        ]);
         await page
-          .getByLabel("运行时后端", { exact: true })
-          .selectOption("dsh");
-        await expect(version).toHaveValue("builtin-runtime-dsh:1");
+          .locator(".configuration-list")
+          .getByRole("button", { name: /Codex 默认 Harness/ })
+          .click();
+        await expect(version).toHaveValue("0.167.0");
+        await page
+          .locator(".configuration-list")
+          .getByRole("button", { name: /DeepSeek Harness 多模型服务商/ })
+          .click();
+        await expect(
+          page.getByLabel("运行时后端", { exact: true }),
+        ).toHaveValue("dsh");
+        await expect(version).toHaveValue("0.2.2-rc.1");
       }
     }
   }
