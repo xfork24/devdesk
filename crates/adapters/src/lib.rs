@@ -4,6 +4,7 @@ mod configuration_cache;
 mod connection_pool;
 pub mod performance;
 mod resource_commits;
+mod runtime_queries;
 mod store_changes;
 pub use configuration_backend::ConfigurationBackend;
 mod factory_bundle;
@@ -202,6 +203,7 @@ impl SqliteStore {
         memo: &mut std::collections::BTreeMap<String, Value>,
     ) -> Result<EngineeringState> {
         let _span = performance::Span::new("project.full_snapshot");
+        source_views::begin_snapshot(memo);
         let mut s = EngineeringState::default();
         s.governance = source_store::load_records(conn)?;
         s.orchestration_wakeups = load_table(conn, "orchestration_wakeups")?;
@@ -618,6 +620,12 @@ impl EngineeringStore for SqliteStore {
             return Ok(snapshot);
         }
         self.catalog_cache.read(&*self.connection.read()?, true)
+    }
+    fn workflow_runtime_pending(&self, kind: ports::WorkflowRuntimeWork) -> Result<bool> {
+        runtime_queries::pending(&*self.connection.read()?, kind)
+    }
+    fn conversation_running_count(&self) -> Result<usize> {
+        runtime_queries::running(&*self.connection.read()?)
     }
     fn has_pending_work(&self) -> Result<bool> {
         // Idle projects must not deserialize their complete protocol history on every tick.

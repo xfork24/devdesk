@@ -1177,6 +1177,13 @@ impl Engine {
     }
 
     pub fn drive_workflow_changes(&self) -> Result<()> {
+        let _span = self.store.observe_query("runtime.drive_workflow_changes");
+        if !self
+            .store
+            .workflow_runtime_pending(ports::WorkflowRuntimeWork::Changes)?
+        {
+            return Ok(());
+        }
         self.store.transact(None, &mut |state| {
             let ids: Vec<_> = state
                 .governance
@@ -1249,6 +1256,13 @@ impl Engine {
     }
 
     pub fn drive_workflow_segments(&self) -> Result<()> {
+        let _span = self.store.observe_query("runtime.drive_workflow_segments");
+        if !self
+            .store
+            .workflow_runtime_pending(ports::WorkflowRuntimeWork::Segments)?
+        {
+            return Ok(());
+        }
         self.store.transact(None,&mut|state|{
             let rows:Vec<_>=state.governance.iter().filter(|r|r.r#type=="workflow_segment"&&r.data["status"]=="active").cloned().collect();
             for segment in rows {

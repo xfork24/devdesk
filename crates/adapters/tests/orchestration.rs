@@ -142,6 +142,34 @@ fn accept(e: &Engine, id: &str, key: &str) {
 }
 
 #[test]
+fn observing_unstarted_and_waiting_steps_does_not_clone_rollback_snapshots() {
+    let directory = tempfile::tempdir().unwrap();
+    let e = engine(directory.path());
+    let root = start(&e, document());
+    let trace = devdesk_adapters::performance::Trace::start();
+    e.evaluate_workflows().unwrap();
+    assert!(trace.finish()["spans"]["runtime.step_checkpoint"].is_null());
+    cmd(
+        &e,
+        "workflow.step.dispatch",
+        Some(&root),
+        json!({"step":"one"}),
+    )
+    .unwrap();
+    let trace = devdesk_adapters::performance::Trace::start();
+    e.evaluate_workflows().unwrap();
+    assert!(trace.finish()["spans"]["runtime.step_checkpoint"].is_null());
+    assert_eq!(
+        runtime(&e, &root)["runtime"]["steps"][0]["status"],
+        "awaiting_acceptance"
+    );
+    assert_eq!(
+        runtime(&e, &root)["runtime"]["steps"][1]["status"],
+        "queued"
+    );
+}
+
+#[test]
 fn observations_never_dispatch_or_accept_without_an_explicit_command() {
     let d = tempfile::tempdir().unwrap();
     let e = engine(d.path());
@@ -507,6 +535,7 @@ fn bounded_segment_requires_explicit_authorization_and_stops_at_plan_change() {
 #[derive(Default)]
 struct NativeManager {
     segment: bool,
+    reject_replies: std::sync::atomic::AtomicBool,
     pending:
         std::sync::Mutex<std::collections::HashMap<String, Vec<ports::ConversationObservation>>>,
     turns: std::sync::Mutex<std::collections::HashMap<String, String>>,
@@ -608,6 +637,15 @@ impl ports::Harness for NativeManager {
             .unwrap_or_default())
     }
     fn answer_tool_call(&self, s: &Session, _: &Value, r: &ToolReceipt) -> Result<()> {
+        if self
+            .reject_replies
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return Err(err(
+                "provider_failure",
+                "fixture interrupted native reply transport",
+            ));
+        }
         assert!(
             r.structured_content.is_none() || r.content.is_empty(),
             "native controller results must be sent once"
@@ -718,6 +756,91 @@ fn drive_manager_cycle(e: &Engine, allow_send: bool, full_tick: bool) {
     } else {
         e.tick_conversations(1).unwrap();
     }
+}
+
+struct RejectedManager;
+impl ports::Harness for RejectedManager {
+    fn open_session(&self, _: &ports::SessionStart) -> Result<ports::SessionReceipt> {
+        Err(err("provider_failure", "worker 未启动，输入未发送").technical_not_applied())
+    }
+    fn stop_session(&self, _: &Session, execution: &RuntimeExecution) -> Result<ports::WorkerStop> {
+        Ok(ports::WorkerStop {
+            operation_id: execution.operation_id.clone(),
+            writer_revoked: true,
+            mode: "fixture_absent_container".into(),
+            requires_successor: true,
+        })
+    }
+}
+
+#[test]
+fn manager_starts_without_extra_input_and_surfaces_rejected_startup_until_resumed() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut e = engine(directory.path());
+    e.harness = Arc::new(RejectedManager);
+    let root = start(&e, document());
+    cmd(&e, "orchestration.open", Some(&root), json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:9"})).unwrap();
+    cmd(
+        &e,
+        "workflow.driver.select",
+        Some(&root),
+        json!({"mode":"agent"}),
+    )
+    .unwrap();
+    for _ in 0..8 {
+        drive_manager_cycle(&e, true, false);
+    }
+    let state = e.store.snapshot().unwrap();
+    let controller = state
+        .governance
+        .iter()
+        .find(|r| r.r#type == "workflow_controller")
+        .unwrap();
+    assert_eq!(controller.data["status"], "failed");
+    assert!(
+        controller.data["reason"]
+            .as_str()
+            .unwrap()
+            .contains("worker 未启动")
+    );
+    assert_eq!(
+        state.turns.len(),
+        1,
+        "must not silently replay the rejected input"
+    );
+    assert!(!state.turns[0].consumed);
+    assert_eq!(state.turns[0].status, TurnStatus::Failed);
+    assert!(state.executions.iter().all(|e| e.writer_revoked));
+    let input: Value = serde_json::from_str(&state.turns[0].input).unwrap();
+    assert_eq!(input["user_messages"], json!([]));
+    assert_eq!(
+        input["instances"][0]["steps"][0]["confirmation_policy"],
+        "automatic"
+    );
+    assert!(
+        input["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("Workflow defines which checkpoints")
+    );
+    let previous_session = controller.data["session_id"].clone();
+    cmd(
+        &e,
+        "orchestration.resume",
+        Some(&controller.id),
+        json!({"epoch":controller.data["epoch"]}),
+    )
+    .unwrap();
+    for _ in 0..8 {
+        drive_manager_cycle(&e, true, false);
+    }
+    let resumed = e.store.snapshot().unwrap();
+    assert_eq!(resumed.turns.len(), 2);
+    assert_ne!(
+        resumed.configuration(&controller.id).unwrap().data["session_id"],
+        previous_session
+    );
+    assert_eq!(resumed.turns[0].id, state.turns[0].id);
 }
 
 #[test]
@@ -847,9 +970,244 @@ fn a_native_manager_controls_without_a_running_step_and_persists_its_real_call_c
 }
 
 #[test]
+fn committed_native_action_recovers_its_receipt_after_host_interruption_and_takeover() {
+    struct InterruptedAction {
+        inner: Arc<dyn EngineeringStore>,
+        armed: std::sync::atomic::AtomicBool,
+    }
+    impl EngineeringStore for InterruptedAction {
+        fn root(&self) -> String {
+            self.inner.root()
+        }
+        fn snapshot(&self) -> Result<EngineeringState> {
+            self.inner.snapshot()
+        }
+        fn replay(&self, id: &str, fp: &str) -> Result<Option<Value>> {
+            self.inner.replay(id, fp)
+        }
+        fn transact(
+            &self,
+            key: Option<(&str, &str)>,
+            action: &mut dyn FnMut(&mut EngineeringState) -> Result<Value>,
+        ) -> Result<Value> {
+            let value = self.inner.transact(key, action)?;
+            if key.is_some_and(|(id, _)| id.ends_with(":action"))
+                && self.armed.swap(false, std::sync::atomic::Ordering::Relaxed)
+            {
+                panic!("fixture Host exits after durable action, before native result");
+            }
+            Ok(value)
+        }
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let mut e = engine(directory.path());
+    e.harness = Arc::new(NativeManager::default());
+    let root = start(&e, document());
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:9","policy":WorkflowControlPolicy::default()})).unwrap();
+    for _ in 0..20 {
+        drive_manager_cycle(&e, true, false);
+        if e.store
+            .snapshot()
+            .unwrap()
+            .governance
+            .iter()
+            .any(|row| row.r#type == "controller_tool_call" && row.data["status"] == "prepared")
+        {
+            break;
+        }
+    }
+    let inner = e.store.clone();
+    e.store = Arc::new(InterruptedAction {
+        inner,
+        armed: std::sync::atomic::AtomicBool::new(true),
+    });
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| e.drive_controllers())).is_err()
+    );
+    let state = e.store.snapshot().unwrap();
+    assert_eq!(
+        state
+            .governance
+            .iter()
+            .find(|row| row.r#type == "controller_tool_call")
+            .unwrap()
+            .data["status"],
+        "prepared"
+    );
+    let turn = state
+        .turns
+        .iter()
+        .find(|turn| turn.status.active())
+        .unwrap();
+    e.execute(
+        "conversation.cancel",
+        Command {
+            command_id: id(),
+            target: Some(turn.id.clone()),
+            expected_revision: Some(turn.revision),
+            payload: json!({}),
+        },
+    )
+    .unwrap();
+    e.tick_conversations(1).unwrap();
+    e.drive_controllers().unwrap();
+    let state = e.store.snapshot().unwrap();
+    assert_eq!(
+        state
+            .governance
+            .iter()
+            .find(|row| row.r#type == "controller_tool_call")
+            .unwrap()
+            .data["status"],
+        "succeeded"
+    );
+    assert_eq!(
+        state
+            .governance
+            .iter()
+            .find(|row| row.r#type == "controller_tool_reply")
+            .unwrap()
+            .data["status"],
+        "worker_unavailable"
+    );
+    assert_eq!(
+        state
+            .governance
+            .iter()
+            .filter(|row| row.r#type == "workflow_decision" && row.data["operation"] == "dispatch")
+            .count(),
+        1
+    );
+    assert_eq!(
+        runtime(&e, &root)["runtime"]["steps"][0]["status"],
+        "awaiting_acceptance"
+    );
+    assert_eq!(
+        runtime(&e, &root)["runtime"]["steps"][1]["status"],
+        "queued"
+    );
+}
+
+#[test]
+fn cancelling_manager_turn_revokes_prepared_calls_before_any_business_dispatch() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut e = engine(directory.path());
+    e.harness = Arc::new(NativeManager::default());
+    let root = start(&e, document());
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:9","policy":WorkflowControlPolicy::default()})).unwrap();
+    for _ in 0..20 {
+        drive_manager_cycle(&e, true, false);
+        if e.store
+            .snapshot()
+            .unwrap()
+            .governance
+            .iter()
+            .any(|row| row.r#type == "controller_tool_call" && row.data["status"] == "prepared")
+        {
+            break;
+        }
+    }
+    let state = e.store.snapshot().unwrap();
+    let turn = state
+        .turns
+        .iter()
+        .find(|turn| turn.status.active())
+        .unwrap();
+    e.execute(
+        "conversation.cancel",
+        Command {
+            command_id: id(),
+            target: Some(turn.id.clone()),
+            expected_revision: Some(turn.revision),
+            payload: json!({}),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .governance
+            .iter()
+            .find(|row| row.r#type == "workflow_controller")
+            .unwrap()
+            .data["status"],
+        "paused"
+    );
+    e.tick_conversations(1).unwrap();
+    e.drive_controllers().unwrap();
+    let state = e.store.snapshot().unwrap();
+    assert_eq!(
+        state.turns.len(),
+        1,
+        "cancel cannot silently create another manager Turn"
+    );
+    assert!(
+        state
+            .executions
+            .iter()
+            .all(|execution| execution.writer_revoked)
+    );
+    assert!(
+        !state
+            .governance
+            .iter()
+            .any(|row| row.r#type == "workflow_decision"
+                && row.data["actor"]["kind"] == "controller")
+    );
+    assert_eq!(
+        runtime(&e, &root)["runtime"]["steps"][0]["status"],
+        "queued"
+    );
+}
+
+#[test]
+fn native_result_is_delivered_in_the_same_drive_and_never_redispatched() {
+    let directory = tempfile::tempdir().unwrap();
+    let harness = Arc::new(NativeManager::default());
+    let mut e = engine(directory.path());
+    e.harness = harness.clone();
+    let root = start(&e, document());
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:9","policy":WorkflowControlPolicy::default()})).unwrap();
+    for _ in 0..20 {
+        drive_manager_cycle(&e, true, false);
+        if e.store
+            .snapshot()
+            .unwrap()
+            .governance
+            .iter()
+            .any(|r| r.r#type == "controller_tool_call" && r.data["status"] == "prepared")
+        {
+            break;
+        }
+    }
+    assert!(harness.replies.lock().unwrap().is_empty());
+    e.drive_controllers().unwrap();
+    assert_eq!(
+        harness.replies.lock().unwrap().len(),
+        1,
+        "reply must not wait for a later drive/tick"
+    );
+    e.drive_controllers().unwrap();
+    assert_eq!(harness.replies.lock().unwrap().len(), 1);
+    let state = e.store.snapshot().unwrap();
+    assert_eq!(
+        state
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "workflow_decision" && r.data["operation"] == "dispatch")
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn native_control_survives_restart_after_action_and_before_reply_without_replay() {
     let directory = tempfile::tempdir().unwrap();
     let harness = Arc::new(NativeManager::default());
+    harness
+        .reject_replies
+        .store(true, std::sync::atomic::Ordering::Relaxed);
     let mut e = engine(directory.path());
     e.harness = harness.clone();
     let root = start(&e, document());
@@ -898,6 +1256,9 @@ fn native_control_survives_restart_after_action_and_before_reply_without_replay(
     drop(e);
     let mut e = engine(directory.path());
     e.harness = harness.clone();
+    harness
+        .reject_replies
+        .store(false, std::sync::atomic::Ordering::Relaxed);
     for _ in 0..3 {
         e.drive_controllers().unwrap();
     }

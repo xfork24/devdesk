@@ -982,23 +982,9 @@ impl Workspace {
             if should_stop() {
                 break;
             }
-            if let Err(error) = e.tick_repositories() {
-                failure.get_or_insert(error);
-            }
-            if should_stop() {
-                break;
-            }
-            if let Err(error) = e.tick_conversations(limit.saturating_sub(total - running[index])) {
-                failure.get_or_insert(error);
-            }
-            if should_stop() {
-                break;
-            }
-            if let Err(error) = e.tick(
-                limit
-                    .saturating_sub(total - running[index])
-                    .saturating_sub(e.conversation_running()?),
-            ) {
+            // Engine::tick owns repository and conversation advancement. Its limit
+            // already includes this project's occupied slots; subtract only other projects.
+            if let Err(error) = e.tick(limit.saturating_sub(total - running[index])) {
                 failure.get_or_insert(error);
             }
             if should_stop() {

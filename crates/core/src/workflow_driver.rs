@@ -329,6 +329,13 @@ impl Engine {
         )
     }
     pub fn drive_rust_workflows(&self) -> Result<()> {
+        let _span = self.store.observe_query("runtime.rust_driver");
+        if !self
+            .store
+            .workflow_runtime_pending(ports::WorkflowRuntimeWork::RustDrivers)?
+        {
+            return Ok(());
+        }
         let initial = self.store.snapshot()?;
         let drivers: Vec<_> = initial
             .governance

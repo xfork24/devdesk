@@ -106,7 +106,7 @@ impl Workspace {
         if should_stop() {
             return Ok(());
         }
-        e.evaluate_workflows()
+        Ok(())
     }
     pub(super) fn governance_dispatch(
         &self,

@@ -1064,6 +1064,13 @@ impl Engine {
         Ok(receipt)
     }
     pub fn drive_platform_tools(&self) -> Result<()> {
+        let _span = self.store.observe_query("runtime.platform_tools");
+        if !self
+            .store
+            .workflow_runtime_pending(ports::WorkflowRuntimeWork::PlatformTools)?
+        {
+            return Ok(());
+        }
         let mut snapshot = self.store.snapshot()?;
         if snapshot
             .governance
@@ -1260,6 +1267,7 @@ impl Engine {
     }
 
     fn reply_agent_platform_calls(&self) -> Result<()> {
+        let _span = self.store.observe_query("runtime.platform_reply");
         let snapshot = self.store.snapshot()?;
         for source in snapshot
             .governance
@@ -1301,9 +1309,13 @@ impl Engine {
             let receipt = ToolReceipt {
                 invocation_id: request.execution_id.clone(),
                 success,
-                content: vec![
-                    json!({"type":"text","text":if success{result.data["receipt"].to_string()}else{result.data["error"].to_string()}}),
-                ],
+                // Both native bridges render structured content. Sending its text
+                // copy too doubles document and inspection payloads sent to the Agent.
+                content: if success {
+                    vec![]
+                } else {
+                    vec![json!({"type":"text","text":result.data["error"].to_string()})]
+                },
                 structured_content: success.then(|| result.data["receipt"].clone()),
                 remote_effect: if success {
                     "applied"

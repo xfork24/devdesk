@@ -107,3 +107,7 @@ Harness 编排回归：`crates/adapters/tests/orchestration.rs` 验证显式驱�
 `tests/live/probe_harness_orchestration.py` 使用实际 Codex 项目经理和业务 Agent，验证运行时绕过、实际平台调用及暂停重启后的后继 Session。`probe_default_engineering_workflow.py` 使用独立数据集、专用 GitHub 仓库与真实 Codex、Docker、Git 执行默认 Feature/Task；人工确认精确绑定当前材料，不覆盖拒绝。二者必须显式提供二进制与认证源；临时复制凭据在退出时清理。
 
 Standard 的真实两 Task 工程验收入口为 `tests/live/probe_standard_snapshots.py`，使用独立数据集、真实 Codex、Docker 和专用 GitHub 测试仓库，验证不同快照、运行中切换、重启恢复、真实测试及 Git 回执。完整回归在整合到 main 后统一运行。通过同一 `--report-directory` 和 `--resume` 可以保留原实例、接管项目经理，并只恢复已核对的中断执行、修复后的只读目标查询，或对并行任务推进后过期的候选从 target 返工。父调用由子步骤恢复，不重新创建 Task。完成后运行 `python3 tests/live/verify_standard_history.py /临时证据目录`，离线核对 62 个步骤、唯一的规范切换、旧输入输出、零豁免、每项 Task 的两轮原生命令 Red/Green 与三个精确测试后发布版本。
+
+Workflow 执行性能的显式组件入口为 `crates/adapters/tests/workflow_performance.rs`，通过 `DEVDESK_WORKFLOW_PERF_OUTPUT` 指定全新输出文件，测量确定性隔离流程；`frozen_history_performance.rs` 只读取明确选择的备份，使用 `DEVDESK_HISTORY_DATASET`、`DEVDESK_HISTORY_PROJECT` 和 `DEVDESK_HISTORY_OUTPUT`。两者默认 ignored，不启动模型或恢复原 worker。它们不是 100 前端或完整原生往返验收。
+
+`python3 tests/entrypoints/host_launcher.py` 在 macOS 以一次性 worker 验证独立进程组、SIGTERM/SIGHUP 转发、退出日志和子进程清理；其他系统显式跳过。签名验证在此测试中替换，实际子进程和信号使用生产启动器。

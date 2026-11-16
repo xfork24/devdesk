@@ -764,7 +764,7 @@ impl Engine {
                     json!({"plan_revision_id":instance.active_plan_revision_id,"decision_id":d}),
                     true,
                 ));
-                self.advance_configured_step(state, &row, &mut instance, &step)?;
+                self.advance_configured_step(state, &row, &mut instance, &step, false)?;
                 require(
                     instance.steps[index].status != StepExecutionStatus::Queued,
                     "步骤输入或资源未就绪",

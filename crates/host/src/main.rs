@@ -654,6 +654,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let scheduler = app.clone();
     let task = tokio::spawn(async move {
         let mut timer = tokio::time::interval(std::time::Duration::from_millis(75));
+        timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             timer.tick().await;
             if scheduler.stopping.load(Ordering::Relaxed) {
@@ -664,11 +665,14 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 if a.stopping.load(Ordering::Relaxed) {
                     return Ok(());
                 }
-                if let Ok(w) = a.workspace() {
+                let trace = performance_logging().then(devdesk_adapters::performance::Trace::start);
+                let result = if let Ok(w) = a.workspace() {
                     w.tick(|| a.stopping.load(Ordering::Relaxed))
-                } else {
-                    Ok(())
+                } else { Ok(()) };
+                if let Some(trace) = trace {
+                    eprintln!("{}", json!({"type":"performance","context":"workflow_tick","success":result.is_ok(),"measurement":trace.finish()}));
                 }
+                result
             })
             .await;
             if let Ok(Err(e)) = result {

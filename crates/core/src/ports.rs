@@ -355,6 +355,18 @@ pub trait PullRequests: Send + Sync {
     ) -> Result<devdesk_domain::PullRequestReceipt>;
 }
 
+/// Workflow-specific scheduling hints; they never authorize dispatch or acceptance.
+#[derive(Clone, Copy)]
+pub enum WorkflowRuntimeWork {
+    Conversations,
+    Controllers,
+    ControllerCalls,
+    PlatformTools,
+    Changes,
+    Segments,
+    RustDrivers,
+}
+
 pub trait EngineeringStore: Send + Sync {
     fn namespace(&self) -> crate::concurrency::StoreNamespace {
         crate::concurrency::StoreNamespace::Engineering {
@@ -390,6 +402,24 @@ pub trait EngineeringStore: Send + Sync {
     /// Conservative scheduling hint; providers without an indexed query remain always eligible.
     fn has_pending_work(&self) -> Result<bool> {
         Ok(true)
+    }
+    fn workflow_runtime_pending(&self, _kind: WorkflowRuntimeWork) -> Result<bool> {
+        Ok(true)
+    }
+    fn conversation_running_count(&self) -> Result<usize> {
+        let state = self.snapshot()?;
+        Ok(state
+            .turns
+            .iter()
+            .filter(|t| {
+                t.status != devdesk_domain::TurnStatus::Queued
+                    && t.status.active()
+                    && state
+                        .executions
+                        .iter()
+                        .any(|e| e.session_id == t.session_id && !e.writer_revoked)
+            })
+            .count())
     }
     fn snapshot(&self) -> Result<EngineeringState>;
     fn events_after(&self, cursor: u64, limit: usize) -> Result<Vec<devdesk_domain::Event>> {

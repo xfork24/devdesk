@@ -83,6 +83,44 @@ fn step_attention(step: &Value) -> u8 {
     }
 }
 
+fn turn_failure_reason(state: &EngineeringState, turn: &str, fallback: &str) -> String {
+    state
+        .conversation_events
+        .iter()
+        .find(|event| event.deduplication_key == format!("{turn}:execution-failure"))
+        .and_then(|event| serde_json::from_str::<Error>(&event.content).ok())
+        .map(|failure| failure.to_string())
+        .unwrap_or_else(|| fallback.into())
+}
+
+// Union of durable native tool wait intervals; overlapping requests count once.
+// This diagnoses the existing wall-clock limit without changing a frozen budget.
+fn controller_platform_wait_ms(state: &EngineeringState, turn: &str, start: u64, end: u64) -> u64 {
+    let mut intervals: Vec<_> = state
+        .governance
+        .iter()
+        .filter(|row| row.r#type == "controller_tool_call" && row.data["turn_id"] == turn)
+        .map(|call| {
+            let reply = state
+                .governance
+                .iter()
+                .find(|row| row.r#type == "controller_tool_reply" && row.definition_id == call.id);
+            (
+                call.created_at.max(start).min(end),
+                reply.map_or(end, |row| row.created_at).max(start).min(end),
+            )
+        })
+        .filter(|(a, b)| a < b)
+        .collect();
+    intervals.sort_unstable();
+    let (mut total, mut last) = (0u64, start);
+    for (a, b) in intervals {
+        total = total.saturating_add(b.saturating_sub(a.max(last)));
+        last = last.max(b);
+    }
+    total
+}
+
 pub(crate) fn binding<'a>(s: &'a EngineeringState, sid: &str) -> Option<&'a ConfigurationRecord> {
     s.governance
         .iter()
@@ -109,6 +147,12 @@ pub(crate) fn authorized_send(s: &EngineeringState, c: &Command) -> bool {
                 && r.data["method"] == "conversation.send"
                 && r.data["command"] == json!(c)
         })
+}
+
+fn update_controller(row: &mut ConfigurationRecord, data: Value) {
+    if row.data != data {
+        update_record(row, data);
+    }
 }
 
 fn intent(
@@ -142,6 +186,41 @@ fn intent(
 }
 
 impl Engine {
+    pub(crate) fn cancel_bound_controller(
+        &self,
+        state: &mut EngineeringState,
+        session: &str,
+        command_id: &str,
+    ) -> Result<()> {
+        let Some(bound) = binding(state, session).cloned() else {
+            return Ok(());
+        };
+        let Some(row) = state
+            .governance
+            .iter()
+            .find(|row| {
+                row.id == bound.data["controller_id"]
+                    && row.data["session_id"] == session
+                    && row.data["epoch"] == bound.data["epoch"]
+                    && row.data["status"] == "active"
+            })
+            .cloned()
+        else {
+            return Ok(());
+        };
+        self.controller_command(
+            "orchestration.takeover",
+            &Command {
+                command_id: format!("{command_id}:cancel-manager"),
+                target: Some(row.id),
+                expected_revision: Some(row.revision),
+                payload: json!({"epoch":row.data["epoch"]}),
+            },
+            state,
+        )?;
+        Ok(())
+    }
+
     pub(crate) fn controller_command(
         &self,
         method: &str,
@@ -738,6 +817,13 @@ impl Engine {
 
     pub fn drive_controllers(&self) -> Result<()> {
         self.drive_controller_calls()?;
+        if !self
+            .store
+            .workflow_runtime_pending(ports::WorkflowRuntimeWork::Controllers)?
+        {
+            return Ok(());
+        }
+        let _span = self.store.observe_query("runtime.controllers");
         self.store.transact(None,&mut|s|{
             let rows:Vec<_>=s.governance.iter().filter(|r|r.r#type=="workflow_controller").cloned().collect();
             for row in rows{
@@ -747,7 +833,7 @@ impl Engine {
                     if s.governance.iter().any(|call|call.r#type=="controller_tool_call"&&call.definition_id==row.id&&!s.governance.iter().any(|reply|reply.r#type=="controller_tool_reply"&&reply.definition_id==call.id)){continue;}
                     for turn in s.turns.iter_mut().filter(|t|Some(&t.session_id)==controller.session_id.as_ref()&&t.status.active()){turn.cancel_requested=true;turn.revision+=1;}
                     controller.epoch+=1;controller.status="paused".into();controller.reason="经理实例已换绑/移除，当前冻结会话已撤权；需要人类建立后继会话".into();
-                    update_record(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));continue;
+                    update_controller(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));continue;
                 }
                 if controller.session_id.is_none(){
                     let opened=s.governance.iter().rev().find(|r|r.r#type=="workflow_intent"&&r.definition_id==row.id&&r.data["method"]=="session.open"&&r.data["command"]["payload"]["controller_epoch"]==controller.epoch).cloned();
@@ -757,21 +843,29 @@ impl Engine {
                             if binding(s,sid).is_none(){s.governance.push(record("controller_session",sid.into(),row.scope.clone(),"项目经理会话".into(),1,None,json!({"controller_id":row.id,"epoch":controller.epoch}),true));}
                         }else if opened.data["status"]=="failed"{controller.status="failed".into();controller.reason=opened.data["error"].to_string();}
                     }else{intent(s,&row,controller.epoch,"session.open",&controller.owner_id,json!({"agent":controller.agent_revision_id,"work_type":"orchestration","controller_id":row.id,"controller_epoch":controller.epoch,"force_new":true,"snapshot_id":controller.snapshot_id,"predecessor":controller.predecessor_session_id}));}
-                    update_record(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));continue;
+                    update_controller(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));continue;
                 }
                 let sid=controller.session_id.clone().unwrap();
                 if let Some(turn)=s.turns.iter().find(|t|t.session_id==sid&&t.status.active()).cloned(){
                     if let Some(lease)=s.orchestration_leases.iter_mut().find(|l|l.controller_id==row.id&&l.epoch==controller.epoch)&& lease.expires_at<now()+controller.policy.timeout_seconds*500 {lease.expires_at=now()+controller.policy.timeout_seconds*1000;}
 
-                    if turn.status==TurnStatus::NeedsReconciliation {controller.status="needs_reconciliation".into();controller.reason="编排执行结果未知，请停止并核对后恢复".into();}
-                    else if turn.started.is_some_and(|started|now().saturating_sub(started)>controller.policy.timeout_seconds*1000){let t=s.turns.iter_mut().find(|t|t.id==turn.id).unwrap();t.cancel_requested=true;t.revision+=1;controller.status="budget_exhausted".into();controller.reason="编排 Turn 超时，已请求停止".into();}
-                    update_record(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));continue;
+                    if turn.status==TurnStatus::NeedsReconciliation {controller.status="needs_reconciliation".into();controller.reason=turn_failure_reason(s,&turn.id,"编排执行结果未知，请停止并核对后恢复");}
+                    else if turn.started.is_some_and(|started|now().saturating_sub(started)>controller.policy.timeout_seconds*1000){let t=s.turns.iter_mut().find(|t|t.id==turn.id).unwrap();t.cancel_requested=true;t.revision+=1;controller.status="budget_exhausted".into();let end=now();let start=turn.started.unwrap();let wall=end.saturating_sub(start);let wait=controller_platform_wait_ms(s,&turn.id,start,end);controller.reason=format!("编排 Turn 超时，已请求停止；墙钟 {} ms，其中已登记平台请求等待 {} ms，其余区间 {} ms（不等同于模型推理时间）",wall,wait,wall.saturating_sub(wait));}
+                    update_controller(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));continue;
+                }
+                // A failed Turn is terminal too. Without this projection the
+                // state digest can remain unchanged and leave an idle manager
+                // marked active forever after a rejected worker startup.
+                if let Some(turn)=s.turns.iter().rev().find(|turn|turn.session_id==sid).filter(|turn|matches!(turn.status,TurnStatus::Failed|TurnStatus::Cancelled)) {
+                    controller.status=if turn.status==TurnStatus::Cancelled {"paused"} else {"failed"}.into();
+                    controller.reason=turn_failure_reason(s,&turn.id,if turn.status==TurnStatus::Cancelled {"项目经理轮次已取消，请恢复后建立后继会话"} else {"项目经理会话执行失败，请恢复后建立后继会话"});
+                    update_controller(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));continue;
                 }
                 // A durable send can be awaiting Host dispatch before a Turn exists.
                 // Coalesce new events until that exact send has been admitted.
                 if s.governance.iter().any(|r|r.r#type=="workflow_intent"&&r.definition_id==row.id&&r.data["method"]=="conversation.send"&&r.data["status"]=="prepared"&&r.data["command"]["payload"]["controller_epoch"]==controller.epoch){continue;}
                 let root=controller.root_instance_id.as_ref().and_then(|id|s.configuration(id).ok());
-                if root.is_some_and(|r|["completed","cancelled"].contains(&r.data["status"].as_str().unwrap_or(""))){controller.status="closed".into();update_record(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));continue;}
+                if root.is_some_and(|r|["completed","cancelled"].contains(&r.data["status"].as_str().unwrap_or(""))){controller.status="closed".into();update_controller(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));continue;}
                 let instances:Vec<_>=s.governance.iter().filter(|r|r.r#type=="workflow_instance"&&Some(r.data["root_instance_id"].as_str().unwrap_or(""))==controller.root_instance_id.as_deref()).map(|row|instance_summary(s,row)).collect();
                 let mut input_bytes=0;
                 let user:Vec<_>=s.governance.iter().filter(|r|r.r#type=="controller_input"&&r.definition_id==row.id&&r.data["consumed"]==false).take(8).take_while(|r|{let size=r.data["input"].as_str().unwrap_or("").len();if input_bytes+size>65536{false}else{input_bytes+=size;true}}).cloned().collect();
@@ -780,19 +874,19 @@ impl Engine {
                     let refs=failed.data["command"]["payload"]["controller_input_refs"].as_array().cloned().unwrap_or_default();
                     for input in s.governance.iter_mut().filter(|r|r.r#type=="controller_input"&&r.definition_id==row.id&&refs.contains(&json!(r.id))) {let mut data=input.data.clone();data["consumed"]=json!(false);update_record(input,data);}
                     controller.status="failed".into();controller.reason=failed.data["error"].to_string();
-                    update_record(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));continue;
+                    update_controller(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));continue;
                 }
                 if controller.workspace_only && user.is_empty(){continue;}
                 let digest=configuration_hash(&json!({"instances":instances,"decisions":decisions,"inputs":user.iter().map(|r|&r.id).collect::<Vec<_>>() }));
                 if digest==controller.last_state_digest{continue;}
                 let results=configuration_hash(&instances.iter().flat_map(|i|i["steps"].as_array().into_iter().flatten()).map(|e|json!({"outputs":e["outputs"],"confirmation_ref":e["confirmation_ref"],"confirmation_waiver_ref":e["confirmation_waiver_ref"]})).collect::<Vec<_>>());
                 if results!=controller.last_result_digest||!user.is_empty(){controller.wakeup_turns=0;controller.last_result_digest=results;}
-                if controller.wakeup_turns>=controller.policy.max_turns_per_wakeup{controller.status="budget_exhausted".into();controller.reason="编排唤醒预算已耗尽，请恢复或补充指令".into();update_record(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));continue;}
+                if controller.wakeup_turns>=controller.policy.max_turns_per_wakeup{controller.status="budget_exhausted".into();controller.reason="编排唤醒预算已耗尽，请恢复或补充指令".into();update_controller(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));continue;}
                 let mut visible=instances.clone();visible.sort_by_key(|i| (i["id"]!=json!(controller.root_instance_id),["completed","cancelled"].contains(&i["status"].as_str().unwrap_or(""))));visible.truncate(16);
                 for instance in &mut visible {if let Some(steps)=instance["steps"].as_array(){let total=steps.len();let mut shown=steps.clone();shown.sort_by_key(step_attention);shown.truncate(16);for step in &mut shown {if let Some(reason)=step["reason"].as_str(){step["reason"]=json!(reason.chars().take(160).collect::<String>());}}instance["steps"]=json!(shown);instance["step_total"]=json!(total);instance["step_selection"]=json!("attention_then_pending");}}
                 let visible_decisions=decisions.iter().rev().take(32).map(|d|json!({"id":d["id"],"instance_id":d["instance_id"],"status":d["status"],"decision_ref":d["decision_ref"],"operation":d["request"]["operation"]})).collect::<Vec<_>>();
                 let scope_snapshot=json!({"renderer_version":ORCHESTRATION_RENDERER,"controller_id":row.id,"epoch":controller.epoch,"owner_id":controller.owner_id,"root_instance_id":controller.root_instance_id,"instances":visible,"instance_total":instances.len(),"event_hint":s.events.last().map(|e|e.id),
-                    "workspace_only":controller.workspace_only,"project_id":controller.project_id,"project_tools":MANAGER_TOOLS,"project_overview_only":true,"instructions":if controller.workspace_only {"You are a project-bound manager workspace. Use project.overview and paginated project.records.list/read to obtain facts. Use configuration catalog/read/usage, then change.preview and change.apply with the exact preview hash. Source edits publish new immutable revisions; adoption is explicit. You have no root scheduling lease. Never claim a write succeeded without its tool receipt. Do not change your own current permissions. Shared configuration writes require configuration.global.write; otherwise create project-owned successors. Finish and wait after answering the user's request."}else{"Use workflow tools to inspect the current plan and outputs, dispatch and accept explicit steps, and complete workflows. Every child also requires explicit dispatch and completion. Projected steps prioritize unresolved and pending work, not authoring order; inspect omitted steps when needed. human_satisfied and confirmation_ref reflect matching recorded decisions; execution.reason is an earlier message. waiting_confirmation does not mean a human decision is still missing: when human_satisfied is true, inspect the current result and accept it if all conditions hold. Do not simulate tool receipts. You are the user's primary contact for progress and blockers. For every unresolved step, inspect and report the concrete question or failure, what you already did, and exactly what the user can provide here. For waiting_input, the user can answer in this manager conversation: call workflow.step.input with input exactly equal to a user_messages entry from this Turn, preserving the human's words verbatim. Never invent or rewrite a human answer, or tell the user they must switch to the worker conversation. If no answer is present, ask the actual clarification question here and wait. PRD, Design and Tasks checkpoints require exact human confirmation after successful Spec review. Request workflow.step.confirm or workflow.step.accept via workflow.decision.request bound to the current execution_id, input_digest and outputs so the user can decide in the manager area; do not require navigation to the workflow. A change to scope, acceptance criteria, key design, inputs or the plan requires change.preview, then decision.request for workflow.change.apply with the exact changeset and preview_hash; wait for approval and call apply with the returned decision_ref. Do not remove, bypass or waive human checkpoints on your own, and do not switch a child work configuration to evade the approved plan. Submit other changes through preview and apply. When only workers or humans can act, finish this turn and wait. Never approve as a human. Use tools for every actual operation."},
+                    "workspace_only":controller.workspace_only,"project_id":controller.project_id,"project_tools":MANAGER_TOOLS,"project_overview_only":true,"instructions":if controller.workspace_only {"You are a project-bound manager workspace. Use project.overview and paginated project.records.list/read to obtain facts. Use configuration catalog/read/usage, then change.preview and change.apply with the exact preview hash. Source edits publish new immutable revisions; adoption is explicit. You have no root scheduling lease. Never claim a write succeeded without its tool receipt. Do not change your own current permissions. Shared configuration writes require configuration.global.write; otherwise create project-owned successors. Finish and wait after answering the user's request."}else{"Starting this Feature already authorizes you to advance its frozen plan. Use workflow tools to inspect the current plan and outputs, dispatch and accept every eligible automatic step, and complete workflows. Continue while useful authorized work is available; do not ask the user to start or confirm ordinary automatic steps. Every child also requires explicit dispatch and completion. Projected steps prioritize unresolved and pending work, not authoring order; inspect omitted steps when needed. human_satisfied and confirmation_ref reflect matching recorded decisions; execution.reason is an earlier message. waiting_confirmation does not mean a human decision is still missing: when human_satisfied is true, inspect the current result and accept it if all conditions hold. Do not simulate tool receipts. You are the user's primary contact for progress and blockers. For every unresolved step, inspect and report the concrete question or failure, what you already did, and exactly what the user can provide here. For waiting_input, the user can answer in this manager conversation: call workflow.step.input with input exactly equal to a user_messages entry from this Turn, preserving the human's words verbatim. Never invent or rewrite a human answer, or tell the user they must switch to the worker conversation. If no answer is present, ask the actual clarification question here and wait. Read each frozen step confirmation_policy and completion requirements; the Workflow defines which checkpoints require human confirmation. Before requesting human confirmation, inspect the actual outputs and verify all required Spec and independent review conditions passed. Repair or rework rejected results instead of submitting failed reviews for routine human approval. Request workflow.step.confirm or workflow.step.accept via workflow.decision.request bound to the current execution_id, input_digest and outputs so the user can decide in the manager area; do not require navigation to the workflow. A change to scope, acceptance criteria, key design, inputs or the plan requires change.preview, then decision.request for workflow.change.apply with the exact changeset and preview_hash; wait for approval and call apply with the returned decision_ref. Do not remove, bypass or waive human checkpoints on your own, and do not switch a child work configuration to evade the approved plan. Submit other changes through preview and apply. When only workers or humans can act, finish this turn and wait. Never approve as a human. Use tools for every actual operation."},
                     "root":root.map(|r|json!({"id":r.id,"plan_revision_id":r.data["active_plan_revision_id"],"status":r.data["status"],"human_governance":r.data["human_governance"],"user_request":r.data["user_request"]})),"policy":controller.policy,"decisions":visible_decisions,"user_messages":user.iter().map(|r|&r.data["input"]).collect::<Vec<_>>()});
                 controller.event_cursor+=1;controller.wakeup_turns+=1;controller.last_state_digest=digest;
                 let payload=json!({"client_message_id":format!("controller:{}:{}:{}",row.id,controller.epoch,controller.event_cursor),"input":scope_snapshot.to_string(),"controller_epoch":controller.epoch,"controller_input_refs":user.iter().map(|r|&r.id).collect::<Vec<_>>()});
@@ -801,7 +895,7 @@ impl Engine {
                 if let Some(lease)=s.orchestration_leases.iter_mut().find(|l|l.controller_id==row.id){lease.epoch=controller.epoch;lease.root_instance_id=controller.root_instance_id.clone();lease.expires_at=now()+controller.policy.timeout_seconds*1000;}
                 intent(s,&row,controller.epoch,"conversation.send",&sid,payload);
                 for input in user{let r=s.governance.iter_mut().find(|r|r.id==input.id).unwrap();let mut d=r.data.clone();d["consumed"]=json!(true);update_record(r,d);}
-                update_record(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));
+                update_controller(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));
             }
             for wakeup in &mut s.orchestration_wakeups{
                 if let Some(turn)=s.turns.iter().find(|t|t.client_message_id==wakeup.id){wakeup.turn_id=Some(turn.id.clone());wakeup.status=if turn.consumed{"consumed"}else{"dispatched"}.into();}
@@ -812,6 +906,13 @@ impl Engine {
     }
 
     fn drive_controller_calls(&self) -> Result<()> {
+        let _span = self.store.observe_query("runtime.controller_calls");
+        if !self
+            .store
+            .workflow_runtime_pending(ports::WorkflowRuntimeWork::ControllerCalls)?
+        {
+            return Ok(());
+        }
         let snapshot = self.store.snapshot()?;
         for call in snapshot
             .governance
@@ -824,6 +925,42 @@ impl Engine {
                 let method = call.data["method"].as_str().unwrap_or("");
                 let args = call.data["arguments"].clone();
                 let result = (|| -> Result<Value> {
+                    // A Host can exit after committing the action and before recording
+                    // its native result. Recover that exact receipt even after takeover;
+                    // never relabel a committed action as not applied or re-execute it.
+                    if !control_query(method) && !MANAGER_TOOLS.contains(&method) {
+                        let actor = WorkflowActor::Controller {
+                            controller_id: call.definition_id.clone(),
+                            session_id: text(&call.data, "session_id")?,
+                            turn_id: text(&call.data, "turn_id")?,
+                            epoch: call.data["epoch"]
+                                .as_u64()
+                                .ok_or_else(|| err("storage", "调用缺少经理代次"))?,
+                        };
+                        let fingerprint = configuration_hash(&(method, &args, &actor));
+                        if let Some(receipt) = self
+                            .store
+                            .replay(&format!("{}:action", call.id), &fingerprint)?
+                        {
+                            return Ok(receipt);
+                        }
+                    }
+                    require(
+                        snapshot.turns.iter().any(|turn| {
+                            turn.id == call.data["turn_id"]
+                                && turn.status.active()
+                                && !matches!(
+                                    turn.status,
+                                    TurnStatus::Queued | TurnStatus::NeedsReconciliation
+                                )
+                                && !turn.cancel_requested
+                        }) && snapshot.executions.iter().any(|execution| {
+                            execution.session_id == call.data["session_id"]
+                                && execution.operation_id == call.data["worker_operation_id"]
+                                && !execution.writer_revoked
+                        }),
+                        "原生调用者已停止或等待核对",
+                    )?;
                     if MANAGER_TOOLS.contains(&method) {
                         return self.manager_tool(&controller, call, method, &args);
                     }
@@ -950,70 +1087,85 @@ impl Engine {
                     match &result {
                         Ok(v) => {
                             d["status"] = json!("succeeded");
+                            d["finished_at"] = json!(now());
                             d["receipt"] = v.clone();
                         }
                         Err(e) => {
                             d["status"] = json!("failed");
+                            d["finished_at"] = json!(now());
                             d["error"] = json!(e);
                         }
                     }
                     update_record(row, d);
                     Ok(Value::Null)
                 })?;
+                // The durable result is authoritative before any native reply. Deliver it
+                // in this drive, rather than waiting behind the remaining scheduler stages.
+                let current = self.store.snapshot()?;
+                self.deliver_controller_call(&current, current.configuration(&call.id)?)?;
                 continue;
             }
-            if !["succeeded", "failed"].contains(&call.data["status"].as_str().unwrap_or(""))
-                || snapshot
-                    .governance
-                    .iter()
-                    .any(|r| r.r#type == "controller_tool_reply" && r.definition_id == call.id)
-            {
-                continue;
-            }
-            let session = snapshot
-                .sessions
+            self.deliver_controller_call(&snapshot, call)?;
+        }
+        Ok(())
+    }
+    fn deliver_controller_call(
+        &self,
+        snapshot: &EngineeringState,
+        call: &ConfigurationRecord,
+    ) -> Result<()> {
+        let _span = self.store.observe_query("runtime.controller_reply");
+        if !["succeeded", "failed"].contains(&call.data["status"].as_str().unwrap_or(""))
+            || snapshot
+                .governance
                 .iter()
-                .find(|s| s.id == call.data["session_id"])
-                .ok_or_else(|| err("storage", "编排会话缺失"))?;
-            let active = snapshot.executions.iter().any(|e| {
-                e.session_id == session.id
-                    && e.operation_id == call.data["worker_operation_id"]
-                    && !e.writer_revoked
-            });
-            let success = call.data["status"] == "succeeded";
-            let value = if success {
-                call.data["receipt"].clone()
+                .any(|r| r.r#type == "controller_tool_reply" && r.definition_id == call.id)
+        {
+            return Ok(());
+        }
+        let session = snapshot
+            .sessions
+            .iter()
+            .find(|s| s.id == call.data["session_id"])
+            .ok_or_else(|| err("storage", "编排会话缺失"))?;
+        let active = snapshot.executions.iter().any(|e| {
+            e.session_id == session.id
+                && e.operation_id == call.data["worker_operation_id"]
+                && !e.writer_revoked
+        });
+        let success = call.data["status"] == "succeeded";
+        let value = if success {
+            call.data["receipt"].clone()
+        } else {
+            call.data["error"].clone()
+        };
+        let value = if success {
+            native_reply_value(call.data["method"].as_str().unwrap_or(""), &call.id, value)
+        } else {
+            value
+        };
+        let receipt = ToolReceipt {
+            invocation_id: call.id.clone(),
+            success,
+            // The Codex bridge renders structured_content as inputText.
+            // Supplying the same text too doubles every inspection result.
+            content: if success {
+                vec![]
             } else {
-                call.data["error"].clone()
-            };
-            let value = if success {
-                native_reply_value(call.data["method"].as_str().unwrap_or(""), &call.id, value)
-            } else {
-                value
-            };
-            let receipt = ToolReceipt {
-                invocation_id: call.id.clone(),
-                success,
-                // The Codex bridge renders structured_content as inputText.
-                // Supplying the same text too doubles every inspection result.
-                content: if success {
-                    vec![]
-                } else {
-                    vec![json!({"type":"text","text":value.to_string()})]
-                },
-                structured_content: success.then_some(value.clone()),
-                remote_effect: if success { "applied" } else { "not_applied" }.into(),
-                error: (!success).then_some(value),
-                origin: Origin::External,
-            };
-            if !active
-                || self
-                    .harness
-                    .answer_tool_call(session, &call.data["request_id"], &receipt)
-                    .is_ok()
-            {
-                self.store.transact(None,&mut|s|{if !s.governance.iter().any(|r|r.r#type=="controller_tool_reply"&&r.definition_id==call.id){s.governance.push(record("controller_tool_reply",call.id.clone(),call.scope.clone(),"编排原生回复".into(),1,None,json!({"status":if active{"delivered"}else{"worker_unavailable"},"receipt":receipt}),true));}Ok(Value::Null)})?;
-            }
+                vec![json!({"type":"text","text":value.to_string()})]
+            },
+            structured_content: success.then_some(value.clone()),
+            remote_effect: if success { "applied" } else { "not_applied" }.into(),
+            error: (!success).then_some(value),
+            origin: Origin::External,
+        };
+        if !active
+            || self
+                .harness
+                .answer_tool_call(session, &call.data["request_id"], &receipt)
+                .is_ok()
+        {
+            self.store.transact(None,&mut|s|{if !s.governance.iter().any(|r|r.r#type=="controller_tool_reply"&&r.definition_id==call.id){s.governance.push(record("controller_tool_reply",call.id.clone(),call.scope.clone(),"编排原生回复".into(),1,None,json!({"status":if active{"delivered"}else{"worker_unavailable"},"receipt":receipt}),true));}Ok(Value::Null)})?;
         }
         Ok(())
     }
@@ -1022,6 +1174,43 @@ impl Engine {
 #[cfg(test)]
 mod reply_tests {
     use super::*;
+
+    #[test]
+    fn platform_wait_counts_overlaps_once_and_clamps_to_the_turn() {
+        let mut state = EngineeringState::default();
+        for (id, start, finish) in [("a", 10, Some(50)), ("b", 40, Some(70)), ("c", 80, None)] {
+            let mut call = record(
+                "controller_tool_call",
+                "manager".into(),
+                Scope::global(),
+                id.into(),
+                1,
+                None,
+                json!({"turn_id":"turn"}),
+                false,
+            );
+            call.id = id.into();
+            call.created_at = start;
+            state.governance.push(call);
+            if let Some(finish) = finish {
+                let mut reply = record(
+                    "controller_tool_reply",
+                    id.into(),
+                    Scope::global(),
+                    "reply".into(),
+                    1,
+                    None,
+                    json!({}),
+                    true,
+                );
+                reply.created_at = finish;
+                state.governance.push(reply);
+            }
+        }
+        assert_eq!(controller_platform_wait_ms(&state, "turn", 20, 100), 70);
+        assert_eq!(controller_platform_wait_ms(&state, "turn", 50, 60), 10);
+        assert_eq!(controller_platform_wait_ms(&state, "another", 20, 100), 0);
+    }
 
     #[test]
     fn large_inspection_retains_real_gate_conditions_in_the_native_reply() {

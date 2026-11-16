@@ -58,22 +58,16 @@ fn append(
 }
 impl Engine {
     pub fn conversation_running(&self) -> Result<usize> {
-        let state = self.store.snapshot()?;
-        let standalone = state
-            .turns
-            .iter()
-            .filter(|t| {
-                t.status != TurnStatus::Queued
-                    && t.status.active()
-                    && state
-                        .executions
-                        .iter()
-                        .any(|e| e.session_id == t.session_id && !e.writer_revoked)
-            })
-            .count();
-        Ok(standalone)
+        self.store.conversation_running_count()
     }
     pub fn tick_conversations(&self, limit: usize) -> Result<()> {
+        let _span = self.store.observe_query("runtime.conversations");
+        if !self
+            .store
+            .workflow_runtime_pending(ports::WorkflowRuntimeWork::Conversations)?
+        {
+            return Ok(());
+        }
         let state = self.store.snapshot()?;
         for turn in state
             .turns

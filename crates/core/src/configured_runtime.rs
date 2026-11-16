@@ -2060,13 +2060,9 @@ impl Engine {
                 }
                 let steps = instance.plan.document.steps.clone();
                 for step in &steps {
-                    let checkpoint = state.clone();
-                    let previous = instance.clone();
                     if let Err(error) =
-                        self.advance_configured_step(state, &row, &mut instance, step)
+                        self.advance_configured_step(state, &row, &mut instance, step, true)
                     {
-                        *state = checkpoint;
-                        instance = previous;
                         let execution = instance
                             .steps
                             .iter_mut()
@@ -2176,6 +2172,34 @@ impl Engine {
         row: &ConfigurationRecord,
         instance: &mut ConfiguredWorkflowInstance,
         step: &StepDefinition,
+        rollback_on_error: bool,
+    ) -> Result<()> {
+        let index = instance
+            .steps
+            .iter()
+            .position(|e| e.step == step.key)
+            .unwrap();
+        let previous_execution = instance.steps[index].clone();
+        let mut checkpoint = None;
+        let rollback = rollback_on_error.then_some(&mut checkpoint);
+        let result = self.advance_configured_step_inner(state, row, instance, step, rollback);
+        if result.is_err() {
+            if let Some((before, before_instance)) = checkpoint {
+                *state = before;
+                *instance = before_instance;
+            }
+            instance.steps[index] = previous_execution;
+        }
+        result
+    }
+
+    fn advance_configured_step_inner(
+        &self,
+        state: &mut EngineeringState,
+        row: &ConfigurationRecord,
+        instance: &mut ConfiguredWorkflowInstance,
+        step: &StepDefinition,
+        checkpoint: Option<&mut Option<(EngineeringState, ConfiguredWorkflowInstance)>>,
     ) -> Result<()> {
         let index = instance
             .steps
@@ -2189,7 +2213,10 @@ impl Engine {
             .any(|r| r.r#type == "workflow_stop" && r.definition_id == execution.id)
         {
             if !active_execution(state, &execution)
-                && execution.status != StepExecutionStatus::NeedsReconciliation
+                && !matches!(
+                    execution.status,
+                    StepExecutionStatus::NeedsReconciliation | StepExecutionStatus::Cancelled
+                )
             {
                 execution.status = StepExecutionStatus::Cancelled;
                 execution.finished = Some(now());
@@ -2210,7 +2237,6 @@ impl Engine {
         ) {
             return Ok(());
         }
-        let current_facts = facts(state, instance)?;
         if matches!(
             execution.status,
             StepExecutionStatus::WaitingConfirmation | StepExecutionStatus::AwaitingAcceptance
@@ -2238,6 +2264,13 @@ impl Engine {
             }) {
                 return Ok(());
             }
+        }
+        let current_facts = facts(state, instance)?;
+        if let Some(checkpoint) = checkpoint {
+            let _span = self.store.observe_query("runtime.step_checkpoint");
+            *checkpoint = Some((state.clone(), instance.clone()));
+        }
+        if execution.status == StepExecutionStatus::Queued {
             if !step.condition.evaluate(&current_facts) {
                 execution.status = StepExecutionStatus::Skipped;
                 instance.steps[index] = execution;
@@ -2589,12 +2622,12 @@ impl Engine {
                         );
                         child_row.id = child_id.clone();
                         state.governance.push(record("workflow_invocation",execution.id.clone(),row.scope.clone(),step.name.clone(),1,None,
-                            json!({"parent_execution_id":execution.id,"parent_plan_revision_id":execution.plan_revision_id,"child_instance_id":child_id,"initial_plan_revision_id":child_instance.active_plan_revision_id,"owner_id":child_instance.owner_id,"member_identity":if work_binding.is_some(){child_instance.owner_id.clone()}else{item.to_string()},"standard_ref":child_instance.plan.standard_ref,"workflow_ref":child_instance.workflow_ref,"work_configuration_ref":child_instance.plan.work_configuration_ref,"input_digest":configuration_hash(&child_instance.inputs)}),true));
+                        json!({"parent_execution_id":execution.id,"parent_plan_revision_id":execution.plan_revision_id,"child_instance_id":child_id,"initial_plan_revision_id":child_instance.active_plan_revision_id,"owner_id":child_instance.owner_id,"member_identity":if work_binding.is_some(){child_instance.owner_id.clone()}else{item.to_string()},"standard_ref":child_instance.plan.standard_ref,"workflow_ref":child_instance.workflow_ref,"work_configuration_ref":child_instance.plan.work_configuration_ref,"input_digest":configuration_hash(&child_instance.inputs)}),true));
                         state.governance.push(child_row);
                         children.push(child_id);
                     }
                     state.governance.push(record("workflow_children",execution.id.clone(),row.scope.clone(),step.name.clone(),1,None,
-                                    json!({"children":children,"foreach":foreach.is_some(),"max_concurrency":foreach.as_ref().map_or(1,|c|c.max_concurrency)}),true));
+                                json!({"children":children,"foreach":foreach.is_some(),"max_concurrency":foreach.as_ref().map_or(1,|c|c.max_concurrency)}),true));
                     execution.status = StepExecutionStatus::Running;
                 }
             }
@@ -2723,8 +2756,8 @@ impl Engine {
                                 receipt.structured_content.unwrap_or(json!(receipt.content));
                             let outputs = mapped_tool_outputs(step, &value)?;
                             if let Err(error)=self.accept_configured_outputs(state,row,step,&mut execution,&json!({"status":"completed","summary":"工具执行完成","outputs":outputs})) {
-                                            execution.status=StepExecutionStatus::Failed;execution.reason=error.message;
-                                        }
+                                        execution.status=StepExecutionStatus::Failed;execution.reason=error.message;
+                                    }
                         } else {
                             execution.status = StepExecutionStatus::Failed;
                             execution.reason = "工具执行失败".into();

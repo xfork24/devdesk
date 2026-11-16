@@ -2,6 +2,13 @@
 use super::*;
 use std::collections::BTreeMap;
 const SOURCE_TEXT: &str = "\u{1e}devdesk-source-text:";
+const SNAPSHOT_PERMISSIONS: &str = "snapshot-permissions:";
+
+pub(super) fn begin_snapshot(memo: &mut BTreeMap<String, Value>) {
+    // Permission compilation checks the current backend assets as well as the
+    // pinned sources. Reuse duplicate selections only within one store load.
+    memo.retain(|key, _| !key.starts_with(SNAPSHOT_PERMISSIONS));
+}
 
 fn factual_field(key: &str) -> bool {
     [
@@ -417,6 +424,12 @@ fn restore_reference(
             }))
         }
         Some("execution_permissions") => {
+            let key = format!("{SNAPSHOT_PERMISSIONS}{value}");
+            if let Some(compiled) = memo.get(&key) {
+                performance::record("source.restore_permissions.hit", 0.0);
+                return Ok(compiled.clone());
+            }
+            let _span = performance::Span::new("source.restore_permissions.compile");
             let lock = VersionedPermissionLock {
                 harness: devdesk_core::frozen_views::restore_permission_choice(
                     state,
@@ -428,11 +441,16 @@ fn restore_reference(
                 )?,
             };
             let scope = serde_json::from_value(value["scope"].clone()).map_err(storage)?;
-            Ok(json!(permission_profiles::compile_permission_profiles(
+            let compiled = json!(permission_profiles::compile_permission_profiles(
                 state,
                 &lock,
                 Some(scope)
-            )?))
+            )?);
+            // Share the existing memo's entry bound and skip oversized grants.
+            if memo.len() < 128 && key.len() + compiled.to_string().len() <= 64 * 1024 {
+                memo.insert(key, compiled.clone());
+            }
+            Ok(compiled)
         }
         Some("skill_package") => Ok(state
             .configuration(value["ref"].as_str().unwrap_or(""))?
@@ -479,6 +497,66 @@ pub fn runtime_digest(agent: &Definition, b: &RuntimeBinding) -> Result<String> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn repeated_permissions_share_compilation_only_within_the_same_snapshot() {
+        let mut state = EngineeringState::default();
+        seed_factory_configuration(&mut state);
+        let defaults = devdesk_core::current_template_defaults(&state).unwrap();
+        let selection = ExecutionPermissionSelection {
+            sandbox_ref: defaults["sandbox_ref"].as_str().unwrap().into(),
+            harness: PermissionSelection::Profile {
+                permission_revision_id: "builtin-permission-harness-full-access:1".into(),
+            },
+            sandbox: PermissionSelection::Profile {
+                permission_revision_id: "builtin-permission-sandbox-full-access:1".into(),
+            },
+        };
+        let lock = resolve_permission_lock(
+            &state,
+            defaults["harness_ref"].as_str().unwrap(),
+            &selection,
+        )
+        .unwrap();
+        let compile = |scope| {
+            json!(
+                permission_profiles::compile_permission_profiles(&state, &lock, Some(scope))
+                    .unwrap()
+            )
+        };
+        let scope = ExecutionScope {
+            work_type: WorkType::Discussion,
+            writable_paths: vec![],
+            read_only_paths: vec![],
+        };
+        let expected = compile(scope.clone());
+        let encoded = pack(&state, &expected).unwrap();
+        let mut other_scope = scope;
+        other_scope.work_type = WorkType::Workflow;
+        other_scope.writable_paths = vec!["outputs".into()];
+        let other = compile(other_scope);
+        let other_encoded = pack(&state, &other).unwrap();
+        let trace = performance::Trace::start();
+        let mut memo = BTreeMap::new();
+        for _ in 0..10 {
+            assert_eq!(restore_with(&state, &encoded, &mut memo).unwrap(), expected);
+        }
+        assert_eq!(
+            restore_with(&state, &other_encoded, &mut memo).unwrap(),
+            other
+        );
+        assert_ne!(other["scope"], expected["scope"]);
+        begin_snapshot(&mut memo);
+        assert_eq!(restore_with(&state, &encoded, &mut memo).unwrap(), expected);
+        let measurement = trace.finish();
+        assert_eq!(
+            measurement["spans"]["source.restore_permissions.compile"]["calls"],
+            3
+        );
+        assert_eq!(
+            measurement["spans"]["source.restore_permissions.hit"]["calls"],
+            9
+        );
+    }
     #[test]
     fn delivered_task_contract_is_restored_from_authenticated_history_not_current_renderer() {
         let mut state = EngineeringState::default();

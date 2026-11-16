@@ -3990,6 +3990,10 @@ fn ordinary_agents_lint_drafts_without_sealing_them_or_querying_other_deliveries
         assert_eq!(receipts.len(), 1, "{mode}");
         assert_eq!(receipts[0].success, mode == "assigned", "{mode}");
         if mode == "assigned" {
+            assert!(
+                receipts[0].content.is_empty(),
+                "structured native results must not also be sent as duplicate text"
+            );
             assert_eq!(
                 receipts[0].structured_content.as_ref().unwrap()["structure_valid"],
                 false

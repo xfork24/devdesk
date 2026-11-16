@@ -72,6 +72,8 @@ source_definitions 保存配置源，governance_records 保存实例、回执等
 
 正式任务按结构记录来源选择和恢复参数，而不是凭 renderer 字符串猜测。恢复优先查 ConversationEvent 的 User 消息账本，将任务的 source、inputs、input_sources、Agent、补充文本及摘要与 configured_execution_task/archived 记录逐项核验；匹配时直接返回当时实际发送的 JSON，不先用当前渲染器重写。找不到这份已认证正文时，才按原 plan_revision 调用 core.frozen_views.restore_task 纯重建；这里不从原生协议 journal 提取替代正文。
 
+同一次工程快照加载中，完全相同的执行权限选择和作用域只编译一次。复用键包含 Harness/Sandbox 的确切选择及完整 ExecutionScope，不同路径或 WorkType 不共用结果；下一次加载前清除此类条目，重新核对源、摘要与执行后端资产。条目受现有 memo 的 128 项限制，键和值的 JSON 总长度超过 64 KiB 时不保留，不新增权限或持久化展开副本。
+
 本文件的 runtime_digest 是另一项共用计算：对实际安装、adapter、完整 Agent/模型连接、权限、路径、WorkType 和凭据引用等 RuntimeBinding 选择计算摘要，供恢复和权限后继使用，不是任务正文摘要或 Artifact ID。
 
 包内测试覆盖伪造标记、嵌套恢复、文本转义及历史实际正文。修改任务渲染器时，必须同时考虑这里的往返相等和旧会话重放，而不只是新任务是否好看。
@@ -99,3 +101,5 @@ source_definitions 保存配置源，governance_records 保存实例、回执等
 ---
 
 [代码手册总览](../overview.md) · [完整执行链](../execution-flows.md) · [本包概览](overview.md)
+
+工作流运行提示及占用计数位于 `runtime_queries.rs`，通过共享只读池查询实际 Turn/执行和待交付记录，不恢复会话或源闭包。未知结果但尚未撤权的执行仍占用额度；提示只决定是否需要轮询，不授予派发或接纳权限。

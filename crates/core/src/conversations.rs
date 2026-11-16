@@ -484,6 +484,7 @@ impl Engine {
                     turn.finished = Some(now());
                 }
                 turn.revision += 1;
+                let cancelled_session = turn.session_id.clone();
                 for interaction in s
                     .interactions
                     .iter_mut()
@@ -492,6 +493,7 @@ impl Engine {
                     interaction.status = InteractionStatus::Cancelled;
                     interaction.revision += 1;
                 }
+                self.cancel_bound_controller(s, &cancelled_session, &command.command_id)?;
                 json!({"id":target,"cancel_requested":true})
             }
             "interaction.answer" => {
