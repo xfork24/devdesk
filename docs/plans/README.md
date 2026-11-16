@@ -4,7 +4,7 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
-| [配置加载优化](configuration-loading-performance/PLAN.md) | [性能分析与耗时分布](configuration-loading-performance/ANALYSIS.md) | 待实施；覆盖五类配置页面，基于本机 HTTP、浏览器和后端阶段采样，设计配置专用读取、一致快照、轻量 SSE、共享缓存与按需加载 |
+| [配置加载优化](configuration-loading-performance/PLAN.md) | [性能分析](configuration-loading-performance/ANALYSIS.md)、[W0–W3 实施与验收](configuration-loading-performance/EXECUTION.md) | W0–W3 已完成；配置专用快照、一致视图、轻量 SSE 与启动；debug/release 同条件各页面 30 次对比和回归通过，W4–W7 待实施 |
 | [配置归属、权限简化、本地安装与讨论展示](configuration-permissions-runtime-discussion/PLAN.md) | [实施与定向验收](configuration-permissions-runtime-discussion/EXECUTION.md)；已实施 | 整合六项需求及两项调整：项目工具接入说明、Profile 直用并删除执行授权、Harness/Sandbox 拆分及运行资源删除、本地安装与登录反馈、Workflow 内嵌调度、讨论原始信息新标签页及增量消息简化 |
 | [Agent 完整能力与自由讨论及经验访问](agent-capabilities-discussion-experience/PLAN.md) | [实施验收](agent-capabilities-discussion-experience/EXECUTION.md)、[合并回归](agent-capabilities-discussion-experience/MERGE.md) | 已合并本地 main，合并回归通过；统一 Agent 完整能力装配；Workflow 只负责调度；支持无项目对话及 Agent 在当前对话中读取现有经验，修复工具裁剪引发的权限冲突 |
 | [代码规范、Lint 体系与 CI 建设](code-standards-lint-ci/PLAN.md) | [独立评估](code-standards-lint-ci/ASSESSMENT.md)、[补充验收](code-standards-lint-ci/ACCEPTANCE.md)、[原执行报告](code-standards-lint-ci/EXECUTION.md)、[原问题记录](code-standards-lint-ci/ISSUES.md) | main 补充实施完成；Rust 291 项、debug/release 浏览器各 57 项通过；已修正原问题分类、门禁缺口与 CI 依赖判断 |
