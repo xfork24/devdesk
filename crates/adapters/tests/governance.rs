@@ -218,22 +218,7 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
         );
         e.bootstrap().unwrap();
         runtime::bind_default_permissions(&e);
-        let config = global.snapshot().unwrap();
-        e.store
-            .transact(None, &mut |s| {
-                for r in &config.governance {
-                    if !s.governance.iter().any(|old| old.id == r.id) {
-                        s.governance.push(r.clone());
-                    }
-                }
-                for d in &config.definitions {
-                    if !s.definitions.iter().any(|old| old.id == d.id) {
-                        s.definitions.push(d.clone());
-                    }
-                }
-                Ok(Value::Null)
-            })
-            .unwrap();
+        e.sync_shared_configuration(global.as_ref()).unwrap();
         e.execute("project.create", create).unwrap();
         global
             .publish_project(&e.store.snapshot().unwrap().projects[0])
