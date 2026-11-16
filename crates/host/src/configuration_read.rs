@@ -27,7 +27,7 @@ pub(super) fn directory_query(method: &str) -> bool {
 }
 
 impl Workspace {
-    fn configuration_bundle(&self) -> Result<(Arc<ConfigurationCatalogSnapshot>, String)> {
+    fn configuration_bundle(&self) -> Result<(Arc<ConfigurationCatalogSnapshot>, String, Value)> {
         let global = self.global.configuration_snapshot()?;
         let engines: Vec<_> = self
             .opened
@@ -45,6 +45,12 @@ impl Workspace {
             projects.push(catalog);
         }
         let clock = configuration_hash(&clocks);
+        let source_epochs = json!(
+            clocks
+                .iter()
+                .cloned()
+                .collect::<std::collections::BTreeMap<_, _>>()
+        );
         let key = format!("roles:{}:{clock}", global.revision);
         if let Some((_, snapshot)) = self
             .configuration_views
@@ -53,7 +59,7 @@ impl Workspace {
             .iter()
             .find(|(k, _)| k == &key)
         {
-            return Ok((snapshot.clone(), clock));
+            return Ok((snapshot.clone(), clock, source_epochs));
         }
         let snapshot = if projects.is_empty() {
             global
@@ -61,7 +67,7 @@ impl Workspace {
             Arc::new(compose_role_directory(&global, &projects)?)
         };
         self.retain_configuration_view(key, snapshot.clone())?;
-        Ok((snapshot, clock))
+        Ok((snapshot, clock, source_epochs))
     }
     fn retain_configuration_view(
         &self,
@@ -84,14 +90,14 @@ impl Workspace {
         Ok(())
     }
     pub(crate) fn configuration_version(&self, engine: &Engine) -> Result<Value> {
-        let (global, clock) = self.configuration_bundle()?;
+        let (global, clock, source_epochs) = self.configuration_bundle()?;
         let project = if engine.store.project_id().is_some() {
             engine.store.configuration_snapshot()?.revision
         } else {
             0
         };
         Ok(
-            json!({"host":self.catalog_instance,"global":global.revision,"project":project,"project_sources":clock}),
+            json!({"host":self.catalog_instance,"global":global.revision,"project":project,"project_sources":clock,"source_epochs":source_epochs}),
         )
     }
     pub(super) fn project_directory(&self, params: &Value) -> Result<Value> {
@@ -115,7 +121,7 @@ impl Workspace {
     }
     pub(super) fn ui_bootstrap(&self, params: &Value) -> Result<Value> {
         let _span = performance::Span::new("ui.bootstrap");
-        let (global, clock) = self.configuration_bundle()?;
+        let (global, clock, source_epochs) = self.configuration_bundle()?;
         let engine = match self.active_engine(params["project_id"].as_str()) {
             Ok(engine) => engine,
             Err(e) if e.code == "project_required" => self.configuration.clone(),
@@ -148,7 +154,7 @@ impl Workspace {
         result["configuration_ready"] = health["ready"].clone();
         result["configuration_status"] = health;
         result["catalog_generation"] = json!(template_catalog_generation(&global.state));
-        result["catalog_version"] = json!({"host":self.catalog_instance,"global":global.revision,"project":if project_id.is_some(){view.revision}else{0},"project_sources":clock});
+        result["catalog_version"] = json!({"host":self.catalog_instance,"global":global.revision,"project":if project_id.is_some(){view.revision}else{0},"project_sources":clock,"source_epochs":source_epochs});
         result["definitions"]=json!(view.state.definitions.iter().filter(|d|template_projection_current(&view.state,d)).map(|d|json!({"id":d.id,"name":d.name,"family":d.family,"version":d.version,"supersedes":d.supersedes,"agent_profile":d.agent_profile})).collect::<Vec<_>>());
         result["configurations"] = json!(
             view.state
@@ -203,7 +209,7 @@ impl Workspace {
         }
         Some((|| {
             let _span = performance::Span::new("catalog.query");
-            let (global, clock) = self.configuration_bundle()?;
+            let (global, clock, source_epochs) = self.configuration_bundle()?;
             let target = params["id"].as_str().or_else(|| params["target"].as_str());
             let project = params["project_id"].as_str();
             let local = match method {
@@ -255,35 +261,26 @@ impl Workspace {
                 &compute_params,
                 runtime_key,
             ));
+            crate::check_read_cancelled()?;
             let mut computed = false;
             let mut result = view.cached_query(key, || {
+                crate::check_read_cancelled()?;
                 computed = true;
                 let _compile = performance::Span::new("catalog.query_build");
-                let value = if method == "query.configuration_index" {
-                configuration_index(&view, params, project)?
-            } else if method == "query.configuration_records" {
-                configuration_records(&view, params, project)?
-            } else if method == "query.configuration_defaults" {
-                if params["view"]=="selection" {pinned.configuration_default_selection(project)?}else{pinned.configuration_defaults(project)?}
-            } else if method=="query.project_configuration" && params["view"]=="selection" {
-                project_configuration_context(&view,project)?
-            } else if method == "query.template_catalog" {
-                let info = template_bundle_info()?;
-                json!({"generation":template_catalog_generation(&view.state),"bundle_version":info["bundle_version"],"bundle_hash":info["bundle_hash"],"current_bundle_version":template_catalog_state(&view.state).map(|r|&r.data["bundle_version"]),"counts":template_catalog_counts(&view.state)})
-            } else if method == "query.permission_resources" {
-                self.permission_resource_api_at(
-                    method,
-                    params,
-                    Some(view.clone()),
-                    Some(global.state.as_ref()),
-                )
-                .expect("permission read")?
-            } else if local && matches!(method, "query.configurations" | "query.workflows") {
-                local_directory(&view, &global, method, params, project)?
-            } else {
-                pinned.query(method, &compute_params, self.global.concurrency()?)?
-            };
-                Ok(value)
+                match method {
+                    "query.configuration_index" => configuration_index(&view, params, project),
+                    "query.configuration_records" => configuration_records(&view, params, project),
+                    "query.configuration_defaults" if params["view"]=="selection" => pinned.configuration_default_selection(project),
+                    "query.configuration_defaults" => pinned.configuration_defaults(project),
+                    "query.project_configuration" if params["view"]=="selection" => project_configuration_context(&view,project),
+                    "query.template_catalog" => {
+                        let info=template_bundle_info()?;
+                        Ok(json!({"generation":template_catalog_generation(&view.state),"bundle_version":info["bundle_version"],"bundle_hash":info["bundle_hash"],"current_bundle_version":template_catalog_state(&view.state).map(|r|&r.data["bundle_version"]),"counts":template_catalog_counts(&view.state)}))
+                    }
+                    "query.permission_resources" => self.permission_resource_api_at(method,params,Some(view.clone()),Some(global.state.as_ref())).expect("permission read"),
+                    "query.configurations" | "query.workflows" if local => local_directory(&view,&global,method,params,project),
+                    _ => pinned.query(method,&compute_params,self.global.concurrency()?),
+                }
             })?;
             performance::record(
                 if computed {
@@ -321,7 +318,7 @@ impl Workspace {
                 ) {
                     object.insert("template_sources".into(), json!(sources));
                 }
-                object.insert("catalog_version".into(),json!({"host":self.catalog_instance,"global":global.revision,"project":if local {view.revision}else{0},"project_sources":clock}));
+                object.insert("catalog_version".into(),json!({"host":self.catalog_instance,"global":global.revision,"project":if local {view.revision}else{0},"project_sources":clock,"source_epochs":source_epochs}));
             }
             Ok(result)
         })())

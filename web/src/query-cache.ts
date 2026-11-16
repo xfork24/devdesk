@@ -14,9 +14,15 @@ export class QueryCache {
   private bytes = 0;
   private readonly maxEntries: number;
   private readonly maxBytes: number;
-  constructor(maxEntries = 64, maxBytes = 8 * 1024 * 1024) {
+  private readonly retainPending: boolean;
+  constructor(
+    maxEntries = 64,
+    maxBytes = 8 * 1024 * 1024,
+    retainPending = false,
+  ) {
     this.maxEntries = maxEntries;
     this.maxBytes = maxBytes;
+    this.retainPending = retainPending;
   }
   peek<T>(key: string): T | undefined {
     return this.entries.get(key)?.value as T | undefined;
@@ -48,7 +54,9 @@ export class QueryCache {
         if (old) {
           this.entries.delete(old[0]);
           this.bytes -= old[1].bytes;
-        } else return load(signal || new AbortController().signal);
+        } else if (this.retainPending)
+          return Promise.reject(new Error("后台模型目录繁忙，请稍后重试"));
+        else return load(signal || new AbortController().signal);
       }
       const controller = new AbortController();
       entry = {
@@ -94,7 +102,11 @@ export class QueryCache {
         done = true;
         signal?.removeEventListener("abort", abort);
         current.consumers -= 1;
-        if (!current.consumers && current.value === undefined) {
+        if (
+          !this.retainPending &&
+          !current.consumers &&
+          current.value === undefined
+        ) {
           current.controller.abort();
           if (this.entries.get(key) === current) this.entries.delete(key);
         }

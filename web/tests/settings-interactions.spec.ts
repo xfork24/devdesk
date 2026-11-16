@@ -43,6 +43,11 @@ test("MiniMax 默认选择、行左侧反馈、自动模型目录与原生工具
         storage: "fixture",
         auth_kind: call.params.model_provider === "ollama" ? "none" : "api_key",
       };
+    else if (call.method === "query.model_catalog_identity")
+      result = {
+        identity: `fixture-${call.params.model_provider}`,
+        available: true,
+      };
     else if (call.method === "codex.auth.models") {
       requested.push("openai");
       result = {
@@ -121,9 +126,11 @@ test("MiniMax 默认选择、行左侧反馈、自动模型目录与原生工具
   await expect(model.locator('option[value="glm-5.3"]')).toHaveCount(1);
   expect(requested).toContain("openai");
   expect(requested).toContain("minimax-cn");
-  expect(
-    requested.filter((provider) => provider === "zai-coding-cn"),
-  ).toHaveLength(2);
+  await expect
+    .poll(
+      () => requested.filter((provider) => provider === "zai-coding-cn").length,
+    )
+    .toBe(2);
 
   await page.getByRole("tab", { name: "Harness", exact: true }).click();
   await page.getByLabel("运行时后端", { exact: true }).selectOption("dsh");

@@ -43,6 +43,7 @@ export function RoleManager({
     `devdesk:v4:roles:${project?.id || "global"}`,
     empty,
   );
+  const [detailLoading, setDetailLoading] = useState(false);
   const choice = useRef<AbortController | null>(null);
   useEffect(() => () => choice.current?.abort(), []);
   const load = useCallback(async () => {
@@ -70,6 +71,12 @@ export function RoleManager({
       choice.current?.abort();
       const controller = new AbortController();
       choice.current = controller;
+      setDetailLoading(true);
+      if (!row.type || row.type === "role") {
+        const params = new URLSearchParams(location.search);
+        params.set("config_object", row.id);
+        history.replaceState(null, "", `?${params}`);
+      }
       try {
         row = await loadConfigurationRecord(
           request,
@@ -97,6 +104,8 @@ export function RoleManager({
         history.replaceState(null, "", `?${params}`);
       } catch (error) {
         if (!controller.signal.aborted) setError(String(error));
+      } finally {
+        if (choice.current === controller) setDetailLoading(false);
       }
     },
     [setDraft, request, project?.id, setError],
@@ -186,6 +195,7 @@ export function RoleManager({
               params.delete("config_object");
               history.replaceState(null, "", `?${params}`);
               choice.current?.abort();
+              setDetailLoading(false);
               setDraft(empty());
             }}
           >
@@ -221,6 +231,7 @@ export function RoleManager({
             Role 名称
             <input
               required
+              disabled={detailLoading}
               value={draft.name}
               onChange={(e) => {
                 captureFeedback();
@@ -275,6 +286,7 @@ export function RoleManager({
           )}
           <MarkdownField
             key={draft.selected || "new"}
+            disabled={detailLoading}
             label="职责说明"
             value={draft.instructions}
             required
@@ -294,7 +306,7 @@ export function RoleManager({
             </ActionButton>
             <ActionButton
               type="button"
-              disabled={busy || !old}
+              disabled={busy || detailLoading || !old}
               onClick={() => {
                 captureFeedback();
                 return void save(true);

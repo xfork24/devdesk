@@ -248,6 +248,11 @@ test("模型目录慢或失败时仍能编辑；切回复用，换账号隔离",
   await expect(select).not.toHaveValue("");
   await page.getByLabel("名称", { exact: true }).fill("目录未完成仍可编辑");
   await expect.poll(() => calls).toBe(1);
+  await page.getByRole("tab", { name: "Harness", exact: true }).click();
+  await page.getByRole("tab", { name: "Model", exact: true }).click();
+  await expect(select).toBeEnabled();
+  await expect(page.getByText(/正在后台刷新模型目录/)).toBeVisible();
+  expect(calls).toBe(1);
   release();
   await expect(select.locator('option[value="private-one"]')).toHaveCount(1);
   await page.getByRole("tab", { name: "Harness", exact: true }).click();

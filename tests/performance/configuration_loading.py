@@ -38,11 +38,12 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--samples", type=int, default=30)
     parser.add_argument("--browser", action="store_true")
+    parser.add_argument("--model-conditions", action="store_true", help="Fresh browser with the same 1,200 ms slow/failed model fixture")
     parser.add_argument("--assert-configuration-isolation", action="store_true", help="Fail RPC sampling if configuration/events restore full state or write transactions")
     args = parser.parse_args()
     if not 1 <= args.samples <= 1000:
         parser.error("samples must be 1..1000")
-    if args.browser and args.assert_configuration_isolation:
+    if (args.browser or args.model_conditions) and args.assert_configuration_isolation:
         parser.error("configuration isolation assertions apply to the RPC cohort")
     args.output.mkdir(parents=True, exist_ok=False)
     binary = args.output / "host-tests"
@@ -54,7 +55,7 @@ def main():
     env.pop("DEVDESK_ACCESS_TOKEN", None)
     metadata = {"binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(), "source_dataset": str(args.dataset.resolve()), "samples": args.samples, "offline": True, "scheduler": False, "node": subprocess.check_output(["node", "--version"], text=True).strip()}
     (args.output / "identity.json").write_text(json.dumps(metadata, indent=2))
-    if not args.browser:
+    if not (args.browser or args.model_conditions):
         subprocess.run([str(binary.resolve()), "loading_performance::configuration_load_profile", "--ignored", "--exact", "--nocapture"], env=env, check=True)
         rows = [json.loads(line) for line in (args.output / "rpc.jsonl").read_text().splitlines()]
         groups = {}
@@ -88,7 +89,7 @@ def main():
                     break
             if not origin:
                 raise RuntimeError("benchmark server failed to start")
-            subprocess.run(["node", str(Path(__file__).with_name("configuration-loading.mjs")), origin, str(args.output.resolve()), str(args.samples), str(server.pid)], check=True)
+            subprocess.run(["node", str(Path(__file__).with_name("model-loading.mjs" if args.model_conditions else "configuration-loading.mjs")), origin, str(args.output.resolve()), str(args.samples), str(server.pid)], check=True)
         finally:
             server.send_signal(__import__("signal").SIGINT)
             try:

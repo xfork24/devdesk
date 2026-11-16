@@ -402,7 +402,7 @@ export function RoleConversation({
     setEvents([]);
     setExperienceRefs([]);
     cursor.current = 0;
-  }, [scopedRequest, owner, initialOwner, initialSession]);
+  }, [global, project.id, owner, initialOwner, initialSession]);
   useEffect(() => {
     void loadSessions().catch((e) => setError(String(e)));
   }, [loadSessions, setError]);

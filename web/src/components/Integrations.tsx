@@ -1,3 +1,4 @@
+import { useReadRequest } from "./use-read-request";
 import {
   ActionButton,
   ActionForm,
@@ -96,7 +97,7 @@ function JsonField({
   );
 }
 export function Integrations({
-  request,
+  request: parentRequest,
   project,
   installations,
   kind,
@@ -108,6 +109,7 @@ export function Integrations({
   kind?: string;
   contentOnly?: boolean;
 }) {
+  const request = useReadRequest(parentRequest);
   const [savedTab, setTab] = useGroupTab("integrations", tabs);
   const tab = kind || savedTab;
   const [skillRevision, setSkillRevision] = useState(0);

@@ -132,3 +132,122 @@ fn readonly_catalog_detects_commits_and_listeners_run_after_unlock() {
     assert!(after.record(&added.id).is_some());
     assert!(after.revision > before.revision);
 }
+
+#[test]
+#[ignore = "explicit source scaling profile"]
+fn configuration_source_scaling() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = Arc::new(GlobalStore::open(directory.path()).unwrap());
+    let _engine = initialized(store.clone());
+    let snapshot = store.configuration_snapshot().unwrap();
+    let role = snapshot.records("role").next().unwrap().clone();
+    for count in [200, 2000, 10000] {
+        let mut state = snapshot.state.as_ref().clone();
+        for n in state
+            .governance
+            .iter()
+            .filter(|r| r.is_definition())
+            .count()..count
+        {
+            let mut row = role.clone();
+            row.definition_id = format!("scaling-role-{n}");
+            row.id = format!("{}:1", row.definition_id);
+            row.version = 1;
+            state.governance.push(row);
+        }
+        let started = std::time::Instant::now();
+        let catalog = devdesk_core::ConfigurationCatalogSnapshot::new(state, 1, true).unwrap();
+        let construction = started.elapsed().as_secs_f64() * 1000.0;
+        let started = std::time::Instant::now();
+        let result =
+            devdesk_core::configuration_index(&catalog, &json!({"limit":1000}), None).unwrap();
+        println!(
+            "{}",
+            json!({"sources":count,"construction_ms":construction,"index_ms":started.elapsed().as_secs_f64()*1000.0,"page_bytes":result.to_string().len(),"total":result["total"]})
+        );
+    }
+}
+
+#[test]
+fn indexed_membership_retirement_and_heads_match_authoritative_rules() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = Arc::new(GlobalStore::open(directory.path()).unwrap());
+    let _engine = initialized(store.clone());
+    let mut state = store
+        .configuration_snapshot()
+        .unwrap()
+        .state
+        .as_ref()
+        .clone();
+    let role = state
+        .governance
+        .iter()
+        .find(|r| r.r#type == "role")
+        .unwrap()
+        .clone();
+    let member = state
+        .governance
+        .iter()
+        .find(|r| r.r#type == "template_catalog_member" && r.definition_id == role.id)
+        .unwrap()
+        .clone();
+    state
+        .governance
+        .iter_mut()
+        .find(|r| r.id == TEMPLATE_CATALOG_STATE)
+        .unwrap()
+        .data["generation"] = json!(2);
+    let mut current = member.clone();
+    current.id = "new-membership".into();
+    current.data["generation"] = json!(2);
+    state.governance.push(current);
+    for (kind, target, data) in [
+        ("role_retirement", role.definition_id.clone(), json!({})),
+        ("configuration_retirement", role.id.clone(), json!({})),
+        (
+            "standard_archive",
+            state
+                .governance
+                .iter()
+                .find(|r| r.r#type == "standard")
+                .unwrap()
+                .id
+                .clone(),
+            json!({"archived":true}),
+        ),
+    ] {
+        let mut row = role.clone();
+        row.id = format!("test-{kind}");
+        row.r#type = kind.into();
+        row.definition_id = target;
+        row.data = data;
+        state.governance.push(row);
+    }
+    let catalog = devdesk_core::ConfigurationCatalogSnapshot::new(state, 2, true).unwrap();
+    for record in &catalog.state.governance {
+        assert_eq!(
+            catalog.is_current(record),
+            template_record_current(&catalog.state, record),
+            "{}",
+            record.id
+        );
+        assert_eq!(
+            catalog.is_retired(record),
+            devdesk_core::configuration_retired(&catalog.state, record),
+            "{}",
+            record.id
+        );
+        assert_eq!(
+            catalog.is_head(record),
+            !catalog
+                .state
+                .governance
+                .iter()
+                .any(|n| n.r#type == record.r#type
+                    && n.definition_id == record.definition_id
+                    && n.version > record.version)
+        );
+    }
+    assert!(catalog.is_current(&role));
+    assert!(catalog.is_retired(&role));
+}

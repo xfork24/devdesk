@@ -255,10 +255,12 @@ export function StandardManager({
     history.replaceState(null, "", `?${params}`);
   }, [selected]);
   useEffect(() => {
-    let active = true;
     setSnapshot(undefined);
     setUsage(undefined);
     setDiff(undefined);
+  }, [selected, project?.id]);
+  useEffect(() => {
+    let active = true;
     if (!selected) return;
     const controller = new AbortController();
     void request(

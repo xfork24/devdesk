@@ -45,6 +45,13 @@ Web 的 `feature.create` 显式提交 `payload.start_workflow=false`：保存草
 
 `role.create/revise/delete` 只管理自由业务身份，不生成默认 Agent 或 Skill。Capability 和 Agent 明确引用当前资源；不从角色名称推导权限或业务输出。`query.configuration_defaults` 返回当前目录的确切默认引用，不创建项目采用记录，也不安装运行时。
 
+配置编辑采用 `query.configuration_index` 与 `query.configuration_records`。索引支持 `project_id/local`、`kind/scope`、`include_history/include_archived/include_deleted`、`offset/limit`；默认只列当前 head，单页最多 1,000 项。响应包含名称、确切引用、类型、Scope、版本、`hash`、来源及选择器所需的少量字段和引用，不携带正文、Workflow 步骤、安装文件或权限规则。后续分页必须带首屏的 `index_version`，版本改变返回 `catalog_changed`。`query.configuration_records({refs,project_id?,local?})` 一次最多读取 64 个确切修订及其来源，并执行原有可见性检查；历史或停用源仍可读取，写入校验不变。
+
+`query.configuration_defaults({view:"selection",project_id?})` 只返回经过组合校验的默认选择；原无 `view` 的完整响应保留。`query.project_configuration({project_id,view:"selection"})` 返回项目选择、Standard 来源和所需 pinned 源的摘要。`query.standard`、`query.project_standard_preview` 可用 `view:"summary"` 省略闭包正文；预览同时返回基础规范的节点与默认入口 `baseline`，页面无需再取一次 Standard。`query.standard_usage` 独立读取使用情况。全局讨论目录可用 `query.discussion_agents({view:"index",offset,limit})` 读取摘要，或用 `refs` 读取其可见目录内的确切正文。
+
+`query.model_catalog_identity({model_provider,endpoint?})` 只读取账号引用、配置与运行程序登记，返回不含凭据的目录身份、`available` 和已登记的 `installation_id`；不启动程序、安装、访问系统凭据库或模型端点。Codex 后台模型目录只使用已登记的当前平台程序；需要登录或准备时显示已有选择，由明确的登录/准备入口处理。模型发现不发起推理。
+
+
 `workflow.create` / `workflow.draft.create` 建立 v6 草稿，`workflow.draft.update` 修改草稿，`workflow.publish` 校验并发布不可变修订。`project.configuration.update` 保存确切 Standard、Workflow、Role → Agent 和执行授权；未选快照时原子生成。`spec.create/revise` 使用 v3 数据，`standard.capture.preview/capture` 生成 v4 不可变快照；`delivery_type.create/revise` 定义通用交付格式及可选离线 Schema。
 
 `query.workflow_requirements`、`query.workflow_validation`、`query.workflow_preview` 和 `query.specification_audit` 检查完整闭包、身份、输入输出、Spec 与基线。预演不会调用模型、Docker、Git 或测试，也不产生真实证据。

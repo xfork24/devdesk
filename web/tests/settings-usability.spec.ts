@@ -354,7 +354,9 @@ test("会话绑定更新同步 Agent，切换身份后隔离迟到历史", async
   });
   await open.click();
   await expect(
-    page.getByText("第一个身份的已完成工作", { exact: true }),
+    page
+      .getByRole("log", { name: "讨论记录" })
+      .getByText(/第一个身份的已完成工作/),
   ).toBeVisible();
   const firstSession = sessions.at(-1).id;
   await page.getByRole("button", { name: "新建 Session", exact: true }).click();
@@ -390,7 +392,9 @@ test("会话绑定更新同步 Agent，切换身份后隔离迟到历史", async
   await expect(identity).not.toHaveValue(first);
   const second = await identity.inputValue();
   await expect(
-    page.getByText("第一个身份的已完成工作", { exact: true }),
+    page
+      .getByRole("log", { name: "讨论记录" })
+      .getByText(/第一个身份的已完成工作/),
   ).toHaveCount(0);
   await expect(page.getByLabel("讨论会话", { exact: true })).toHaveValue("");
   await expect
@@ -404,7 +408,7 @@ test("会话绑定更新同步 Agent，切换身份后隔离迟到历史", async
     .toBe(true);
   await open.click();
   await expect(
-    page.getByText("第二个身份的新会话", { exact: true }),
+    page.getByRole("log", { name: "讨论记录" }).getByText(/第二个身份的新会话/),
   ).toBeVisible();
   expect(
     requests.filter((r) => r.method === "session.open").at(-1).params.payload

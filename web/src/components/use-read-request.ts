@@ -2,11 +2,7 @@ import { useCallback, useEffect, useMemo } from "react";
 import type { Request, RequestOptions, Row } from "./rpc-types";
 
 export function useReadRequest(parent: Request): Request {
-  const owned = useMemo(
-    () => ({ parent, controller: new AbortController() }),
-    [parent],
-  );
-  const { controller } = owned;
+  const controller = useMemo(() => new AbortController(), []);
   useEffect(() => () => controller.abort(), [controller]);
   return useCallback(
     (method: string, params: Row = {}, options: RequestOptions = {}) => {
@@ -14,13 +10,13 @@ export function useReadRequest(parent: Request): Request {
         options.shared ||
         !/^(query\.|models\.list|codex\.auth\.models)/.test(method)
       )
-        return owned.parent(method, params, options);
+        return parent(method, params, options);
       const signal = options.signal
         ? AbortSignal.any([options.signal, controller.signal])
         : controller.signal;
-      return owned.parent(method, params, { ...options, signal });
+      return parent(method, params, { ...options, signal });
     },
-    [owned, controller],
+    [parent, controller],
   );
 }
 

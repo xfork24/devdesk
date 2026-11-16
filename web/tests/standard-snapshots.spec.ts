@@ -221,10 +221,12 @@ test("Standard 内容相同时，默认启动入口未声明或不同均显示�
   await page.getByRole("button", { name: "流程与规范", exact: true }).click();
   await page.getByRole("tab", { name: "Standard", exact: true }).click();
   const panel = page.getByRole("region", { name: "Standard 规范快照" });
+  await panel.getByLabel("查看 Standard", { exact: true }).focus();
   await panel
     .getByLabel("查看 Standard", { exact: true })
     .selectOption(defaults.standard_ref);
   for (const copy of copies) {
+    await panel.getByLabel("与另一个 Standard 比较", { exact: true }).focus();
     await panel
       .getByLabel("与另一个 Standard 比较", { exact: true })
       .selectOption(copy.id);
@@ -537,6 +539,7 @@ test("同一 Feature 的 Task 实际采用不同 Standard 且切换保留执行�
   await updatedCard
     .getByLabel("采用 Standard", { exact: true })
     .selectOption(sa.id);
+  await updatedCard.getByLabel("采用的入口 Workflow", { exact: true }).focus();
   await updatedCard
     .getByLabel("采用的入口 Workflow", { exact: true })
     .selectOption(a.id);

@@ -355,7 +355,8 @@ export function ModelFields({
   ]);
 
   const choices: Candidate[] = [...(selected?.models || []), ...candidates];
-  if (data.model) choices.push({ id: data.model });
+  if (data.model && !choices.some((model) => model.id === data.model))
+    choices.push({ id: data.model });
   const available = [
     ...new Map(choices.map((model) => [model.id, model])).values(),
   ];

@@ -25,6 +25,7 @@ import { ProjectManager } from "./components/ProjectManager";
 import { ConfigurationScope } from "./components/configuration-scope";
 import {
   configurationMutation,
+  configurationResponseOutdated,
   foregroundRequest,
   getConfigurationSession,
   invalidateConfigurationQueries,
@@ -168,9 +169,7 @@ async function rpc(
           signal: AbortSignal.any([
             signal,
             AbortSignal.timeout(
-              ["session.open", "runtime.prepare", "codex.auth.models"].includes(
-                method,
-              )
+              ["session.open", "runtime.prepare"].includes(method)
                 ? 25 * 60 * 1000
                 : method === "codex.auth.start"
                   ? 5 * 60 * 1000
@@ -184,6 +183,11 @@ async function rpc(
           throw new Error(
             `${data.error.data?.code || ""} · ${data.error.message}`,
           );
+        if (
+          method.startsWith("query.") &&
+          configurationResponseOutdated(data.result, params)
+        )
+          throw new DOMException("Configuration changed", "AbortError");
         return data.result;
       },
       options,
@@ -270,10 +274,17 @@ function App() {
     subscribeConfigurationSession,
     getConfigurationSession,
   );
+  const configurationLifetime = useMemo(
+    () => ({
+      scope: `${tab}:${projectId}:${configurationSession}`,
+      controller: new AbortController(),
+    }),
+    [tab, projectId, configurationSession],
+  );
   const configurationReader = useMemo(() => {
-    const controller = new AbortController();
+    const controller = configurationLifetime.controller;
     return {
-      scope: `${tab}:${projectId}:${configurationReadVersion}:${configurationSession}`,
+      scope: `${configurationLifetime.scope}:${configurationReadVersion}`,
       controller,
       request: (
         method: string,
@@ -294,10 +305,10 @@ function App() {
               },
         ),
     };
-  }, [tab, projectId, configurationReadVersion, configurationSession]);
+  }, [configurationLifetime, configurationReadVersion]);
   useEffect(
-    () => () => configurationReader.controller.abort(),
-    [configurationReader],
+    () => () => configurationLifetime.controller.abort(),
+    [configurationLifetime],
   );
   const configurationRequest = configurationReader.request;
   const configurationScope = useMemo(

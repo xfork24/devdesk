@@ -559,7 +559,7 @@ export function ResourceEditor({
                 value={old.id}
                 onChange={(id) => {
                   const record = records.find((r) => r.id === id);
-                  if (record) choose(record);
+                  void choose(record || { id, type: kind, _index: true });
                 }}
               />
             )}

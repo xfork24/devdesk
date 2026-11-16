@@ -425,6 +425,7 @@ test("Sandbox 版本独立绑定权限，范围预览固定当前目标并可查
   await expect(editor.getByLabel("Sandbox 修订")).not.toHaveValue(original);
   await expect(panel.getByText(/当前绑定：尚未分配/)).toBeVisible();
   await expect(panel.getByLabel("目标资源权限")).toHaveValue("");
+  await editor.getByLabel("Sandbox 修订").focus();
   await editor.getByLabel("Sandbox 修订").selectOption(original);
   await expect(panel.getByText(/当前绑定：.*revision 1/)).toBeVisible();
   expect(

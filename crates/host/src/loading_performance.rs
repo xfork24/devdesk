@@ -143,31 +143,3 @@ fn configuration_load_server() {
             .unwrap();
     });
 }
-
-#[test]
-#[ignore = "explicit source scaling profile"]
-fn configuration_source_scaling() {
-    let w = Workspace::loading_profile(&dataset()).unwrap();
-    let snapshot = w.global.configuration_snapshot().unwrap();
-    let role = snapshot.records("role").next().unwrap().clone();
-    for count in [200, 2000, 10000] {
-        let mut state = snapshot.state.as_ref().clone();
-        for n in state.governance.len()..count {
-            let mut row = role.clone();
-            row.definition_id = format!("scaling-role-{n}");
-            row.id = format!("{}:1", row.definition_id);
-            row.version = 1;
-            state.governance.push(row);
-        }
-        let started = Instant::now();
-        let catalog = devdesk_core::ConfigurationCatalogSnapshot::new(state, 1, true).unwrap();
-        let construction = started.elapsed().as_secs_f64() * 1000.0;
-        let started = Instant::now();
-        let result =
-            devdesk_core::configuration_index(&catalog, &json!({"limit":1000}), None).unwrap();
-        println!(
-            "{}",
-            json!({"sources":count,"construction_ms":construction,"index_ms":started.elapsed().as_secs_f64()*1000.0,"page_bytes":result.to_string().len(),"total":result["total"]})
-        );
-    }
-}

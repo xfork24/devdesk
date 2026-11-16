@@ -1,6 +1,6 @@
 //! A disposable, configuration-only read model. Execution facts remain in EngineeringStore.
 use crate::*;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub const CATALOG_RECORD_KINDS: &[&str] = &[
     "project_configuration",
@@ -42,6 +42,11 @@ pub struct ConfigurationCatalogSnapshot {
     kinds: BTreeMap<String, Vec<usize>>,
     heads: BTreeMap<(String, String), u64>,
     origins: BTreeMap<String, Value>,
+    current: BTreeSet<String>,
+    all_heads: BTreeMap<(String, String), u64>,
+    retired_identities: BTreeSet<String>,
+    retired_sources: BTreeSet<(String, String)>,
+    archived_standards: BTreeMap<String, bool>,
     health: std::sync::OnceLock<Result<Value>>,
     memo: std::sync::Mutex<crate::configuration_queries::QueryMemo>,
 }
@@ -62,9 +67,15 @@ impl ConfigurationCatalogSnapshot {
             kinds: BTreeMap::new(),
             heads: BTreeMap::new(),
             origins: BTreeMap::new(),
+            current: Default::default(),
+            all_heads: Default::default(),
+            retired_identities: Default::default(),
+            retired_sources: Default::default(),
+            archived_standards: Default::default(),
             health: Default::default(),
             memo: Default::default(),
         };
+        let mut members: BTreeMap<(&str, &str), &ConfigurationRecord> = BTreeMap::new();
         for (index, record) in snapshot.state.governance.iter().enumerate() {
             snapshot.references.insert(record.id.clone(), index);
             snapshot
@@ -72,15 +83,65 @@ impl ConfigurationCatalogSnapshot {
                 .entry(record.r#type.clone())
                 .or_default()
                 .push(index);
-            if template_record_current(&snapshot.state, record) {
+            let head = snapshot
+                .all_heads
+                .entry((record.r#type.clone(), record.definition_id.clone()))
+                .or_default();
+            *head = (*head).max(record.version);
+            if record.r#type == "template_catalog_member" {
+                let key = (
+                    record.definition_id.as_str(),
+                    record.data["kind"].as_str().unwrap_or(""),
+                );
+                if members.get(&key).is_none_or(|old| {
+                    old.data["generation"].as_u64().unwrap_or(0)
+                        <= record.data["generation"].as_u64().unwrap_or(0)
+                }) {
+                    members.insert(key, record);
+                }
+            }
+            if matches!(
+                record.r#type.as_str(),
+                "role_retirement" | "agent_instance_retirement"
+            ) {
+                snapshot
+                    .retired_identities
+                    .insert(record.definition_id.clone());
+            }
+            if record.r#type == "standard_archive" {
+                snapshot.archived_standards.insert(
+                    record.definition_id.clone(),
+                    record.data["archived"] == true,
+                );
+            }
+        }
+        snapshot.retired_sources = snapshot
+            .records("configuration_retirement")
+            .filter_map(|record| snapshot.record(&record.definition_id))
+            .map(|source| (source.r#type.clone(), source.definition_id.clone()))
+            .collect();
+        let generation = template_catalog_generation(&snapshot.state);
+        for record in &snapshot.state.governance {
+            let member = members
+                .get(&(record.id.as_str(), template_member_kind(&record.r#type)))
+                .copied();
+            let current = if template_definition_kind(&record.r#type) {
+                member
+                    .and_then(|m| m.data["generation"].as_u64())
+                    .unwrap_or(TEMPLATE_INITIAL_GENERATION)
+                    == generation
+            } else {
+                template_record_current(&snapshot.state, record)
+            };
+            if current {
+                snapshot.current.insert(record.id.clone());
                 let head = snapshot
                     .heads
                     .entry((record.r#type.clone(), record.definition_id.clone()))
                     .or_default();
                 *head = (*head).max(record.version);
             }
-            let member = template_catalog_member(&snapshot.state, record);
-            let origin = if !template_record_current(&snapshot.state, record) {
+            let origin = if !current {
                 "archived"
             } else if let Some(member) = member.filter(|m| m.data["template_key"].is_string()) {
                 if member.data["source_hash"] == template_source_hash(record) {
@@ -116,6 +177,25 @@ impl ConfigurationCatalogSnapshot {
         self.heads
             .get(&(record.r#type.clone(), record.definition_id.clone()))
             .is_none_or(|version| record.version >= *version)
+    }
+    pub fn is_current(&self, record: &ConfigurationRecord) -> bool {
+        self.current.contains(&record.id)
+    }
+    pub fn is_head(&self, record: &ConfigurationRecord) -> bool {
+        self.all_heads
+            .get(&(record.r#type.clone(), record.definition_id.clone()))
+            .is_none_or(|version| record.version >= *version)
+    }
+    pub fn is_retired(&self, record: &ConfigurationRecord) -> bool {
+        self.retired_identities.contains(&record.definition_id)
+            || self
+                .retired_sources
+                .contains(&(record.r#type.clone(), record.definition_id.clone()))
+    }
+    pub fn is_archived(&self, record: &ConfigurationRecord) -> bool {
+        !self.is_current(record)
+            || (record.r#type == "standard"
+                && self.archived_standards.get(&record.id) == Some(&true))
     }
     pub fn origin(&self, reference: &str) -> Option<&Value> {
         self.origins.get(reference)

@@ -2,7 +2,8 @@ import { QueryCache } from "./query-cache";
 import type { Request, RequestOptions, Row } from "./components/rpc-types";
 
 const queries = new QueryCache();
-const models = new QueryCache(16, 1024 * 1024);
+// Discovery belongs to this bounded background service, including while a page is detached.
+const models = new QueryCache(16, 1024 * 1024, true);
 const modelListeners = new Set<() => void>();
 const modelFailures = new Map<string, { until: number; error: unknown }>();
 export const getModelEpoch = () => modelEpoch;
@@ -14,6 +15,7 @@ export function subscribeModels(listener: () => void) {
 }
 const listeners = new Set<() => void>();
 const projects = new Map<string, number>();
+const sourceEpochs = new Map<string, number>();
 let identity = "",
   host = "",
   globalVersion = "",
@@ -40,10 +42,30 @@ export function invalidateModelCatalogs() {
   modelFailures.clear();
   modelListeners.forEach((listener) => listener());
 }
+function outdatedVersion(version: Row, project?: string) {
+  return (
+    host === version?.host &&
+    (Number(version.global) < Number(globalVersion) ||
+      (!!project &&
+        version.project > 0 &&
+        version.project < (projects.get(project) || 0)) ||
+      Object.entries(version.source_epochs || {}).some(
+        ([id, epoch]) => Number(epoch) < (sourceEpochs.get(id) || 0),
+      ))
+  );
+}
+export function configurationResponseOutdated(value: Row, params: Row) {
+  return (
+    !!value?.catalog_version &&
+    outdatedVersion(
+      value.catalog_version,
+      value.active_project_id || params.project_id,
+    )
+  );
+}
 export function observeConfigurationVersion(version: Row, project?: string) {
   if (!version?.host) return;
-  if (host === version.host && Number(version.global) < Number(globalVersion))
-    return;
+  if (outdatedVersion(version, project)) return;
   const changed =
     host !== version.host ||
     globalVersion !== String(version.global) ||
@@ -55,7 +77,11 @@ export function observeConfigurationVersion(version: Row, project?: string) {
     resetGeneration = true;
     invalidateModelCatalogs();
     projects.clear();
+    sourceEpochs.clear();
   }
+  Object.entries(version.source_epochs || {}).forEach(([id, epoch]) =>
+    sourceEpochs.set(id, Number(epoch)),
+  );
   host = version.host;
   globalVersion = String(version.global);
   sources = version.project_sources || "";
@@ -153,8 +179,24 @@ export async function readConfiguration<T>(
   throw new Error("配置已变化，请重试");
 }
 export function configurationMutation(method: string) {
+  if (
+    [
+      "preview",
+      "preflight",
+      "browse",
+      "export",
+      "read",
+      "list",
+      "status",
+      "check",
+      "validate",
+      "diff",
+      "resolve",
+    ].includes(method.split(".").at(-1) || "")
+  )
+    return false;
   return (
-    /^(configuration|project|permission|integration|role|skill|spec|standard|capability|agent|model|harness|sandbox|tool|delivery_type)\./.test(
+    /^(configuration|project|permission|integration|role|skill|spec|standard|capability|agent|model|model_provider|model_catalog|harness|sandbox|tool|delivery_type)\./.test(
       method,
     ) ||
     /^workflow\.(draft\.|create|revise|publish|delete|retire|change\.apply)/.test(
@@ -163,6 +205,7 @@ export function configurationMutation(method: string) {
   );
 }
 export function modelMutation(method: string) {
+  if (method.endsWith("status")) return false;
   return /^(credentials\.(configure|authorize)|codex\.auth\.(start|cancel|logout|check)|runtime\.|harness\.|model_provider\.|config\.templates\.)/.test(
     method,
   );
@@ -194,6 +237,7 @@ export async function readModelCatalog(
     provider,
     endpoint || "",
     account,
+    installationId || "",
   ]);
   if (options.fresh) {
     models.clear();
@@ -278,7 +322,9 @@ export function prefetchConfiguration(
   const key = `${scope(params)}:index:${kind || "all"}`;
   if (prefetchQueue.size >= 2 || prefetchQueue.has(key)) return;
   prefetchQueue.set(key, () =>
-    request("query.configuration_index", params, { prefetch: true }),
+    key === `${scope(params)}:index:${kind || "all"}`
+      ? request("query.configuration_index", params, { prefetch: true })
+      : Promise.resolve(),
   );
   setTimeout(drainPrefetch, 150);
 }

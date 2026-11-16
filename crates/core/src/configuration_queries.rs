@@ -1,5 +1,4 @@
 //! Disposable query projections. Exact source revisions remain the authority for editing and execution.
-use crate::standards::standard_archived;
 use crate::*;
 use std::{
     collections::{BTreeMap, VecDeque},
@@ -79,12 +78,10 @@ pub fn configuration_summary(
     if !catalog.is_current_head(r) {
         row["head"] = json!(false);
     }
-    if !template_record_current(&catalog.state, r)
-        || (r.r#type == "standard" && standard_archived(&catalog.state, &r.id))
-    {
+    if catalog.is_archived(r) {
         row["archived"] = json!(true);
     }
-    if configuration_retired(&catalog.state, r) {
+    if catalog.is_retired(r) {
         row["retired"] = json!(true);
     }
     row["origin"] = catalog
@@ -103,6 +100,7 @@ pub fn configuration_selection_record(r: &ConfigurationRecord) -> Value {
     let mut row = json!({"id":r.id,"type":r.r#type,"definition_id":r.definition_id,"name":r.name,"scope":r.scope,"version":r.version,"revision":r.revision,"hash":r.content_hash});
     let data: serde_json::Map<String, Value> = [
         "provider",
+        "harness_provider",
         "model",
         "runtime_version",
         "target_kind",
@@ -138,20 +136,12 @@ pub fn configuration_index(
         .filter(|r| p["kind"].as_str().is_none_or(|kind| r.r#type == kind))
         .filter(|r| configuration_visible(state, r, project))
         .filter(|r| p.get("scope").is_none_or(|scope| json!(r.scope) == *scope))
-        .filter(|r| {
-            p["include_archived"] == true
-                || (template_record_current(state, r)
-                    && (r.r#type != "standard" || !standard_archived(state, &r.id)))
-        })
-        .filter(|r| p["include_deleted"] == true || !configuration_retired(state, r))
+        .filter(|r| p["include_archived"] == true || !catalog.is_archived(r))
+        .filter(|r| p["include_deleted"] == true || !catalog.is_retired(r))
         .filter(|r| {
             p["include_history"] == true
                 || if p["include_archived"] == true {
-                    !state.governance.iter().any(|n| {
-                        n.r#type == r.r#type
-                            && n.definition_id == r.definition_id
-                            && n.version > r.version
-                    })
+                    catalog.is_head(r)
                 } else {
                     catalog.is_current_head(r)
                 }

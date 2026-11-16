@@ -238,6 +238,44 @@ async fn static_file(request: Request) -> Response {
         None => (StatusCode::NOT_FOUND, "Not found").into_response(),
     }
 }
+thread_local! {
+    static READ_CANCELLATION: std::cell::RefCell<Option<Arc<AtomicBool>>> = const { std::cell::RefCell::new(None) };
+}
+struct ReadCancellation;
+impl ReadCancellation {
+    fn enter(flag: Option<Arc<AtomicBool>>) -> Self {
+        READ_CANCELLATION.with(|slot| *slot.borrow_mut() = flag);
+        Self
+    }
+}
+impl Drop for ReadCancellation {
+    fn drop(&mut self) {
+        READ_CANCELLATION.with(|slot| slot.borrow_mut().take());
+    }
+}
+fn check_read_cancelled() -> devdesk_domain::Result<()> {
+    if READ_CANCELLATION.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .is_some_and(|flag| flag.load(Ordering::Relaxed))
+    }) {
+        devdesk_adapters::performance::record("rpc.cancelled", 0.0);
+        return Err(devdesk_domain::err("cancelled", "读取已取消"));
+    }
+    Ok(())
+}
+#[test]
+fn cancelled_read_scope_is_checked_before_compilation_and_cleared_afterwards() {
+    let flag = Arc::new(AtomicBool::new(false));
+    {
+        let _scope = ReadCancellation::enter(Some(flag.clone()));
+        assert!(check_read_cancelled().is_ok());
+        flag.store(true, Ordering::Relaxed);
+        assert_eq!(check_read_cancelled().unwrap_err().code, "cancelled");
+    }
+    assert!(check_read_cancelled().is_ok());
+}
+
 // HTTP cancellation can skip queued read work. Already-running synchronous compilers
 // finish normally; mutating commands always retain their existing completion semantics.
 struct ReadLifetime(Arc<AtomicBool>);
@@ -279,6 +317,7 @@ async fn rpc(
     let fallback_id = id.clone();
     let result = tokio::task::spawn_blocking(move || {
         let trace = measure.then(devdesk_adapters::performance::Trace::start);
+        let _read_scope=ReadCancellation::enter(read.then(||cancelled.clone()));
         devdesk_adapters::performance::record("worker.queue_wait", submitted.elapsed().as_secs_f64()*1000.0);
         let result = {
             let _span = devdesk_adapters::performance::Span::new("rpc.dispatch");
@@ -291,7 +330,7 @@ async fn rpc(
         };
         let body = {
             let _span = devdesk_adapters::performance::Span::new("rpc.serialize");
-            serde_json::to_vec(&response).expect("JSON RPC value")
+            if read && cancelled.load(Ordering::Relaxed) { Vec::new() } else { serde_json::to_vec(&response).expect("JSON RPC value") }
         };
         let milliseconds = submitted.elapsed().as_secs_f64()*1000.0;
         if let Some(trace) = trace {
