@@ -113,7 +113,8 @@ try {
   for (const provider of ['zai-coding-cn', 'minimax-cn']) {
     const secret = randomBytes(24).toString('hex');
     secrets.push(secret);
-    const saved = await rpc('credentials.configure', { provider: 'dsh', model_provider: provider, api_key: secret });
+    const baseline = await rpc('credentials.status', { model_provider: provider });
+    const saved = await rpc('credentials.configure', { command_id: randomUUID(), expected_revision: baseline.credential_version.revision, provider_ref: baseline.provider_ref, provider: 'dsh', model_provider: provider, api_key: secret });
     references.push(saved.reference);
     providerReferences.set(provider, saved.reference);
     await rpc('credentials.check', { model_provider: provider });

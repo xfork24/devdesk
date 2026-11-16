@@ -80,7 +80,8 @@ try:
     else:
         if args.api_key_file:
             secret = args.api_key_file.read_text().strip()
-            client.rpc("credentials.configure", {"provider":"dsh", "model_provider":args.model_provider, "api_key":secret})
+            baseline = client.rpc("credentials.status", {"model_provider":args.model_provider})
+            client.rpc("credentials.configure", {"command_id":str(uuid.uuid4()), "expected_revision":baseline["credential_version"]["revision"], "provider_ref":baseline["provider_ref"], "provider":"dsh", "model_provider":args.model_provider, "api_key":secret})
             del secret
             args.api_key_file.unlink()
         else:

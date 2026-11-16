@@ -458,7 +458,15 @@ test("真实接入设置偏好、密钥表单与浏览器 OAuth 链接", async (
         json: {
           jsonrpc: "2.0",
           id: request.id,
-          result: { configured: false, storage: "test_vault" },
+          result: {
+            configured: false,
+            storage: "test_vault",
+            credential_version: {
+              resource: { kind: "setting", id: "credentials.dsh.minimax-cn" },
+              revision: 0,
+            },
+            provider_ref: "fixture-provider:1",
+          },
         },
       });
     } else if (request.method === "credentials.configure") {
@@ -467,7 +475,15 @@ test("真实接入设置偏好、密钥表单与浏览器 OAuth 链接", async (
         json: {
           jsonrpc: "2.0",
           id: request.id,
-          result: { configured: true, storage: "test_vault" },
+          result: {
+            configured: true,
+            storage: "test_vault",
+            credential_version: {
+              resource: { kind: "setting", id: "credentials.dsh.minimax-cn" },
+              revision: 1,
+            },
+            provider_ref: "fixture-provider:1",
+          },
         },
       });
     } else await route.continue();

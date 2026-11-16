@@ -69,3 +69,101 @@ test("两个前端修改同一设置时拒绝过期版本并保留草稿", async
     await other.close();
   }
 });
+
+test("凭据冲突保留密钥草稿、原始服务商修订和命令身份", async ({
+  page,
+  browser,
+}) => {
+  const other = await browser.newContext();
+  let version = 0;
+  let statusReads = 0;
+  const submissions: any[] = [];
+  const configure = async (target: Page) => {
+    await target.route("**/rpc", async (route) => {
+      const call = route.request().postDataJSON();
+      if (call.method === "credentials.status") {
+        statusReads++;
+        return route.fulfill({
+          json: {
+            jsonrpc: "2.0",
+            id: call.id,
+            result: {
+              configured: version > 0,
+              available: true,
+              storage: "test_vault",
+              auth_kind: "api_key",
+              provider_ref: `fixture-provider:${version + 1}`,
+              credential_version: {
+                resource: { kind: "setting", id: "credentials.dsh.minimax-cn" },
+                revision: version,
+              },
+            },
+          },
+        });
+      }
+      if (call.method !== "credentials.configure") return route.fallback();
+      submissions.push(call.params);
+      if (call.params.expected_revision !== version)
+        return route.fulfill({
+          json: {
+            jsonrpc: "2.0",
+            id: call.id,
+            error: {
+              message: "credential binding changed",
+              data: { code: "revision_conflict" },
+            },
+          },
+        });
+      version++;
+      return route.fulfill({
+        json: {
+          jsonrpc: "2.0",
+          id: call.id,
+          result: {
+            configured: true,
+            available: true,
+            storage: "test_vault",
+            auth_kind: "api_key",
+            provider_ref: call.params.provider_ref,
+            credential_version: {
+              resource: { kind: "setting", id: "credentials.dsh.minimax-cn" },
+              revision: version,
+            },
+          },
+        },
+      });
+    });
+    await settings(target);
+  };
+  try {
+    const second = await other.newPage();
+    await configure(page);
+    await configure(second);
+    const firstSecret = page.getByLabel("配置或更换 API key", { exact: true });
+    await firstSecret.fill("FIRST_DUMMY_CREDENTIAL");
+    await second
+      .getByLabel("配置或更换 API key", { exact: true })
+      .fill("SECOND_DUMMY_CREDENTIAL");
+    await second.getByRole("button", { name: "保存密钥", exact: true }).click();
+    await expect(
+      second.getByLabel("配置或更换 API key", { exact: true }),
+    ).toHaveValue("");
+    const before = statusReads;
+    await page.evaluate(() =>
+      window.dispatchEvent(new Event("devdesk:runtime-options-changed")),
+    );
+    await expect.poll(() => statusReads).toBeGreaterThan(before);
+    await expect(firstSecret).toHaveValue("FIRST_DUMMY_CREDENTIAL");
+    await page.getByRole("button", { name: "保存密钥", exact: true }).click();
+    await expect(page.getByText(/revision_conflict/)).toBeVisible();
+    await expect(firstSecret).toHaveValue("FIRST_DUMMY_CREDENTIAL");
+    await page.getByRole("button", { name: "保存密钥", exact: true }).click();
+    await expect.poll(() => submissions.length).toBe(3);
+    expect(submissions[1].expected_revision).toBe(0);
+    expect(submissions[1].provider_ref).toBe("fixture-provider:1");
+    expect(submissions[2]).toEqual(submissions[1]);
+    expect(version).toBe(1);
+  } finally {
+    await other.close();
+  }
+});

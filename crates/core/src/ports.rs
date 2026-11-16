@@ -10,6 +10,23 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
 
+#[derive(Debug)]
+pub struct CredentialCandidate {
+    pub reference: String,
+    pub status: Value,
+}
+/// A stable candidate identity is immutable. Implementations inspect an existing
+/// candidate before storing, verify its exact content, and reconcile unknown I/O.
+/// They may never overwrite another candidate or publish the authoritative binding.
+pub trait CredentialCandidates: Send + Sync {
+    fn ensure(
+        &self,
+        provider: &devdesk_domain::ProviderFacts,
+        candidate_id: &str,
+        secret: &str,
+    ) -> Result<CredentialCandidate>;
+}
+
 /// Base contract for an agent runtime: configuration, polling, cancellation acknowledgement and recovery.
 /// Implementations return provider facts; the engine decides whether to accept them.
 pub trait Harness: Send + Sync {

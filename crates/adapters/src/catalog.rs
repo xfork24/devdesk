@@ -19,22 +19,10 @@ impl GlobalStore {
     }
     pub fn model_credential_reference(&self, provider: &ProviderFacts) -> Result<Option<String>> {
         Ok(setting(
-            &*self.connection.lock().map_err(storage)?,
+            &*self.connection.read()?,
             &format!("credentials.dsh.{}", provider.id),
         )?
         .and_then(|v| v.as_str().map(str::to_owned)))
-    }
-    pub fn set_model_credential_reference(
-        &self,
-        provider: &ProviderFacts,
-        reference: &str,
-    ) -> Result<()> {
-        require(provider.requires_key, "本地连接无需凭据")?;
-        put_setting(
-            &*self.connection.lock().map_err(storage)?,
-            &format!("credentials.dsh.{}", provider.id),
-            &json!(reference),
-        )
     }
     pub fn open(path: &Path) -> Result<Self> {
         factory_bundle::initialize()?;

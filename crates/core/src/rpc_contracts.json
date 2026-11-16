@@ -358,9 +358,10 @@
       "method": "credentials.configure",
       "access": "mutation",
       "scope": "global",
-      "precondition": "intent_revision",
+      "precondition": "credential_binding_and_provider_head",
       "sites": [
-        "crates/host/src/model_providers.rs"
+        "crates/core/src/credential_updates.rs",
+        "crates/host/src/workspace.rs"
       ]
     },
     {

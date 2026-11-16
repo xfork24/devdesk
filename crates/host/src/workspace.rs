@@ -276,6 +276,22 @@ impl Workspace {
             .map(|outcome| outcome.value)
     }
     pub fn dispatch_with_receipt(&self, method: &str, params: Value) -> Result<RpcOutcome> {
+        if method == "credentials.configure" {
+            let command = devdesk_core::credential_updates::parse(&params)?;
+            let vault = credentials::CredentialVault::new(Path::new(&self.global.root()))?;
+            let receipt = devdesk_core::credential_updates::configure(
+                self.global.as_ref(),
+                &vault,
+                &command,
+                &InvocationContext::human(None),
+            )?;
+            return Ok(RpcOutcome {
+                value: receipt.result,
+                commit: Some(
+                    json!({"namespace":self.global.namespace(),"versions":receipt.versions,"cursor":receipt.cursor}),
+                ),
+            });
+        }
         if method == "query.execution_workspace" {
             return self.execution_workspace(&params).map(|value| RpcOutcome {
                 value,

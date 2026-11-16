@@ -55,6 +55,11 @@ test("DSH 服务商凭据独立，Ollama 免密且模型草稿可保存", async 
         id: call.id,
         result: {
           model_provider: provider,
+          credential_version: {
+            resource: { kind: "setting", id: `credentials.dsh.${provider}` },
+            revision: configured.includes(provider) ? 1 : 0,
+          },
+          provider_ref: `fixture-provider-${provider}:1`,
           configured: configured.includes(provider),
           available: true,
           storage: "fixture_vault",

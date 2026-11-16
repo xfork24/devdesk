@@ -36,6 +36,8 @@ HTTP JSON-RPC 将 `receipt.result` 放在原有 `result` 字段，把 `{namespac
 
 运行安装登记是另一项已独立切换的资源族：安装表与 `runtime.seal.*` 内容封存不属于旧 EngineeringState 的读写集合。公共创建明确使用资源版本 0，内部恢复另验证保留版本、原内容封存与行不存在；其他安装准备/认证修改尚未完成。两侧共享的事件现在统一由 SQLite 分配提交 ID，并且只追加；幂等操作由主键与原指纹保护。交错测试同时占用旧全局 writer、提交设置/安装并追加旧事件，确认没有业务锁等待或事件覆盖。该证明不能用于允许旧闭包和新 CAS 同时修改工程/控制事实。
 
+模型凭据绑定 `credentials.dsh.*` 及私有 `credential.intent.*` 设置键也已独立切换；这些键不在旧 EngineeringState 保存集合内。configure 的候选意图与最终绑定均由资源提交完成，回执绑定原 Actor/参数摘要，候选核对位于事务外。服务商确切源与 head 加入读集合，发布不刷新原始版本；其余凭据/授权及全局目录入口不能据此并行混用工程写入。
+
 ## 错误和重试
 
 缺少前置条件为 `precondition_required`，过期资源版本为 `revision_conflict`，目录代次冲突为 `catalog_changed`；作用域错误不回退到其他库。SQLite 引擎竞争为 `storage_busy`，与业务版本冲突区分。

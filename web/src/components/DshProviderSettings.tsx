@@ -14,7 +14,7 @@ import {
   subscribeModels,
   readModelCatalog,
 } from "../configuration-client";
-import { type Request, type Row } from "./rpc-types";
+import { type Request, type Row, type ResourceVersion } from "./rpc-types";
 
 export type ModelProvider = {
   id: string;
@@ -27,6 +27,8 @@ export type ModelProvider = {
   models: { id: string; context_window?: number; max_output_tokens?: number }[];
 };
 type Status = {
+  credential_version?: ResourceVersion;
+  provider_ref?: string;
   configured: boolean;
   available: boolean;
   storage: string;
@@ -48,6 +50,11 @@ export function DshProviderSettings({ request }: { request: Request }) {
   const [status, setStatus] = useState<Status>();
   const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState(false);
+  const modelEpoch = useSyncExternalStore(subscribeModels, getModelEpoch);
+  const draft = useRef<
+    | { version: ResourceVersion; providerRef: string; commandId: string }
+    | undefined
+  >(undefined);
 
   useEffect(() => {
     let active = true;
@@ -78,7 +85,7 @@ export function DshProviderSettings({ request }: { request: Request }) {
     return () => {
       active = false;
     };
-  }, [request, provider, setMessage]);
+  }, [request, provider, setMessage, modelEpoch]);
   async function save(event: FormEvent) {
     captureFeedback();
 
@@ -87,19 +94,25 @@ export function DshProviderSettings({ request }: { request: Request }) {
     setBusy(true);
     setMessage("");
     try {
+      const baseline = draft.current;
+      if (!baseline) throw new Error("缺少凭据的原始版本，请重新读取状态");
       setStatus(
         await request("credentials.configure", {
           provider: "dsh",
           model_provider: provider,
+          command_id: baseline.commandId,
+          expected_revision: baseline.version.revision,
+          provider_ref: baseline.providerRef,
           api_key: secret,
         }),
       );
+      setSecret("");
+      draft.current = undefined;
       window.dispatchEvent(new Event("devdesk:runtime-options-changed"));
       setMessage("已保存到系统凭据库");
     } catch (error) {
       setMessage(String(error));
     } finally {
-      setSecret("");
       endFeedback();
       setBusy(false);
     }
@@ -141,6 +154,7 @@ export function DshProviderSettings({ request }: { request: Request }) {
               captureFeedback();
 
               setProvider(event.target.value);
+              draft.current = undefined;
               setSecret("");
               setStatus(undefined);
               setMessage("");
@@ -235,14 +249,35 @@ export function DshProviderSettings({ request }: { request: Request }) {
                 value={secret}
                 onChange={(event) => {
                   captureFeedback();
-                  return setSecret(event.target.value);
+                  const value = event.target.value;
+                  if (!value) draft.current = undefined;
+                  else {
+                    const version =
+                      draft.current?.version || status?.credential_version;
+                    const providerRef =
+                      draft.current?.providerRef || status?.provider_ref;
+                    if (version && providerRef)
+                      draft.current = {
+                        version,
+                        providerRef,
+                        commandId: crypto.randomUUID(),
+                      };
+                  }
+                  setSecret(value);
                 }}
-                disabled={busy}
+                disabled={
+                  busy ||
+                  (!draft.current &&
+                    (!status?.credential_version || !status?.provider_ref))
+                }
                 minLength={8}
                 maxLength={4096}
                 required
               />
-              <ActionButton type="submit" disabled={busy || secret.length < 8}>
+              <ActionButton
+                type="submit"
+                disabled={busy || secret.length < 8 || !draft.current}
+              >
                 保存密钥
               </ActionButton>
             </ActionForm>

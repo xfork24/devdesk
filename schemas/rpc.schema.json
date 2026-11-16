@@ -295,7 +295,11 @@
     "CredentialConfiguration": {
       "type": "object",
       "required": [
+        "command_id",
+        "expected_revision",
         "provider",
+        "model_provider",
+        "provider_ref",
         "api_key"
       ],
       "properties": {
@@ -306,14 +310,36 @@
           "type": "string",
           "minLength": 8,
           "maxLength": 4096,
-          "writeOnly": true
+          "writeOnly": true,
+          "pattern": "^[!-~]+$"
         },
         "model_provider": {
-          "enum": [
-            "deepseek",
-            "zai-coding-cn",
-            "minimax-cn"
-          ]
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "command_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775806
+        },
+        "provider_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "project_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 1024
         }
       },
       "additionalProperties": false

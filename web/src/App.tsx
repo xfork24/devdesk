@@ -623,6 +623,17 @@ function App() {
       try {
         const value: Row = JSON.parse(message.data);
         observeConfigurationVersion(value.configuration_version, projectId);
+        if (value.kind === "resource.changed") {
+          const versions: Row[] = JSON.parse(value.detail);
+          if (
+            versions.some(
+              (version) =>
+                version.resource?.kind === "setting" &&
+                version.resource.id.startsWith("credentials.dsh."),
+            )
+          )
+            invalidateModelCatalogs();
+        }
         if (
           value.kind === "stream.reset" ||
           /^(project|repository|workspace|runtime|settings)\./.test(

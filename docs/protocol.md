@@ -171,7 +171,11 @@ query.project_configuration 附带 pinned_records 与 uses_archived_templates，
 
 `query.model_providers` 返回服务商、Harness、DSH 路由、协议、端点、认证类型与固定目录候选。`models.list` 通过 `model_provider` 选择目录；Ollama 可提供 endpoint，并由 Host 查询本机服务；DeepSeek 读取账号目录，智谱和 MiniMax 返回固定 DSH 版本的内嵌支持目录。候选不自动保存，返回值显式区分目录来源与未验证的推理。
 
-`credentials.configure/status/check/authorize` 增加 model_provider；省略时默认 DeepSeek。configure 保留 provider=dsh，api_key 仅用于 vault 写入，不进入普通查询。Ollama 状态 auth_kind=none，不支持存储或授权 key。
+`credentials.status/check/authorize` 用 model_provider 选择服务商，省略时默认 DeepSeek。status 返回 credential_version（不透明引用资源的版本）与 provider_ref（确切服务商源修订）。`credentials.configure` 明确要求 `{command_id,expected_revision,provider:"dsh",model_provider,provider_ref,api_key}`；api_key 只进入事务外系统凭据库，不保存到意图、事件或回执。Ollama 状态 auth_kind=none，不支持存储或授权 key。
+
+configure 先按原凭据版本与服务商源 head 保存候选意图，再核对稳定身份的不可变 vault 候选，最后原子发布引用、完成意图与幂等回执。候选按原命令/Actor/参数摘要确定；未知存储结果先检查原候选，不创建另一个随机候选或覆盖旧引用。服务商源或引用在外部调用期间改变时发布冲突，旧绑定保持；旧冻结执行仍使用原引用。成功响应包含 meta.commit，已完成的原命令即使当前源/引用后来改变也返回原回执，不重复访问 vault。该流程只迁移 configure；显式授权、OAuth 与其他凭据入口仍在剩余 P2 范围内。
+
+Web 在开始密钥编辑时捕获版本和服务商源，状态刷新不替换草稿基线；冲突保留内存中的输入和命令身份，成功后清空密钥。凭据引用的 resource.changed 事件失效模型目录并刷新显示状态，意图准备不触发模型目录失效。
 
 
 RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服务商、路由、协议、声明/worker 地址、容量和生成 profile 的摘要；credential_ref 仍是唯一凭据引用。所选服务商需要的连接快照不完整时拒绝。Model 的 context_window/max_output_tokens 为容量声明，parameters.max_tokens 是实际请求预算。

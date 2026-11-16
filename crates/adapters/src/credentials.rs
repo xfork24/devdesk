@@ -179,12 +179,24 @@ impl CredentialVault {
     }
     /// Account namespaces come from the provider's published facts, never a code roster.
     pub fn configure_model(&self, facts: &ProviderFacts, secret: &str) -> Result<CredentialStatus> {
+        self.write_model_candidate(facts, &id(), secret)
+    }
+    fn write_model_candidate(
+        &self,
+        facts: &ProviderFacts,
+        candidate_id: &str,
+        secret: &str,
+    ) -> Result<CredentialStatus> {
         require(facts.requires_key, "本地服务无需保存 API key")?;
+        require(
+            uuid::Uuid::parse_str(candidate_id).is_ok(),
+            "凭据候选身份无效",
+        )?;
         require(
             (8..=4096).contains(&secret.len()) && secret.bytes().all(|b| b.is_ascii_graphic()),
             "API key 格式无效",
         )?;
-        let account = format!("{}{}", facts.credential_account, id());
+        let account = format!("{}{candidate_id}", facts.credential_account);
         #[cfg(target_os = "macos")]
         crate::credentials_macos::call("store", &self.service, &account, Some(secret))?;
         #[cfg(target_os = "linux")]
@@ -221,6 +233,67 @@ impl CredentialVault {
         ));
         #[allow(unreachable_code)]
         Ok(self.model_status_value(facts, &account, true))
+    }
+    fn candidate_secret(&self, account: &str, reference: &str) -> Result<Option<Vec<u8>>> {
+        #[cfg(target_os = "macos")]
+        {
+            let configured = crate::credentials_macos::call(
+                "status",
+                &self.service,
+                account,
+                None,
+            )?["configured"]
+                .as_bool()
+                .ok_or_else(|| err("credential_store", "凭据助手缺少存在性结果"))?;
+            if !configured {
+                return Ok(None);
+            }
+            self.read_reference(reference).map(Some)
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let _ = reference;
+            let mut command = std::process::Command::new(secret_tool()?);
+            command.args(["lookup", "service", &self.service, "account", account]);
+            let mut output =
+                crate::process::capture_command(command, std::time::Duration::from_secs(15), None)
+                    .map_err(|_| {
+                        err(
+                            "authentication_required",
+                            "无法核对凭据候选，请检查桌面凭据库",
+                        )
+                    })?;
+            // GNOME libsecret's lookup returns 1 without output only for a missing
+            // value; errors emit stderr. Never turn an unknown failure into absence.
+            // https://github.com/GNOME/libsecret/blob/main/tool/secret-tool.c
+            if output.code == 1
+                && !output.truncated
+                && output.stdout.is_empty()
+                && output.stderr.is_empty()
+            {
+                return Ok(None);
+            }
+            require(
+                output.code == 0 && !output.truncated,
+                "无法核对凭据候选，请检查桌面凭据库",
+            )?;
+            while output
+                .stdout
+                .last()
+                .is_some_and(|b| *b == b'\n' || *b == b'\r')
+            {
+                output.stdout.pop();
+            }
+            Ok(Some(output.stdout))
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        {
+            let _ = (account, reference);
+            Err(err(
+                "credential_store_unavailable",
+                "系统没有受支持的凭据库",
+            ))
+        }
     }
     pub fn status(
         &self,
@@ -419,6 +492,54 @@ impl CredentialVault {
         Self::new(dataset)?.authorize_interactively(reference)
     }
 }
+impl devdesk_core::credential_updates::CredentialCandidates for CredentialVault {
+    fn ensure(
+        &self,
+        facts: &ProviderFacts,
+        candidate_id: &str,
+        secret: &str,
+    ) -> Result<devdesk_core::credential_updates::CredentialCandidate> {
+        require(
+            uuid::Uuid::parse_str(candidate_id).is_ok(),
+            "凭据候选身份无效",
+        )?;
+        let account = format!("{}{candidate_id}", facts.credential_account);
+        let reference = format!("{}:{account}", self.service);
+        ensure_candidate_contents(
+            secret,
+            || self.candidate_secret(&account, &reference),
+            || {
+                self.write_model_candidate(facts, candidate_id, secret)
+                    .map(|_| ())
+            },
+            || self.read_reference(&reference),
+        )?;
+        Ok(devdesk_core::credential_updates::CredentialCandidate {
+            reference,
+            status: serde_json::to_value(self.model_status_value(facts, &account, true))
+                .map_err(storage)?,
+        })
+    }
+}
+
+fn ensure_candidate_contents(
+    secret: &str,
+    lookup: impl FnOnce() -> Result<Option<Vec<u8>>>,
+    write: impl FnOnce() -> Result<()>,
+    read: impl FnOnce() -> Result<Vec<u8>>,
+) -> Result<()> {
+    let mut stored = match lookup()? {
+        Some(stored) => stored,
+        None => {
+            write()?;
+            read()?
+        }
+    };
+    let matches = stored == secret.as_bytes();
+    stored.fill(0);
+    require(matches, "凭据候选内容与原始意图不符，禁止覆盖")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -492,5 +613,70 @@ mod tests {
         assert!(status.available && status.configured && status.reference.is_empty());
         assert_eq!(status.auth_kind, "none");
         assert!(first.configure_model(&ollama, "FAKE_TEST_VALUE").is_err());
+    }
+    #[test]
+    fn existing_candidates_are_verified_and_unknown_lookups_do_not_write() {
+        ensure_candidate_contents(
+            "test-key",
+            || Ok(Some(b"test-key".to_vec())),
+            || panic!("existing candidate overwritten"),
+            || panic!("unexpected second read"),
+        )
+        .unwrap();
+        assert!(
+            ensure_candidate_contents(
+                "test-key",
+                || Ok(Some(b"another-key".to_vec())),
+                || panic!("conflicting candidate overwritten"),
+                || panic!("unexpected read")
+            )
+            .is_err()
+        );
+        assert_eq!(
+            ensure_candidate_contents(
+                "test-key",
+                || Err(err("authentication_required", "test vault locked")),
+                || panic!("unknown result treated as absence"),
+                || panic!("unexpected read")
+            )
+            .unwrap_err()
+            .code,
+            "authentication_required"
+        );
+    }
+    #[test]
+    fn creation_requires_readback_and_a_lost_write_result_is_reconciled_before_retry() {
+        assert!(
+            ensure_candidate_contents(
+                "test-key",
+                || Ok(None),
+                || Ok(()),
+                || Ok(b"different".to_vec())
+            )
+            .is_err()
+        );
+        let stored = std::cell::Cell::new(false);
+        assert_eq!(
+            ensure_candidate_contents(
+                "test-key",
+                || Ok(None),
+                || {
+                    stored.set(true);
+                    Err(err("needs_reconciliation", "test lost response"))
+                },
+                || panic!("unknown write result automatically read or retried")
+            )
+            .unwrap_err()
+            .code,
+            "needs_reconciliation"
+        );
+        assert!(stored.get());
+        ensure_candidate_contents(
+            "test-key",
+            || Ok(Some(b"test-key".to_vec())),
+            || panic!("unknown effect blindly resent"),
+            || panic!("unexpected second read"),
+        )
+        .unwrap();
     }
 }

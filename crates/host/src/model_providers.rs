@@ -37,6 +37,10 @@ impl Workspace {
     }
 
     fn selected_provider(&self, params: &Value) -> Result<ProviderFacts> {
+        self.selected_provider_record(params)
+            .map(|(_, provider)| provider)
+    }
+    fn selected_provider_record(&self, params: &Value) -> Result<(Id, ProviderFacts)> {
         let id = match params.get("model_provider") {
             None => "deepseek",
             Some(Value::String(p)) => p,
@@ -45,7 +49,6 @@ impl Workspace {
         self.model_provider_facts()?
             .into_iter()
             .find(|(_, p)| p.id == id)
-            .map(|(_, p)| p)
             .ok_or_else(|| err("unsupported_model_provider", "未知模型服务商"))
     }
 }
@@ -58,7 +61,6 @@ impl Workspace {
                 | "query.model_catalog_identity"
                 | "models.list"
                 | "credentials.status"
-                | "credentials.configure"
                 | "credentials.check"
                 | "credentials.authorize"
         ) {
@@ -70,7 +72,6 @@ impl Workspace {
                 "models.list" | "query.model_catalog_identity" => {
                     &["project_id", "model_provider", "endpoint"]
                 }
-                "credentials.configure" => &["project_id", "provider", "model_provider", "api_key"],
                 _ => &["project_id", "provider", "model_provider"],
             };
             require(
@@ -136,7 +137,7 @@ impl Workspace {
                     json!({"identity":identity,"available":available,"installation_id":installation.map(|i|&i.id)}),
                 );
             }
-            let p = self.selected_provider(params)?;
+            let (provider_ref, p) = self.selected_provider_record(params)?;
             if method == "models.list" {
                 return if p.kind == ProviderKind::LocalServer {
                     devdesk_adapters::model_providers::discover_ollama_models(
@@ -179,22 +180,20 @@ impl Workspace {
             }
             let root = PathBuf::from(self.global.root());
             let vault = credentials::CredentialVault::new(&root)?;
-            if method == "credentials.configure" {
-                require(params["provider"] == "dsh", "需要 provider: dsh")?;
-                let secret = params["api_key"]
-                    .as_str()
-                    .ok_or_else(|| err("invalid_params", "需要 API key"))?;
-                let status = vault.configure_model(&p, secret)?;
-                self.global
-                    .set_model_credential_reference(&p, &status.reference)?;
-                return Ok(json!(status));
-            }
-            let status = vault.status_model_reference(
-                &p,
-                self.global.model_credential_reference(&p)?.as_deref(),
-            )?;
+            let key = devdesk_core::credential_updates::binding_key(&p.id);
+            let binding = self
+                .global
+                .read_resources(std::slice::from_ref(&key))?
+                .into_iter()
+                .next()
+                .ok_or_else(|| err("storage", "缺少凭据引用读取结果"))?;
+            let status =
+                vault.status_model_reference(&p, binding.value.as_ref().and_then(Value::as_str))?;
             if method == "credentials.status" {
-                return Ok(json!(status));
+                let mut result = json!(status);
+                result["credential_version"] = json!({"resource":key,"revision":binding.revision});
+                result["provider_ref"] = json!(provider_ref);
+                return Ok(result);
             }
             require(
                 p.requires_key,
@@ -216,6 +215,21 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn credential_publication_admission_rejects_missing_or_stale_guards_before_vault_io() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace =
+            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
+        assert_eq!(workspace.dispatch("credentials.configure",json!({"provider":"dsh","model_provider":"minimax-cn","api_key":"dummy-test-key"})).unwrap_err().code,"precondition_required");
+        let provider = workspace
+            .model_provider_facts()
+            .unwrap()
+            .into_iter()
+            .find(|(_, provider)| provider.id == "minimax-cn")
+            .unwrap()
+            .0;
+        assert_eq!(workspace.dispatch("credentials.configure",json!({"command_id":"stale-credential","expected_revision":100,"provider":"dsh","model_provider":"minimax-cn","provider_ref":provider,"api_key":"dummy-test-key"})).unwrap_err().code,"revision_conflict");
+    }
     #[test]
     fn catalog_configuration_and_keyless_status_do_not_start_a_model() {
         let root = tempfile::tempdir().unwrap();

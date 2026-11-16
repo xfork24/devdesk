@@ -749,3 +749,46 @@ fn execution_workspace_schema_matches_strict_pagination() {
         );
     }
 }
+
+#[test]
+fn credential_publication_requires_original_binding_and_provider_versions() {
+    let validator = SCHEMAS.validator("rpc.schema.json");
+    let params = json!({"command_id":"credential-test","expected_revision":0,"provider":"dsh","model_provider":"custom-provider","provider_ref":"custom-provider:1","api_key":"dummy-test-key"});
+    assert!(validator.is_valid(
+        &json!({"jsonrpc":"2.0","id":1,"method":"credentials.configure","params":params})
+    ));
+    assert!(devdesk_core::credential_updates::parse(&params).is_ok());
+    for key in [
+        "command_id",
+        "expected_revision",
+        "model_provider",
+        "provider_ref",
+        "api_key",
+    ] {
+        let mut missing = params.clone();
+        missing.as_object_mut().unwrap().remove(key);
+        assert!(
+            !validator.is_valid(
+                &json!({"jsonrpc":"2.0","id":1,"method":"credentials.configure","params":missing})
+            ),
+            "{missing}"
+        );
+        assert!(devdesk_core::credential_updates::parse(&missing).is_err());
+    }
+    for (key, value) in [
+        ("expected_revision", json!(-1)),
+        ("provider_ref", serde_json::Value::Null),
+        ("api_key", json!("invalid key with spaces")),
+        ("unexpected", json!(true)),
+    ] {
+        let mut invalid = params.clone();
+        invalid[key] = value;
+        assert!(
+            !validator.is_valid(
+                &json!({"jsonrpc":"2.0","id":1,"method":"credentials.configure","params":invalid})
+            ),
+            "{invalid}"
+        );
+        assert!(devdesk_core::credential_updates::parse(&invalid).is_err());
+    }
+}
