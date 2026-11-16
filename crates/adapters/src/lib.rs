@@ -5,6 +5,7 @@ mod connection_pool;
 mod execution_read;
 pub mod performance;
 mod read_models;
+mod repository_contexts;
 mod resource_commits;
 mod runtime_queries;
 mod scheduling_read;
@@ -420,7 +421,7 @@ fn open_engineering_connection(path: &Path) -> Result<connection_pool::ManagedCo
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
     require(
-        version == 0 || version == 53,
+        version == 0 || version == 54,
         "数据集协议不兼容；请使用新的空数据目录",
     )?;
     connection
@@ -709,6 +710,26 @@ impl EngineeringStore for SqliteStore {
         stage: &'static str,
     ) -> Box<dyn ports::QueryObservation> {
         performance::observe_native(call_id, stage)
+    }
+    fn repository_registration_facts(
+        &self,
+    ) -> Result<devdesk_core::repository_updates::RepositoryRegistrationFacts> {
+        repository_contexts::registration(
+            &self.connection,
+            self.project_id
+                .as_deref()
+                .ok_or_else(|| err("project_required", "仓库上下文需要明确项目"))?,
+        )
+    }
+    fn repository_refresh_facts(
+        &self,
+    ) -> Result<devdesk_core::repository_updates::RepositoryRefreshFacts> {
+        repository_contexts::refresh(
+            &self.connection,
+            self.project_id
+                .as_deref()
+                .ok_or_else(|| err("project_required", "仓库上下文需要明确项目"))?,
+        )
     }
     fn project_metadata(&self) -> Result<Project> {
         execution_read::project(

@@ -99,6 +99,15 @@ impl ReadSet {
     }
 }
 
+/// Storage-maintained tokens for collection predicates, never a mutable project lock.
+/// Callers still read the actual selected facts from the same committed snapshot.
+pub fn repository_collection(project: &str) -> ResourceKey {
+    ResourceKey::new("collection", format!("repository:{project}"))
+}
+pub fn feature_collection(project: &str) -> ResourceKey {
+    ResourceKey::new("collection", format!("features:{project}"))
+}
+
 /// Values are prepared by trusted core use cases; this is not an RPC envelope.
 #[derive(Debug, Clone)]
 pub struct ResourceChange {

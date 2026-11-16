@@ -328,7 +328,75 @@ CREATE INDEX idx_live_execution_session ON executions(session_id) WHERE writer_r
 CREATE INDEX idx_active_turn_status ON turns(status,session_id) WHERE status NOT IN ('queued','completed','failed','cancelled');
 CREATE INDEX idx_work_root_owner ON governance_records(owner_project,definition_id) WHERE type='workflow_instance';
 CREATE INDEX idx_invocation_member ON governance_records(owner_project,json_extract(data,'$.child_instance_id'),json_extract(data,'$.member_identity')) WHERE type='workflow_invocation';
-PRAGMA user_version=53;
+-- Derived collection tokens protect absence/range dependencies. They are not business locks.
+
+CREATE TRIGGER collection_repository_operations_insert AFTER INSERT ON repository_operations BEGIN
+ INSERT INTO resource_versions(kind,resource_id,revision) VALUES('collection','repository:' || NEW.project_id,1) ON CONFLICT(kind,resource_id) DO UPDATE SET revision=CASE WHEN resource_versions.revision<9223372036854775807 THEN resource_versions.revision+1 ELSE RAISE(ABORT,'collection revision exhausted') END;
+END;
+
+CREATE TRIGGER collection_repository_operations_update AFTER UPDATE ON repository_operations BEGIN
+ INSERT INTO resource_versions(kind,resource_id,revision) VALUES('collection','repository:' || NEW.project_id,1) ON CONFLICT(kind,resource_id) DO UPDATE SET revision=CASE WHEN resource_versions.revision<9223372036854775807 THEN resource_versions.revision+1 ELSE RAISE(ABORT,'collection revision exhausted') END;
+ INSERT INTO resource_versions(kind,resource_id,revision) SELECT 'collection','repository:' || OLD.project_id,1 WHERE OLD.project_id!=NEW.project_id ON CONFLICT(kind,resource_id) DO UPDATE SET revision=CASE WHEN resource_versions.revision<9223372036854775807 THEN resource_versions.revision+1 ELSE RAISE(ABORT,'collection revision exhausted') END;
+END;
+
+CREATE TRIGGER collection_repository_operations_delete AFTER DELETE ON repository_operations BEGIN
+ INSERT INTO resource_versions(kind,resource_id,revision) VALUES('collection','repository:' || OLD.project_id,1) ON CONFLICT(kind,resource_id) DO UPDATE SET revision=CASE WHEN resource_versions.revision<9223372036854775807 THEN resource_versions.revision+1 ELSE RAISE(ABORT,'collection revision exhausted') END;
+END;
+
+CREATE TRIGGER collection_repository_worktrees_insert AFTER INSERT ON repository_worktrees BEGIN
+ INSERT INTO resource_versions(kind,resource_id,revision) VALUES('collection','repository:' || NEW.project_id,1) ON CONFLICT(kind,resource_id) DO UPDATE SET revision=CASE WHEN resource_versions.revision<9223372036854775807 THEN resource_versions.revision+1 ELSE RAISE(ABORT,'collection revision exhausted') END;
+END;
+
+CREATE TRIGGER collection_repository_worktrees_update AFTER UPDATE ON repository_worktrees BEGIN
+ INSERT INTO resource_versions(kind,resource_id,revision) VALUES('collection','repository:' || NEW.project_id,1) ON CONFLICT(kind,resource_id) DO UPDATE SET revision=CASE WHEN resource_versions.revision<9223372036854775807 THEN resource_versions.revision+1 ELSE RAISE(ABORT,'collection revision exhausted') END;
+ INSERT INTO resource_versions(kind,resource_id,revision) SELECT 'collection','repository:' || OLD.project_id,1 WHERE OLD.project_id!=NEW.project_id ON CONFLICT(kind,resource_id) DO UPDATE SET revision=CASE WHEN resource_versions.revision<9223372036854775807 THEN resource_versions.revision+1 ELSE RAISE(ABORT,'collection revision exhausted') END;
+END;
+
+CREATE TRIGGER collection_repository_worktrees_delete AFTER DELETE ON repository_worktrees BEGIN
+ INSERT INTO resource_versions(kind,resource_id,revision) VALUES('collection','repository:' || OLD.project_id,1) ON CONFLICT(kind,resource_id) DO UPDATE SET revision=CASE WHEN resource_versions.revision<9223372036854775807 THEN resource_versions.revision+1 ELSE RAISE(ABORT,'collection revision exhausted') END;
+END;
+
+CREATE TRIGGER collection_heads_insert AFTER INSERT ON heads BEGIN
+ INSERT INTO resource_versions(kind,resource_id,revision) VALUES('collection','repository:' || NEW.project_id,1) ON CONFLICT(kind,resource_id) DO UPDATE SET revision=CASE WHEN resource_versions.revision<9223372036854775807 THEN resource_versions.revision+1 ELSE RAISE(ABORT,'collection revision exhausted') END;
+END;
+
+CREATE TRIGGER collection_heads_update AFTER UPDATE ON heads BEGIN
+ INSERT INTO resource_versions(kind,resource_id,revision) VALUES('collection','repository:' || NEW.project_id,1) ON CONFLICT(kind,resource_id) DO UPDATE SET revision=CASE WHEN resource_versions.revision<9223372036854775807 THEN resource_versions.revision+1 ELSE RAISE(ABORT,'collection revision exhausted') END;
+ INSERT INTO resource_versions(kind,resource_id,revision) SELECT 'collection','repository:' || OLD.project_id,1 WHERE OLD.project_id!=NEW.project_id ON CONFLICT(kind,resource_id) DO UPDATE SET revision=CASE WHEN resource_versions.revision<9223372036854775807 THEN resource_versions.revision+1 ELSE RAISE(ABORT,'collection revision exhausted') END;
+END;
+
+CREATE TRIGGER collection_heads_delete AFTER DELETE ON heads BEGIN
+ INSERT INTO resource_versions(kind,resource_id,revision) VALUES('collection','repository:' || OLD.project_id,1) ON CONFLICT(kind,resource_id) DO UPDATE SET revision=CASE WHEN resource_versions.revision<9223372036854775807 THEN resource_versions.revision+1 ELSE RAISE(ABORT,'collection revision exhausted') END;
+END;
+
+CREATE TRIGGER collection_features_insert AFTER INSERT ON features BEGIN
+ INSERT INTO resource_versions(kind,resource_id,revision) VALUES('collection','features:' || NEW.project_id,1) ON CONFLICT(kind,resource_id) DO UPDATE SET revision=CASE WHEN resource_versions.revision<9223372036854775807 THEN resource_versions.revision+1 ELSE RAISE(ABORT,'collection revision exhausted') END;
+END;
+
+CREATE TRIGGER collection_features_delete AFTER DELETE ON features BEGIN
+ INSERT INTO resource_versions(kind,resource_id,revision) VALUES('collection','features:' || OLD.project_id,1) ON CONFLICT(kind,resource_id) DO UPDATE SET revision=CASE WHEN resource_versions.revision<9223372036854775807 THEN resource_versions.revision+1 ELSE RAISE(ABORT,'collection revision exhausted') END;
+END;
+
+CREATE TRIGGER collection_features_owner_update AFTER UPDATE OF project_id ON features WHEN OLD.project_id!=NEW.project_id BEGIN
+ INSERT INTO resource_versions(kind,resource_id,revision) VALUES('collection','features:' || OLD.project_id,1),('collection','features:' || NEW.project_id,1) ON CONFLICT(kind,resource_id) DO UPDATE SET revision=CASE WHEN resource_versions.revision<9223372036854775807 THEN resource_versions.revision+1 ELSE RAISE(ABORT,'collection revision exhausted') END;
+END;
+
+CREATE TRIGGER collection_git_call_insert AFTER INSERT ON governance_records BEGIN
+ INSERT INTO resource_versions(kind,resource_id,revision) SELECT 'collection','repository:' || NEW.owner_project,1 WHERE NEW.type='platform_call' AND NEW.owner_project IS NOT NULL AND substr(json_extract(NEW.data,'$.request.definition.qualified_name'),1,4)='git.' ON CONFLICT(kind,resource_id) DO UPDATE SET revision=CASE WHEN resource_versions.revision<9223372036854775807 THEN resource_versions.revision+1 ELSE RAISE(ABORT,'collection revision exhausted') END;
+END;
+
+CREATE TRIGGER collection_git_call_delete AFTER DELETE ON governance_records BEGIN
+ INSERT INTO resource_versions(kind,resource_id,revision) SELECT 'collection','repository:' || OLD.owner_project,1 WHERE OLD.type='platform_call' AND OLD.owner_project IS NOT NULL AND substr(json_extract(OLD.data,'$.request.definition.qualified_name'),1,4)='git.' ON CONFLICT(kind,resource_id) DO UPDATE SET revision=CASE WHEN resource_versions.revision<9223372036854775807 THEN resource_versions.revision+1 ELSE RAISE(ABORT,'collection revision exhausted') END;
+END;
+
+CREATE TRIGGER collection_git_call_update AFTER UPDATE ON governance_records BEGIN
+ INSERT INTO resource_versions(kind,resource_id,revision) SELECT 'collection','repository:' || OLD.owner_project,1 WHERE OLD.type='platform_call' AND OLD.owner_project IS NOT NULL AND substr(json_extract(OLD.data,'$.request.definition.qualified_name'),1,4)='git.' ON CONFLICT(kind,resource_id) DO UPDATE SET revision=CASE WHEN resource_versions.revision<9223372036854775807 THEN resource_versions.revision+1 ELSE RAISE(ABORT,'collection revision exhausted') END;
+ INSERT INTO resource_versions(kind,resource_id,revision) SELECT 'collection','repository:' || NEW.owner_project,1 WHERE NEW.type='platform_call' AND NEW.owner_project IS NOT NULL AND substr(json_extract(NEW.data,'$.request.definition.qualified_name'),1,4)='git.' AND NOT (OLD.type='platform_call' AND OLD.owner_project IS NEW.owner_project AND coalesce(substr(json_extract(OLD.data,'$.request.definition.qualified_name'),1,4),'')='git.') ON CONFLICT(kind,resource_id) DO UPDATE SET revision=CASE WHEN resource_versions.revision<9223372036854775807 THEN resource_versions.revision+1 ELSE RAISE(ABORT,'collection revision exhausted') END;
+END;
+CREATE INDEX idx_repository_pending_project ON repository_operations(project_id,status) WHERE status!='completed';
+CREATE INDEX idx_repository_connect_project ON repository_operations(project_id) WHERE json_extract(action,'$.kind')='connect';
+CREATE INDEX idx_repository_git_calls ON governance_records(owner_project,json_extract(data,'$.status')) WHERE type='platform_call' AND substr(json_extract(data,'$.request.definition.qualified_name'),1,4)='git.';
+PRAGMA user_version=54;
 
 CREATE TABLE orchestration_wakeups (
  id TEXT PRIMARY KEY, controller_id TEXT NOT NULL, event_cursor INTEGER NOT NULL,

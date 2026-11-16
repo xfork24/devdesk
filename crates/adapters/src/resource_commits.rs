@@ -31,6 +31,9 @@ fn table(kind: &str) -> Result<&'static str> {
 fn value(conn: &Connection, key: &ResourceKey) -> Result<Option<Value>> {
     key.validate()?;
     match key.kind.as_str() {
+        // Collection tokens have no entity payload. Their version is maintained
+        // by fact-table triggers and is read atomically with the selected facts.
+        "collection" => Ok(None),
         "runtime_presence" => Ok(conn.query_row("SELECT EXISTS(SELECT 1 FROM runtime_installations WHERE id=?1)",[&key.id],|row|row.get::<_,bool>(0)).map_err(storage)?.then_some(json!(true))),
         "setting" => catalog::setting(conn, &key.id),
         "source_head" => conn.query_row(
@@ -90,6 +93,7 @@ fn current_revision(conn: &Connection, key: &ResourceKey) -> Result<u64> {
         return Ok(revision);
     }
     let revision = match key.kind.as_str() {
+        "collection" => return Ok(0),
         "setting" => conn.query_row("SELECT 1 FROM settings WHERE key=?1",[&key.id],|r|r.get::<_,u64>(0)).optional(),
         "source_head" => conn.query_row("SELECT revision FROM source_definitions WHERE identity=?1 ORDER BY revision DESC LIMIT 1",[&key.id],|r|r.get::<_,u64>(0)).optional(),
         "source" => conn.query_row("SELECT 1 FROM source_definitions WHERE reference=?1",[&key.id],|r|r.get::<_,u64>(0)).optional(),
@@ -106,12 +110,15 @@ pub(super) fn read(pool: &ConnectionPool, keys: &[ResourceKey]) -> Result<Vec<Re
     let _span = performance::Span::new("resource.read");
     let conn = pool.read()?;
     conn.execute_batch("BEGIN;").map_err(storage)?;
-    let values = keys
-        .iter()
-        .map(|key| snapshot(&conn, key))
-        .collect::<Result<_>>()?;
+    let values = read_on(&conn, keys)?;
     conn.execute_batch("COMMIT;").map_err(storage)?;
     Ok(values)
+}
+
+/// Compose several indexed facts and predicate tokens in the caller's one read snapshot.
+pub(super) fn read_on(conn: &Connection, keys: &[ResourceKey]) -> Result<Vec<ResourceSnapshot>> {
+    require(keys.len() <= 4096, "一次读取的资源过多")?;
+    keys.iter().map(|key| snapshot(conn, key)).collect()
 }
 
 fn sqlite_error(error: rusqlite::Error) -> Error {

@@ -8,6 +8,8 @@
 
 `resource_versions` 为有限资源提交保存 `(kind, resource_id, revision)`；`operations` 同事务保存结果、新版本集合和事件游标。旧业务写路径仍在迁移，不能将新端口测试视作所有入口已具备并发保护。
 
+项目库为集合谓词维护只读的 `collection` 版本：`repository:<project>` 随仓库操作、工作副本、代码头及项目 Git 调用变化推进，`features:<project>` 只随 Feature 成员归属变化推进。SQL 触发器与事实变更同事务更新；上下文在同一读快照中读取事实和版本，提交校验可拒绝并发插入、删除及删除后重建造成的旧判断。它们不取得业务锁，也不把无关 Feature 标题编辑变成项目级冲突。仓库登记/同步的类型化准备上下文已使用这些版本，公共分派与回调尚未共同切换。
+
 安装登记使用确定的 runtime_installation 资源身份及独立的内容封存设置；内容封存绑定版本/平台/配方与可执行文件摘要或不可变镜像身份，不绑定安装路径。安装行缺失不重置资源版本；内部恢复用原封存和当前不存在谓词保护，公共登记仍只接受版本 0。安装表对 recipe_digest 的 NULL 情况也执行唯一约束，防止同一程序/平台被重复登记。上述约束使用 global 21，global 20 拒绝打开，不自动转换。
 
 事件写入只追加：旧业务路径也由 SQLite 在提交时分配持久化 ID，不再 upsert 内存中暂定的事件 ID。这样设置/安装的独立资源提交与旧路径交错时不会覆盖事件。内存事件提示不构成已提交游标，有限提交的权威定位来自回执；尚未迁移的业务对象仍保留旧保护。
@@ -36,7 +38,7 @@
 
 ## 配置的唯一存储
 
-配置只存于 `source_definitions` 表（两库同构）：主键 `(identity, revision)`，`reference` 为 `identity:revision` 虚拟唯一列，触发器禁止 UPDATE/DELETE。没有 definitions/harnesses/sandboxes 等投影表：执行视图（任务、运行时、权限、工具）在加载时由同一解析器按需重建；持久化编码把内嵌配置对象压缩为 `$source` 引用，读取时从原源闭包还原，缺失或内容冲突直接报错。SQLite 基线为 global 21 / project 53。
+配置只存于 `source_definitions` 表（两库同构）：主键 `(identity, revision)`，`reference` 为 `identity:revision` 虚拟唯一列，触发器禁止 UPDATE/DELETE。没有 definitions/harnesses/sandboxes 等投影表：执行视图（任务、运行时、权限、工具）在加载时由同一解析器按需重建；持久化编码把内嵌配置对象压缩为 `$source` 引用，读取时从原源闭包还原，缺失或内容冲突直接报错。SQLite 基线为 global 21 / project 54。
 
 配置目录另有可丢弃的进程内快照，不新增展开配置投影。`catalog_clock` 只保存目录快照时钟，由源、目录治理、Project 和 mainline 工作副本的 SQL 触发器在同一事务中推进；它只用于读取新鲜度，不是项目写入乐观锁。读取在同一 SQLite 快照内取得时钟与目录事实，热读返回该版本的不可变 Arc，不跨连接比较 `PRAGMA data_version`。慢读取不能以新版本标记旧数据或覆盖更高版本的缓存。
 
@@ -66,7 +68,7 @@ SSE 按事件主键和游标读取 `events`，提交后通知唤醒读取，低�
 
 经理与驱动的显示摘要通过项目只读连接直接查询原生元数据，并使用 controller 归属、根实例、调用归属、活动根与待决定项索引；不新增展开配置表。消息、调用、待决定项和等待条件都有限额，完整决定请求另按需读取。workflow_pending_decision / workflow_human_decision 的 request 原样保存为输入事实，不将其中用户提供的 `$source` 或保留文本解释为配置引用；全量恢复与精确详情读取遵守同一事实边界。该输入事实编解码与当前项目基线一致，不转换旧记录。
 
-项目库的 governance_records.owner_project 是从 Scope 计算的虚拟列，统一提取 project/feature 的所属项目，供运行摘要与子流程分页索引使用；global 归属为空，不进入项目运行摘要。它不保存第二份可编辑配置。事实表通用读写明确列出物理列，避免虚拟列改变 SELECT * 的列序后误解码；虚拟归属列不参与事实写入。当前使用 project 53，project 52 及更旧基线拒绝打开。
+项目库的 governance_records.owner_project 是从 Scope 计算的虚拟列，统一提取 project/feature 的所属项目，供运行摘要与子流程分页索引使用；global 归属为空，不进入项目运行摘要。它不保存第二份可编辑配置。事实表通用读写明确列出物理列，避免虚拟列改变 SELECT * 的列序后误解码；虚拟归属列不参与事实写入。当前使用 project 54，project 53 及更旧基线拒绝打开。
 
 ## 幂等与恢复模型
 

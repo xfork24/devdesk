@@ -442,6 +442,16 @@ pub trait EngineeringStore: Send + Sync {
     ) -> Result<crate::read_models::WorkflowManagementSummary> {
         Err(err("unsupported", "存储未实现流程管理摘要"))
     }
+    fn repository_registration_facts(
+        &self,
+    ) -> Result<crate::repository_updates::RepositoryRegistrationFacts> {
+        Err(err("unsupported", "存储未实现仓库登记上下文"))
+    }
+    fn repository_refresh_facts(
+        &self,
+    ) -> Result<crate::repository_updates::RepositoryRefreshFacts> {
+        Err(err("unsupported", "存储未实现主干同步上下文"))
+    }
     fn project_metadata(&self) -> Result<devdesk_domain::Project> {
         Err(err("unsupported", "存储未实现项目元数据读取"))
     }
