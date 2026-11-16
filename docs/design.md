@@ -1,6 +1,6 @@
 # 架构与设计决策
 
-当前 SQLite 基线为 global 18 / project 48，配置使用扁平源修订。业务配置与执行边界见 [领域规范](domain.md) 和 [工作流与编排](workflow-orchestration.md)。`docs/plans/` 中待实施方案与历史验收分别标明状态，均不能替代当前接口合同。
+当前 SQLite 基线为 global 19 / project 49，配置使用扁平源修订。业务配置与执行边界见 [领域规范](domain.md) 和 [工作流与编排](workflow-orchestration.md)。`docs/plans/` 中待实施方案与历史验收分别标明状态，均不能替代当前接口合同。
 
 ## 单 Host 并发与性能设计约束
 
@@ -12,7 +12,7 @@
 
 性能优先，显示、缓存、目录和跨库投影允许最终一致。版本比较与提交、幂等回执、执行授权及单库领域约束保持原子；最终一致不允许丢失更新或把未提交状态作为事实。普通查询按需读取摘要和分页详情，不恢复整个工程历史，也不隐式同步或回写业务状态。
 
-这些约束已确认，完整实现尚待重构。当前 Host 仍共享活动项目，部分查询持有模板门锁，Store 仍使用单连接和写互斥锁。具体差距、接口与存储调整、实施顺序见 [底层并发重构方案](plans/single-host-concurrency/PLAN.md)；性能、正确性和运行中工作流的门禁见 [100 前端验收合同](plans/single-host-concurrency/ACCEPTANCE.md)。
+这些约束已确认，完整实现尚待重构。实施分支已加入独立连接池和有限资源版本提交；Host 仍共享活动项目，部分查询持有模板门锁，旧业务写路径仍使用写互斥锁。具体差距、接口与存储调整、实施顺序见 [底层并发重构方案](plans/single-host-concurrency/PLAN.md)；性能、正确性和运行中工作流的门禁见 [100 前端验收合同](plans/single-host-concurrency/ACCEPTANCE.md)。
 
 ## 模块与事实源
 

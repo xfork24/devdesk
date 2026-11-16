@@ -2,9 +2,11 @@
 
 本文描述数据集结构、三库分工、幂等与恢复模型及升级策略。表结构清单见 [SQL 说明](../sql/README.md)，配置存储语义见 [源配置与执行解析](source-configuration.md)。
 
-已确认的并发重构继续使用 SQLite：独立读快照、资源级版本比较与短事务提交、无应用层全局/项目串行写锁，视图允许最终一致。当前单连接/写锁和共享项目选择尚未替换；本文以下描述现行实现，目标结构见 [底层重构方案](plans/single-host-concurrency/PLAN.md)，容量门禁见 [100 前端验收合同](plans/single-host-concurrency/ACCEPTANCE.md)。
+已确认的并发重构继续使用 SQLite：独立读快照、资源级版本比较与短事务提交、无应用层全局/项目串行写锁，视图允许最终一致。实施分支已接入读连接池与有限资源提交，旧业务写锁和共享项目选择尚未替换；本文以下描述现行业务路径，目标结构见 [底层重构方案](plans/single-host-concurrency/PLAN.md)，容量门禁见 [100 前端验收合同](plans/single-host-concurrency/ACCEPTANCE.md)。
 
 ## 数据集总览
+
+`resource_versions` 为有限资源提交保存 `(kind, resource_id, revision)`；`operations` 同事务保存结果、新版本集合和事件游标。旧业务写路径仍在迁移，不能将新端口测试视作所有入口已具备并发保护。
 
 一个数据集目录（`--data`）以 `.devdesk-dataset` 标记（内容 `devdesk-profile-runtime-v2`）并施加独占写锁（`.devdesk.lock`）；同一数据集同时只能有一个可写进程。
 
@@ -30,7 +32,7 @@
 
 ## 配置的唯一存储
 
-配置只存于 `source_definitions` 表（两库同构）：主键 `(identity, revision)`，`reference` 为 `identity:revision` 虚拟唯一列，触发器禁止 UPDATE/DELETE。没有 definitions/harnesses/sandboxes 等投影表：执行视图（任务、运行时、权限、工具）在加载时由同一解析器按需重建；持久化编码把内嵌配置对象压缩为 `$source` 引用，读取时从原源闭包还原，缺失或内容冲突直接报错。SQLite 基线为 global 18 / project 48。
+配置只存于 `source_definitions` 表（两库同构）：主键 `(identity, revision)`，`reference` 为 `identity:revision` 虚拟唯一列，触发器禁止 UPDATE/DELETE。没有 definitions/harnesses/sandboxes 等投影表：执行视图（任务、运行时、权限、工具）在加载时由同一解析器按需重建；持久化编码把内嵌配置对象压缩为 `$source` 引用，读取时从原源闭包还原，缺失或内容冲突直接报错。SQLite 基线为 global 19 / project 49。
 
 配置目录另有可丢弃的进程内快照，不新增持久化投影。单写 Store 在配置提交后失效缓存，热读可直接取得不可变 Arc，避免等待完整工程恢复占用的数据库连接。共享目录与项目目录的只读组合最多保留 8 个视图；底层缓存按估算字节计账，单项 32 MiB、进程合计 128 MiB，过大或预算不足时读取但不保留。跨项目只读目录最多复用 8 个连接，通过 SQLite `data_version` 检测外部提交。
 

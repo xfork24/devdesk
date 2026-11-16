@@ -239,12 +239,12 @@ fn current_databases_exclude_retired_permission_storage_and_conversion_indexes()
     let project = id();
     let _project = SqliteStore::open_project(dir.path(), &project).unwrap();
     for (path, version) in [
-        (dir.path().join("global.sqlite3"), 18),
+        (dir.path().join("global.sqlite3"), 19),
         (
             SqliteStore::project_path(dir.path(), &project)
                 .unwrap()
                 .join("engineering.sqlite3"),
-            48,
+            49,
         ),
     ] {
         let db = rusqlite::Connection::open(path).unwrap();
@@ -265,7 +265,11 @@ fn current_databases_exclude_retired_permission_storage_and_conversion_indexes()
                 .iter()
                 .any(|name| ["slots", "rules"].contains(&name.as_str()))
         );
-        if version == 44 {
+        assert!(
+            db.prepare("SELECT revision FROM resource_versions WHERE kind=?1 AND resource_id=?2")
+                .is_ok()
+        );
+        if version == 49 {
             for table in ["projects", "features", "tasks", "snapshots"] {
                 let columns: Vec<String> = db
                     .prepare(&format!("PRAGMA table_info({table})"))

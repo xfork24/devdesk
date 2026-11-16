@@ -1,7 +1,9 @@
 mod catalog;
 mod configuration_backend;
 mod configuration_cache;
+mod connection_pool;
 pub mod performance;
+mod resource_commits;
 mod store_changes;
 pub use configuration_backend::ConfigurationBackend;
 mod factory_bundle;
@@ -54,7 +56,7 @@ fn storage(e: impl std::fmt::Display) -> Error {
     err("storage", e.to_string())
 }
 pub struct SqliteStore {
-    connection: Mutex<Connection>,
+    connection: connection_pool::ConnectionPool,
     writer: Mutex<()>,
     source_views: Mutex<std::collections::BTreeMap<String, Value>>,
     catalog_cache: configuration_cache::CatalogCache,
@@ -81,7 +83,10 @@ impl SqliteStore {
         let connection = open_engineering_connection(&root.join("engineering.sqlite3"))?;
         fs::create_dir_all(root.join("artifacts")).map_err(storage)?;
         Ok(Self {
-            connection: Mutex::new(connection),
+            connection: connection_pool::ConnectionPool::new(
+                &root.join("engineering.sqlite3"),
+                connection,
+            )?,
             writer: Mutex::new(()),
             source_views: Mutex::new(Default::default()),
             catalog_cache: Default::default(),
@@ -177,13 +182,17 @@ impl SqliteStore {
         Self::load_with(conn, &mut Default::default())
     }
     fn load_cached(&self, conn: &Connection) -> Result<EngineeringState> {
-        let mut memo = self.source_views.lock().map_err(storage)?;
+        let mut memo = self.source_views.lock().map_err(storage)?.clone();
         // A plan descriptor contains only immutable source revisions and fixed choices.
         // Keep a bounded request-independent memory cache; it never crosses the storage boundary.
         if memo.len() >= 128 {
             memo.clear();
         }
-        Self::load_with(conn, &mut memo)
+        let state = Self::load_with(conn, &mut memo)?;
+        if memo.len() <= 128 {
+            *self.source_views.lock().map_err(storage)? = memo;
+        }
+        Ok(state)
     }
     // Table loads interleave with view refreshes: later tables restore against
     // views rebuilt from earlier fields, so a struct literal is not equivalent.
@@ -412,7 +421,7 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
     require(
-        version == 0 || version == 48,
+        version == 0 || version == 49,
         "数据集协议不兼容；请使用新的空数据目录",
     )?;
     connection
@@ -444,6 +453,15 @@ fn load_table_filtered<T: DeserializeOwned>(
     table: &str,
     predicate: &str,
 ) -> Result<Vec<T>> {
+    load_table_filtered_params(conn, table, predicate, &[])
+}
+
+fn load_table_filtered_params<T: DeserializeOwned>(
+    conn: &Connection,
+    table: &str,
+    predicate: &str,
+    parameters: &[&dyn rusqlite::ToSql],
+) -> Result<Vec<T>> {
     let _span = performance::Span::new("sqlite.table_read_decode");
     let columns = columns(conn, table)?;
     let mut q = conn
@@ -452,7 +470,7 @@ fn load_table_filtered<T: DeserializeOwned>(
         ))
         .map_err(storage)?;
     let rows = q
-        .query_map([], |r| {
+        .query_map(parameters, |r| {
             let mut map = serde_json::Map::new();
             for (i, (name, typ)) in columns.iter().enumerate() {
                 let v = match r.get_ref(i)? {
@@ -555,28 +573,55 @@ fn save_table<T: Serialize>(
     Ok(())
 }
 impl EngineeringStore for SqliteStore {
+    fn read_resources(
+        &self,
+        keys: &[concurrency::ResourceKey],
+    ) -> Result<Vec<concurrency::ResourceSnapshot>> {
+        resource_commits::read(&self.connection, keys)
+    }
+    fn commit_changes(
+        &self,
+        changes: &concurrency::PreparedChangeSet,
+    ) -> Result<concurrency::CommitReceipt> {
+        if let Some(project) = &self.project_id {
+            for change in &changes.changes {
+                require(
+                    (change.resource.kind != "project" || &change.resource.id == project)
+                        && change.value.get("project_id").is_none_or(|value| {
+                            value.is_null() || value.as_str() == Some(project.as_str())
+                        }),
+                    "项目数据库不能提交其他项目的事实",
+                )?;
+            }
+        }
+        let (receipt, changed) = resource_commits::commit(&self.connection, changes)?;
+        if changed {
+            self.catalog_cache.invalidate()?;
+            self.changes.notify();
+        }
+        Ok(receipt)
+    }
     fn observe_query(&self, stage: &'static str) -> Box<dyn ports::QueryObservation> {
         performance::observe(stage)
     }
     fn events_after(&self, cursor: u64, limit: usize) -> Result<Vec<Event>> {
-        store_changes::events_after(&*self.connection.lock().map_err(storage)?, cursor, limit)
+        store_changes::events_after(&*self.connection.read()?, cursor, limit)
     }
     fn subscribe_changes(&self, listener: std::sync::Weak<dyn Fn() + Send + Sync>) {
         self.changes.subscribe(listener);
     }
     fn has_pending_tool_calls(&self) -> Result<bool> {
-        store_changes::pending_tools(&*self.connection.lock().map_err(storage)?)
+        store_changes::pending_tools(&*self.connection.read()?)
     }
     fn configuration_snapshot(&self) -> Result<std::sync::Arc<ConfigurationCatalogSnapshot>> {
         if let Some(snapshot) = self.catalog_cache.current()? {
             return Ok(snapshot);
         }
-        self.catalog_cache
-            .read(&*self.connection.lock().map_err(storage)?, true)
+        self.catalog_cache.read(&*self.connection.read()?, true)
     }
     fn has_pending_work(&self) -> Result<bool> {
         // Idle projects must not deserialize their complete protocol history on every tick.
-        let conn = self.connection.lock().map_err(storage)?;
+        let conn = self.connection.read()?;
         conn.query_row("SELECT
           EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_controller' AND json_extract(data,'$.status')='active') OR
           EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_instance' AND json_extract(data,'$.status') NOT IN ('cancelled','completed') AND (json_extract(data,'$.cancel_requested')=1 OR (json_extract(data,'$.paused')=0 AND json_extract(data,'$.status') NOT IN ('failed','needs_reconciliation')))) OR
@@ -595,9 +640,12 @@ impl EngineeringStore for SqliteStore {
     }
     fn snapshot(&self) -> Result<EngineeringState> {
         let waiting = performance::Span::new("project.connection_wait");
-        let conn = self.connection.lock().map_err(storage)?;
+        let conn = self.connection.read()?;
         drop(waiting);
-        self.load_cached(&conn)
+        conn.execute_batch("BEGIN;").map_err(storage)?;
+        let state = self.load_cached(&conn)?;
+        conn.execute_batch("COMMIT;").map_err(storage)?;
+        Ok(state)
     }
     fn transact(
         &self,
@@ -611,7 +659,7 @@ impl EngineeringStore for SqliteStore {
         let conn = self.connection.lock().map_err(storage)?;
         if let Some((id, fp)) = key {
             let mut q = conn
-                .prepare("SELECT fingerprint,result FROM operations WHERE id=?1")
+                .prepare("SELECT fingerprint,CAST(result AS TEXT) FROM operations WHERE id=?1")
                 .map_err(storage)?;
             let mut rows = q.query([id]).map_err(storage)?;
             if let Some(row) = rows.next().map_err(storage)? {

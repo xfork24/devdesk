@@ -2,7 +2,7 @@
 
 DevDesk 是本地软件工程工作台：Rust 内核管理配置、工作流和权威执行事实，React Web 提供操作入口，SQLite 按项目保存工程数据与历史。它通过 GitHub 仓库、Git worktree、Linux Docker worker 和 Codex / DeepSeek Harness 执行实际工作；平台发布只创建 GitHub PR，不自动合入。
 
-核心性能约束是单 Host 在工作流运行时支撑至少 100 个活跃并发前端：各前端独立选择项目，读取并发执行，写入用乐观版本校验保护，显示允许最终一致。当前 SQLite 底层并发重构处于方案阶段，尚未完成该能力验收，见 [设计约束](docs/design.md#单-host-并发与性能设计约束)、[实施计划](docs/plans/single-host-concurrency/PLAN.md) 和 [100 前端验收标准](docs/plans/single-host-concurrency/ACCEPTANCE.md)。
+核心性能约束是单 Host 在工作流运行时支撑至少 100 个活跃并发前端：各前端独立选择项目，读取并发执行，写入用乐观版本校验保护，显示允许最终一致。当前 SQLite 底层并发重构处于实施阶段，尚未完成该能力验收，见 [设计约束](docs/design.md#单-host-并发与性能设计约束)、[实施计划](docs/plans/single-host-concurrency/PLAN.md) 和 [100 前端验收标准](docs/plans/single-host-concurrency/ACCEPTANCE.md)。
 
 工作方法由不可变配置源组合：Role 定义职责，Skill 定义方法，Step 定义任务，Spec 定义检查，Delivery 定义交付合同，Standard 固定规范闭包。项目和具体工作显式采用确切修订，运行冻结输入、权限、资源与接入选择；修改默认配置不会覆写已有运行。
 
@@ -52,7 +52,7 @@ Web 和出厂资源嵌入 Host，界面更新后重新构建并重启。发行�
 <data>/projects/<id>/execution/                    # 会话、测试、工具、Git 意图与工作副本
 ```
 
-数据集标记为 `devdesk-profile-runtime-v2`，当前 SQLite 基线为 **global 18 / project 48**，同一数据集只有一个可写 Host。不兼容旧数据集直接拒绝，不自动转换、删库或重建；兼容数据集可重开，验证新代码使用独立空目录。
+数据集标记为 `devdesk-profile-runtime-v2`，当前 SQLite 基线为 **global 19 / project 49**，同一数据集只有一个可写 Host。不兼容旧数据集直接拒绝，不自动转换、删库或重建；兼容数据集可重开，验证新代码使用独立空目录。
 
 配置唯一存储在 `source_definitions`，执行视图按原源引用恢复，不存第二份展开闭包。权限与能力分开：Agent 只引用 Role/Capability，Profile 落实 Harness/Sandbox 策略，步骤直接引用所需 Profile，显式选择替换同层默认绑定。真实 worker 在 Linux 容器运行，宿主登录组件不作为工程执行环境。
 

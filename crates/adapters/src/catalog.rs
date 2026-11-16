@@ -3,7 +3,7 @@ use super::*;
 use rusqlite::{OptionalExtension, params};
 
 pub struct GlobalStore {
-    pub(super) connection: Mutex<Connection>,
+    pub(super) connection: connection_pool::ConnectionPool,
     pub(super) writer: Mutex<()>,
     catalog_cache: configuration_cache::CatalogCache,
     changes: store_changes::StoreChanges,
@@ -48,7 +48,7 @@ impl GlobalStore {
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(storage)?;
         require(
-            version == 0 || version == 18,
+            version == 0 || version == 19,
             "数据集协议不兼容；请使用新的空数据目录",
         )?;
         connection
@@ -63,7 +63,10 @@ impl GlobalStore {
         }
 
         let store = Self {
-            connection: Mutex::new(connection),
+            connection: connection_pool::ConnectionPool::new(
+                &root.join("global.sqlite3"),
+                connection,
+            )?,
             writer: Mutex::new(()),
             catalog_cache: Default::default(),
             changes: Default::default(),
@@ -369,33 +372,52 @@ impl GlobalStore {
 }
 
 impl EngineeringStore for GlobalStore {
+    fn read_resources(
+        &self,
+        keys: &[concurrency::ResourceKey],
+    ) -> Result<Vec<concurrency::ResourceSnapshot>> {
+        resource_commits::read(&self.connection, keys)
+    }
+    fn commit_changes(
+        &self,
+        changes: &concurrency::PreparedChangeSet,
+    ) -> Result<concurrency::CommitReceipt> {
+        let (receipt, changed) = resource_commits::commit(&self.connection, changes)?;
+        if changed {
+            self.catalog_cache.invalidate()?;
+            self.changes.notify();
+        }
+        Ok(receipt)
+    }
     fn observe_query(&self, stage: &'static str) -> Box<dyn ports::QueryObservation> {
         performance::observe(stage)
     }
     fn events_after(&self, cursor: u64, limit: usize) -> Result<Vec<Event>> {
-        store_changes::events_after(&*self.connection.lock().map_err(storage)?, cursor, limit)
+        store_changes::events_after(&*self.connection.read()?, cursor, limit)
     }
     fn subscribe_changes(&self, listener: std::sync::Weak<dyn Fn() + Send + Sync>) {
         self.changes.subscribe(listener);
     }
     fn has_pending_tool_calls(&self) -> Result<bool> {
-        store_changes::pending_tools(&*self.connection.lock().map_err(storage)?)
+        store_changes::pending_tools(&*self.connection.read()?)
     }
     fn configuration_snapshot(&self) -> Result<std::sync::Arc<ConfigurationCatalogSnapshot>> {
         if let Some(snapshot) = self.catalog_cache.current()? {
             return Ok(snapshot);
         }
-        self.catalog_cache
-            .read(&*self.connection.lock().map_err(storage)?, false)
+        self.catalog_cache.read(&*self.connection.read()?, false)
     }
     fn root(&self) -> String {
         self.root.to_string_lossy().into_owned()
     }
     fn snapshot(&self) -> Result<EngineeringState> {
         let waiting = performance::Span::new("global.connection_wait");
-        let conn = self.connection.lock().map_err(storage)?;
+        let conn = self.connection.read()?;
         drop(waiting);
-        Self::configuration(&conn)
+        conn.execute_batch("BEGIN;").map_err(storage)?;
+        let state = Self::configuration(&conn)?;
+        conn.execute_batch("COMMIT;").map_err(storage)?;
+        Ok(state)
     }
     fn transact(
         &self,
@@ -408,7 +430,7 @@ impl EngineeringStore for GlobalStore {
         if let Some((id, fp)) = key {
             let previous: Option<(String, String)> = conn
                 .query_row(
-                    "SELECT fingerprint,result FROM operations WHERE id=?1",
+                    "SELECT fingerprint,CAST(result AS TEXT) FROM operations WHERE id=?1",
                     [id],
                     |r| Ok((r.get(0)?, r.get(1)?)),
                 )

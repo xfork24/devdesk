@@ -122,7 +122,8 @@ CREATE TABLE "interactions" (
  FOREIGN KEY(project_id,session_id,turn_id) REFERENCES turns(project_id,session_id,id) DEFERRABLE INITIALLY DEFERRED
 );
 
-CREATE TABLE operations (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, result JSON NOT NULL CHECK(json_valid(result)));
+CREATE TABLE operations (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, result JSON NOT NULL CHECK(json_valid(result)), versions JSON NOT NULL DEFAULT '[]' CHECK(json_valid(versions)), cursor INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE resource_versions(kind TEXT NOT NULL,resource_id TEXT NOT NULL,revision INTEGER NOT NULL CHECK(revision>=0),PRIMARY KEY(kind,resource_id));
 
 CREATE TABLE projects (
  "id" TEXT PRIMARY KEY,
@@ -306,7 +307,7 @@ CREATE UNIQUE INDEX idx_template_catalog_singleton ON governance_records(type) W
 CREATE UNIQUE INDEX idx_template_catalog_member ON governance_records(definition_id,json_extract(data,'$.generation')) WHERE type='template_catalog_member';
 CREATE INDEX idx_template_catalog_generation ON governance_records(json_extract(data,'$.generation')) WHERE type='template_catalog_member';
 
-PRAGMA user_version=48;
+PRAGMA user_version=49;
 
 CREATE TABLE orchestration_wakeups (
  id TEXT PRIMARY KEY, controller_id TEXT NOT NULL, event_cursor INTEGER NOT NULL,
