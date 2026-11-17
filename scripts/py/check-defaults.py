@@ -37,7 +37,7 @@ def main() -> None:
     # shape at load time); schema_version is recorded metadata, never a version check.
     manifest = json.loads((ROOT / "manifest.json").read_text())
 
-    published: dict[str, dict] = {}  # (type, identity) -> {revision, path}
+    published: dict[tuple[str, str, int], dict] = {}  # exact immutable revisions
     sources: dict[str, dict] = {}  # rel -> parsed source
     md_bodies: set[Path] = set()
     for kind, paths in sorted(manifest.get("types", {}).items()):
@@ -56,7 +56,7 @@ def main() -> None:
                 fail(f"{rel}: type {source['type']!r} does not match manifest type {kind!r}")
             if source["scope"] != "global":
                 fail(f"{rel}: factory sources must use the global scope")
-            key = (kind, source["identity"])
+            key = (kind, source["identity"], source["revision"])
             if key in published:
                 fail(
                     f"identity {source['identity']!r} published twice: "
@@ -96,8 +96,8 @@ def main() -> None:
 
     def resolve(ref: str, what: str) -> None:
         identity, _, revision = ref.rpartition(":")
-        for (_, ident), meta in published.items():
-            if ident == identity and str(meta["revision"]) == revision:
+        for (_, ident, rev), meta in published.items():
+            if ident == identity and str(rev) == revision:
                 return
         fail(f"{what} references unpublished revision {ref!r}")
 

@@ -193,6 +193,19 @@ impl Engine {
         change: &ConfigurationChangeSet,
         actor: &WorkflowActor,
     ) -> Result<(EngineeringState, Vec<ConfigurationRecord>, Vec<Value>)> {
+        let work = self.configuration_work_facts(change)?;
+        self.configuration_candidate_with(before, change, actor, &work)
+    }
+    pub(crate) fn configuration_candidate_with(
+        &self,
+        before: &EngineeringState,
+        change: &ConfigurationChangeSet,
+        actor: &WorkflowActor,
+        work: &std::collections::BTreeMap<
+            Id,
+            crate::configuration_publication::ConfigurationWorkFact,
+        >,
+    ) -> Result<(EngineeringState, Vec<ConfigurationRecord>, Vec<Value>)> {
         require(
             !change.operations.is_empty() && change.operations.len() <= 256,
             "变更集需要 1—256 项操作",
@@ -445,8 +458,48 @@ impl Engine {
                         expected_revision: Some(*expected_revision),
                         payload: selection.clone(),
                     };
-                    let value = self.apply_command(method, &command, &mut candidate, actor)?;
-                    self.governance_after_command(method, &command, &mut candidate, &value)?;
+                    let value = if matches!(operation, ConfigurationOperation::SelectWork { .. }) {
+                        let fact = work
+                            .get(project_id)
+                            .ok_or_else(|| err("precondition_required", "缺少原工作选择事实"))?;
+                        require(
+                            fact.owner.revision == *expected_revision
+                                && fact.work.id() == project_id,
+                            "工作选择依据不匹配",
+                        )?;
+                        let inherited =
+                            crate::standards::work_configuration(&candidate, project_id).cloned();
+                        let row = crate::standards::select_work_configuration_for(
+                            &mut candidate,
+                            &fact.work,
+                            &fact.scope,
+                            selection,
+                            inherited.as_ref(),
+                        )?;
+                        let selected = crate::standards::selection_state(&candidate, &row.data);
+                        let workflow =
+                            candidate.configuration(row.data["workflow_ref"].as_str().unwrap())?;
+                        let bindings =
+                            serde_json::from_value(row.data["role_agent_bindings"].clone())
+                                .map_err(|e| err("invalid_params", e.to_string()))?;
+                        self.compile_configured_workflow(
+                            &selected,
+                            workflow,
+                            &row.scope,
+                            Some(&bindings),
+                        )?;
+                        if let WorkReference::Project { id } = &fact.work {
+                            candidate
+                                .projects
+                                .iter_mut()
+                                .find(|p| &p.id == id)
+                                .ok_or_else(|| err("not_found", "工作项目不存在"))?
+                                .revision += 1;
+                        }
+                        json!(row)
+                    } else {
+                        self.apply_command(method, &command, &mut candidate, actor)?
+                    };
                     results.push(value);
                 }
                 _ => {}
@@ -475,8 +528,9 @@ impl Engine {
         change: &ConfigurationChangeSet,
         actor: &WorkflowActor,
     ) -> Result<Value> {
-        let before = self.store.snapshot()?;
-        self.configuration_preview_in(&before, change, actor)
+        let before = self.store.configuration_snapshot()?;
+        let work = self.configuration_work_facts(change)?;
+        self.configuration_preview_with(&before.state, change, actor, &work)
     }
     fn configuration_preview_in(
         &self,
@@ -484,8 +538,21 @@ impl Engine {
         change: &ConfigurationChangeSet,
         actor: &WorkflowActor,
     ) -> Result<Value> {
+        let work = self.configuration_work_facts(change)?;
+        self.configuration_preview_with(before, change, actor, &work)
+    }
+    pub(crate) fn configuration_preview_with(
+        &self,
+        before: &EngineeringState,
+        change: &ConfigurationChangeSet,
+        actor: &WorkflowActor,
+        work: &std::collections::BTreeMap<
+            Id,
+            crate::configuration_publication::ConfigurationWorkFact,
+        >,
+    ) -> Result<Value> {
         let (candidate, changed, selections) =
-            self.configuration_candidate(before, change, actor)?;
+            self.configuration_candidate_with(before, change, actor, work)?;
         let base = configuration_fingerprint(before);
         let affected: Vec<_> = changed
             .iter()
@@ -543,7 +610,7 @@ impl Engine {
                 self.preview_configuration_change(&change)
             })()),
             "query.configuration_graph" => Some((|| {
-                let s = self.store.snapshot()?;
+                let s = self.store.configuration_snapshot()?.state.as_ref().clone();
                 let id = text(p, "id")?;
                 let record = s.configuration(&id)?;
                 Ok(

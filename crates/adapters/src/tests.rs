@@ -1,6 +1,7 @@
 //! Credential-free, fixed-revision tests in owned Docker containers. Never infer test success from LLM output.
 use super::*;
 use crate::docker::{ContainerPurpose, ContainerSpec, DockerSandbox};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 fn timestamp() -> u64 {
     SystemTime::now()
@@ -16,16 +17,19 @@ struct Job {
 }
 pub struct CommandTests {
     root: PathBuf,
-    writer: Mutex<()>,
+    cells: Mutex<std::collections::BTreeMap<String, std::sync::Weak<Mutex<()>>>>,
 }
 impl CommandTests {
     pub fn new(root: &Path) -> Result<Self> {
         Ok(Self {
             root: fs::canonicalize(root).map_err(storage)?,
-            writer: Mutex::new(()),
+            cells: Default::default(),
         })
     }
     fn paths(&self, r: &TestRequest) -> Result<(PathBuf, PathBuf)> {
+        self.locations(r, true)
+    }
+    fn locations(&self, r: &TestRequest, create: bool) -> Result<(PathBuf, PathBuf)> {
         let c = r
             .code
             .as_ref()
@@ -40,12 +44,26 @@ impl CommandTests {
         )?;
         let root = SqliteStore::project_path(&self.root, &c.project)?.join("execution");
         let parent = root.join("tests");
-        fs::create_dir_all(&parent).map_err(storage)?;
+        if create {
+            fs::create_dir_all(&parent).map_err(storage)?;
+        }
         reject_symlink(&parent)?;
         let job = parent.join(&r.operation_id);
         reject_symlink(&job)?;
-        fs::create_dir_all(&job).map_err(storage)?;
+        if create {
+            fs::create_dir_all(&job).map_err(storage)?;
+        }
         Ok((root, job))
+    }
+    fn cell(&self, operation: &str) -> Result<Arc<Mutex<()>>> {
+        let mut cells = self.cells.lock().map_err(storage)?;
+        cells.retain(|_, cell| cell.strong_count() > 0);
+        if let Some(cell) = cells.get(operation).and_then(std::sync::Weak::upgrade) {
+            return Ok(cell);
+        }
+        let cell = Arc::new(Mutex::new(()));
+        cells.insert(operation.into(), Arc::downgrade(&cell));
+        Ok(cell)
     }
     fn recipe(&self, r: &TestRequest) -> Result<TestRecipe> {
         let recipe = r
@@ -83,9 +101,13 @@ impl CommandTests {
             .map_err(storage)
     }
     pub fn poll(&self, r: &TestRequest) -> Result<Option<Value>> {
-        let _lock = self.writer.lock().map_err(storage)?;
+        let cell = self.cell(&r.operation_id)?;
+        let _lock = cell.lock().map_err(storage)?;
+        self.poll_locked(r, true)
+    }
+    fn poll_locked(&self, r: &TestRequest, allow_start: bool) -> Result<Option<Value>> {
         let recipe = self.recipe(r)?;
-        let (root, job) = self.paths(r)?;
+        let (root, job) = self.locations(r, allow_start)?;
         let digest = configuration_digest(&json!(r))?;
         let metadata = job.join("job.json");
         let mut state: Job = if let Some(value) = Self::read(&metadata)? {
@@ -96,6 +118,9 @@ impl CommandTests {
             )?;
             state
         } else {
+            if !allow_start {
+                return Ok(None);
+            }
             let state = Job {
                 request_digest: digest.clone(),
                 started: timestamp(),
@@ -104,14 +129,16 @@ impl CommandTests {
             Self::write(&metadata, &state)?;
             state
         };
-        require(
-            Self::read(&job.join("cancelled.json"))?.is_none(),
-            "测试已取消，不能恢复或重跑旧 operation",
-        )?;
         if let Some(value) = Self::read(&job.join("result.json"))? {
             return Ok(Some(value));
         }
-        if job.join("work").exists() {
+        if allow_start {
+            require(
+                Self::read(&job.join("cancelled.json"))?.is_none(),
+                "测试已取消，不能恢复或重跑旧 operation",
+            )?;
+        }
+        if allow_start && job.join("work").exists() {
             CliGit::new(&self.root)?.export_revision(
                 r.code.as_ref().unwrap(),
                 &r.candidate,
@@ -121,6 +148,9 @@ impl CommandTests {
         let sandbox = DockerSandbox::new(&root)?;
         let mut receipt = sandbox.inspect(&r.operation_id)?;
         if !state.start_dispatched {
+            if !allow_start {
+                return Ok(None);
+            }
             let work = job.join("work");
             CliGit::new(&self.root)?.export_revision(
                 r.code.as_ref().unwrap(),
@@ -190,6 +220,9 @@ impl CommandTests {
             Self::write(&metadata, &state)?;
             receipt = Some(sandbox.start(&r.operation_id)?);
         }
+        if !allow_start && receipt.is_none() && Self::read(&job.join("cancelled.json"))?.is_some() {
+            return Ok(None);
+        }
         let receipt = receipt.ok_or_else(|| {
             err(
                 "needs_reconciliation",
@@ -208,6 +241,9 @@ impl CommandTests {
             return Ok(None);
         }
         let stopped = if receipt.running {
+            if !allow_start {
+                return Ok(None);
+            }
             sandbox.stop(&r.operation_id)?;
             sandbox
                 .inspect(&r.operation_id)?
@@ -251,8 +287,38 @@ impl CommandTests {
         if !gaps.is_empty() {
             result["execution_file_gaps"] = json!(gaps);
         }
-        Self::write(&job.join("result.json"), &result)?;
+        if allow_start {
+            Self::write(&job.join("result.json"), &result)?;
+        }
         Ok(Some(result))
+    }
+    fn inspect(&self, r: &TestRequest) -> Result<ports::TestExecutionObservation> {
+        let cell = self.cell(&r.operation_id)?;
+        let _lock = cell.lock().map_err(storage)?;
+        if let Some(result) = self.poll_locked(r, false)? {
+            return Ok(ports::TestExecutionObservation::Completed { result });
+        }
+        let (root, job) = self.locations(r, false)?;
+        let cancelled = Self::read(&job.join("cancelled.json"))?.is_some();
+        let metadata = Self::read(&job.join("job.json"))?;
+        let Some(metadata) = metadata else {
+            return Ok(ports::TestExecutionObservation::NotStarted);
+        };
+        let state: Job = serde_json::from_value(metadata).map_err(storage)?;
+        require(
+            state.request_digest == configuration_digest(&json!(r))?,
+            "测试只读核对不能替换原请求",
+        )?;
+        let receipt = DockerSandbox::new(&root)?.inspect(&r.operation_id)?;
+        match receipt {
+            Some(receipt) if receipt.running => Ok(ports::TestExecutionObservation::Running {
+                timed_out: receipt.runtime_millis(timestamp())?
+                    > self.recipe(r)?.timeout_seconds * 1000,
+            }),
+            None if cancelled => Ok(ports::TestExecutionObservation::Stopped),
+            _ if !state.start_dispatched => Ok(ports::TestExecutionObservation::NotStarted),
+            _ => Ok(ports::TestExecutionObservation::Unknown),
+        }
     }
     fn result(
         r: &TestRequest,
@@ -327,7 +393,8 @@ impl CommandTests {
         Ok(result)
     }
     pub fn stop(&self, r: &TestRequest) -> Result<bool> {
-        let _lock = self.writer.lock().map_err(storage)?;
+        let cell = self.cell(&r.operation_id)?;
+        let _lock = cell.lock().map_err(storage)?;
         let (root, job) = self.paths(r)?;
         let state: Job = if let Some(metadata) = Self::read(&job.join("job.json"))? {
             serde_json::from_value(metadata).map_err(storage)?
@@ -350,27 +417,59 @@ impl CommandTests {
             state.request_digest == configuration_digest(&json!(r))?,
             "测试停止请求身份不符",
         )?;
-        DockerSandbox::new(&root)?.stop(&r.operation_id)?;
+        // Persist the physical no-start fence before asking Docker to stop.
         Self::write(
             &job.join("cancelled.json"),
-            &json!({"operation_id":r.operation_id,"writer_revoked":true}),
+            &json!({"operation_id":r.operation_id,"phase":"requested"}),
+        )?;
+        std::fs::File::open(&job)
+            .and_then(|f| f.sync_all())
+            .map_err(storage)?;
+        let sandbox = DockerSandbox::new(&root)?;
+        sandbox.stop(&r.operation_id)?;
+        require(
+            sandbox.inspect(&r.operation_id)?.is_none_or(|r| !r.running),
+            "原测试 worker 尚未停止",
+        )?;
+        Self::write(
+            &job.join("cancelled.json"),
+            &json!({"operation_id":r.operation_id,"phase":"proved","writer_revoked":true}),
         )?;
         Ok(true)
     }
     pub fn cleanup(&self, r: &TestRequest) -> Result<()> {
+        let cell = self.cell(&r.operation_id)?;
+        let _lock = cell.lock().map_err(storage)?;
         let (root, job) = self.paths(r)?;
+        let state: Job = serde_json::from_value(
+            Self::read(&job.join("job.json"))?
+                .ok_or_else(|| err("needs_reconciliation", "清理缺少原测试身份"))?,
+        )
+        .map_err(storage)?;
+        require(
+            state.request_digest == configuration_digest(&json!(r))?,
+            "测试清理不能替换原请求",
+        )?;
         require(
             Self::read(&job.join("result.json"))?.is_some()
-                || Self::read(&job.join("cancelled.json"))?.is_some(),
+                || Self::read(&job.join("cancelled.json"))?.is_some()
+                || self.poll_locked(r, false)?.is_some(),
             "先导出结果/停止回执才能清理测试容器",
         )?;
-        DockerSandbox::new(&root)?.remove(&r.operation_id)
+        let sandbox = DockerSandbox::new(&root)?;
+        require(
+            sandbox
+                .inspect(&r.operation_id)?
+                .is_none_or(|receipt| !receipt.running),
+            "测试清理前必须取得停止证明",
+        )?;
+        sandbox.remove(&r.operation_id)
     }
 }
 impl ports::Tests for CommandTests {
     fn identity(&self) -> String {
         format!(
-            "devdesk_adapters::CommandTests/v1+reporter.{:x}",
+            "devdesk_adapters::CommandTests/v2+reporter.{:x}",
             Sha256::digest(include_bytes!("../../../tests/reporters/node-reporter.mjs"))
         )
     }
@@ -389,7 +488,30 @@ impl ports::Tests for CommandTests {
         self.cleanup(r)
     }
     fn reconcile(&self, r: &TestRequest) -> Result<Option<Value>> {
-        self.poll(r)
+        self.inspect(r).map(|observation| match observation {
+            ports::TestExecutionObservation::Completed { result } => Some(result),
+            _ => None,
+        })
+    }
+    fn inspect_test(&self, r: &TestRequest) -> Result<ports::TestExecutionObservation> {
+        self.inspect(r)
+    }
+    fn inspect_test_cleanup(&self, r: &TestRequest) -> Result<bool> {
+        let cell = self.cell(&r.operation_id)?;
+        let _lock = cell.lock().map_err(storage)?;
+        let (root, job) = self.locations(r, false)?;
+        let state: Job = serde_json::from_value(
+            Self::read(&job.join("job.json"))?
+                .ok_or_else(|| err("needs_reconciliation", "测试清理核对缺少原身份"))?,
+        )
+        .map_err(storage)?;
+        require(
+            state.request_digest == configuration_digest(&json!(r))?,
+            "测试清理核对改变了原请求",
+        )?;
+        Ok(DockerSandbox::new(&root)?
+            .inspect(&r.operation_id)?
+            .is_none())
     }
 }
 

@@ -13,7 +13,7 @@ fn selectable(state: &EngineeringState, row: &ConfigurationRecord, scope: &Scope
     )?;
     crate::integrations::enabled(state, row)
 }
-fn frozen_sources<'a>(
+pub(crate) fn frozen_sources<'a>(
     catalog: &'a ConfigurationCatalogSnapshot,
     i: &ToolInvocation,
 ) -> Result<[&'a ConfigurationRecord; 3]> {
@@ -38,6 +38,7 @@ fn frozen_sources<'a>(
 /// but cannot replace its original intent, authority, command or Actor.
 pub struct PreparedConfiguredTool {
     namespace: StoreNamespace,
+    root: String,
     command: String,
     request: ConfiguredToolRequest,
 }
@@ -50,6 +51,7 @@ impl Engine {
     pub fn prepare_configured_tool(&self, c: &Command) -> Result<PreparedConfiguredTool> {
         Ok(PreparedConfiguredTool {
             namespace: self.store.namespace(),
+            root: self.store.root(),
             command: command_fingerprint("workflow.tool.execute", c),
             request: self.configured_tool_request(c)?,
         })
@@ -60,7 +62,7 @@ impl Engine {
         i: &ToolInvocation,
         prepared: &PreparedConfiguredTool,
     ) -> Result<Value> {
-        if prepared.namespace != self.store.namespace() {
+        if prepared.namespace != self.store.namespace() || prepared.root != self.store.root() {
             return Err(err("invalid_scope", "工具准备不能跨命名空间"));
         }
         require(

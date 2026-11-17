@@ -1,5 +1,7 @@
 #[cfg(test)]
 use crate::default_fixture::*;
+#[path = "background.rs"]
+mod background;
 #[path = "configuration_read.rs"]
 mod configuration_read;
 #[path = "github_projects.rs"]
@@ -15,6 +17,8 @@ mod integrations;
 mod model_providers;
 #[path = "permission_resources.rs"]
 mod permission_resources;
+#[path = "runtime_reads.rs"]
+mod runtime_reads;
 #[path = "runtime_setup.rs"]
 mod runtime_setup;
 #[path = "templates.rs"]
@@ -33,20 +37,23 @@ use std::{
     sync::{Arc, Mutex, atomic::Ordering},
 };
 
+type EngineInitialization = Arc<std::sync::OnceLock<Result<Arc<Engine>>>>;
 pub struct Workspace {
     pub global: Arc<GlobalStore>,
     codex_auth: codex_auth::CodexAuthentication,
     configuration: Arc<Engine>,
     adapters: ports::ExecutionAdapters,
     opened: Mutex<BTreeMap<String, Arc<Engine>>>,
-    switching: Mutex<()>,
-    template_gate: Arc<Mutex<()>>,
+    loading: Mutex<BTreeMap<String, EngineInitialization>>,
     runtime_setup: session_resources::RuntimePreparation,
     configuration_views: Mutex<Vec<(String, Arc<ConfigurationCatalogSnapshot>)>>,
     catalog_instance: String,
+    configuration_sync_epochs: Mutex<BTreeMap<String, (u64, u64)>>,
     event_hubs: Mutex<BTreeMap<String, std::sync::Weak<crate::event_hub::EventHub>>>,
     scheduler_next: std::sync::atomic::AtomicUsize,
     directory_next: std::sync::atomic::AtomicUsize,
+    runtime_reads: runtime_reads::RuntimeReadCache,
+    background: background::Background,
 }
 pub struct RpcOutcome {
     pub value: Value,
@@ -97,10 +104,10 @@ impl Workspace {
         if template_catalog_generation(&global.snapshot()?) == TEMPLATE_INITIAL_GENERATION
             && global.permission_preset_source()?.is_builtin
         {
-            global.reload_permission_presets(&Command {
+            global.initialize_permission_presets(&Command {
                 command_id: id(),
                 target: None,
-                expected_revision: None,
+                expected_revision: Some(global.permission_preset_source()?.revision),
                 payload: json!({}),
             })?;
         }
@@ -111,14 +118,16 @@ impl Workspace {
             configuration,
             adapters,
             opened: Mutex::new(BTreeMap::new()),
-            switching: Mutex::new(()),
-            template_gate: Arc::new(Mutex::new(())),
+            loading: Default::default(),
             runtime_setup: session_resources::RuntimePreparation::default(),
             configuration_views: Default::default(),
             catalog_instance: id(),
+            configuration_sync_epochs: Default::default(),
             event_hubs: Default::default(),
             scheduler_next: Default::default(),
             directory_next: Default::default(),
+            runtime_reads: Default::default(),
+            background: Default::default(),
         });
         let mut offset = 0;
         loop {
@@ -130,6 +139,12 @@ impl Workspace {
             if offset >= total {
                 break;
             }
+        }
+        if SqliteStore::global_discussion_path(Path::new(&workspace.global.root()))?
+            .join("engineering.sqlite3")
+            .is_file()
+        {
+            workspace.initialize_global_discussion()?;
         }
         Ok(workspace)
     }
@@ -151,7 +166,25 @@ impl Workspace {
             .ok_or_else(|| err("not_found", "项目尚未打开"))
     }
     fn sync_configuration(&self, e: &Engine) -> Result<()> {
-        e.sync_shared_configuration(self.global.as_ref())
+        let basis = (self.global.catalog_revision()?, e.store.catalog_revision()?);
+        let key = e.store.root();
+        if self
+            .configuration_sync_epochs
+            .lock()
+            .map_err(|error| err("storage", error.to_string()))?
+            .get(&key)
+            == Some(&basis)
+        {
+            return Ok(());
+        }
+        e.sync_shared_configuration(self.global.as_ref())?;
+        // Cache only the clocks captured before publication. A concurrent new
+        // source must cause another sync, never be labelled already copied.
+        self.configuration_sync_epochs
+            .lock()
+            .map_err(|error| err("storage", error.to_string()))?
+            .insert(key, basis);
+        Ok(())
     }
     fn load_project(&self, id: &str, creating: bool) -> Result<Arc<Engine>> {
         let _span = performance::Span::new("project.open");
@@ -168,6 +201,32 @@ impl Workspace {
         if let Some(e) = self.opened.lock().unwrap().get(id).cloned() {
             return Ok(e);
         }
+        let cell = self
+            .loading
+            .lock()
+            .map_err(|e| err("storage", e.to_string()))?
+            .entry(id.into())
+            .or_default()
+            .clone();
+        let result = cell
+            .get_or_init(|| self.initialize_project(id, creating))
+            .clone();
+        if result.is_err() {
+            let mut loading = self
+                .loading
+                .lock()
+                .map_err(|e| err("storage", e.to_string()))?;
+            if loading
+                .get(id)
+                .is_some_and(|current| Arc::ptr_eq(current, &cell))
+            {
+                loading.remove(id);
+            }
+        }
+        result
+    }
+    fn initialize_project(&self, id: &str, creating: bool) -> Result<Arc<Engine>> {
+        let root = PathBuf::from(self.global.root());
         let e = engine(
             Arc::new(SqliteStore::open_project(&root, id)?),
             &self.adapters,
@@ -178,13 +237,12 @@ impl Workspace {
                 .with_manager_services(ManagerServices {
                     shared: self.configuration.clone(),
                     inventory: self.global.clone(),
-                    gate: self.template_gate.clone(),
                 }),
         );
         if !creating {
             require(
-                e.store.snapshot()?.projects.len() == 1,
-                "项目数据库未包含有效 Project",
+                e.store.project_metadata()?.id == id,
+                "项目数据库未包含对应的有效 Project",
             )?;
         }
         self.configuration.recover_configuration_transfers(&e)?;
@@ -192,10 +250,8 @@ impl Workspace {
         e.bootstrap()?;
         e.recover_tool_receipts()?;
         if e.store
-            .snapshot()?
-            .projects
-            .iter()
-            .all(|p| p.execution_mode == "live")
+            .project_metadata()
+            .is_ok_and(|p| p.execution_mode == "live")
         {
             // Re-evaluate native facts once on reopen before the idle-project filter.
             e.evaluate_workflows()?;
@@ -209,6 +265,41 @@ impl Workspace {
         self.opened.lock().unwrap().insert(id.into(), e.clone());
         Ok(e)
     }
+    fn initialize_global_discussion(&self) -> Result<Arc<Engine>> {
+        let cell = self
+            .loading
+            .lock()
+            .map_err(|e| err("storage", e.to_string()))?
+            .entry(GLOBAL_DISCUSSION_NAMESPACE.into())
+            .or_default()
+            .clone();
+        let result = cell
+            .get_or_init(|| {
+                let root = SqliteStore::global_discussion_path(Path::new(&self.global.root()))?;
+                let e = engine(Arc::new(SqliteStore::open(&root)?), &self.adapters);
+                self.sync_configuration(&e)?;
+                e.bootstrap()?;
+                self.opened
+                    .lock()
+                    .map_err(|e| err("storage", e.to_string()))?
+                    .insert(GLOBAL_DISCUSSION_NAMESPACE.into(), e.clone());
+                Ok(e)
+            })
+            .clone();
+        if result.is_err() {
+            let mut loading = self
+                .loading
+                .lock()
+                .map_err(|e| err("storage", e.to_string()))?;
+            if loading
+                .get(GLOBAL_DISCUSSION_NAMESPACE)
+                .is_some_and(|current| Arc::ptr_eq(current, &cell))
+            {
+                loading.remove(GLOBAL_DISCUSSION_NAMESPACE);
+            }
+        }
+        result
+    }
     fn global_conversation_dispatch(&self, method: &str, params: Value) -> Result<Value> {
         require(params["project_id"].is_null(), "全局讨论不能同时指定项目")?;
         let existing = {
@@ -218,20 +309,23 @@ impl Workspace {
                 .get(GLOBAL_DISCUSSION_NAMESPACE)
                 .cloned()
         };
+        let read =
+            method.starts_with("query.") || matches!(method, "session.list" | "session.read");
+        if read && existing.is_none() {
+            return if matches!(method, "query.sessions" | "session.list") {
+                Ok(json!({"sessions":[],"total":0}))
+            } else {
+                Err(err("not_found", "全局讨论尚未建立"))
+            };
+        }
         let e = if let Some(e) = existing {
             e
         } else {
-            let root = SqliteStore::global_discussion_path(Path::new(&self.global.root()))?;
-            let e = engine(Arc::new(SqliteStore::open(&root)?), &self.adapters);
-            self.sync_configuration(&e)?;
-            e.bootstrap()?;
-            self.opened
-                .lock()
-                .unwrap()
-                .insert(GLOBAL_DISCUSSION_NAMESPACE.into(), e.clone());
-            e
+            self.initialize_global_discussion()?
         };
-        self.sync_configuration(&e)?;
+        if !read {
+            self.sync_configuration(&e)?;
+        }
         if (method == "session.open" || method == "experience.restore")
             && let Some(instance) = params["payload"]["agent_instance_id"].as_str()
         {
@@ -443,28 +537,35 @@ impl Workspace {
         if method == "query.project_directory" {
             return self.project_directory(&params);
         }
+        if matches!(
+            method,
+            "query.workflow_instance"
+                | "query.execution_task"
+                | "query.workflow_contexts"
+                | "query.workflow_materials"
+                | "query.workflow_executions"
+                | "query.workflow_record"
+        ) {
+            let engine = self.project_engine(params["project_id"].as_str())?;
+            // Display reads use committed project facts. They never synchronize
+            // sources, enter lifecycle gates, or inspect other projects' quota.
+            if method == "query.workflow_instance" && params["view"] == "status" {
+                let key = configuration_hash(&(
+                    "workflow-status/v1",
+                    engine.store.namespace(),
+                    engine.store.root(),
+                    &params,
+                ));
+                return self
+                    .runtime_reads
+                    .read(&key, || engine.query(method, &params, 0));
+            }
+            return engine.query(method, &params, 0);
+        }
         if let Some(result) = self.configuration_read(method, &params) {
             return result;
         }
 
-        let coordinated = template_definition_write(method)
-            || template_catalog_query(method)
-            || method == "configuration.templates.reset"
-            || ["project.configuration.update", "work.configuration.update"].contains(&method)
-            || matches!(
-                method,
-                "project.create" | "project.open_github" | "workflow.start" | "feature.create"
-            );
-        let _guard = if coordinated {
-            let _waiting = performance::Span::new("catalog.gate_wait");
-            Some(
-                self.template_gate
-                    .lock()
-                    .map_err(|e| err("storage", e.to_string()))?,
-            )
-        } else {
-            None
-        };
         if let Some(result) = self.template_dispatch(method, &params) {
             return result;
         }
@@ -512,13 +613,18 @@ impl Workspace {
         let params_for_sources = params.clone();
         let mut result = self.dispatch_inner(method, params)?;
         if template_catalog_query(method) {
-            let global = self.global.snapshot()?;
+            let global = self.global.configuration_snapshot()?.state.clone();
             let local = if params_for_sources["local"] == true
                 || params_for_sources["project_id"].is_string()
             {
                 self.project_engine(params_for_sources["project_id"].as_str())
                     .ok()
-                    .and_then(|e| e.store.snapshot().ok())
+                    .and_then(|e| {
+                        e.store
+                            .configuration_snapshot()
+                            .ok()
+                            .map(|catalog| catalog.state.clone())
+                    })
             } else {
                 None
             };
@@ -638,7 +744,12 @@ impl Workspace {
             } else {
                 self.project_engine(params["project_id"].as_str())?
             };
-            let state = engine.store.snapshot()?;
+            let state = engine
+                .store
+                .configuration_snapshot()?
+                .state
+                .as_ref()
+                .clone();
             let harness = state.configuration(id)?;
             require(harness.r#type == "harness", "需要 Harness 修订")?;
             return Ok(json!(self.materialize_harness(&engine, harness)?));
@@ -785,7 +896,12 @@ impl Workspace {
             }).collect();
             let recipe_state =
                 if let Ok(engine) = self.project_engine(params["project_id"].as_str()) {
-                    engine.store.snapshot()?
+                    engine
+                        .store
+                        .configuration_snapshot()?
+                        .state
+                        .as_ref()
+                        .clone()
                 } else {
                     self.global.snapshot()?
                 };
@@ -805,7 +921,6 @@ impl Workspace {
         if method == "project.create" {
             let command: Command =
                 serde_json::from_value(params).map_err(|e| err("invalid_params", e.to_string()))?;
-            let _switch = self.switching.lock().unwrap();
             let id = self
                 .global
                 .reserve_project(&command, &devdesk_core::InvocationContext::human(None))?;
@@ -845,17 +960,28 @@ impl Workspace {
             }
             Err(error) => return Err(error),
         };
-        if !method.starts_with("query.") {
+        let read_only =
+            method.starts_with("query.") || matches!(method, "session.list" | "session.read");
+        if !read_only
+            && e.store
+                .project_id()
+                .is_some_and(|id| id != GLOBAL_DISCUSSION_NAMESPACE)
+        {
             require(
-                e.store
-                    .snapshot()?
-                    .projects
-                    .iter()
-                    .all(|p| p.execution_mode == "live"),
+                e.store.project_metadata()?.execution_mode == "live",
                 "历史项目只读，请创建新的 GitHub 项目",
             )?;
         }
-        if e.store.project_id().is_some() {
+        if e.store.project_id().is_some()
+            && matches!(
+                method,
+                "project.configuration.update"
+                    | "feature.create"
+                    | "workflow.start"
+                    | "session.open"
+                    | "conversation.send"
+            )
+        {
             self.sync_configuration(&e)?;
         }
         if method == "conversation.send" {
@@ -864,35 +990,14 @@ impl Workspace {
             if let Some(result) = self.send_permission_conversation(&e, command)? {
                 return Ok(result);
             }
-            let sid = params["target"]
-                .as_str()
-                .ok_or_else(|| err("invalid_params", "需要 Session target"))?;
-            if let Some(binding) = e
-                .store
-                .snapshot()?
-                .sessions
-                .iter()
-                .find(|s| s.id == sid)
-                .and_then(|s| s.runtime_binding.as_ref())
-            {
-                require(
-                    binding.adapter_version
-                        == harness::managed_adapter_identity(binding.installation.key.provider),
-                    "适配器构建已更新，请点击开始/续用讨论创建带快照的后继会话",
-                )?;
-            }
+            return Err(err("adapter_contract", "讨论输入未由原生入口处理"));
         }
         if let Some(result) = self.experience_dispatch(method, &params, &e) {
             return result;
         }
         if method == "feature.create" {
             let mut params = params.clone();
-            if e.store
-                .snapshot()?
-                .projects
-                .first()
-                .is_some_and(|p| p.execution_mode == "live")
-            {
+            if e.store.project_metadata()?.execution_mode == "live" {
                 params["payload"]["require_configuration"] = json!(true);
             }
             let c =
@@ -912,7 +1017,7 @@ impl Workspace {
                     "query.session"
                 },
                 &params,
-                self.project_limit(&e, self.global.concurrency()?)?,
+                self.global.concurrency()?,
             )?;
             if method == "session.read"
                 && let Some(sid) = params["id"].as_str()
@@ -923,7 +1028,7 @@ impl Workspace {
         }
         let global_limit = self.global.concurrency()?;
         if method.starts_with("query.") {
-            let mut result = e.query(method, &params, self.project_limit(&e, global_limit)?)?;
+            let mut result = e.query(method, &params, global_limit)?;
             if method == "query.session"
                 && let Some(sid) = params["id"].as_str()
             {
@@ -956,9 +1061,6 @@ impl Workspace {
                         .map(|p| p.execution_mode.as_str())
                         .unwrap_or("live")
                 );
-                let configuration_status = e.project_configuration_status()?;
-                result["configuration_ready"] = configuration_status["ready"].clone();
-                result["configuration_status"] = configuration_status;
                 result["active_project"] = json!(current);
                 result["project_data_root"] = if e.store.project_id().is_some() {
                     json!(e.store.root())
@@ -978,42 +1080,6 @@ impl Workspace {
                 result["default_harness"] = json!(settings.default_harness);
                 result["settings_versions"] = json!(settings.versions);
                 result["runtime_installations"] = json!(self.global.runtime_installations()?);
-                let state = e.store.snapshot()?;
-                let project = e.store.project_id();
-                let material_offset =
-                    params["project_document_offset"].as_u64().unwrap_or(0) as usize;
-                result["project_documents"] = json!(
-                    state
-                        .documents
-                        .iter()
-                        .filter(|d| d.project_id.is_some() && d.project_id == project)
-                        .rev()
-                        .skip(material_offset)
-                        .take(limit)
-                        .collect::<Vec<_>>()
-                );
-                result["total_project_documents"] = json!(
-                    state
-                        .documents
-                        .iter()
-                        .filter(|d| d.project_id.is_some() && d.project_id == project)
-                        .count()
-                );
-                result["project_snapshots"] = json!(
-                    state
-                        .snapshots
-                        .iter()
-                        .filter(|s| s.project_id.is_some() && s.project_id == project)
-                        .rev()
-                        .take(limit)
-                        .collect::<Vec<_>>()
-                );
-                result["project_context"] = json!(
-                    state
-                        .contexts
-                        .iter()
-                        .find(|c| Some(c.owner_id.as_str()) == project.as_deref())
-                );
             }
             return Ok(result);
         }
@@ -1057,16 +1123,19 @@ impl Workspace {
         hubs.insert(scope.to_owned(), Arc::downgrade(&hub));
         Ok(hub)
     }
-    pub fn tick(&self, should_stop: impl Fn() -> bool) -> Result<()> {
+    #[cfg(test)]
+    pub fn tick_fixture(self: &Arc<Self>, should_stop: impl Fn() -> bool) -> Result<()> {
+        self.tick(&should_stop)?;
+        self.background.drain(should_stop)
+    }
+    pub fn tick(self: &Arc<Self>, should_stop: impl Fn() -> bool) -> Result<()> {
         if should_stop() {
+            self.background.stopped.store(true, Ordering::Release);
             return Ok(());
         }
-        self.configuration.drive_tool_calls()?;
-        if should_stop() {
-            return Ok(());
-        }
+        let completed = self.background.poll();
         let opened: Vec<_> = self.opened.lock().unwrap().values().cloned().collect();
-        let mut failure = None;
+        let mut failure = completed.err();
         // Repair directory summaries independently of pending workflow work.
         // The rotation includes idle projects; frontend queries never publish.
         if !opened.is_empty() {
@@ -1099,98 +1168,149 @@ impl Workspace {
             }
             self.directory_next.fetch_add(visited, Ordering::Relaxed);
         }
+        if !should_stop() && !opened.is_empty() {
+            let selected =
+                self.background.catalog_next.fetch_add(1, Ordering::Relaxed) % opened.len();
+            let engine = opened[selected].clone();
+            let project = engine.store.project_id().unwrap_or_else(|| "global".into());
+            let workspace = self.clone();
+            let stopping = self.background.stopped.clone();
+            self.background.spawn(
+                format!(
+                    "{project}:stage:{}",
+                    devdesk_core::SchedulingStage::ALL.len()
+                ),
+                project,
+                None,
+                move || {
+                    if stopping.load(Ordering::Acquire) {
+                        Ok(())
+                    } else {
+                        workspace.sync_configuration(&engine)
+                    }
+                },
+            )?;
+        }
         let mut engines = vec![];
-        let mut running = vec![];
+        let mut running = BTreeMap::new();
         let mut total = 0;
         for engine in opened {
             if should_stop() {
-                return Ok(());
+                self.background.stopped.store(true, Ordering::Release);
+                break;
             }
             let hints = engine.store.scheduling_hints()?;
-            // Every live writer consumes global quota, including work not selected
-            // for this bounded scheduler round.
+            let project = engine.store.project_id().unwrap_or_else(|| "global".into());
             total += hints.running_conversations;
+            running.insert(project.clone(), hints.running_conversations);
             if hints.pending && hints.live {
-                running.push(hints.running_conversations);
-                engines.push(engine);
+                engines.push((project, engine, hints.stages));
             }
+        }
+        // Configuration callbacks share the worker bound, independently of any
+        // project's potentially slow Git, Docker or runtime setup operation.
+        if !should_stop() {
+            let engine = self.configuration.clone();
+            let stopping = self.background.stopped.clone();
+            self.background
+                .spawn("global:tools".into(), "global".into(), None, move || {
+                    if !stopping.load(Ordering::Acquire) {
+                        engine.drive_tool_calls()?;
+                    }
+                    Ok(())
+                })?;
         }
         if !engines.is_empty() {
-            let start = self.scheduler_next.load(Ordering::Relaxed) % engines.len();
+            let start = self.scheduler_next.fetch_add(1, Ordering::Relaxed) % engines.len();
             engines.rotate_left(start);
-            running.rotate_left(start);
         }
-        let limit = self.global.concurrency()?;
-        let started = std::time::Instant::now();
-        let mut visited = 0;
-        // The scheduler is single-threaded across projects. Other running projects consume quota.
-        for (index, e) in engines.iter().enumerate() {
-            // Finish a project's current stages, then rotate to the next project
-            // on the next round. A slow first project cannot always start first.
-            if visited >= 8
-                || (visited > 0 && started.elapsed() >= std::time::Duration::from_millis(250))
-            {
-                break;
+        let stages = devdesk_core::SchedulingStage::ALL;
+        let stage_start =
+            self.background.stage_next.fetch_add(1, Ordering::Relaxed) % (stages.len() + 2);
+        let global_limit = self.global.concurrency()?;
+        let mut reserved = self.background.reserve_count(&running)?;
+        // Each pass offers one stage per project before offering another stage
+        // to the same project. SQL OCC still arbitrates every business change.
+        for slot in 0..stages.len() + 2 {
+            for (project, engine, ready) in &engines {
+                if should_stop() {
+                    self.background.stopped.store(true, Ordering::Release);
+                    break;
+                }
+                let phase = (stage_start + slot) % (stages.len() + 2);
+                // Catalog synchronization has its own all-project rotation.
+                // Offering it again here could consume every worker before
+                // projects with real runtime work get their first stage.
+                if phase == stages.len() {
+                    continue;
+                }
+                if phase < stages.len() && !ready.contains(&stages[phase]) {
+                    continue;
+                }
+                if phase == stages.len() + 1
+                    && !ready.iter().any(|s| {
+                        matches!(
+                            s,
+                            devdesk_core::SchedulingStage::Workflows
+                                | devdesk_core::SchedulingStage::Controllers
+                                | devdesk_core::SchedulingStage::Platform
+                        )
+                    })
+                {
+                    continue;
+                }
+                let key = format!("{project}:stage:{phase}");
+                let engine = engine.clone();
+                let workspace = self.clone();
+                let stopping = self.background.stopped.clone();
+                let mut reservation = None;
+                let mut allowance = 0;
+                if phase < stages.len()
+                    && stages[phase] == devdesk_core::SchedulingStage::Conversations
+                {
+                    let actual = *running.get(project).unwrap_or(&0);
+                    let project_limit = engine
+                        .store
+                        .project_metadata()
+                        .map(|p| p.concurrency as usize)
+                        .unwrap_or(global_limit);
+                    let free = global_limit.saturating_sub(total + reserved);
+                    let new = free.min(project_limit.saturating_sub(actual));
+                    allowance = actual + new;
+                    reservation = Some(allowance);
+                }
+                let started =
+                    self.background
+                        .spawn(key, project.clone(), reservation, move || {
+                            let stop = || stopping.load(Ordering::Acquire);
+                            if stop() {
+                                return Ok(());
+                            }
+                            if phase == stages.len() {
+                                workspace.sync_configuration(&engine)
+                            } else if phase == stages.len() + 1 {
+                                workspace.tick_workflow_engine(&engine, &stop)
+                            } else {
+                                engine.run_scheduling_stage(stages[phase], allowance, &stop)
+                            }
+                        })?;
+                if started && let Some(allowance) = reservation {
+                    reserved += allowance.saturating_sub(*running.get(project).unwrap_or(&0));
+                }
             }
-            // Finish the current scheduler stage, then leave remaining work queued.
-            // The Host waits for this tick before stopping and sealing owned writers.
-            if should_stop() {
-                break;
-            }
-            visited += 1;
-            if let Err(error) = self.tick_workflow_engine(e, &should_stop) {
-                failure.get_or_insert(error);
-            }
-            if should_stop() {
-                break;
-            }
-            if let Err(error) =
-                e.tick_until(limit.saturating_sub(total - running[index]), &should_stop)
-            {
-                failure.get_or_insert(error);
-            }
-            if should_stop() {
-                break;
-            }
-            if let Err(error) = self.tick_workflow_engine(e, &should_stop) {
-                failure.get_or_insert(error);
-            }
-            if should_stop() {
-                break;
-            }
-            if let Err(error) = e
-                .store
-                .project_metadata()
-                .and_then(|project| self.global.publish_project(&project))
-            {
-                failure.get_or_insert(error);
-            }
-            let next = e.conversation_running()?;
-            total = total - running[index] + next;
-            running[index] = next;
         }
-        self.scheduler_next.fetch_add(visited, Ordering::Relaxed);
         failure.map_or(Ok(()), Err)
     }
     pub fn stop_owned_runtime(&self) -> Result<()> {
+        let drained = self.background.stop_and_drain();
         let engines: Vec<_> = self.opened.lock().unwrap().values().cloned().collect();
-        let mut failure = None;
+        let mut failure = drained.err();
         for engine in engines {
             if let Err(e) = engine.stop_owned_runtime() {
                 failure.get_or_insert(e);
             }
         }
         failure.map_or(Ok(()), Err)
-    }
-    fn project_limit(&self, engine: &Arc<Engine>, limit: usize) -> Result<usize> {
-        let engines: Vec<_> = self.opened.lock().unwrap().values().cloned().collect();
-        let mut others = 0;
-        for other in engines {
-            if !Arc::ptr_eq(engine, &other) {
-                others += other.conversation_running()?;
-            }
-        }
-        Ok(limit.saturating_sub(others))
     }
 }
 
@@ -1205,14 +1325,14 @@ mod tests {
             Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
         let project = create(&workspace, "Idle experience metadata");
         let engine = workspace.project_engine(Some(&project)).unwrap();
-        engine.store.transact(None,&mut|state|{
+        engine.store.seed_fixture_state(None,&mut|state|{
             let data=json!({"project_id":project,"project_name":"Idle experience metadata","agent_instance_id":"fixture-agent","snapshot_id":"fixture-snapshot","session_id":"fixture-session","captured_at":1});
             state.governance.push(ConfigurationRecord {id:"fixture-experience".into(),r#type:"experience".into(),definition_id:"fixture-snapshot".into(),scope:Scope::project(&project),name:"Fixture metadata".into(),version:1,supersedes:None,content_hash:content_digest(&References::new(),&data),refs:References::new(),data,immutable:true,revision:1,created_at:1});
             Ok(Value::Null)
         }).unwrap();
         assert!(!engine.store.scheduling_hints().unwrap().pending);
         let trace = performance::Trace::start();
-        workspace.tick(|| false).unwrap();
+        workspace.tick_fixture(|| false).unwrap();
         let report = trace.finish();
         let key = devdesk_core::experience_directory::resource_key(
             &engine.store.namespace(),
@@ -1257,17 +1377,17 @@ mod tests {
         let first = workspace.project_engine(Some(&first)).unwrap();
         let first_id = first.store.project_id().unwrap();
         crate::test_runtime::queue_conversation(&first, &first_id);
-        workspace.tick(|| false).unwrap();
+        workspace.tick_fixture(|| false).unwrap();
         assert_eq!(first.conversation_running().unwrap(), 1);
         harness.0.store(0, Ordering::SeqCst);
         // Existing writers are counted once. Poll the original writer and admit
         // another in the same round, then poll each exactly once next round.
         crate::test_runtime::queue_conversation(&first, &first_id);
-        workspace.tick(|| false).unwrap();
+        workspace.tick_fixture(|| false).unwrap();
         assert_eq!(first.conversation_running().unwrap(), 2);
         assert_eq!(harness.0.load(Ordering::SeqCst), 1);
         harness.0.store(0, Ordering::SeqCst);
-        workspace.tick(|| false).unwrap();
+        workspace.tick_fixture(|| false).unwrap();
         assert_eq!(harness.0.load(Ordering::SeqCst), 2);
         let second = create(&workspace, "Second");
         let second = workspace.project_engine(Some(&second)).unwrap();
@@ -1275,7 +1395,7 @@ mod tests {
         crate::test_runtime::queue_conversation(&second, &second_id);
         crate::test_runtime::queue_conversation(&second, &second_id);
         for _ in 0..8 {
-            workspace.tick(|| false).unwrap();
+            workspace.tick_fixture(|| false).unwrap();
             let total =
                 first.conversation_running().unwrap() + second.conversation_running().unwrap();
             assert!(total <= 3);
@@ -1338,7 +1458,7 @@ mod tests {
             workspace.global.project(project).unwrap().unwrap().title,
             "Original directory title"
         );
-        workspace.tick(|| false).unwrap();
+        workspace.tick_fixture(|| false).unwrap();
         assert_eq!(
             workspace.global.project(project).unwrap().unwrap().title,
             "Background authoritative title"
@@ -1436,14 +1556,13 @@ mod tests {
         let (ready_tx, ready_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
         let writer = std::thread::spawn(move || {
-            engine.store.transact(None, &mut |_| {
+            engine.store.seed_fixture_state(None, &mut |_| {
                 ready_tx.send(()).unwrap();
                 release_rx.recv_timeout(Duration::from_secs(10)).unwrap();
                 Ok(Value::Null)
             })
         });
         ready_rx.recv_timeout(Duration::from_secs(10)).unwrap();
-        let gate = workspace.template_gate.lock().unwrap();
         let (result_tx, result_rx) = mpsc::channel();
         let reader_workspace = workspace.clone();
         let reader = std::thread::spawn(move || {
@@ -1470,6 +1589,8 @@ mod tests {
             );
             let execution = reader_workspace
                 .dispatch("query.execution_workspace", json!({"project_id":project}));
+            let metadata =
+                reader_workspace.dispatch("query.workspace", json!({"project_id":project}));
             let hints = reader_workspace
                 .project_engine(Some(&project))
                 .unwrap()
@@ -1483,6 +1604,7 @@ mod tests {
                     management,
                     progress,
                     execution,
+                    metadata,
                     hints,
                     trace.finish(),
                 ))
@@ -1490,11 +1612,10 @@ mod tests {
         });
         // Test admission independently of the locks; this is not a latency benchmark.
         let result = result_rx.recv_timeout(Duration::from_secs(2));
-        drop(gate);
         release_tx.send(()).unwrap();
         writer.join().unwrap().unwrap();
         reader.join().unwrap();
-        let (summary, driver, decision, management, progress, execution, hints, trace) =
+        let (summary, driver, decision, management, progress, execution, metadata, hints, trace) =
             result.expect("summary reads waited for a business lock");
         assert!(summary.unwrap()["record"].is_null());
         assert_eq!(driver.unwrap_err().code, "not_found");
@@ -1502,6 +1623,7 @@ mod tests {
         assert_eq!(management.unwrap_err().code, "not_found");
         assert_eq!(progress.unwrap_err().code, "not_found");
         assert_eq!(execution.unwrap()["kind"], "execution_workspace");
+        assert_eq!(metadata.unwrap()["kind"], "workspace_metadata");
         assert_eq!(hints.unwrap().running_conversations, 0);
         for span in [
             "catalog.build",
@@ -1659,6 +1781,9 @@ mod tests {
             .filter(|v| v.resource.id == "global_concurrency")
             .collect();
         w.dispatch("settings.update", json!({"command_id":"set-limit","preconditions":versions,"payload":{"global_concurrency":3}})).unwrap();
+        for _ in 0..4 {
+            w.tick_fixture(|| false).unwrap();
+        }
         read_project(&w, &a);
         let a_state = w
             .project_engine(Some(&a))
@@ -1829,18 +1954,18 @@ mod adapter_injection_tests {
             engines.push(engine);
         }
         harness.stopping.store(true, Ordering::SeqCst);
-        w.tick(|| harness.stopping.load(Ordering::SeqCst)).unwrap();
+        w.tick_fixture(|| harness.stopping.load(Ordering::SeqCst))
+            .unwrap();
         assert_eq!(harness.dispatched.load(Ordering::SeqCst), 0);
         harness.stopping.store(false, Ordering::SeqCst);
-        w.tick(|| harness.stopping.load(Ordering::SeqCst)).unwrap();
-        assert_eq!(
-            harness.dispatched.load(Ordering::SeqCst),
-            1,
-            "shutdown during one project must prevent dispatch in the next project"
-        );
+        w.background.stopped.store(false, Ordering::Release);
+        w.tick_fixture(|| harness.stopping.load(Ordering::SeqCst))
+            .unwrap();
+        let dispatched = harness.dispatched.load(Ordering::SeqCst);
+        assert!((1..=2).contains(&dispatched));
         w.stop_owned_runtime().unwrap();
-        assert_eq!(harness.stopped.load(Ordering::SeqCst), 1);
-        assert_eq!(harness.cleaned.load(Ordering::SeqCst), 1);
+        assert_eq!(harness.stopped.load(Ordering::SeqCst), dispatched);
+        assert_eq!(harness.cleaned.load(Ordering::SeqCst), dispatched);
         let states: Vec<_> = engines
             .iter()
             .map(|e| e.store.snapshot().unwrap())
@@ -1850,7 +1975,7 @@ mod adapter_injection_tests {
                 .iter()
                 .filter(|s| s.turns[0].status == TurnStatus::Queued)
                 .count(),
-            1
+            2 - dispatched
         );
         let started = states.iter().find(|s| !s.executions.is_empty()).unwrap();
         assert_eq!(started.turns[0].status, TurnStatus::NeedsReconciliation);
@@ -1885,7 +2010,7 @@ mod adapter_injection_tests {
         }
         // A round has at most eight project visits and a time budget checked
         // between project stages. All twelve must progress over later rounds.
-        w.tick(|| false).unwrap();
+        w.tick_fixture(|| false).unwrap();
         let started = engines
             .iter()
             .filter(|engine| engine.conversation_running().unwrap() > 0)
@@ -1898,14 +2023,33 @@ mod adapter_injection_tests {
             {
                 break;
             }
-            w.tick(|| false).unwrap();
+            w.tick_fixture(|| false).unwrap();
         }
         assert!(
             engines
                 .iter()
-                .all(|engine| engine.conversation_running().unwrap() > 0)
+                .all(|engine| engine.conversation_running().unwrap() > 0),
+            "scheduler facts: {:?}",
+            engines
+                .iter()
+                .map(|engine| {
+                    let s = engine.store.snapshot().unwrap();
+                    (
+                        engine.store.project_id(),
+                        s.turns
+                            .iter()
+                            .map(|t| (t.status, t.revision))
+                            .collect::<Vec<_>>(),
+                        s.executions
+                            .iter()
+                            .map(|e| (e.status, e.writer_revoked))
+                            .collect::<Vec<_>>(),
+                        engine.store.scheduling_hints().unwrap(),
+                    )
+                })
+                .collect::<Vec<_>>()
         );
-        assert!(w.scheduler_next.load(Ordering::Relaxed) >= 12);
+        assert!(w.scheduler_next.load(Ordering::Relaxed) > 0);
         // IdleHarness is a test-only protocol port; no native worker was started.
     }
     #[test]
@@ -1931,7 +2075,7 @@ mod adapter_injection_tests {
                 if e.conversation_running().unwrap() > 0 {
                     break;
                 }
-                w.tick(|| false).unwrap();
+                w.tick_fixture(|| false).unwrap();
             }
             assert!(e.store.snapshot().unwrap().turns.iter().any(|t| t.id == tid
                 && [TurnStatus::Dispatching, TurnStatus::Running].contains(&t.status)));
@@ -1959,7 +2103,7 @@ mod adapter_injection_tests {
                 .to_string();
             let e = w.project_engine(Some(&pid)).unwrap();
             crate::test_runtime::queue_conversation(&e, &pid);
-            w.tick(|| false).unwrap();
+            w.tick_fixture(|| false).unwrap();
             engines.push(e);
         }
         assert_eq!(engines[0].conversation_running().unwrap(), 1);
@@ -2119,7 +2263,7 @@ mod adapter_injection_tests {
         );
         let mut payload = payload;
         payload["frozen_feature_id"] = json!(fid);
-        let instance = e
+        let error = e
             .execute(
                 "agent.instance.create",
                 Command {
@@ -2129,11 +2273,8 @@ mod adapter_injection_tests {
                     payload,
                 },
             )
-            .unwrap();
-        assert_eq!(
-            instance["data"]["agent_revision_id"],
-            default_configured_agent_id("analyst")
-        );
+            .unwrap_err();
+        assert!(error.message.contains("冻结"), "{error}");
         assert_eq!(
             json!(e.store.snapshot().unwrap().frozen_test_plan(fid).unwrap()),
             frozen
@@ -2235,14 +2376,16 @@ impl Workspace {
             codex_auth: devdesk_adapters::codex_auth::CodexAuthentication::new(root)?,
             adapters,
             opened: Mutex::new(opened),
-            switching: Mutex::new(()),
-            template_gate: Arc::new(Mutex::new(())),
+            loading: Default::default(),
             runtime_setup: Default::default(),
             configuration_views: Default::default(),
             catalog_instance: id(),
+            configuration_sync_epochs: Default::default(),
             event_hubs: Default::default(),
             scheduler_next: Default::default(),
             directory_next: Default::default(),
+            runtime_reads: Default::default(),
+            background: Default::default(),
         }))
     }
 }

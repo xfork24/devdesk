@@ -199,8 +199,10 @@ fn check_scope(s: &EngineeringState, scope: &Scope, store_project: Option<&str>)
     } else {
         let project = scope.project_id();
         require(
-            store_project.is_none_or(|p| Some(p) == project)
-                && project.is_some_and(|id| s.projects.iter().any(|p| p.id == id)),
+            project.is_some_and(|id| match store_project {
+                Some(owned) => owned == id && s.projects.iter().all(|p| p.id == id),
+                None => s.projects.iter().any(|p| p.id == id),
+            }),
             "配置 Project 作用域不匹配",
         )
     }
@@ -322,6 +324,7 @@ pub(crate) fn install_agent_profile(
 }
 
 // Experience is a current Feature index; sealed snapshots retain the evidence history.
+#[cfg(test)]
 fn store_experience(state: &mut EngineeringState, mut entry: ConfigurationRecord) {
     if let Some(feature) = entry.data["feature_id"].as_str() {
         entry.id = format!(
@@ -355,187 +358,6 @@ fn store_experience(state: &mut EngineeringState, mut entry: ConfigurationRecord
 }
 
 impl Engine {
-    pub(crate) fn index_experience(
-        &self,
-        s: &mut EngineeringState,
-        snapshot_id: &str,
-    ) -> Result<()> {
-        let snap = s
-            .snapshots
-            .iter()
-            .find(|snap| snap.id == snapshot_id)
-            .ok_or_else(|| err("not_found", "Snapshot 不存在"))?
-            .clone();
-        let feature = snap
-            .feature_id
-            .as_ref()
-            .and_then(|id| s.features.iter().find(|f| &f.id == id));
-        let pid = feature
-            .map(|f| f.project_id.clone())
-            .or(snap.project_id.clone())
-            .unwrap_or_else(|| GLOBAL_DISCUSSION_NAMESPACE.into());
-        let project_title = if pid == GLOBAL_DISCUSSION_NAMESPACE {
-            "全局 / 跨项目".to_owned()
-        } else {
-            s.projects
-                .iter()
-                .find(|p| p.id == pid)
-                .ok_or_else(|| err("not_found", "Project 不存在"))?
-                .title
-                .clone()
-        };
-        let feature_name = feature.map(|f| f.title.clone());
-        for session_id in &snap.capture.sessions {
-            let link = s
-                .governance
-                .iter()
-                .find(|r| r.r#type == "agent_session" && r.definition_id == *session_id)
-                .cloned();
-            if let Some(link) = link
-                && !s.governance.iter().any(|r| {
-                    r.r#type == "experience"
-                        && r.definition_id == snapshot_id
-                        && r.data["session_id"] == *session_id
-                })
-            {
-                let work = s
-                    .turns
-                    .iter()
-                    .rev()
-                    .find(|t| t.session_id == *session_id)
-                    .and_then(|t| t.finished.or(t.started));
-                let workflow = crate::agent_tasks::session_binding(s, session_id)
-                    .map(|r| r.data.clone())
-                    .unwrap_or(Value::Null);
-                let data = json!({"agent_instance_id":link.data["agent_instance_id"],"agent_revision_id":link.data["agent_revision_id"],"snapshot_id":snapshot_id,"session_id":session_id,"project_id":pid,"project_name":project_title,"feature_id":snap.feature_id,"feature_name":feature_name.clone().unwrap_or_default(),"task_id":snap.task_id,"workflow_instance_id":workflow["instance_id"],"step_execution_id":workflow["execution_id"],"plan_revision_id":workflow["plan_revision_id"],"content_digest":configuration_hash(&snap),"captured_at":snap.capture.captured_at,"work_time":work,"binding":link.data["binding"],"kind":snap.kind});
-                let entry = record(
-                    "experience",
-                    snapshot_id.into(),
-                    if pid == GLOBAL_DISCUSSION_NAMESPACE {
-                        Scope::global()
-                    } else {
-                        Scope::project(pid.clone())
-                    },
-                    feature_name.clone().unwrap_or(project_title.clone()),
-                    1,
-                    None,
-                    data,
-                    true,
-                );
-                store_experience(s, entry);
-            }
-        }
-        Ok(())
-    }
-
-    pub(crate) fn governance_after_command(
-        &self,
-        method: &str,
-        c: &Command,
-        s: &mut EngineeringState,
-        result: &Value,
-    ) -> Result<()> {
-        if method == "conversation.send" {
-            self.configured_turn_task(s, &text(result, "id")?)?;
-        }
-        if method == "session.open" {
-            self.configured_session_opened(s, c, result)?;
-            if let Some(instance_id) = opt(&c.payload, "agent_instance_id") {
-                let instance_record = s.configuration(&instance_id)?.clone();
-                require(instance_record.r#type == "agent_instance", "无效 Agent")?;
-                let instance: AgentInstance = instance_record.decode()?;
-                let session_id = text(result, "id")?;
-                let session = s
-                    .sessions
-                    .iter()
-                    .find(|v| v.id == session_id)
-                    .ok_or_else(|| err("not_found", "Session 不存在"))?;
-                let project = session
-                    .project_id
-                    .clone()
-                    .ok_or_else(|| err("invalid_scope", "Session 缺少项目"))?;
-                require(
-                    session.scope == Some(SessionScope::Global)
-                        || instance.scope.visible_from(&if session.scope
-                            == Some(SessionScope::Global)
-                        {
-                            Scope::global()
-                        } else {
-                            Scope::project(project.clone())
-                        }),
-                    "Agent 不能用于其他项目",
-                )?;
-                require(
-                    session.agent == instance.agent_revision_id,
-                    "Agent 与 AgentRevision 不匹配",
-                )?;
-                let agent = s.resolve_agent(&instance.agent_revision_id)?;
-                let model: ModelDefinition = s.configuration(&agent.model_ref)?.decode()?;
-                let harness_record = s.configuration(&agent.harness_ref)?.clone();
-                let harness: HarnessDefinition = harness_record.decode()?;
-                let binding = session
-                    .runtime_binding
-                    .as_ref()
-                    .ok_or_else(|| err("blocked", "Agent Session 缺少冻结绑定"))?;
-                require(
-                    binding.model == model.model
-                        && binding.installation.key.provider.as_str() == harness.provider,
-                    "执行绑定改变了 Agent 的 Model/Harness",
-                )?;
-                let resolved = s.resolve_model_connection(&model, &harness_record)?;
-                require(
-                    binding.model_connection == resolved,
-                    "执行绑定改变了 Model 连接或容量",
-                )?;
-                if let Some(old) = s
-                    .governance
-                    .iter()
-                    .find(|r| r.r#type == "agent_session" && r.definition_id == session_id)
-                {
-                    require(
-                        old.data["agent_instance_id"] == instance_id,
-                        "不能将 Session 重新归属其他 Agent",
-                    )?;
-                } else {
-                    s.governance.push(record("agent_session",session_id,if session.scope==Some(SessionScope::Global){Scope::global()}else{Scope::project(project)},instance_record.name,1,None,json!({"agent_instance_id":instance_id,"agent_revision_id":instance.agent_revision_id,"composition_hash":s.configuration(&instance.agent_revision_id)?.content_hash,"model_ref":agent.model_ref,"harness_ref":agent.harness_ref,"binding":binding,"step_execution_id":c.payload["configured_execution_id"]}),true));
-                }
-            }
-        }
-        Ok(())
-    }
-    pub(crate) fn freeze_feature_configuration(
-        &self,
-        s: &mut EngineeringState,
-        feature: &str,
-        p: &Value,
-    ) -> Result<()> {
-        let f = s.feature(feature)?.clone();
-        let current = s
-            .governance
-            .iter()
-            .filter(|r| r.r#type == "project_configuration" && r.definition_id == f.project_id)
-            .max_by_key(|r| r.version)
-            .cloned();
-        let Some(current) = current else {
-            require(
-                p["require_configuration"] != true
-                    && !s
-                        .projects
-                        .iter()
-                        .any(|p| p.id == f.project_id && p.execution_mode == "live"),
-                "请先为 Project 选择 Workflow、Standard 和 Agent 组合",
-            )?;
-            return Ok(());
-        };
-        if let Some(expected) = opt(p, "configuration_revision_id") {
-            require(
-                expected == current.id,
-                "Project 默认配置已变化，请刷新创建表单",
-            )?;
-        }
-        self.configure_feature_workflow(s, feature, &current, p)
-    }
-
     pub(crate) fn governance_command(
         &self,
         method: &str,
@@ -568,10 +390,17 @@ impl Engine {
             } else {
                 None
             };
-            let scope = old
-                .as_ref()
-                .map(|r| r.scope.clone())
-                .unwrap_or(decode(p.get("scope").unwrap_or(&json!("global")))?);
+            let scope = old.as_ref().map(|r| r.scope.clone()).unwrap_or(decode(
+                &p.get("scope").cloned().unwrap_or_else(|| {
+                    json!(
+                        self.store
+                            .project_id()
+                            .as_deref()
+                            .map(Scope::project)
+                            .unwrap_or_else(Scope::global)
+                    )
+                }),
+            )?);
             if !(family == "role" && self.store.project_id().is_none()) {
                 check_scope(s, &scope, self.store.project_id().as_deref())?;
             }

@@ -269,7 +269,7 @@ fn publication_does_not_restore_unrelated_history_or_wait_for_legacy_global_writ
     let (release, blocked) = mpsc::channel();
     let old = global.clone();
     let writer = std::thread::spawn(move || {
-        old.transact(None, &mut |_| {
+        old.seed_fixture_state(None, &mut |_| {
             ready.send(()).unwrap();
             blocked.recv().unwrap();
             Ok(Value::Null)
@@ -280,7 +280,7 @@ fn publication_does_not_restore_unrelated_history_or_wait_for_legacy_global_writ
         std::path::Path::new(&engine.store.root()).join("engineering.sqlite3"),
     )
     .unwrap();
-    conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('unrestorable','workflow_instance','owner',?1,'History',1,'fixture','{}',?2,0,1,1)",rusqlite::params![serde_json::to_string(&Scope::project(PROJECT)).unwrap(),json!({"plan":{"$source":"missing-frozen-source"},"large":"x".repeat(1_000_000)}).to_string()]).unwrap();
+    conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('unrestorable','workflow_instance','owner',?1,'History',1,'fixture','{}',?2,0,1,1)",rusqlite::params![serde_json::to_string(&Scope::project(PROJECT)).unwrap(),json!({"root_instance_id":"unrestorable-root","plan":{"$source":"missing-frozen-source"},"large":"x".repeat(1_000_000)}).to_string()]).unwrap();
     let trace = performance::Trace::start();
     let result = engine.publish_experience_index(global.as_ref());
     let report = trace.finish();

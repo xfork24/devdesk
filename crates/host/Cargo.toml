@@ -19,4 +19,6 @@ uuid.workspace = true
 base64 = "0.22"
 url = "2"
 [dev-dependencies]
+devdesk-adapters = { path = "../adapters", features = ["test-fixtures"] }
+devdesk-core = { path = "../core", features = ["test-fixtures"] }
 tempfile = "3"

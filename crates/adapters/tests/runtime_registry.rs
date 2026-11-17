@@ -212,7 +212,7 @@ fn independent_resource_commits_do_not_wait_for_the_legacy_writer_or_overwrite_e
     let (release_tx, release_rx) = mpsc::channel();
     let legacy = store.clone();
     let writer = std::thread::spawn(move || {
-        legacy.transact(None, &mut |state| {
+        legacy.seed_fixture_state(None, &mut |state| {
             ready_tx.send(()).unwrap();
             release_rx.recv_timeout(Duration::from_secs(10)).unwrap();
             state.events.push(Event {

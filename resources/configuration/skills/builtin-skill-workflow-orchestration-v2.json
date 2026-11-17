@@ -1,0 +1,11 @@
+{
+  "type": "skill",
+  "identity": "builtin-skill-workflow-orchestration",
+  "revision": 2,
+  "name": "工作流编排",
+  "scope": "global",
+  "data": {
+    "rules": [],
+    "body_file": "workflow-orchestration-v2.md"
+  }
+}

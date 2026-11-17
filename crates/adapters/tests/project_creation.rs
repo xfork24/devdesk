@@ -111,7 +111,7 @@ fn scoped_engine_creation_bypasses_old_writer_and_never_restores_engineering_his
     let (release, released) = mpsc::channel();
     let legacy = store.clone();
     let writer = std::thread::spawn(move || {
-        legacy.transact(None, &mut |state| {
+        legacy.seed_fixture_state(None, &mut |state| {
             ready.send(()).unwrap();
             released.recv().unwrap();
             state.events.push(Event {

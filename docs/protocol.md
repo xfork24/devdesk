@@ -1,10 +1,8 @@
 # 本地协议
 
-JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 22 / project 57；出厂 Workflow、Spec、Standard 分别记录 schema_version 6、3、4，任务记录 `agent-task/v6`。业务源按实际结构与规则接纳；SQLite user_version、数据集标记和外部凭据助手协议则有独立兼容校验，不能混为版本展示元数据。精确字段见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。不升级或转换旧数据。
+JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 24 / project 59；出厂 Workflow、Spec、Standard 分别记录 schema_version 6、3、4，任务记录 `agent-task/v6`。业务源按实际结构与规则接纳；SQLite user_version、数据集标记和外部凭据助手协议则有独立兼容校验，不能混为版本展示元数据。精确字段见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。不升级或转换旧数据。
 
-本文记录实施分支的协议。项目路由已采用显式作用域；重构继续为所有修改入口统一版本前置条件、幂等和冲突响应；接口盘点、目标语义及切换顺序见 [底层并发重构方案](plans/single-host-concurrency/PLAN.md)。目前设置修改已接入资源提交，其余接口迁移尚未完成。
-
-本文记录现行协议。已确认的下一步设计将以显式作用域替代共享活动项目，并为所有修改入口统一版本前置条件、幂等和冲突响应；接口盘点、目标语义及切换顺序见 [底层并发重构方案](plans/single-host-concurrency/PLAN.md)。本轮仅确定方案，尚未修改 RPC Schema 或运行行为。
+本文记录实施分支的协议。项目路由采用显式作用域，修改入口使用原始版本前置条件、幂等和冲突响应；公开业务命令与后台回调均采用资源提交。接口盘点和设计见 [底层并发重构方案](plans/single-host-concurrency/PLAN.md)，已执行的初步验证及正式容量缺口见 [实施记录](plans/single-host-concurrency/EXECUTION.md)。
 
 ## HTTP 与命令
 
@@ -23,19 +21,19 @@ JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 22 / project 
 
 `/capabilities.lifecycle` 为 `{instance_id,revision,status}`。`/setup` 参数为 `{command_id,instance_id,expected_revision,path}`，`/shutdown` 为 `{command_id,instance_id,expected_revision}`；缺少版本为 `precondition_required`，旧实例或旧版本为 `revision_conflict`。HTTP 拒绝响应含 `error`、`code` 和当前 `lifecycle`，成功或已受理操作完成的响应另含 `operation_id`。初始化失败仍返回明确错误与该次完成版本，允许重新选择路径，不改写不兼容目录。
 
-初始化先原子取得生命周期意图，事务外加载数据，结束时再次校验原意图；期间其他 HTTP 读取可继续返回已提交状态。客户端断开不取消 Host 持有的完成任务，停止会围栏迟到初始化。相同命令完成后重放原回执，进行中返回 `operation_in_progress`，使用原命令核对；本 Host 内最多保留 128 条已受理生命周期回执。重启生成新实例身份，旧页面不能继续初始化或停止新 Host。生命周期回执属于当前进程，不能代替 SQLite 中的持久化业务回执。会话建立及其他修改入口的迁移仍待完成。
+初始化先原子取得生命周期意图，事务外加载数据，结束时再次校验原意图；期间其他 HTTP 读取可继续返回已提交状态。客户端断开不取消 Host 持有的完成任务，停止会围栏迟到初始化。相同命令完成后重放原回执，进行中返回 `operation_in_progress`，使用原命令核对；本 Host 内最多保留 128 条已受理生命周期回执。重启生成新实例身份，旧页面不能继续初始化或停止新 Host。生命周期回执属于当前进程，不能代替 SQLite 中的持久化业务回执。
 
 `query.settings` 从一个已提交快照返回 `global_concurrency`、`default_harness` 和 `versions`。`settings.update` 参数为 `{command_id,preconditions,payload}`，其中 `preconditions` 是 `{resource:{kind:"setting",id},revision}` 数组，只包含本次修改项，`payload` 包含 `global_concurrency` 和/或 `default_harness`。缺少原始版本返回 `precondition_required`，过期返回 `revision_conflict`；两个设置项的版本互不影响。`query.ui_bootstrap`、`query.workspace` 和 `query.runtime_installations` 也返回 `settings_versions`，值与版本在同一读取快照内取得。
 
 资源提交的 JSON-RPC 成功响应保留 `result` 的领域形状，并在顶层增加 `meta.commit={namespace,versions,cursor}`。设置作用域为 `{kind:"configuration"}`；游标属于该库事件流。相同设置命令重放原结果、原版本及原游标，即使设置后来再次修改。客户端发生冲突后保留编辑草稿及其原版本；重新读取不会自动改写已打开草稿的保存条件。
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"query.workspace","params":{}}
+{"jsonrpc":"2.0","id":1,"method":"query.workspace","params":{"project_id":"<project-id>"}}
 ```
 
-`query.workspace` 返回项目目录及活动工程，`query.history` / `query.events` / `query.artifact` 读取对应事实。分页参数有界；SSE 只通知变化，客户端重新查询权威状态。没有通用 `set_status`。
+`query.workspace` 返回明确所选项目的有界工程元数据；配置状态表示已经发布校验的确切选择，完整当前诊断另按需读取。`query.history` / `query.events` / `query.artifact` 读取对应作用域事实，Artifact 按精确资源键读取。SSE 只通知变化，客户端重新查询权威状态。没有通用 `set_status`。
 
-`query.ui_bootstrap` 返回本请求所选项目、项目目录、配置新鲜度、配置健康摘要和页面必须的运行安装信息，不返回工程详情或历史快照；`query.project_directory` 只读取项目目录，支持 `project_offset`、`limit` 和 `github_only`。配置页面使用这两个入口，执行和历史页面继续读取 `query.workspace`。配置目录、默认选择、权限资源等查询保留原有响应内容，并附带 `catalog_version={host,global,project,project_sources}`；该版本不作为执行授权或并发写入令牌，模板重置仍使用 `catalog_generation`。
+`query.ui_bootstrap` 返回本请求所选项目、项目目录、配置新鲜度、配置健康摘要和页面必须的运行安装信息，不返回工程详情或历史快照；`query.project_directory` 只读取项目目录，支持 `project_offset`、`limit` 和 `github_only`。配置页面使用这两个入口，执行页按面板使用工作台元数据、execution_workspace 和流程状态/详情查询。配置目录、默认选择、权限资源等查询保留原有响应内容，并附带 `catalog_version={host,global,project,project_sources}`；该版本不作为执行授权或并发写入令牌，模板重置仍使用 `catalog_generation`。
 
 Web 使用 `GET /events?tail=true&configuration=true&project_id=ID` 订阅共享失效尾流。同一作用域只有一个后台读取器，按提交通知唤醒并每秒补查一次；初次连接从当前事件头开始，发送 stream.ready，前端据此刷新当前页。确切同作用域 Last-Event-ID 优先于 cursor；跨项目 Last-Event-ID 不沿用。缓存窗口内重连按事件顺序恢复；游标过旧、超前、事件过大或缓存预算不足时发送带当前作用域游标的 stream.reset，前端失效缓存并读取当前权威状态，不把缺失事件当作已经接纳的业务事实。
 
@@ -45,7 +43,7 @@ SSE 可显式传入 `configuration=true`，接收无持久化事件 ID 的 `conf
 
 设置 `DEVDESK_PERF_LOG=1` 可输出启动和 RPC 的 JSON 性能日志，包含请求编号、队列等待、连接等待、源解码/校验、恢复、编译、响应编码、字节数与阶段调用次数；嵌套阶段为包含关系，不能直接相加。RPC 同时返回 `Server-Timing` 和 `X-DevDesk-Request-Id`。日志不包含请求参数或响应正文，默认关闭。
 
-历史记录页使用 `query.history({scope,project_id?,include_tool_calls:true,offset,limit})`：Global 读取全局配置库，当前项目读取对应活动项目库；先合并持久化事件、外部工具及平台工具调用，按事件 time / 调用 created_at 倒序排列，再统一分页，默认每页 50 条、上限 100 条。返回 `{records,total}`，每条为 `{type:"event",time,event}` 或 `{type:"tool_call",time,call}`；调用沿用 `query.tool_calls` 的来源投影和敏感参数脱敏。不传 include_tool_calls 时仍返回 `{events,total}`，`query.events` 的 SSE 游标语义不变。
+历史记录页使用 `query.history({scope,project_id?,include_tool_calls:true,offset,limit})`：Global 读取全局配置库，项目历史必须指定 project_id；先合并持久化事件、外部工具及平台工具调用，按事件 time / 调用 created_at 倒序排列，再统一分页，默认每页 50 条、上限 100 条。返回 `{records,total}`，每条为 `{type:"event",time,event}` 或 `{type:"tool_call",time,call}`；调用沿用 `query.tool_calls` 的来源投影和敏感参数脱敏。不传 include_tool_calls 时仍返回 `{events,total}`，`query.events` 的 SSE 游标语义不变。通用历史和工具调用列表仍有完整快照读取成本，不能等同于已迁移的流程范围历史分页。
 
 JSON-RPC 使用 -32600 / -32601 / -32602 / -32000；领域说明位于 `error.message`，领域代码位于 `error.data.code`，常见为 invalid_params、not_found、blocked、revision_conflict、project_required、configuration_required、dataset_locked 和 storage。
 
@@ -173,7 +171,7 @@ query.project_configuration 附带 pinned_records 与 uses_archived_templates，
 
 `credentials.status/check/authorize` 用 model_provider 选择服务商，省略时默认 DeepSeek。status 返回 credential_version（不透明引用资源的版本）与 provider_ref（确切服务商源修订）。`credentials.configure` 明确要求 `{command_id,expected_revision,provider:"dsh",model_provider,provider_ref,api_key}`；api_key 只进入事务外系统凭据库，不保存到意图、事件或回执。Ollama 状态 auth_kind=none，不支持存储或授权 key。
 
-configure 先按原凭据版本与服务商源 head 保存候选意图，再核对稳定身份的不可变 vault 候选，最后原子发布引用、完成意图与幂等回执。候选按原命令/Actor/参数摘要确定；未知存储结果先检查原候选，不创建另一个随机候选或覆盖旧引用。服务商源或引用在外部调用期间改变时发布冲突，旧绑定保持；旧冻结执行仍使用原引用。成功响应包含 meta.commit，已完成的原命令即使当前源/引用后来改变也返回原回执，不重复访问 vault。该流程只迁移 configure；显式授权、OAuth 与其他凭据入口仍在剩余 P2 范围内。
+configure 先按原凭据版本与服务商源 head 保存候选意图，再核对稳定身份的不可变 vault 候选，最后原子发布引用、完成意图与幂等回执。候选按原命令/Actor/参数摘要确定；未知存储结果先检查原候选，不创建另一个随机候选或覆盖旧引用。服务商源或引用在外部调用期间改变时发布冲突，旧绑定保持；旧冻结执行仍使用原引用。成功响应包含 meta.commit，已完成的原命令即使当前源/引用后来改变也返回原回执，不重复访问 vault。
 
 Web 在开始密钥编辑时捕获版本和服务商源，状态刷新不替换草稿基线；冲突保留内存中的输入和命令身份，成功后清空密钥。凭据引用的 resource.changed 事件失效模型目录并刷新显示状态，意图准备不触发模型目录失效。
 
@@ -182,19 +180,19 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 
 `query.runtime_options` 只读取安装、Harness 安装组合和服务商凭据的配置状态，不构建运行时或调用模型。安装项标明 `execution_supported` 与用途；本机 Codex 用于登录和模型目录，Linux Docker worker 用于项目执行。设置和 Harness 的安装列表只展示项目执行用安装；登录/模型目录组件内部登记。`models.list` 对 DeepSeek 读取账号 `/models`，对 Ollama 读取本机服务，智谱与 MiniMax 使用所采用目录的容量数据，结果标明 `source` 和未验证的推理状态。
 
-`runtime.register` 接受 `{command_id,expected_revision:0,payload:RuntimeRegistration}`，可附确切 target；不再直接接受裸登记对象。安装身份由服务商、程序版本、平台与内部配方身份确定，校验文件/镜像内容后通过资源 CAS 登记，不取得全局业务写锁。相同不存在条件的不同命令只有一个成功；同命令同参数重放原结果和 `meta.commit`，不重复检查已完成的外部文件。同一命令不同参数拒绝，已登记身份不可覆盖。内部安装器可以复用同内容安装；登记行丢失时，只有已重新核验并匹配原始内容封存的资产可以恢复，恢复同时校验保留版本与当前行不存在，不能用新内容替换历史身份。运行准备、取消与认证流程的其他写入仍在迁移。
+`runtime.register` 接受 `{command_id,expected_revision:0,payload:RuntimeRegistration}`，可附确切 target；不再直接接受裸登记对象。安装身份由服务商、程序版本、平台与内部配方身份确定，校验文件/镜像内容后通过资源 CAS 登记，不取得全局业务写锁。相同不存在条件的不同命令只有一个成功；同命令同参数重放原结果和 `meta.commit`，不重复检查已完成的外部文件。同一命令不同参数拒绝，已登记身份不可覆盖。内部安装器可以复用同内容安装；登记行丢失时，只有已重新核验并匹配原始内容封存的资产可以恢复，恢复同时校验保留版本与当前行不存在，不能用新内容替换历史身份。
 
 项目配置选择 Workflow、Standard、Role→Agent、Sandbox、可选双层 Profile 和驱动模式，不另设项目或角色运行时偏好。模型、连接、容量与参数来自绑定 Agent 的 Model 修订，Harness 与 Sandbox 组合并按内容摘要物化。有效参数冻结在 RuntimeBinding；每个 Agent Step 使用独立 Session，补充输入沿用该 Step 的冻结运行锁。
 
 `integration.delete` 将接入源及所属工具、绑定从后续选择中删除，或单独删除已发布工具。操作原子检查在用引用，拒绝仍被 Capability、Agent、Skill 或项目配置使用的资源；修订和历史调用保留，紧急停用另由 `integration.disable` 处理。
 
-`tool.call.approve/cancel/reconcile` 对外部 `tool_call` 要求客户端读取的原始 expected_revision，以调用资源版本和实际人类命令来源同事务提交。缺版本返回 precondition_required，过期返回 revision_conflict；同命令同参数返回原结果。人工核对证据与首次编辑版本保留，轮询不替换基线，冲突重试沿用原命令 ID。派发与后台回执均不进入旧工具业务写事务；原始外部观察先保留，再校验原版本。原生回复结果未知时显示待核对且不自动重复投递。平台工具取消仍由其所属平台族处理，不据此宣称该族已经迁移。
+`tool.call.approve/cancel/reconcile` 对外部 `tool_call` 要求客户端读取的原始 expected_revision，以调用资源版本和实际人类命令来源同事务提交。缺版本返回 precondition_required，过期返回 revision_conflict；同命令同参数返回原结果。人工核对证据与首次编辑版本保留，轮询不替换基线，冲突重试沿用原命令 ID。派发与后台回执均不进入旧工具业务写事务；原始外部观察先保留，再校验原版本。原生回复结果未知时显示待核对且不自动重复投递。平台调用取消同样校验原调用版本，只记录取消请求；实际停止仍需原操作的外部证明。
 
-内部工作流意图回调接收执行前捕获的不可替换句柄，绑定原数据集、命令和原生意图版本；回调先保存不可变观察，再按原版本更新终态。成功结果引用原命令的持久回执和结果身份，不复制展开源；响应未确认但原命令已提交时，以该回执核对完成，保留原错误观察。撤销或其他回调已推进意图时，迟到观察保留并返回冲突，不重新取版本接纳。后台回调不补造 Human。待执行意图按索引每页最多 16 条轮转，失效项推进游标；运行前重新只读核对原意图、步骤/祖先、暂停和控制器代次。任务准备只读取本次实例、精确冻结计划及所需历史执行；已投递正文按原 Turn 与任务封存摘要认证后直接使用。没有把部分工程状态交给旧业务规则。工作流评估、平台/Agent 执行准备和控制器接管等其他阶段仍有完整状态或旧写路径。
+内部工作流意图回调接收执行前捕获的不可替换句柄，绑定原数据集、命令和原生意图版本；回调先保存不可变观察，再按原版本更新终态。成功结果引用原命令的持久回执和结果身份，不复制展开源；响应未确认但原命令已提交时，以该回执核对完成，保留原错误观察。撤销或其他回调已推进意图时，迟到观察保留并返回冲突，不重新取版本接纳。后台回调不补造 Human。待执行意图按索引每页最多 16 条轮转，失效项推进游标；运行前重新只读核对原意图、步骤/祖先、暂停和控制器代次。任务准备只读取本次实例、精确冻结计划及所需历史执行；已投递正文按原 Turn 与任务封存摘要认证后直接使用。工作流评估、平台/Agent 执行准备和控制器接管读取实际的用例事实，不构造部分 EngineeringState 交给旧业务规则。
 
-`integration.discover` 要求原绑定 expected_revision 和稳定 command_id；缺少版本在运行准备前拒绝。外部尝试之前保存确切绑定、服务源、原目录版本和实际 Human 来源。发现返回值先作为字面事实保存不可变观察，再校验原目录头，原子发布新目录及意图终态；目录变化时保留观察并返回冲突，不刷新基线或再次请求服务。相同回调/命令重放原目录，重复工具名拒绝；浏览器对未确认请求保留命令身份。所选工具的源定义发布仍在后续迁移范围。
+`integration.discover` 要求原绑定 expected_revision 和稳定 command_id；缺少版本在运行准备前拒绝。外部尝试之前保存确切绑定、服务源、原目录版本和实际 Human 来源。发现返回值先作为字面事实保存不可变观察，再校验原目录头，原子发布新目录及意图终态；目录变化时保留观察并返回冲突，不刷新基线或再次请求服务。相同回调/命令重放原目录，重复工具名拒绝；浏览器对未确认请求保留命令身份。所选工具的源定义发布校验原目录及源/引用谓词后原子提交。
 
-人工 `integration.test` 创建调用要求 expected_revision=0、确切 binding_ref/tool_ref 与原 arguments。入口在运行准备前核对原不存在条件、可选源、作用域、认证和参数；创建再验证原权限绑定及配置读谓词，原子保存调用、实际人类来源和幂等回执，不使用旧工具业务写事务。回执只保存可按原不可变源重建的编码，重复请求返回原创建结果，即使调用已派发或源有后继修订，也不会重新做运行准备。浏览器对未确认的同一请求保留命令 ID。工作流内部外部工具调用也使用有限资源提交：Host 在运行准备前捕获不可替换的原意图、步骤/祖先资格和实际派发 Actor，创建时校验原版本、精确冻结源及来源，不能用较新状态重建原请求。暂停时保留原意图，取消或执行替换后拒绝旧准备；完成重放读取原结果，不重复运行准备。原生会话调用创建和平台工具仍有旧路径。
+人工 `integration.test` 创建调用要求 expected_revision=0、确切 binding_ref/tool_ref 与原 arguments。入口在运行准备前核对原不存在条件、可选源、作用域、认证和参数；创建再验证原权限绑定及配置读谓词，原子保存调用、实际人类来源和幂等回执，不使用旧工具业务写事务。回执只保存可按原不可变源重建的编码，重复请求返回原创建结果，即使调用已派发或源有后继修订，也不会重新做运行准备。浏览器对未确认的同一请求保留命令 ID。工作流内部外部工具调用也使用有限资源提交：Host 在运行准备前捕获不可替换的原意图、步骤/祖先资格和实际派发 Actor，创建时校验原版本、精确冻结源及来源，不能用较新状态重建原请求。暂停时保留原意图，取消或执行替换后拒绝旧准备；完成重放读取原结果，不重复运行准备。原生会话调用创建和平台工具采用相同的原读集合与单次授权协议。
 
 全局角色讨论使用 `scope: "global"`，`session.open` 的目标为 `global`，不得同时提供 `project_id`。数据单独保存在 `conversations/global/engineering.sqlite3`；不创建 Project。Session 的 `scope` 为 `global`，其 `project_id` 列保留固定的执行命名空间 `00000000-0000-4000-8000-000000000000`，用于容器归属和 Session/Turn 外键；它不属于项目目录。全局 Session 仅接受全局 AgentID，消息、快照及经验仍按该身份保存。全局讨论中的方案须切换到具体项目后再进入工程采纳流程。
 
@@ -214,13 +212,13 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 
 Web 经理面板改用 `query.orchestration_summary` 与 `query.workflow_driver_summary`。两者要求 project_id，在独立只读快照中读取原生运行元数据，不取得模板门闩、不同步配置、不恢复完整工程状态或编译计划。前者用 id/root_instance_id/owner_id 唯一定位经理，可附 workspace_only；返回最近 10 条消息节选（每条 512 字符）、5 条调用状态、10 条待决定摘要和 more 标记，待决定项按 next_decision_before 翻页。后者用实例 id 定位根驱动，返回当前根代次、所查实例的原生修订与至多 20 条等待节选；observed_only=true，不能据此推导动作授权。两者 cursor 是各自读快照内的项目事件游标，不是跨查询的原子快照。
 
-`query.workflow_management_summary({project_id,id,child_offset?})` 为经理页上层提供实例原生版本、运行状态、控制代次与规范/工作流引用，以及每页 20 个子流程标识。子流程页偏移范围为 0–1000000，后续页用 next_child_offset。摘要不包含展开计划、输出正文、历史或派发资格；配置绑定超过 8192 字节时 configuration_truncated=true，必须明确读取完整执行配置后才能编辑。经理页的计划调整在首次展开时读取确切计划，折叠及后续摘要刷新保留原编辑版本与草稿；历史展开仍使用旧详情路径，独立分页迁移尚未完成。普通驱动切换只使用驱动摘要内配套读取的实例修订和代次，不以父组件版本替补缺失前置条件。
+`query.workflow_management_summary({project_id,id,child_offset?})` 为经理页上层提供实例原生版本、运行状态、控制代次与规范/工作流引用，以及每页 20 个子流程标识。子流程页偏移范围为 0–1000000，后续页用 next_child_offset。摘要不包含展开计划、输出正文、历史或派发资格；配置绑定超过 8192 字节时 configuration_truncated=true，必须明确读取完整执行配置后才能编辑。经理页的计划调整在首次展开时读取确切计划，折叠及后续摘要刷新保留原编辑版本与草稿；历史使用 query.workflow_instance 的 history 视图独立分页。普通驱动切换只使用驱动摘要内配套读取的实例修订和代次，不以父组件版本替补缺失前置条件。
 
 `query.execution_workspace({project_id,feature_id?,offset?,task_offset?,limit?,work_filter?,project_offset?,github_only?})` 是执行页项目经理与工作流程总览的只读入口。Feature 与 Task 分别分页，limit 为 1–100，偏移不超过 1000000；默认每页 50。返回标题节选、状态、原生修订、任务依赖数和总数，以及当前项目、所选 Feature、当前 Task 页的最新工作根元数据；Task 工作根仍核对 workflow_invocation 的成员身份，嵌套流程不替代工作根。工作筛选按当前 Feature 根流程的步骤状态计算，历史嵌套实例不会使已结束的工作保留在运行队列。
 
-该响应 kind 为 execution_workspace，实例 metadata_only=true，observed_only=true，不包含完整任务/计划、绑定或历史。面板编辑前按需读取管理配置；摘要不能被用作完整对象保存或动作授权。Host 将整个响应限制在 128 KiB，超限要求缩小分页，不静默删字段。该查询不计算配置健康或产生业务写入；未返回的 configuration_ready 表示未在此查询求值。工作总览 Tab 及材料、上下文、执行记录仍保留旧入口，不能将这一接口的优化扩大描述为全部热查询已完成迁移。
+该响应 kind 为 execution_workspace，实例 metadata_only=true，observed_only=true，不包含完整任务/计划、绑定或历史。面板编辑前按需读取管理配置；摘要不能被用作完整对象保存或动作授权。Host 将整个响应限制在 128 KiB，超限要求缩小分页，不静默删字段。该查询不计算配置健康或产生业务写入；未返回的 configuration_ready 表示未在此查询求值。工作总览读取有界工作台元数据；材料、上下文、执行记录通过对应的流程范围查询按需读取。
 
-`query.workflow_progress({project_id,id,stage_offset?})` 返回实例原生修订、运行状态、暂停/停止标记、当前步骤总数与已完成/运行/等待/失败计数，以及每页 20 个阶段的名称和计数。阶段偏移范围为 0–1000000，后续页用 next_stage_offset；响应至多 64 KiB。阶段来自该实例冻结计划的精确 Workflow 源引用，缺失时拒绝，不使用新的默认或 head 替换。该读取不恢复工程历史、不编译配置、不读取输出正文或执行授权。工作流程页轮询该摘要；“展开步骤与操作”后才挂载原有完整步骤查询，收起后停止该详情轮询。完整步骤/历史路径仍待独立迁移，摘要不能作为动作授权或完整对象保存。
+`query.workflow_progress({project_id,id,stage_offset?})` 返回实例原生修订、运行状态、暂停/停止标记、当前步骤总数与已完成/运行/等待/失败计数，以及每页 20 个阶段的名称和计数。阶段偏移范围为 0–1000000，后续页用 next_stage_offset；响应至多 64 KiB。阶段来自该实例冻结计划的精确 Workflow 源引用，缺失时拒绝，不使用新的默认或 head 替换。该读取不恢复工程历史、不编译配置、不读取输出正文或执行授权。工作流程页轮询该摘要；“展开步骤与操作”后才挂载实例的 status 视图，收起后停止该详情轮询。完整 detail 和 history 视图分别按需读取；摘要不能作为动作授权或完整对象保存。
 
 “采用规范”面板折叠时不请求目录、工作配置或采用历史。首次展开后保留独立编辑基线，摘要更新及折叠不覆盖草稿；规范切换使用原实例修订，失败重试保留同一命令身份，提交前不刷新版本。成功后结束该编辑基线，重新展开读取新状态。配置版本通知只查询 catalog_clock 标量，不为版本比较组装目录或角色闭包。
 
@@ -282,3 +280,15 @@ interaction 包含 title、background、requested_action、completed_work、revi
 StepExecution 可带 failure（WorkflowFailure）和 retry_of；workflow.inspect 的 retry_count 从同一实例、节点和 round 的历史执行推导。可信端口错误可附 ExecutionFailureDisposition，缺失分类时不推测为可自动重试。旧的文本意图错误只保留原文；新观察保存结构化错误，已记录终态只能幂等重报。
 
 普通 Workflow Tool/Agent 的 spec.lint 仅接受 delivery_ref/value，目标必须是当前冻结步骤声明的输入或输出 Delivery；任意 specification/delivery 草稿参数只属于已授权经理预演入口。未授予该工具的业务步骤不能调用。输出为内容报告时，附 content_report_valid/content_report_error，复用接纳时的检查集合与冻结输入证据校验；草稿检查不生成 workflow_output 或人工决定。
+
+权限预设目录切换与重载使用读取时的 `source.revision` 作为命令 `expected_revision`；切换目录的编辑基线在打开选择器时保留。跨库配置采用与取消使用暂存操作原 `revision`，经理工具通过 `expected_revision` 提供；跨库恢复继续原始采用意图，不产生新的 Human 决定。配置发布在同一资源提交中校验源 head、相关引用谓词和目录条件。
+
+## 资源提交与原始版本
+
+项目请求使用每个标签页的显式 project_id；Host 没有共享活动项目。读请求不做配置同步或业务写入。写接口校验原始对象、相关资源/集合谓词及命令身份；缺少前置条件拒绝，冲突保留草稿和原命令，不自动读取新版本重发。
+
+Workflow 写命令携带原 expected_revision、plan_revision_id、control_version。单步命令跨兄弟步骤进展提交时，还需原 execution_id 与 expected_step_revision；它只更新该执行，控制决定或该执行变化仍冲突。经理写工具使用相同字段。采用/替换经理还需原 controller_id、expected_controller_revision 与 epoch。自由讨论和经理输入在开始编辑时固定 Session/Controller 版本，轮询不替换草稿基线。
+
+平台/仓库/后台回调保留原操作、源修订、参数、准备句柄及实际 Actor。持久单次授权后才能执行外部 I/O；原观察独立保存，接纳使用原读集合。迟到冲突不能重新准备或以当前版本补交。显式核对另建来源，仅检查原物理身份或记录实际 Human 判断，不伪造供应商回执。
+
+执行页状态只读小型流程/步骤投影和有版本见证的条件提示，不读取产物正文。条件提示缺失或过期为 pending；实际派发/接纳重做领域检查。历史、材料、上下文、执行及产物按需分页/分块。一次命令封存支持 1–64 个文件，总准备内容上限 32 MiB。

@@ -5,7 +5,7 @@ fn add_history(engine: &Engine, name: &str) {
         .store
         .project_id()
         .map_or(Scope::global(), Scope::project);
-    engine.store.transact(None, &mut |s| {
+    engine.store.seed_fixture_state(None, &mut |s| {
         let time = 9_000_000_000_000;
         let data = json!({"status":"succeeded","invocation":{"tool":{"definition":{}},"arguments":{}}});
         s.governance.push(ConfigurationRecord {

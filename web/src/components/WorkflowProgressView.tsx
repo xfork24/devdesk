@@ -33,7 +33,9 @@ type Props = {
   record: Row;
   projectId: string;
   refresh: () => Promise<void>;
-  onDiscussion: (id: string, owner: string) => void;
+  onDiscussion: (id: string, owner: string, turnId?: string) => void;
+  ownerId?: string;
+  target?: Row;
 };
 function status(counts: Counts) {
   if (counts.failed) return "需要处理";
@@ -49,7 +51,7 @@ export function WorkflowProgressView(props: Props) {
   const [data, setData] = useState<Progress>();
   const [error, setError] = useState("");
   const [offset, setOffset] = useState(0);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(Boolean(props.target?.execution_id));
   const generation = useRef(0);
   useEffect(() => {
     const current = ++generation.current;

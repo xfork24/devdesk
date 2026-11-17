@@ -72,7 +72,7 @@ with tempfile.TemporaryDirectory(prefix="devdesk-protocol-") as temp:
                 assert capabilities["setup_required"] is False
                 assert (data / ".devdesk-dataset").read_text() == "devdesk-profile-runtime-v2\n"
                 with sqlite3.connect(data / "global.sqlite3") as conn:
-                    assert conn.execute("PRAGMA user_version").fetchone()[0] == 22
+                    assert conn.execute("PRAGMA user_version").fetchone()[0] == 24
                     assert conn.execute("SELECT count(*) FROM source_definitions").fetchone()[0] > 0
                 post("/shutdown", {})
                 assert child.wait(timeout=15) == 0

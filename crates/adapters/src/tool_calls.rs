@@ -17,6 +17,46 @@ pub(super) fn restore(catalog: &ConfigurationCatalogSnapshot, value: &Value) -> 
     Ok(json!(row))
 }
 
+pub(super) fn provider_intents(pool: &ConnectionPool, after: Option<&str>) -> Result<ToolCallPage> {
+    provider_page(
+        pool,
+        after,
+        "provider_tool_intent",
+        "idx_provider_tool_prepared",
+    )
+}
+pub(super) fn provider_polls(pool: &ConnectionPool, after: Option<&str>) -> Result<ToolCallPage> {
+    provider_page(
+        pool,
+        after,
+        "provider_poll_pending",
+        "idx_provider_poll_prepared",
+    )
+}
+fn provider_page(
+    pool: &ConnectionPool,
+    after: Option<&str>,
+    kind: &str,
+    index: &str,
+) -> Result<ToolCallPage> {
+    let conn = pool.read()?;
+    let sql = format!(
+        "SELECT id FROM governance_records INDEXED BY {index} WHERE type='{kind}' AND json_extract(data,'$.status')='prepared' AND id>?1 ORDER BY id LIMIT 17"
+    );
+    let mut query = conn.prepare_cached(&sql).map_err(storage)?;
+    let mut ids = query
+        .query_map([after.unwrap_or("")], |r| r.get::<_, String>(0))
+        .map_err(storage)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(storage)?;
+    let more = ids.len() > 16;
+    ids.truncate(16);
+    Ok(ToolCallPage {
+        next_after: more.then(|| ids.last().unwrap().clone()),
+        ids,
+    })
+}
+
 pub(super) fn page(pool: &ConnectionPool, after: Option<&str>) -> Result<ToolCallPage> {
     let _span = performance::Span::new("tool_calls.page");
     let conn = pool.read()?;
@@ -98,6 +138,7 @@ pub(super) fn facts(
             .is_some_and(|v| v["active"] == true && v["session_id"] == session.id)
             && turn.value.as_ref().is_some_and(|v| {
                 v["session_id"] == session.id
+                    && v["cancel_requested"] != true
                     && matches!(
                         v["status"].as_str(),
                         Some("dispatching" | "running" | "waiting_interaction")
@@ -111,6 +152,23 @@ pub(super) fn facts(
             })
             .collect();
         result.dispatch_allowed = result.worker_active;
+        if raw["data"]["conversation_authority"].is_object() {
+            let authority: devdesk_core::ConversationAuthority =
+                serde_json::from_value(raw["data"]["conversation_authority"].clone())
+                    .map_err(storage)?;
+            let facts = conversation_authority_on(
+                &tx,
+                &authority,
+                &session.id,
+                session
+                    .project_id
+                    .as_deref()
+                    .ok_or_else(|| err("invalid_scope", "原会话缺少项目命名空间"))?,
+            )?;
+            result.dispatch_allowed &= facts.allowed;
+            result.dispatch_suspended = facts.suspended;
+            result.worker_guards.extend(facts.versions);
+        }
         result.session = Some(session);
     }
     if result.invocation.session_id.is_none()
@@ -133,6 +191,52 @@ pub(super) fn facts(
         result.dispatch_allowed = facts.allowed;
     }
     tx.commit().map_err(storage)?;
+    Ok(result)
+}
+
+pub(super) fn conversation_authority_on(
+    conn: &Connection,
+    authority: &devdesk_core::ConversationAuthority,
+    session_id: &str,
+    project: &str,
+) -> Result<WorkflowToolFacts> {
+    let mut result = if let Some(workflow) = &authority.workflow {
+        workflow_on(conn, workflow, project)?
+    } else {
+        WorkflowToolFacts {
+            allowed: true,
+            suspended: false,
+            versions: vec![],
+        }
+    };
+    if let Some((binding, controller, epoch)) = &authority.controller {
+        let rows = resource_commits::read_on(
+            conn,
+            &[
+                ResourceKey::new("governance", binding),
+                ResourceKey::new("controller_authority", controller),
+            ],
+        )?;
+        let binding = rows[0]
+            .value
+            .as_ref()
+            .ok_or_else(|| err("not_found", "原控制器绑定缺失"))?;
+        let controller = rows[1]
+            .value
+            .as_ref()
+            .ok_or_else(|| err("not_found", "原控制器缺失"))?;
+        result.allowed &= binding["type"] == "controller_session"
+            && binding["definition_id"] == session_id
+            && binding["data"]["epoch"] == *epoch
+            && controller["type"] == "workflow_controller"
+            && controller["data"]["session_id"] == session_id
+            && controller["data"]["epoch"] == *epoch
+            && controller["data"]["status"] == "active";
+        result.versions.extend(rows.iter().map(|r| ResourceVersion {
+            resource: r.resource.clone(),
+            revision: r.revision,
+        }));
+    }
     Ok(result)
 }
 
@@ -160,7 +264,7 @@ pub(super) fn workflow_on(
     )?;
     let keys = ids
         .iter()
-        .map(|id| ResourceKey::new("tool_workflow", id))
+        .map(|id| ResourceKey::new("workflow_run_authority", id))
         .collect::<Vec<_>>();
     let rows = resource_commits::read_on(conn, &keys)?;
     let mut valid = true;
@@ -181,29 +285,33 @@ pub(super) fn workflow_on(
         valid &= value["cancel_requested"] != true
             && !matches!(value["status"].as_str(), Some("completed" | "cancelled"));
         paused |= value["paused"] == true;
-        let mut query=conn.prepare_cached("SELECT value FROM json_each((SELECT data FROM governance_records WHERE id=?1),'$.steps') WHERE json_extract(value,'$.id')=?2 LIMIT 1").map_err(storage)?;
-        use rusqlite::OptionalExtension;
-        let step: Option<String> = query
-            .query_row(
-                rusqlite::params![ids[index], authority.executions[index]],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(storage)?;
-        let step = step
-            .map(|s| serde_json::from_str::<Value>(&s).map_err(storage))
-            .transpose()?
-            .unwrap_or(Value::Null);
-        valid &= step["status"] == "running";
+        valid &= if index + 1 < ids.len() {
+            value["parent_execution_id"] == authority.executions[index + 1]
+        } else {
+            value["parent_execution_id"].is_null()
+        };
+        let key = ResourceKey::new(
+            "workflow_step_authority",
+            json!([ids[index], authority.executions[index]]).to_string(),
+        );
+        let mut selected = resource_commits::read_on(conn, &[key])?;
+        let step_row = selected.remove(0);
+        let step = step_row.value.unwrap_or(Value::Null);
+        valid &= step["status"] == "running" && step["stop_requested"] != true;
         if index == 0 {
             valid &= step["plan_revision_id"] == authority.plan_revision_id
                 && step["input_digest"] == authority.input_digest
                 && step["contract_digest"] == authority.contract_digest
-                && step["node_id"] == authority.node_id;
+                && step["node_id"] == authority.node_id
+                && step["session_id"] == json!(authority.session_id);
         }
         versions.push(ResourceVersion {
             resource: row.resource,
             revision: row.revision,
+        });
+        versions.push(ResourceVersion {
+            resource: step_row.resource,
+            revision: step_row.revision,
         });
     }
 

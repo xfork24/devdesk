@@ -134,6 +134,7 @@ pub fn append_workflow_events(before: &EngineeringState, state: &mut Engineering
     }
 }
 
+#[cfg(test)]
 pub(crate) fn pending_events(
     state: &EngineeringState,
     controller: &WorkflowController,
@@ -186,6 +187,7 @@ pub(crate) fn pending_events(
         .collect()
 }
 
+#[cfg(test)]
 pub(crate) fn wait(
     state: &mut EngineeringState,
     id: &str,
@@ -253,4 +255,54 @@ pub(crate) fn wait(
     Ok(
         json!({"status":if pending == 0 {"waiting"}else{"pending_events"},"pending":pending,"cursor":cursor}),
     )
+}
+
+/// Exact runtime event page and head are sampled together by the adapter.
+pub(crate) fn native_events(
+    engine: &Engine,
+    root: &str,
+    cursor: u64,
+) -> Result<(Vec<Value>, crate::concurrency::ResourceSnapshot)> {
+    let selected = crate::platform_facts::one(
+        engine.store.as_ref(),
+        "controller_runtime_events",
+        &json!([root, cursor]).to_string(),
+    )?;
+    let mut items = Vec::new();
+    let mut bytes = 2;
+    for event in selected
+        .value
+        .as_ref()
+        .and_then(|v| v["events"].as_array())
+        .into_iter()
+        .flatten()
+    {
+        let detail = event["detail"]
+            .as_str()
+            .ok_or_else(|| err("storage", "经理事件缺少原始详情"))?;
+        let mut data: Value =
+            serde_json::from_str(detail).map_err(|e| err("storage", e.to_string()))?;
+        require(data["root_instance_id"] == root, "经理事件跨流程根")?;
+        if detail.len() > 16 * 1024 {
+            let has_outputs = data["change"]["changes"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|c| {
+                    c["execution"]["outputs"]
+                        .as_object()
+                        .is_some_and(|v| !v.is_empty())
+                });
+            let executions:Vec<_>=data["change"]["changes"].as_array().into_iter().flatten().filter_map(|c|c["execution"].as_object()).take(16).map(|e|json!({"execution_id":e.get("execution_id"),"step":e.get("step"),"status":e.get("status")})).collect();
+            data["change"] = json!({"kind":data["change"]["kind"],"details_omitted":true,"record_ref":data["instance_id"],"executions":executions,"has_outputs":has_outputs});
+        }
+        let item = json!({"id":event["id"],"source":data});
+        let size = item.to_string().len() + 1;
+        if bytes + size > 64 * 1024 {
+            break;
+        }
+        bytes += size;
+        items.push(item);
+    }
+    Ok((items, selected))
 }

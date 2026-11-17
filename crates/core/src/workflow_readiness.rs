@@ -1,0 +1,467 @@
+//! Bounded control queries and readiness use actual selected workflow facts.
+//! Display eligibility is advisory; every command repeats authoritative CAS.
+use crate::{
+    platform_facts::{one, restored},
+    workflow_commits::{WorkflowCommit, WorkflowHeaderFacts},
+    workflow_eligibility::{WorkflowActionEligibility as Eligibility, WorkflowStepActions},
+    workflow_facts::FactSelection,
+    workflow_resources::WorkflowResources,
+    *,
+};
+impl Engine {
+    pub(crate) fn native_step_readiness(
+        &self,
+        root: &WorkflowHeaderFacts,
+        resources: &WorkflowResources,
+    ) -> Result<Value> {
+        let c = Command {
+            command_id: "readiness-only".into(),
+            target: Some(root.record.id.clone()),
+            expected_revision: Some(root.record.revision),
+            payload: json!({}),
+        };
+        let context = InvocationContext::workflow(
+            WorkflowActor::Coordinator {
+                source_id: root.record.id.clone(),
+            },
+            Some(root.instance.project_id.clone()),
+        );
+        let mut selected = WorkflowCommit::new(self, "query.workflow.readiness", &c, &context)?;
+        let e = &resources.execution;
+        let step = root
+            .instance
+            .plan
+            .document
+            .steps
+            .iter()
+            .find(|s| s.node_id == e.node_id)
+            .ok_or_else(|| err("storage", "原步骤合同缺失"))?;
+        let pending = one(
+            self.store.as_ref(),
+            "workflow_change_pending",
+            &root.record.id,
+        )?;
+        let common = if root.instance.cancel_requested
+            || matches!(
+                root.instance.status,
+                StepExecutionStatus::Completed | StepExecutionStatus::Cancelled
+            ) {
+            Some(Eligibility::blocked("terminal", "流程已结束或取消"))
+        } else if pending.value.is_some() {
+            Some(Eligibility::blocked("change_pending", "运行计划正在变更"))
+        } else {
+            None
+        };
+        let mut selection = FactSelection::default();
+        selection.rule(&step.condition);
+        selection.rule(&step.completion);
+        selection.approval(&step.key);
+        for binding in step.inputs.values() {
+            selection.binding(binding);
+        }
+        let facts = resources.selected_facts(self.store.as_ref(), &selection)?;
+        let attempts = one(
+            self.store.as_ref(),
+            "workflow_retry_count",
+            &json!([root.record.id, e.node_id, e.round]).to_string(),
+        )?;
+        let retry_count = attempts
+            .value
+            .as_ref()
+            .and_then(|v| v["count"].as_u64())
+            .unwrap_or(0);
+        let advisory = |result: Result<()>| match result {
+            Ok(()) => Eligibility::ready(),
+            Err(error) => Eligibility::blocked(&error.code, error.message),
+        };
+        let mut input_gap = None;
+        let dispatch = if let Some(blocked) = &common {
+            blocked.clone()
+        } else if e.status != StepExecutionStatus::Queued {
+            Eligibility::blocked("execution_state", "步骤已派发或结束")
+        } else {
+            advisory((|| {
+                selected.require_dispatch(root, resources)?;
+                if step.condition.evaluate(&facts.facts)
+                    && let Err(error) =
+                        crate::configured_runtime::material_inputs(step, &facts.facts)
+                {
+                    input_gap = Some(error.message.clone());
+                    return Err(error);
+                }
+                Ok(())
+            })())
+        };
+        let accept = if let Some(blocked) = &common {
+            blocked.clone()
+        } else {
+            advisory(selected.require_acceptance(resources, &facts.facts))
+        };
+        let retry = if let Some(blocked) = &common {
+            blocked.clone()
+        } else if !matches!(
+            e.status,
+            StepExecutionStatus::Failed | StepExecutionStatus::Cancelled
+        ) {
+            Eligibility::blocked("execution_state", "步骤不在技术失败或取消状态")
+        } else if retry_count >= step.budget.retry_limit {
+            Eligibility::blocked("retry_budget", "技术重试额度已满")
+        } else if e
+            .failure
+            .as_ref()
+            .is_some_and(|f| f.effect == ExecutionFailureEffect::Unknown)
+        {
+            Eligibility::blocked("needs_reconciliation", "未知副作用需先核对")
+        } else {
+            advisory((|| {
+                require(
+                    !selected.execution_active(resources)?,
+                    "原执行仍有活动写者或未核对副作用",
+                )
+            })())
+        };
+        let completion = selected.rule(
+            &root.instance,
+            &step.node_id,
+            &step.completion,
+            &facts.facts,
+        )?;
+        let approvals = one(self.store.as_ref(), "workflow_confirmations", &e.id)?;
+        let matching = approvals
+            .value
+            .as_ref()
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter(|r| {
+                r["data"]["input_digest"] == e.input_digest
+                    && r["data"]["outputs"] == json!(e.outputs)
+            })
+            .collect::<Vec<_>>();
+        let overridden = matching
+            .iter()
+            .any(|r| r["data"]["override_completion"] == true);
+        let waiver = one(
+            self.store.as_ref(),
+            "workflow_waiver",
+            &json!([
+                root.instance.active_plan_revision_id,
+                step.node_id,
+                "confirmation"
+            ])
+            .to_string(),
+        )?;
+        let waived = selected.waiver(&root.instance, &step.node_id, "confirmation")?;
+        let confirmation = matching.first().map(|row| &row["id"]);
+        let human =
+            step.confirmation != ConfirmationPolicy::Human || confirmation.is_some() || waived;
+        let disposition = if confirmation.is_some() {
+            "confirmed"
+        } else if waived {
+            "waived"
+        } else if step.confirmation == ConfirmationPolicy::Human {
+            "pending"
+        } else {
+            "not_required"
+        };
+        let actions = WorkflowStepActions {
+            dispatch,
+            accept,
+            retry,
+        };
+        Ok(
+            json!({"step":step.key,"node_id":step.node_id,"execution":e,"step_revision":resources.step.revision,"dispatchable":actions.dispatch.allowed,"actions":actions,"retry_count":retry_count,"input_gap":input_gap,"completion_satisfied":completion,"completion_overridden":overridden,"human_satisfied":human,"confirmation_status":disposition,"confirmation_ref":confirmation,"confirmation_waiver_ref":if waived{waiver.value.as_ref().map(|r|&r["id"])}else{None}}),
+        )
+    }
+    pub(crate) fn native_completion_ready(&self, root: &WorkflowHeaderFacts) -> Result<bool> {
+        if root.instance.cancel_requested
+            || matches!(
+                root.instance.status,
+                StepExecutionStatus::Completed | StepExecutionStatus::Cancelled
+            )
+            || root.instance.steps.iter().any(|e| {
+                !matches!(
+                    e.status,
+                    StepExecutionStatus::Completed | StepExecutionStatus::Skipped
+                )
+            })
+        {
+            return Ok(false);
+        }
+        if one(
+            self.store.as_ref(),
+            "workflow_change_pending",
+            &root.record.id,
+        )?
+        .value
+        .is_some()
+        {
+            return Ok(false);
+        }
+        let first = root
+            .instance
+            .steps
+            .first()
+            .ok_or_else(|| err("storage", "流程没有步骤"))?;
+        let resources = root.step(self, &first.id)?;
+        let mut selection = FactSelection::default();
+        selection.rule(&root.instance.plan.document.completion);
+        for source in root.instance.plan.document.outputs.values() {
+            selection.source(source);
+        }
+        let facts = resources.selected_facts(self.store.as_ref(), &selection)?;
+        let c = Command {
+            command_id: "completion-readiness".into(),
+            target: Some(root.record.id.clone()),
+            expected_revision: Some(root.record.revision),
+            payload: json!({}),
+        };
+        let context = InvocationContext::workflow(
+            WorkflowActor::Coordinator {
+                source_id: root.record.id.clone(),
+            },
+            Some(root.instance.project_id.clone()),
+        );
+        let mut selected = WorkflowCommit::new(self, "query.workflow.completion", &c, &context)?;
+        Ok(selected.rule(
+            &root.instance,
+            "$workflow",
+            &root.instance.plan.document.completion,
+            &facts.facts,
+        )? && root
+            .instance
+            .plan
+            .document
+            .outputs
+            .values()
+            .all(|s| facts.facts.value(s).is_some()))
+    }
+    pub(crate) fn native_workflow_control_query(&self, method: &str, p: &Value) -> Result<Value> {
+        let root = WorkflowHeaderFacts::read(
+            self,
+            p["id"]
+                .as_str()
+                .or_else(|| p["instance_id"].as_str())
+                .ok_or_else(|| err("invalid_params", "缺少流程"))?,
+        )?;
+        if let Some(project) = p["project_id"].as_str() {
+            require(project == root.instance.project_id, "项目不匹配")?;
+        }
+        if method == "workflow.outputs.read" {
+            return self.native_root_outputs(&root, p);
+        }
+        if method == "workflow.events.read" {
+            let cursor = p["cursor"].as_u64().unwrap_or(0);
+            let limit = p["limit"].as_u64().unwrap_or(100).clamp(1, 100) as usize;
+            let rows = self.store.events_after(cursor, limit)?;
+            let mut out = vec![];
+            for row in &rows {
+                let actual = one(self.store.as_ref(), "workflow_run_authority", &row.target)?;
+                if row.target == root.instance.root_instance_id
+                    || actual
+                        .value
+                        .as_ref()
+                        .is_some_and(|v| v["root_instance_id"] == root.instance.root_instance_id)
+                {
+                    out.push(row);
+                }
+            }
+            return Ok(
+                json!({"events":out,"next_cursor":rows.last().map(|e|e.id).unwrap_or(cursor)}),
+            );
+        }
+        if let Some(id) = p["decision_ref"].as_str() {
+            let selected = one(self.store.as_ref(), "governance", id)?;
+            let decision = restored(self, &selected)?;
+            let pending = if decision.r#type == "workflow_human_decision" {
+                restored(
+                    self,
+                    &one(self.store.as_ref(), "governance", &decision.definition_id)?,
+                )?
+            } else {
+                decision.clone()
+            };
+            require(
+                pending.r#type == "workflow_pending_decision",
+                "不是决定请求",
+            )?;
+            let owner = WorkflowHeaderFacts::read(self, &pending.definition_id)?;
+            require(
+                owner.instance.root_instance_id == root.instance.root_instance_id,
+                "决定不属于当前流程根",
+            )?;
+            let mut out = crate::orchestration::read_chunk(&decision.data["request"], p)?;
+            out["decision_ref"] = json!(decision.id);
+            out["status"] = pending.data["status"].clone();
+            out["approved"] = decision.data["approved"].clone();
+            return Ok(out);
+        }
+        if method == "workflow.execution.inspect" {
+            let id = text(p, "execution_id")?;
+            let e = if let Some(e) = root.instance.steps.iter().find(|e| e.id == id) {
+                e.clone()
+            } else {
+                let source = one(self.store.as_ref(), "workflow_history_source", &id)?;
+                let row = restored(self, &source)?;
+                require(
+                    row.r#type == "workflow_execution_history"
+                        && row.data["workflow_instance_id"] == root.record.id,
+                    "原执行历史不属于当前流程",
+                )?;
+                row.decode()?
+            };
+            if let Some(part) = p["part"].as_str() {
+                let value = match part {
+                    "inputs" => json!(e.inputs),
+                    "contract" => {
+                        let row = restored(
+                            self,
+                            &one(self.store.as_ref(), "governance", &e.plan_revision_id)?,
+                        )?;
+                        row.data["plan"]["document"]["steps"]
+                            .as_array()
+                            .and_then(|steps| steps.iter().find(|s| s["node_id"] == e.node_id))
+                            .cloned()
+                            .ok_or_else(|| err("not_found", "原合同缺失"))?
+                    }
+                    _ => return Err(err("invalid_params", "未知执行读取部分")),
+                };
+                let mut out = crate::orchestration::read_chunk(&value, p)?;
+                out["execution_id"] = json!(id);
+                out["plan_revision_id"] = json!(e.plan_revision_id);
+                out["part"] = json!(part);
+                return Ok(out);
+            }
+            return Ok(json!(e));
+        }
+        let offset = p["offset"].as_u64().unwrap_or(0) as usize;
+        let limit = p["limit"].as_u64().unwrap_or(32).clamp(1, 64) as usize;
+        let mut steps = vec![];
+        for e in root.instance.steps.iter().skip(offset).take(limit) {
+            steps.push(self.native_step_readiness(&root, &root.step(self, &e.id)?)?);
+        }
+        let terminal = root.instance.cancel_requested
+            || matches!(
+                root.instance.status,
+                StepExecutionStatus::Completed | StepExecutionStatus::Cancelled
+            );
+        let mut allowed = vec!["inspect"];
+        if !terminal {
+            allowed.extend([
+                "preview",
+                "apply",
+                "stop",
+                "cancel",
+                if root.instance.paused {
+                    "resume"
+                } else {
+                    "pause"
+                },
+            ]);
+            if steps.iter().any(|s| s["dispatchable"] == true) {
+                allowed.push("dispatch");
+            }
+            if steps
+                .iter()
+                .any(|s| s["actions"]["accept"]["allowed"] == true)
+            {
+                allowed.push("accept");
+            }
+            if self.native_completion_ready(&root)? {
+                allowed.push("complete");
+            }
+        }
+        let mut runtime = json!(root.instance.as_ref());
+        runtime["plan"] = json!({"workflow_revision_id":root.instance.plan.workflow_revision_id,"standard_ref":root.instance.plan.standard_ref,"work_configuration_ref":root.instance.plan.work_configuration_ref,"harness_permission_ref":root.instance.plan.harness_permission_ref,"document":root.instance.plan.document,"roles":root.instance.plan.roles});
+        runtime["plan"]["document"]["steps"] = json!(
+            root.instance
+                .plan
+                .document
+                .steps
+                .iter()
+                .skip(offset)
+                .take(limit)
+                .collect::<Vec<_>>()
+        );
+        runtime["steps"] = json!(
+            root.instance
+                .steps
+                .iter()
+                .skip(offset)
+                .take(limit)
+                .collect::<Vec<_>>()
+        );
+        let detail = self
+            .store
+            .workflow_detail(&crate::read_models::WorkflowDetailQuery::parse(
+                &json!({"id":root.record.id,"view":"status","child_offset":offset}),
+            )?)?
+            .ok_or_else(|| err("not_found", "流程摘要缺失"))?;
+        let total = root.instance.steps.len();
+        Ok(
+            json!({"human_gates":self.controller_human_gates(&root.instance.root_instance_id)?,"record":{"id":root.record.id,"revision":root.record.revision},"page":{"offset":offset,"limit":limit,"total":total,"next_offset":if offset+limit<total{Some(offset+limit)}else{None},"document_complete":offset==0&&limit>=total},"runtime":runtime,"steps":steps,"allowed_actions":allowed,"children_page":{"offset":offset,"more":detail.children_more,"next_offset":detail.next_child_offset},"delivery_types":root.instance.plan.definitions.values().filter(|r|r.r#type=="delivery_type").collect::<Vec<_>>(),"children":detail.children}),
+        )
+    }
+    fn native_root_outputs(&self, root: &WorkflowHeaderFacts, p: &Value) -> Result<Value> {
+        let ids: Vec<Id> = serde_json::from_value(p.get("ids").cloned().unwrap_or(json!([])))
+            .map_err(|e| err("invalid_params", e.to_string()))?;
+        require(ids.len() <= 100, "最多读取 100 项产物")?;
+        let mut out = vec![];
+        let budget =
+            p["max_bytes"].as_u64().unwrap_or(16384).clamp(1024, 65536) / ids.len().max(1) as u64;
+        for id in ids {
+            let row = restored(self, &one(self.store.as_ref(), "governance", &id)?)?;
+            require(
+                row.immutable
+                    && row.scope.project_id() == Some(root.instance.project_id.as_str())
+                    && matches!(row.r#type.as_str(), "workflow_output" | "typed_material"),
+                "原产物不属于当前项目",
+            )?;
+            if row.r#type == "typed_material" {
+                require(
+                    row.data["root_instance_id"] == root.instance.root_instance_id,
+                    "材料跨流程根",
+                )?;
+            } else {
+                let e = text(&row.data, "execution_id")?;
+                let owner = one(self.store.as_ref(), "workflow_execution_owner", &e)?;
+                let id = if let Some(raw) = &owner.value {
+                    text(raw, "instance_id")?
+                } else {
+                    let history = restored(
+                        self,
+                        &one(self.store.as_ref(), "workflow_history_source", &e)?,
+                    )?;
+                    text(&history.data, "workflow_instance_id")?
+                };
+                let source = one(self.store.as_ref(), "workflow_run_authority", &id)?;
+                require(
+                    source
+                        .value
+                        .as_ref()
+                        .is_some_and(|v| v["root_instance_id"] == root.instance.root_instance_id),
+                    "产物跨流程根",
+                )?;
+            }
+            let value = row.data["value"]
+                .pointer(p["pointer"].as_str().unwrap_or(""))
+                .ok_or_else(|| err("invalid_params", "产物字段不存在"))?;
+            let mut request = p.clone();
+            request["max_bytes"] = json!(budget.max(1));
+            let chunk = crate::orchestration::read_chunk(value, &request)?;
+            if chunk["next_offset"].is_null() && chunk["offset"] == 0 {
+                let mut raw = json!(row);
+                raw["data"]["value"] = value.clone();
+                out.push(raw);
+            } else {
+                let mut data = row.data.clone();
+                data.as_object_mut().unwrap().remove("value");
+                let mut raw = chunk;
+                raw["id"] = json!(row.id);
+                raw["data"] = data;
+                out.push(raw);
+            }
+        }
+        Ok(json!({"outputs":out}))
+    }
+}

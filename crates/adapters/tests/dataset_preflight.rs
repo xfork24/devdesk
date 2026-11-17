@@ -77,20 +77,47 @@ fn missing_published_project_is_not_silently_recreated() {
 }
 
 #[test]
-fn the_previous_intent_layout_is_rejected_without_changing_project_or_global_files() {
+fn the_previous_intent_layouts_are_rejected_without_changing_project_or_global_files() {
+    for version in [56, 57, 58] {
+        let root = tempfile::tempdir().unwrap();
+        GlobalStore::open(root.path()).unwrap();
+        let project = id();
+        let store = SqliteStore::open_project(root.path(), &project).unwrap();
+        let path = Path::new(&store.root()).join("engineering.sqlite3");
+        drop(store);
+        reserve(root.path(), &project, true);
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(&format!("PRAGMA user_version={version};"))
+            .unwrap();
+        drop(conn);
+        let before = std::fs::read(&path).unwrap();
+        reject_unchanged(root.path(), "数据集协议不兼容");
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert!(SqliteStore::open_project(root.path(), &project).is_err());
+        assert_eq!(std::fs::read(path).unwrap(), before);
+    }
+}
+
+#[test]
+fn same_numbered_but_different_resource_layout_is_rejected_without_repair() {
     let root = tempfile::tempdir().unwrap();
     GlobalStore::open(root.path()).unwrap();
-    let project = id();
-    let store = SqliteStore::open_project(root.path(), &project).unwrap();
-    let path = Path::new(&store.root()).join("engineering.sqlite3");
-    drop(store);
-    reserve(root.path(), &project, true);
-    let conn = rusqlite::Connection::open(&path).unwrap();
-    conn.execute_batch("PRAGMA user_version=56;").unwrap();
+    let conn = rusqlite::Connection::open(root.path().join("global.sqlite3")).unwrap();
+    conn.execute(
+        "UPDATE dataset_layout SET contract='single-host-resource-v1' WHERE id=1",
+        [],
+    )
+    .unwrap();
     drop(conn);
-    let before = std::fs::read(&path).unwrap();
+    reject_unchanged(root.path(), "数据集资源协议不兼容");
+}
+
+#[test]
+fn pre_integration_global_resource_layout_is_rejected_without_writes() {
+    let root = tempfile::tempdir().unwrap();
+    GlobalStore::open(root.path()).unwrap();
+    let conn = rusqlite::Connection::open(root.path().join("global.sqlite3")).unwrap();
+    conn.execute_batch("PRAGMA user_version=23;").unwrap();
+    drop(conn);
     reject_unchanged(root.path(), "数据集协议不兼容");
-    assert_eq!(std::fs::read(&path).unwrap(), before);
-    assert!(SqliteStore::open_project(root.path(), &project).is_err());
-    assert_eq!(std::fs::read(path).unwrap(), before);
 }

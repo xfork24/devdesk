@@ -24,7 +24,7 @@ use std::sync::Mutex;
 
 fn engine(path: &std::path::Path) -> Engine {
     let engine = Engine::new(
-        Arc::new(SqliteStore::open(path).unwrap()),
+        Arc::new(SqliteStore::open_fixture(path).unwrap()),
         Arc::new(FileArtifacts::new(path.into())),
         runtime::adapters(),
     )
@@ -72,6 +72,15 @@ fn command(
                 .unwrap_or(0)
         );
     }
+    if method.starts_with("workflow.step.")
+        && let Some(row) = target.and_then(|id| state.configuration(id).ok())
+        && payload["execution_id"].is_null()
+        && let Some(step) = row.data["steps"]
+            .as_array()
+            .and_then(|steps| steps.iter().find(|e| e["step"] == payload["step"]))
+    {
+        payload["execution_id"] = step["id"].clone();
+    }
     let revision = target.and_then(|target| {
         state
             .configuration(target)
@@ -99,7 +108,7 @@ fn command(
                     .map(|t| t.revision)
             })
     });
-    engine.execute(
+    let result = engine.execute(
         method,
         Command {
             command_id: id(),
@@ -107,7 +116,11 @@ fn command(
             expected_revision: revision,
             payload,
         },
-    )
+    )?;
+    if method == "workflow.change.apply" {
+        engine.drive_workflow_changes()?;
+    }
+    Ok(result)
 }
 fn publish(engine: &Engine, mut document: Value) -> Value {
     // Fixtures choose Profiles exactly as production Workflow sources do.
@@ -153,7 +166,7 @@ fn publish(engine: &Engine, mut document: Value) -> Value {
         let reference = record.id.clone();
         engine
             .store
-            .transact(None, &mut |state| {
+            .seed_fixture_state(None, &mut |state| {
                 state.governance.push(record.clone());
                 Ok(Value::Null)
             })
@@ -217,7 +230,7 @@ fn custom_role_and_typed_business_step_publish_preview_and_reload() {
     drop(engine);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
     let reopened = loop {
-        match SqliteStore::open(dir.path()) {
+        match SqliteStore::open_fixture(dir.path()) {
             Ok(store) => break store,
             Err(error)
                 if error.code == "dataset_locked" && std::time::Instant::now() < deadline =>
@@ -358,7 +371,7 @@ impl ports::Harness for RecordingAgent {
             .as_ref()
             .unwrap()
             .tool_policy
-            == ToolPolicy::WorkspaceWrite
+            != ToolPolicy::ReadOnly
             && let (Some(git), Some(view)) =
                 (&*self.view_validator.lock().unwrap(), &request.code_view)
         {
@@ -456,7 +469,7 @@ fn custom_agent_executes_actual_task_through_ports_and_persists_typed_artifact()
     let feature = id();
     engine
         .store
-        .transact(None, &mut |state| {
+        .seed_fixture_state(None, &mut |state| {
             state.features.push(Feature {
                 id: feature.clone(),
                 project_id: project["id"].as_str().unwrap().into(),
@@ -552,7 +565,10 @@ fn custom_agent_executes_actual_task_through_ports_and_persists_typed_artifact()
     drop(calls);
     drop(conn);
     drop(engine);
-    let restored = SqliteStore::open(dir.path()).unwrap().snapshot().unwrap();
+    let restored = SqliteStore::open_fixture(dir.path())
+        .unwrap()
+        .snapshot()
+        .unwrap();
     assert_eq!(restored.configuration(&row.id).unwrap().data, row.data);
     assert_eq!(
         restored
@@ -657,6 +673,22 @@ fn drive(engine: &Engine, rounds: usize) {
         }
         engine.drive_platform_tools().unwrap();
         engine.tick_conversations(4).unwrap();
+    }
+    let s = engine.store.snapshot().unwrap();
+    for turn in s
+        .turns
+        .iter()
+        .filter(|t| t.status == TurnStatus::NeedsReconciliation)
+    {
+        eprintln!(
+            "unknown turn {} status observations: {:?}",
+            turn.id,
+            s.conversation_events
+                .iter()
+                .filter(|e| e.turn_id == turn.id && e.kind == ConversationEventKind::Status)
+                .map(|e| &e.content)
+                .collect::<Vec<_>>()
+        );
     }
 }
 fn research_agent(engine: &Engine) -> (Value, Value) {
@@ -1289,7 +1321,15 @@ fn explicit_manual_approval_requires_reason_and_exact_execution_and_preserves_re
     let before = instance(&engine, &run["id"]);
     let execution = &before["steps"][0];
     assert_eq!(execution["status"], "awaiting_acceptance");
-    let payload = json!({"step":"study","execution_id":execution["id"],"input_digest":execution["input_digest"],"outputs":execution["outputs"],"reason":"已核对功能，接受本轮历史证据缺失"});
+    let original_step = engine
+        .store
+        .read_resources(&[devdesk_core::concurrency::ResourceKey::new(
+            "workflow_step",
+            json!([run["id"], execution["id"]]).to_string(),
+        )])
+        .unwrap()
+        .remove(0);
+    let payload = json!({"plan_revision_id":before["active_plan_revision_id"],"control_version":before["control_version"],"expected_step_revision":original_step.revision,"step":"study","execution_id":execution["id"],"input_digest":execution["input_digest"],"outputs":execution["outputs"],"reason":"已核对功能，接受本轮历史证据缺失"});
     for (key, value) in [
         ("reason", json!("  ")),
         ("execution_id", json!("old-execution")),
@@ -1643,7 +1683,7 @@ fn persisted_evidence_case(large: bool) {
     let output_id = output_id.to_owned();
     drop(calls);
     drop(workbench);
-    let reopened = SqliteStore::open(dir.path()).unwrap();
+    let reopened = SqliteStore::open_fixture(dir.path()).unwrap();
     assert_eq!(
         reopened
             .snapshot()
@@ -1741,7 +1781,7 @@ fn natural_language_feature_request_survives_restart_and_reaches_actual_agent_tu
     let turn = calls[0].turn.id.clone();
     drop(calls);
     drop(workbench);
-    let restored = SqliteStore::open(directory.path())
+    let restored = SqliteStore::open_fixture(directory.path())
         .unwrap()
         .snapshot()
         .unwrap();
@@ -1828,7 +1868,12 @@ fn invalid_typed_output_fails_and_retry_creates_a_new_execution_without_changing
     .unwrap();
     drive(&engine, 12);
     let after = instance(&engine, &run["id"]);
-    assert_eq!(after["status"], "completed");
+    assert_eq!(
+        after["status"],
+        "completed",
+        "{}",
+        json!({"reason":after["steps"][0]["reason"],"failure":after["steps"][0]["failure"]})
+    );
     assert_eq!(before["steps"][0]["inputs"], after["steps"][0]["inputs"]);
     assert_ne!(before["steps"][0]["id"], after["steps"][0]["id"]);
     assert!(
@@ -1914,7 +1959,7 @@ fn platform_step_runs_without_a_placeholder_agent_session_and_seals_real_receipt
     assert!(
         engine
             .store
-            .transact(None, &mut |state| {
+            .seed_fixture_state(None, &mut |state| {
                 let row = state
                     .governance
                     .iter_mut()
@@ -2156,7 +2201,7 @@ fn actual_git_candidate(waived_advance: bool, task_owner: bool, rework_writer: b
         .unwrap();
     engine
         .store
-        .transact(None, &mut |state| {
+        .seed_fixture_state(None, &mut |state| {
             let p = state.projects.iter_mut().find(|p| p.id == project).unwrap();
             p.workspace_definition = Some(Workspace {
                 repository: "fixture/local".into(),
@@ -2259,6 +2304,8 @@ fn actual_git_candidate(waived_advance: bool, task_owner: bool, rework_writer: b
         json!({"type":"source","source":{"step":"current","port":"workspace"}});
     document["steps"][2]["outputs"]["diff"] = json!({"delivery_ref":"builtin-delivery-diff:2"});
     document["steps"][2]["executor"]["output_mapping"] = json!({"candidate":"","diff":"/diff"});
+    document["steps"][3]["harness_permission_ref"] =
+        json!("builtin-permission-harness-read-only:1");
     document["steps"][3]["inputs"]["diff"] =
         json!({"type":"source","source":{"step":"snapshot","port":"scope_diff"}});
     document["steps"][3]["inputs"]["candidate_diff"] =
@@ -2365,7 +2412,7 @@ fn actual_git_candidate(waived_advance: bool, task_owner: bool, rework_writer: b
         // A moved code head with no genuine snapshot cannot become a checkpoint.
         engine
             .store
-            .transact(None, &mut |s| {
+            .seed_fixture_state(None, &mut |s| {
                 s.heads.iter_mut().find(|h| h.id == task).unwrap().revision = "e".repeat(40);
                 Ok(Value::Null)
             })
@@ -2381,7 +2428,7 @@ fn actual_git_candidate(waived_advance: bool, task_owner: bool, rework_writer: b
         );
         engine
             .store
-            .transact(None, &mut |s| {
+            .seed_fixture_state(None, &mut |s| {
                 s.heads.iter_mut().find(|h| h.id == task).unwrap().revision =
                     checkpoint_revision.as_str().unwrap().into();
                 Ok(Value::Null)
@@ -2726,7 +2773,12 @@ fn ancestor_pause_suspends_nested_dispatch_without_overriding_a_child_pause() {
     assert!(engine.pending_workflow_intents().unwrap().is_empty());
     command(&engine, "workflow.resume", Some(&child), json!({})).unwrap();
     assert_eq!(engine.pending_workflow_intents().unwrap().len(), 1);
-    drive(&engine, 8);
+    for _ in 0..32 {
+        drive(&engine, 1);
+        if instance(&engine, &run["id"])["status"] == "completed" {
+            break;
+        }
+    }
     assert_eq!(instance(&engine, &run["id"])["status"], "completed");
 }
 
@@ -2790,7 +2842,7 @@ fn task_creation_keeps_business_metadata_and_dependent_worktrees_use_the_latest_
     let feature = id();
     engine
         .store
-        .transact(None, &mut |state| {
+        .seed_fixture_state(None, &mut |state| {
             state.features.push(Feature {
                 id: feature.clone(),
                 project_id: project.clone(),
@@ -2861,7 +2913,7 @@ fn task_creation_keeps_business_metadata_and_dependent_worktrees_use_the_latest_
     // Explicit scheduling fixture: the dependency's external publication has been projected.
     engine
         .store
-        .transact(None, &mut |state| {
+        .seed_fixture_state(None, &mut |state| {
             state
                 .tasks
                 .iter_mut()
@@ -2967,7 +3019,7 @@ fn failed_child_send_is_reported_and_retry_resumes_the_parent_invocation() {
             let mut cmd: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
             let original_fingerprint = devdesk_core::command_fingerprint(method, &cmd);
             let result = if method == "conversation.send" {
-                Err(err("blocked", "explicit dispatch failure fixture"))
+                Err(err("blocked", "explicit dispatch failure fixture").technical_not_applied())
             } else {
                 cmd.payload["binding"] = json!(fixture_binding());
                 workflow_intents::execute(&engine, method, cmd, &original_fingerprint)
@@ -3000,7 +3052,12 @@ fn failed_child_send_is_reported_and_retry_resumes_the_parent_invocation() {
     )
     .unwrap();
     assert_eq!(instance(&engine, &run["id"])["status"], "running");
-    drive(&engine, 8);
+    for _ in 0..32 {
+        drive(&engine, 1);
+        if instance(&engine, &run["id"])["status"] == "completed" {
+            break;
+        }
+    }
     assert_eq!(instance(&engine, &run["id"])["status"], "completed");
 }
 
@@ -3215,7 +3272,14 @@ fn agent_platform_case(reject_schema: bool, cancel: bool, reject_receipt: bool, 
         engine.tick_conversations(4).unwrap();
     }
     assert_eq!(checked, !reject_schema);
-    assert_eq!(instance(&engine, &run["id"])["status"], "completed");
+    assert_eq!(
+        instance(&engine, &run["id"])["status"],
+        if reject_receipt {
+            "needs_reconciliation"
+        } else {
+            "completed"
+        }
+    );
     let receipts = harness.replies.lock().unwrap();
     assert_eq!(receipts.len(), 1);
     assert_eq!(
@@ -3271,7 +3335,10 @@ fn agent_platform_case(reject_schema: bool, cancel: bool, reject_receipt: bool, 
     if reject_receipt {
         assert_eq!(call.data["error"]["code"], "receipt_rejected");
         assert_eq!(
-            call.data["observed_receipt"]["inputs"]["note"],
+            state
+                .configuration(call.data["observation_id"].as_str().unwrap())
+                .unwrap()
+                .data["result"]["Ok"]["inputs"]["note"],
             "可复核的实际输入"
         );
     }
@@ -3316,7 +3383,7 @@ fn configured_task_completion_works_without_git_and_releases_declared_dependenci
     let feature = id();
     engine
         .store
-        .transact(None, &mut |state| {
+        .seed_fixture_state(None, &mut |state| {
             state.features.push(Feature {
                 id: feature.clone(),
                 project_id: project["id"].as_str().unwrap().into(),
@@ -3348,7 +3415,18 @@ fn configured_task_completion_works_without_git_and_releases_declared_dependenci
     .unwrap();
     drive(&engine, 14);
     let state = engine.store.snapshot().unwrap();
-    assert_eq!(instance(&engine, &run["id"])["status"], "completed");
+    assert_eq!(
+        instance(&engine, &run["id"])["status"],
+        "completed",
+        "steps: {}; calls: {:?}",
+        instance(&engine, &run["id"])["steps"],
+        state
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "platform_call")
+            .map(|r| (&r.id, &r.data["status"], &r.data["error"]))
+            .collect::<Vec<_>>()
+    );
     assert_eq!(state.tasks.len(), 2);
     assert!(
         state
@@ -3388,7 +3466,7 @@ fn task_agent_steps_own_distinct_sessions_even_while_the_same_agent_has_an_activ
     let task = id();
     engine
         .store
-        .transact(None, &mut |state| {
+        .seed_fixture_state(None, &mut |state| {
             state.features.push(Feature {
                 id: feature.clone(),
                 project_id: project["id"].as_str().unwrap().into(),
@@ -3477,7 +3555,7 @@ fn task_agent_steps_own_distinct_sessions_even_while_the_same_agent_has_an_activ
     let mut request: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
     let original_fingerprint = devdesk_core::command_fingerprint("session.open", &request);
     request.payload["binding"] = json!(fixture_binding());
-    let result = engine.execute_resolved("session.open", request, &original_fingerprint);
+    let result = workflow_intents::execute(&engine, "session.open", request, &original_fingerprint);
     engine.observe_workflow_intent(intent, &result).unwrap();
     result.unwrap();
     let state = engine.store.snapshot().unwrap();
@@ -3550,7 +3628,17 @@ fn changing_a_running_task_waits_for_stop_and_never_reuses_the_old_contract() {
         .unwrap();
     assert_eq!(preview["must_stop"].as_array().unwrap().len(), 1);
     let applied=command(&engine,"workflow.change.apply",run["id"].as_str(),json!({"plan_revision_id":before["active_plan_revision_id"],"changeset":changes,"preview_hash":preview["preview_hash"]})).unwrap();
-    assert_eq!(applied["status"], "waiting_quiescence");
+    assert_eq!(applied["status"], "prepared");
+    assert_eq!(
+        engine
+            .store
+            .snapshot()
+            .unwrap()
+            .configuration(applied["id"].as_str().unwrap())
+            .unwrap()
+            .data["status"],
+        "waiting_quiescence"
+    );
     assert_eq!(
         instance(&engine, &run["id"])["active_plan_revision_id"],
         before["active_plan_revision_id"]
@@ -3584,15 +3672,16 @@ fn changing_a_running_task_waits_for_stop_and_never_reuses_the_old_contract() {
                 && r.data["contract_digest"] == old["contract_digest"])
     );
     let history = engine
-        .query("query.workflow_instance", &json!({"id":run["id"]}), 4)
+        .query(
+            "workflow.execution.inspect",
+            &json!({"id":run["id"],"execution_id":old["id"],"part":"contract"}),
+            4,
+        )
         .unwrap();
+    let original_contract: Value =
+        serde_json::from_str(history["value_chunk"].as_str().unwrap()).unwrap();
     assert_eq!(
-        history["history"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|r| r["type"] == "workflow_execution_history" && r["data"]["id"] == old["id"])
-            .unwrap()["frozen_step"]["task_instructions"],
+        original_contract["task_instructions"],
         "原任务只调查原材料。"
     );
     recorder.hold.store(false, Ordering::SeqCst);
@@ -3996,8 +4085,8 @@ fn native_rejection_retries_only_after_real_stop_proof_and_keeps_the_failure_eve
         state
             .conversation_events
             .iter()
-            .any(|event| event.id == source
-                && event.deduplication_key.ends_with(":execution-failure"))
+            .any(|event| event.turn_id == source
+                && event.deduplication_key.contains(":execution-failure:"))
     );
     assert!(state.executions.iter().all(|run| run.writer_revoked));
     assert_eq!(
@@ -4174,21 +4263,22 @@ fn ordinary_agents_lint_drafts_without_sealing_them_or_querying_other_deliveries
         drive_platform_fixture(&e, 12);
         let receipts = harness.replies.lock().unwrap();
         if mode == "not_granted" {
-            assert!(receipts.is_empty());
+            assert_eq!(receipts.len(), 1);
+            assert!(!receipts[0].success);
             let state = e.store.snapshot().unwrap();
             assert!(
                 !state
                     .governance
                     .iter()
-                    .any(|r| r.r#type == "platform_call" || r.r#type == "workflow_output")
+                    .any(|r| r.r#type == "platform_effect_intent")
             );
             assert!(
                 state
-                    .turns
+                    .governance
                     .iter()
-                    .any(|t| t.status == TurnStatus::NeedsReconciliation)
+                    .filter(|r| r.r#type == "platform_call")
+                    .all(|r| r.data["remote_effect"] == "not_applied")
             );
-            continue;
         }
         assert_eq!(receipts.len(), 1, "{mode}");
         assert_eq!(receipts[0].success, mode == "assigned", "{mode}");
@@ -4297,7 +4387,7 @@ fn native_pending_tasks_restore_only_the_original_frozen_task_or_authenticated_d
         let mut c: Command = serde_json::from_value(open.data["command"].clone()).unwrap();
         let fingerprint = command_fingerprint("session.open", &c);
         c.payload["binding"] = json!(fixture_binding());
-        let result = e.execute_resolved("session.open", c, &fingerprint);
+        let result = workflow_intents::execute(&e, "session.open", c, &fingerprint);
         e.observe_workflow_intent(&open, &result).unwrap();
         result.unwrap();
         e.evaluate_workflows().unwrap();
@@ -4319,7 +4409,7 @@ fn native_pending_tasks_restore_only_the_original_frozen_task_or_authenticated_d
             None
         };
         let conn = rusqlite::Connection::open(dir.path().join("engineering.sqlite3")).unwrap();
-        conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('unrestorable-task-history','workflow_instance','fixture',?1,'History',1,'fixture','{}',?2,0,1,1)",rusqlite::params![serde_json::to_string(&intent.scope).unwrap(),json!({"plan":{"$source":"absent-history"},"large":"x".repeat(1_000_000)}).to_string()]).unwrap();
+        conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('unrestorable-task-history','workflow_instance','fixture',?1,'History',1,'fixture','{}',?2,0,1,1)",rusqlite::params![serde_json::to_string(&intent.scope).unwrap(),json!({"owner_id":intent.scope.project_id(),"project_id":intent.scope.project_id(),"root_instance_id":"unrestorable-task-history","status":"completed","steps":[],"control_version":1,"active_plan_revision_id":"unrestorable-plan","plan":{"$source":"absent-history"},"large":"x".repeat(1_000_000)}).to_string()]).unwrap();
         let trace = devdesk_adapters::performance::Trace::start();
         let pending = e.pending_workflow_intents().unwrap();
         let report = trace.finish();

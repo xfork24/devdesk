@@ -6,7 +6,7 @@ use std::{path::Path, sync::Arc};
 #[path = "../../../tests/support/runtime.rs"]
 mod runtime;
 fn engine(path: &Path) -> Engine {
-    let store = Arc::new(SqliteStore::open(path).unwrap());
+    let store = Arc::new(SqliteStore::open_fixture(path).unwrap());
     let e = Engine::new(
         store,
         Arc::new(FileArtifacts::new(path.into())),
@@ -102,14 +102,17 @@ fn combined_history_sorts_before_paging_and_reuses_redacted_call_projections() {
     let dir = tempfile::tempdir().unwrap();
     let e = engine(dir.path());
     let time = 9_000_000_000_000;
-    e.store.transact(None, &mut |s| {
+    e.store.seed_fixture_state(None, &mut |s| {
         let first = s.events.last().map_or(1, |e| e.id + 1);
         for (index, (name, delta)) in [("newest-event", 300), ("oldest-event", 100), ("middle-event", 200)].into_iter().enumerate() {
             s.events.push(Event { id: first + index as u64, target: "old-call".into(), kind: name.into(), detail: name.into(), time: time + delta });
         }
         for (id, kind, delta) in [("new-call", "tool_call", 400), ("old-call", "tool_call", 150), ("platform-call", "platform_call", 250)] {
             let data = if kind == "platform_call" {
-                json!({"status":"succeeded","request":{"definition":{"qualified_name":"workspace.current"},"arguments":{}},"receipt":{"path":"/work"}})
+                json!({"status":"succeeded","request":PlatformToolRequest {
+                    definition_ref:Some("builtin-tool-workspace-current:1".into()), execution_id:"fixture-execution".into(),instance_id:"fixture-instance".into(),owner_id:"fixture-owner".into(),project_id:"fixture-project".into(),
+                    definition:s.configuration("builtin-tool-workspace-current:1")?.decode()?, arguments:json!({}), runtime:None,permissions:None,caller:None,
+                },"receipt":{"path":"/work"}})
             } else {
                 json!({"status":"succeeded","invocation":{"tool":{"definition":{"sensitive_parameters":["/password"]}},"arguments":{"password":"secret-value","visible":"kept"}}})
             };
@@ -239,12 +242,12 @@ fn current_databases_exclude_retired_permission_storage_and_conversion_indexes()
     let project = id();
     let _project = SqliteStore::open_project(dir.path(), &project).unwrap();
     for (path, version) in [
-        (dir.path().join("global.sqlite3"), 22),
+        (dir.path().join("global.sqlite3"), 23),
         (
             SqliteStore::project_path(dir.path(), &project)
                 .unwrap()
                 .join("engineering.sqlite3"),
-            57,
+            58,
         ),
     ] {
         let db = rusqlite::Connection::open(path).unwrap();
@@ -269,7 +272,7 @@ fn current_databases_exclude_retired_permission_storage_and_conversion_indexes()
             db.prepare("SELECT revision FROM resource_versions WHERE kind=?1 AND resource_id=?2")
                 .is_ok()
         );
-        if version == 57 {
+        if version == 58 {
             for table in ["projects", "features", "tasks", "snapshots"] {
                 let columns: Vec<String> = db
                     .prepare(&format!("PRAGMA table_info({table})"))

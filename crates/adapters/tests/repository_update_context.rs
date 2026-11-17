@@ -139,7 +139,7 @@ fn refresh_is_fenced_by_head_and_git_activity_without_loading_project_history() 
     let root = tempfile::tempdir().unwrap();
     let (store, connection) = fixture(root.path());
     mainline(&connection);
-    connection.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('history','workflow_instance','owner',?1,'history',1,'fixture','{}',?2,0,1,1)",params![json!(format!("project:{PROJECT}")).to_string(),json!({"plan":{"$source":"unrestorable-history"},"large":"x".repeat(1_000_000)}).to_string()]).unwrap();
+    connection.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('history','workflow_instance','owner',?1,'history',1,'fixture','{}',?2,0,1,1)",params![json!(format!("project:{PROJECT}")).to_string(),json!({"root_instance_id":"unrestorable-root","plan":{"$source":"unrestorable-history"},"large":"x".repeat(1_000_000)}).to_string()]).unwrap();
     let command = command("refresh", json!({"revision":"b".repeat(40)}));
     let trace = performance::Trace::start();
     let prepared = RepositoryRefreshContext::read(store.as_ref(), &command)

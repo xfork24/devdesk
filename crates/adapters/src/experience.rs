@@ -405,10 +405,40 @@ impl devdesk_core::ports::AgentContextReader for Reader {
             params["project_id"].as_str().is_none_or(|id| id == project),
             "工具参数不能改变当前项目范围",
         )?;
-        let state = SqliteStore::read_project_snapshot(&self.root, project)?;
-        let files = FileArtifacts::new(SqliteStore::project_path(&self.root, project)?);
+        let catalog = SqliteStore::read_project_catalog(&self.root, project)?;
+        let path = SqliteStore::project_path(&self.root, project)?;
+        let pool = connection_pool::ConnectionPool::read_only(&path.join("engineering.sqlite3"))?;
+        if matches!(
+            method,
+            "project.overview" | "project.records.list" | "project.record.read"
+        ) {
+            let selected = project_records::read(&pool, &catalog, method, params)?;
+            return if method == "project.record.read" {
+                devdesk_core::render_project_record(&selected, params)
+            } else {
+                Ok(selected)
+            };
+        }
+        let files = FileArtifacts::new(path);
+        if method == "project.artifact.read" {
+            let key = devdesk_core::concurrency::ResourceKey::new(
+                "artifact",
+                params["id"]
+                    .as_str()
+                    .ok_or_else(|| err("invalid_params", "需要产物 ID"))?,
+            );
+            let row = resource_commits::read(&pool, &[key])?.remove(0);
+            let artifact: Artifact =
+                serde_json::from_value(row.value.ok_or_else(|| err("not_found", "产物不存在"))?)
+                    .map_err(storage)?;
+            return devdesk_core::render_project_artifact(
+                &artifact,
+                files.read(&artifact)?,
+                params,
+            );
+        }
         devdesk_core::read_project_knowledge(
-            &state,
+            &catalog.state,
             &files,
             json!({"available":false}),
             method,
@@ -416,6 +446,7 @@ impl devdesk_core::ports::AgentContextReader for Reader {
             params,
         )
     }
+
     fn experience(&self, instance_id: &str, origin: Option<&str>, params: &Value) -> Result<Value> {
         let mut params = params.clone();
         require(params.is_object(), "经验查询参数必须为对象")?;
@@ -522,35 +553,92 @@ impl devdesk_core::ports::AgentContextReader for Reader {
             {
                 continue;
             }
-            let state = match SqliteStore::read_project_snapshot(&self.root, &project.id) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-            let Some(row) = state
-                .governance
-                .iter()
-                .find(|r| r.id == workflow && r.r#type == "workflow_instance")
-            else {
+            let path = SqliteStore::project_path(&self.root, &project.id)?;
+            let pool =
+                match connection_pool::ConnectionPool::read_only(&path.join("engineering.sqlite3"))
+                {
+                    Ok(pool) => pool,
+                    Err(_) => continue,
+                };
+            let catalog = SqliteStore::read_project_catalog(&self.root, &project.id)?;
+            let conn = pool.read()?;
+            conn.execute_batch("BEGIN;").map_err(storage)?;
+            let selected = resource_commits::read_on(
+                &conn,
+                &[devdesk_core::concurrency::ResourceKey::new(
+                    "workflow_run_authority",
+                    workflow,
+                )],
+            )?
+            .remove(0);
+            let Some(run) = selected.value else {
                 continue;
             };
-            let belongs = state
-                .governance
-                .iter()
-                .filter(|r| r.r#type == "configured_session" && r.data["instance_id"] == workflow)
-                .any(|r| {
-                    state.sessions.iter().any(|s| {
-                        s.id == r.definition_id
-                            && s.runtime_binding
-                                .as_ref()
-                                .and_then(|b| b.agent_configuration.as_ref())
-                                .is_some_and(|a| a.agent_instance_id == instance_id)
-                    })
-                });
+            let belongs:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM governance_records c JOIN sessions s ON s.id=c.definition_id WHERE c.type='configured_session' AND json_extract(c.data,'$.instance_id')=?1 AND coalesce(json_extract(s.runtime_binding,'$.agent_configuration.instance_ref'),json_extract(s.runtime_binding,'$.agent_configuration.agent_instance_id'))=?2)",rusqlite::params![workflow,instance_id],|r|r.get(0)).map_err(storage)?;
             require(belongs, "该 Agent 没有此工作流的历史参与记录")?;
-            let instance: devdesk_core::ConfiguredWorkflowInstance = row.decode()?;
-            let mut result = devdesk_core::read_workflow_outputs(&state, &instance, params)?;
-            result["source"] = json!({"project_id":project.id,"workflow_instance_id":workflow});
-            return Ok(result);
+            let ids: Vec<Id> =
+                serde_json::from_value(params.get("ids").cloned().unwrap_or(json!([])))
+                    .map_err(storage)?;
+            require(ids.len() <= 100, "最多读取 100 项原产物")?;
+            let budget = params["max_bytes"]
+                .as_u64()
+                .unwrap_or(16384)
+                .clamp(1024, 65536) as usize
+                / ids.len().max(1);
+            let mut outputs = vec![];
+            for id in ids {
+                let selected = load_table_filtered_params::<ConfigurationRecord>(
+                    &conn,
+                    "governance_records",
+                    "id=?1",
+                    &[&id],
+                )?
+                .pop()
+                .ok_or_else(|| err("not_found", "原产物不存在"))?;
+                require(
+                    selected.immutable
+                        && selected.scope.project_id() == Some(project.id.as_str())
+                        && matches!(
+                            selected.r#type.as_str(),
+                            "workflow_output" | "typed_material"
+                        ),
+                    "原产物跨项目或类型不符",
+                )?;
+                let same_root = if selected.r#type == "typed_material" {
+                    selected.data["root_instance_id"] == run["root_instance_id"]
+                } else {
+                    conn.query_row("SELECT EXISTS(SELECT 1 FROM governance_records w WHERE w.type='workflow_instance' AND json_extract(w.data,'$.root_instance_id')=?1 AND (EXISTS(SELECT 1 FROM json_each(w.data,'$.steps') e WHERE json_extract(e.value,'$.id')=?2) OR EXISTS(SELECT 1 FROM governance_records h WHERE h.type='workflow_execution_history' AND json_extract(h.data,'$.workflow_instance_id')=w.id AND json_extract(h.data,'$.id')=?2)))",rusqlite::params![run["root_instance_id"].as_str(),selected.data["execution_id"].as_str()],|r|r.get::<_,bool>(0)).map_err(storage)?
+                };
+                require(same_root, "原产物不属于当前流程根")?;
+                let row: ConfigurationRecord = ConfigurationRecord::from_storage(
+                    source_views::restore(&catalog.state, &json!(selected))?,
+                )?;
+                let value = row.data["value"]
+                    .pointer(params["pointer"].as_str().unwrap_or(""))
+                    .ok_or_else(|| err("invalid_params", "产物字段不存在"))?;
+                let body = value.to_string();
+                let mut offset = (params["offset"].as_u64().unwrap_or(0) as usize).min(body.len());
+                while !body.is_char_boundary(offset) {
+                    offset -= 1;
+                }
+                if body.len() > budget || offset > 0 {
+                    let mut end = (offset + budget).min(body.len());
+                    while !body.is_char_boundary(end) {
+                        end -= 1;
+                    }
+                    let mut data = row.data.clone();
+                    data.as_object_mut().unwrap().remove("value");
+                    outputs.push(json!({"id":row.id,"data":data,"value_chunk":&body[offset..end],"offset":offset,"next_offset":if end<body.len(){Some(end)}else{None},"total_bytes":body.len()}));
+                } else {
+                    let mut raw = json!(row);
+                    raw["data"]["value"] = value.clone();
+                    outputs.push(raw);
+                }
+            }
+            conn.execute_batch("COMMIT;").map_err(storage)?;
+            return Ok(
+                json!({"outputs":outputs,"source":{"project_id":project.id,"workflow_instance_id":workflow}}),
+            );
         }
         Err(err("not_found", "历史工作流不存在或来源项目不可用"))
     }

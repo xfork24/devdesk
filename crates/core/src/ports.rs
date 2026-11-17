@@ -3,8 +3,9 @@
 //! These runtime interfaces are separate from `devdesk_domain::Harness` and
 //! `devdesk_domain::Sandbox`, which describe persisted configuration and instances.
 use devdesk_domain::{
-    AdvanceObservation, Artifact, Document, EngineeringState, ExecutionInstance, GitContext, Id,
-    MaterialOwner, Origin, Result, err,
+    AdvanceObservation, Artifact, ConfiguredAgentTask, Document, EngineeringState,
+    ExecutionInstance, GitContext, Id, MaterialOwner, Origin, PullRequestReceipt,
+    PullRequestRequest, RepositoryOperation, RepositoryReceipt, Result, Session, err,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -92,6 +93,22 @@ pub trait Harness: Send + Sync {
             "unsupported",
             "供应商不提供 worker 停止证明",
         ))
+    }
+    /// Read-only inspection of this exact operation. It must never stop,
+    /// restart or recreate a worker; unknown results do not grant a new attempt.
+    fn inspect_worker_stop(
+        &self,
+        _session: &devdesk_domain::Session,
+        _execution: &devdesk_domain::RuntimeExecution,
+    ) -> Result<Option<WorkerStop>> {
+        Err(err("unsupported", "供应商未提供只读停止核对"))
+    }
+    fn inspect_worker_cleanup(
+        &self,
+        _session: &devdesk_domain::Session,
+        _execution: &devdesk_domain::RuntimeExecution,
+    ) -> Result<bool> {
+        Err(err("unsupported", "供应商未提供只读清理核对"))
     }
     fn session_log(&self, _execution: &devdesk_domain::RuntimeExecution) -> Result<Option<String>> {
         Ok(None)
@@ -232,6 +249,13 @@ pub trait ToolExecutor: Send + Sync {
         &self,
         invocation: &devdesk_domain::ToolInvocation,
     ) -> Result<Option<devdesk_domain::ToolReceipt>>;
+    /// Read the original durable receipt only; never start, stop or resend.
+    fn inspect(
+        &self,
+        _invocation: &devdesk_domain::ToolInvocation,
+    ) -> Result<Option<devdesk_domain::ToolReceipt>> {
+        Err(err("unsupported", "工具执行器未实现只读回执核对"))
+    }
     fn cancel(&self, invocation: &devdesk_domain::ToolInvocation) -> Result<()>;
     fn discover(
         &self,
@@ -272,6 +296,21 @@ pub trait Git: Send + Sync {
             "unsupported",
             "Git 适配器未提供仓库/worktree 管理",
         ))
+    }
+    /// Read only the original physical operation and its immutable marker.
+    /// Absence is unknown, never authorization to dispatch it again.
+    fn inspect_repository_operation(
+        &self,
+        _operation: &RepositoryOperation,
+    ) -> Result<Option<RepositoryReceipt>> {
+        Err(err("unsupported", "Git 缺少只读仓库操作核对"))
+    }
+    fn inspect_advance(
+        &self,
+        _context: &GitContext,
+        _operation_id: &str,
+    ) -> Result<AdvanceObservation> {
+        Err(err("unsupported", "Git 缺少只读推进核对"))
     }
     fn reconcile_advance(
         &self,
@@ -333,6 +372,15 @@ pub struct TestRequest {
     pub runtime: Option<ExecutionInstance>,
 }
 /// Base contract for executing and reconciling tests against a frozen request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum TestExecutionObservation {
+    Unknown,
+    NotStarted,
+    Running { timed_out: bool },
+    Completed { result: Value },
+    Stopped,
+}
 pub trait Tests: Send + Sync {
     /// Stable provider + adapter version; production adapters must override this identity.
     fn identity(&self) -> String {
@@ -360,6 +408,13 @@ pub trait Tests: Send + Sync {
     fn reconcile(&self, _request: &TestRequest) -> Result<Option<Value>> {
         Ok(None)
     }
+    /// Inspect only the original operation. Never create, start or stop a worker.
+    fn inspect_test(&self, _request: &TestRequest) -> Result<TestExecutionObservation> {
+        Err(err("unsupported", "测试适配器未实现只读执行核对"))
+    }
+    fn inspect_test_cleanup(&self, _request: &TestRequest) -> Result<bool> {
+        Err(err("unsupported", "测试适配器未实现只读清理核对"))
+    }
 }
 /// A replaceable set of execution providers shared by engines in one workspace.
 /// Cloning preserves provider instances, including their connection and recovery state.
@@ -382,6 +437,9 @@ pub trait PullRequests: Send + Sync {
         &self,
         request: &devdesk_domain::PullRequestRequest,
     ) -> Result<devdesk_domain::PullRequestReceipt>;
+    fn inspect(&self, _request: &PullRequestRequest) -> Result<Option<PullRequestReceipt>> {
+        Err(err("unsupported", "PR 适配器缺少只读 marker 核对"))
+    }
 }
 
 /// Workflow-specific scheduling hints; they never authorize dispatch or acceptance.
@@ -400,6 +458,9 @@ pub enum WorkflowRuntimeWork {
 }
 
 pub trait EngineeringStore: Send + Sync {
+    fn workspace_reading(&self, _params: &Value) -> Result<Value> {
+        Err(err("unsupported", "存储未实现有界工作台读取"))
+    }
     fn namespace(&self) -> crate::concurrency::StoreNamespace {
         crate::concurrency::StoreNamespace::Engineering {
             project_id: self.project_id(),
@@ -448,6 +509,28 @@ pub trait EngineeringStore: Send + Sync {
         _stage_offset: u64,
     ) -> Result<crate::read_models::WorkflowProgress> {
         Err(err("unsupported", "存储未实现工作流阶段进度"))
+    }
+    fn workflow_detail(
+        &self,
+        _query: &crate::read_models::WorkflowDetailQuery,
+    ) -> Result<Option<crate::read_models::WorkflowDetailFacts>> {
+        Err(err("unsupported", "存储未实现有界流程详情"))
+    }
+    fn execution_task_detail(&self, _turn: &str) -> Result<Option<Value>> {
+        Err(err("unsupported", "存储未实现精确冻结任务读取"))
+    }
+    fn project_records(&self, _method: &str, _params: &Value) -> Result<Value> {
+        Err(err("unsupported", "存储未实现有限项目资料读取"))
+    }
+    fn conversation_query(&self, _method: &str, _params: &Value) -> Result<Value> {
+        Err(err("unsupported", "存储未实现有限会话读取"))
+    }
+    fn workflow_reading(
+        &self,
+        _view: crate::read_models::WorkflowReadingView,
+        _params: &Value,
+    ) -> Result<Value> {
+        Err(err("unsupported", "存储未实现流程范围内的有界读取"))
     }
     fn experience_headers(
         &self,
@@ -514,12 +597,8 @@ pub trait EngineeringStore: Send + Sync {
     }
     /// Lookup through the same idempotency contract without creating a missing operation.
     fn replay(&self, id: &str, fingerprint: &str) -> Result<Option<Value>> {
-        let mut missing = false;
-        let result = self.transact(Some((id, fingerprint)), &mut |_| {
-            missing = true;
-            Err(err("operation_absent", "操作尚未登记"))
-        });
-        if missing { Ok(None) } else { result.map(Some) }
+        self.replay_commit(id, fingerprint)
+            .map(|r| r.map(|r| r.result))
     }
     /// Conservative scheduling hint; providers without an indexed query remain always eligible.
     fn active_conversation_count(&self) -> Result<usize> {
@@ -538,6 +617,7 @@ pub trait EngineeringStore: Send + Sync {
     }
     fn scheduling_hints(&self) -> Result<crate::read_models::SchedulingHints> {
         Ok(crate::read_models::SchedulingHints {
+            stages: crate::SchedulingStage::ALL.to_vec(),
             pending: self.has_pending_work()?,
             live: self
                 .snapshot()?
@@ -617,6 +697,109 @@ pub trait EngineeringStore: Send + Sync {
     ) -> Result<Value> {
         Err(err("unsupported", "存储未实现运行记录源编码"))
     }
+    fn encode_configuration_record(
+        &self,
+        _catalog: &crate::ConfigurationCatalogSnapshot,
+        _record: &devdesk_domain::ConfigurationRecord,
+    ) -> Result<Value> {
+        Err(err("unsupported", "存储未实现候选目录记录编码"))
+    }
+    fn encode_configuration_value(
+        &self,
+        _catalog: &crate::ConfigurationCatalogSnapshot,
+        _value: &Value,
+    ) -> Result<Value> {
+        Err(err("unsupported", "存储未实现候选源值编码"))
+    }
+    fn restore_runtime_value(&self, _value: &Value) -> Result<Value> {
+        Err(err("unsupported", "存储未实现有限运行事实源恢复"))
+    }
+    fn encode_runtime_value(&self, _value: &Value) -> Result<Value> {
+        Err(err("unsupported", "存储未实现有限运行事实源编码"))
+    }
+    /// Trusted task admission supplies an already validated exact renderer
+    /// result. Persist its compact source descriptor and literal ledger body.
+    fn encode_execution_task(&self, _task: &ConfiguredAgentTask) -> Result<(Value, String)> {
+        Err(err("unsupported", "存储未实现显式任务源编码"))
+    }
+    /// An original coordinator command contains a validated renderer result,
+    /// before a Turn exists. Encode its source without inventing a Turn/task.
+    fn encode_workflow_input_intent(
+        &self,
+        _record: &devdesk_domain::ConfigurationRecord,
+    ) -> Result<Value> {
+        Err(err("unsupported", "存储未实现工作流输入意图源编码"))
+    }
+    fn provider_tool_intent_page(
+        &self,
+        _after: Option<&str>,
+    ) -> Result<crate::tool_calls::ToolCallPage> {
+        Err(err("unsupported", "存储未实现原生工具创建意图分页"))
+    }
+    fn provider_poll_page(&self, _after: Option<&str>) -> Result<crate::tool_calls::ToolCallPage> {
+        Err(err("unsupported", "存储未实现原生观察交接分页"))
+    }
+    fn conversation_capture_page(
+        &self,
+        _after: Option<&str>,
+    ) -> Result<crate::tool_calls::ToolCallPage> {
+        Err(err("unsupported", "存储未实现完成会话捕获分页"))
+    }
+    fn conversation_capture_facts(
+        &self,
+        _session: &Session,
+        _turn: &str,
+        _terminal: &str,
+        _worker_boundary: u64,
+    ) -> Result<crate::ConversationCaptureFacts> {
+        Err(err("unsupported", "存储未实现有界会话捕获事实"))
+    }
+    fn conversation_input_facts(
+        &self,
+        _session: &Session,
+    ) -> Result<crate::ConversationCaptureFacts> {
+        Err(err("unsupported", "存储未实现输入前有界上下文事实"))
+    }
+    fn conversation_page(
+        &self,
+        _queued: bool,
+        _after: Option<&str>,
+    ) -> Result<crate::tool_calls::ToolCallPage> {
+        Err(err("unsupported", "存储未实现会话轮询分页"))
+    }
+    fn conversation_runtime_facts(
+        &self,
+        _turn: &str,
+    ) -> Result<Option<crate::ConversationRuntimeFacts>> {
+        Err(err("unsupported", "存储未实现有界会话运行事实"))
+    }
+    fn conversation_answers_pending(
+        &self,
+        _turn: &str,
+    ) -> Result<Vec<devdesk_domain::PendingInteraction>> {
+        Err(err("unsupported", "存储未实现待返回交互分页"))
+    }
+    fn conversation_start_source(&self, _turn: &str) -> Result<crate::ConversationStartSource> {
+        Err(err("unsupported", "存储未实现冻结会话派发事实"))
+    }
+    fn context_call_page(&self, _after: Option<&str>) -> Result<crate::tool_calls::ToolCallPage> {
+        Err(err("unsupported", "存储未实现上下文调用分页"))
+    }
+    fn context_call_facts(&self, _id: &str) -> Result<crate::ContextCallFacts> {
+        Err(err("unsupported", "存储未实现上下文调用原生事实"))
+    }
+    fn platform_calls_pending(&self) -> Result<bool> {
+        Err(err("unsupported", "存储未实现平台调用待办读取"))
+    }
+    /// Finite runtime work index, never a configuration or project snapshot.
+    fn runtime_record_page(
+        &self,
+        _kind: &str,
+        _status: &str,
+        _after: Option<&str>,
+    ) -> Result<crate::tool_calls::ToolCallPage> {
+        Err(err("unsupported", "存储未实现运行记录有界分页"))
+    }
     fn restore_runtime_record(&self, _value: &Value) -> Result<Value> {
         Err(err("unsupported", "存储未实现运行记录源恢复"))
     }
@@ -658,11 +841,15 @@ pub trait EngineeringStore: Send + Sync {
             ready,
         )?))
     }
-    fn transact(
+    /// Offline test fixtures only; production commands use prepared resources.
+    #[cfg(feature = "test-fixtures")]
+    fn seed_fixture_state(
         &self,
-        key: Option<(&str, &str)>,
-        action: &mut dyn FnMut(&mut EngineeringState) -> Result<Value>,
-    ) -> Result<Value>;
+        _key: Option<(&str, &str)>,
+        _action: &mut dyn FnMut(&mut EngineeringState) -> Result<Value>,
+    ) -> Result<Value> {
+        Err(err("read_only", "此存储不支持离线测试夹具写入"))
+    }
     fn root(&self) -> String;
     fn project_id(&self) -> Option<String> {
         None
@@ -672,6 +859,14 @@ pub trait EngineeringStore: Send + Sync {
 pub trait QueryObservation {}
 impl QueryObservation for () {}
 pub trait ArtifactStore: Send + Sync {
+    fn seal_prepared(&self, _seal: &devdesk_domain::ArtifactSeal, _body: &str) -> Result<Artifact> {
+        Err(err("unsupported", "产物存储未提供预分配身份封存"))
+    }
+    /// Read and authenticate this exact preallocated identity. Missing bytes
+    /// are distinct from an unreadable file or an observed hash mismatch.
+    fn inspect_prepared(&self, _seal: &devdesk_domain::ArtifactSeal) -> Result<Option<Artifact>> {
+        Err(err("unsupported", "产物存储未提供原身份封存核对"))
+    }
     fn seal_scoped(&self, owner: &MaterialOwner, category: &str, body: &str) -> Result<Artifact> {
         match owner {
             MaterialOwner::Feature { id } => self.seal(id, None, category, body),
@@ -751,7 +946,7 @@ pub trait ApplicationEnvironment: Send + Sync {
 
 /// Read-only project inventory and pure backend feasibility; adapters provide environment facts.
 pub trait ProjectInventory: Send + Sync {
-    fn snapshots(&self) -> Result<Vec<EngineeringState>>;
+    fn configuration_catalogs(&self) -> Result<Vec<Arc<crate::ConfigurationCatalogSnapshot>>>;
     fn runtime_facts(&self) -> Result<Value> {
         Ok(serde_json::json!({"available":false}))
     }

@@ -19,26 +19,37 @@ impl Workspace {
         if let Some(previous) = e.store.replay(&c.command_id, &fp)? {
             return Ok(Some(previous));
         }
-        let s = e.store.snapshot()?;
-        if let Some(transition) = s.governance.iter().find(|r| {
-            r.r#type == "permission_switch"
-                && Some(r.definition_id.as_str()) == c.target.as_deref()
-                && r.data["status"] == "adopted"
-                && r.data["command"]["payload"]["client_message_id"]
-                    == c.payload["client_message_id"]
-        }) {
-            let next = transition.data["effective_session_id"]
+        let sid = c
+            .target
+            .as_deref()
+            .ok_or_else(|| err("invalid_params", "需要 Session target"))?;
+        let keys = [
+            concurrency::ResourceKey::new("session", sid),
+            concurrency::ResourceKey::new("governance", permission_switch_id(&c.command_id)),
+            concurrency::ResourceKey::new(
+                "permission_transition",
+                json!([sid, c.payload["client_message_id"]]).to_string(),
+            ),
+            concurrency::ResourceKey::new("session_input_state", sid),
+        ];
+        let rows = e.store.read_resources(&keys)?;
+        if let Some(transition) = &rows[2].value {
+            let next = transition["data"]["effective_session_id"]
                 .as_str()
-                .ok_or_else(|| err("invalid_configuration", "后继会话缺失"))?
-                .to_owned();
-            let result = e.replay_successor_input(&c, &next)?;
-            return Ok(Some(result));
+                .ok_or_else(|| err("invalid_configuration", "后继会话缺失"))?;
+            return e.replay_successor_input(&c, next).map(Some);
         }
-        let session = s
-            .sessions
-            .iter()
-            .find(|v| Some(v.id.as_str()) == c.target.as_deref())
-            .ok_or_else(|| err("not_found", "Session 不存在"))?;
+        let catalog = e.store.configuration_snapshot()?;
+        let s = catalog.state.as_ref();
+        let session: Session = serde_json::from_value(
+            e.store.restore_runtime_value(
+                rows[0]
+                    .value
+                    .as_ref()
+                    .ok_or_else(|| err("not_found", "Session 不存在"))?,
+            )?,
+        )
+        .map_err(|e| err("storage", e.to_string()))?;
         let binding = session
             .runtime_binding
             .as_ref()
@@ -59,19 +70,20 @@ impl Workspace {
                 "冻结适配器已变化，需要显式后继会话",
             ));
         }
-        if let Ok(intent) = s.configuration(&permission_switch_id(&c.command_id)) {
+        if let Some(value) = &rows[1].value {
+            let intent = ConfigurationRecord::from_storage(e.store.restore_runtime_record(value)?)?;
             let next: RuntimeBinding = serde_json::from_value(intent.data["binding"].clone())
                 .map_err(|e| err("invalid_configuration", e.to_string()))?;
             return e.send_with_permission_binding(c, next).map(Some);
         }
         let a = s.resolve_agent(&session.agent)?;
-        let selection = permission_selection(&s)
+        let selection = permission_selection(s)
             .ok()
             .ok_or_else(|| err("invalid_configuration", "缺少命名权限选择"))?;
-        let frozen = s
-            .governance
-            .iter()
-            .any(|r| r.r#type == "configured_session" && r.definition_id == session.id);
+        let frozen = rows[3]
+            .value
+            .as_ref()
+            .is_some_and(|v| v["configured"] == true);
         let lock = if frozen {
             binding
                 .permissions
@@ -79,25 +91,21 @@ impl Workspace {
                 .and_then(|p| p.binding_lock.clone())
                 .ok_or_else(|| err("permission_unconfigured", "步骤会话缺少冻结 Profile"))?
         } else {
-            resolve_permission_lock(&s, &a.harness_ref, &selection)?
+            resolve_permission_lock(s, &a.harness_ref, &selection)?
         };
         devdesk_adapters::permission_profiles::verify_permission_installation(
-            &s,
+            s,
             &lock,
             &binding.installation,
         )?;
-        let integrations = if s
-            .governance
-            .iter()
-            .any(|r| r.r#type == "configured_session" && r.definition_id == session.id)
-        {
+        let integrations = if frozen {
             binding
                 .agent_configuration
                 .as_ref()
                 .and_then(|c| c.integration_lock.clone())
                 .ok_or_else(|| err("configuration_required", "步骤会话接入锁缺失"))?
         } else {
-            devdesk_core::freeze_discussion_integrations(&s, &a, session.project_id.as_deref())?
+            devdesk_core::freeze_discussion_integrations(s, &a, session.project_id.as_deref())?
         };
         let integrations_unchanged = binding
             .agent_configuration
@@ -125,7 +133,7 @@ impl Workspace {
             return e.execute("conversation.send", c).map(Some);
         }
         let permissions = compile_permission_profiles(
-            &s,
+            s,
             &lock,
             Some(ExecutionScope {
                 work_type: binding.work_type,
@@ -155,21 +163,38 @@ impl Workspace {
                 .ok_or_else(|| err("not_found", "冻结 Agent 定义不存在"))?,
             &next,
         )?;
-        e.send_with_permission_binding(c, next).map(Some)
+        e.send_with_permission_binding_at(c, next, catalog.revision)
+            .map(Some)
     }
 
     pub(super) fn permission_session_status(&self, e: &Engine, sid: &str) -> Result<Value> {
-        let s = e.store.snapshot()?;
-        let session = s
-            .sessions
-            .iter()
-            .find(|v| v.id == sid)
-            .ok_or_else(|| err("not_found", "Session 不存在"))?;
-        let pending = s.governance.iter().find(|r| {
-            r.r#type == "permission_switch"
-                && r.definition_id == sid
-                && r.data["status"] != "adopted"
-        });
+        let keys = [
+            concurrency::ResourceKey::new("session", sid),
+            concurrency::ResourceKey::new("permission_transition", json!([sid, null]).to_string()),
+            concurrency::ResourceKey::new("session_input_state", sid),
+        ];
+        let rows = e.store.read_resources(&keys)?;
+        let catalog = e.store.configuration_snapshot()?;
+        let s = catalog.state.as_ref();
+        let session: Session = serde_json::from_value(
+            e.store.restore_runtime_value(
+                rows[0]
+                    .value
+                    .as_ref()
+                    .ok_or_else(|| err("not_found", "Session 不存在"))?,
+            )?,
+        )
+        .map_err(|e| err("storage", e.to_string()))?;
+        let pending = rows[1]
+            .value
+            .as_ref()
+            .map(|v| {
+                e.store
+                    .restore_runtime_record(v)
+                    .and_then(ConfigurationRecord::from_storage)
+            })
+            .transpose()?;
+        let pending = pending.as_ref();
         let frozen = session
             .runtime_binding
             .as_ref()
@@ -179,12 +204,9 @@ impl Workspace {
             .configuration(&session.agent)
             .ok()
             .and_then(|r| s.resolve_agent(&r.id).ok())
-            .and_then(|a| permission_selection(&s).ok().map(|choice| (a, choice)))
-            .map(|(a, choice)| resolve_permission_lock(&s, &a.harness_ref, &choice));
-        let active = s
-            .turns
-            .iter()
-            .any(|t| t.session_id == sid && t.status.active());
+            .and_then(|a| permission_selection(s).ok().map(|choice| (a, choice)))
+            .map(|(a, choice)| resolve_permission_lock(s, &a.harness_ref, &choice));
+        let active = rows[2].value.as_ref().is_some_and(|v| v["active"] == true);
         let status = if pending.is_some_and(|r| r.data["status"] == "needs_reconciliation") {
             "needs_reconciliation"
         } else {
@@ -236,7 +258,14 @@ impl Workspace {
                 None
             } else if let Some(pid) = params["project_id"].as_str() {
                 let e = self.project_engine(Some(pid))?;
-                self.sync_configuration(&e)?;
+                if !method.starts_with("query.")
+                    && !matches!(
+                        method,
+                        "permission.profile.export" | "permission.binding.preflight"
+                    )
+                {
+                    self.sync_configuration(&e)?;
+                }
                 Some(e)
             } else {
                 None
@@ -244,9 +273,9 @@ impl Workspace {
             let s = if let Some(catalog) = &catalog {
                 catalog.state.as_ref().clone()
             } else if let Some(e) = &local {
-                e.store.snapshot()?
+                e.store.configuration_snapshot()?.state.as_ref().clone()
             } else {
-                self.global.snapshot()?
+                self.global.configuration_snapshot()?.state.as_ref().clone()
             };
             match method {
                 "query.permission_resources" => {
@@ -642,7 +671,7 @@ mod tests {
         let catalog = w.dispatch("query.permission_resources", json!({})).unwrap();
         let bindings = catalog["bindings"].clone();
         assert_eq!(catalog["source"]["is_builtin"], true);
-        let c = json!({"command_id":id(),"payload":{"path":custom}});
+        let c = json!({"command_id":id(),"expected_revision":catalog["source"]["revision"],"payload":{"path":custom}});
         let selected = w.dispatch("permission.source.select", c.clone()).unwrap();
         assert_eq!(selected["path"], json!(custom));
         assert_eq!(selected["is_builtin"], false);
@@ -665,11 +694,16 @@ mod tests {
         );
         w.dispatch(
             "permission.profile.reload",
-            json!({"command_id":id(),"payload":{"builtin":true}}),
+            json!({"command_id":id(),"expected_revision":selected["revision"],"payload":{"builtin":true}}),
         )
         .unwrap();
         let restored = w.dispatch("query.permission_resources", json!({})).unwrap();
-        assert_eq!(restored["source"], catalog["source"]);
+        assert_eq!(restored["source"]["path"], catalog["source"]["path"]);
+        assert_eq!(restored["source"]["is_builtin"], true);
+        assert!(
+            restored["source"]["revision"].as_u64().unwrap()
+                > selected["revision"].as_u64().unwrap()
+        );
         assert_eq!(restored["bindings"], bindings);
     }
 
@@ -701,11 +735,6 @@ mod tests {
             .unwrap()
         };
         apply("builtin-permission-harness-full-access:1", 1);
-        let selection = ExecutionPermissionSelection {
-            sandbox_ref: DEFAULT_PERMISSION_SANDBOX.into(),
-            harness: PermissionSelection::FollowTarget,
-            sandbox: PermissionSelection::FollowTarget,
-        };
         let data = json!(
             w.global
                 .snapshot()
@@ -733,63 +762,33 @@ mod tests {
         let e = w.project_engine(Some(&project)).unwrap();
         w.sync_configuration(&e).unwrap();
         let state = e.store.snapshot().unwrap();
-        let lock = resolve_permission_lock(&state, DEFAULT_HARNESS_ID, &selection).unwrap();
-        let permissions = compile_permission_profiles(
-            &state,
-            &lock,
-            Some(ExecutionScope {
-                work_type: WorkType::Discussion,
-                writable_paths: vec![],
-                read_only_paths: vec![],
-            }),
-        )
-        .unwrap();
-        let binding = RuntimeBinding {
-            model_connection: None,
-            model_profile_digest: None,
-            agent_configuration: None,
-            model_parameters: Default::default(),
-            writable_paths: permissions.scope.writable_paths.clone(),
-            read_only_paths: permissions.scope.read_only_paths.clone(),
-            permissions: Some(permissions),
-            installation: RuntimeInstallation {
-                recipe_digest: Some(
-                    devdesk_adapters::runtime_preparation::default_codex_recipe_digest(),
-                ),
-                id: "explicit-port-fixture".into(),
-                key: RuntimeKey {
-                    provider: HarnessProvider::Codex,
-                    version: "fixture-label".into(),
-                    os: "linux".into(),
-                    arch: "aarch64".into(),
-                },
-                artifact: RuntimeArtifact::DockerImage {
-                    image_id: format!("sha256:{}", "a".repeat(64)),
-                },
-                source: "injected port fixture, no Docker/model".into(),
-                license: "test".into(),
-            },
-            adapter_version: harness::managed_adapter_identity(HarnessProvider::Codex),
-            model: "fixture".into(),
-            tool_policy: ToolPolicy::WorkspaceWrite,
-            work_type: WorkType::Discussion,
-            configuration_digest: "a".repeat(64),
-            credential_ref: None,
-        };
         let original = e
-            .execute(
-                "session.open",
+            .open_prepared_session(
+                &crate::test_runtime::ResourceFixture {
+                    store: e.store.as_ref(),
+                },
                 Command {
                     command_id: id(),
                     target: Some(project.clone()),
                     expected_revision: Some(state.projects[0].revision),
-                    payload: json!({"agent":agent,"binding":binding}),
+                    payload: json!({"agent":agent}),
                 },
             )
             .unwrap()["id"]
             .as_str()
             .unwrap()
             .to_owned();
+        let binding = e
+            .store
+            .snapshot()
+            .unwrap()
+            .sessions
+            .iter()
+            .find(|s| s.id == original)
+            .unwrap()
+            .runtime_binding
+            .clone()
+            .unwrap();
         apply("builtin-permission-harness-read-only:1", 2);
         let params = json!({"project_id":project,"command_id":id(),"target":original,"expected_revision":1,"payload":{"input":"Use the new permissions","client_message_id":"one-message"}});
         let sent = w.dispatch("conversation.send", params.clone()).unwrap();

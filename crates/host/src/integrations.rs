@@ -15,9 +15,10 @@ impl Workspace {
         if let Some(result) = e.replay_workflow_tool(&command)? {
             return Ok(result);
         }
-        if let Some(mut request) = e.configured_platform_request(&command)? {
+        if let Some(prepared) = e.prepare_configured_platform(&command)? {
+            let mut request = prepared.request().clone();
             if let Some(runtime) = &request.definition.runtime {
-                let state = e.store.snapshot()?;
+                let state = e.store.configuration_snapshot()?.state.clone();
                 let harness = state.configuration(&runtime.harness_ref)?;
                 let installation = self.materialize_harness(e, harness)?;
                 let image = match installation.artifact {
@@ -38,8 +39,8 @@ impl Workspace {
                     }),
                 )?;
                 request.runtime = Some(ExecutionInstance {
-                    id: request.execution_id.clone(),
-                    operation_id: request.execution_id.clone(),
+                    id: prepared.runtime_operation_id().into(),
+                    operation_id: prepared.runtime_operation_id().into(),
                     harness: Harness {
                         id: runtime.harness_ref.clone(),
                         provider: "docker".into(),
@@ -65,11 +66,11 @@ impl Workspace {
                     finished: None,
                 });
             }
-            return e.enqueue_platform_tool(&command, &request);
+            return e.enqueue_prepared_platform_tool(&command, &request, &prepared);
         }
         let prepared = e.prepare_configured_tool(&command)?;
         let request = prepared.request().clone();
-        let state = e.store.snapshot()?;
+        let state = e.store.configuration_snapshot()?.state.clone();
         let harness = state.configuration(&request.tool.binding.harness_ref)?;
         let installation = self.materialize_harness(e, harness)?;
         let permissions = devdesk_adapters::permission_profiles::compile_permission_profiles(
@@ -85,14 +86,21 @@ impl Workspace {
             RuntimeArtifact::DockerImage { image_id } => image_id,
             _ => return Err(err("unsupported", "工具需要固定 Docker 镜像")),
         };
-        let task = state.tasks.iter().find(|t| t.id == request.owner_id);
-        let feature = task.map(|t| t.feature_id.clone()).or_else(|| {
-            state
-                .features
-                .iter()
-                .find(|f| f.id == request.owner_id)
-                .map(|f| f.id.clone())
-        });
+        let facts = e.store.read_resources(&[
+            devdesk_core::concurrency::ResourceKey::new("task", &request.owner_id),
+            devdesk_core::concurrency::ResourceKey::new("feature", &request.owner_id),
+        ])?;
+        let task = facts[0].value.as_ref();
+        let feature = task
+            .and_then(|t| t["feature_id"].as_str())
+            .map(str::to_owned)
+            .or_else(|| {
+                facts[1]
+                    .value
+                    .as_ref()
+                    .and_then(|f| f["id"].as_str())
+                    .map(str::to_owned)
+            });
         let invocation = ToolInvocation {
             id: format!(
                 "tool-call-{}",
@@ -100,7 +108,7 @@ impl Workspace {
             ),
             project_id: Some(request.project_id.clone()),
             feature_id: feature,
-            task_id: task.map(|t| t.id.clone()),
+            task_id: task.and_then(|t| t["id"].as_str()).map(str::to_owned),
             agent_instance_id: None,
             session_id: None,
             turn_id: None,
@@ -123,7 +131,7 @@ impl Workspace {
         e: &Engine,
         b: &IntegrationBinding,
     ) -> Result<(ExecutionPermissions, String)> {
-        let state = e.store.snapshot()?;
+        let state = e.store.configuration_snapshot()?.state.clone();
         let selection = ExecutionPermissionSelection {
             sandbox_ref: b.sandbox_ref.clone(),
             harness: PermissionSelection::FollowTarget,

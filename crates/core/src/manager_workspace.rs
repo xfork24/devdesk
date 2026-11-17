@@ -1,5 +1,4 @@
 //! Project-bound manager tools. No tool accepts an arbitrary RPC method or database path.
-use crate::governance::record;
 use crate::*;
 use std::sync::Arc;
 pub const MANAGER_TOOLS: &[&str] = &[
@@ -23,7 +22,6 @@ pub const MANAGER_TOOLS: &[&str] = &[
 pub struct ManagerServices {
     pub shared: Arc<Engine>,
     pub inventory: Arc<dyn ports::ProjectInventory>,
-    pub gate: Arc<std::sync::Mutex<()>>,
 }
 pub(crate) fn manager_operation(method: &str) -> &str {
     match method {
@@ -37,27 +35,7 @@ pub(crate) fn manager_operation(method: &str) -> &str {
         _ => "project.read",
     }
 }
-pub(crate) fn session_instance_current(
-    s: &EngineeringState,
-    controller: &WorkflowController,
-) -> bool {
-    let instance = controller
-        .session_id
-        .as_deref()
-        .and_then(|id| s.sessions.iter().find(|session| session.id == id))
-        .and_then(|session| session.runtime_binding.as_ref())
-        .and_then(|binding| binding.agent_configuration.as_ref())
-        .and_then(|a| s.configuration(&a.agent_instance_id).ok());
-    instance.is_none_or(|instance| {
-        !configuration_retired(s, instance)
-            && !s.governance.iter().any(|r| {
-                r.r#type == "agent_instance"
-                    && r.definition_id == instance.definition_id
-                    && r.version > instance.version
-            })
-    })
-}
-fn sanitize(value: &mut Value) {
+pub(crate) fn sanitize(value: &mut Value) {
     match value {
         Value::Object(map) => {
             for (key, value) in map {
@@ -87,7 +65,7 @@ fn sanitize(value: &mut Value) {
         _ => {}
     }
 }
-fn chunk(value: &Value, p: &Value) -> Result<Value> {
+pub(crate) fn chunk(value: &Value, p: &Value) -> Result<Value> {
     let digest = configuration_hash(value);
     require(
         p["value_digest"].as_str().is_none_or(|d| d == digest),
@@ -286,6 +264,25 @@ fn row(s: &EngineeringState, kind: &str, project: &str, id: &str) -> Result<Valu
 fn summary(row: &Value) -> Value {
     json!({"id":row["id"],"type":row["type"],"name":row.get("name").or_else(||row.get("title")),"revision":row.get("revision").or_else(||row.get("version")),"status":row.get("status").or_else(||row["data"].get("status")),"content_hash":row["content_hash"],"value_digest":configuration_hash(row)})
 }
+pub fn render_project_record(selected: &Value, p: &Value) -> Result<Value> {
+    let mut row = selected["record"].clone();
+    sanitize(&mut row);
+    let pointer = p["pointer"].as_str().unwrap_or("");
+    let value = row
+        .pointer(pointer)
+        .ok_or_else(|| err("not_found", "原记录字段缺失"))?;
+    let mut result = chunk(value, p)?;
+    result["record_ref"] = json!({"kind":p["kind"],"id":p["id"],"revision":row["revision"],"content_hash":row["content_hash"],"pointer":pointer});
+    Ok(result)
+}
+pub fn render_project_artifact(artifact: &Artifact, bytes: Vec<u8>, p: &Value) -> Result<Value> {
+    require(bytes.len() <= SPEC_VALUE_LIMIT, "产物超过分块读取上限")?;
+    let body =
+        String::from_utf8(bytes).map_err(|_| err("unsupported", "二进制产物需要专用查看器"))?;
+    let mut result = chunk(&json!(body), p)?;
+    result["artifact_ref"] = json!({"id":artifact.id,"sha256":artifact.sha256});
+    Ok(result)
+}
 impl Engine {
     fn manager_project(&self, s: &EngineeringState, project: &str, p: &Value) -> Result<()> {
         require(
@@ -300,17 +297,30 @@ impl Engine {
         )
     }
     pub fn manager_knowledge(&self, method: &str, project: &str, p: &Value) -> Result<Value> {
-        let s = self.store.snapshot()?;
-        self.manager_knowledge_at(&s, method, project, p)
-    }
-    fn manager_knowledge_at(
-        &self,
-        s: &EngineeringState,
-        method: &str,
-        project: &str,
-        p: &Value,
-    ) -> Result<Value> {
-        self.manager_project(s, project, p)?;
+        require(
+            self.store.project_id().as_deref() == Some(project)
+                && p["project_id"].as_str().is_none_or(|id| id == project),
+            "项目资料读取跨作用域",
+        )?;
+        if method == "project.overview" || method == "project.records.list" {
+            return self.store.project_records(method, p);
+        }
+        if method == "project.record.read" {
+            return render_project_record(&self.store.project_records(method, p)?, p);
+        }
+        if method == "project.artifact.read" {
+            let selected =
+                crate::platform_facts::one(self.store.as_ref(), "artifact", &text(p, "id")?)?;
+            let artifact: Artifact = serde_json::from_value(
+                selected
+                    .value
+                    .ok_or_else(|| err("not_found", "原产物缺失"))?,
+            )
+            .map_err(|e| err("storage", e.to_string()))?;
+            return render_project_artifact(&artifact, self.artifacts.read(&artifact)?, p);
+        }
+        let catalog = self.store.configuration_snapshot()?;
+        self.manager_project(&catalog.state, project, p)?;
         let actual = if method == "project.resources" {
             self.manager_services
                 .as_ref()
@@ -320,53 +330,16 @@ impl Engine {
         } else {
             json!({"available":false})
         };
-        read_project_knowledge(s, self.artifacts.as_ref(), actual, method, project, p)
-    }
-
-    fn manager_live(
-        &self,
-        s: &EngineeringState,
-        controller: &WorkflowController,
-        call: &ConfigurationRecord,
-    ) -> Result<()> {
-        let current: WorkflowController = s.configuration(&call.definition_id)?.decode()?;
-        crate::configuration::project_manager_role(s, &current.role_ref)?;
-        require(
-            session_instance_current(s, &current),
-            "经理实例已换绑/移除，需要后继会话",
-        )?;
-        require(
-            current.status == "active"
-                && current.epoch == controller.epoch
-                && call.data["epoch"] == current.epoch,
-            "经理会话已失效",
-        )?;
-        require(
-            s.orchestration_leases.iter().any(|l| {
-                l.controller_id == call.definition_id
-                    && l.epoch == current.epoch
-                    && l.expires_at >= now()
-            }),
-            "经理租约已过期",
-        )?;
-        let turn = s
-            .turns
-            .iter()
-            .find(|t| {
-                t.id == call.data["turn_id"]
-                    && t.session_id == call.data["session_id"]
-                    && t.status == TurnStatus::Running
-            })
-            .ok_or_else(|| err("tool_not_authorized", "经理原生调用轮次已结束"))?;
-        require(
-            s.executions.iter().any(|e| {
-                e.session_id == turn.session_id
-                    && e.operation_id == call.data["worker_operation_id"]
-                    && !e.writer_revoked
-            }),
-            "经理 worker 已停止",
+        read_project_knowledge(
+            &catalog.state,
+            self.artifacts.as_ref(),
+            actual,
+            method,
+            project,
+            p,
         )
     }
+
     fn manager_change_scope(
         &self,
         s: &EngineeringState,
@@ -374,6 +347,11 @@ impl Engine {
         change: &ConfigurationChangeSet,
         global: bool,
     ) -> Result<()> {
+        let work = if global {
+            std::collections::BTreeMap::new()
+        } else {
+            self.configuration_work_facts(change)?
+        };
         if global {
             controller.policy.permits("configuration.global.write")?;
         }
@@ -408,8 +386,9 @@ impl Engine {
                 ConfigurationOperation::SelectWork { owner_id, .. } => {
                     require(!global, "共享目录不能选择项目工作")?;
                     require(
-                        work_reference(s, owner_id)?.scope(s)?.project_id()
-                            == Some(controller.project_id.as_str()),
+                        work.get(owner_id).is_some_and(|fact| {
+                            fact.scope.project_id() == Some(controller.project_id.as_str())
+                        }),
                         "工作不属于经理项目",
                     )?;
                 }
@@ -423,9 +402,9 @@ impl Engine {
                     "停用目标不属于授权配置库",
                 )?,
                 ConfigurationOperation::PermissionBindings { bindings } => {
-                    let local = self.store.snapshot()?;
-                    let agent = local.resolve_agent(&controller.agent_revision_id)?;
-                    let sandbox = permission_selection(&local)?.sandbox_ref;
+                    let local = self.store.configuration_snapshot()?;
+                    let agent = local.state.resolve_agent(&controller.agent_revision_id)?;
+                    let sandbox = permission_selection(&local.state)?.sandbox_ref;
                     let own_sandbox = Some(sandbox.as_str());
                     require(
                         !bindings.iter().any(|b| {
@@ -447,39 +426,8 @@ impl Engine {
         method: &str,
         p: &Value,
     ) -> Result<Value> {
-        let read_only = matches!(
-            method,
-            "spec.lint"
-                | "project.overview"
-                | "project.records.list"
-                | "project.record.read"
-                | "project.artifact.read"
-                | "project.resources"
-                | "configuration.catalog"
-                | "configuration.read"
-                | "configuration.usage"
-        );
-        let _waiting = self
-            .store
-            .observe_native_call(&call.id, "native.manager.gate_wait");
-        let _gate = self
-            .manager_services
-            .as_ref()
-            .filter(|_| !read_only)
-            .map(|v| {
-                v.gate
-                    .lock()
-                    .map_err(|_| err("storage", "配置写入锁不可用"))
-            })
-            .transpose()?;
-        drop(_waiting);
-        let snapshot = {
-            let _span = self
-                .store
-                .observe_native_call(&call.id, "native.manager.snapshot");
-            self.store.snapshot()?
-        };
-        self.manager_project(&snapshot, &controller.project_id, p)?;
+        let local_catalog = self.store.configuration_snapshot()?;
+        self.manager_project(&local_catalog.state, &controller.project_id, p)?;
         let actor = WorkflowActor::Controller {
             controller_id: call.definition_id.clone(),
             session_id: text(&call.data, "session_id")?,
@@ -504,7 +452,7 @@ impl Engine {
         {
             return Ok(result);
         }
-        self.manager_live(&snapshot, controller, call)?;
+        let authority = self.manager_call_authority(controller, call, method, p)?;
         controller.policy.permits(manager_operation(method))?;
         require(
             !controller
@@ -530,8 +478,13 @@ impl Engine {
                 let local: ConfigurationChangeSet =
                     serde_json::from_value(p["project_changeset"].clone())
                         .map_err(|e| err("invalid_params", e.to_string()))?;
-                self.manager_change_scope(&shared.store.snapshot()?, controller, &global, true)?;
-                self.manager_change_scope(&snapshot, controller, &local, false)?;
+                self.manager_change_scope(
+                    &shared.store.configuration_snapshot()?.state,
+                    controller,
+                    &global,
+                    true,
+                )?;
+                self.manager_change_scope(&local_catalog.state, controller, &local, false)?;
                 return shared.stage_configuration_transfer_as(
                     self,
                     Command {
@@ -544,7 +497,20 @@ impl Engine {
                 );
             }
             let id = text(p, "id")?;
-            let transfer = shared.store.snapshot()?.configuration(&id)?.clone();
+            let transfer_row = shared
+                .store
+                .read_resources(&[crate::concurrency::ResourceKey::new("governance", &id)])?
+                .into_iter()
+                .next()
+                .ok_or_else(|| err("storage", "跨库操作读取不完整"))?;
+            let transfer = ConfigurationRecord::from_storage(
+                shared.store.restore_runtime_record(
+                    transfer_row
+                        .value
+                        .as_ref()
+                        .ok_or_else(|| err("not_found", "跨库操作缺失"))?,
+                )?,
+            )?;
             require(
                 transfer.r#type == "configuration_transfer"
                     && transfer.data["project_id"] == controller.project_id,
@@ -559,10 +525,30 @@ impl Engine {
             }
             require(owner == principal, "经理只能继续本会话发起的跨库操作")?;
             return match method {
-                "configuration.transfer.apply" => shared.apply_configuration_transfer(self, &id),
-                "configuration.transfer.cancel" => shared.cancel_configuration_transfer(&id),
+                "configuration.transfer.apply" => shared.configuration_transfer_command_as(
+                    self,
+                    &Command {
+                        command_id: action_id.clone(),
+                        target: Some(id.clone()),
+                        expected_revision: p["expected_revision"].as_u64(),
+                        payload: p.clone(),
+                    },
+                    true,
+                    &actor,
+                ),
+                "configuration.transfer.cancel" => shared.configuration_transfer_command_as(
+                    self,
+                    &Command {
+                        command_id: action_id.clone(),
+                        target: Some(id.clone()),
+                        expected_revision: p["expected_revision"].as_u64(),
+                        payload: p.clone(),
+                    },
+                    false,
+                    &actor,
+                ),
                 _ => Ok(
-                    json!({"id":id,"status":transfer.data["status"],"project_id":controller.project_id,"result":transfer.data["result"]}),
+                    json!({"id":id,"revision":transfer.revision,"status":transfer.data["status"],"project_id":controller.project_id,"result":transfer.data["result"]}),
                 ),
             };
         }
@@ -570,17 +556,12 @@ impl Engine {
             let _span = self
                 .store
                 .observe_native_call(&call.id, "native.manager.read");
-            return self.manager_knowledge_at(&snapshot, method, &controller.project_id, p);
+            return self.manager_knowledge(method, &controller.project_id, p);
         }
         let change: ConfigurationChangeSet = serde_json::from_value(p["changeset"].clone())
             .map_err(|e| err("invalid_params", e.to_string()))?;
-        let selected = target.store.snapshot()?;
-        self.manager_change_scope(
-            if global { &selected } else { &snapshot },
-            controller,
-            &change,
-            global,
-        )?;
+        let selected = target.store.configuration_snapshot()?;
+        self.manager_change_scope(&selected.state, controller, &change, global)?;
         if method.ends_with("preview") {
             return target.preview_configuration_change_as(&change, &actor);
         }
@@ -590,46 +571,34 @@ impl Engine {
                 .as_ref()
                 .unwrap()
                 .inventory
-                .snapshots()?
+                .configuration_catalogs()?
             {
                 check_configuration_retirements(
                     &change,
                     &project
+                        .state
                         .projects
                         .first()
                         .map(|p| p.title.clone())
                         .unwrap_or_default(),
-                    &project,
+                    &project.state,
                 )?;
             }
         }
-        // Persist authorization before a cross-store write. It is a precise in-flight
-        // intent, not a new permission grant; replay observes the original action.
-        self.store.transact(None,&mut|s|{
-            self.manager_live(s,controller,call)?;
-            if !s.governance.iter().any(|r|r.id==format!("{action_id}:authorization")) {
-                let mut r=record("manager_write_authorization",call.id.clone(),Scope::project(&controller.project_id),"经理配置写入".into(),1,None,json!({"actor":actor,"method":method,"arguments_digest":fingerprint,"global":global}),true);r.id=format!("{action_id}:authorization");s.governance.push(r);
-            }
-            Ok(Value::Null)
-        })?;
-        let c = Command {
-            command_id: action_id.clone(),
-            target: None,
-            expected_revision: None,
-            payload: json!({"changeset":change,"preview_hash":p["preview_hash"]}),
-        };
-        // Use the same candidate service and preview fingerprint as the UI. The tool
-        // action ledger additionally binds the exact native call for crash replay.
-        target
-            .store
-            .transact(Some((&action_id, &fingerprint)), &mut |s| {
-                let result = target
-                    .configuration_change_command("configuration.change.apply", &c, s, &actor)?
-                    .ok_or_else(|| err("method_not_found", "配置用例未处理"))?;
-                InvocationContext::workflow(actor.clone(), Some(controller.project_id.clone()))
-                    .record(s, method, &c)?;
-                Ok(result)
-            })
+        self.commit_manager_configuration(
+            target,
+            crate::manager_publication::ManagerPublication {
+                call,
+                method,
+                params: p,
+                change: &change,
+                actor: &actor,
+                action: &action_id,
+                fingerprint: &fingerprint,
+            },
+            &selected,
+            authority,
+        )
     }
 }
 
@@ -737,6 +706,7 @@ pub fn read_project_knowledge(
 #[cfg(test)]
 mod read_contract_tests {
     use super::*;
+    use crate::governance::record;
     #[test]
     fn direct_records_preserve_family_shape_visibility_redaction_and_numeric_ids() {
         let mut state = EngineeringState::default();

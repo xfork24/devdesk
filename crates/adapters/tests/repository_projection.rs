@@ -220,7 +220,7 @@ fn owned_workspace_projection_retains_concurrent_title_and_quota_edits_without_h
         json!({"title":"Edited while external port ran","concurrency":8}),
     );
     let connection = fixture.connection();
-    connection.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('history','workflow_instance','owner',?1,'unrestorable',1,'fixture','{}',?2,0,1,1)",params![json!(format!("project:{PROJECT}")).to_string(),json!({"plan":{"$source":"missing"},"large":"x".repeat(1_000_000)}).to_string()]).unwrap();
+    connection.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('history','workflow_instance','owner',?1,'unrestorable',1,'fixture','{}',?2,0,1,1)",params![json!(format!("project:{PROJECT}")).to_string(),json!({"root_instance_id":"unrestorable-root","plan":{"$source":"missing"},"large":"x".repeat(1_000_000)}).to_string()]).unwrap();
     let trace = performance::Trace::start();
     accept_connect_observation(fixture.store.as_ref(), &observation).unwrap();
     let report = trace.finish();

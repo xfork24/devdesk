@@ -33,7 +33,11 @@ export function WorkflowProjectManager({
   onCollaboration,
   unstartedTasks = [],
 }: Props) {
-  const [data, setData] = useState<Row>();
+  const [loadedData, setData] = useState<Row>();
+  const data =
+    loadedData?._projectId === projectId && loadedData?.record?.id === record.id
+      ? loadedData
+      : undefined;
   const [error, setError] = useState("");
   const [collaboration, setCollaboration] = useState<WorkflowCollaboration>();
   const shared = inherited || collaboration;
@@ -72,30 +76,83 @@ export function WorkflowProjectManager({
     )
       pendingIds.add(waiting.execution_id);
   }
+  const [history, setHistory] = useState<Row[]>();
+  const [historyError, setHistoryError] = useState("");
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyBefore, setHistoryBefore] = useState<number>();
+  const [fullConfiguration, setFullConfiguration] = useState<Row>();
+  const [configurationLoading, setConfigurationLoading] = useState(false);
+  const [childOffset, setChildOffset] = useState(0);
+  const lifetime = useRef(0);
+  useEffect(
+    () => () => {
+      lifetime.current += 1;
+    },
+    [projectId, record.id],
+  );
+  useEffect(() => {
+    setHistory(undefined);
+    setHistoryBefore(undefined);
+    setFullConfiguration(undefined);
+    setChildOffset(0);
+  }, [projectId, record.id]);
+  const loadHistory = async (before?: number) => {
+    const ticket = lifetime.current;
+    setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      const value = await request("query.workflow_instance", {
+        project_id: projectId,
+        id: record.id,
+        view: "history",
+        ...(before === undefined ? {} : { history_before: before }),
+      });
+      if (ticket === lifetime.current) {
+        setHistory((previous) =>
+          before === undefined
+            ? value.history || []
+            : [...(previous || []), ...(value.history || [])],
+        );
+        setHistoryBefore(value.next_history_before ?? undefined);
+      }
+    } catch (error) {
+      if (ticket === lifetime.current) setHistoryError(String(error));
+    } finally {
+      if (ticket === lifetime.current) setHistoryLoading(false);
+    }
+  };
+
   const epoch = useRef(0);
   const load = useCallback(async () => {
     const ticket = ++epoch.current;
-    const result = await request("query.workflow_instance", {
-      id: record.id,
-      project_id: projectId,
-    });
+    const [result, progress] = await Promise.all([
+      request("query.workflow_management_summary", {
+        id: record.id,
+        project_id: projectId,
+        child_offset: childOffset,
+      }),
+      request("query.workflow_progress", {
+        id: record.id,
+        project_id: projectId,
+      }),
+    ]);
     if (ticket === epoch.current) {
-      setData(result);
+      setData({ ...result, progress, _projectId: projectId });
       setError("");
     }
-  }, [request, record.id, projectId]);
+  }, [request, record.id, projectId, childOffset]);
   useEffect(() => {
     void load().catch((error) => setError(String(error)));
     return () => {
       epoch.current += 1;
     };
-  }, [record, load]);
+  }, [record.revision, load]);
   const refreshManagement = async () => {
     await load();
     await refresh();
   };
   const current = data?.record || record;
-  const runtime = data?.runtime || record.data;
+  const runtime = data?.runtime || data?.record?.data || record.data;
   const title = nested
     ? `子流程 · ${/^执行各 Task(?: · \d+)?$/.test(current.name) ? "Task开发" : current.name}`
     : `主工作流 · ${current.name === "默认 Feature 开发流程" ? "Feature开发" : current.name}`;
@@ -170,22 +227,13 @@ export function WorkflowProjectManager({
           {displayText(runtime.paused ? " · 已暂停" : "")}
         </p>
         <p>
-          已完成{" "}
-          {displayText(
-            (runtime.steps || []).filter((step: Row) =>
-              ["completed", "skipped"].includes(step.status),
-            ).length,
-          )}{" "}
-          / {displayText((runtime.steps || []).length)} 个步骤
+          已完成 {displayText(data?.progress?.counts?.completed ?? 0)} /{" "}
+          {displayText(data?.progress?.counts?.total || 0)} 个步骤
         </p>
         <progress
           aria-label="步骤完成进度"
-          value={
-            (runtime.steps || []).filter((step: Row) =>
-              ["completed", "skipped"].includes(step.status),
-            ).length
-          }
-          max={Math.max(1, (runtime.steps || []).length)}
+          value={data?.progress?.counts?.completed ?? 0}
+          max={Math.max(1, data?.progress?.counts?.total || 0)}
         />
         <ul>
           {(runtime.steps || [])
@@ -233,13 +281,43 @@ export function WorkflowProjectManager({
         </p>
       </section>
       <section className="manager-standard" aria-label="流程规范">
-        <WorkStandard
-          request={request}
-          projectId={projectId}
-          owner={{ id: runtime.owner_id }}
-          instance={current}
-          refresh={refreshManagement}
-        />
+        {runtime.configuration_truncated && !fullConfiguration ? (
+          <ActionButton
+            disabled={configurationLoading}
+            onClick={() => {
+              const ticket = lifetime.current;
+              setConfigurationLoading(true);
+              void request("query.workflow_instance", {
+                project_id: projectId,
+                id: current.id,
+                view: "detail",
+              })
+                .then((value) => {
+                  if (ticket === lifetime.current)
+                    setFullConfiguration(value.record);
+                })
+                .catch((error) => {
+                  if (ticket === lifetime.current) setError(String(error));
+                })
+                .finally(() => {
+                  if (ticket === lifetime.current)
+                    setConfigurationLoading(false);
+                });
+            }}
+          >
+            {configurationLoading
+              ? "正在读取完整执行配置…"
+              : "读取完整执行配置"}
+          </ActionButton>
+        ) : (
+          <WorkStandard
+            request={request}
+            projectId={projectId}
+            owner={{ id: runtime.owner_id }}
+            instance={fullConfiguration || current}
+            refresh={refreshManagement}
+          />
+        )}
       </section>
       {!nested && unstartedTasks.length > 0 && (
         <details className="manager-task-settings">
@@ -269,38 +347,53 @@ export function WorkflowProjectManager({
             refresh={refreshManagement}
           />
         )}
-      {!!data?.history?.length && (
-        <details className="manager-history">
-          <summary>
-            计划与执行历史 · {displayText(data.history.length)} 条
-          </summary>
-          {data?.history.map((r: Row) => (
-            <p key={r.id}>
-              {displayText(r.name)} ·{" "}
-              {r.type === "workflow_execution_history" ? (
-                <ReadingLink
-                  detail="records"
-                  projectId={projectId}
-                  ownerId={ownerId || runtime.owner_id}
-                  target={{ instance_id: current.id, execution_id: r.data.id }}
-                >
-                  查看历史执行
-                </ReadingLink>
-              ) : (
-                <RawJsonLink
-                  source="record"
-                  params={{
-                    project_id: projectId,
-                    owner_id: runtime.owner_id,
-                    record_id: r.id,
-                  }}
-                  title="查看计划/变更原始记录"
-                />
-              )}
-            </p>
-          ))}
-        </details>
-      )}
+      <details
+        className="panel"
+        onToggle={(event) => {
+          if (event.currentTarget.open && !history && !historyLoading) {
+            void loadHistory();
+          }
+        }}
+      >
+        <summary>
+          计划与执行历史{history ? ` · ${history.length} 条` : ""}
+        </summary>
+        {historyError && <p role="alert">{historyError}</p>}
+        {historyLoading && <p role="status">正在读取计划与执行历史…</p>}
+        {(history || []).map((r: Row) => (
+          <p key={r.id}>
+            {r.name} ·{" "}
+            {r.type === "workflow_execution_history" ? (
+              <ReadingLink
+                detail="records"
+                projectId={projectId}
+                ownerId={runtime.owner_id}
+                target={{ instance_id: current.id, execution_id: r.data.id }}
+              >
+                查看历史执行
+              </ReadingLink>
+            ) : (
+              <RawJsonLink
+                source="record"
+                params={{
+                  project_id: projectId,
+                  owner_id: runtime.owner_id,
+                  record_id: r.id,
+                }}
+                title="查看计划/变更原始记录"
+              />
+            )}
+          </p>
+        ))}
+        {historyBefore !== undefined ? (
+          <ActionButton
+            disabled={historyLoading}
+            onClick={() => void loadHistory(historyBefore)}
+          >
+            继续读取历史
+          </ActionButton>
+        ) : null}
+      </details>
 
       <WorkflowController
         embedded
@@ -329,13 +422,38 @@ export function WorkflowProjectManager({
           nested
           ownerId={ownerId}
           request={request}
-          record={child}
+          record={{
+            ...child,
+            data: child.data || {
+              owner_id: runtime.owner_id,
+              root_instance_id: runtime.root_instance_id,
+              steps: [],
+            },
+          }}
           projectId={projectId}
           refresh={refresh}
           inherited={shared}
           onCollaboration={updateCollaboration}
         />
       ))}
+      {(childOffset > 0 || data?.children_more) && (
+        <div className="actions">
+          {childOffset > 0 && (
+            <ActionButton
+              onClick={() => setChildOffset(Math.max(0, childOffset - 20))}
+            >
+              上一页子流程
+            </ActionButton>
+          )}
+          {data?.next_child_offset != null && (
+            <ActionButton
+              onClick={() => setChildOffset(data.next_child_offset)}
+            >
+              下一页子流程
+            </ActionButton>
+          )}
+        </div>
+      )}
     </>
   );
 }

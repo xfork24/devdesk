@@ -68,6 +68,7 @@ async function fixture(page: Page, failure?: "catalog" | "defaults") {
     const call = route.request().postDataJSON();
     let result: any;
     switch (call.method) {
+      case "query.execution_workspace":
       case "query.workspace":
         result = {
           ...original.result,
@@ -89,7 +90,30 @@ async function fixture(page: Page, failure?: "catalog" | "defaults") {
           },
         };
         break;
+      case "query.workflow_progress":
+        result = {
+          project_id: project.id,
+          record: instance,
+          counts: { total: 1, completed: 0, running: 1, waiting: 0, failed: 0 },
+          stages: [
+            {
+              key: "work",
+              name: "当前阶段摘要",
+              counts: {
+                total: 1,
+                completed: 0,
+                running: 1,
+                waiting: 0,
+                failed: 0,
+              },
+            },
+          ],
+          next_stage_offset: null,
+          observed_only: true,
+        };
+        break;
       case "query.workflow_instance":
+      case "query.workflow_management_summary":
         result = {
           record: instance,
           runtime: instance.data,
@@ -115,9 +139,11 @@ async function fixture(page: Page, failure?: "catalog" | "defaults") {
         result = { roles: [] };
         break;
       case "query.orchestration":
+      case "query.orchestration_summary":
         result = { record: null };
         break;
       case "query.workflow_driver":
+      case "query.workflow_driver_summary":
         result = { driver: null };
         break;
       default:
@@ -156,7 +182,9 @@ test("a manager material link keeps its Feature scope before workspace loading f
   });
   await page.route("**/rpc", async (route) => {
     const call = route.request().postDataJSON();
-    if (call.method === "query.workspace") {
+    if (
+      ["query.workspace", "query.execution_workspace"].includes(call.method)
+    ) {
       await workspace;
       return route.fallback();
     }
@@ -374,7 +402,11 @@ test("manager collects child confirmations and tool approvals, with errors besid
   await page.route("**/rpc", async (route) => {
     const call = route.request().postDataJSON();
     let result: any;
-    if (call.method === "query.workflow_instance") {
+    if (
+      ["query.workflow_instance", "query.workflow_management_summary"].includes(
+        call.method,
+      )
+    ) {
       const record =
         call.params.id === "child-instance" ? childRecord : rootRecord;
       result = {
@@ -1526,4 +1558,532 @@ test("流程、材料、步骤上下文、Agent 讨论和审计定位同一执�
     path: info.outputPath("execution-perspectives.png"),
     fullPage: true,
   });
+});
+
+test("workflow approval keeps its original draft versions and command identity after progress changes", async ({
+  page,
+}) => {
+  const url = (await fixture(page)).replace(
+    "detail=manager",
+    "detail=overview",
+  );
+  let revision = 5;
+  const submitted: any[] = [];
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    if (call.method === "workflow.step.approve") {
+      submitted.push(call.params);
+      return route.fulfill({
+        json: {
+          jsonrpc: "2.0",
+          id: call.id,
+          error: {
+            code: -32000,
+            message: "controlled original-version conflict",
+            data: { code: "revision_conflict" },
+          },
+        },
+      });
+    }
+    if (call.method !== "query.workflow_instance") return route.fallback();
+    const plan = {
+      stages: [{ key: "work", name: "审阅阶段" }],
+      steps: [
+        {
+          key: "review",
+          stage: "work",
+          name: "核对版本",
+          executor: { type: "control" },
+          confirmation: "human",
+        },
+      ],
+    };
+    const runtime = {
+      owner_id: "read-feature",
+      status: "running",
+      paused: false,
+      control_version: revision === 5 ? 2 : 8,
+      active_plan_revision_id: revision === 5 ? "plan-original" : "plan-new",
+      steps: [
+        {
+          id: "review-execution",
+          step: "review",
+          status: "waiting_confirmation",
+          round: 1,
+          input_digest: revision === 5 ? "input-original" : "input-new",
+          outputs: {
+            result: revision === 5 ? "output-original" : "output-new",
+          },
+        },
+      ],
+    };
+    return route.fulfill({
+      json: {
+        jsonrpc: "2.0",
+        id: call.id,
+        result: {
+          record: {
+            id: "read-instance",
+            name: `流程状态 ${revision}`,
+            revision,
+            data: runtime,
+          },
+          runtime,
+          plan,
+          completion_status: {
+            "review-execution": { satisfied: false, human_satisfied: false },
+          },
+          children: [],
+        },
+      },
+    });
+  });
+  await page.goto(url);
+  await page
+    .getByRole("button", { name: "展开步骤与操作", exact: true })
+    .click();
+  const runtime = page.getByRole("region", { name: "当前工作流", exact: true });
+  await expect(
+    runtime.getByRole("heading", { name: "流程状态 5" }),
+  ).toBeVisible();
+  await runtime.locator(".workflow-stage-toggle").click();
+  await runtime.locator(".workflow-step-toggle").click();
+  const reason = runtime.getByLabel("手动批准理由（必填）");
+  await reason.fill("基于最初产物的决定");
+  revision = 9;
+  await runtime.getByRole("button", { name: "刷新进度", exact: true }).click();
+  await expect(
+    runtime.getByRole("heading", { name: "流程状态 9" }),
+  ).toBeVisible();
+  const approve = runtime.getByRole("button", { name: "手动 Approve 此版本" });
+  await approve.click();
+  await expect(runtime.getByRole("alert")).toContainText("revision_conflict");
+  await approve.click();
+  await expect.poll(() => submitted.length).toBe(2);
+  expect(submitted[0]).toMatchObject({
+    expected_revision: 5,
+    payload: {
+      plan_revision_id: "plan-original",
+      control_version: 2,
+      execution_id: "review-execution",
+      input_digest: "input-original",
+      outputs: { result: "output-original" },
+      reason: "基于最初产物的决定",
+    },
+  });
+  expect(submitted[1]).toEqual(submitted[0]);
+  await expect(reason).toHaveValue("基于最初产物的决定");
+  await reason.fill("修改后的理由仍基于原版本");
+  await approve.click();
+  await expect.poll(() => submitted.length).toBe(3);
+  expect(submitted[2].expected_revision).toBe(5);
+  expect(submitted[2].command_id).not.toBe(submitted[0].command_id);
+});
+
+test("parallel supplemental inputs retain separate drafts and original control versions", async ({
+  page,
+}) => {
+  const url = (await fixture(page)).replace(
+    "detail=manager",
+    "detail=overview",
+  );
+  let revision = 5;
+  const submitted: any[] = [];
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    if (call.method === "workflow.step.input") {
+      submitted.push(call.params);
+      return route.fulfill({
+        json: {
+          jsonrpc: "2.0",
+          id: call.id,
+          error: {
+            code: -32000,
+            message: "controlled original-version conflict",
+            data: { code: "revision_conflict" },
+          },
+        },
+      });
+    }
+    if (call.method !== "query.workflow_instance") return route.fallback();
+    const runtime = {
+      owner_id: "read-feature",
+      status: "running",
+      paused: false,
+      active_plan_revision_id: "plan-original",
+      control_version: revision,
+      steps: ["first", "second"].map((step) => ({
+        id: `${step}-execution`,
+        step,
+        status: "waiting_input",
+        round: 1,
+        outputs: {},
+      })),
+    };
+    return route.fulfill({
+      json: {
+        jsonrpc: "2.0",
+        id: call.id,
+        result: {
+          record: {
+            id: "read-instance",
+            name: `输入状态 ${revision}`,
+            revision,
+          },
+          runtime,
+          plan: {
+            stages: [{ key: "work", name: "并行输入" }],
+            steps: ["first", "second"].map((key) => ({
+              key,
+              name: key,
+              stage: "work",
+              executor: { type: "control" },
+            })),
+          },
+          children: [],
+        },
+      },
+    });
+  });
+  await page.goto(url);
+  await page
+    .getByRole("button", { name: "展开步骤与操作", exact: true })
+    .click();
+  const runtime = page.getByRole("region", { name: "当前工作流", exact: true });
+  await expect(
+    runtime.getByRole("heading", { name: "输入状态 5" }),
+  ).toBeVisible();
+  await runtime.locator(".workflow-stage-toggle").click();
+  const first = runtime.getByRole("article", { name: "步骤 · first" });
+  const second = runtime.getByRole("article", { name: "步骤 · second" });
+  await first.locator(".workflow-step-toggle").click();
+  await second.locator(".workflow-step-toggle").click();
+  await first.getByLabel("补充本次任务").fill("第一步输入");
+  await expect(second.getByLabel("补充本次任务")).toHaveValue("");
+  await second.getByLabel("补充本次任务").fill("第二步输入");
+  revision = 9;
+  await runtime.getByRole("button", { name: "刷新进度", exact: true }).click();
+  await expect(
+    runtime.getByRole("heading", { name: "输入状态 9" }),
+  ).toBeVisible();
+  await first.getByRole("button", { name: "提交补充输入" }).click();
+  await expect(runtime.getByRole("alert")).toContainText("revision_conflict");
+  await first.getByRole("button", { name: "提交补充输入" }).click();
+  await second.getByRole("button", { name: "提交补充输入" }).click();
+  await expect.poll(() => submitted.length).toBe(3);
+  expect(submitted[1]).toEqual(submitted[0]);
+  expect(submitted[0]).toMatchObject({
+    expected_revision: 5,
+    payload: { step: "first", input: "第一步输入", control_version: 5 },
+  });
+  expect(submitted[2]).toMatchObject({
+    expected_revision: 5,
+    payload: { step: "second", input: "第二步输入", control_version: 5 },
+  });
+  await expect(first.getByLabel("补充本次任务")).toHaveValue("第一步输入");
+  await expect(second.getByLabel("补充本次任务")).toHaveValue("第二步输入");
+});
+
+test("manager loads an exact plan only on expansion and retains its draft through summary refreshes", async ({
+  page,
+}) => {
+  const url = await fixture(page);
+  let revision = 1,
+    fullReads = 0;
+  const submissions: any[] = [];
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const record = () => ({
+    id: "read-instance",
+    name: "Summary-only manager",
+    revision,
+    data: {
+      owner_id: "read-feature",
+      status: "running",
+      root_instance_id: "read-instance",
+      active_plan_revision_id: "plan-current",
+      control_version: 1,
+      role_agent_bindings: {},
+      plan: { standard_ref: "standard-current:1" },
+    },
+  });
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    if (call.method === "query.workflow_change_preview")
+      return route.fulfill({
+        json: {
+          jsonrpc: "2.0",
+          id: call.id,
+          result: {
+            changeset: call.params.changeset,
+            preview_hash: "original-preview",
+            affected: [],
+            must_stop: [],
+            bypassed: [],
+          },
+        },
+      });
+    if (call.method === "workflow.change.apply") {
+      submissions.push(call.params);
+      return route.fulfill({
+        json: {
+          jsonrpc: "2.0",
+          id: call.id,
+          error: {
+            code: -32000,
+            message: "controlled original plan conflict",
+            data: { code: "revision_conflict" },
+          },
+        },
+      });
+    }
+    if (call.method === "query.workflow_management_summary")
+      return route.fulfill({
+        json: {
+          jsonrpc: "2.0",
+          id: call.id,
+          result: { record: record(), children: [], observed_only: true },
+        },
+      });
+    if (call.method !== "query.workflow_instance") return route.fallback();
+    fullReads++;
+    expect(call.params).toEqual({
+      project_id: "read-project",
+      id: "read-instance",
+    });
+    await held;
+    const exact = record();
+    await route.fulfill({
+      json: {
+        jsonrpc: "2.0",
+        id: call.id,
+        result: {
+          record: {
+            ...exact,
+            data: {
+              ...exact.data,
+              plan: {
+                ...exact.data.plan,
+                document: {
+                  stages: [{ key: "work", name: "审阅" }],
+                  steps: [
+                    {
+                      key: "review",
+                      node_id: "review-node",
+                      name: "审阅步骤",
+                      stage: "work",
+                      executor: { type: "control" },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+  });
+  try {
+    await page.goto(url);
+    const manager = page.getByRole("region", { name: "项目经理", exact: true });
+    await expect(
+      manager.getByRole("heading", {
+        name: "主工作流 · Summary-only manager",
+        exact: true,
+      }),
+    ).toBeVisible();
+    expect(fullReads).toBe(0);
+    await manager.getByText("调整当前运行计划", { exact: true }).click();
+    await expect(
+      manager.getByRole("status").filter({ hasText: "正在读取确切执行计划" }),
+    ).toBeVisible();
+    expect(fullReads).toBe(1);
+    release();
+    const reason = manager.getByLabel("计划调整理由", { exact: true });
+    await reason.fill("保留原计划基线和未保存理由");
+    revision = 2;
+    await manager
+      .getByRole("button", { name: "刷新管理状态", exact: true })
+      .click();
+    await expect(reason).toHaveValue("保留原计划基线和未保存理由");
+    expect(fullReads).toBe(1);
+    await manager
+      .getByLabel("计划调整对象", { exact: true })
+      .selectOption("review");
+    await manager
+      .getByRole("button", { name: "预览影响", exact: true })
+      .click();
+    const apply = manager.getByRole("button", {
+      name: "应用此计划调整",
+      exact: true,
+    });
+    await apply.click();
+    await expect(manager.getByRole("alert")).toContainText("revision_conflict");
+    await apply.click();
+    await expect.poll(() => submissions.length).toBe(2);
+    expect(submissions[0].expected_revision).toBe(1);
+    expect(submissions[1]).toEqual(submissions[0]);
+    expect(fullReads).toBe(1);
+    await expect(reason).toHaveValue("保留原计划基线和未保存理由");
+    await manager.getByText("调整当前运行计划", { exact: true }).click();
+    await manager.getByText("调整当前运行计划", { exact: true }).click();
+    await expect(reason).toHaveValue("保留原计划基线和未保存理由");
+    expect(fullReads).toBe(1);
+  } finally {
+    release();
+  }
+});
+
+test("folded work configuration is lazy and Standard apply keeps its original revision", async ({
+  page,
+}) => {
+  const url = await fixture(page);
+  let workReads = 0;
+  let fullReads = 0;
+  let revision = 1;
+  const submissions: any[] = [];
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    let result: any;
+    if (call.method === "query.work_configuration") {
+      workReads++;
+      return route.fallback();
+    } else if (call.method === "query.workflow_instance") {
+      fullReads++;
+      return route.fallback();
+    } else if (call.method === "query.workflow_management_summary") {
+      result = {
+        record: {
+          id: "read-instance",
+          name: "读取隔离流程",
+          revision,
+          data: {
+            owner_id: "read-feature",
+            status: "running",
+            active_plan_revision_id: "plan-current",
+            workflow_ref: "workflow-current:1",
+            role_agent_bindings: {},
+            plan: { standard_ref: "standard-current:1" },
+          },
+        },
+      };
+    } else if (call.method === "query.configuration_index") {
+      result = {
+        records: [
+          {
+            id: "standard-current:1",
+            type: "standard",
+            name: "Current Standard",
+            data: { default_workflow_ref: "workflow-current:1" },
+            workflow_refs: ["workflow-current:1"],
+          },
+        ],
+        total: 1,
+      };
+    } else if (call.method === "query.workflow_change_preview") {
+      result = {
+        changeset: call.params.changeset,
+        preview_hash: "original-preview",
+        affected: [],
+        standard_diff: { equal: true, changes: [] },
+      };
+    } else if (call.method === "workflow.change.apply") {
+      submissions.push(call.params);
+      return route.fulfill({
+        json: {
+          jsonrpc: "2.0",
+          id: call.id,
+          error: {
+            code: -32000,
+            message: "original revision has changed",
+            data: { code: "revision_conflict" },
+          },
+        },
+      });
+    } else return route.fallback();
+    await route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
+  });
+  await page.goto(url);
+  const manager = page.getByRole("region", { name: "项目经理", exact: true });
+  await expect(
+    manager.getByRole("button", { name: "刷新管理状态" }),
+  ).toBeVisible();
+  expect(workReads).toBe(0);
+  expect(fullReads).toBe(0);
+  const standard = manager.locator(":scope > .work-standard");
+  await standard.locator(":scope > summary").click();
+  await expect.poll(() => workReads).toBe(1);
+  await expect(
+    standard.getByLabel("采用的入口 Workflow", { exact: true }),
+  ).toHaveValue("workflow-current:1");
+  await standard
+    .getByLabel("规范切换原因", { exact: true })
+    .fill("keep original baseline");
+  revision = 2;
+  await manager
+    .getByRole("button", { name: "刷新管理状态", exact: true })
+    .click();
+  await standard.locator(":scope > summary").click();
+  await standard.locator(":scope > summary").click();
+  await expect(
+    standard.getByLabel("规范切换原因", { exact: true }),
+  ).toHaveValue("keep original baseline");
+  await standard
+    .getByRole("button", { name: "预演规范切换", exact: true })
+    .click();
+  await standard
+    .getByRole("button", { name: "应用规范切换", exact: true })
+    .click();
+  await expect(standard.getByRole("alert")).toContainText("revision_conflict");
+  await standard
+    .getByRole("button", { name: "应用规范切换", exact: true })
+    .click();
+  await expect.poll(() => submissions.length).toBe(2);
+  expect(submissions[0].expected_revision).toBe(1);
+  expect(submissions[1]).toEqual(submissions[0]);
+  expect(fullReads).toBe(0);
+  expect(workReads).toBe(1);
+  await expect(
+    standard.getByLabel("规范切换原因", { exact: true }),
+  ).toHaveValue("keep original baseline");
+});
+
+test("workflow overview polls bounded progress before opening exact step actions", async ({
+  page,
+}) => {
+  const url = (await fixture(page)).replace(
+    "detail=manager",
+    "detail=overview",
+  );
+  // Stop the setup document before measuring the target document's requests.
+  // Its background refresh may otherwise arrive while navigation is starting.
+  await page.goto("about:blank");
+  const calls: string[] = [];
+  await page.route("**/rpc", async (route) => {
+    calls.push(route.request().postDataJSON().method);
+    await route.fallback();
+  });
+  await page.goto(url);
+  const progress = page.getByRole("region", { name: "工作流进度摘要" });
+  await expect(
+    progress.getByText("当前阶段摘要", { exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(
+      () =>
+        calls.filter((method) => method === "query.workflow_progress").length,
+    )
+    .toBeGreaterThanOrEqual(2);
+  expect(calls).toContain("query.execution_workspace");
+  expect(calls).not.toContain("query.workspace");
+  expect(calls).not.toContain("query.workflow_instance");
+  await progress
+    .getByRole("button", { name: "展开步骤与操作", exact: true })
+    .click();
+  await expect(
+    page.getByRole("region", { name: "当前工作流", exact: true }),
+  ).toBeVisible();
+  expect(calls).toContain("query.workflow_instance");
 });

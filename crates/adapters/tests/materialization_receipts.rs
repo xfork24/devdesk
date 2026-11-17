@@ -94,7 +94,7 @@ fn materialization_reads_no_unrelated_engineering_history() {
     let engine = fixture(root.path());
     let record = harness(&engine);
     let connection = Connection::open(root.path().join("engineering.sqlite3")).unwrap();
-    connection.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('unrestorable-history','workflow_instance','owner','\"global\"','history',1,'fixture','{}',?1,0,1,1)",params![json!({"plan":{"$source":"missing-frozen-input"},"large":"x".repeat(1_000_000)}).to_string()]).unwrap();
+    connection.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('unrestorable-history','workflow_instance','owner','\"global\"','history',1,'fixture','{}',?1,0,1,1)",params![json!({"root_instance_id":"unrestorable-root","plan":{"$source":"missing-frozen-input"},"large":"x".repeat(1_000_000)}).to_string()]).unwrap();
     // Prime only the immutable configuration view. The corrupt history must not
     // be restored by either preparation or publication.
     engine.store.configuration_snapshot().unwrap();
@@ -130,7 +130,7 @@ fn publication_interleaves_with_an_old_writer_without_losing_either_receipt() {
     let (release, released) = mpsc::channel();
     let store = engine.store.clone();
     let writer = std::thread::spawn(move || {
-        store.transact(None, &mut |state| {
+        store.seed_fixture_state(None, &mut |state| {
             ready.send(()).unwrap();
             released.recv().unwrap();
             state.events.push(Event {

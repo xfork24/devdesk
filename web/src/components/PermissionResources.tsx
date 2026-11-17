@@ -53,6 +53,9 @@ export function PermissionResources({
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [choosingSource, setChoosingSource] = useState(false);
+  const [sourceDraftRevision, setSourceDraftRevision] = useState<number | null>(
+    null,
+  );
   const profile = catalog?.profiles.find((p) => p.id === selected);
   useEffect(() => {
     if (hydrated.current || !linkedProfile || !catalog) return;
@@ -358,6 +361,7 @@ export function PermissionResources({
                 disabled={busy}
                 onClick={() => {
                   captureFeedback();
+                  setSourceDraftRevision(catalog.source.revision);
                   setChoosingSource(true);
                 }}
               >
@@ -372,6 +376,7 @@ export function PermissionResources({
                     const result = await command(
                       "permission.profile.reload",
                       {},
+                      { expected_revision: catalog.source.revision },
                     );
                     await reload();
                     setMessage(
@@ -388,9 +393,13 @@ export function PermissionResources({
                 onClick={() => {
                   captureFeedback();
                   return action(async () => {
-                    const result = await command("permission.profile.reload", {
-                      builtin: true,
-                    });
+                    const result = await command(
+                      "permission.profile.reload",
+                      {
+                        builtin: true,
+                      },
+                      { expected_revision: catalog.source.revision },
+                    );
                     await reload();
                     setMessage(
                       `内置预设重新加载完成：新增 ${result.added.length}，相同 ${result.unchanged.length}；已恢复内置目录，活动绑定保持不变。`,
@@ -407,7 +416,11 @@ export function PermissionResources({
                 initialPath={catalog.source.path}
                 onClose={() => setChoosingSource(false)}
                 onSelect={async (path) => {
-                  await command("permission.source.select", { path });
+                  await command(
+                    "permission.source.select",
+                    { path },
+                    { expected_revision: sourceDraftRevision },
+                  );
                   await reload();
                   setMessage("预设目录已替换，可重新加载预设。");
                 }}

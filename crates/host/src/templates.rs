@@ -390,7 +390,7 @@ mod tests {
         let before = w.global.snapshot().unwrap();
         assert!(
             w.global
-                .transact(None, &mut |s| {
+                .seed_fixture_state(None, &mut |s| {
                     restore_template_catalog(s, "rollback")?;
                     Err(err("fixture", "rollback"))
                 })

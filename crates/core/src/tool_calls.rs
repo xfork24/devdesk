@@ -19,6 +19,8 @@ pub struct WorkflowToolAuthority {
     pub input_digest: String,
     pub contract_digest: String,
     pub node_id: Id,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<Id>,
 }
 #[derive(Debug, Clone)]
 pub struct WorkflowToolProvenance {
@@ -31,116 +33,6 @@ pub struct WorkflowToolFacts {
     pub versions: Vec<ResourceVersion>,
     pub allowed: bool,
     pub suspended: bool,
-}
-pub(crate) fn workflow_tool_provenance(
-    state: &EngineeringState,
-    row: &ConfigurationRecord,
-    execution: &str,
-    plan: &str,
-    command: &Command,
-) -> Result<WorkflowToolProvenance> {
-    let intent = state
-        .governance
-        .iter()
-        .find(|r| {
-            r.r#type == "workflow_intent"
-                && r.definition_id == execution
-                && r.data["method"] == "workflow.tool.execute"
-                && r.data["command"] == json!(command)
-        })
-        .ok_or_else(|| err("permission_denied", "工具缺少原工作流意图"))?;
-    require(
-        row.scope.project_id() == row.data["project_id"].as_str()
-            && row.scope.project_id().is_some(),
-        "工具工作流的范围与项目不符",
-    )?;
-    let dispatch = state
-        .governance
-        .iter()
-        .rev()
-        .find(|r| {
-            r.r#type == "workflow_dispatch"
-                && r.definition_id == execution
-                && r.data["plan_revision_id"] == plan
-        })
-        .ok_or_else(|| err("permission_denied", "工具缺少原步骤派发"))?;
-    let decision = state.configuration(&text(&dispatch.data, "decision_id")?)?;
-    require(
-        decision.r#type == "workflow_decision"
-            && dispatch.immutable
-            && decision.immutable
-            && intent.scope == row.scope
-            && dispatch.scope == row.scope
-            && decision.scope == row.scope,
-        "工具原始决定范围或性质不符",
-    )?;
-    let decided: WorkflowDecision = decision.decode()?;
-    require(
-        decided.instance_id == row.id
-            && decided.execution_id.as_deref() == Some(execution)
-            && decided.plan_revision_id == plan
-            && decided.operation == "dispatch"
-            && row.data["root_instance_id"] == decided.root_instance_id,
-        "工具派发决定不属于原执行",
-    )?;
-    Ok(WorkflowToolProvenance {
-        intent: intent.clone(),
-        dispatch: dispatch.clone(),
-        decision: decision.clone(),
-        context: InvocationContext::workflow(decided.actor, Some(text(&row.data, "project_id")?)),
-    })
-}
-pub(crate) fn workflow_authority(
-    state: &EngineeringState,
-    row: &ConfigurationRecord,
-    execution: &str,
-) -> Result<WorkflowToolAuthority> {
-    let step = row.data["steps"]
-        .as_array()
-        .and_then(|steps| steps.iter().find(|s| s["id"] == execution))
-        .ok_or_else(|| err("not_found", "工具原步骤缺失"))?;
-    let execution: StepExecution =
-        serde_json::from_value(step.clone()).map_err(|e| err("storage", e.to_string()))?;
-    workflow_execution_authority(state, row, &execution)
-}
-pub(crate) fn workflow_execution_authority(
-    state: &EngineeringState,
-    row: &ConfigurationRecord,
-    execution: &StepExecution,
-) -> Result<WorkflowToolAuthority> {
-    require(
-        row.r#type == "workflow_instance" && execution.workflow_instance_id == row.id,
-        "步骤资格与原工作流实例不符",
-    )?;
-    let mut instances = vec![row.id.clone()];
-    let mut executions = vec![execution.id.clone()];
-    let mut parent = row.data["parent_execution_id"].as_str();
-    for _ in 0..8 {
-        let Some(parent_id) = parent else { break };
-        let ancestor = state
-            .governance
-            .iter()
-            .find(|r| {
-                r.r#type == "workflow_instance"
-                    && r.data["steps"]
-                        .as_array()
-                        .is_some_and(|steps| steps.iter().any(|step| step["id"] == parent_id))
-            })
-            .ok_or_else(|| err("storage", "工具步骤祖先缺失"))?;
-        instances.push(ancestor.id.clone());
-        executions.push(parent_id.to_owned());
-        parent = ancestor.data["parent_execution_id"].as_str();
-    }
-    require(parent.is_none(), "工具步骤祖先超限")?;
-    Ok(WorkflowToolAuthority {
-        instances,
-        executions,
-        execution_id: execution.id.clone(),
-        plan_revision_id: execution.plan_revision_id.clone(),
-        input_digest: execution.input_digest.clone(),
-        contract_digest: execution.contract_digest.clone(),
-        node_id: execution.node_id.clone(),
-    })
 }
 /// A native row plus its exact frozen invocation. The adapter restores source
 /// references only; this is not a partial EngineeringState for business rules.
@@ -155,6 +47,7 @@ pub struct ToolCallFacts {
 }
 pub struct ToolCall {
     namespace: StoreNamespace,
+    root: String,
     row: ConfigurationRecord,
     version: ResourceVersion,
     invocation: ToolInvocation,
@@ -200,6 +93,36 @@ impl ToolDispatch {
     }
     pub fn observe(&self, store: &dyn EngineeringStore, receipt: &ToolReceipt) -> Result<()> {
         self.call.observe(store, receipt)
+    }
+    pub fn reject_start(&self, store: &dyn EngineeringStore, error: &Error) -> Result<()> {
+        if !error
+            .execution_failure
+            .as_ref()
+            .is_some_and(|f| f.effect == ExecutionFailureEffect::NotApplied)
+        {
+            return self.unknown(store, error);
+        }
+        let observed = self.call.journal(
+            store,
+            "start_rejected",
+            json!({"issuer":"execution_adapter","error":error}),
+        )?;
+        let dispatch = self.call.dispatch_guard(store)?;
+        let mut data = self.call.row.data.clone();
+        data["status"] = json!("failed");
+        data["remote_effect"] = json!("not_applied");
+        data["local_rejection"] = json!(error);
+        data["observation_id"] = json!(observed.resource.id);
+        data["finished_at"] = json!(now());
+        self.call
+            .commit(
+                store,
+                "start_rejected",
+                &self.call.next(data),
+                vec![],
+                vec![dispatch, observed],
+            )
+            .map(|_| ())
     }
     pub fn unknown(&self, store: &dyn EngineeringStore, error: &Error) -> Result<()> {
         self.call.mark_unknown(store, "start", error)
@@ -263,6 +186,7 @@ impl ToolCall {
         )?;
         Ok(Self {
             namespace: store.namespace(),
+            root: store.root(),
             version: ResourceVersion {
                 resource: facts.row.resource,
                 revision: facts.row.revision,
@@ -290,7 +214,7 @@ impl ToolCall {
     }
     fn bound(&self, store: &dyn EngineeringStore) -> Result<()> {
         require(
-            store.namespace() == self.namespace,
+            store.namespace() == self.namespace && store.root() == self.root,
             "工具调用不能跨命名空间接纳",
         )
     }
@@ -638,14 +562,33 @@ impl ToolCall {
         store: &dyn EngineeringStore,
         harness: &dyn ports::Harness,
     ) -> Result<()> {
+        if self.dispatch_suspended {
+            return Ok(());
+        }
         let (Some(session), Some(request)) = (&self.session, &self.invocation.request_id) else {
             return Ok(());
         };
         if self.row.data["reply_sent"] == true {
             return Ok(());
         }
-        let receipt: ToolReceipt = serde_json::from_value(self.row.data["receipt"].clone())
-            .map_err(|e| err("storage", e.to_string()))?;
+        let worker_active = self.worker_active && self.dispatch_allowed;
+        let receipt: ToolReceipt = if !self.row.data["local_rejection"].is_null() {
+            // This is an outbound kernel error reply, not a supplier receipt.
+            ToolReceipt {
+                invocation_id: self.id().into(),
+                success: false,
+                content: vec![
+                    json!({"type":"text","text":self.row.data["local_rejection"]["message"]}),
+                ],
+                structured_content: None,
+                remote_effect: "not_applied".into(),
+                error: Some(json!({"issuer":"kernel","error":self.row.data["local_rejection"]})),
+                origin: Origin::External,
+            }
+        } else {
+            serde_json::from_value(self.row.data["receipt"].clone())
+                .map_err(|e| err("storage", e.to_string()))?
+        };
         let id = format!(
             "tool-reply:{}",
             configuration_hash(&(&self.namespace, self.id(), "native-reply/v1"))
@@ -661,17 +604,17 @@ impl ToolCall {
             "原生工具回复意图".into(),
             1,
             None,
-            json!({"inputs":{"session_id":session.id,"request_id":request,"operation_id":self.invocation.operation_id},"value":receipt,"worker_active":self.worker_active}),
+            json!({"inputs":{"session_id":session.id,"request_id":request,"operation_id":self.invocation.operation_id},"value":receipt,"worker_active":worker_active,"issuer":if self.row.data["local_rejection"].is_null(){"tool_result"}else{"kernel"}}),
             true,
         );
         intent.id = id;
         let mut data = self.row.data.clone();
-        data["reply_status"] = json!(if self.worker_active {
+        data["reply_status"] = json!(if worker_active {
             "dispatching"
         } else {
             "worker_unavailable"
         });
-        data["reply_sent"] = json!(!self.worker_active);
+        data["reply_sent"] = json!(!worker_active);
         let next = self.next(data);
         let mut guards = self.worker_guards.clone();
         guards.push(ResourceVersion {
@@ -679,7 +622,7 @@ impl ToolCall {
             revision: known.revision,
         });
         let outcome = self.commit(store, "reply_claim", &next, vec![write(&intent)], guards)?;
-        if !outcome.applied || !self.worker_active {
+        if !outcome.applied || !worker_active {
             return Ok(());
         }
         let result = harness.answer_tool_call(session, request, &receipt);
@@ -710,6 +653,7 @@ impl ToolCall {
     fn clone_for_observation(&self, row: ConfigurationRecord) -> Self {
         Self {
             namespace: self.namespace.clone(),
+            root: self.root.clone(),
             row,
             version: self.version.clone(),
             invocation: self.invocation.clone(),
@@ -748,10 +692,62 @@ pub fn control(
         .as_deref()
         .ok_or_else(|| err("invalid_params", "需要工具调用标识"))?;
     let saved = snapshot(store, target)?;
-    let Some(value) = saved.value else {
+    let Some(value) = saved.value.clone() else {
         return Err(err("not_found", "工具调用缺失"));
     };
     let row = ConfigurationRecord::from_storage(value)?;
+    if row.r#type == "platform_call" && method == "tool.call.cancel" {
+        let row =
+            ConfigurationRecord::from_storage(store.restore_runtime_record(&row.to_storage())?)?;
+        if let Some(receipt) = store.replay_commit(&command.command_id, &fingerprint)? {
+            return Ok(Some(receipt.result));
+        }
+        require(
+            row.scope.project_id() == store.project_id().as_deref(),
+            "平台调用跨项目",
+        )?;
+        let expected = command
+            .expected_revision
+            .ok_or_else(|| err("precondition_required", "平台取消需要原调用版本"))?;
+        if expected != row.revision {
+            return Err(err("revision_conflict", "原平台调用已变化"));
+        }
+        require(
+            ["prepared", "running"].contains(&row.data["status"].as_str().unwrap_or("")),
+            "平台调用已结束或需要工作流核对",
+        )?;
+        let mut next = row.clone();
+        let mut data = next.data.clone();
+        data["cancel_requested"] = json!(true);
+        update_record(&mut next, data);
+        let provenance = context.prepare_record(method, command);
+        let result = json!(next);
+        return store
+            .commit_changes(&PreparedChangeSet {
+                command_id: command.command_id.clone(),
+                fingerprint,
+                read_set: ReadSet::new(vec![
+                    ResourceVersion {
+                        resource: saved.resource.clone(),
+                        revision: saved.revision,
+                    },
+                    ResourceVersion {
+                        resource: provenance.resource.clone(),
+                        revision: 0,
+                    },
+                ])?,
+                changes: vec![
+                    ResourceChange {
+                        resource: saved.resource,
+                        value: store.encode_runtime_record(&next)?,
+                    },
+                    provenance,
+                ],
+                result,
+                time: now() as i64,
+            })
+            .map(|r| Some(r.result));
+    }
     if row.r#type != "tool_call" {
         return Ok(None);
     }

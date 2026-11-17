@@ -34,8 +34,7 @@ fn fixture(root: &std::path::Path) -> (Arc<SqliteStore>, Connection) {
     ];
     let data = json!({"project_id":PROJECT,"owner_id":PROJECT,"root_instance_id":"root","status":"running","paused":false,"cancel_requested":false,"workflow_ref":"frozen-workflow:1","plan":{"$source":"workflow_plan","workflow_ref":"frozen-workflow:1","unrestorable_dependency":"missing"},"steps":(0..1000).map(|i|json!({"id":format!("execution-{i}"),"step":format!("step-{i}"),"status":statuses[i%8]})).collect::<Vec<_>>()});
     conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('root','workflow_instance',?1,?2,'Root',1,?3,'{}',?4,0,7,1)",params![PROJECT,serde_json::to_string(&Scope::project(PROJECT)).unwrap(),content_digest(&References::new(),&data),data.to_string()]).unwrap();
-    let bad =
-        json!({"plan":{"$source":"missing-historical-source"},"history":"x".repeat(1_000_000)});
+    let bad = json!({"root_instance_id":"unrestorable-root","plan":{"$source":"missing-historical-source"},"history":"x".repeat(1_000_000)});
     conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('unreadable-history','workflow_instance',?1,?2,'History',1,'fixture','{}',?3,0,1,1)",params![PROJECT,serde_json::to_string(&Scope::project(PROJECT)).unwrap(),bad.to_string()]).unwrap();
     (store, conn)
 }

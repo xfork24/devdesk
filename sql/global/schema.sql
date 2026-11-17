@@ -97,7 +97,6 @@ CREATE UNIQUE INDEX idx_template_catalog_singleton ON governance_records(type) W
 CREATE UNIQUE INDEX idx_template_catalog_member ON governance_records(definition_id,json_extract(data,'$.generation')) WHERE type='template_catalog_member';
 CREATE INDEX idx_template_catalog_generation ON governance_records(json_extract(data,'$.generation')) WHERE type='template_catalog_member';
 
-PRAGMA user_version=22;
 -- A database clock identifies committed catalog snapshots across pooled connections.
 -- This is a read-model token, never an optimistic write precondition for a project.
 CREATE TABLE catalog_clock(id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL CHECK(revision>0));
@@ -107,7 +106,22 @@ CREATE TRIGGER catalog_governance_insert AFTER INSERT ON governance_records WHEN
 CREATE TRIGGER catalog_governance_update AFTER UPDATE ON governance_records WHEN NEW.type IN ('project_configuration','work_configuration','integration_project_configuration','workflow_draft','agent_instance','agent_instance_retirement','skill_package','role_retirement','configuration_retirement','template_catalog_state','template_catalog_member','standard_archive','standard_derivation','integration_discovery','integration_disabled','integration_operation','harness_materialization','permission_origin','permission_file_origin','permission_source_selection','permission_binding','permission_assignment') BEGIN UPDATE catalog_clock SET revision=revision+1 WHERE id=1; END;
 CREATE TRIGGER catalog_governance_delete AFTER DELETE ON governance_records WHEN OLD.type IN ('project_configuration','work_configuration','integration_project_configuration','workflow_draft','agent_instance','agent_instance_retirement','skill_package','role_retirement','configuration_retirement','template_catalog_state','template_catalog_member','standard_archive','standard_derivation','integration_discovery','integration_disabled','integration_operation','harness_materialization','permission_origin','permission_file_origin','permission_source_selection','permission_binding','permission_assignment') BEGIN UPDATE catalog_clock SET revision=revision+1 WHERE id=1; END;
 
-COMMIT;
+
+CREATE INDEX idx_runtime_work_seek ON governance_records(type,json_extract(data,'$.status'),id);
+CREATE TRIGGER transfer_predicate_insert AFTER INSERT ON governance_records WHEN NEW.type='configuration_transfer' BEGIN
+ INSERT INTO resource_versions(kind,resource_id,revision) VALUES('collection','configuration-transfers',1) ON CONFLICT(kind,resource_id) DO UPDATE SET revision=revision+1;
+END;
+CREATE TRIGGER transfer_predicate_update AFTER UPDATE ON governance_records WHEN NEW.type='configuration_transfer' BEGIN
+ INSERT INTO resource_versions(kind,resource_id,revision) VALUES('collection','configuration-transfers',1) ON CONFLICT(kind,resource_id) DO UPDATE SET revision=revision+1;
+END;
+CREATE TRIGGER transfer_no_delete BEFORE DELETE ON governance_records WHEN OLD.type='configuration_transfer' BEGIN SELECT RAISE(ABORT,'configuration transfer cannot be deleted'); END;
+
 
 -- The driver seeks active IDs without inspecting settled tool history.
 CREATE INDEX idx_tool_call_drivable ON governance_records(id) WHERE type='tool_call' AND (json_extract(data,'$.status') IN ('prepared','dispatched','needs_reconciliation') OR (json_extract(data,'$.status') IN ('succeeded','failed','cancelled') AND coalesce(json_extract(data,'$.reply_sent'),0)=0 AND json_extract(data,'$.invocation.session_id') IS NOT NULL));
+
+CREATE TABLE dataset_layout(id INTEGER PRIMARY KEY CHECK(id=1),contract TEXT NOT NULL);
+INSERT INTO dataset_layout VALUES(1,'single-host-resource-v2');
+
+PRAGMA user_version=24;
+COMMIT;

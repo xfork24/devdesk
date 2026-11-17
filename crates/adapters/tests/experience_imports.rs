@@ -48,7 +48,7 @@ fn one_hundred_replays_publish_one_snapshot_with_provenance_without_loading_hist
         std::path::Path::new(&engine.store.root()).join("engineering.sqlite3"),
     )
     .unwrap();
-    connection.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('unrestorable','workflow_instance','owner',?1,'history',1,'fixture','{}',?2,0,1,1)",rusqlite::params![serde_json::to_string(&Scope::project(PROJECT)).unwrap(),json!({"plan":{"$source":"absent-frozen-input"},"large":"x".repeat(1_000_000)}).to_string()]).unwrap();
+    connection.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('unrestorable','workflow_instance','owner',?1,'history',1,'fixture','{}',?2,0,1,1)",rusqlite::params![serde_json::to_string(&Scope::project(PROJECT)).unwrap(),json!({"root_instance_id":"unrestorable-root","plan":{"$source":"absent-frozen-input"},"large":"x".repeat(1_000_000)}).to_string()]).unwrap();
     let before = engine.store.event_cursor().unwrap();
     let barrier = Arc::new(Barrier::new(100));
     let threads = (0..100)
@@ -122,7 +122,7 @@ fn imports_commit_while_legacy_writer_is_busy_and_keep_both_appends() {
     let (release, blocked) = mpsc::channel();
     let old = engine.clone();
     let writer = std::thread::spawn(move || {
-        old.store.transact(None, &mut |state| {
+        old.store.seed_fixture_state(None, &mut |state| {
             ready.send(()).unwrap();
             blocked.recv().unwrap();
             state.events.push(Event {

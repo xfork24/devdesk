@@ -1,0 +1,53 @@
+{
+  "type": "tool",
+  "identity": "builtin-tool-workflow-decision-request",
+  "revision": 1,
+  "name": "请求真正的人类决定",
+  "scope": "global",
+  "data": {
+    "qualified_name": "workflow.decision.request",
+    "implementation": "platform",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "instance_id": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "plan_revision_id": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "control_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "decision_ref": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "arguments": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "plan_revision_id",
+        "reason",
+        "operation",
+        "arguments"
+      ],
+      "additionalProperties": false,
+      "description": "Ask a human to approve exact current-plan action arguments. Only a human resolves it. Use workflow.step.confirm for a business human gate; never claim a human signature yourself."
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "capabilities": []
+  }
+}

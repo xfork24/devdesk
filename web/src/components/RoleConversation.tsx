@@ -87,6 +87,22 @@ export function RoleConversation({
   const [events, setEvents] = useState<Row[]>([]);
   const [input, setInput] = useState("");
   const [approvalNotice, setApprovalNotice] = useState("");
+  const messageDrafts = useRef(
+    new Map<
+      string,
+      {
+        input: string;
+        revision: number;
+        target: string;
+        epoch?: number;
+        approvalContext?: { id: string; revision: number }[];
+        commandId: string;
+        clientId: string;
+        sent?: string;
+      }
+    >(),
+  );
+
   const [experienceRefs, setExperienceRefs] = useState<Row[]>([]);
   const [busy, setBusy] = useState(false);
 
@@ -350,6 +366,28 @@ export function RoleConversation({
       detail.output_contract.id !== "proposal-content/v1"),
   );
   const controller = detail?.controller;
+  const messageKey = `${project.id}:${owner}:${sessionId}`;
+  useEffect(() => {
+    setInput(messageDrafts.current.get(messageKey)?.input ?? "");
+  }, [messageKey]);
+  const changeInput = (value: string) => {
+    const previous = messageDrafts.current.get(messageKey);
+    if (detail && !previous)
+      messageDrafts.current.set(messageKey, {
+        input: value,
+        revision: controller?.revision ?? detail.session.revision,
+        target: controller?.id ?? sessionId,
+        epoch: controller?.data.epoch,
+        approvalContext: (detail.approval_context || []).map(
+          (decision: Row) => ({ id: decision.id, revision: decision.revision }),
+        ),
+        commandId: crypto.randomUUID(),
+        clientId: crypto.randomUUID(),
+      });
+    else if (previous) previous.input = value;
+    setInput(value);
+  };
+
   const scopedRequest = useCallback(
     (method: string, params: Row = {}) =>
       request(method, {
@@ -363,9 +401,10 @@ export function RoleConversation({
     target: string | undefined,
     expected_revision: number | undefined,
     payload: Row = {},
+    commandId: string = crypto.randomUUID(),
   ) =>
     scopedRequest(method, {
-      command_id: crypto.randomUUID(),
+      command_id: commandId,
       target,
       expected_revision,
       payload,
@@ -549,38 +588,55 @@ export function RoleConversation({
 
     event.preventDefault();
     if (!detail || !input.trim()) return;
+    const basis = messageDrafts.current.get(messageKey) ?? {
+      input,
+      revision: controller?.revision ?? detail.session.revision,
+      target: controller?.id ?? sessionId,
+      epoch: controller?.data.epoch,
+      approvalContext: (detail.approval_context || []).map((decision: Row) => ({
+        id: decision.id,
+        revision: decision.revision,
+      })),
+      commandId: crypto.randomUUID(),
+      clientId: crypto.randomUUID(),
+      sent: undefined as string | undefined,
+    };
+    const fingerprint = JSON.stringify({ input, experienceRefs });
+    if (basis.sent && basis.sent !== fingerprint) {
+      basis.commandId = crypto.randomUUID();
+      basis.clientId = crypto.randomUUID();
+    }
+    basis.sent = fingerprint;
+    messageDrafts.current.set(messageKey, basis);
     await action(async () => {
       if (controller) {
         const result = await command(
           "orchestration.input",
-          controller.id,
-          controller.revision,
+          basis.target,
+          basis.revision,
           {
-            epoch: controller.data.epoch,
+            epoch: basis.epoch,
             input,
-            approval_context: (detail.approval_context || []).map(
-              (decision: Row) => ({
-                id: decision.id,
-                revision: decision.revision,
-              }),
-            ),
+            approval_context: basis.approvalContext || [],
           },
+          basis.commandId,
         );
         setApprovalNotice(
           result.approval?.status === "approved"
             ? "已登记人工批准并处理当前结果，后续步骤由流程驱动继续执行。"
             : "",
         );
+        messageDrafts.current.delete(messageKey);
         setInput("");
         await refresh();
         return;
       }
       const result = await command(
         "conversation.send",
-        sessionId,
-        detail.session.revision,
+        basis.target,
+        basis.revision,
         {
-          client_message_id: crypto.randomUUID(),
+          client_message_id: basis.clientId,
           input,
           ...(experienceRefs.length
             ? {
@@ -591,6 +647,7 @@ export function RoleConversation({
               }
             : {}),
         },
+        basis.commandId,
       );
       if (
         result.effective_session_id &&
@@ -599,6 +656,7 @@ export function RoleConversation({
         await loadSessions();
         setSessionId(result.effective_session_id);
       }
+      messageDrafts.current.delete(messageKey);
       setInput("");
       setExperienceRefs([]);
     });
@@ -1346,7 +1404,7 @@ export function RoleConversation({
               value={input}
               onChange={(value) => {
                 captureFeedback();
-                setInput(value);
+                changeInput(value);
               }}
               required
               maxLength={65536}

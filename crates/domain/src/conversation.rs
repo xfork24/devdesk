@@ -203,7 +203,55 @@ pub struct PendingInteraction {
     pub tool: Option<String>,
     pub reason: String,
     pub answer: Option<InteractionAnswer>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answered_at: Option<u64>,
     pub revision: u64,
+}
+
+impl PendingInteraction {
+    pub fn validate_answer(&self, answer: &InteractionAnswer) -> Result<()> {
+        match (answer, self.kind) {
+            (InteractionAnswer::ToolApproval { .. }, InteractionKind::ToolApproval) => Ok(()),
+            (
+                InteractionAnswer::UserQuestions { answers, cancelled },
+                InteractionKind::AgentQuestion,
+            ) => {
+                if *cancelled {
+                    return require(answers.is_empty(), "取消问题不应包含回答");
+                }
+                require(
+                    answers.len() == self.questions.len(),
+                    "必须逐项回答所有问题",
+                )?;
+                let mut seen = std::collections::HashSet::new();
+                for answer in answers {
+                    require(seen.insert(&answer.id), "问题回答不可重复")?;
+                    let question = self
+                        .questions
+                        .iter()
+                        .find(|q| q.id == answer.id)
+                        .ok_or_else(|| err("invalid_params", "问题 ID 无效"))?;
+                    require(
+                        (question.multi_select || answer.selected.len() <= 1)
+                            && answer
+                                .selected
+                                .iter()
+                                .collect::<std::collections::HashSet<_>>()
+                                .len()
+                                == answer.selected.len()
+                            && answer.selected.iter().all(|s| question.options.contains(s))
+                            && (!answer.selected.is_empty()
+                                || answer.custom.as_ref().is_some_and(|c| !c.trim().is_empty())),
+                        "问题选项或自定义回答无效",
+                    )?;
+                }
+                Ok(())
+            }
+            _ => Err(err("invalid_params", "回答类型与交互请求不一致")),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -249,7 +297,7 @@ pub enum RuntimeExecutionKind {
     Tests,
 }
 /// Append one row per worker lifetime; a new worker cannot overwrite the previous receipt.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimeExecution {
     #[serde(default)]
     pub permissions: Option<ExecutionPermissions>,

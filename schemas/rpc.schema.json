@@ -57,7 +57,7 @@
             "string",
             "null"
           ],
-          "description": "Optional active-project scope; mismatches are rejected before dispatch."
+          "description": "Explicit per-request project scope; no shared active project. Project mutations and reads require this field."
         },
         "expected_catalog_generation": {
           "type": "integer",
@@ -6440,6 +6440,37 @@
         }
       },
       "additionalProperties": false
+    },
+    "WorkflowWriteBasis": {
+      "type": "object",
+      "required": [
+        "expected_revision",
+        "plan_revision_id",
+        "control_version"
+      ],
+      "properties": {
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "plan_revision_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "control_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "execution_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected_step_revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "description": "Original edit baseline. Step writes surviving sibling progress also require the exact execution_id and expected_step_revision. Conflicts preserve the draft; clients must not substitute current versions."
     }
   },
   "allOf": [

@@ -35,12 +35,21 @@ export function WorkflowController({
   embedded = false,
 }: Props) {
   const [localData, setData] = useState<Row>();
-  const data = shared?.data || localData;
+  const candidate = shared?.data || localData;
+  const data =
+    candidate?._projectId === projectId &&
+    candidate?._rootId === (instance.data.root_instance_id || instance.id)
+      ? candidate
+      : undefined;
   const [catalog, setCatalog] = useState<Row[]>([]);
   const [catalogError, setCatalogError] = useState("");
   const [managerAgent, setManagerAgent] = useState("");
   const [managerPermission, setManagerPermission] = useState("");
   const [input, setInput] = useState("");
+  const drafts = useRef(new Map<string, { record?: Row; owner: Row }>());
+  const attempts = useRef(
+    new Map<string, { fingerprint: string; id: string }>(),
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [readError, setReadError] = useState("");
@@ -68,6 +77,8 @@ export function WorkflowController({
     if (ticket === epoch.current) {
       const value = {
         ...next,
+        _projectId: projectId,
+        _rootId: rootId,
         driver: driver.driver,
         driverWaiting: driver.waiting || [],
         approvals: driver.approvals || [],
@@ -117,18 +128,42 @@ export function WorkflowController({
       active = false;
     };
   }, [request, projectId, workspaceOnly]);
+  const scopedDraft = (kind: string) => `${projectId}:${instance.id}:${kind}`;
+  function captureDraft(kind: string) {
+    const key = scopedDraft(kind);
+    if (!drafts.current.has(key))
+      drafts.current.set(key, {
+        record: data?.record ? structuredClone(data.record) : undefined,
+        owner: structuredClone(instance),
+      });
+  }
+  async function submitDraft(method: string, params: Row) {
+    const key = `${scopedDraft(method)}:${params.target}`;
+    const fingerprint = JSON.stringify(params);
+    if (attempts.current.get(key)?.fingerprint !== fingerprint)
+      attempts.current.set(key, { fingerprint, id: crypto.randomUUID() });
+    return request(method, {
+      ...params,
+      command_id: attempts.current.get(key)!.id,
+    });
+  }
   async function act(method: string) {
     setBusy(true);
     setError("");
     try {
-      let record = data?.record;
+      const original = drafts.current.get(scopedDraft(method)) || {
+        record: data?.record,
+        owner: instance,
+      };
+      let record = original.record;
       if (!record) {
         const opened = await request(
           workspaceOnly ? "manager.open" : "orchestration.open",
           {
             project_id: projectId,
             command_id: crypto.randomUUID(),
-            target: instance.id,
+            target: original.owner.id,
+            expected_revision: original.owner.revision,
             payload: {
               ...(managerAgent ? { agent_ref: managerAgent } : {}),
               ...(managerPermission
@@ -143,9 +178,8 @@ export function WorkflowController({
         });
         record = loaded.record;
       }
-      await request(method, {
+      await submitDraft(method, {
         project_id: projectId,
-        command_id: crypto.randomUUID(),
         target: record.id,
         expected_revision: record.revision,
         payload: {
@@ -162,6 +196,8 @@ export function WorkflowController({
         },
       });
       if (method === "orchestration.input") setInput("");
+      drafts.current.delete(scopedDraft(method));
+      attempts.current.delete(scopedDraft(method));
       await Promise.all([(shared?.reload || load)(), refresh()]);
     } catch (e) {
       setError(String(e));
@@ -173,17 +209,26 @@ export function WorkflowController({
     setBusy(true);
     setError("");
     try {
-      await request("manager.open", {
+      const original = drafts.current.get(scopedDraft("manager.open")) || {
+        record: data?.record,
+        owner: instance,
+      };
+      await submitDraft("manager.open", {
         project_id: projectId,
-        command_id: crypto.randomUUID(),
         target: projectId,
+        expected_revision: original.owner.revision,
         payload: {
+          controller_id: original.record?.id,
+          expected_controller_revision: original.record?.revision || 0,
+          epoch: original.record?.data.epoch || 0,
           ...(managerAgent ? { agent_ref: managerAgent } : {}),
           ...(managerPermission
             ? { harness_permission_ref: managerPermission }
             : {}),
         },
       });
+      drafts.current.delete(scopedDraft("manager.open"));
+      attempts.current.delete(scopedDraft("manager.open"));
       await load();
     } catch (e) {
       setError(String(e));
@@ -199,9 +244,8 @@ export function WorkflowController({
     setBusy(true);
     setError("");
     try {
-      await request("workflow.decision.resolve", {
+      await submitDraft("workflow.decision.resolve", {
         project_id: projectId,
-        command_id: crypto.randomUUID(),
         target: decision.id,
         expected_revision: decision.revision,
         payload: {
@@ -223,16 +267,18 @@ export function WorkflowController({
   ) {
     setBusy(true);
     try {
-      await request(approved ? approval.operation : "workflow.step.rework", {
-        project_id: projectId,
-        command_id: crypto.randomUUID(),
-        target: approval.instance_id,
-        expected_revision: approval.revision,
-        payload: {
-          ...approval.arguments,
-          reason: opinion.trim() || "用户确认当前版本结果",
+      await submitDraft(
+        approved ? approval.operation : "workflow.step.rework",
+        {
+          project_id: projectId,
+          target: approval.instance_id,
+          expected_revision: approval.revision,
+          payload: {
+            ...approval.arguments,
+            reason: opinion.trim() || "用户确认当前版本结果",
+          },
         },
-      });
+      );
       await Promise.all([(shared?.reload || load)(), refresh()]);
     } finally {
       setBusy(false);
@@ -303,6 +349,7 @@ export function WorkflowController({
       {decisions.map((decision: Row) => (
         <ManagerInteraction
           key={decision.id}
+          basis={`${decision.id}:${decision.revision}`}
           interaction={{
             ...(data?.approvals?.find(
               (approval: Row) =>
@@ -350,6 +397,11 @@ export function WorkflowController({
         .map((approval: Row) => (
           <ManagerInteraction
             key={approval.arguments.execution_id}
+            basis={JSON.stringify([
+              approval.instance_id,
+              approval.operation,
+              approval.arguments,
+            ])}
             interaction={approval.interaction}
             projectId={projectId}
             ownerId={approval.owner_id}
@@ -474,7 +526,11 @@ export function WorkflowController({
               }
               records={managerAgents}
               value={managerAgent}
-              onChange={(value) => setManagerAgent(value)}
+              onChange={(value) => {
+                captureDraft("orchestration.resume");
+                captureDraft("manager.open");
+                setManagerAgent(value);
+              }}
             />
             <RevisionSelect
               label={workspaceOnly ? "工作台授权上下文" : "经理授权上下文"}
@@ -482,7 +538,11 @@ export function WorkflowController({
                 (row) => row.type === "permission_profile",
               )}
               value={managerPermission}
-              onChange={(value) => setManagerPermission(value)}
+              onChange={(value) => {
+                captureDraft("orchestration.resume");
+                captureDraft("manager.open");
+                setManagerPermission(value);
+              }}
             />
             <ActionButton
               disabled={
@@ -545,7 +605,10 @@ export function WorkflowController({
                 workspaceOnly ? "给项目经理的指令" : "回复项目经理",
               )}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                captureDraft("orchestration.input");
+                setInput(e.target.value);
+              }}
               placeholder="回答经理的问题，或提供你的业务意见"
             />
           </label>
@@ -619,12 +682,73 @@ export function WorkflowController({
   );
 }
 
-export function WorkflowPlanChanges({
+export function WorkflowPlanChanges(props: Props) {
+  const [activated, setActivated] = useState(false);
+  const [exact, setExact] = useState<Row>();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const epoch = useRef(0);
+  useEffect(
+    () => () => {
+      epoch.current += 1;
+    },
+    [],
+  );
+  const loadExact = async () => {
+    const ticket = ++epoch.current;
+    setLoading(true);
+    setError("");
+    try {
+      const detail = await props.request("query.workflow_instance", {
+        project_id: props.projectId,
+        id: props.instance.id,
+      });
+      if (ticket === epoch.current) setExact(detail.record);
+    } catch (error) {
+      if (ticket === epoch.current) setError(String(error));
+    } finally {
+      if (ticket === epoch.current) setLoading(false);
+    }
+  };
+  return (
+    <details
+      className={props.embedded ? "manager-plan-changes" : "panel"}
+      onToggle={(event) => {
+        if (event.currentTarget.open && !activated) {
+          setActivated(true);
+          if (props.instance.data.plan?.document) setExact(props.instance);
+          else void loadExact();
+        }
+      }}
+    >
+      <summary>调整当前运行计划</summary>
+      {activated && loading && <p role="status">正在读取确切执行计划…</p>}
+      {error && <p role="alert">{error}</p>}
+      {activated && !exact && !loading && (
+        <ActionButton onClick={() => void loadExact()}>
+          重新读取执行计划
+        </ActionButton>
+      )}
+      {exact && (
+        <WorkflowPlanChangeEditor
+          {...props}
+          key={exact.revision}
+          instance={exact}
+          refresh={async () => {
+            await props.refresh();
+            await loadExact();
+          }}
+        />
+      )}
+    </details>
+  );
+}
+
+function WorkflowPlanChangeEditor({
   request,
   instance,
   projectId,
   refresh,
-  embedded = false,
 }: Props) {
   const runtime = instance.data;
   const plan = runtime.plan.document;
@@ -757,8 +881,7 @@ export function WorkflowPlanChanges({
   }
   const choices = kind === "bypass" ? plan.stages : plan.steps;
   return (
-    <details className={embedded ? "manager-plan-changes" : "panel"}>
-      <summary>调整当前运行计划</summary>
+    <>
       <label>
         调整方式
         <select
@@ -777,7 +900,7 @@ export function WorkflowPlanChanges({
         </select>
       </label>
       <label>
-        {displayText(kind === "bypass" ? "阶段" : "步骤")}
+        {kind === "bypass" ? "阶段" : "步骤"}
         <select
           aria-label="计划调整对象"
           value={selected}
@@ -786,7 +909,7 @@ export function WorkflowPlanChanges({
           <option value="">请选择</option>
           {choices.map((s: Row) => (
             <option key={s.node_id || s.key} value={s.key}>
-              {displayText(s.name)}
+              {s.name}
             </option>
           ))}
         </select>
@@ -851,7 +974,7 @@ export function WorkflowPlanChanges({
                       setPreview(undefined);
                     }}
                   />
-                  {displayText(s.name)}
+                  {s.name}
                 </label>
               ))}
           </fieldset>
@@ -874,7 +997,7 @@ export function WorkflowPlanChanges({
                 .flatMap((s: Row) =>
                   Object.keys(s.outputs || {}).map((port) => (
                     <option key={`${s.key}.${port}`} value={`${s.key}.${port}`}>
-                      {displayText(s.name)} · {displayText(port)}
+                      {s.name} · {port}
                     </option>
                   )),
                 )}
@@ -921,17 +1044,15 @@ export function WorkflowPlanChanges({
       {preview && (
         <div role="status">
           <p>
-            受影响步骤：{displayText(preview.affected.join("、") || "无")}
-            ；需要停止：
-            {displayText(preview.must_stop.length)} 项。
+            受影响步骤：{preview.affected.join("、") || "无"}；需要停止：
+            {preview.must_stop.length} 项。
           </p>
           <p>
-            绕过：{displayText(preview.bypassed.join("、") || "无")}
-            。原执行记录和报告保留。
+            绕过：{preview.bypassed.join("、") || "无"}。原执行记录和报告保留。
           </p>
           {!!preview.budget_updates?.length && (
             <p>
-              延长子流程预算：{displayText(preview.budget_updates.join("、"))}
+              延长子流程预算：{preview.budget_updates.join("、")}
               。保留当前调用和原合同。
             </p>
           )}
@@ -946,9 +1067,9 @@ export function WorkflowPlanChanges({
       )}
       {error && (
         <p className="error" role="alert">
-          {displayText(error)}
+          {error}
         </p>
       )}
-    </details>
+    </>
   );
 }

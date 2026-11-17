@@ -101,7 +101,7 @@ fn publishing_a_snapshot_does_not_wait_for_the_old_global_business_writer() {
     let (release, released) = mpsc::channel();
     let legacy = store.clone();
     let writer = std::thread::spawn(move || {
-        legacy.transact(None, &mut |_| {
+        legacy.seed_fixture_state(None, &mut |_| {
             ready.send(()).unwrap();
             released.recv().unwrap();
             Ok(Value::Null)

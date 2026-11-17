@@ -28,7 +28,6 @@ impl Workspace {
         let c: Command =
             serde_json::from_value(params).map_err(|e| err("invalid_params", e.to_string()))?;
         require(!c.command_id.is_empty(), "command_id 不能为空")?;
-        let _switch = self.switching.lock().unwrap();
         let fingerprint = command_fingerprint("project.open_github", &c);
         if let Some(previous) = self.global.replay(&c.command_id, &fingerprint)? {
             let pid = previous["id"]
@@ -117,15 +116,18 @@ impl Workspace {
             (pid, e)
         };
         self.sync_configuration(&e)?;
-        let state = e.store.snapshot()?;
-        let project = state
-            .projects
-            .first()
-            .ok_or_else(|| err("storage", "项目不存在"))?;
-        if !state
-            .repository_operations
-            .iter()
-            .any(|op| matches!(op.action, RepositoryAction::Connect { .. }))
+        let project = e.store.project_metadata()?;
+        let state = e
+            .store
+            .read_resources(&[devdesk_core::concurrency::ResourceKey::new(
+                "repository_project_state",
+                &pid,
+            )])?
+            .remove(0);
+        if state
+            .value
+            .as_ref()
+            .is_some_and(|v| v["connect_exists"] == false)
         {
             e.execute(
                 "repository.connect",
@@ -138,10 +140,34 @@ impl Workspace {
             )?;
         }
         self.global.publish_project(&e.store.project_metadata()?)?;
+        let context = InvocationContext::human(None).prepare_record("project.open_github", &c);
+        let directory_key = devdesk_core::concurrency::ResourceKey::new("project_directory", &pid);
+        let directory = self
+            .global
+            .read_resources(std::slice::from_ref(&directory_key))?
+            .remove(0);
         self.global
-            .transact(Some((&c.command_id, &fingerprint)), &mut |_| {
-                Ok(json!({"id":pid,"repository":repository,"mainline":mainline}))
+            .commit_changes(&devdesk_core::concurrency::PreparedChangeSet {
+                command_id: c.command_id.clone(),
+                fingerprint,
+                read_set: devdesk_core::concurrency::ReadSet::new(vec![
+                    devdesk_core::concurrency::ResourceVersion {
+                        resource: directory_key,
+                        revision: directory.revision,
+                    },
+                    devdesk_core::concurrency::ResourceVersion {
+                        resource: context.resource.clone(),
+                        revision: 0,
+                    },
+                ])?,
+                changes: vec![context],
+                result: json!({"id":pid,"repository":repository,"mainline":mainline}),
+                time: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as i64,
             })
+            .map(|r| r.result)
     }
 }
 #[cfg(test)]
@@ -240,7 +266,7 @@ mod tests {
             )
             .unwrap();
         // This fixture has no repository adapter: first dispatch fails without external I/O.
-        w.tick(|| false).unwrap();
+        w.tick_fixture(|| false).unwrap();
         let e = w.project_engine(project["id"].as_str()).unwrap();
         let state = e.store.snapshot().unwrap();
         let op = state.repository_operations.first().unwrap();
@@ -266,7 +292,7 @@ mod tests {
                 .has_pending_work()
                 .unwrap()
         );
-        w.tick(|| false).unwrap();
+        w.tick_fixture(|| false).unwrap();
         let e = w.project_engine(project["id"].as_str()).unwrap();
         let state = e.store.snapshot().unwrap();
         let retried = &state.repository_operations[0];

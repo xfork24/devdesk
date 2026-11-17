@@ -19,7 +19,8 @@ pub fn managed_adapter_identity(provider: HarnessProvider) -> String {
     hash.update(include_bytes!("harness_startup.rs"));
     hash.update(include_bytes!("../../domain/src/agent_context.rs"));
     hash.update(include_bytes!("../../domain/src/agent_task.rs"));
-    hash.update(include_bytes!("../../core/src/agent_tasks.rs"));
+    hash.update(include_bytes!("../../core/src/formal_inputs.rs"));
+    hash.update(include_bytes!("../../core/src/formal_sessions.rs"));
     hash.update(include_bytes!("model_providers.rs"));
     hash.update(include_bytes!("../../domain/src/model_provider.rs"));
     hash.update(include_bytes!("permissions.rs"));
@@ -212,6 +213,21 @@ impl RuntimeWorkers {
         if cancelled.is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Acquire)) {
             return Err(err("cancelled", "启动已停止，未发送轮次输入").technical_not_applied());
         }
+        let base = self.location(&r.session)?;
+        require(
+            uuid::Uuid::parse_str(&r.execution.operation_id).is_ok(),
+            "worker 操作身份无效",
+        )?;
+        let fence = base
+            .join("coordinator")
+            .join(format!("{}.stop-fence.json", r.execution.operation_id));
+        reject_symlink(&fence)?;
+        if fence.exists() {
+            return Err(
+                err("worker_revoked", "原 worker 操作已永久撤销，不能再次打开")
+                    .technical_not_applied(),
+            );
+        }
         if let Some(w) = slot.as_ref() {
             require(
                 w.operation == r.execution.operation_id,
@@ -236,7 +252,6 @@ impl RuntimeWorkers {
             RuntimeArtifact::DockerImage { image_id } => image_id.clone(),
             _ => return Err(err("unsupported", "真实执行要求固定 Linux Docker 镜像")),
         };
-        let base = self.location(&r.session)?;
         let root = base.parent().unwrap().parent().unwrap().to_path_buf();
         require(
             fs::canonicalize(&r.project_root).map_err(storage)? == root.parent().unwrap(),
@@ -746,6 +761,23 @@ impl RuntimeWorkers {
         let cell = self.cell(&s.id)?;
         let mut slot = cell.lock().map_err(storage)?;
         let base = self.location(s)?;
+        require(
+            e.session_id == s.id && uuid::Uuid::parse_str(&e.operation_id).is_ok(),
+            "停止操作身份不符",
+        )?;
+        let coordinator = base.join("coordinator");
+        private_dir(&coordinator)?;
+        // A per-operation physical fence outlives the protocol connection and
+        // prevents an already granted but delayed open from creating a writer
+        // after its stop proof. No database/application writer mutex is held.
+        write_private(
+            &coordinator.join(format!("{}.stop-fence.json", e.operation_id)),
+            &serde_json::to_vec(&json!({"session_id":s.id,"operation_id":e.operation_id}))
+                .map_err(storage)?,
+        )?;
+        std::fs::File::open(&coordinator)
+            .and_then(|file| file.sync_all())
+            .map_err(storage)?;
         let root = base.parent().unwrap().parent().unwrap();
         let sandbox = DockerSandbox::new(root)?;
         let mut mode = "recovery_owned_container_stop".to_string();
@@ -1432,6 +1464,27 @@ macro_rules! provider {
                 self.check(s)?;
                 self.workers.stop(s, e)
             }
+            fn inspect_worker_stop(&self, s: &Session, e: &RuntimeExecution) -> Result<Option<WorkerStop>> {
+                self.check(s)?;
+                require(e.session_id == s.id, "只读核对改变了 worker 归属")?;
+                let cell=self.workers.cell(&s.id)?;
+                let _slot=cell.lock().map_err(storage)?;
+                let base = self.workers.location(s)?;
+                require(uuid::Uuid::parse_str(&e.operation_id).is_ok(),"worker 操作身份无效")?;
+                let fence=base.join("coordinator").join(format!("{}.stop-fence.json",e.operation_id));
+                reject_symlink(&fence)?;
+                let bytes=match fs::read(&fence){Ok(bytes)=>bytes,Err(error) if error.kind()==std::io::ErrorKind::NotFound=>return Ok(None),Err(error)=>return Err(storage(error))};
+                let fenced:Value=serde_json::from_slice(&bytes).map_err(storage)?;
+                require(fenced==json!({"session_id":s.id,"operation_id":e.operation_id}),"原 worker 的物理撤销围栏不符")?;
+                let sandbox = DockerSandbox::new(base.parent().unwrap().parent().unwrap())?;
+                let container = sandbox.inspect(&e.operation_id)?;
+                if let Some(container) = container {
+                    if container.running { return Ok(None); }
+                    require(e.container_id.as_ref().is_none_or(|id| id == &container.id), "停止核对的容器身份不符")?;
+                }
+                Ok(Some(WorkerStop { operation_id:e.operation_id.clone(), writer_revoked:true,
+                    mode:"read_only_owned_container_inspection".into(), requires_successor:true }))
+            }
             fn session_log(&self, e: &RuntimeExecution) -> Result<Option<String>> {
                 let cell = self.workers.cell(&e.session_id)?;
                 let slot = cell.lock().map_err(storage)?;
@@ -1459,6 +1512,11 @@ macro_rules! provider {
                 DockerSandbox::new(base.parent().unwrap().parent().unwrap())?
                     .remove(&e.operation_id)?;
                 self.workers.release_start(&s.id, &e.operation_id)
+            }
+            fn inspect_worker_cleanup(&self,s:&Session,e:&RuntimeExecution)->Result<bool>{
+                self.check(s)?;require(e.session_id==s.id,"只读清理核对跨原 worker")?;
+                let base=self.workers.location(s)?;
+                Ok(DockerSandbox::new(base.parent().unwrap().parent().unwrap())?.inspect(&e.operation_id)?.is_none())
             }
         }
     };
@@ -1632,11 +1690,17 @@ impl ports::Harness for RoutingHarness {
     fn stop_session(&self, s: &Session, e: &RuntimeExecution) -> Result<WorkerStop> {
         self.route(s)?.stop_session(s, e)
     }
+    fn inspect_worker_stop(&self, s: &Session, e: &RuntimeExecution) -> Result<Option<WorkerStop>> {
+        self.route(s)?.inspect_worker_stop(s, e)
+    }
     fn session_log(&self, e: &RuntimeExecution) -> Result<Option<String>> {
         self.codex.session_log(e)
     }
     fn cleanup_worker(&self, s: &Session, e: &RuntimeExecution) -> Result<()> {
         self.route(s)?.cleanup_worker(s, e)
+    }
+    fn inspect_worker_cleanup(&self, s: &Session, e: &RuntimeExecution) -> Result<bool> {
+        self.route(s)?.inspect_worker_cleanup(s, e)
     }
 }
 

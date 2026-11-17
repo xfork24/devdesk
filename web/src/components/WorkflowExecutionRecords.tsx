@@ -1,5 +1,5 @@
 import { displayText } from "../display-text";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { type Request, type Row } from "./rpc-types";
 import { RawJsonLink, ReadableValue, ReadingLink, ReadState } from "./reading";
 import { useReading, navigateReading, executionUrl } from "./reading-state";
@@ -28,11 +28,13 @@ function ExecutionReader({
   executionId: string;
   instanceId?: string;
 }) {
+  const [factOffset, setFactOffset] = useState(0);
   const state = useReading(request, "query.workflow_executions", {
     project_id: projectId,
     owner_id: ownerId,
     execution_id: executionId,
     instance_id: instanceId || undefined,
+    fact_offset: factOffset,
   });
   const value = state.value,
     record = value?.record;
@@ -140,6 +142,22 @@ function ExecutionReader({
               />
             </section>
           ))}
+          {factOffset > 0 || value.facts_more ? (
+            <div className="actions">
+              {factOffset > 0 ? (
+                <button
+                  onClick={() => setFactOffset(Math.max(0, factOffset - 100))}
+                >
+                  上一页决定与回执
+                </button>
+              ) : null}
+              {value.facts_more ? (
+                <button onClick={() => setFactOffset(value.next_fact_offset)}>
+                  下一页决定与回执
+                </button>
+              ) : null}
+            </div>
+          ) : null}
           <details>
             <summary>执行来源与冻结引用</summary>
             <ReadableValue
@@ -179,9 +197,13 @@ export function WorkflowExecutionRecords({
   request: Request;
   target?: Row;
 }) {
+  const [offset, setOffset] = useState(0);
+  useEffect(() => setOffset(0), [projectId, ownerId]);
   const state = useReading(request, "query.workflow_executions", {
     project_id: projectId,
     owner_id: ownerId,
+    offset,
+    limit: 100,
   });
   const [showHistory, setShowHistory] = useState(false);
   const records: Row[] = (state.value?.records || []).filter(
@@ -261,12 +283,12 @@ export function WorkflowExecutionRecords({
             </section>
           ))}
         </nav>
-        {selected ? (
+        {selected || target.execution_id ? (
           <ExecutionReader
-            key={`${projectId}:${ownerId}:${selected.id}`}
+            key={`${projectId}:${ownerId}:${target.execution_id || selected?.id}`}
             {...{ projectId, ownerId, request }}
-            executionId={selected.id}
-            instanceId={selected.instance_id}
+            executionId={target.execution_id || selected!.id}
+            instanceId={target.instance_id || selected?.instance_id}
           />
         ) : (
           <p className="muted">
@@ -280,6 +302,20 @@ export function WorkflowExecutionRecords({
           </p>
         )}
       </div>
+      {offset > 0 || state.value?.more ? (
+        <div className="actions">
+          {offset > 0 ? (
+            <button onClick={() => setOffset(Math.max(0, offset - 100))}>
+              上一页执行
+            </button>
+          ) : null}
+          {state.value?.more ? (
+            <button onClick={() => setOffset(state.value!.next_offset)}>
+              下一页执行
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }

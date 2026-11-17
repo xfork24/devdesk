@@ -159,7 +159,7 @@ fn finite_project_preparation_validates_scope_and_never_restores_unrelated_facts
             .join("engineering.sqlite3"),
     )
     .unwrap();
-    connection.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('unreadable','workflow_instance','other',?1,'unreadable',1,'fixture','{}',?2,0,1,1)",rusqlite::params![json!(format!("project:{PROJECT}")).to_string(),json!({"plan":{"$source":"unrestorable-history"},"large":"x".repeat(1_000_000)}).to_string()]).unwrap();
+    connection.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('unreadable','workflow_instance','other',?1,'unreadable',1,'fixture','{}',?2,0,1,1)",rusqlite::params![json!(format!("project:{PROJECT}")).to_string(),json!({"root_instance_id":"unreadable-root","plan":{"$source":"unrestorable-history"},"large":"x".repeat(1_000_000)}).to_string()]).unwrap();
     let trace = performance::Trace::start();
     let request = command("finite", 1, json!({"title":"Finite"}));
     let prepared = prepare(store.as_ref(), &request).unwrap();

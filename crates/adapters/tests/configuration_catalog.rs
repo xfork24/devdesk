@@ -48,7 +48,7 @@ fn configuration_cache_pins_revisions_and_ignores_fact_only_commits() {
     assert!(measured["spans"]["global.full_snapshot"].is_null());
     assert!(measured["spans"]["source.load_records"].is_null());
     store
-        .transact(None, &mut |state| {
+        .seed_fixture_state(None, &mut |state| {
             state.events.push(Event {
                 id: 1,
                 target: "test".into(),
@@ -65,7 +65,7 @@ fn configuration_cache_pins_revisions_and_ignores_fact_only_commits() {
     ));
     let added = source("new-source");
     store
-        .transact(None, &mut |state| {
+        .seed_fixture_state(None, &mut |state| {
             state.governance.push(added.clone());
             Ok(json!({}))
         })
@@ -74,7 +74,8 @@ fn configuration_cache_pins_revisions_and_ignores_fact_only_commits() {
     assert!(after.revision > before.revision);
     assert!(before.record(&added.id).is_none());
     assert!(after.record(&added.id).is_some());
-    let failed = store.transact(None, &mut |_| Err(err("test_rollback", "not committed")));
+    let failed =
+        store.seed_fixture_state(None, &mut |_| Err(err("test_rollback", "not committed")));
     assert!(failed.is_err());
     assert!(Arc::ptr_eq(
         &after,
@@ -121,7 +122,7 @@ fn readonly_catalog_detects_commits_and_listeners_run_after_unlock() {
     store.subscribe_changes(Arc::downgrade(&listener));
     let added = source("outside-connection");
     store
-        .transact(None, &mut |state| {
+        .seed_fixture_state(None, &mut |state| {
             state.governance.push(added.clone());
             Ok(json!({}))
         })

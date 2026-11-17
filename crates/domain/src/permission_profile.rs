@@ -496,6 +496,21 @@ pub fn validate_frozen_permissions(s: &EngineeringState, p: &ExecutionPermission
         .binding_lock
         .as_ref()
         .ok_or_else(|| err("permission_unconfigured", "执行必须冻结 v2 权限绑定"))?;
+    validate_frozen_permission_lock(s, lock)?;
+    require(
+        p.harness.reference.revision_id == lock.harness.profile.id
+            && p.sandbox.reference.revision_id == lock.sandbox.profile.id
+            && p.harness.policy == lock.harness.profile.policy.portable()
+            && p.sandbox.policy == lock.sandbox.profile.policy.portable()
+            && Some(p.approval) == lock.harness.profile.policy.approval,
+        "执行权限与冻结 profile 不一致",
+    )
+}
+
+pub fn validate_frozen_permission_lock(
+    s: &EngineeringState,
+    lock: &VersionedPermissionLock,
+) -> Result<()> {
     for (bound, kind) in [
         (&lock.harness, PermissionTargetKind::Harness),
         (&lock.sandbox, PermissionTargetKind::Sandbox),
@@ -535,14 +550,7 @@ pub fn validate_frozen_permissions(s: &EngineeringState, p: &ExecutionPermission
             "冻结 v2 权限引用或摘要不一致",
         )?;
     }
-    require(
-        p.harness.reference.revision_id == lock.harness.profile.id
-            && p.sandbox.reference.revision_id == lock.sandbox.profile.id
-            && p.harness.policy == lock.harness.profile.policy.portable()
-            && p.sandbox.policy == lock.sandbox.profile.policy.portable()
-            && Some(p.approval) == lock.harness.profile.policy.approval,
-        "执行权限与冻结 profile 不一致",
-    )
+    Ok(())
 }
 
 impl ConfigurationRecord {

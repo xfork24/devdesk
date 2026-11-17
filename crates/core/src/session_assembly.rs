@@ -11,47 +11,73 @@ impl Engine {
             .iter()
             .find(|r| r.r#type == "agent_instance" && r.id == instance)
             .ok_or_else(|| err("not_found", "Agent 实例不存在"))?;
-        self.store.transact(None, &mut |state| {
-            require(state.projects.is_empty(), "独立讨论只能装配到讨论命名空间")?;
-            let mut pending = vec![
-                selected.id.clone(),
-                text(&selected.data, "agent_revision_id")?,
-            ];
-            let mut visited = std::collections::BTreeSet::new();
-            while let Some(id) = pending.pop() {
-                if !visited.insert(id.clone()) {
-                    continue;
-                }
-                let source = records
-                    .iter()
-                    .find(|r| r.id == id)
-                    .ok_or_else(|| err("invalid_configuration", format!("实例依赖缺失: {id}")))?;
-                require(
-                    source.is_definition() || source.r#type == "agent_instance",
-                    "讨论只能导入身份及配置源",
-                )?;
-                for edge in configuration_edges(source)? {
-                    if edge.relation != "content_digest" {
-                        pending.push(edge.to);
-                    }
-                }
-                for package in records
-                    .iter()
-                    .filter(|r| r.r#type == "skill_package" && r.definition_id == source.id)
-                {
-                    if !state.governance.iter().any(|r| r.id == package.id) {
-                        state.governance.push(package.clone());
-                    }
-                }
-                if let Some(old) = state.governance.iter().find(|r| r.id == source.id) {
-                    require(old.content_hash == source.content_hash, "实例依赖内容冲突")?;
-                } else {
-                    state.governance.push(source.clone());
+        let before = self.store.configuration_snapshot()?;
+        require(
+            before.state.projects.is_empty(),
+            "独立讨论只能装配到讨论命名空间",
+        )?;
+        let mut candidate = before.state.as_ref().clone();
+        let state = &mut candidate;
+        let mut pending = vec![
+            selected.id.clone(),
+            text(&selected.data, "agent_revision_id")?,
+        ];
+        let mut visited = std::collections::BTreeSet::new();
+        while let Some(id) = pending.pop() {
+            if !visited.insert(id.clone()) {
+                continue;
+            }
+            let source = records
+                .iter()
+                .find(|r| r.id == id)
+                .ok_or_else(|| err("invalid_configuration", format!("实例依赖缺失: {id}")))?;
+            require(
+                source.is_definition() || source.r#type == "agent_instance",
+                "讨论只能导入身份及配置源",
+            )?;
+            for edge in configuration_edges(source)? {
+                if edge.relation != "content_digest" {
+                    pending.push(edge.to);
                 }
             }
-            state.refresh_configuration_views()?;
-            Ok(Value::Null)
-        })?;
+            for package in records
+                .iter()
+                .filter(|r| r.r#type == "skill_package" && r.definition_id == source.id)
+            {
+                if !state.governance.iter().any(|r| r.id == package.id) {
+                    state.governance.push(package.clone());
+                }
+            }
+            if let Some(old) = state.governance.iter().find(|r| r.id == source.id) {
+                require(old.content_hash == source.content_hash, "实例依赖内容冲突")?;
+            } else {
+                state.governance.push(source.clone());
+            }
+        }
+        state.refresh_configuration_views()?;
+        let candidate =
+            ConfigurationCatalogSnapshot::new(candidate, before.revision, before.repository_ready)?;
+        let publication =
+            prepare_configuration_publication(self.store.as_ref(), &before, &candidate)?;
+        if !publication.changes.is_empty() {
+            let digest = configuration_hash(&(
+                "discussion-source-import/v1",
+                self.store.namespace(),
+                self.store.root(),
+                instance,
+                before.revision,
+                &candidate.fingerprint,
+            ));
+            self.store
+                .commit_changes(&crate::concurrency::PreparedChangeSet {
+                    command_id: format!("discussion-source-import:{digest}"),
+                    fingerprint: digest,
+                    read_set: publication.read_set,
+                    changes: publication.changes,
+                    result: Value::Null,
+                    time: now() as i64,
+                })?;
+        }
         Ok(())
     }
     pub fn resolve_session_composition(
@@ -59,16 +85,30 @@ impl Engine {
         resources: &dyn ports::SessionResources,
         command: &mut Command,
     ) -> Result<()> {
+        let formal = self.prepare_formal_session(command)?;
+        self.resolve_session_composition_at(resources, command, formal.as_ref())
+    }
+    fn resolve_session_composition_at(
+        &self,
+        resources: &dyn ports::SessionResources,
+        command: &mut Command,
+        formal: Option<&crate::formal_sessions::PreparedFormalSession>,
+    ) -> Result<()> {
         let e = self;
 
-        let state = e.store.snapshot()?;
-        let selected = command.payload["agent_instance_id"]
-            .as_str()
-            .map(str::to_owned);
+        let catalog = e.store.configuration_snapshot()?;
+        let state = catalog.state.as_ref();
+        let selected = formal
+            .map(|prepared| prepared.agent_instance.clone())
+            .or_else(|| {
+                command.payload["agent_instance_id"]
+                    .as_str()
+                    .map(str::to_owned)
+            });
         let agent_id = if let Some(instance) = &selected {
             let r = state.configuration(instance)?;
             require(
-                r.r#type == "agent_instance" && !configuration_retired(&state, r),
+                r.r#type == "agent_instance" && !configuration_retired(state, r),
                 "无效或已移除 Agent 实例",
             )?;
             r.data["agent_revision_id"]
@@ -97,18 +137,13 @@ impl Engine {
         };
         let agent = state.resolve_agent(&record.id)?;
         let owner = command.target.as_deref().unwrap_or("");
-        let feature = state
-            .tasks
-            .iter()
-            .find(|task| task.id == owner)
-            .map_or(owner, |task| task.feature_id.as_str());
-        let configured = e.configured_agent_request(command)?;
+        let configured = formal.map(|prepared| prepared.request.clone());
         let frozen = configured.is_some();
         require(
             frozen
-                || (!configuration_retired(&state, record)
+                || (!configuration_retired(state, record)
                     && configuration_visible(
-                        &state,
+                        state,
                         record,
                         selected
                             .as_ref()
@@ -168,7 +203,7 @@ impl Engine {
         } else if let Some(r) = state.governance.iter().find(|r| {
             r.r#type == "agent_instance"
                 && r.data["agent_revision_id"] == agent_id
-                && !configuration_retired(&state, r)
+                && !configuration_retired(state, r)
                 && !state.governance.iter().any(|next| {
                     next.r#type == "agent_instance"
                         && next.definition_id == r.definition_id
@@ -178,7 +213,7 @@ impl Engine {
         }) {
             r.id.clone()
         } else {
-            e.execute("agent.instance.create",Command{command_id:format!("{}:agent-instance",command.command_id),target:None,expected_revision:None,payload:json!({"name":format!("{} · {}",record.name,title),"scope":scope,"agent_revision_id":agent_id,"frozen_feature_id":if frozen && !command.payload["controller_id"].is_string(){Some(feature)}else{None},"frozen_controller_id":command.payload["controller_id"]})})?["id"].as_str().unwrap().into()
+            e.execute("agent.instance.create",Command{command_id:format!("{}:agent-instance",command.command_id),target:None,expected_revision:None,payload:json!({"name":format!("{} · {}",record.name,title),"scope":scope,"agent_revision_id":agent_id})})?["id"].as_str().unwrap().into()
         };
         state.resolve_model_connection(&model, &harness_record)?;
         let materialized = if let Some(configured) = &configured {
@@ -194,7 +229,7 @@ impl Engine {
         let integration_lock = match configured {
             Some(configured) => configured.integration_lock,
             None => freeze_discussion_integrations(
-                &state,
+                state,
                 &agent,
                 state.projects.first().map(|p| p.id.as_str()),
             )?,
@@ -226,16 +261,19 @@ impl Engine {
 
         require(!command.command_id.is_empty(), "command_id 不能为空")?;
         require(
-            command.payload.get("binding").is_none(),
+            command.payload.get("binding").is_none()
+                && command.payload.get("prepared_catalog_revision").is_none(),
             "会话绑定由协调器解析，不能由客户端提供",
         )?;
         let fingerprint = command_fingerprint("session.open", &command);
         if let Some(previous) = e.store.replay(&command.command_id, &fingerprint)? {
             return Ok(previous);
         }
-        let configured = e.configured_agent_request(&command)?;
-        e.resolve_session_composition(resources, &mut command)?;
-        let state = e.store.snapshot()?;
+        let formal = e.prepare_formal_session(&command)?;
+        let configured = formal.as_ref().map(|prepared| prepared.request.clone());
+        e.resolve_session_composition_at(resources, &mut command, formal.as_ref())?;
+        let catalog = e.store.configuration_snapshot()?;
+        let state = catalog.state.as_ref();
         let agent = command.payload["agent"]
             .as_str()
             .ok_or_else(|| err("invalid_params", "需要 Agent 修订 ID"))?;
@@ -317,15 +355,15 @@ impl Engine {
             "旧权限覆盖已移除",
         )?;
         let composition = state.resolve_agent(agent)?;
-        let selection = permission_selection(&state)?;
+        let selection = permission_selection(state)?;
         let lock = if let Some(configured) = &configured {
             configured.permissions.clone()
         } else {
-            resolve_permission_lock(&state, &composition.harness_ref, &selection)?
+            resolve_permission_lock(state, &composition.harness_ref, &selection)?
         };
-        resources.verify_permissions(&state, &lock, &installation)?;
+        resources.verify_permissions(state, &lock, &installation)?;
         let resolved_permissions = resources.compile_permissions(
-            &state,
+            state,
             &lock,
             Some(ExecutionScope {
                 work_type,
@@ -368,7 +406,7 @@ impl Engine {
             None
         };
         let credential_ref =
-            resources.credential_reference(provider, model_connection.as_ref(), &state)?;
+            resources.credential_reference(provider, model_connection.as_ref(), state)?;
         let model_profile_digest = model_connection
             .as_ref()
             .map(|c| resources.model_profile_digest(c, &model))
@@ -391,6 +429,11 @@ impl Engine {
         };
         binding.configuration_digest = resources.runtime_digest(definition, &binding)?;
         command.payload["binding"] = json!(binding);
-        e.execute_resolved("session.open", command, &fingerprint)
+        command.payload["prepared_catalog_revision"] = json!(catalog.revision);
+        if let Some(formal) = formal.as_ref() {
+            e.admit_formal_session(&command, &binding, formal)
+        } else {
+            e.execute_resolved("session.open", command, &fingerprint)
+        }
     }
 }

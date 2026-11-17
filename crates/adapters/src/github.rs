@@ -217,6 +217,35 @@ impl ports::PullRequests for GitHubPullRequests {
         };
         self.receipt(r, &row)
     }
+    fn inspect(&self, r: &PullRequestRequest) -> Result<Option<PullRequestReceipt>> {
+        self.validate_request(r)?;
+        if r.number.is_some() {
+            return self.read(r).map(Some);
+        }
+        let owner = r.repository.split('/').next().unwrap();
+        let rows = self.api(
+            &format!(
+                "repos/{}/pulls?state=all&head={}:{}&base={}&per_page=100",
+                r.repository, owner, r.head_branch, r.base_branch
+            ),
+            None,
+        )?;
+        let rows = rows
+            .as_array()
+            .ok_or_else(|| err("github_unavailable", "PR 列表结构不完整"))?;
+        require(rows.len() <= 1, "PR 列表不唯一或分页不完整")?;
+        rows.first()
+            .map(|row| {
+                let number = row["number"]
+                    .as_u64()
+                    .ok_or_else(|| err("github_unavailable", "PR number 缺失"))?;
+                self.receipt(
+                    r,
+                    &self.api(&format!("repos/{}/pulls/{number}", r.repository), None)?,
+                )
+            })
+            .transpose()
+    }
     fn read(&self, r: &PullRequestRequest) -> Result<PullRequestReceipt> {
         self.validate_request(r)?;
         let number = r

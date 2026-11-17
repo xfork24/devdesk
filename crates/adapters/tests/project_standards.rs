@@ -8,8 +8,14 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 
 fn engine(path: &std::path::Path) -> Engine {
+    engine_with_store(path, SqliteStore::open_fixture(path).unwrap())
+}
+fn global_engine(path: &std::path::Path) -> Engine {
+    engine_with_store(path, SqliteStore::open(path).unwrap())
+}
+fn engine_with_store(path: &std::path::Path, store: SqliteStore) -> Engine {
     let e = Engine::new(
-        Arc::new(SqliteStore::open(path).unwrap()),
+        Arc::new(store),
         Arc::new(FileArtifacts::new(path.into())),
         runtime::adapters(),
     )
@@ -143,8 +149,8 @@ fn project_override_rewrites_the_graph_and_permissions_without_changing_frozen_f
     ));
     let revised = cmd(
         &e,
-        "spec.revise",
-        Some(&old_spec.id),
+        "spec.create",
+        None,
         json!({"name":"Project PRD requirements","data":data}),
     )
     .unwrap();
@@ -207,8 +213,21 @@ fn project_override_rewrites_the_graph_and_permissions_without_changing_frozen_f
         .find(|r| r.r#type == "workflow_instance" && r.data["owner_id"] == fresh["id"])
         .unwrap();
     assert_eq!(fresh_root.data["plan"]["standard_ref"], effective);
+    let other_path = dir.path().join("other-project");
+    let other_engine = engine(&other_path);
+    other_engine
+        .store
+        .seed_fixture_state(None, &mut |candidate| {
+            for source in state.governance.iter().filter(|r| r.is_definition()) {
+                if candidate.configuration(&source.id).is_err() {
+                    candidate.governance.push(source.clone());
+                }
+            }
+            Ok(Value::Null)
+        })
+        .unwrap();
     let other = cmd(
-        &e,
+        &other_engine,
         "project.create",
         None,
         json!({"title":"Another project"}),
@@ -218,7 +237,7 @@ fn project_override_rewrites_the_graph_and_permissions_without_changing_frozen_f
     forbidden["standard_ref"] = json!(effective);
     assert!(
         cmd(
-            &e,
+            &other_engine,
             "project.configuration.update",
             other["id"].as_str(),
             forbidden
@@ -324,7 +343,7 @@ fn project_standard_rejects_stale_duplicate_and_wrong_type_overrides_atomically(
 #[test]
 fn standard_comparison_ignores_missing_and_different_default_entries() {
     let dir = tempfile::tempdir().unwrap();
-    let e = engine(dir.path());
+    let e = global_engine(dir.path());
     let defaults = e.configuration_defaults(None).unwrap();
     let base = defaults["standard_ref"].as_str().unwrap();
     let state = e.store.snapshot().unwrap();

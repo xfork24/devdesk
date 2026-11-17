@@ -1,7 +1,7 @@
 //! Public execution facts. Never project credentials or model connection settings.
 use crate::*;
-use std::collections::BTreeMap;
 
+#[cfg(test)]
 pub(crate) fn observed(state: &EngineeringState, turn_id: &str) -> Vec<Value> {
     let Some(turn) = state.turns.iter().find(|turn| turn.id == turn_id) else {
         return vec![];
@@ -28,7 +28,7 @@ pub(crate) fn observed(state: &EngineeringState, turn_id: &str) -> Vec<Value> {
     })).collect()
 }
 
-fn public_binding(session_id: &str, binding: &RuntimeBinding) -> Value {
+pub(crate) fn public_binding(session_id: &str, binding: &RuntimeBinding) -> Value {
     let artifact = match &binding.installation.artifact {
         RuntimeArtifact::DockerImage { image_id } => {
             json!({"kind":"docker_image","image_id":image_id})
@@ -41,47 +41,6 @@ fn public_binding(session_id: &str, binding: &RuntimeBinding) -> Value {
     json!({"session_id":session_id,"installation_id":binding.installation.id,
                     "runtime_key":binding.installation.key,"artifact":artifact,
                     "recipe_digest":binding.installation.recipe_digest,"adapter_version":binding.adapter_version})
-}
-
-pub(crate) fn context(state: &EngineeringState, execution: &StepExecution) -> Value {
-    let binding = execution.session_id.as_ref().and_then(|id| {
-        state
-            .sessions
-            .iter()
-            .find(|session| session.id == *id)
-            .and_then(|session| {
-                session
-                    .runtime_binding
-                    .as_ref()
-                    .map(|binding| public_binding(&session.id, binding))
-            })
-    });
-    let inputs: BTreeMap<_, _> = state
-        .governance
-        .iter()
-        .find(|record| record.id == format!("workflow-inputs:{}", execution.id))
-        .and_then(|record| record.data["targets"].as_array())
-        .into_iter()
-        .flatten()
-        .filter_map(|target| {
-            let name = target["input"].as_str()?;
-            let origin = state.configuration(target["origin_ref"].as_str()?).ok()?;
-            if origin.r#type != "workflow_output" || origin.data["provenance"]["kind"] != "agent" {
-                return None;
-            }
-            let turn = origin.data["provenance"]["turn_id"].as_str()?;
-            let runs = observed(state, turn);
-            if runs.is_empty() {
-                return None;
-            }
-            Some((
-                name.to_owned(),
-                json!({"source_output_id":origin.id,"runtime_executions":runs}),
-            ))
-        })
-        .collect();
-    json!({"binding":binding,"inputs":inputs,
-        "instructions":"binding is the kernel-frozen runtime selection for this Session, not a claim about arbitrary nested or remote commands. inputs contains kernel-observed outer harness execution facts bound to exact producer Turns and stop proofs. Use these image identities alongside the actual command logs and code snapshots; model-reported Node versions alone do not identify an image. Do not invent missing facts."})
 }
 
 #[cfg(test)]

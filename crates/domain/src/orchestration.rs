@@ -214,6 +214,11 @@ pub enum WorkflowActor {
     Segment {
         authorization_id: Id,
     },
+    /// Kernel observation/continuation metadata. This origin cannot sign a
+    /// business decision or invoke public workflow controls.
+    Coordinator {
+        source_id: Id,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

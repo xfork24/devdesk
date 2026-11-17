@@ -36,16 +36,10 @@ impl Scripted {
                     .clone();
             }
             if arguments["id"] == "$previous_transfer" {
-                arguments["id"] = self
-                    .replies
-                    .lock()
-                    .unwrap()
-                    .last()
-                    .unwrap()
-                    .structured_content
-                    .as_ref()
-                    .unwrap()["id"]
-                    .clone();
+                let replies = self.replies.lock().unwrap();
+                let staged = replies.last().unwrap().structured_content.as_ref().unwrap();
+                arguments["id"] = staged["id"].clone();
+                arguments["expected_revision"] = staged["revision"].clone();
             }
             let reply_count = self.replies.lock().unwrap().len();
             ports::ConversationObservation::ToolCall {
@@ -140,11 +134,18 @@ impl ports::Harness for Scripted {
         Ok(())
     }
 }
-fn cmd(e: &Engine, method: &str, target: Option<&str>, payload: Value) -> Value {
+fn cmd(e: &Engine, method: &str, target: Option<&str>, mut payload: Value) -> Value {
     if method == "permission.profile.create" {
         return configuration_fixture::create_profile(e, payload).unwrap();
     }
     let s = e.store.snapshot().unwrap();
+    if let Some(row) = target
+        .and_then(|id| s.configuration(id).ok())
+        .filter(|r| r.r#type == "workflow_controller")
+        && payload["epoch"].is_null()
+    {
+        payload["epoch"] = row.data["epoch"].clone();
+    }
     let revision = target.and_then(|id| {
         s.configuration(id)
             .ok()
@@ -200,7 +201,6 @@ fn setup(path: &std::path::Path) -> (Engine, Arc<Scripted>, String) {
     .with_manager_services(ManagerServices {
         shared,
         inventory: global.clone(),
-        gate: Arc::new(Mutex::new(())),
     });
     e.sync_shared_configuration(global.as_ref()).unwrap();
     e.bootstrap().unwrap();
@@ -215,79 +215,8 @@ fn drive(e: &Engine, rounds: usize) {
         e.drive_controllers().unwrap();
         for intent in e.pending_workflow_intents().unwrap() {
             let method = intent.data["method"].as_str().unwrap();
-            let mut c: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
+            let c: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
             let original_fingerprint = devdesk_core::command_fingerprint(method, &c);
-            if method == "session.open" {
-                let selected = e.configured_agent_request(&c).unwrap().unwrap();
-                let s = e.store.snapshot().unwrap();
-                let agent = s
-                    .configuration(c.payload["agent"].as_str().unwrap())
-                    .unwrap();
-                let composition = s.resolve_agent(&agent.id).unwrap();
-                let mut binding = RuntimeBinding {
-                    installation: RuntimeInstallation {
-                        id: "explicit-manager-runtime".into(),
-                        recipe_digest: Some(runtime_preparation::default_codex_recipe_digest()),
-                        key: RuntimeKey {
-                            provider: HarnessProvider::Codex,
-                            version: "fixture".into(),
-                            os: "linux".into(),
-                            arch: "aarch64".into(),
-                        },
-                        artifact: RuntimeArtifact::DockerImage {
-                            image_id: format!("sha256:{}", "a".repeat(64)),
-                        },
-                        source: "scripted native port".into(),
-                        license: "test".into(),
-                    },
-                    adapter_version: "fixture/v1".into(),
-                    model: "fixture".into(),
-                    tool_policy: ToolPolicy::ReadOnly,
-                    writable_paths: vec![],
-                    read_only_paths: vec![],
-                    work_type: WorkType::Orchestration,
-                    configuration_digest: "a".repeat(64),
-                    credential_ref: None,
-                    model_connection: None,
-                    model_profile_digest: None,
-                    model_parameters: Default::default(),
-                    permissions: Some(
-                        permission_profiles::compile_permission_profiles(
-                            &s,
-                            &selected.permissions,
-                            Some(ExecutionScope {
-                                work_type: WorkType::Orchestration,
-                                writable_paths: vec![],
-                                read_only_paths: vec![],
-                            }),
-                        )
-                        .unwrap(),
-                    ),
-                    agent_configuration: Some(AgentExecutionConfiguration {
-                        context_protocol: None,
-                        integration_lock: Some(selected.integration_lock),
-                        agent_instance_id: "fixture-manager-instance".into(),
-                        agent_revision_id: agent.id.clone(),
-                        composition_hash: agent.content_hash.clone(),
-                        model_revision_id: composition.model_ref,
-                        harness_revision_id: composition.harness_ref,
-                        model_provider: "openai".into(),
-                        model_parameters: Default::default(),
-                        tool_revisions: composition.tools,
-                    }),
-                };
-                let permissions = binding.permissions.as_ref().unwrap();
-                binding.writable_paths = permissions.scope.writable_paths.clone();
-                binding.read_only_paths = permissions.scope.read_only_paths.clone();
-                binding.tool_policy = if binding.writable_paths.is_empty() {
-                    ToolPolicy::ReadOnly
-                } else if binding.writable_paths == ["."] {
-                    ToolPolicy::WorkspaceWrite
-                } else {
-                    ToolPolicy::ScopedWrite
-                };
-                c.payload["binding"] = json!(binding);
-            }
             let result = workflow_intents::execute(e, method, c, &original_fingerprint);
             e.observe_workflow_intent(&intent, &result).unwrap();
             result.unwrap();
@@ -466,7 +395,19 @@ fn manager_five_configuration_scenarios_have_native_receipts_without_feature_or_
     );
     drive(&e, 65);
     let replies = h.replies.lock().unwrap();
-    assert_eq!(replies.len(), 11);
+    assert_eq!(
+        replies.len(),
+        11,
+        "runtime facts: {:?}",
+        e.store
+            .snapshot()
+            .unwrap()
+            .governance
+            .iter()
+            .filter(|r| matches!(r.r#type.as_str(), "workflow_controller" | "workflow_intent"))
+            .map(|r| (&r.id, &r.data))
+            .collect::<Vec<_>>()
+    );
     assert!(replies.iter().all(|r| r.success), "{:?}", *replies);
     let s = e.store.snapshot().unwrap();
     assert!(s.features.is_empty() && s.tasks.is_empty());
@@ -521,7 +462,7 @@ fn non_manager_agents_cannot_open_project_management_controllers() {
                 Command {
                     command_id: id(),
                     target: Some(project.clone()),
-                    expected_revision: None,
+                    expected_revision: Some(e.store.snapshot().unwrap().projects[0].revision),
                     payload: json!({
                         "role_ref": "builtin-role-analyst:1",
                         "agent_ref": "builtin-agent-sol-high-analyst:6",
@@ -540,7 +481,7 @@ fn non_manager_agents_cannot_open_project_management_controllers() {
             Command {
                 command_id: id(),
                 target: Some(project.clone()),
-                expected_revision: None,
+                expected_revision: Some(e.store.snapshot().unwrap().projects[0].revision),
                 payload: json!({"agent_ref":"builtin-agent-sol-high-analyst:6"}),
             },
         )
@@ -562,7 +503,7 @@ fn non_manager_agents_cannot_open_project_management_controllers() {
 }
 
 #[test]
-fn native_manager_reads_do_not_wait_for_the_configuration_write_gate() {
+fn native_manager_read_tools_finish_with_durable_receipts() {
     let dir = tempfile::tempdir().unwrap();
     let (e, h, project) = setup(dir.path());
     h.actions.lock().unwrap().extend([
@@ -579,8 +520,6 @@ fn native_manager_reads_do_not_wait_for_the_configuration_write_gate() {
         manager["id"].as_str(),
         json!({"input":"Read-only context probe"}),
     );
-    let gate = e.manager_services.as_ref().unwrap().gate.clone();
-    let held = gate.lock().unwrap();
     std::thread::scope(|scope| {
         let (tx, rx) = std::sync::mpsc::channel();
         let engine = &e;
@@ -589,10 +528,9 @@ fn native_manager_reads_do_not_wait_for_the_configuration_write_gate() {
             tx.send(()).unwrap();
         });
         let completed = rx.recv_timeout(std::time::Duration::from_secs(10));
-        drop(held);
         assert!(
             completed.is_ok(),
-            "read-only native calls waited on the configuration write gate"
+            "native manager read tools did not finish within their bounded fixture timeout"
         );
     });
     assert_eq!(h.replies.lock().unwrap().len(), 2);

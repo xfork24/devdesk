@@ -186,7 +186,7 @@ fn independent_intents_and_completion_do_not_take_legacy_writer_or_restore_histo
     let (release, blocked) = mpsc::channel();
     let old = engine.clone();
     let writer = std::thread::spawn(move || {
-        old.store.transact(None, &mut |state| {
+        old.store.seed_fixture_state(None, &mut |state| {
             ready.send(()).unwrap();
             blocked.recv().unwrap();
             state.events.push(Event {
@@ -201,7 +201,7 @@ fn independent_intents_and_completion_do_not_take_legacy_writer_or_restore_histo
     });
     waiting.recv().unwrap();
     let conn = rusqlite::Connection::open(root.path().join("engineering.sqlite3")).unwrap();
-    conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('unrestorable','workflow_instance','owner','\"global\"','History',1,'fixture','{}',?1,0,1,1)",[json!({"plan":{"$source":"missing-frozen-source"},"large":"x".repeat(1_000_000)}).to_string()]).unwrap();
+    conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('unrestorable','workflow_instance','owner','\"global\"','History',1,'fixture','{}',?1,0,1,1)",[json!({"root_instance_id":"unrestorable-root","plan":{"$source":"missing-frozen-source"},"large":"x".repeat(1_000_000)}).to_string()]).unwrap();
     let barrier = Arc::new(Barrier::new(100));
     let threads = (0..100)
         .map(|n| {
@@ -503,7 +503,7 @@ fn discovery_publication_is_atomic_and_one_hundred_callbacks_replay_without_lega
     let (release, blocked) = mpsc::channel();
     let old = engine.clone();
     let writer = std::thread::spawn(move || {
-        old.store.transact(None, &mut |_| {
+        old.store.seed_fixture_state(None, &mut |_| {
             ready.send(()).unwrap();
             blocked.recv().unwrap();
             Ok(Value::Null)
@@ -511,7 +511,7 @@ fn discovery_publication_is_atomic_and_one_hundred_callbacks_replay_without_lega
     });
     waiting.recv().unwrap();
     let conn = rusqlite::Connection::open(root.path().join("engineering.sqlite3")).unwrap();
-    conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('unrestorable-discovery','workflow_instance','fixture','\"global\"','History',1,'fixture','{}',?1,0,1,1)",[json!({"plan":{"$source":"missing-frozen-source"}}).to_string()]).unwrap();
+    conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('unrestorable-discovery','workflow_instance','fixture','\"global\"','History',1,'fixture','{}',?1,0,1,1)",[json!({"root_instance_id":"unrestorable-root","plan":{"$source":"missing-frozen-source"}}).to_string()]).unwrap();
     let result = Arc::new(Ok(
         json!({"tools":[{"name":"sum","inputSchema":{"type":"object"}}]}),
     ));

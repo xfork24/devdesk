@@ -244,7 +244,7 @@ fn a_late_unknown_result_is_preserved_without_overwriting_newer_operation_state(
 fn finite_dispatch_ignores_unrelated_history_and_never_guesses_legacy_actor() {
     let root = tempfile::tempdir().unwrap();
     let (store, id, connection) = fixture(root.path());
-    connection.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('unrestorable','workflow_instance','owner',?1,'history',1,'fixture','{}',?2,0,1,1)",params![json!(format!("project:{PROJECT}")).to_string(),json!({"plan":{"$source":"missing-input"},"large":"x".repeat(1_000_000)}).to_string()]).unwrap();
+    connection.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('unrestorable','workflow_instance','owner',?1,'history',1,'fixture','{}',?2,0,1,1)",params![json!(format!("project:{PROJECT}")).to_string(),json!({"root_instance_id":"unrestorable-root","plan":{"$source":"missing-input"},"large":"x".repeat(1_000_000)}).to_string()]).unwrap();
     let context = RepositoryDispatchContext::read(store.as_ref(), &id).unwrap();
     let other_id = "8bce7c46-e9f2-4079-99fb-90b061ef7df2";
     let other = SqliteStore::open_project(root.path(), other_id).unwrap();
@@ -270,7 +270,13 @@ fn finite_dispatch_ignores_unrelated_history_and_never_guesses_legacy_actor() {
     ] {
         assert!(report["spans"][span].is_null(), "{report}");
     }
-    connection.execute("INSERT INTO repository_operations(id,project_id,action,status,receipt,reason,revision) VALUES('legacy-operation',?1,?2,'prepared',NULL,'fixture without provenance',1)",params![PROJECT,json!({"kind":"connect","repository":"fixture/legacy","mainline":"main"}).to_string()]).unwrap();
+    connection
+        .execute(
+            "UPDATE repository_operations SET status='completed',revision=revision+1 WHERE id=?1",
+            [&id],
+        )
+        .unwrap();
+    connection.execute("INSERT INTO repository_operations(id,project_id,action,status,receipt,reason,revision) VALUES('legacy-operation',?1,?2,'prepared',NULL,'fixture without provenance',1)",params![PROJECT,json!({"kind":"create_worktree","owner":"legacy-owner","worktree_kind":"feature","base":"a".repeat(40)}).to_string()]).unwrap();
     assert!(matches!(
         RepositoryDispatchContext::read(store.as_ref(), "legacy-operation"),
         Err(error) if error.code == "provenance_required"

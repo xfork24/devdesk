@@ -42,6 +42,8 @@ mod agent_context;
 pub use agent_context::*;
 mod conversation;
 pub use conversation::*;
+mod artifact;
+pub use artifact::*;
 mod governance;
 pub use governance::*;
 // Pure domain model: no I/O or adapter dependencies.

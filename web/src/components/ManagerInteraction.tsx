@@ -7,6 +7,7 @@ import type { Row } from "./rpc-types";
 
 type Props = {
   interaction: Row;
+  basis?: string;
   projectId: string;
   ownerId: string;
   status?: string;
@@ -17,20 +18,39 @@ type Props = {
 };
 
 export function ManagerInteraction({
-  interaction,
+  interaction: latestInteraction,
+  basis,
   projectId,
   ownerId,
-  status,
+  status: latestStatus,
   busy,
-  onDecide,
+  onDecide: latestDecide,
   requireReason = false,
   awaitingInput = false,
 }: Props) {
   const [reason, setReason] = useState("");
+  const [original, setOriginal] = useState<{
+    interaction: Row;
+    decide: Props["onDecide"];
+    basis?: string;
+  }>();
+  const interaction = original?.interaction || latestInteraction;
+  const onDecide = original?.decide || latestDecide;
+  const status = original && original.basis !== basis ? "stale" : latestStatus;
+  const capture = () => {
+    if (!original)
+      setOriginal({
+        interaction: structuredClone(latestInteraction),
+        decide: latestDecide,
+        basis,
+      });
+  };
+
   const [error, setError] = useState("");
   async function decide(approved: boolean) {
     setError("");
     try {
+      capture();
       await onDecide?.(approved, reason);
     } catch (e) {
       setError(String(e));
@@ -47,6 +67,14 @@ export function ManagerInteraction({
       className="manager-interaction"
       aria-label={displayText(interaction.title || "待决定的操作")}
     >
+      {original && original.basis !== basis && (
+        <p role="status">
+          事项已变化，原意见和依据已保留。
+          <button onClick={() => setOriginal(undefined)}>
+            使用当前事项重新确认
+          </button>
+        </p>
+      )}
       <details
         className="manager-disclosure"
         open={status === "pending" || awaitingInput}
@@ -202,7 +230,10 @@ export function ManagerInteraction({
                 <textarea
                   aria-label="意见或修改要求"
                   value={reason}
-                  onChange={(e) => setReason(e.target.value)}
+                  onChange={(e) => {
+                    capture();
+                    setReason(e.target.value);
+                  }}
                 />
               </label>
               <div className="actions">

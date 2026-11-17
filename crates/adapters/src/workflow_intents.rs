@@ -86,7 +86,7 @@ pub(super) fn active(
     tx.commit().map_err(storage)?;
     Ok(result)
 }
-struct TaskFacts {
+pub(super) struct TaskFacts {
     descriptor: Value,
     instance: ConfigurationRecord,
     plan: ConfigurationRecord,
@@ -97,6 +97,17 @@ fn task_facts(
     conn: &Connection,
     row: &ConfigurationRecord,
     descriptor: Value,
+) -> Result<TaskFacts> {
+    let command = &row.data["command"];
+    let delivered=conn.query_row("SELECT e.content,json_extract(g.data,'$.digest') FROM turns t JOIN sessions s ON s.id=t.session_id JOIN conversation_events e ON e.turn_id=t.id AND e.session_id=s.id AND e.kind='user' JOIN governance_records g ON g.definition_id=t.id AND g.type IN ('configured_execution_task','archived_configured_execution_task') WHERE t.session_id=?1 AND t.client_message_id=?2 AND s.project_id=?3 ORDER BY e.rowid LIMIT 1",params![command["target"].as_str().unwrap_or(""),command["payload"]["client_message_id"].as_str().unwrap_or(""),row.scope.project_id()],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).optional().map_err(storage)?;
+    task_source_facts(conn, &row.scope, &row.definition_id, descriptor, delivered)
+}
+pub(super) fn task_source_facts(
+    conn: &Connection,
+    scope: &Scope,
+    execution: &str,
+    descriptor: Value,
+    delivered: Option<(String, String)>,
 ) -> Result<TaskFacts> {
     let source = &descriptor["source"];
     let instance_id = source["workflow_instance_id"]
@@ -126,11 +137,11 @@ fn task_facts(
     )?;
     require(
         instance.r#type == "workflow_instance"
-            && instance.scope == row.scope
-            && plan.scope == row.scope
+            && instance.scope == *scope
+            && plan.scope == *scope
             && plan.r#type == "workflow_plan_revision"
             && plan.data["instance_id"] == instance.id
-            && source["execution_id"] == row.definition_id,
+            && source["execution_id"] == execution,
         "任务原事实类型或范围不符",
     )?;
     let execution = source["execution_id"]
@@ -144,14 +155,10 @@ fn task_facts(
     } else {
         load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT id FROM governance_records WHERE type='workflow_execution_history' AND definition_id=?1 AND json_extract(data,'$.workflow_instance_id')=?2 ORDER BY rowid LIMIT 1)",&[&execution,&instance_id])?.into_iter().next().map(|v|{
             let history=ConfigurationRecord::from_storage(v)?;
-            require(history.scope==row.scope,"任务历史跨项目")?;
+            require(history.scope==*scope,"任务历史跨项目")?;
             history.decode()
         }).transpose()?
     };
-    // A delivered user body is the exact historical contract. Only the selected
-    // Session/client-message Turn and its authenticated task seal are inspected.
-    let command = &row.data["command"];
-    let delivered=conn.query_row("SELECT e.content,json_extract(g.data,'$.digest') FROM turns t JOIN sessions s ON s.id=t.session_id JOIN conversation_events e ON e.turn_id=t.id AND e.session_id=s.id AND e.kind='user' JOIN governance_records g ON g.definition_id=t.id AND g.type IN ('configured_execution_task','archived_configured_execution_task') WHERE t.session_id=?1 AND t.client_message_id=?2 AND s.project_id=?3 ORDER BY e.rowid LIMIT 1",params![command["target"].as_str().unwrap_or(""),command["payload"]["client_message_id"].as_str().unwrap_or(""),row.scope.project_id()],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).optional().map_err(storage)?;
     Ok(TaskFacts {
         descriptor,
         instance,
@@ -160,7 +167,7 @@ fn task_facts(
         delivered,
     })
 }
-fn restore_task(
+pub(super) fn restore_task(
     catalog: &ConfigurationCatalogSnapshot,
     facts: TaskFacts,
     memo: &mut std::collections::BTreeMap<String, Value>,

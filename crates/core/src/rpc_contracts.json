@@ -461,9 +461,7 @@
       "scope": "explicit",
       "precondition": "absence_and_dependencies",
       "sites": [
-        "crates/core/src/lib.rs",
-        "crates/host/src/governance.rs",
-        "crates/host/src/workspace.rs"
+        "crates/core/src/workspace_commands.rs"
       ]
     },
     {
@@ -805,7 +803,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/controllers.rs"
+        "crates/core/src/controller_lifecycle.rs"
       ]
     },
     {
@@ -814,8 +812,7 @@
       "scope": "explicit",
       "precondition": "absence_and_dependencies",
       "sites": [
-        "crates/core/src/controllers.rs",
-        "crates/core/src/workflow_driver.rs"
+        "crates/core/src/controller_lifecycle.rs"
       ]
     },
     {
@@ -824,8 +821,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/controllers.rs",
-        "crates/core/src/workflow_driver.rs"
+        "crates/core/src/controller_lifecycle.rs"
       ]
     },
     {
@@ -834,8 +830,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/controllers.rs",
-        "crates/core/src/orchestration.rs"
+        "crates/core/src/controller_lifecycle.rs"
       ]
     },
     {
@@ -1071,7 +1066,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/lib.rs"
+        "crates/core/src/workspace_commands.rs"
       ]
     },
     {
@@ -1080,7 +1075,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/proposals.rs"
+        "crates/core/src/proposal_commands.rs"
       ]
     },
     {
@@ -1089,7 +1084,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/proposals.rs"
+        "crates/core/src/proposal_commands.rs"
       ]
     },
     {
@@ -1098,7 +1093,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/proposals.rs"
+        "crates/core/src/proposal_commands.rs"
       ]
     },
     {
@@ -1107,7 +1102,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/proposals.rs"
+        "crates/core/src/proposal_commands.rs"
       ]
     },
     {
@@ -1116,7 +1111,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/proposals.rs"
+        "crates/core/src/proposal_commands.rs"
       ]
     },
     {
@@ -1842,8 +1837,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/repositories.rs",
-        "crates/host/src/github_projects.rs"
+        "crates/core/src/repository_runtime.rs"
       ]
     },
     {
@@ -1852,7 +1846,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/repositories.rs"
+        "crates/core/src/repository_runtime.rs"
       ]
     },
     {
@@ -1861,7 +1855,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/repositories.rs"
+        "crates/core/src/repository_runtime.rs"
       ]
     },
     {
@@ -2283,10 +2277,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/configured_runtime.rs",
-        "crates/core/src/controllers.rs",
-        "crates/core/src/orchestration.rs",
-        "crates/core/src/platform_tools.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2295,10 +2286,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/controllers.rs",
-        "crates/core/src/human_governance.rs",
-        "crates/core/src/orchestration.rs",
-        "crates/core/src/platform_tools.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2319,10 +2307,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/controllers.rs",
-        "crates/core/src/orchestration.rs",
-        "crates/core/src/platform_tools.rs",
-        "crates/core/src/workflow_driver.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2353,8 +2338,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/configured_workflows.rs",
-        "crates/host/src/governance.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2363,9 +2347,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/controllers.rs",
-        "crates/core/src/orchestration.rs",
-        "crates/core/src/platform_tools.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2374,8 +2356,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/human_governance.rs",
-        "crates/core/src/orchestration.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2384,8 +2365,7 @@
       "scope": "explicit",
       "precondition": "absence_and_dependencies",
       "sites": [
-        "crates/core/src/command_catalog.rs",
-        "crates/core/src/configured_workflows.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2394,8 +2374,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/command_catalog.rs",
-        "crates/core/src/configured_workflows.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2404,7 +2383,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/command_catalog.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2413,7 +2392,7 @@
       "scope": "explicit",
       "precondition": "root_revision_and_driver_epoch",
       "sites": [
-        "crates/core/src/workflow_driver.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2446,9 +2425,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/controllers.rs",
-        "crates/core/src/orchestration.rs",
-        "crates/core/src/platform_tools.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2457,9 +2434,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/controllers.rs",
-        "crates/core/src/orchestration.rs",
-        "crates/core/src/platform_tools.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2481,9 +2456,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/controllers.rs",
-        "crates/core/src/orchestration.rs",
-        "crates/core/src/platform_tools.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2506,10 +2479,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/configured_runtime.rs",
-        "crates/core/src/controllers.rs",
-        "crates/core/src/orchestration.rs",
-        "crates/core/src/platform_tools.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2529,10 +2499,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/configured_runtime.rs",
-        "crates/core/src/controllers.rs",
-        "crates/core/src/orchestration.rs",
-        "crates/core/src/platform_tools.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2541,9 +2508,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/controllers.rs",
-        "crates/core/src/orchestration.rs",
-        "crates/core/src/platform_tools.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2552,12 +2517,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/configured_runtime.rs",
-        "crates/core/src/controllers.rs",
-        "crates/core/src/human_governance.rs",
-        "crates/core/src/orchestration.rs",
-        "crates/core/src/platform_tools.rs",
-        "crates/host/src/workspace.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2566,11 +2526,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/controllers.rs",
-        "crates/core/src/orchestration.rs",
-        "crates/core/src/platform_tools.rs",
-        "crates/core/src/workflow_changes.rs",
-        "crates/core/src/workflow_driver.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2579,10 +2535,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/configured_runtime.rs",
-        "crates/core/src/controllers.rs",
-        "crates/core/src/human_governance.rs",
-        "crates/core/src/orchestration.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2591,10 +2544,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/configured_runtime.rs",
-        "crates/core/src/controllers.rs",
-        "crates/core/src/human_governance.rs",
-        "crates/core/src/orchestration.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2603,11 +2553,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/controllers.rs",
-        "crates/core/src/orchestration.rs",
-        "crates/core/src/platform_tools.rs",
-        "crates/core/src/workflow_changes.rs",
-        "crates/core/src/workflow_driver.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2616,11 +2562,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/configured_runtime.rs",
-        "crates/core/src/controllers.rs",
-        "crates/core/src/human_governance.rs",
-        "crates/core/src/orchestration.rs",
-        "crates/core/src/platform_tools.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2629,9 +2571,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/configured_runtime.rs",
-        "crates/core/src/controllers.rs",
-        "crates/core/src/orchestration.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2640,11 +2580,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/configured_runtime.rs",
-        "crates/core/src/controllers.rs",
-        "crates/core/src/orchestration.rs",
-        "crates/core/src/platform_tools.rs",
-        "crates/core/src/workflow_driver.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2653,10 +2589,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/configured_runtime.rs",
-        "crates/core/src/controllers.rs",
-        "crates/core/src/orchestration.rs",
-        "crates/core/src/platform_tools.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2674,11 +2607,7 @@
       "scope": "explicit",
       "precondition": "resource_read_set",
       "sites": [
-        "crates/core/src/configured_runtime.rs",
-        "crates/core/src/integrations.rs",
-        "crates/core/src/platform_tools.rs",
-        "crates/host/src/governance.rs",
-        "crates/host/src/integrations.rs"
+        "crates/core/src/workflow_controls.rs"
       ]
     },
     {
@@ -2701,7 +2630,6 @@
     }
   ],
   "non_methods": [
-    "project.reserve",
     "configuration.changed",
     "configuration.global.write",
     "context.revised",
@@ -2711,7 +2639,11 @@
     "experience.imported",
     "harness.native",
     "project.read",
+    "project.reserve",
     "query.work_",
+    "query.workflow.change.preview",
+    "query.workflow.completion",
+    "query.workflow.readiness",
     "repository.completed",
     "repository.dispatched",
     "repository.needs_reconciliation",
@@ -2727,6 +2659,14 @@
     "runtime.rust_driver",
     "runtime.step_checkpoint",
     "workflow.changed",
+    "runtime.controller.observe",
+    "runtime.task.worktree",
+    "runtime.workflow.change.activate",
+    "runtime.workflow.change.quiesce",
+    "runtime.workflow.observe",
+    "runtime.workflow.reconciliation",
+    "runtime.workflow.rule_hint",
+    "runtime.workflow.status",
     "workflow.compile",
     "workflow.decision",
     "workflow.driver.selected",

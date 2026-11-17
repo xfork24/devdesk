@@ -188,10 +188,13 @@ impl Engine {
                     None
                 };
                 let mut profile = PermissionProfile {
-                    scope: old
-                        .as_ref()
-                        .map(|p| p.scope.clone())
-                        .unwrap_or(Scope::global()),
+                    scope: old.as_ref().map(|p| p.scope.clone()).unwrap_or_else(|| {
+                        self.store
+                            .project_id()
+                            .as_deref()
+                            .map(Scope::project)
+                            .unwrap_or_else(Scope::global)
+                    }),
                     schema_version: 2,
                     id: String::new(),
                     identity: match &old {
@@ -234,12 +237,6 @@ impl Engine {
 
 /// Apply prevalidated target contracts in the caller's transaction.
 pub fn apply_permission_bindings(s: &mut EngineeringState, changes: &[Value]) -> Result<Value> {
-    if !changes.is_empty() {
-        crate::configuration_transfers::configuration_transfer_guard(
-            s,
-            "permission.bindings.apply",
-        )?;
-    }
     let mut seen = std::collections::BTreeSet::new();
     let mut result = Vec::new();
     for change in changes {

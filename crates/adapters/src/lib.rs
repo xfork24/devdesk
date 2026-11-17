@@ -4,6 +4,7 @@ mod configuration_cache;
 mod connection_pool;
 mod execution_read;
 mod experience_directory;
+mod named_artifacts;
 pub mod performance;
 mod read_models;
 mod repository_contexts;
@@ -12,12 +13,24 @@ mod runtime_queries;
 mod scheduling_read;
 mod store_changes;
 mod tool_calls;
+mod workflow_details;
+mod workflow_events;
 mod workflow_intents;
+mod workflow_observations;
+mod workflow_projection;
+mod workflow_readers;
 pub use configuration_backend::ConfigurationBackend;
+mod context_calls;
+mod conversation_captures;
+mod conversation_queries;
+mod conversation_reads;
+mod conversation_sources;
 mod factory_bundle;
+mod project_records;
 pub mod session_resources;
 mod source_store;
 mod source_views;
+mod workspace_read;
 pub use source_views::runtime_digest;
 pub mod codex_auth;
 pub mod credentials;
@@ -48,7 +61,7 @@ pub use catalog::GlobalStore;
 use devdesk_core::*;
 use devdesk_domain::*;
 pub use runtime_registry::configuration_digest;
-const PROJECT_SCHEMA_VERSION: u32 = 57;
+const PROJECT_SCHEMA_VERSION: u32 = 59;
 use rusqlite::{
     Connection,
     types::{Value as SqlValue, ValueRef},
@@ -66,7 +79,6 @@ fn storage(e: impl std::fmt::Display) -> Error {
 }
 pub struct SqliteStore {
     connection: connection_pool::ConnectionPool,
-    writer: Mutex<()>,
     source_views: Mutex<std::collections::BTreeMap<String, Value>>,
     catalog_cache: configuration_cache::CatalogCache,
     changes: store_changes::StoreChanges,
@@ -96,7 +108,6 @@ impl SqliteStore {
                 &root.join("engineering.sqlite3"),
                 connection,
             )?,
-            writer: Mutex::new(()),
             source_views: Mutex::new(Default::default()),
             catalog_cache: Default::default(),
             changes: Default::default(),
@@ -105,15 +116,30 @@ impl SqliteStore {
             project_id: None,
         })
     }
+    /// Flat, isolated project root for offline legacy fixtures. Production must
+    /// use the explicit per-project path and reserved project identity.
+    #[cfg(feature = "test-fixtures")]
+    pub fn open_fixture(path: &Path) -> Result<Self> {
+        let mut store = Self::open(path)?;
+        let projects = load_table::<Project>(&*store.connection.read()?, "projects")?;
+        require(projects.len() <= 1, "离线测试根只能包含一个项目")?;
+        store.project_id = Some(
+            projects
+                .first()
+                .map(|p| p.id.clone())
+                .unwrap_or_else(devdesk_core::id),
+        );
+        Ok(store)
+    }
     pub fn open_project(data_root: &Path, project_id: &str) -> Result<Self> {
         let root = Self::project_path(data_root, project_id)?;
         let parent = data_root.join("projects");
         fs::create_dir_all(&parent).map_err(storage)?;
         let mut store = Self::open(&root)?;
         store.project_id = Some(project_id.into());
-        let state = store.snapshot()?;
+        let projects = load_table::<Project>(&*store.connection.read()?, "projects")?;
         require(
-            state.projects.iter().all(|p| p.id == project_id) && state.projects.len() <= 1,
+            projects.len() <= 1 && projects.iter().all(|p| p.id == project_id),
             "项目数据库身份不匹配",
         )?;
         Ok(store)
@@ -159,6 +185,9 @@ impl SqliteStore {
     }
     pub fn read_global_discussion_snapshot(data_root: &Path) -> Result<EngineeringState> {
         let path = Self::global_discussion_path(data_root)?.join("engineering.sqlite3");
+        if !path.is_file() {
+            return Ok(EngineeringState::default());
+        }
         let conn = connection_pool::ManagedConnection::read_only(&path)?;
         conn.execute_batch("BEGIN;").map_err(storage)?;
         Self::load(&conn)
@@ -260,7 +289,24 @@ impl SqliteStore {
         source_store::restore_records(&mut s, memo)?;
         Ok(s)
     }
+    #[cfg(any(test, feature = "test-fixtures"))]
     fn save(conn: &Connection, s: &EngineeringState, before: &EngineeringState) -> Result<()> {
+        // Even offline fixture seeding must not overwrite a concurrent native
+        // resource commit made after its original snapshot.
+        guard_fixture_revisions(conn, "turn", &s.turns, &before.turns)?;
+        guard_fixture_revisions(conn, "session", &s.sessions, &before.sessions)?;
+        guard_fixture_revisions(conn, "interaction", &s.interactions, &before.interactions)?;
+        guard_fixture_revisions(conn, "project", &s.projects, &before.projects)?;
+        guard_fixture_revisions(conn, "feature", &s.features, &before.features)?;
+        guard_fixture_revisions(conn, "task", &s.tasks, &before.tasks)?;
+        guard_fixture_revisions(conn, "context", &s.contexts, &before.contexts)?;
+        guard_fixture_revisions(conn, "proposal", &s.proposals, &before.proposals)?;
+        guard_fixture_revisions(
+            conn,
+            "repository_operation",
+            &s.repository_operations,
+            &before.repository_operations,
+        )?;
         save_table(
             conn,
             "orchestration_wakeups",
@@ -350,6 +396,13 @@ impl SqliteStore {
         save_table(conn, "heads", &s.heads, &before.heads)?;
         save_table(conn, "artifacts", &s.artifacts, &before.artifacts)?;
         append_events(conn, &s.events, &before.events)?;
+        for row in s
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "workflow_instance")
+        {
+            workflow_projection::refresh_root(conn, &row.id)?;
+        }
         Ok(())
     }
 }
@@ -428,6 +481,9 @@ fn open_engineering_connection(path: &Path) -> Result<connection_pool::ManagedCo
         version == 0 || version == PROJECT_SCHEMA_VERSION,
         "数据集协议不兼容；请使用新的空数据目录",
     )?;
+    if version != 0 {
+        check_dataset_layout(&connection)?;
+    }
     connection
         .execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")
         .map_err(storage)?;
@@ -438,6 +494,19 @@ fn open_engineering_connection(path: &Path) -> Result<connection_pool::ManagedCo
     }
 
     Ok(connection)
+}
+
+fn check_dataset_layout(conn: &Connection) -> Result<()> {
+    let layout = conn.query_row("SELECT contract FROM dataset_layout WHERE id=1", [], |r| {
+        r.get::<_, String>(0)
+    });
+    if !layout.is_ok_and(|v| v == "single-host-resource-v2") {
+        return Err(err(
+            "incompatible_dataset",
+            "数据集资源协议不兼容；保留原数据并使用新的空数据目录",
+        ));
+    }
+    Ok(())
 }
 
 fn columns(conn: &Connection, table: &str) -> Result<Vec<(String, String)>> {
@@ -516,6 +585,75 @@ fn load_table_filtered_params<T: DeserializeOwned>(
     rows.map(|v| serde_json::from_value(v.map_err(storage)?).map_err(storage))
         .collect()
 }
+#[cfg(any(test, feature = "test-fixtures"))]
+fn normalize_fixture_revisions<T: Serialize + DeserializeOwned>(
+    items: &mut [T],
+    before: &[T],
+) -> Result<()> {
+    let previous = before
+        .iter()
+        .map(|r| serde_json::to_value(r).map_err(storage))
+        .collect::<Result<Vec<_>>>()?;
+    for item in items {
+        let mut value = serde_json::to_value(&*item).map_err(storage)?;
+        let old = previous.iter().find(|r| r["id"] == value["id"]);
+        if old == Some(&value) {
+            continue;
+        }
+        let revision = old.and_then(|r| r["revision"].as_u64()).unwrap_or(0);
+        if value["revision"].as_u64().unwrap_or(0) <= revision {
+            value["revision"] = json!(revision + 1);
+            *item = serde_json::from_value(value).map_err(storage)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(any(test, feature = "test-fixtures"))]
+fn guard_fixture_revisions<T: Serialize>(
+    conn: &Connection,
+    kind: &str,
+    items: &[T],
+    before: &[T],
+) -> Result<()> {
+    let previous = before
+        .iter()
+        .map(|row| {
+            let value = serde_json::to_value(row).map_err(storage)?;
+            Ok((value["id"].as_str().unwrap_or_default().to_owned(), value))
+        })
+        .collect::<Result<std::collections::BTreeMap<_, _>>>()?;
+    for row in items {
+        let value = serde_json::to_value(row).map_err(storage)?;
+        let id = value["id"]
+            .as_str()
+            .ok_or_else(|| err("storage", "会话事实缺少身份"))?;
+        let old = previous.get(id);
+        if old == Some(&value) {
+            continue;
+        }
+        if kind == "session" && value["scope"].is_null() {
+            continue;
+        }
+        let revision = old.and_then(|r| r["revision"].as_u64()).unwrap_or(0);
+        require(
+            value["revision"]
+                .as_u64()
+                .is_some_and(|next| next > revision),
+            "会话事实变化必须推进原版本",
+        )?;
+        resource_commits::verify_read_set(
+            conn,
+            &concurrency::ReadSet::new(vec![concurrency::ResourceVersion {
+                resource: concurrency::ResourceKey::new(kind, id),
+                revision,
+            }])?,
+        )?;
+    }
+    Ok(())
+}
+
+#[cfg(any(test, feature = "test-fixtures"))]
 fn save_table<T: Serialize>(
     conn: &Connection,
     table: &str,
@@ -582,6 +720,7 @@ fn save_table<T: Serialize>(
     Ok(())
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 fn append_events(conn: &Connection, events: &[Event], before: &[Event]) -> Result<()> {
     require(events.starts_with(before), "事件历史只能追加")?;
     let mut statement = conn
@@ -601,7 +740,135 @@ fn append_events(conn: &Connection, events: &[Event], before: &[Event]) -> Resul
     }
     Ok(())
 }
+impl SqliteStore {
+    // Offline fixture setup is feature gated and never called by Host commands.
+    #[cfg(feature = "test-fixtures")]
+    fn fixture_transaction(
+        &self,
+        key: Option<(&str, &str)>,
+        guards: Option<&concurrency::ReadSet>,
+        action: &mut dyn FnMut(&mut EngineeringState) -> Result<Value>,
+    ) -> Result<Value> {
+        if let Some(guards) = guards {
+            guards.validate()?;
+        }
+        let _span = performance::Span::new("project.transaction");
+        let conn = self.connection.lock().map_err(storage)?;
+        if let Some((id, fp)) = key {
+            let mut q = conn
+                .prepare("SELECT fingerprint,CAST(result AS TEXT) FROM operations WHERE id=?1")
+                .map_err(storage)?;
+            let mut rows = q.query([id]).map_err(storage)?;
+            if let Some(row) = rows.next().map_err(storage)? {
+                let saved: String = row.get(0).map_err(storage)?;
+                require(saved == fp, "command_id 被不同参数复用")?;
+                let result: String = row.get(1).map_err(storage)?;
+                return source_views::restore(
+                    &self.load_cached(&conn)?,
+                    &serde_json::from_str(&result).map_err(storage)?,
+                );
+            }
+        }
+        conn.execute_batch("BEGIN;").map_err(storage)?;
+        let mut state = self.load_cached(&conn)?;
+        let execution_versions = {
+            let mut query = conn
+                .prepare_cached(
+                    "SELECT resource_id,revision FROM resource_versions WHERE kind='execution'",
+                )
+                .map_err(storage)?;
+            query
+                .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u64>(1)?)))
+                .map_err(storage)?
+                .collect::<rusqlite::Result<std::collections::HashMap<_, _>>>()
+                .map_err(storage)?
+        };
+        conn.execute_batch("COMMIT;").map_err(storage)?;
+        let before = state.clone();
+        drop(conn);
+        let result = action(&mut state)?;
+        normalize_fixture_revisions(&mut state.projects, &before.projects)?;
+        normalize_fixture_revisions(&mut state.features, &before.features)?;
+        normalize_fixture_revisions(&mut state.tasks, &before.tasks)?;
+        normalize_fixture_revisions(&mut state.contexts, &before.contexts)?;
+        normalize_fixture_revisions(&mut state.sessions, &before.sessions)?;
+        normalize_fixture_revisions(&mut state.turns, &before.turns)?;
+        normalize_fixture_revisions(&mut state.interactions, &before.interactions)?;
+        normalize_fixture_revisions(&mut state.proposals, &before.proposals)?;
+        normalize_fixture_revisions(
+            &mut state.repository_operations,
+            &before.repository_operations,
+        )?;
+
+        let changed = serde_json::to_vec(&before).map_err(storage)?
+            != serde_json::to_vec(&state).map_err(storage)?;
+        // Idle observations cannot introduce a new invalid state. Avoid parsing
+        // and hashing every historical task/plan again on each empty poll.
+        if changed {
+            state.validate_governance(&before)?;
+            state.validate_conversations(&before)?;
+        }
+        if let Some(id) = &self.project_id {
+            require(
+                state.projects.len() <= 1 && state.projects.iter().all(|p| &p.id == id),
+                "项目数据库不能写入其他项目",
+            )?;
+        }
+        let mut conn = self.connection.lock().map_err(storage)?;
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        if let Some(guards) = guards {
+            resource_commits::verify_read_set(&tx, guards)?;
+        }
+        if changed {
+            let old = before
+                .executions
+                .iter()
+                .map(|e| (&e.id, e))
+                .collect::<std::collections::HashMap<_, _>>();
+            let mut versions = Vec::new();
+            for next in &state.executions {
+                if old.get(&next.id).is_some_and(|prior| *prior == next) {
+                    continue;
+                }
+                let revision = if old.contains_key(&next.id) {
+                    *execution_versions
+                        .get(&next.id)
+                        .ok_or_else(|| err("storage", "原 worker 缺少技术版本"))?
+                } else {
+                    0
+                };
+                versions.push(concurrency::ResourceVersion {
+                    resource: concurrency::ResourceKey::new("execution", &next.id),
+                    revision,
+                });
+            }
+            resource_commits::verify_read_set(&tx, &concurrency::ReadSet::new(versions)?)?;
+            Self::save(&tx, &state, &before)?;
+        }
+        if let Some((id, fp)) = key {
+            tx.execute(
+                "INSERT INTO operations(id,fingerprint,result) VALUES(?1,?2,?3)",
+                rusqlite::params![id, fp, source_views::pack(&state, &result)?.to_string()],
+            )
+            .map_err(storage)?;
+        }
+        tx.commit().map_err(storage)?;
+        if catalog_changed(&before, &state) {
+            self.catalog_cache.invalidate()?;
+        }
+        drop(conn);
+        if changed {
+            self.changes.notify();
+        }
+        Ok(result)
+    }
+}
 impl EngineeringStore for SqliteStore {
+    fn workspace_reading(&self, p: &Value) -> Result<Value> {
+        workspace_read::read(self, p)
+    }
     fn replay_commit(
         &self,
         command_id: &str,
@@ -630,7 +897,10 @@ impl EngineeringStore for SqliteStore {
                     require(
                         scope.project_id() == Some(project.as_str())
                             || (scope.is_global() && catalog),
-                        "项目数据库不能提交其他项目或全局的运行事实",
+                        format!(
+                            "项目数据库不能提交其他项目或全局的运行事实：{} {}（{:?}）",
+                            change.value["type"], change.resource.id, scope
+                        ),
                     )?;
                     if !catalog {
                         require(
@@ -721,6 +991,60 @@ impl EngineeringStore for SqliteStore {
             id,
             stage_offset,
         )
+    }
+    fn workflow_detail(
+        &self,
+        query: &devdesk_core::read_models::WorkflowDetailQuery,
+    ) -> Result<Option<devdesk_core::read_models::WorkflowDetailFacts>> {
+        workflow_details::with_catalog(self, |catalog| {
+            workflow_details::detail(
+                &self.connection,
+                catalog,
+                self.project_id
+                    .as_deref()
+                    .ok_or_else(|| err("project_required", "流程详情需要项目"))?,
+                query,
+            )
+        })
+    }
+    fn execution_task_detail(&self, turn: &str) -> Result<Option<Value>> {
+        workflow_details::with_catalog(self, |catalog| {
+            workflow_details::task(
+                &self.connection,
+                catalog,
+                self.project_id
+                    .as_deref()
+                    .ok_or_else(|| err("project_required", "冻结任务需要项目"))?,
+                turn,
+            )
+        })
+    }
+    fn project_records(&self, method: &str, params: &Value) -> Result<Value> {
+        workflow_details::with_catalog(self, |catalog| {
+            project_records::read(&self.connection, catalog, method, params)
+        })
+    }
+    fn conversation_query(&self, method: &str, params: &Value) -> Result<Value> {
+        workflow_details::with_catalog(self, |catalog| {
+            conversation_queries::query(&self.connection, catalog, method, params)
+        })
+    }
+    fn workflow_reading(
+        &self,
+        view: devdesk_core::read_models::WorkflowReadingView,
+        params: &Value,
+    ) -> Result<Value> {
+        workflow_details::with_catalog(self, |catalog| {
+            workflow_readers::read(
+                &self.connection,
+                catalog,
+                self.project_id
+                    .as_deref()
+                    .ok_or_else(|| err("project_required", "流程读取需要项目"))?,
+                view,
+                params,
+            )
+        })
     }
     fn observe_query(&self, stage: &'static str) -> Box<dyn ports::QueryObservation> {
         performance::observe(stage)
@@ -815,6 +1139,125 @@ impl EngineeringStore for SqliteStore {
     fn has_pending_tool_calls(&self) -> Result<bool> {
         store_changes::pending_tools(&*self.connection.read()?)
     }
+    fn provider_tool_intent_page(
+        &self,
+        after: Option<&str>,
+    ) -> Result<devdesk_core::tool_calls::ToolCallPage> {
+        tool_calls::provider_intents(&self.connection, after)
+    }
+    fn provider_poll_page(
+        &self,
+        after: Option<&str>,
+    ) -> Result<devdesk_core::tool_calls::ToolCallPage> {
+        tool_calls::provider_polls(&self.connection, after)
+    }
+    fn conversation_capture_page(
+        &self,
+        after: Option<&str>,
+    ) -> Result<devdesk_core::tool_calls::ToolCallPage> {
+        conversation_captures::page(&self.connection, after)
+    }
+    fn conversation_capture_facts(
+        &self,
+        session: &Session,
+        turn: &str,
+        terminal: &str,
+        worker_boundary: u64,
+    ) -> Result<devdesk_core::ConversationCaptureFacts> {
+        conversation_captures::facts(&self.connection, session, turn, terminal, worker_boundary)
+    }
+    fn conversation_input_facts(
+        &self,
+        session: &Session,
+    ) -> Result<devdesk_core::ConversationCaptureFacts> {
+        conversation_captures::input(&self.connection, session)
+    }
+    fn conversation_page(
+        &self,
+        queued: bool,
+        after: Option<&str>,
+    ) -> Result<devdesk_core::tool_calls::ToolCallPage> {
+        conversation_reads::page(&self.connection, queued, after)
+    }
+    fn conversation_answers_pending(&self, turn: &str) -> Result<Vec<PendingInteraction>> {
+        conversation_reads::answers(&self.connection, turn)
+    }
+    fn conversation_runtime_facts(
+        &self,
+        turn: &str,
+    ) -> Result<Option<devdesk_core::ConversationRuntimeFacts>> {
+        for _ in 0..2 {
+            let catalog = self.configuration_snapshot()?;
+            match conversation_reads::runtime(&self.connection, &catalog, turn) {
+                Err(error) if error.code == "catalog_refresh_required" => continue,
+                result => return result,
+            }
+        }
+        Err(err("revision_conflict", "会话引用的源目录持续变化，请重读"))
+    }
+    fn conversation_start_source(
+        &self,
+        turn: &str,
+    ) -> Result<devdesk_core::ConversationStartSource> {
+        for _ in 0..2 {
+            let catalog = self.configuration_snapshot()?;
+            match conversation_sources::source(&self.connection, &catalog, turn) {
+                Err(error) if error.code == "catalog_refresh_required" => continue,
+                result => return result,
+            }
+        }
+        Err(err(
+            "revision_conflict",
+            "冻结派发引用的源目录持续变化，请重读",
+        ))
+    }
+    fn context_call_page(
+        &self,
+        after: Option<&str>,
+    ) -> Result<devdesk_core::tool_calls::ToolCallPage> {
+        context_calls::page(&self.connection, after)
+    }
+    fn context_call_facts(&self, id: &str) -> Result<devdesk_core::ContextCallFacts> {
+        for _ in 0..2 {
+            let catalog = self.configuration_snapshot()?;
+            match context_calls::facts(&self.connection, &catalog, id) {
+                Err(error) if error.code == "catalog_refresh_required" => continue,
+                result => return result,
+            }
+        }
+        Err(err("revision_conflict", "上下文源目录持续变化，请重读"))
+    }
+    fn platform_calls_pending(&self) -> Result<bool> {
+        let conn = self.connection.read()?;
+        conn.query_row("SELECT EXISTS(SELECT 1 FROM governance_records INDEXED BY idx_platform_call_active WHERE type='platform_call' AND json_extract(data,'$.status') IN ('prepared','running')) OR EXISTS(SELECT 1 FROM governance_records r WHERE r.type='agent_platform_request' AND NOT EXISTS(SELECT 1 FROM governance_records p WHERE p.type='platform_tool_reply' AND p.definition_id=json_extract(r.data,'$.request.execution_id')) AND (EXISTS(SELECT 1 FROM governance_records c WHERE c.id=json_extract(r.data,'$.request.execution_id') AND c.type='platform_call' AND json_extract(c.data,'$.status') IN ('succeeded','failed','cancelled','needs_reconciliation')) OR EXISTS(SELECT 1 FROM governance_records i WHERE i.type='workflow_intent' AND json_extract(i.data,'$.status')='failed' AND json_extract(i.data,'$.command.payload.agent_platform_call_id')=json_extract(r.data,'$.request.execution_id'))))",[],|r|r.get(0)).map_err(storage)
+    }
+    fn runtime_record_page(
+        &self,
+        kind: &str,
+        status: &str,
+        after: Option<&str>,
+    ) -> Result<devdesk_core::tool_calls::ToolCallPage> {
+        let conn = self.connection.read()?;
+        let sql = if kind == "workflow_driver" {
+            "SELECT id FROM governance_records WHERE type=?1 AND json_extract(data,'$.mode')=?2 AND id>?3 ORDER BY id LIMIT 17"
+        } else {
+            "SELECT id FROM governance_records INDEXED BY idx_runtime_work_seek WHERE type=?1 AND json_extract(data,'$.status')=?2 AND id>?3 ORDER BY id LIMIT 17"
+        };
+        let mut q = conn.prepare_cached(sql).map_err(storage)?;
+        let mut ids = q
+            .query_map(rusqlite::params![kind, status, after.unwrap_or("")], |r| {
+                r.get::<_, String>(0)
+            })
+            .map_err(storage)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(storage)?;
+        let more = ids.len() > 16;
+        ids.truncate(16);
+        Ok(devdesk_core::tool_calls::ToolCallPage {
+            next_after: more.then(|| ids.last().unwrap().clone()),
+            ids,
+        })
+    }
     fn tool_call_page(
         &self,
         after: Option<&str>,
@@ -852,6 +1295,32 @@ impl EngineeringStore for SqliteStore {
     }
     fn encode_runtime_record(&self, record: &ConfigurationRecord) -> Result<Value> {
         tool_calls::encode(self.configuration_snapshot()?.as_ref(), record)
+    }
+    fn encode_configuration_record(
+        &self,
+        catalog: &ConfigurationCatalogSnapshot,
+        record: &ConfigurationRecord,
+    ) -> Result<Value> {
+        Ok(source_store::pack_record(&catalog.state, record)?.to_storage())
+    }
+    fn encode_configuration_value(
+        &self,
+        catalog: &ConfigurationCatalogSnapshot,
+        value: &Value,
+    ) -> Result<Value> {
+        source_views::pack(&catalog.state, value)
+    }
+    fn restore_runtime_value(&self, value: &Value) -> Result<Value> {
+        source_views::restore(&self.configuration_snapshot()?.state, value)
+    }
+    fn encode_runtime_value(&self, value: &Value) -> Result<Value> {
+        source_views::pack(&self.configuration_snapshot()?.state, value)
+    }
+    fn encode_execution_task(&self, task: &ConfiguredAgentTask) -> Result<(Value, String)> {
+        source_views::encode_task(self.configuration_snapshot()?.as_ref(), task)
+    }
+    fn encode_workflow_input_intent(&self, record: &ConfigurationRecord) -> Result<Value> {
+        source_views::encode_workflow_input_intent(self.configuration_snapshot()?.as_ref(), record)
     }
     fn restore_runtime_record(&self, value: &Value) -> Result<Value> {
         tool_calls::restore(self.configuration_snapshot()?.as_ref(), value)
@@ -906,74 +1375,13 @@ impl EngineeringStore for SqliteStore {
         conn.execute_batch("COMMIT;").map_err(storage)?;
         Ok(state)
     }
-    fn transact(
+    #[cfg(feature = "test-fixtures")]
+    fn seed_fixture_state(
         &self,
         key: Option<(&str, &str)>,
         action: &mut dyn FnMut(&mut EngineeringState) -> Result<Value>,
     ) -> Result<Value> {
-        let _span = performance::Span::new("project.transaction");
-        // Serialize writers, but release the DB connection and transaction during
-        // adapter calls. Read-only queries remain available while an adapter polls.
-        let _writer = self.writer.lock().map_err(storage)?;
-        let conn = self.connection.lock().map_err(storage)?;
-        if let Some((id, fp)) = key {
-            let mut q = conn
-                .prepare("SELECT fingerprint,CAST(result AS TEXT) FROM operations WHERE id=?1")
-                .map_err(storage)?;
-            let mut rows = q.query([id]).map_err(storage)?;
-            if let Some(row) = rows.next().map_err(storage)? {
-                let saved: String = row.get(0).map_err(storage)?;
-                require(saved == fp, "command_id 被不同参数复用")?;
-                let result: String = row.get(1).map_err(storage)?;
-                return source_views::restore(
-                    &self.load_cached(&conn)?,
-                    &serde_json::from_str(&result).map_err(storage)?,
-                );
-            }
-        }
-        let mut state = self.load_cached(&conn)?;
-        let before = state.clone();
-        drop(conn);
-        let result = action(&mut state)?;
-        append_workflow_events(&before, &mut state);
-        let changed = serde_json::to_vec(&before).map_err(storage)?
-            != serde_json::to_vec(&state).map_err(storage)?;
-        // Idle observations cannot introduce a new invalid state. Avoid parsing
-        // and hashing every historical task/plan again on each empty poll.
-        if changed {
-            state.validate_governance(&before)?;
-            state.validate_conversations(&before)?;
-        }
-        if let Some(id) = &self.project_id {
-            require(
-                state.projects.len() <= 1 && state.projects.iter().all(|p| &p.id == id),
-                "项目数据库不能写入其他项目",
-            )?;
-        }
-        let mut conn = self.connection.lock().map_err(storage)?;
-        let tx = conn
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-            .map_err(storage)?;
-        if changed {
-            Self::save(&tx, &state, &before)?;
-        }
-        if let Some((id, fp)) = key {
-            tx.execute(
-                "INSERT INTO operations(id,fingerprint,result) VALUES(?1,?2,?3)",
-                rusqlite::params![id, fp, source_views::pack(&state, &result)?.to_string()],
-            )
-            .map_err(storage)?;
-        }
-        tx.commit().map_err(storage)?;
-        if catalog_changed(&before, &state) {
-            self.catalog_cache.invalidate()?;
-        }
-        drop(conn);
-        drop(_writer);
-        if changed {
-            self.changes.notify();
-        }
-        Ok(result)
+        self.fixture_transaction(key, None, action)
     }
 }
 fn reject_symlink(path: &Path) -> Result<()> {
@@ -1008,6 +1416,12 @@ impl FileArtifacts {
     }
 }
 impl ArtifactStore for FileArtifacts {
+    fn seal_prepared(&self, seal: &ArtifactSeal, body: &str) -> Result<Artifact> {
+        named_artifacts::seal(&self.root, seal, body)
+    }
+    fn inspect_prepared(&self, seal: &ArtifactSeal) -> Result<Option<Artifact>> {
+        named_artifacts::inspect(&self.root, seal)
+    }
     fn seal(
         &self,
         feature: &str,

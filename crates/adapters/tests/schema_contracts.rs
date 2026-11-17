@@ -54,7 +54,7 @@ fn all_published_schemas_and_definitions_resolve_offline() {
 #[test]
 fn published_configuration_wrappers_accept_current_builtin_revisions() {
     let dir = tempfile::tempdir().unwrap();
-    let store = Arc::new(SqliteStore::open(dir.path()).unwrap());
+    let store = Arc::new(SqliteStore::open_fixture(dir.path()).unwrap());
     let engine = Engine::new(
         store,
         Arc::new(FileArtifacts::new(dir.path().into())),
@@ -569,7 +569,7 @@ fn configuration_schemas_cover_stage_intent_capability_and_standard_snapshot() {
     SCHEMAS.assert_valid("project-configuration.schema.json", &project);
     let dir = tempfile::tempdir().unwrap();
     let e = Engine::new(
-        Arc::new(SqliteStore::open(dir.path()).unwrap()),
+        Arc::new(SqliteStore::open_fixture(dir.path()).unwrap()),
         Arc::new(FileArtifacts::new(dir.path().into())),
         runtime::adapters(),
     );
@@ -694,12 +694,12 @@ fn configuration_change_contracts_cover_sources_operations_and_precise_edges() {
 fn workflow_action_eligibility_has_a_published_bounded_shape() {
     let ready = devdesk_core::WorkflowActionEligibility {
         allowed: true,
-        code: "ready",
+        code: "ready".into(),
         reason: String::new(),
     };
     let blocked = devdesk_core::WorkflowActionEligibility {
         allowed: false,
-        code: "foreach_capacity",
+        code: "foreach_capacity".into(),
         reason: "子流程并发已满".into(),
     };
     SCHEMAS.assert_valid(&definition("WorkflowActionEligibility"), &json!(ready));

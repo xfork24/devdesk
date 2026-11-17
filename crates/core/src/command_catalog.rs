@@ -35,8 +35,7 @@ pub fn template_definition_write(method: &str) -> bool {
 pub fn template_catalog_query(method: &str) -> bool {
     matches!(
         method,
-        "query.workspace"
-            | "query.project_configuration"
+        "query.project_configuration"
             | "query.configurations"
             | "query.roles"
             | "query.capabilities"

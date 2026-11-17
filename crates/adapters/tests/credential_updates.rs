@@ -330,13 +330,32 @@ fn a_provider_change_during_vault_io_fences_publication_and_preserves_the_old_bi
         .read_resources(&[binding_key("minimax-cn")])
         .unwrap()
         .remove(0);
-    let path = root.path().join("global.sqlite3");
-    let source = provider.clone();
+    let publisher = store.clone();
+    let original_source = store
+        .read_resources(&[ResourceKey::new("source", &provider)])
+        .unwrap()
+        .remove(0);
+    let mut successor = original_source.value.unwrap();
+    successor["revision"] = json!(2);
+    let successor_id = format!("{}:2", successor["identity"].as_str().unwrap());
+    let head = ResourceKey::new("source_head", successor["identity"].as_str().unwrap());
+    let source = ResourceKey::new("source", successor_id);
     *vault.after_store.lock().unwrap() = Some(Box::new(move || {
-        let connection = rusqlite::Connection::open(path).unwrap();
-        // Immutable-source publication fault fixture, deliberately interleaved
-        // after the external candidate is stored and before the final commit.
-        connection.execute("INSERT INTO source_definitions(identity,revision,type,name,scope,refs,data) SELECT identity,revision+1,type,name,scope,refs,data FROM source_definitions WHERE reference=?1",[source]).unwrap();
+        // Real immutable-source publication interleaved after the vault candidate
+        // is stored and before the original credential dependencies are committed.
+        publisher.commit_changes(&PreparedChangeSet {
+            command_id: "interleaved-provider-publication".into(),
+            fingerprint: configuration_hash(&successor),
+            read_set: ReadSet::new(vec![
+                ResourceVersion { resource: head.clone(), revision: 1 },
+                ResourceVersion { resource: source.clone(), revision: 0 },
+            ]).unwrap(),
+            changes: vec![
+                ResourceChange { resource: source, value: successor.clone() },
+                ResourceChange { resource: head, value: json!({"reference":format!("{}:2", successor["identity"].as_str().unwrap()),"revision":2}) },
+            ],
+            result: json!({"revision":2}), time: 1,
+        }).unwrap();
     }));
     assert_eq!(
         configure(
@@ -376,7 +395,7 @@ fn credential_publication_does_not_wait_for_the_legacy_writer_or_restore_catalog
     let (release_tx, release_rx) = mpsc::channel();
     let writer = store.clone();
     let thread = std::thread::spawn(move || {
-        writer.transact(None, &mut |_| {
+        writer.seed_fixture_state(None, &mut |_| {
             ready_tx.send(()).unwrap();
             release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
             Ok(json!(null))

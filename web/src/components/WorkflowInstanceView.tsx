@@ -23,6 +23,7 @@ type ActionBaseline = {
   revision: number;
   planRevision: string;
   controlVersion: number;
+  stepRevision?: number;
   execution?: Row;
 };
 const stateLabels: Record<string, string> = {
@@ -76,6 +77,7 @@ export function WorkflowInstanceView({
     [busy, setBusy] = useState(false);
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [childOffset, setChildOffset] = useState(0);
   const drafts = useRef(new Map<string, ActionBaseline>());
   const attempts = useRef(
     new Map<string, { fingerprint: string; id: string }>(),
@@ -98,10 +100,12 @@ export function WorkflowInstanceView({
     const result = await request("query.workflow_instance", {
       id: record.id,
       project_id: projectId,
+      view: "status",
+      child_offset: childOffset,
     });
     if (epoch.current === current)
       setData({ ...result, _projectId: projectId });
-  }, [request, record.id, projectId]);
+  }, [request, record.id, projectId, childOffset]);
   useEffect(() => {
     let active = true;
     let timer: ReturnType<typeof setTimeout>;
@@ -149,6 +153,9 @@ export function WorkflowInstanceView({
       revision: current.revision,
       planRevision: runtime.active_plan_revision_id,
       controlVersion: runtime.control_version,
+      stepRevision: execution
+        ? activeData?.step_revisions?.[execution.id]
+        : undefined,
       execution: execution
         ? {
             id: execution.id,
@@ -242,6 +249,9 @@ export function WorkflowInstanceView({
           ...originalPayload,
           plan_revision_id: original.planRevision,
           control_version: original.controlVersion,
+          ...(original.stepRevision !== undefined
+            ? { expected_step_revision: original.stepRevision }
+            : {}),
         },
       };
       const key = `${draftKey(executionId)}:${method}`;
@@ -477,11 +487,11 @@ export function WorkflowInstanceView({
                             !humanSatisfied && (
                               <div role="status">
                                 <p>
-                                  {displayText(
-                                    unmet
+                                  {completion.pending
+                                    ? "正在汇总完成条件，可先查看产物。"
+                                    : unmet
                                       ? "本步骤验收未通过，需要先返工。"
-                                      : "本步骤验收已通过，请核对产物并确认此版本，后续步骤将等待你的确认。",
-                                  )}
+                                      : "本步骤验收已通过，请核对产物并确认此版本，后续步骤将等待你的确认。"}
                                 </p>
                                 <div className="reading-links">
                                   {Object.entries(definition.inputs || {}).map(
@@ -797,6 +807,24 @@ export function WorkflowInstanceView({
           </section>
         );
       })}
+      {childOffset > 0 || activeData.children_more ? (
+        <div className="actions">
+          {childOffset > 0 ? (
+            <ActionButton
+              onClick={() => setChildOffset(Math.max(0, childOffset - 100))}
+            >
+              上一页子流程
+            </ActionButton>
+          ) : null}
+          {activeData.children_more ? (
+            <ActionButton
+              onClick={() => setChildOffset(activeData.next_child_offset)}
+            >
+              下一页子流程
+            </ActionButton>
+          ) : null}
+        </div>
+      ) : null}
       {error ? (
         <p role="alert" className="error">
           {displayText(error)}

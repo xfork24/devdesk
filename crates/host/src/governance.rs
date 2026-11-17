@@ -127,23 +127,12 @@ impl Workspace {
                         self.configuration
                             .stage_configuration_transfer(&project, command)
                     }
-                    "configuration.transfer.apply" => {
-                        self.configuration.apply_configuration_transfer(
-                            &project,
-                            command
-                                .target
-                                .as_deref()
-                                .ok_or_else(|| err("invalid_params", "需要暂存操作 ID"))?,
-                        )
-                    }
-                    "configuration.transfer.cancel" => {
-                        self.configuration.cancel_configuration_transfer(
-                            command
-                                .target
-                                .as_deref()
-                                .ok_or_else(|| err("invalid_params", "需要暂存操作 ID"))?,
-                        )
-                    }
+                    "configuration.transfer.apply" => self
+                        .configuration
+                        .configuration_transfer_command(&project, &command, true),
+                    "configuration.transfer.cancel" => self
+                        .configuration
+                        .configuration_transfer_command(&project, &command, false),
                     _ => Err(err("method_not_found", "未知跨库配置操作")),
                 }
             })());

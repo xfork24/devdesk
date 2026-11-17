@@ -63,7 +63,7 @@ fn independent_reservations_do_not_take_the_legacy_global_writer() {
     let (release, blocked) = mpsc::channel();
     let old = store.clone();
     let writer = std::thread::spawn(move || {
-        old.transact(None, &mut |_| {
+        old.seed_fixture_state(None, &mut |_| {
             ready.send(()).unwrap();
             blocked.recv().unwrap();
             Ok(Value::Null)

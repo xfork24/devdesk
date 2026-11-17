@@ -119,12 +119,31 @@ export function WorkflowContexts({
   contexts?: Row[];
   onEditContext?: (context: Row) => void;
 }) {
+  const [offset, setOffset] = useState(0);
+  const hasTarget = Boolean(
+    target.execution_id ||
+    target.turn_id ||
+    target.session_id ||
+    target.agent_instance_id,
+  );
   const state = useReading(request, "query.workflow_contexts", {
     project_id: projectId,
     owner_id: ownerId,
+    offset,
+    limit: 100,
   });
+  const exactState = useReading(
+    request,
+    "query.workflow_contexts",
+    { project_id: projectId, owner_id: ownerId, ...target },
+    hasTarget,
+  );
   const [showHistory, setShowHistory] = useState(false);
-  const turns: Row[] = (state.value?.agents || []).flatMap((agent: Row) =>
+  const turns: Row[] = (
+    exactState.value?.agents ||
+    state.value?.agents ||
+    []
+  ).flatMap((agent: Row) =>
     agent.entries.map((entry: Row) => ({
       ...entry,
       actor: entry.actor || agent.actor,
@@ -158,12 +177,6 @@ export function WorkflowContexts({
       else groups.push({ ...turn, key, entries: [turn] });
     }
   }
-  const hasTarget = Boolean(
-    target.execution_id ||
-    target.turn_id ||
-    target.session_id ||
-    target.agent_instance_id,
-  );
   const matches = (entry: Row) =>
     target.turn_id
       ? entry.turn_id === target.turn_id
@@ -212,6 +225,7 @@ export function WorkflowContexts({
         </button>
       </div>
       <ReadState {...state} />
+      {hasTarget && <ReadState {...exactState} />}
       <label>
         <input
           type="checkbox"
@@ -329,6 +343,20 @@ export function WorkflowContexts({
           )}
         </article>
       </div>
+      {(offset > 0 || state.value?.more) && (
+        <div className="actions">
+          {offset > 0 && (
+            <button onClick={() => setOffset(Math.max(0, offset - 100))}>
+              上一页上下文
+            </button>
+          )}
+          {state.value?.more && (
+            <button onClick={() => setOffset(state.value!.next_offset)}>
+              下一页上下文
+            </button>
+          )}
+        </div>
+      )}
       {contexts.length > 0 && (
         <details>
           <summary>共享工作背景 · 手工维护（不代表当轮已发送）</summary>

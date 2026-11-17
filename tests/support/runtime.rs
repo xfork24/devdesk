@@ -74,10 +74,18 @@ pub fn queue_conversation_with(
     project: &str,
     configure: impl Fn(&EngineeringState, &mut RuntimeBinding) -> Result<()>,
 ) -> (Id, Id) {
+    queue_conversation_for_agent(e, project, "builtin-agent-sol-high-analyst:6", configure)
+}
+pub fn queue_conversation_for_agent(
+    e: &Engine,
+    project: &str,
+    agent: &str,
+    configure: impl Fn(&EngineeringState, &mut RuntimeBinding) -> Result<()>,
+) -> (Id, Id) {
     let sid = id();
     let tid = id();
     e.store
-        .transact(None, &mut |s| {
+        .seed_fixture_state(None, &mut |s| {
             let mut session = Session {
                 id: sid.clone(),
                 owner_id: if project == GLOBAL_DISCUSSION_NAMESPACE {
@@ -85,7 +93,7 @@ pub fn queue_conversation_with(
                 } else {
                     project.into()
                 },
-                agent: "builtin-agent-sol-high-analyst:6".into(),
+                agent: agent.into(),
                 harness: "fixture-runtime".into(),
                 sandbox: "fixture-docker".into(),
                 snapshot_id: None,
@@ -171,7 +179,7 @@ pub fn configure_project(e: &Engine, project: &str) {
 
 /// Explicit fixture grants for current built-in targets, through the production v2 command.
 pub fn bind_default_permissions(e: &Engine) {
-    e.store.transact(None, &mut |s| {
+    e.store.seed_fixture_state(None, &mut |s| {
         if s.configuration("fixture-spec:1").is_err() {
             let spec = (
                 "spec",
@@ -268,8 +276,23 @@ impl ports::SessionResources for ResourceFixture<'_> {
     fn installations(&self) -> Result<Vec<RuntimeInstallation>> {
         Ok(vec![])
     }
-    fn ensure_runtime(&self, _: HarnessProvider, _: Option<&str>) -> Result<RuntimeInstallation> {
-        Err(err("fixture", "fixture expects first materialization"))
+    fn ensure_runtime(
+        &self,
+        provider: HarnessProvider,
+        id: Option<&str>,
+    ) -> Result<RuntimeInstallation> {
+        let catalog = self.store.configuration_snapshot()?;
+        let row = catalog
+            .state
+            .governance
+            .iter()
+            .find(|r| {
+                r.r#type == "harness_materialization"
+                    && r.data["key"]["provider"] == serde_json::json!(provider)
+                    && id.is_none_or(|id| r.data["installation_id"] == id)
+            })
+            .ok_or_else(|| err("fixture", "缺少原物化安装回执"))?;
+        serde_json::from_value(json!({"id":row.data["installation_id"],"key":row.data["key"],"artifact":row.data["artifact"],"recipe_digest":row.data["recipe_digest"],"source":"explicit resource port fixture","license":"test"})).map_err(|e|err("fixture",e.to_string()))
     }
     fn runtime_verified(&self, _: &str) -> Result<bool> {
         Ok(true)
@@ -296,8 +319,8 @@ impl ports::SessionResources for ResourceFixture<'_> {
     ) -> Result<ExecutionPermissions> {
         devdesk_adapters::permission_profiles::compile_permission_profiles(s, l, scope)
     }
-    fn adapter_identity(&self, _: HarnessProvider) -> String {
-        "explicit-resource-fixture/v1".into()
+    fn adapter_identity(&self, provider: HarnessProvider) -> String {
+        devdesk_adapters::harness::managed_adapter_identity(provider)
     }
     fn credential_reference(
         &self,

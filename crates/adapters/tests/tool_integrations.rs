@@ -15,7 +15,7 @@ use std::sync::Arc;
 mod runtime;
 fn engine(root: &std::path::Path) -> Engine {
     let e = Engine::new(
-        Arc::new(SqliteStore::open(root).unwrap()),
+        Arc::new(SqliteStore::open_fixture(root).unwrap()),
         Arc::new(FileArtifacts::new(root.into())),
         runtime::adapters(),
     )
@@ -480,7 +480,7 @@ fn durable_external_operation_replays_intent_without_running_io_again() {
         expected_revision: None,
         payload: json!({"binding_ref":"fixture"}),
     };
-    let context = devdesk_core::InvocationContext::human(None);
+    let context = devdesk_core::InvocationContext::human(e.store.project_id());
     let input =
         json!({"package_hash":devdesk_domain::configuration_hash(&c.payload),"frozen":"input"});
     let first = match e
@@ -800,7 +800,7 @@ fn registered_invocation(root: &std::path::Path) -> (Engine, ToolInvocation) {
     let arguments = json!({"id":"A-1"});
     let i = ToolInvocation {
         id: id(),
-        project_id: None,
+        project_id: e.store.project_id(),
         feature_id: None,
         task_id: None,
         agent_instance_id: None,
@@ -838,7 +838,7 @@ fn test_command(invocation: &ToolInvocation) -> Command {
 }
 // A test-only admitted native observation, independent from the human RPC API.
 fn seed_provider_call(engine: &Engine, invocation: &ToolInvocation) {
-    engine.store.transact(None,&mut |state|{
+    engine.store.seed_fixture_state(None,&mut |state|{
         let data=json!({"status":"prepared","remote_effect":"not_applied","invocation":invocation,"created_at":1,"cancel_requested":false,"reply_sent":false});
         state.governance.push(ConfigurationRecord{id:invocation.id.clone(),r#type:"tool_call".into(),definition_id:invocation.id.clone(),scope:invocation.project_id.as_ref().map_or_else(Scope::global,Scope::project),name:invocation.tool.definition.qualified_name.clone(),version:1,supersedes:None,content_hash:content_digest(&References::new(),&data),refs:References::new(),data,immutable:false,revision:1,created_at:1});
         Ok(Value::Null)
@@ -892,7 +892,30 @@ fn select_tool_approval(
         .data["policy"]
         .clone();
     policy["approval"] = json!(approval);
-    let profile=command(engine,"permission.profile.create",None,json!({"identity":format!("fixture-test-approval-{}",id()),"name":"Test call approval","target_kind":"harness","policy":policy})).unwrap();
+    // The existing harness target is shared. Author its shared Profile as
+    // an explicit offline catalog fixture; a project command cannot publish
+    // a new global definition or bind a project-only Profile to this target.
+    let source = SourceDefinition {
+        r#type: "permission_profile".into(),
+        identity: format!("fixture-test-approval-{}", id()),
+        revision: 1,
+        name: "Test call approval".into(),
+        scope: state
+            .configuration(&invocation.tool.binding.harness_ref)
+            .unwrap()
+            .scope
+            .clone(),
+        refs: References::new(),
+        data: json!({"schema_version":2,"target_kind":"harness","policy":policy}),
+    };
+    let profile = json!(source);
+    engine
+        .store
+        .seed_fixture_state(None, &mut |s| {
+            s.governance.push(source.clone().into_record()?);
+            Ok(Value::Null)
+        })
+        .unwrap();
     let target = permission_target(
         &state,
         PermissionTargetKind::Harness,
@@ -965,7 +988,7 @@ fn one_hundred_parallel_dispatch_claims_grant_one_external_start_without_old_wri
     let (release, blocked) = std::sync::mpsc::channel();
     let old = engine.clone();
     let legacy = std::thread::spawn(move || {
-        old.store.transact(None, &mut |_| {
+        old.store.seed_fixture_state(None, &mut |_| {
             ready.send(()).unwrap();
             blocked.recv().unwrap();
             Ok(Value::Null)
@@ -1331,7 +1354,7 @@ fn workflow_tool_dispatch_respects_ancestor_pause_and_original_execution_fences(
         ("child", "child-execution", false, Some("parent-execution")),
         ("root", "parent-execution", true, None),
     ] {
-        let data = json!({"project_id":project,"status":"running","paused":paused,"cancel_requested":false,"parent_execution_id":parent,"steps":[{"id":execution,"status":"running","plan_revision_id":"plan","node_id":"node","input_digest":"input","contract_digest":"contract"}]});
+        let data = json!({"project_id":project,"root_instance_id":"root","status":"running","paused":paused,"cancel_requested":false,"parent_execution_id":parent,"steps":[{"id":execution,"status":"running","plan_revision_id":"plan","node_id":"node","input_digest":"input","contract_digest":"contract"}]});
         conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES(?1,'workflow_instance',?2,?3,'Unrestored workflow',1,'fixture','{}',?4,0,1,1)",rusqlite::params![id,project,serde_json::to_string(&Scope::project(&project)).unwrap(),data.to_string()]).unwrap();
     }
     let authority = WorkflowToolAuthority {
@@ -1342,6 +1365,7 @@ fn workflow_tool_dispatch_respects_ancestor_pause_and_original_execution_fences(
         node_id: "node".into(),
         input_digest: "input".into(),
         contract_digest: "contract".into(),
+        session_id: None,
     };
     conn.execute("UPDATE governance_records SET data=json_set(data,'$.workflow_authority',json(?1)),revision=revision+1 WHERE id=?2",rusqlite::params![serde_json::to_string(&authority).unwrap(),invocation.id]).unwrap();
     assert!(
@@ -1493,7 +1517,7 @@ fn workflow_tool_creation_preserves_actual_driver_actor_and_one_hundred_replays(
     let (release, blocked) = std::sync::mpsc::channel();
     let old = engine.clone();
     let writer = std::thread::spawn(move || {
-        old.store.transact(None, &mut |_| {
+        old.store.seed_fixture_state(None, &mut |_| {
             ready.send(()).unwrap();
             blocked.recv().unwrap();
             Ok(Value::Null)
@@ -1541,7 +1565,7 @@ fn workflow_tool_creation_preserves_actual_driver_actor_and_one_hundred_replays(
         1
     );
     let conn = rusqlite::Connection::open(root.path().join("engineering.sqlite3")).unwrap();
-    conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('unrestorable-history','workflow_instance','fixture',?1,'History',1,'fixture','{}',?2,0,1,1)",rusqlite::params![serde_json::to_string(&Scope::project(invocation.project_id.as_ref().unwrap())).unwrap(),json!({"plan":{"$source":"absent-history"}}).to_string()]).unwrap();
+    conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('unrestorable-history','workflow_instance','fixture',?1,'History',1,'fixture','{}',?2,0,1,1)",rusqlite::params![serde_json::to_string(&Scope::project(invocation.project_id.as_ref().unwrap())).unwrap(),json!({"root_instance_id":"unrelated-history","plan":{"$source":"absent-history"}}).to_string()]).unwrap();
     let trace = devdesk_adapters::performance::Trace::start();
     assert_eq!(
         engine
@@ -1654,13 +1678,13 @@ fn manual_tool_creation_replays_original_packed_result_and_does_not_wait_for_old
     let (engine, invocation) = registered_invocation(root.path());
     let engine = Arc::new(engine);
     let original = test_command(&invocation);
-    let context = InvocationContext::human(None);
+    let context = InvocationContext::human(engine.store.project_id());
     engine.store.configuration_snapshot().unwrap();
     let (ready, wait) = std::sync::mpsc::channel();
     let (release, blocked) = std::sync::mpsc::channel();
     let old = engine.clone();
     let writer = std::thread::spawn(move || {
-        old.store.transact(None, &mut |_| {
+        old.store.seed_fixture_state(None, &mut |_| {
             ready.send(()).unwrap();
             blocked.recv().unwrap();
             Ok(Value::Null)
@@ -1760,7 +1784,7 @@ fn manual_tool_creation_replays_original_packed_result_and_does_not_wait_for_old
 fn manual_tool_creation_rejects_missing_absence_original_source_or_permission_drift() {
     let root = tempfile::tempdir().unwrap();
     let (engine, mut invocation) = registered_invocation(root.path());
-    let context = InvocationContext::human(None);
+    let context = InvocationContext::human(engine.store.project_id());
     let mut original = test_command(&invocation);
     original.expected_revision = None;
     assert_eq!(
@@ -1812,7 +1836,7 @@ fn one_hundred_independent_manual_calls_share_read_only_configuration_guards() {
                 let result = engine.enqueue_tool_test(
                     &request,
                     &invocation,
-                    &InvocationContext::human(None),
+                    &InvocationContext::human(engine.store.project_id()),
                 );
                 (result, trace.finish())
             })
@@ -2252,7 +2276,7 @@ fn workflow_intent_callbacks_replay_once_without_old_writer_or_history_and_keep_
     let (release, blocked) = std::sync::mpsc::channel();
     let old = engine.clone();
     let writer = std::thread::spawn(move || {
-        old.store.transact(None, &mut |_| {
+        old.store.seed_fixture_state(None, &mut |_| {
             ready.send(()).unwrap();
             blocked.recv().unwrap();
             Ok(Value::Null)
@@ -2260,7 +2284,7 @@ fn workflow_intent_callbacks_replay_once_without_old_writer_or_history_and_keep_
     });
     waiting.recv().unwrap();
     let conn = rusqlite::Connection::open(root.path().join("engineering.sqlite3")).unwrap();
-    conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('bad-intent-history','workflow_instance','fixture',?1,'History',1,'fixture','{}',?2,0,1,1)",rusqlite::params![serde_json::to_string(&original.scope).unwrap(),json!({"plan":{"$source":"absent-history"}}).to_string()]).unwrap();
+    conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('bad-intent-history','workflow_instance','fixture',?1,'History',1,'fixture','{}',?2,0,1,1)",rusqlite::params![serde_json::to_string(&original.scope).unwrap(),json!({"root_instance_id":"unrelated-history","plan":{"$source":"absent-history"}}).to_string()]).unwrap();
     let barrier = Arc::new(std::sync::Barrier::new(100));
     let threads = (0..100)
         .map(|_| {
@@ -2337,7 +2361,7 @@ fn workflow_intent_callbacks_preserve_conflicts_and_stale_controller_saves_canno
     let (release, blocked) = std::sync::mpsc::channel();
     let old = engine.clone();
     let writer = std::thread::spawn(move || {
-        old.store.transact(None, &mut |s| {
+        old.store.seed_fixture_state(None, &mut |s| {
             ready.send(()).unwrap();
             blocked.recv().unwrap();
             let row = s.governance.iter_mut().find(|r| r.id == intent_id).unwrap();
@@ -2386,7 +2410,7 @@ fn workflow_intent_callbacks_preserve_conflicts_and_stale_controller_saves_canno
         .unwrap();
     other
         .store
-        .transact(None, &mut |s| {
+        .seed_fixture_state(None, &mut |s| {
             let row = s
                 .governance
                 .iter_mut()
@@ -2453,7 +2477,7 @@ fn native_pending_intent_scan_allows_one_hundred_reads_without_old_writer_or_com
     let (release, blocked) = std::sync::mpsc::channel();
     let old = engine.clone();
     let writer = std::thread::spawn(move || {
-        old.store.transact(None, &mut |_| {
+        old.store.seed_fixture_state(None, &mut |_| {
             ready.send(()).unwrap();
             blocked.recv().unwrap();
             Ok(Value::Null)
@@ -2461,7 +2485,7 @@ fn native_pending_intent_scan_allows_one_hundred_reads_without_old_writer_or_com
     });
     waiting.recv().unwrap();
     let conn = rusqlite::Connection::open(root.path().join("engineering.sqlite3")).unwrap();
-    conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('bad-scan-history','workflow_instance','fixture',?1,'History',1,'fixture','{}',?2,0,1,1)",rusqlite::params![serde_json::to_string(&original.scope).unwrap(),json!({"plan":{"$source":"absent-history"},"large":"x".repeat(1_000_000)}).to_string()]).unwrap();
+    conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('bad-scan-history','workflow_instance','fixture',?1,'History',1,'fixture','{}',?2,0,1,1)",rusqlite::params![serde_json::to_string(&original.scope).unwrap(),json!({"root_instance_id":"unrelated-history","plan":{"$source":"absent-history"},"large":"x".repeat(1_000_000)}).to_string()]).unwrap();
     conn.execute("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<2000) INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) SELECT 'settled-intent-'||x,'workflow_intent','fixture',?1,'Settled',1,'fixture','{}',?2,0,1,1 FROM n",rusqlite::params![serde_json::to_string(&original.scope).unwrap(),json!({"status":"completed","plan":{"$source":"absent-history"}}).to_string()]).unwrap();
     let barrier = Arc::new(std::sync::Barrier::new(100));
     let threads = (0..100)
@@ -2518,4 +2542,439 @@ fn pending_intent_pages_advance_past_invalidated_steps_and_recheck_pause_and_can
     assert_eq!(third[0].data["command"], json!(command));
     workflow_control(&engine, "workflow.cancel", instance);
     assert!(!engine.workflow_intent_drivable(&original).unwrap());
+}
+
+#[derive(Default)]
+struct NativeToolCaller {
+    turn: std::sync::Mutex<Option<Id>>,
+    emitted: std::sync::atomic::AtomicBool,
+    arguments: std::sync::Mutex<Value>,
+    replies: std::sync::Mutex<Vec<ToolReceipt>>,
+    poll_gate:
+        std::sync::Mutex<Option<(std::sync::mpsc::Sender<()>, std::sync::mpsc::Receiver<()>)>>,
+}
+impl devdesk_core::ports::Harness for NativeToolCaller {
+    fn open_session(
+        &self,
+        r: &devdesk_core::ports::SessionStart,
+    ) -> Result<devdesk_core::ports::SessionReceipt> {
+        Ok(devdesk_core::ports::SessionReceipt {
+            external_session: format!("native-thread:{}", r.session.id),
+            container_id: "explicit-protocol-fixture".into(),
+            image_digest: r.execution.image_digest.clone(),
+            operation_id: r.execution.operation_id.clone(),
+        })
+    }
+    fn dispatch_turn(&self, r: &devdesk_core::ports::TurnDispatch) -> Result<()> {
+        *self.turn.lock().unwrap() = Some(r.turn.id.clone());
+        Ok(())
+    }
+    fn poll_session(
+        &self,
+        session: &Session,
+    ) -> Result<Vec<devdesk_core::ports::ConversationObservation>> {
+        use devdesk_core::ports::ConversationObservation as O;
+        if self.emitted.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            return Ok(vec![]);
+        }
+        if let Some((ready, release)) = self.poll_gate.lock().unwrap().take() {
+            ready.send(()).unwrap();
+            release.recv().unwrap();
+        }
+        let turn = self.turn.lock().unwrap().clone().unwrap();
+        Ok(vec![
+            O::Admitted {
+                turn: turn.clone(),
+                message: Some("native-message-1".into()),
+                external_turn: Some("native-turn-1".into()),
+            },
+            O::Consumed {
+                turn: turn.clone(),
+                message: Some("native-message-1".into()),
+            },
+            O::ToolCall {
+                turn,
+                request: json!({"request_id":"native-request-1"}),
+                thread: session.external_session.clone().unwrap(),
+                external_turn: "native-turn-1".into(),
+                call: "native-call-1".into(),
+                tool: "ticket_lookup".into(),
+                arguments: self.arguments.lock().unwrap().clone(),
+                worktree: String::new(),
+            },
+        ])
+    }
+    fn answer_tool_call(&self, _: &Session, _: &Value, receipt: &ToolReceipt) -> Result<()> {
+        self.replies.lock().unwrap().push(receipt.clone());
+        Ok(())
+    }
+}
+fn native_provider_fixture(
+    root: &std::path::Path,
+    arguments: Value,
+) -> (Engine, Arc<NativeToolCaller>, Arc<ObservedExecutor>, Id, Id) {
+    let (mut engine, invocation) = registered_invocation(root);
+    let project = command(
+        &engine,
+        "project.create",
+        None,
+        json!({"title":"Native provider admission"}),
+    )
+    .unwrap();
+    let pid = project["id"].as_str().unwrap();
+    command(&engine,"integration.project.bind",None,json!({"project_id":pid,"bindings":{invocation.tool.binding.integration_ref.clone():invocation.tool.binding_ref.clone()}})).unwrap();
+    let capability=command(&engine,"capability.create",None,json!({"name":"Native external caller","model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"tools":[DEFAULT_NATIVE_TOOL_ID,invocation.tool.revision_id],"skills":[],"data":{}})).unwrap();
+    let role=command(&engine,"role.create",None,json!({"name":"Native provider fixture","data":{"instructions":"Call only the exact frozen integration."}})).unwrap();
+    let agent=command(&engine,"agent.create",None,json!({"name":"Native provider caller","role_ref":role["id"],"capability_ref":capability["id"],"data":{}})).unwrap();
+    let caller = Arc::new(NativeToolCaller::default());
+    *caller.arguments.lock().unwrap() = arguments;
+    engine.harness = caller.clone();
+    let executor = Arc::new(ObservedExecutor {
+        native: NativeTools::new(root).unwrap(),
+        starts: Default::default(),
+        receipts: Default::default(),
+    });
+    engine.tool_executor = Some(executor.clone());
+    let instance=command(&engine,"agent.instance.create",None,json!({"name":"Native tool fixture actor","scope":Scope::project(pid),"agent_revision_id":agent["id"]})).unwrap();
+    let agent_id = agent["id"].as_str().unwrap();
+    let (sid, tid) =
+        runtime::queue_conversation_for_agent(&engine, pid, agent_id, |state, binding| {
+            use devdesk_core::ports::SessionResources;
+            let a = state.resolve_agent(agent_id)?;
+            let record = state.configuration(agent_id)?;
+            let model: ModelDefinition = state.configuration(&a.model_ref)?.decode()?;
+            binding.installation = runtime::ResourceFixture {
+                store: engine.store.as_ref(),
+            }
+            .prepare_harness(
+                state.configuration(&a.harness_ref)?,
+                state.configuration(&invocation.tool.binding.sandbox_ref)?,
+            )?;
+            binding.model = model.model.clone();
+            binding.model_parameters.clear();
+            binding.agent_configuration = Some(AgentExecutionConfiguration {
+                context_protocol: Some(AGENT_CONTEXT_PROTOCOL.into()),
+                integration_lock: Some(freeze_discussion_integrations(state, &a, Some(pid))?),
+                agent_instance_id: instance["id"].as_str().unwrap().into(),
+                agent_revision_id: agent_id.into(),
+                composition_hash: record.content_hash.clone(),
+                model_revision_id: a.model_ref,
+                harness_revision_id: a.harness_ref,
+                model_provider: model.provider,
+                model_parameters: model.parameters,
+                tool_revisions: a.tools,
+            });
+            runtime::set_permissions(binding, invocation.permissions.clone());
+            binding.configuration_digest = devdesk_adapters::runtime_digest(
+                state.definitions.iter().find(|d| d.id == agent_id).unwrap(),
+                binding,
+            )?;
+            Ok(())
+        });
+    engine.tick_conversations(4).unwrap();
+    (engine, caller, executor, sid, tid)
+}
+#[test]
+fn provider_tool_creation_preserves_actual_worker_origin_and_uses_one_native_admission() {
+    let root = tempfile::tempdir().unwrap();
+    let (engine, caller, executor, sid, tid) =
+        native_provider_fixture(root.path(), json!({"id":"A-1"}));
+    engine.tick_conversations(4).unwrap();
+    let state = engine.store.snapshot().unwrap();
+    let call = state
+        .governance
+        .iter()
+        .find(|r| r.r#type == "tool_call")
+        .unwrap();
+    assert_eq!(call.data["status"], "prepared", "{}", call.data);
+    assert_eq!(call.data["invocation"]["session_id"], sid);
+    assert_eq!(call.data["invocation"]["turn_id"], tid);
+    let intent = state
+        .governance
+        .iter()
+        .find(|r| r.r#type == "provider_tool_intent")
+        .unwrap();
+    assert_eq!(intent.data["status"], "completed");
+    let origin = state
+        .governance
+        .iter()
+        .find(|r| r.r#type == "tool_call_origin")
+        .unwrap();
+    assert_eq!(origin.data["context"]["kind"], "native_worker");
+    assert!(!origin.data.to_string().contains("human"));
+    assert_eq!(
+        state
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "provider_poll_observation")
+            .count(),
+        1
+    );
+    assert_eq!(executor.starts.load(std::sync::atomic::Ordering::SeqCst), 0);
+    let original = engine.admit_provider_tool(&intent.id).unwrap();
+    assert_eq!(original["id"], call.id);
+    engine.drive_tool_calls().unwrap();
+    assert_eq!(executor.starts.load(std::sync::atomic::Ordering::SeqCst), 1);
+    executor
+        .receipts
+        .lock()
+        .unwrap()
+        .insert(call.id.clone(), success(&call.id));
+    engine.drive_tool_calls().unwrap();
+    engine.drive_tool_calls().unwrap();
+    assert_eq!(caller.replies.lock().unwrap().len(), 1);
+}
+#[test]
+fn provider_schema_rejection_is_a_local_kernel_reply_without_a_supplier_receipt_or_external_start()
+{
+    let root = tempfile::tempdir().unwrap();
+    let (engine, caller, executor, _, _) = native_provider_fixture(root.path(), json!({"id":7}));
+    engine.tick_conversations(4).unwrap();
+    let state = engine.store.snapshot().unwrap();
+    let call = state
+        .governance
+        .iter()
+        .find(|r| r.r#type == "tool_call")
+        .unwrap();
+    assert_eq!(call.data["status"], "failed");
+    assert!(call.data["receipt"].is_null());
+    assert!(call.data["local_rejection"].is_object());
+    engine.drive_tool_calls().unwrap();
+    engine.drive_tool_calls().unwrap();
+    assert_eq!(executor.starts.load(std::sync::atomic::Ordering::SeqCst), 0);
+    let replies = caller.replies.lock().unwrap();
+    assert_eq!(replies.len(), 1);
+    assert!(!replies[0].success);
+    assert_eq!(replies[0].error.as_ref().unwrap()["issuer"], "kernel");
+}
+
+struct PendingNativeProvider {
+    engine: Arc<Engine>,
+    executor: Arc<ObservedExecutor>,
+    intent: Id,
+    release: std::sync::mpsc::Sender<()>,
+    tick: std::thread::JoinHandle<Result<()>>,
+    _listener: Arc<dyn Fn() + Send + Sync>,
+}
+fn pending_native_provider(root: &std::path::Path) -> PendingNativeProvider {
+    let (engine, _, executor, _, _) = native_provider_fixture(root, json!({"id":"A-1"}));
+    let engine = Arc::new(engine);
+    let (ready, waiting) = std::sync::mpsc::channel();
+    let (release, blocked) = std::sync::mpsc::channel();
+    let blocked = std::sync::Mutex::new(blocked);
+    let path = root.join("engineering.sqlite3");
+    let paused = std::sync::atomic::AtomicBool::new(false);
+    let listener: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+        if paused.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        use rusqlite::OptionalExtension;
+        let id=conn.query_row("SELECT id FROM governance_records WHERE type='provider_tool_intent' AND json_extract(data,'$.status')='prepared' ORDER BY id LIMIT 1",[],|r|r.get::<_,String>(0)).optional().unwrap();
+        if let Some(id) = id
+            && !paused.swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            ready.send(id).unwrap();
+            blocked.lock().unwrap().recv().unwrap();
+        }
+    });
+    engine.store.subscribe_changes(Arc::downgrade(&listener));
+    let worker = engine.clone();
+    let tick = std::thread::spawn(move || worker.tick_conversations(4));
+    let intent = waiting
+        .recv_timeout(std::time::Duration::from_secs(15))
+        .expect("provider intent must commit before admission");
+    PendingNativeProvider {
+        engine,
+        executor,
+        intent,
+        release,
+        tick,
+        _listener: listener,
+    }
+}
+#[test]
+fn one_hundred_provider_admissions_replay_once_without_the_old_writer() {
+    let root = tempfile::tempdir().unwrap();
+    let pending = pending_native_provider(root.path());
+    // The complete configuration catalog is a separate allowed cold read;
+    // this case measures whether admission itself restores runtime history.
+    pending.engine.store.configuration_snapshot().unwrap();
+    let (ready, waiting) = std::sync::mpsc::channel();
+    let (release, blocked) = std::sync::mpsc::channel();
+    let old = pending.engine.clone();
+    let writer = std::thread::spawn(move || {
+        old.store.seed_fixture_state(None, &mut |state| {
+            ready.send(()).unwrap();
+            blocked.recv().unwrap();
+            state.events.push(Event {
+                id: state.events.len() as u64 + 1,
+                target: "legacy".into(),
+                kind: "test.provider-interleave".into(),
+                detail: "explicit fixture".into(),
+                time: 1,
+            });
+            Ok(Value::Null)
+        })
+    });
+    waiting.recv().unwrap();
+    let barrier = Arc::new(std::sync::Barrier::new(100));
+    let threads = (0..100)
+        .map(|_| {
+            let (engine, intent, barrier) = (
+                pending.engine.clone(),
+                pending.intent.clone(),
+                barrier.clone(),
+            );
+            std::thread::spawn(move || {
+                barrier.wait();
+                let trace = devdesk_adapters::performance::Trace::start();
+                let result = engine.admit_provider_tool(&intent);
+                (result, trace.finish())
+            })
+        })
+        .collect::<Vec<_>>();
+    let results = threads
+        .into_iter()
+        .map(|t| t.join().unwrap())
+        .collect::<Vec<_>>();
+    release.send(()).unwrap();
+    writer.join().unwrap().unwrap();
+    pending.release.send(()).unwrap();
+    pending.tick.join().unwrap().unwrap();
+    let expected = results[0].0.as_ref().unwrap().clone();
+    for (result, trace) in results {
+        assert_eq!(result.unwrap(), expected);
+        for stage in [
+            "project.full_snapshot",
+            "project.transaction",
+            "source.restore_records",
+            "workflow.compile",
+        ] {
+            assert!(trace["spans"][stage].is_null(), "{trace}");
+        }
+    }
+    let state = pending.engine.store.snapshot().unwrap();
+    assert_eq!(
+        state
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "tool_call")
+            .count(),
+        1
+    );
+    assert_eq!(
+        state
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "tool_call_origin")
+            .count(),
+        1
+    );
+    assert!(
+        state
+            .events
+            .iter()
+            .any(|r| r.kind == "test.provider-interleave")
+    );
+    assert_eq!(
+        pending
+            .executor
+            .starts
+            .load(std::sync::atomic::Ordering::SeqCst),
+        0
+    );
+}
+#[test]
+fn cancellation_during_poll_preserves_the_original_observation_and_does_not_rebase_the_batch() {
+    let root = tempfile::tempdir().unwrap();
+    let (engine, caller, executor, _, tid) =
+        native_provider_fixture(root.path(), json!({"id":"A-1"}));
+    let engine = Arc::new(engine);
+    let (ready, waiting) = std::sync::mpsc::channel();
+    let (release, blocked) = std::sync::mpsc::channel();
+    *caller.poll_gate.lock().unwrap() = Some((ready, blocked));
+    let worker = engine.clone();
+    let tick = std::thread::spawn(move || worker.tick_conversations(4));
+    waiting
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .unwrap();
+    let original = engine
+        .store
+        .snapshot()
+        .unwrap()
+        .turns
+        .into_iter()
+        .find(|t| t.id == tid)
+        .unwrap();
+    engine
+        .execute(
+            "conversation.cancel",
+            Command {
+                command_id: id(),
+                target: Some(tid.clone()),
+                expected_revision: Some(original.revision),
+                payload: json!({}),
+            },
+        )
+        .unwrap();
+    release.send(()).unwrap();
+    assert_eq!(tick.join().unwrap().unwrap_err().code, "revision_conflict");
+    let state = engine.store.snapshot().unwrap();
+    let turn = state.turns.iter().find(|t| t.id == tid).unwrap();
+    assert!(turn.cancel_requested);
+    assert_eq!(turn.revision, original.revision + 1);
+    assert_eq!(turn.status, original.status);
+    assert!(
+        !state
+            .governance
+            .iter()
+            .any(|r| r.r#type == "tool_call" || r.r#type == "provider_tool_intent")
+    );
+    let observation = state
+        .governance
+        .iter()
+        .find(|r| r.r#type == "provider_poll_observation")
+        .unwrap();
+    assert_eq!(
+        observation.data["value"]["observations"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    assert_eq!(executor.starts.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+#[test]
+fn cancellation_before_native_dispatch_rejects_a_prepared_provider_call_without_a_supplier_receipt()
+{
+    let root = tempfile::tempdir().unwrap();
+    let (engine, _, executor, _, tid) = native_provider_fixture(root.path(), json!({"id":"A-1"}));
+    engine.tick_conversations(4).unwrap();
+    let state = engine.store.snapshot().unwrap();
+    let turn = state.turns.iter().find(|t| t.id == tid).unwrap();
+    let call = state
+        .governance
+        .iter()
+        .find(|r| r.r#type == "tool_call")
+        .unwrap();
+    let callid = call.id.clone();
+    engine
+        .execute(
+            "conversation.cancel",
+            Command {
+                command_id: id(),
+                target: Some(tid),
+                expected_revision: Some(turn.revision),
+                payload: json!({}),
+            },
+        )
+        .unwrap();
+    engine.drive_tool_calls().unwrap();
+    let state = engine.store.snapshot().unwrap();
+    let call = state.configuration(&callid).unwrap();
+    assert_eq!(call.data["status"], "cancelled");
+    assert!(call.data["receipt"].is_null());
+    assert!(call.data["local_pre_dispatch_stop"].is_object());
+    assert_eq!(executor.starts.load(std::sync::atomic::Ordering::SeqCst), 0);
 }

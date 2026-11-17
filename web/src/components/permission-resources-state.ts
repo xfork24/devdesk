@@ -52,7 +52,12 @@ export type PermissionCatalog = {
   targets: PermissionTarget[];
   bindings: PermissionBinding[];
   origins: PermissionOrigin[];
-  source: { path: string; builtin_path: string; is_builtin: boolean };
+  source: {
+    path: string;
+    builtin_path: string;
+    is_builtin: boolean;
+    revision: number;
+  };
   default_sandbox_ref?: string;
 };
 export const profileView = (source: Row): PermissionProfile => ({

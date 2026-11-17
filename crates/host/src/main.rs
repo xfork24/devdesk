@@ -877,6 +877,8 @@ fn router(app: Arc<App>) -> Router {
 }
 
 #[cfg(test)]
+mod active_frontend_performance;
+#[cfg(test)]
 mod loading_performance;
 
 fn performance_logging() -> bool {

@@ -1,3 +1,6 @@
+#[macro_use]
+#[path = "../../../tests/support/delegating_store.rs"]
+mod delegating_store;
 #[path = "../../../tests/support/defaults.rs"]
 mod default_fixture;
 mod support;
@@ -40,6 +43,15 @@ fn command(
             payload,
         },
     )
+}
+fn preset_command(store: &GlobalStore, method: &str, payload: Value) -> Command {
+    command(
+        method,
+        payload,
+        None,
+        Some(store.permission_preset_source().unwrap().revision),
+    )
+    .1
 }
 fn execute(e: &Engine, c: (String, Command)) -> Result<Value> {
     let value = e.execute(&c.0, c.1)?;
@@ -125,7 +137,7 @@ fn strict_profiles_share_canonical_hashes_and_reject_v1() {
         .map(|r| r.id.clone())
         .collect::<Vec<_>>();
     store
-        .reload_permission_presets(&command("reload", json!({}), None, None).1)
+        .reload_permission_presets(&preset_command(store.as_ref(), "reload", json!({})))
         .unwrap();
     assert_eq!(
         before,
@@ -266,9 +278,13 @@ fn runtime_directory_reload_is_idempotent_and_does_not_assign_targets() {
     p.identity = "runtime-added".into();
     std::fs::write(root.join("new.json"), serde_json::to_vec(&p).unwrap()).unwrap();
     store
-        .select_permission_preset_source(&command("select", json!({"path":root}), None, None).1)
+        .select_permission_preset_source(&preset_command(
+            store.as_ref(),
+            "select",
+            json!({"path":root}),
+        ))
         .unwrap();
-    let c = command("reload", json!({}), None, None).1;
+    let c = preset_command(store.as_ref(), "reload", json!({}));
     assert!(
         store.reload_permission_presets(&c).unwrap()["added"]
             .as_array()
@@ -294,7 +310,7 @@ fn runtime_directory_reload_is_idempotent_and_does_not_assign_targets() {
     std::fs::write(root.join("new.json"), serde_json::to_vec(&p).unwrap()).unwrap();
     assert_eq!(
         store
-            .reload_permission_presets(&command("reload", json!({}), None, None).1)
+            .reload_permission_presets(&preset_command(store.as_ref(), "reload", json!({})))
             .unwrap_err()
             .code,
         "revision_conflict"
@@ -321,7 +337,11 @@ fn packaged_presets_are_dataset_local_and_recover_from_the_embedded_bundle() {
     let original = std::fs::read(&files[0]).unwrap();
     std::fs::write(&files[0], "damaged generated cache").unwrap();
     store
-        .reload_permission_presets(&command("reload", json!({"builtin":true}), None, None).1)
+        .reload_permission_presets(&preset_command(
+            store.as_ref(),
+            "reload",
+            json!({"builtin":true}),
+        ))
         .unwrap();
     assert_eq!(std::fs::read(&files[0]).unwrap(), original);
     std::fs::remove_dir_all(&source.path).unwrap();
@@ -343,7 +363,7 @@ fn preset_source_is_single_persistent_and_recoverable_with_builtin_reload() {
     std::fs::create_dir_all(&former).unwrap();
     std::fs::write(former.join("invalid.json"), "invalid").unwrap();
     store
-        .reload_permission_presets(&command("reload", json!({}), None, None).1)
+        .reload_permission_presets(&preset_command(store.as_ref(), "reload", json!({})))
         .unwrap();
 
     let first = dir.path().join("团队 预设");
@@ -355,12 +375,12 @@ fn preset_source_is_single_persistent_and_recoverable_with_builtin_reload() {
         p.identity = name.into();
         std::fs::write(path.join("profile.json"), serde_json::to_vec(&p).unwrap()).unwrap();
     }
-    let select_first = command("select", json!({"path":first}), None, None).1;
+    let select_first = preset_command(store.as_ref(), "select", json!({"path":first}));
     store
         .select_permission_preset_source(&select_first)
         .unwrap();
     let loaded = store
-        .reload_permission_presets(&command("reload", json!({}), None, None).1)
+        .reload_permission_presets(&preset_command(store.as_ref(), "reload", json!({})))
         .unwrap();
     assert_eq!(loaded["added"], json!(["team:1"]));
     assert!(
@@ -371,12 +391,16 @@ fn preset_source_is_single_persistent_and_recoverable_with_builtin_reload() {
             .is_err()
     );
     store
-        .select_permission_preset_source(&command("select", json!({"path":second}), None, None).1)
+        .select_permission_preset_source(&preset_command(
+            store.as_ref(),
+            "select",
+            json!({"path":second}),
+        ))
         .unwrap();
     // An invalid former source must not break the current source's reload.
     std::fs::write(first.join("profile.json"), "invalid").unwrap();
     let loaded = store
-        .reload_permission_presets(&command("reload", json!({}), None, None).1)
+        .reload_permission_presets(&preset_command(store.as_ref(), "reload", json!({})))
         .unwrap();
     assert_eq!(loaded["added"], json!(["personal:1"]));
     // Replaying an older selection must not revert a newer selection.
@@ -399,11 +423,11 @@ fn preset_source_is_single_persistent_and_recoverable_with_builtin_reload() {
     std::fs::remove_dir_all(&second).unwrap();
     assert!(
         store
-            .reload_permission_presets(&command("reload", json!({}), None, None).1)
+            .reload_permission_presets(&preset_command(store.as_ref(), "reload", json!({})))
             .is_err()
     );
     assert!(!store.permission_preset_source().unwrap().is_builtin);
-    let restore = command("reload", json!({"builtin":true}), None, None).1;
+    let restore = preset_command(store.as_ref(), "reload", json!({"builtin":true}));
     store.reload_permission_presets(&restore).unwrap();
     assert!(store.permission_preset_source().unwrap().is_builtin);
     let state = store.snapshot().unwrap();
@@ -417,9 +441,11 @@ fn preset_source_is_single_persistent_and_recoverable_with_builtin_reload() {
     );
     assert!(
         store
-            .select_permission_preset_source(
-                &command("select", json!({"path":"relative"}), None, None).1
-            )
+            .select_permission_preset_source(&preset_command(
+                store.as_ref(),
+                "select",
+                json!({"path":"relative"})
+            ))
             .is_err()
     );
     assert!(
@@ -437,7 +463,11 @@ fn preset_source_is_single_persistent_and_recoverable_with_builtin_reload() {
     );
     assert!(
         store
-            .reload_permission_presets(&command("reload", json!({"builtin":"true"}), None, None).1)
+            .reload_permission_presets(&preset_command(
+                store.as_ref(),
+                "reload",
+                json!({"builtin":"true"})
+            ))
             .is_err()
     );
 }
@@ -643,58 +673,118 @@ fn prepared_discussion(e: &Engine) -> (Id, Id, RuntimeBinding) {
         .as_str()
         .unwrap()
         .to_owned();
-    let binding = RuntimeBinding {
-        model_connection: None,
-        model_profile_digest: None,
-        agent_configuration: None,
-        model_parameters: Default::default(),
-        permissions: None,
-        installation: RuntimeInstallation {
-            recipe_digest: None,
-            id: "fixture-runtime".into(),
-            key: RuntimeKey {
-                provider: HarnessProvider::Codex,
-                version: "fixture".into(),
-                os: "linux".into(),
-                arch: "aarch64".into(),
-            },
-            artifact: RuntimeArtifact::DockerImage {
-                image_id: format!("sha256:{}", "a".repeat(64)),
-            },
-            source: "test".into(),
-            license: "test".into(),
-        },
-        adapter_version: "fixture".into(),
-        model: "fixture".into(),
-        tool_policy: ToolPolicy::ReadOnly,
-        writable_paths: vec![],
-        read_only_paths: vec![],
-        work_type: WorkType::Discussion,
-        configuration_digest: "a".repeat(64),
-        credential_ref: None,
-    };
+    runtime::bind_default_permissions(e);
     let revision = e.store.snapshot().unwrap().projects[0].revision;
-    let sid = execute(
-        e,
-        command(
-            "session.open",
-            json!({"agent":"builtin-agent-sol-high-analyst:6","binding":binding}),
-            Some(&project),
-            Some(revision),
-        ),
-    )
-    .unwrap()["id"]
+    let sid = e
+        .open_prepared_session(
+            &runtime::ResourceFixture {
+                store: e.store.as_ref(),
+            },
+            Command {
+                command_id: id(),
+                target: Some(project.clone()),
+                expected_revision: Some(revision),
+                payload: json!({"agent":"builtin-agent-sol-high-analyst:6"}),
+            },
+        )
+        .unwrap()["id"]
         .as_str()
         .unwrap()
         .to_owned();
+    let binding = e
+        .store
+        .snapshot()
+        .unwrap()
+        .sessions
+        .iter()
+        .find(|s| s.id == sid)
+        .unwrap()
+        .runtime_binding
+        .clone()
+        .unwrap();
     (project, sid, binding)
+}
+
+fn read_only_successor(e: &Engine, old: &RuntimeBinding) -> RuntimeBinding {
+    let state = e.store.snapshot().unwrap();
+    let harness = &old
+        .agent_configuration
+        .as_ref()
+        .unwrap()
+        .harness_revision_id;
+    let target = permission_target(&state, PermissionTargetKind::Harness, harness).unwrap();
+    let revision = active_permission_binding(&state, &target).unwrap().version;
+    apply(
+        e,
+        vec![change(
+            e,
+            PermissionTargetKind::Harness,
+            harness,
+            "builtin-permission-harness-read-only:1",
+            revision,
+        )],
+    )
+    .unwrap();
+    let state = e.store.snapshot().unwrap();
+    let lock =
+        resolve_permission_lock(&state, harness, &permission_selection(&state).unwrap()).unwrap();
+    let permissions = compile_permission_profiles(
+        &state,
+        &lock,
+        Some(old.permissions.as_ref().unwrap().scope.clone()),
+    )
+    .unwrap();
+    let mut next = old.clone();
+    runtime::set_permissions(&mut next, permissions);
+    let agent = state
+        .definitions
+        .iter()
+        .find(|d| d.id == old.agent_configuration.as_ref().unwrap().agent_revision_id)
+        .unwrap();
+    next.configuration_digest = devdesk_adapters::runtime_digest(agent, &next).unwrap();
+    next
+}
+fn seed_prior_turn(state: &mut EngineeringState, session: &str) {
+    state
+        .sessions
+        .iter_mut()
+        .find(|s| s.id == session)
+        .unwrap()
+        .external_session = Some(format!("fixture-native-{session}"));
+    let project = state
+        .sessions
+        .iter()
+        .find(|s| s.id == session)
+        .unwrap()
+        .project_id
+        .clone()
+        .unwrap();
+    state.turns.push(ConversationTurn {
+        id: id(),
+        project_id: project,
+        session_id: session.into(),
+        client_message_id: "prior-worker-turn".into(),
+        input: "previous completed fixture turn".into(),
+        input_digest: configuration_hash(&json!("previous completed fixture turn")),
+        input_snapshot: None,
+        code_view: None,
+        source_revision: None,
+        status: TurnStatus::Completed,
+        external_message: Some("prior-fixture-message".into()),
+        external_turn: Some("prior-fixture-turn".into()),
+        consumed: true,
+        cancel_requested: false,
+        started: Some(1),
+        finished: Some(2),
+        revision: 1,
+    });
 }
 
 #[test]
 fn successor_switch_accepts_input_once_preserves_history_and_recovers_after_restart() {
     let dir = tempfile::tempdir().unwrap();
     let e = Engine::new(
-        Arc::new(SqliteStore::open(dir.path()).unwrap()),
+        Arc::new(SqliteStore::open_fixture(dir.path()).unwrap()),
         Arc::new(FileArtifacts::new(dir.path().into())),
         runtime::adapters(),
     )
@@ -703,7 +793,8 @@ fn successor_switch_accepts_input_once_preserves_history_and_recovers_after_rest
     ));
     e.bootstrap().unwrap();
     let (_, sid, mut next) = prepared_discussion(&e);
-    next.configuration_digest = "b".repeat(64);
+    let original_digest = next.configuration_digest.clone();
+    next = read_only_successor(&e, &next);
     let c = command(
         "conversation.send",
         json!({"input":"Keep the context","client_message_id":"switch-message"}),
@@ -727,7 +818,7 @@ fn successor_switch_accepts_input_once_preserves_history_and_recovers_after_rest
             .as_ref()
             .unwrap()
             .configuration_digest,
-        "a".repeat(64)
+        original_digest
     );
     let successor = s
         .sessions
@@ -750,7 +841,7 @@ fn successor_switch_accepts_input_once_preserves_history_and_recovers_after_rest
     );
     drop(e);
     let restarted = Engine::new(
-        Arc::new(SqliteStore::open(dir.path()).unwrap()),
+        Arc::new(SqliteStore::open_fixture(dir.path()).unwrap()),
         Arc::new(FileArtifacts::new(dir.path().into())),
         runtime::adapters(),
     )
@@ -769,7 +860,7 @@ fn successor_switch_accepts_input_once_preserves_history_and_recovers_after_rest
 fn queued_input_prevents_permission_switch_and_cannot_be_reinterpreted() {
     let dir = tempfile::tempdir().unwrap();
     let e = Engine::new(
-        Arc::new(SqliteStore::open(dir.path()).unwrap()),
+        Arc::new(SqliteStore::open_fixture(dir.path()).unwrap()),
         Arc::new(FileArtifacts::new(dir.path().into())),
         runtime::adapters(),
     )
@@ -790,7 +881,7 @@ fn queued_input_prevents_permission_switch_and_cannot_be_reinterpreted() {
     .unwrap();
     let s = e.store.snapshot().unwrap();
     let revision = s.sessions.iter().find(|v| v.id == sid).unwrap().revision;
-    next.configuration_digest = "b".repeat(64);
+    next = read_only_successor(&e, &next);
     let error = e
         .send_with_permission_binding(
             command(
@@ -812,7 +903,7 @@ fn queued_input_prevents_permission_switch_and_cannot_be_reinterpreted() {
 fn frozen_feature_pins_followed_bindings_before_the_target_default_changes() {
     let dir = tempfile::tempdir().unwrap();
     let e = Engine::new(
-        Arc::new(SqliteStore::open(dir.path()).unwrap()),
+        Arc::new(SqliteStore::open_fixture(dir.path()).unwrap()),
         Arc::new(FileArtifacts::new(dir.path().into())),
         runtime::adapters(),
     )
@@ -856,7 +947,8 @@ fn frozen_feature_pins_followed_bindings_before_the_target_default_changes() {
         .configuration(source)
         .unwrap()
         .clone();
-    let mut payload = json!({"name":"Followed analyst","scope":"global","data":record.data});
+    let mut payload =
+        json!({"name":"Followed analyst","scope":Scope::project(&project),"data":record.data});
     for (key, value) in &record.refs {
         payload[key] = value.clone();
     }
@@ -918,7 +1010,7 @@ fn frozen_feature_pins_followed_bindings_before_the_target_default_changes() {
 #[test]
 fn uncertain_stop_retains_the_intent_and_retry_uses_the_original_binding() {
     use std::sync::atomic::{AtomicUsize, Ordering};
-    struct StopOnce(AtomicUsize);
+    struct StopOnce(AtomicUsize, std::sync::atomic::AtomicBool);
     impl ports::Harness for StopOnce {
         fn stop_session(&self, _: &Session, e: &RuntimeExecution) -> Result<ports::WorkerStop> {
             if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
@@ -931,20 +1023,41 @@ fn uncertain_stop_retains_the_intent_and_retry_uses_the_original_binding() {
                 requires_successor: true,
             })
         }
+        fn inspect_worker_stop(
+            &self,
+            _: &Session,
+            e: &RuntimeExecution,
+        ) -> Result<Option<ports::WorkerStop>> {
+            Ok((self.1.load(Ordering::SeqCst)).then(|| ports::WorkerStop {
+                operation_id: e.operation_id.clone(),
+                writer_revoked: true,
+                mode: "fixture-readonly-stop-proof".into(),
+                requires_successor: true,
+            }))
+        }
+        fn cleanup_worker(&self, _: &Session, _: &RuntimeExecution) -> Result<()> {
+            Ok(())
+        }
     }
     let dir = tempfile::tempdir().unwrap();
     let mut adapters = runtime::adapters();
-    adapters.harness = Arc::new(StopOnce(AtomicUsize::new(0)));
+    let stopper = Arc::new(StopOnce(
+        AtomicUsize::new(0),
+        std::sync::atomic::AtomicBool::new(false),
+    ));
+    adapters.harness = stopper.clone();
     let e = Engine::new(
-        Arc::new(SqliteStore::open(dir.path()).unwrap()),
+        Arc::new(SqliteStore::open_fixture(dir.path()).unwrap()),
         Arc::new(FileArtifacts::new(dir.path().into())),
         adapters,
     );
     e.bootstrap().unwrap();
     let (_, sid, mut next) = prepared_discussion(&e);
-    next.configuration_digest = "b".repeat(64);
+    next = read_only_successor(&e, &next);
+    let successor_digest = next.configuration_digest.clone();
     e.store
-        .transact(None, &mut |s| {
+        .seed_fixture_state(None, &mut |s| {
+            seed_prior_turn(s, &sid);
             s.executions.push(RuntimeExecution {
                 permissions: None,
                 kind: RuntimeExecutionKind::Harness,
@@ -967,17 +1080,26 @@ fn uncertain_stop_retains_the_intent_and_retry_uses_the_original_binding() {
         "conversation.send",
         json!({"input":"one original input","client_message_id":"fault"}),
         Some(&sid),
-        Some(1),
+        Some(
+            e.store
+                .snapshot()
+                .unwrap()
+                .sessions
+                .iter()
+                .find(|s| s.id == sid)
+                .unwrap()
+                .revision,
+        ),
     )
     .1;
     assert_eq!(
         e.send_with_permission_binding(c.clone(), next.clone())
             .unwrap_err()
             .code,
-        "needs_reconciliation"
+        "worker_stop_unresolved"
     );
     let s = e.store.snapshot().unwrap();
-    assert!(s.turns.is_empty());
+    assert_eq!(s.turns.len(), 1);
     assert_eq!(s.sessions.len(), 1);
     assert_eq!(
         s.configuration(&permission_switch_id(&c.command_id))
@@ -985,10 +1107,18 @@ fn uncertain_stop_retains_the_intent_and_retry_uses_the_original_binding() {
             .data["status"],
         "needs_reconciliation"
     );
-    next.configuration_digest = "c".repeat(64);
+    stopper.1.store(true, Ordering::SeqCst);
+    let mut changed = next.clone();
+    changed.configuration_digest = "c".repeat(64);
+    assert!(e.send_with_permission_binding(c.clone(), changed).is_err());
     let result = e.send_with_permission_binding(c, next).unwrap();
+    assert_eq!(
+        stopper.0.load(Ordering::SeqCst),
+        1,
+        "unknown stop is inspected, never resent"
+    );
     let s = e.store.snapshot().unwrap();
-    assert_eq!(s.turns.len(), 1);
+    assert_eq!(s.turns.len(), 2);
     assert!(s.executions.iter().all(|e| e.writer_revoked));
     assert_eq!(
         s.sessions
@@ -999,7 +1129,7 @@ fn uncertain_stop_retains_the_intent_and_retry_uses_the_original_binding() {
             .as_ref()
             .unwrap()
             .configuration_digest,
-        "b".repeat(64)
+        successor_digest
     );
 }
 
@@ -1198,38 +1328,39 @@ fn permission_switch_survives_process_exit_at_durable_boundaries() {
         fn replay(&self, id: &str, fingerprint: &str) -> Result<Option<Value>> {
             self.inner.replay(id, fingerprint)
         }
-        fn transact(
+        delegated_native_store!();
+        fn seed_fixture_state(
             &self,
             key: Option<(&str, &str)>,
             action: &mut dyn FnMut(&mut EngineeringState) -> Result<Value>,
         ) -> Result<Value> {
-            let result = self.inner.transact(key, &mut |state| {
-                let value = action(state)?;
-                if self.boundary == "before_successor_commit"
-                    && state
-                        .governance
-                        .iter()
-                        .any(|r| r.r#type == "permission_switch" && r.data["status"] == "adopted")
-                {
-                    std::process::exit(86);
-                }
-                Ok(value)
-            })?;
-            let state = self.inner.snapshot()?;
-            if let Some(intent) = state
-                .governance
-                .iter()
-                .find(|r| r.r#type == "permission_switch")
+            self.inner.seed_fixture_state(key, action)
+        }
+        fn submit_changes(
+            &self,
+            changes: &devdesk_core::concurrency::PreparedChangeSet,
+        ) -> Result<devdesk_core::concurrency::CommitOutcome> {
+            let adopted = changes.changes.iter().any(|c| {
+                c.value["type"] == "permission_switch" && c.value["data"]["status"] == "adopted"
+            });
+            if self.boundary == "before_successor_commit" && adopted {
+                std::process::exit(86);
+            }
+            let result = self.inner.submit_changes(changes)?;
+            if result.applied
+                && ((self.boundary == "intent_committed"
+                    && changes.changes.iter().any(|c| {
+                        c.value["type"] == "permission_switch"
+                            && c.value["data"]["status"] == "prepared"
+                    }))
+                    || (self.boundary == "stop_committed"
+                        && changes.changes.iter().any(|c| {
+                            c.value["type"] == "worker_stop_intent"
+                                && c.value["data"]["status"] == "completed"
+                        }))
+                    || (self.boundary == "input_committed" && adopted))
             {
-                let stopped = intent.data["stop_receipts"]
-                    .as_object()
-                    .is_some_and(|v| !v.is_empty());
-                if (self.boundary == "intent_committed" && intent.data["status"] == "prepared")
-                    || (self.boundary == "stop_committed" && stopped)
-                    || (self.boundary == "input_committed" && intent.data["status"] == "adopted")
-                {
-                    std::process::exit(86);
-                }
+                std::process::exit(86);
             }
             Ok(result)
         }
@@ -1256,6 +1387,24 @@ fn permission_switch_survives_process_exit_at_durable_boundaries() {
                 requires_successor: true,
             })
         }
+        fn inspect_worker_stop(
+            &self,
+            _: &Session,
+            e: &RuntimeExecution,
+        ) -> Result<Option<ports::WorkerStop>> {
+            Ok(std::fs::read_to_string(self.root.join("stopped-operation"))
+                .ok()
+                .filter(|operation| operation == &e.operation_id)
+                .map(|_| ports::WorkerStop {
+                    operation_id: e.operation_id.clone(),
+                    writer_revoked: true,
+                    mode: "fixture-readonly-stop-proof".into(),
+                    requires_successor: true,
+                }))
+        }
+        fn cleanup_worker(&self, _: &Session, _: &RuntimeExecution) -> Result<()> {
+            Ok(())
+        }
     }
     let adapters = |root: &Path, crash: bool| {
         let mut adapters = runtime::adapters();
@@ -1271,7 +1420,7 @@ fn permission_switch_survives_process_exit_at_durable_boundaries() {
         let value: Value =
             serde_json::from_slice(&std::fs::read(root.join("request.json")).unwrap()).unwrap();
         let store = Arc::new(CrashStore {
-            inner: Arc::new(SqliteStore::open(&root).unwrap()),
+            inner: Arc::new(SqliteStore::open_fixture(&root).unwrap()),
             boundary: boundary.clone(),
         });
         let engine = Engine::new(
@@ -1297,16 +1446,19 @@ fn permission_switch_survives_process_exit_at_durable_boundaries() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let engine = Engine::new(
-            Arc::new(SqliteStore::open(root).unwrap()),
+            Arc::new(SqliteStore::open_fixture(root).unwrap()),
             Arc::new(FileArtifacts::new(root.into())),
             adapters(root, false),
         );
         engine.bootstrap().unwrap();
         let (_, sid, mut binding) = prepared_discussion(&engine);
-        binding.configuration_digest = "b".repeat(64);
+        let original_digest = binding.configuration_digest.clone();
+        binding = read_only_successor(&engine, &binding);
+        let successor_digest = binding.configuration_digest.clone();
         engine
             .store
-            .transact(None, &mut |state| {
+            .seed_fixture_state(None, &mut |state| {
+                seed_prior_turn(state, &sid);
                 state.executions.push(RuntimeExecution {
                     permissions: None,
                     kind: RuntimeExecutionKind::Harness,
@@ -1329,7 +1481,17 @@ fn permission_switch_survives_process_exit_at_durable_boundaries() {
             "conversation.send",
             json!({"input":"one crash-safe input","client_message_id":"crash-message"}),
             Some(&sid),
-            Some(1),
+            Some(
+                engine
+                    .store
+                    .snapshot()
+                    .unwrap()
+                    .sessions
+                    .iter()
+                    .find(|s| s.id == sid)
+                    .unwrap()
+                    .revision,
+            ),
         )
         .1;
         std::fs::write(
@@ -1355,13 +1517,16 @@ fn permission_switch_survives_process_exit_at_durable_boundaries() {
             String::from_utf8_lossy(&output.stderr)
         );
         let engine = Engine::new(
-            Arc::new(SqliteStore::open(root).unwrap()),
+            Arc::new(SqliteStore::open_fixture(root).unwrap()),
             Arc::new(FileArtifacts::new(root.into())),
             adapters(root, false),
         );
         engine.bootstrap().unwrap();
         // A new default cannot replace the original durable switching intent.
-        binding.configuration_digest = "c".repeat(64);
+        let mut changed = binding.clone();
+        changed.configuration_digest = "c".repeat(64);
+        let replay_with_changed_default =
+            engine.send_with_permission_binding(request.clone(), changed);
         let result = engine
             .send_with_permission_binding(request.clone(), binding.clone())
             .unwrap();
@@ -1371,9 +1536,15 @@ fn permission_switch_survives_process_exit_at_durable_boundaries() {
                 .unwrap(),
             result
         );
+        if let Ok(replayed) = replay_with_changed_default {
+            assert_eq!(
+                replayed, result,
+                "an already sealed original command replays only its original result"
+            );
+        }
         let state = engine.store.snapshot().unwrap();
         assert_eq!(state.sessions.len(), 2, "{boundary}");
-        assert_eq!(state.turns.len(), 1, "{boundary}");
+        assert_eq!(state.turns.len(), 2, "{boundary}");
         assert!(
             state.executions.iter().all(|e| e.writer_revoked),
             "{boundary}"
@@ -1390,7 +1561,7 @@ fn permission_switch_survives_process_exit_at_durable_boundaries() {
                 .as_ref()
                 .unwrap()
                 .configuration_digest,
-            "b".repeat(64)
+            successor_digest
         );
         assert_eq!(
             state
@@ -1402,7 +1573,7 @@ fn permission_switch_survives_process_exit_at_durable_boundaries() {
                 .as_ref()
                 .unwrap()
                 .configuration_digest,
-            "a".repeat(64)
+            original_digest
         );
     }
 }

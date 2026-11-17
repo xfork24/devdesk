@@ -10,7 +10,11 @@ fn text(v: &Value, key: &str) -> Result<String> {
 }
 use crate::docker::{ContainerPurpose, ContainerSpec, DockerSandbox};
 use std::{collections::HashMap, sync::Arc, time::Duration};
-type Job = Arc<Mutex<Option<Result<ToolReceipt>>>>;
+struct ToolJob {
+    fingerprint: String,
+    result: Mutex<Option<Result<ToolReceipt>>>,
+}
+type Job = Arc<ToolJob>;
 pub struct NativeTools {
     root: PathBuf,
     jobs: Mutex<HashMap<String, Job>>,
@@ -563,19 +567,6 @@ impl ports::ToolExecutor for NativeTools {
         )?;
         self.validate_arguments(&i.tool.definition.input_schema, &i.arguments)?;
         require(!self.revoked(&i.tool)?, "接入已紧急停用")?;
-        let mut jobs = self.jobs.lock().map_err(storage)?;
-        require(
-            jobs.contains_key(&i.id)
-                || jobs
-                    .values()
-                    .filter(|j| j.lock().is_ok_and(|v| v.is_none()))
-                    .count()
-                    < 4,
-            "工具并发已满",
-        )?;
-        let directory = self.directory(&i.id);
-        fs::create_dir_all(&directory).map_err(storage)?;
-        let identity = directory.join("input-hash");
         let fingerprint = configuration_hash(&json!([
             i.input_hash,
             i.tool,
@@ -583,33 +574,81 @@ impl ports::ToolExecutor for NativeTools {
             i.image_id,
             i.worktree
         ]));
-        match OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&identity)
-        {
-            Ok(mut file) => {
-                use std::io::Write;
-                file.write_all(fingerprint.as_bytes()).map_err(storage)?;
-                file.sync_all().map_err(storage)?;
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+        let job = {
+            let mut jobs = self.jobs.lock().map_err(storage)?;
+            if let Some(job) = jobs.get(&i.id) {
                 require(
-                    fs::read_to_string(&identity).map_err(storage)? == fingerprint,
-                    "调用 ID 被不同的输入或授权复用",
+                    job.fingerprint == fingerprint,
+                    "调用 ID 被不同输入或授权复用",
                 )?;
-                if jobs.contains_key(&i.id) || directory.join("receipt.json").is_file() {
-                    return Ok(());
-                }
-                return Err(err(
-                    "needs_reconciliation",
-                    "已存在执行意图且无回执，禁止重新派发",
-                ));
+                return Ok(());
             }
-            Err(e) => return Err(storage(e)),
+            require(
+                jobs.values()
+                    .filter(|j| j.result.lock().is_ok_and(|v| v.is_none()))
+                    .count()
+                    < 4,
+                "工具并发已满",
+            )?;
+            let job = Arc::new(ToolJob {
+                fingerprint: fingerprint.clone(),
+                result: Mutex::new(None),
+            });
+            jobs.insert(i.id.clone(), job.clone());
+            job
+        };
+        // Reserve only the execution cell under the structural map lock.
+        // Files, schema providers and Docker run after releasing that lock.
+        let prepared = (|| -> Result<bool> {
+            let directory = self.directory(&i.id);
+            fs::create_dir_all(&directory).map_err(storage)?;
+            let identity = directory.join("input-hash");
+            match OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&identity)
+            {
+                Ok(mut file) => {
+                    use std::io::Write;
+                    file.write_all(fingerprint.as_bytes()).map_err(storage)?;
+                    file.sync_all().map_err(storage)?;
+                    Ok(true)
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    require(
+                        fs::read_to_string(&identity).map_err(storage)? == fingerprint,
+                        "调用 ID 被不同输入或授权复用",
+                    )?;
+                    let receipt = directory.join("receipt.json");
+                    if receipt.is_file() {
+                        let receipt: ToolReceipt =
+                            serde_json::from_slice(&fs::read(receipt).map_err(storage)?)
+                                .map_err(storage)?;
+                        *job.result.lock().map_err(storage)? = Some(Ok(receipt));
+                        return Ok(false);
+                    }
+                    Err(err(
+                        "needs_reconciliation",
+                        "原执行资格存在但没有回执，不重新派发",
+                    ))
+                }
+                Err(e) => Err(storage(e)),
+            }
+        })();
+        match prepared {
+            Ok(false) => return Ok(()),
+            Ok(true) => {}
+            Err(error) => {
+                let mut jobs = self.jobs.lock().map_err(storage)?;
+                if jobs
+                    .get(&i.id)
+                    .is_some_and(|current| Arc::ptr_eq(current, &job))
+                {
+                    jobs.remove(&i.id);
+                }
+                return Err(error);
+            }
         }
-        let job = Arc::new(Mutex::new(None));
-        jobs.insert(i.id.clone(), job.clone());
         let root = self.root.clone();
         let invocation = i.clone();
         std::thread::spawn(move || {
@@ -631,21 +670,34 @@ impl ports::ToolExecutor for NativeTools {
                     let _ = fs::rename(temporary, dir.join("receipt.json"));
                 }
             }
-            if let Ok(mut slot) = job.lock() {
+            if let Ok(mut slot) = job.result.lock() {
                 *slot = Some(Ok(receipt));
             }
         });
         Ok(())
     }
     fn poll(&self, i: &ToolInvocation) -> Result<Option<ToolReceipt>> {
-        if let Some(job) = self.jobs.lock().map_err(storage)?.get(&i.id) {
-            let result = job.lock().map_err(storage)?.clone().transpose()?;
+        let job = self.jobs.lock().map_err(storage)?.get(&i.id).cloned();
+        if let Some(job) = job {
+            let result = job.result.lock().map_err(storage)?.clone().transpose()?;
             if result.is_some() {
+                if self.directory(&i.id).join("receipt.json").is_file() {
+                    let mut jobs = self.jobs.lock().map_err(storage)?;
+                    if jobs
+                        .get(&i.id)
+                        .is_some_and(|current| Arc::ptr_eq(current, &job))
+                    {
+                        jobs.remove(&i.id);
+                    }
+                }
                 return Ok(result);
             }
             if self.revoked(&i.tool)? {
-                self.cancel(i)?;
-                return Err(err("integration_disabled", "接入已停用，调用需核对"));
+                return Err(err(
+                    "integration_disabled",
+                    "接入已停用，等待内核授权停止；读取不直接取消调用",
+                )
+                .technical_unknown());
             }
             return Ok(None);
         }
@@ -659,6 +711,39 @@ impl ports::ToolExecutor for NativeTools {
             "needs_reconciliation",
             "执行器未持有该调用且没有持久回执，禁止重新派发",
         ))
+    }
+    fn inspect(&self, i: &ToolInvocation) -> Result<Option<ToolReceipt>> {
+        let directory = self.directory(&i.id);
+        let identity = directory.join("input-hash");
+        reject_symlink(&identity)?;
+        if !identity.is_file() {
+            return Ok(None);
+        }
+        let expected = configuration_hash(&json!([
+            i.input_hash,
+            i.tool,
+            i.permissions,
+            i.image_id,
+            i.worktree
+        ]));
+        require(
+            fs::read_to_string(identity).map_err(storage)? == expected,
+            "工具只读核对改变了原输入或权限",
+        )?;
+        let job = self.jobs.lock().map_err(storage)?.get(&i.id).cloned();
+        if let Some(job) = job
+            && let Some(result) = job.result.lock().map_err(storage)?.clone()
+        {
+            return result.map(Some);
+        }
+        let path = directory.join("receipt.json");
+        reject_symlink(&path)?;
+        if !path.is_file() {
+            return Ok(None);
+        }
+        serde_json::from_slice(&fs::read(path).map_err(storage)?)
+            .map(Some)
+            .map_err(storage)
     }
     fn cancel(&self, i: &ToolInvocation) -> Result<()> {
         DockerSandbox::new(&self.root)?.stop(&operation(&i.id))

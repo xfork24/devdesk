@@ -96,6 +96,19 @@ pub(crate) fn select_work_configuration(
 ) -> Result<ConfigurationRecord> {
     let work = work_reference(state, owner)?;
     let scope = work.scope(state)?;
+    select_work_configuration_for(state, &work, &scope, payload, inherited)
+}
+
+/// Pure configuration selection for an explicitly observed work owner. Runtime
+/// existence, owner revisions and the no-workflow predicate are caller guards.
+pub(crate) fn select_work_configuration_for(
+    state: &mut EngineeringState,
+    work: &WorkReference,
+    scope: &Scope,
+    payload: &Value,
+    inherited: Option<&ConfigurationRecord>,
+) -> Result<ConfigurationRecord> {
+    let owner = work.id();
     let data = inherited.map(|r| &r.data).unwrap_or(&Value::Null);
     let workflow = payload["workflow_ref"]
         .as_str()
@@ -113,10 +126,10 @@ pub(crate) fn select_work_configuration(
         })
         .map(str::to_owned);
     let standard = if let Some(standard) = standard {
-        standard_entry(state, &standard, &workflow, &scope)?;
+        standard_entry(state, &standard, &workflow, scope)?;
         standard
     } else {
-        capture_standard(state, vec![workflow.clone()], &scope, "规范快照")?.id
+        capture_standard(state, vec![workflow.clone()], scope, "规范快照")?.id
     };
     let bindings = payload
         .get("role_agent_bindings")
@@ -132,7 +145,7 @@ pub(crate) fn select_work_configuration(
         .unwrap_or(&data["harness_permission_ref"])
         .clone();
     if let Some(id) = context.as_str() {
-        let profile = reference(state, id, "permission_profile", &scope)?.permission_profile()?;
+        let profile = reference(state, id, "permission_profile", scope)?.permission_profile()?;
         require(
             profile.target_kind == PermissionTargetKind::Harness,
             "工作需要 Harness Profile",
@@ -144,13 +157,13 @@ pub(crate) fn select_work_configuration(
         .or_else(|| data["sandbox_ref"].as_str())
         .unwrap_or(&defaults.sandbox_ref)
         .to_owned();
-    reference(state, &sandbox, "sandbox", &scope)?;
+    reference(state, &sandbox, "sandbox", scope)?;
     let sandbox_profile = payload
         .get("sandbox_permission_ref")
         .unwrap_or(&data["sandbox_permission_ref"])
         .clone();
     if let Some(id) = sandbox_profile.as_str() {
-        let profile = reference(state, id, "permission_profile", &scope)?.permission_profile()?;
+        let profile = reference(state, id, "permission_profile", scope)?.permission_profile()?;
         require(
             profile.target_kind == PermissionTargetKind::Sandbox,
             "工作需要 Sandbox Profile",
@@ -162,7 +175,7 @@ pub(crate) fn select_work_configuration(
         .or_else(|| data.get("orchestration"))
         .cloned()
         .unwrap_or(json!({"mode":"manual"}));
-    crate::workflow_driver::validate_selection(state, &orchestration, &scope)?;
+    crate::workflow_driver::validate_selection(state, &orchestration, scope)?;
     let selection = json!({"orchestration":orchestration,"schema_version":1,"work":work,"standard_ref":standard,"workflow_ref":workflow,"role_agent_bindings":bindings,"harness_permission_ref":context,"sandbox_ref":sandbox,"sandbox_permission_ref":sandbox_profile,"source_configuration_ref":inherited.map(|r|json!(r.id)).or_else(||payload.get("source_configuration_ref").cloned())});
     if let Some(old) = &old
         && old.data == selection
@@ -172,7 +185,7 @@ pub(crate) fn select_work_configuration(
     let mut row = record(
         "work_configuration",
         owner.into(),
-        scope,
+        scope.clone(),
         "采用的规范".into(),
         old.as_ref().map_or(1, |r| r.version + 1),
         old.map(|r| r.id),

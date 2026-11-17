@@ -299,6 +299,7 @@ pub struct PermissionPresetSource {
     pub path: PathBuf,
     pub builtin_path: PathBuf,
     pub is_builtin: bool,
+    pub revision: u64,
 }
 
 fn permission_preset_directory(path: &Path) -> Result<PathBuf> {
@@ -327,6 +328,7 @@ fn preset_source(s: &EngineeringState, builtin: PathBuf) -> PermissionPresetSour
         .unwrap_or_else(|| builtin.clone());
     PermissionPresetSource {
         is_builtin: path == builtin,
+        revision: preset_source_selection(s).map_or(0, |r| r.version),
         path,
         builtin_path: builtin,
     }
@@ -357,6 +359,12 @@ fn select_preset_source(s: &mut EngineeringState, path: Option<&Path>) {
     });
 }
 
+struct PermissionPresetCommand<'a> {
+    command: &'a Command,
+    fingerprint: &'a str,
+    origin: Value,
+}
+
 impl GlobalStore {
     fn builtin_permission_preset_source(&self) -> Result<PathBuf> {
         if let Ok(exe) = std::env::current_exe()
@@ -372,7 +380,6 @@ impl GlobalStore {
         // editable directories. Keep old content-addressed generations intact.
         let files = factory_bundle::packaged_permission_presets()?;
         let generation = configuration_hash(&json!(files));
-        let _writer = self.writer.lock().map_err(storage)?;
         let mut root = PathBuf::from(self.root());
         for part in ["packaged-permission-presets", &generation] {
             root.push(part);
@@ -433,16 +440,44 @@ impl GlobalStore {
                 .ok_or_else(|| err("invalid_params", "需要预设目录"))?,
         ))?;
         let builtin = self.builtin_permission_preset_source()?;
-        self.transact(Some((&c.command_id, &fp)), &mut |s| {
-            select_preset_source(s, if path == builtin { None } else { Some(&path) });
-            Ok(json!(preset_source(s, builtin.clone())))
-        })
+        let before = self.configuration_snapshot()?;
+        let current = preset_source_selection(&before.state).map_or(0, |r| r.version);
+        if c.expected_revision != Some(current) {
+            return Err(err("revision_conflict", "预设来源已改变，请重新载入"));
+        }
+        let transfer = devdesk_core::configuration_transfer_witness(self)?;
+        let mut next = before.state.as_ref().clone();
+        select_preset_source(&mut next, if path == builtin { None } else { Some(&path) });
+        let result = json!(preset_source(&next, builtin));
+        self.commit_permission_catalog(
+            &before,
+            next,
+            PermissionPresetCommand {
+                command: c,
+                fingerprint: &fp,
+                origin: json!({"kind":"human"}),
+            },
+            result,
+            transfer,
+        )
     }
+
     pub fn reload_permission_presets(&self, c: &Command) -> Result<Value> {
+        self.reload_permission_presets_from(c, false)
+    }
+    pub fn initialize_permission_presets(&self, c: &Command) -> Result<Value> {
+        self.reload_permission_presets_from(c, true)
+    }
+    fn reload_permission_presets_from(&self, c: &Command, initializing: bool) -> Result<Value> {
         if c.command_id.is_empty() {
             return Err(err("invalid_params", "command_id 不能为空"));
         }
-        let fp = command_fingerprint("permission.profile.reload", c);
+        let request = command_fingerprint("permission.profile.reload", c);
+        let fp = if initializing {
+            configuration_hash(&("initialize-permission-presets/v1", &request))
+        } else {
+            request
+        };
         if let Some(previous) = self.replay(&c.command_id, &fp)? {
             return Ok(previous);
         }
@@ -451,10 +486,14 @@ impl GlobalStore {
             Some(Value::Bool(value)) => *value,
             _ => return Err(err("invalid_params", "builtin 必须为布尔值")),
         };
-        let before = self.snapshot()?;
-        let source_revision = preset_source_selection(&before).map(|r| r.id.clone());
+        let before = self.configuration_snapshot()?;
+        let source_revision = preset_source_selection(&before.state).map_or(0, |r| r.version);
+        if c.expected_revision != Some(source_revision) {
+            return Err(err("revision_conflict", "预设来源已改变，请重新载入"));
+        }
+        let transfer = devdesk_core::configuration_transfer_witness(self)?;
         let builtin_path = self.builtin_permission_preset_source()?;
-        let source = preset_source(&before, builtin_path.clone());
+        let source = preset_source(&before.state, builtin_path.clone());
         let root = permission_preset_directory(if builtin { &builtin_path } else { &source.path })?;
         let mut profiles = Vec::new();
         let mut origins = Vec::new();
@@ -499,40 +538,97 @@ impl GlobalStore {
                 }
             }
         }
-        self.transact(Some((&c.command_id, &fp)), &mut |s| {
-            if preset_source_selection(s).map(|r| &r.id) != source_revision.as_ref() {
-                return Err(err("revision_conflict", "预设目录已变更，请重新加载"));
+        let mut next = before.state.as_ref().clone();
+        let s = &mut next;
+        let result = insert_permission_profiles(s, &profiles, "presets")?;
+        for (profile, data) in &origins {
+            let key = format!(
+                "permission-file-origin:{}",
+                permission_content_hash(&json!({"profile":profile,"source":data}))
+            );
+            if !s.governance.iter().any(|r| r.id == key) {
+                s.governance.push(ConfigurationRecord {
+                    id: key,
+                    r#type: "permission_file_origin".into(),
+                    definition_id: profile.clone(),
+                    scope: Scope::global(),
+                    name: "预设文件来源".into(),
+                    version: 1,
+                    supersedes: None,
+                    content_hash: content_digest(&References::new(), data),
+                    refs: References::new(),
+                    data: data.clone(),
+                    immutable: true,
+                    revision: 1,
+                    created_at: 0,
+                });
             }
-            let result = insert_permission_profiles(s, &profiles, "presets")?;
-            for (profile, data) in &origins {
-                let key = format!(
-                    "permission-file-origin:{}",
-                    permission_content_hash(&json!({"profile":profile,"source":data}))
-                );
-                if !s.governance.iter().any(|r| r.id == key) {
-                    s.governance.push(ConfigurationRecord {
-                        id: key,
-                        r#type: "permission_file_origin".into(),
-                        definition_id: profile.clone(),
-                        scope: Scope::global(),
-                        name: "预设文件来源".into(),
-                        version: 1,
-                        supersedes: None,
-                        content_hash: content_digest(&References::new(), data),
-                        refs: References::new(),
-                        data: data.clone(),
-                        immutable: true,
-                        revision: 1,
-                        created_at: 0,
-                    });
-                }
-            }
-            if builtin {
-                select_preset_source(s, None);
-            }
-            devdesk_core::register_template_members(s, template_catalog_generation(s));
-            Ok(result)
+        }
+        if builtin {
+            select_preset_source(s, None);
+        }
+        devdesk_core::register_template_members(s, template_catalog_generation(s));
+        self.commit_permission_catalog(&before,next,PermissionPresetCommand{command:c,fingerprint:&fp,origin:if initializing{json!({"kind":"runtime_coordinator","operation":"initialize_permission_presets"})}else{json!({"kind":"human"})}},result,transfer)
+    }
+
+    fn commit_permission_catalog(
+        &self,
+        before: &ConfigurationCatalogSnapshot,
+        next: EngineeringState,
+        request: PermissionPresetCommand<'_>,
+        result: Value,
+        transfer: devdesk_core::concurrency::ResourceVersion,
+    ) -> Result<Value> {
+        use devdesk_core::concurrency::*;
+        let c = request.command;
+        let fingerprint = request.fingerprint;
+        let candidate =
+            ConfigurationCatalogSnapshot::new(next, before.revision, before.repository_ready)?;
+        let publication =
+            devdesk_core::prepare_configuration_publication(self, before, &candidate)?;
+        let key = ResourceKey::new(
+            "governance",
+            format!("permission-command:{}", configuration_hash(&c.command_id)),
+        );
+        let data = json!({"origin":request.origin,"request_digest":fingerprint,"target":c.target,"expected_revision":c.expected_revision});
+        let row = ConfigurationRecord {
+            id: key.id.clone(),
+            r#type: "permission_command".into(),
+            definition_id: c.command_id.clone(),
+            scope: Scope::global(),
+            name: "权限配置命令".into(),
+            version: 1,
+            supersedes: None,
+            content_hash: content_digest(&References::new(), &data),
+            refs: References::new(),
+            data,
+            immutable: true,
+            revision: 1,
+            created_at: 0,
+        };
+        let mut guards = publication.read_set.versions().to_vec();
+        guards.push(transfer);
+        guards.push(ResourceVersion {
+            resource: key.clone(),
+            revision: 0,
+        });
+        let mut changes = publication.changes;
+        changes.push(ResourceChange {
+            resource: key,
+            value: row.to_storage(),
+        });
+        self.commit_changes(&PreparedChangeSet {
+            command_id: c.command_id.clone(),
+            fingerprint: fingerprint.into(),
+            read_set: ReadSet::new(guards)?,
+            changes,
+            result,
+            time: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64,
         })
+        .map(|r| r.result)
     }
 }
 

@@ -29,6 +29,7 @@ pub(super) struct CatalogCache {
     entry: Mutex<Option<Entry>>,
 }
 impl CatalogCache {
+    #[cfg(any(test, feature = "test-fixtures"))]
     pub fn invalidate(&self) -> Result<()> {
         *self.entry.lock().map_err(storage)? = None;
         Ok(())

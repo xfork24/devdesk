@@ -82,8 +82,38 @@ impl ReadSet {
         ))
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     pub fn versions(&self) -> &[ResourceVersion] {
         &self.0
+    }
+
+    /// Combine independently prepared witnesses. Equal witnesses may overlap;
+    /// differing versions are a conflict, never an invitation to refresh one.
+    pub fn merge(&self, versions: impl IntoIterator<Item = ResourceVersion>) -> Result<Self> {
+        let mut original = self
+            .0
+            .iter()
+            .map(|v| (v.resource.clone(), v.revision))
+            .collect::<BTreeMap<_, _>>();
+        for version in versions {
+            if let Some(previous) = original.insert(version.resource, version.revision)
+                && previous != version.revision
+            {
+                return Err(err(
+                    "revision_conflict",
+                    "准备期间关联资源已变化，请保留原请求并重新载入",
+                ));
+            }
+        }
+        Self::new(
+            original
+                .into_iter()
+                .map(|(resource, revision)| ResourceVersion { resource, revision })
+                .collect(),
+        )
     }
 
     pub fn validate(&self) -> Result<()> {
@@ -109,7 +139,8 @@ pub fn feature_collection(project: &str) -> ResourceKey {
 }
 
 /// Values are prepared by trusted core use cases; this is not an RPC envelope.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ResourceChange {
     pub resource: ResourceKey,
     pub value: Value,

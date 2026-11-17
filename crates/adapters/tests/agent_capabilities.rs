@@ -89,8 +89,11 @@ impl AgentContextReader for ContextReader {
     }
 }
 fn engine(root: &std::path::Path) -> Engine {
+    engine_with_store(root, SqliteStore::open(root).unwrap())
+}
+fn engine_with_store(root: &std::path::Path, store: SqliteStore) -> Engine {
     let e = Engine::new(
-        Arc::new(SqliteStore::open(root).unwrap()),
+        Arc::new(store),
         Arc::new(FileArtifacts::new(root.into())),
         runtime::adapters(),
     )
@@ -106,20 +109,15 @@ fn discussion_keeps_agent_tools_and_common_context_without_a_workflow() {
 }
 fn context_case(detached: bool) {
     let dir = tempfile::tempdir().unwrap();
-    let mut e = engine(dir.path());
+    let mut e = if detached {
+        engine(dir.path())
+    } else {
+        engine_with_store(dir.path(), SqliteStore::open_fixture(dir.path()).unwrap())
+    };
     let harness = Arc::new(CallingHarness::default());
     let reader = Arc::new(ContextReader::default());
     e.harness = harness.clone();
     e.context_reader = Some(reader.clone());
-    e.store
-        .transact(None, &mut |state| {
-            let mut source = state.configuration("fixture-delivery-object:1")?.source();
-            source.identity = "fixture-delivery-private".into();
-            source.scope = Scope::project(id());
-            state.governance.push(source.into_record()?);
-            Ok(Value::Null)
-        })
-        .unwrap();
     let project = if detached {
         GLOBAL_DISCUSSION_NAMESPACE.into()
     } else {
@@ -137,7 +135,16 @@ fn context_case(detached: bool) {
             .unwrap()
             .to_owned()
     };
-    let instance=e.execute("agent.instance.create",Command{command_id:id(),target:None,expected_revision:None,payload:json!({"name":"Identity","agent_revision_id":"builtin-agent-sol-high-analyst:6","scope":"global"})}).unwrap()["id"].as_str().unwrap().to_owned();
+    let instance=e.execute("agent.instance.create",Command{command_id:id(),target:None,expected_revision:None,payload:json!({"name":"Identity","agent_revision_id":"builtin-agent-sol-high-analyst:6","scope":if detached{"global".into()}else{format!("project:{project}")},"project_id":if detached{None}else{Some(&project)}})}).unwrap()["id"].as_str().unwrap().to_owned();
+    e.store
+        .seed_fixture_state(None, &mut |state| {
+            let mut source = state.configuration("fixture-delivery-object:1")?.source();
+            source.identity = "fixture-delivery-private".into();
+            source.scope = Scope::project(id());
+            state.governance.push(source.into_record()?);
+            Ok(Value::Null)
+        })
+        .unwrap();
     let (session, turn) = runtime::queue_conversation_with(&e, &project, |state, binding| {
         let agent = state.resolve_agent("builtin-agent-sol-high-analyst:6")?;
         let model: ModelDefinition = state.configuration(&agent.model_ref)?.decode()?;
@@ -176,15 +183,20 @@ fn context_case(detached: bool) {
     });
     e.tick_conversations(1).unwrap();
     e.tick_conversations(1).unwrap();
-    e.drive_platform_tools().unwrap();
+    for _ in 0..16 {
+        e.drive_platform_tools().unwrap();
+        if harness.replies.lock().unwrap().len() == 5 {
+            break;
+        }
+    }
     let replies = harness.replies.lock().unwrap();
     assert_eq!(replies.len(), 5);
     assert_eq!(replies.iter().filter(|r| r.success).count(), 2);
     assert_eq!(&*reader.instances.lock().unwrap(), &[instance]);
     assert!(replies.iter().any(|r| {
-        r.error
-            .as_ref()
-            .is_some_and(|v| v["code"] == "context_required")
+        r.error.as_ref().is_some_and(|v| {
+            v["issuer"] == "kernel_context" && v["error"]["code"] == "context_required"
+        })
     }));
     drop(replies);
     e.drive_platform_tools().unwrap();
@@ -277,7 +289,13 @@ fn missing_external_account_keeps_the_declared_tool_available_for_discussion() {
             Command {
                 command_id: id(),
                 target: payload["id"].as_str().map(str::to_owned),
-                expected_revision: None,
+                expected_revision: payload["id"].as_str().and_then(|target| {
+                    e.store
+                        .configuration_snapshot()
+                        .unwrap()
+                        .record(target)
+                        .map(|r| r.revision)
+                }),
                 payload,
             },
         )
@@ -354,7 +372,7 @@ fn historical_outputs_are_read_from_the_source_without_starting_its_workflow() {
         .publish_project(&e.store.snapshot().unwrap().projects[0])
         .unwrap();
     e.store
-        .transact(None, &mut |state| {
+        .seed_fixture_state(None, &mut |state| {
             state
                 .governance
                 .push(global.snapshot()?.configuration(&instance)?.clone());
@@ -443,7 +461,7 @@ fn historical_outputs_are_read_from_the_source_without_starting_its_workflow() {
         revision: 1,
         created_at: 0,
     };
-    e.store.transact(None,&mut |state| {
+    e.store.seed_fixture_state(None,&mut |state| {
         for revision in ["original-plan","later-plan"] {
             state.governance.push(fact("workflow_plan_revision",revision,&workflow_id,json!({"owner_id":project,"instance_id":workflow_id,"workflow_ref":historical.workflow_ref,"standard_ref":historical.plan.standard_ref,"plan":historical.plan,"inputs":historical.inputs,"role_agent_bindings":historical.role_agent_bindings})));
         }

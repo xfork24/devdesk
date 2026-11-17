@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 fn engine(path: &std::path::Path) -> Engine {
     let e = Engine::new(
-        Arc::new(SqliteStore::open(path).unwrap()),
+        Arc::new(SqliteStore::open_fixture(path).unwrap()),
         Arc::new(FileArtifacts::new(path.into())),
         runtime::adapters(),
     )
@@ -170,94 +170,26 @@ fn initialize(e: &Engine) -> (Id, Id, Id) {
         .as_str()
         .unwrap()
         .to_string();
-    let sid = id();
-    let turn = id();
-    e.store
-        .transact(None, &mut |s| {
-            s.sessions.push(Session {
-                id: sid.clone(),
-                owner_id: pid.clone(),
-                agent: "builtin-agent-sol-high-analyst:6".into(),
-                harness: "fixture-runtime".into(),
-                sandbox: "docker-fixture".into(),
-                snapshot_id: None,
-                instance: None,
-                origin: Origin::External,
-                project_id: Some(pid.clone()),
-                feature_id: None,
-                task_id: None,
-                scope: Some(SessionScope::Project),
-                lifecycle: Some(SessionLifecycle::Prepared),
-                runtime_binding: Some(RuntimeBinding {
-                    model_connection: None,
-                    model_profile_digest: None,
-                    agent_configuration: None,
-                    model_parameters: Default::default(),
-                    permissions: None,
-                    installation: RuntimeInstallation {
-                        recipe_digest: None,
-                        id: "fixture-runtime".into(),
-                        key: RuntimeKey {
-                            provider: HarnessProvider::Codex,
-                            version: "fixture".into(),
-                            os: "linux".into(),
-                            arch: "aarch64".into(),
-                        },
-                        artifact: RuntimeArtifact::OciImage {
-                            reference: format!("example.org/runtime@sha256:{}", "a".repeat(64)),
-                        },
-                        source: "synthetic domain fixture".into(),
-                        license: "test".into(),
-                    },
-                    adapter_version: "fixture/v1".into(),
-                    model: "fixture-model".into(),
-                    tool_policy: ToolPolicy::ReadOnly,
-                    writable_paths: vec![],
-                    read_only_paths: vec![],
-                    work_type: WorkType::Discussion,
-                    configuration_digest: "a".repeat(64),
-                    credential_ref: None,
-                }),
-                external_session: None,
-                predecessor: None,
-                revision: 1,
-            });
-            s.turns.push(ConversationTurn {
-                id: turn.clone(),
-                project_id: pid.clone(),
-                session_id: sid.clone(),
-                client_message_id: "message-1".into(),
-                input: "Discuss a requirement before a Feature exists".into(),
-                input_digest: "b".repeat(64),
-                input_snapshot: None,
-                code_view: None,
-                source_revision: None,
-                status: TurnStatus::Queued,
-                external_message: None,
-                external_turn: None,
-                consumed: false,
-                cancel_requested: false,
-                started: None,
-                finished: None,
-
-                revision: 1,
-            });
-            s.conversation_events.push(ConversationEvent {
-                mode: MessageMode::Full,
-                provider_item: None,
-                id: id(),
-                session_id: sid.clone(),
-                turn_id: turn.clone(),
-                sequence: 1,
-                deduplication_key: "input-1".into(),
-                kind: ConversationEventKind::User,
-                content: "requirement input".into(),
-                artifact_id: None,
-                time: 1,
-            });
-            Ok(json!({"ok":true}))
-        })
-        .unwrap();
+    let sid = e
+        .open_prepared_session(
+            &runtime::ResourceFixture {
+                store: e.store.as_ref(),
+            },
+            Command {
+                command_id: id(),
+                target: Some(pid.clone()),
+                expected_revision: Some(1),
+                payload: json!({"agent":"builtin-agent-sol-high-analyst:6"}),
+            },
+        )
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let turn = e.execute("conversation.send",Command {
+        command_id:id(), target:Some(sid.clone()), expected_revision:Some(1),
+        payload:json!({"client_message_id":"message-1","input":"Discuss a requirement before a Feature exists"}),
+    }).unwrap()["id"].as_str().unwrap().to_owned();
     (pid, sid, turn)
 }
 #[test]
@@ -296,14 +228,20 @@ fn discussion_before_feature_survives_restart_without_fabricating_runs() {
             .iter()
             .filter(|record| record.r#type == "role")
             .count(),
-        6
+        s.governance
+            .iter()
+            .filter(|record| record.r#type == "role")
+            .count()
     );
     assert_eq!(
         roles
             .iter()
             .filter(|definition| definition.id.starts_with("builtin-agent-sol-high-"))
             .count(),
-        6
+        s.definitions
+            .iter()
+            .filter(|d| d.agent_profile.is_some() && d.id.starts_with("builtin-agent-sol-high-"))
+            .count()
     );
     assert_ne!(
         roles
@@ -325,7 +263,7 @@ fn enforce_busy_cross_project_immutable_binding_and_append_only_messages() {
     initialize(&e);
     assert!(
         e.store
-            .transact(None, &mut |s| {
+            .seed_fixture_state(None, &mut |s| {
                 s.sessions[0].runtime_binding.as_mut().unwrap().model = "changed".into();
                 Ok(json!(null))
             })
@@ -333,7 +271,7 @@ fn enforce_busy_cross_project_immutable_binding_and_append_only_messages() {
     );
     assert!(
         e.store
-            .transact(None, &mut |s| {
+            .seed_fixture_state(None, &mut |s| {
                 let mut t = s.turns[0].clone();
                 t.id = id();
                 t.client_message_id = "another-message".into();
@@ -344,7 +282,7 @@ fn enforce_busy_cross_project_immutable_binding_and_append_only_messages() {
     );
     assert!(
         e.store
-            .transact(None, &mut |s| {
+            .seed_fixture_state(None, &mut |s| {
                 s.turns[0].project_id = id();
                 Ok(json!(null))
             })
@@ -352,7 +290,7 @@ fn enforce_busy_cross_project_immutable_binding_and_append_only_messages() {
     );
     assert!(
         e.store
-            .transact(None, &mut |s| {
+            .seed_fixture_state(None, &mut |s| {
                 s.conversation_events[0].content = "rewritten".into();
                 Ok(json!(null))
             })
@@ -360,7 +298,7 @@ fn enforce_busy_cross_project_immutable_binding_and_append_only_messages() {
     );
     assert!(
         e.store
-            .transact(None, &mut |s| {
+            .seed_fixture_state(None, &mut |s| {
                 s.turns[0].status = TurnStatus::Completed;
                 Ok(json!(null))
             })
@@ -371,14 +309,14 @@ fn enforce_busy_cross_project_immutable_binding_and_append_only_messages() {
         TurnStatus::Queued
     );
     e.store
-        .transact(None, &mut |s| {
+        .seed_fixture_state(None, &mut |s| {
             s.turns[0].status = TurnStatus::NeedsReconciliation;
             Ok(json!(null))
         })
         .unwrap();
     assert!(
         e.store
-            .transact(None, &mut |s| {
+            .seed_fixture_state(None, &mut |s| {
                 let mut t = s.turns[0].clone();
                 t.id = id();
                 t.client_message_id = "resubmit".into();
@@ -394,7 +332,7 @@ fn completion_needs_external_session_consumption_and_writer_release_proof() {
     let e = engine(dir.path());
     let (_, sid, _) = initialize(&e);
     e.store
-        .transact(None, &mut |s| {
+        .seed_fixture_state(None, &mut |s| {
             s.sessions[0].external_session = Some("provider-session-1".into());
             s.turns[0].status = TurnStatus::Completed;
             s.turns[0].external_message = Some("provider-input-1".into());
@@ -422,7 +360,7 @@ fn completion_needs_external_session_consumption_and_writer_release_proof() {
         .unwrap();
     assert!(
         e.store
-            .transact(None, &mut |s| {
+            .seed_fixture_state(None, &mut |s| {
                 s.sessions[0].external_session = Some("different-provider-session".into());
                 Ok(json!(null))
             })
@@ -430,7 +368,7 @@ fn completion_needs_external_session_consumption_and_writer_release_proof() {
     );
     assert!(
         e.store
-            .transact(None, &mut |s| {
+            .seed_fixture_state(None, &mut |s| {
                 s.turns[0].status = TurnStatus::Queued;
                 Ok(json!(null))
             })
@@ -438,14 +376,14 @@ fn completion_needs_external_session_consumption_and_writer_release_proof() {
     );
     assert!(
         e.store
-            .transact(None, &mut |s| {
+            .seed_fixture_state(None, &mut |s| {
                 s.executions[0].status = Status::Released;
                 Ok(json!(null))
             })
             .is_err()
     );
     e.store
-        .transact(None, &mut |s| {
+        .seed_fixture_state(None, &mut |s| {
             s.executions[0].status = Status::Released;
             s.executions[0].writer_revoked = true;
             s.executions[0].finished = Some(3);
@@ -530,16 +468,22 @@ fn project_requirement_and_snapshot_have_real_owner_then_feature_pins_the_revisi
         state.documents.iter().find(|d| d.id == newer).unwrap(),
         &feature
     ));
-    let other = call(
-        "project.create",
-        None,
-        None,
-        json!({"title":"Other project"}),
-    )
-    .unwrap()["id"]
+    let other_directory = tempfile::tempdir().unwrap();
+    let other_engine = engine(other_directory.path());
+    let other = other_engine
+        .execute(
+            "project.create",
+            Command {
+                command_id: id(),
+                target: None,
+                expected_revision: None,
+                payload: json!({"title":"Other project"}),
+            },
+        )
+        .unwrap()["id"]
         .as_str()
         .unwrap()
-        .to_string();
+        .to_owned();
     assert!(
         call(
             "feature.create",
@@ -597,25 +541,43 @@ fn conversation_commands_are_idempotent_and_switching_creates_a_snapshot_success
         command_id: id(),
         target: Some(pid.clone()),
         expected_revision: Some(1),
-        payload: json!({"agent":first.agent,"model":"fixture-model"}),
+        payload: json!({"agent":first.agent}),
     };
-    let fingerprint = command_fingerprint("session.open", &original);
-    let mut resolved = original.clone();
-    resolved.payload["binding"] = json!(binding);
     let reused = e
-        .execute_resolved("session.open", resolved.clone(), &fingerprint)
+        .open_prepared_session(
+            &runtime::ResourceFixture {
+                store: e.store.as_ref(),
+            },
+            original.clone(),
+        )
         .unwrap();
     assert_eq!(reused["id"], sid);
     assert_eq!(reused["reused"], true);
-    resolved.payload["binding"]["model"] = json!("different-default");
     assert_eq!(
-        e.execute_resolved("session.open", resolved, &fingerprint)
-            .unwrap(),
+        e.open_prepared_session(
+            &runtime::ResourceFixture {
+                store: e.store.as_ref()
+            },
+            original.clone()
+        )
+        .unwrap(),
         reused
     );
+    let mut forged = original;
+    forged.command_id = id();
+    forged.payload["binding"] = json!(binding);
+    assert!(
+        e.open_prepared_session(
+            &runtime::ResourceFixture {
+                store: e.store.as_ref()
+            },
+            forged
+        )
+        .is_err()
+    );
     let payload = json!({"input":"Discuss acceptance criteria","client_message_id":"frontend-message","experience_refs":[{"source_project_id":pid,"snapshot_id":"historical-snapshot"}]});
-    let submitted = call("conversation.send", &sid, 1, payload.clone()).unwrap();
-    let replay = call("conversation.send", &sid, 1, payload.clone()).unwrap();
+    let submitted = call("conversation.send", &sid, first.revision, payload.clone()).unwrap();
+    let replay = call("conversation.send", &sid, first.revision, payload.clone()).unwrap();
     assert_eq!(submitted["id"], replay["id"]);
     let state = e.store.snapshot().unwrap();
     let context = state
@@ -626,7 +588,15 @@ fn conversation_commands_are_idempotent_and_switching_creates_a_snapshot_success
     assert_eq!(context.data["experience_refs"], payload["experience_refs"]);
     let mut changed_references = payload;
     changed_references["experience_refs"] = json!([]);
-    assert!(call("conversation.send", &sid, 1, changed_references).is_err());
+    assert!(
+        call(
+            "conversation.send",
+            &sid,
+            first.revision,
+            changed_references
+        )
+        .is_err()
+    );
     assert!(
         call(
             "conversation.send",
@@ -643,20 +613,22 @@ fn conversation_commands_are_idempotent_and_switching_creates_a_snapshot_success
         json!({}),
     )
     .unwrap();
-    let mut dsh = binding.clone();
-    dsh.installation.id = "fixture-dsh-installation".into();
-    dsh.installation.key.provider = HarnessProvider::Dsh;
-    dsh.adapter_version = "dsh-fixture/v1".into();
-    let next = call(
-        "session.open",
-        &pid,
-        1,
-        json!({"agent":first.agent,"binding":dsh}),
-    )
-    .unwrap()["id"]
+    let next = e
+        .open_prepared_session(
+            &runtime::ResourceFixture {
+                store: e.store.as_ref(),
+            },
+            Command {
+                command_id: id(),
+                target: Some(pid.clone()),
+                expected_revision: Some(1),
+                payload: json!({"agent":first.agent,"force_new":true}),
+            },
+        )
+        .unwrap()["id"]
         .as_str()
         .unwrap()
-        .to_string();
+        .to_owned();
     let state = e.store.snapshot().unwrap();
     let successor = state.sessions.iter().find(|s| s.id == next).unwrap();
     assert_eq!(successor.predecessor.as_ref(), Some(&sid));
@@ -669,16 +641,22 @@ fn conversation_commands_are_idempotent_and_switching_creates_a_snapshot_success
     assert!(source.content.contains("Discuss acceptance criteria"));
     assert_eq!(source.capture.sessions, vec![sid.clone()]);
     assert_eq!(source.runtime_bindings, vec![binding.clone()]);
-    let back = call(
-        "session.open",
-        &pid,
-        1,
-        json!({"agent":first.agent,"binding":binding}),
-    )
-    .unwrap()["id"]
+    let back = e
+        .open_prepared_session(
+            &runtime::ResourceFixture {
+                store: e.store.as_ref(),
+            },
+            Command {
+                command_id: id(),
+                target: Some(pid.clone()),
+                expected_revision: Some(1),
+                payload: json!({"agent":first.agent,"force_new":true}),
+            },
+        )
+        .unwrap()["id"]
         .as_str()
         .unwrap()
-        .to_string();
+        .to_owned();
     assert_ne!(back, sid);
     assert_eq!(
         e.store
@@ -710,7 +688,7 @@ fn conversation_commands_are_idempotent_and_switching_creates_a_snapshot_success
 
 fn complete_fixture(e: &Engine, sid: &str, tid: &str) {
     e.store
-        .transact(None, &mut |s| {
+        .seed_fixture_state(None, &mut |s| {
             s.sessions
                 .iter_mut()
                 .find(|v| v.id == sid)
@@ -786,6 +764,8 @@ struct ConversationFixture {
     dispatched: std::sync::atomic::AtomicUsize,
     stop_allowed: std::sync::atomic::AtomicBool,
     emit_terminal: std::sync::atomic::AtomicBool,
+    log_allowed: std::sync::atomic::AtomicBool,
+    cleaned: std::sync::atomic::AtomicUsize,
 }
 impl ports::Harness for ConversationFixture {
     fn open_session(&self, r: &ports::SessionStart) -> Result<ports::SessionReceipt> {
@@ -861,12 +841,34 @@ impl ports::Harness for ConversationFixture {
             requires_successor: true,
         })
     }
+    fn inspect_worker_stop(
+        &self,
+        session: &Session,
+        execution: &RuntimeExecution,
+    ) -> Result<Option<ports::WorkerStop>> {
+        if self.stop_allowed.load(std::sync::atomic::Ordering::SeqCst) {
+            Ok(Some(ports::WorkerStop {
+                operation_id: execution.operation_id.clone(),
+                writer_revoked: true,
+                mode: format!("fixture-readonly:{}", session.id),
+                requires_successor: true,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
     fn session_log(&self, _: &RuntimeExecution) -> Result<Option<String>> {
+        require(
+            self.log_allowed.load(std::sync::atomic::Ordering::SeqCst),
+            "fixture log temporarily unavailable",
+        )?;
         Ok(Some("sanitized fixture frames".into()))
     }
     fn cleanup_worker(&self, _: &Session, e: &RuntimeExecution) -> Result<()> {
         let s = self.store.snapshot()?;
         let row = s.executions.iter().find(|v| v.id == e.id).unwrap();
+        self.cleaned
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         assert!(row.writer_revoked && row.protocol_artifact.is_some());
         assert!(
             s.artifacts
@@ -879,12 +881,14 @@ impl ports::Harness for ConversationFixture {
 #[test]
 fn coordinator_never_resends_unknown_input_or_finishes_without_stop_and_export() {
     let dir = tempfile::tempdir().unwrap();
-    let store = Arc::new(SqliteStore::open(dir.path()).unwrap());
+    let store = Arc::new(SqliteStore::open_fixture(dir.path()).unwrap());
     let fixture = Arc::new(ConversationFixture {
         store: store.clone(),
         dispatched: 0.into(),
         stop_allowed: false.into(),
         emit_terminal: true.into(),
+        log_allowed: true.into(),
+        cleaned: 0.into(),
     });
     let mut adapters = runtime::adapters();
     adapters.harness = fixture.clone();
@@ -902,7 +906,7 @@ fn coordinator_never_resends_unknown_input_or_finishes_without_stop_and_export()
         "queued input must keep background scheduling eligible"
     );
     store
-        .transact(None, &mut |s| {
+        .seed_fixture_state(None, &mut |s| {
             s.sessions
                 .iter_mut()
                 .find(|v| v.id == sid)
@@ -912,7 +916,7 @@ fn coordinator_never_resends_unknown_input_or_finishes_without_stop_and_export()
                 .unwrap()
                 .installation
                 .artifact = RuntimeArtifact::DockerImage {
-                image_id: format!("sha256:{}", "a".repeat(64)),
+                image_id: format!("sha256:{}", "c".repeat(64)),
             };
             Ok(json!({"ok":true}))
         })
@@ -920,13 +924,6 @@ fn coordinator_never_resends_unknown_input_or_finishes_without_stop_and_export()
     // Bind a valid new Session through the public resolved command rather than changing its frozen metadata.
     let state = store.snapshot().unwrap();
     let pid = state.projects[0].id.clone();
-    let mut binding = state.sessions[0].runtime_binding.clone().unwrap();
-    // Different distribution artifacts require distinct immutable installation identities.
-    binding.installation.id = id();
-    binding.installation.key.version = "fixture-docker-v1".into();
-    binding.installation.artifact = RuntimeArtifact::DockerImage {
-        image_id: format!("sha256:{}", "a".repeat(64)),
-    };
     e.execute(
         "conversation.cancel",
         Command {
@@ -938,13 +935,15 @@ fn coordinator_never_resends_unknown_input_or_finishes_without_stop_and_export()
     )
     .unwrap();
     let opened = e
-        .execute(
-            "session.open",
+        .open_prepared_session(
+            &runtime::ResourceFixture {
+                store: e.store.as_ref(),
+            },
             Command {
                 command_id: id(),
                 target: Some(pid),
                 expected_revision: Some(1),
-                payload: json!({"agent":"builtin-agent-sol-high-analyst:6","binding":binding}),
+                payload: json!({"agent":"builtin-agent-sol-high-analyst:6","force_new":true}),
             },
         )
         .unwrap();
@@ -1010,6 +1009,73 @@ fn coordinator_never_resends_unknown_input_or_finishes_without_stop_and_export()
     assert!(
         !store.has_pending_work().unwrap(),
         "stopped and sealed idle histories do not need continuous full-state loading"
+    );
+}
+
+#[test]
+fn failed_log_export_retains_the_stopped_worker_and_recovers_without_resending_input() {
+    use std::sync::atomic::Ordering::SeqCst;
+    let dir = tempfile::tempdir().unwrap();
+    let store = Arc::new(SqliteStore::open_fixture(dir.path()).unwrap());
+    let fixture = Arc::new(ConversationFixture {
+        store: store.clone(),
+        dispatched: 0.into(),
+        stop_allowed: true.into(),
+        emit_terminal: true.into(),
+        log_allowed: false.into(),
+        cleaned: 0.into(),
+    });
+    let mut adapters = runtime::adapters();
+    adapters.harness = fixture.clone();
+    let e = Engine::new(
+        store.clone(),
+        Arc::new(FileArtifacts::new(dir.path().into())),
+        adapters,
+    );
+    e.bootstrap().unwrap();
+    runtime::bind_default_permissions(&e);
+    let (_, _, tid) = initialize(&e);
+    for _ in 0..4 {
+        let _ = e.tick_conversations(2);
+    }
+    assert_eq!(fixture.dispatched.load(SeqCst), 1);
+    assert_eq!(fixture.cleaned.load(SeqCst), 0);
+    let before = store.snapshot().unwrap();
+    let worker = before
+        .executions
+        .iter()
+        .find(|w| w.kind == RuntimeExecutionKind::Harness)
+        .unwrap();
+    assert!(worker.writer_revoked && worker.protocol_artifact.is_none());
+    assert!(store.has_pending_work().unwrap());
+    fixture.log_allowed.store(true, SeqCst);
+    for _ in 0..8 {
+        e.tick_conversations(2).unwrap();
+    }
+    let after = store.snapshot().unwrap();
+    assert!(
+        after
+            .executions
+            .iter()
+            .find(|w| w.id == worker.id)
+            .unwrap()
+            .protocol_artifact
+            .is_some()
+    );
+    assert_eq!(fixture.dispatched.load(SeqCst), 1);
+    assert_eq!(fixture.cleaned.load(SeqCst), 1);
+    assert!(
+        after
+            .turns
+            .iter()
+            .any(|t| t.id == tid && t.status == TurnStatus::Completed)
+    );
+    assert!(
+        after
+            .governance
+            .iter()
+            .any(|r| r.r#type == "worker_stop_observation"
+                && r.data["value"]["log_error"].is_object())
     );
 }
 
@@ -1080,46 +1146,16 @@ fn global_agent_discussion_has_no_project_and_persists_identity_messages_and_sna
     runtime::bind_default_permissions(&e);
     let agent = default_agent_id("analyst");
     let instance = e.execute("agent.instance.create",Command{command_id:id(),target:None,expected_revision:None,payload:json!({"name":"Global analyst","scope":"global","agent_revision_id":agent})}).unwrap()["id"].as_str().unwrap().to_owned();
-    let binding = RuntimeBinding {
-        model_connection: None,
-        model_profile_digest: None,
-        agent_configuration: None,
-        model_parameters: Default::default(),
-        permissions: None,
-        installation: RuntimeInstallation {
-            recipe_digest: None,
-            id: "global-fixture".into(),
-            key: RuntimeKey {
-                provider: HarnessProvider::Codex,
-                version: devdesk_adapters::runtime_preparation::default_version(
-                    HarnessProvider::Codex,
-                ),
-                os: "linux".into(),
-                arch: "aarch64".into(),
-            },
-            artifact: RuntimeArtifact::DockerImage {
-                image_id: format!("sha256:{}", "a".repeat(64)),
-            },
-            source: "offline fixture".into(),
-            license: "test".into(),
-        },
-        adapter_version: "fixture:native-idle-harness:v1".into(),
-        model: "gpt-6.1-sol".into(),
-        tool_policy: ToolPolicy::ReadOnly,
-        writable_paths: vec![],
-        read_only_paths: vec![],
-        work_type: WorkType::Discussion,
-        configuration_digest: "a".repeat(64),
-        credential_ref: None,
-    };
     let opened = e
-        .execute(
-            "session.open",
+        .open_prepared_session(
+            &runtime::ResourceFixture {
+                store: e.store.as_ref(),
+            },
             Command {
                 command_id: id(),
                 target: Some("global".into()),
                 expected_revision: None,
-                payload: json!({"agent":agent,"agent_instance_id":instance,"binding":binding}),
+                payload: json!({"agent":agent,"agent_instance_id":instance}),
             },
         )
         .unwrap();
@@ -1132,6 +1168,7 @@ fn global_agent_discussion_has_no_project_and_persists_identity_messages_and_sna
     };
     let sent = e.execute("conversation.send", c.clone()).unwrap();
     assert_eq!(e.execute("conversation.send", c).unwrap(), sent);
+    e.tick_conversations(0).unwrap();
     let state = e.store.snapshot().unwrap();
     assert!(state.projects.is_empty());
     assert_eq!(state.sessions[0].scope, Some(SessionScope::Global));
@@ -1141,6 +1178,7 @@ fn global_agent_discussion_has_no_project_and_persists_identity_messages_and_sna
         && r.data["agent_instance_id"] == instance));
     e.tick_conversations(1).unwrap();
     e.tick_conversations(1).unwrap();
+    e.tick_conversations(0).unwrap();
     let completed = e.store.snapshot().unwrap();
     assert!(
         completed
@@ -1150,7 +1188,12 @@ fn global_agent_discussion_has_no_project_and_persists_identity_messages_and_sna
                 && snap.content.contains("Completed cross-project work"))
     );
     drop(e);
-    let e = engine(dir.path());
+    let e = Engine::new(
+        Arc::new(SqliteStore::open(dir.path()).unwrap()),
+        Arc::new(FileArtifacts::new(dir.path().into())),
+        runtime::adapters(),
+    );
+    e.bootstrap().unwrap();
     let detail = e.query("query.session", &json!({"id":sid}), 1).unwrap();
     assert!(
         detail["events"]
@@ -1187,7 +1230,7 @@ fn turn_diagnostics_include_final_messages_and_stop_proof_without_stream_fragmen
     let directory = tempfile::tempdir().unwrap();
     let e = engine(directory.path());
     let (pid, sid, tid) = initialize(&e);
-    e.store.transact(None,&mut |s| {
+    e.store.seed_fixture_state(None,&mut |s| {
         for (sequence,mode,content,kind) in [(2,MessageMode::Delta,"part",ConversationEventKind::Assistant),(3,MessageMode::Delta,"more",ConversationEventKind::Assistant),
             (4,MessageMode::Full,"final answer",ConversationEventKind::Assistant),
             (5,MessageMode::Full,r#"{"operation_id":"worker","writer_revoked":true,"mode":"normal_stop","requires_successor":false}"#,ConversationEventKind::Status)] {

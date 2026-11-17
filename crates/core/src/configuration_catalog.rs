@@ -272,13 +272,6 @@ impl EngineeringStore for CatalogView {
     fn configuration_snapshot(&self) -> Result<Arc<ConfigurationCatalogSnapshot>> {
         Ok(self.catalog.clone())
     }
-    fn transact(
-        &self,
-        _: Option<(&str, &str)>,
-        _: &mut dyn FnMut(&mut EngineeringState) -> Result<Value>,
-    ) -> Result<Value> {
-        Err(err("read_only", "配置读取视图不能执行命令"))
-    }
     fn root(&self) -> String {
         self.root.clone()
     }
@@ -302,8 +295,15 @@ impl Engine {
     /// Reuse one pinned configuration view across existing pure query implementations.
     pub fn at_configuration(&self, catalog: Arc<ConfigurationCatalogSnapshot>) -> Self {
         Self {
+            runtime_callback_cursors: std::sync::Mutex::new(Default::default()),
             experience_cursor: std::sync::Mutex::new(None),
             workflow_intent_cursor: std::sync::Mutex::new(None),
+            provider_tool_cursor: std::sync::Mutex::new(None),
+            provider_poll_cursor: std::sync::Mutex::new(None),
+            conversation_capture_cursor: std::sync::Mutex::new(None),
+            conversation_active_cursor: std::sync::Mutex::new(None),
+            conversation_queued_cursor: std::sync::Mutex::new(None),
+            context_call_cursor: std::sync::Mutex::new(None),
             tool_cursor: std::sync::Mutex::new(None),
             store: Arc::new(CatalogView {
                 catalog,

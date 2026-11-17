@@ -1,504 +1,228 @@
 //! Durable intent -> external receipt -> domain projection. Provider I/O never runs in a transaction.
 use crate::*;
-use ports::{ConversationObservation as Obs, ProviderTerminal, SessionStart, TurnDispatch};
-fn owner(s: &Session) -> MaterialOwner {
-    match s.scope.unwrap() {
-        SessionScope::Global => MaterialOwner::Global,
-        SessionScope::Project => MaterialOwner::Project {
-            id: s.project_id.clone().unwrap(),
-        },
-        SessionScope::Feature => MaterialOwner::Feature {
-            id: s.feature_id.clone().unwrap(),
-        },
-        SessionScope::Task => MaterialOwner::Task {
-            feature: s.feature_id.clone().unwrap(),
-            id: s.task_id.clone().unwrap(),
-        },
-    }
-}
-// Event fields map one-to-one onto the persisted conversation row.
-#[allow(clippy::too_many_arguments)]
-fn append(
-    s: &mut EngineeringState,
-    session: &Session,
-    turn: &str,
-    key: &str,
-    kind: ConversationEventKind,
-    content: &str,
-    mode: MessageMode,
-    item: Option<String>,
-) {
-    if s.conversation_events
-        .iter()
-        .any(|e| e.session_id == session.id && e.deduplication_key == key)
-    {
-        return;
-    }
-    let sequence = s
-        .conversation_events
-        .iter()
-        .filter(|e| e.session_id == session.id)
-        .map(|e| e.sequence)
-        .max()
-        .unwrap_or(0)
-        + 1;
-    s.conversation_events.push(ConversationEvent {
-        id: id(),
-        session_id: session.id.clone(),
-        turn_id: turn.into(),
-        sequence,
-        deduplication_key: key.into(),
-        kind,
-        content: content.into(),
-        artifact_id: None,
-        time: now(),
-        mode,
-        provider_item: item,
-    });
-}
+use ports::{ConversationObservation as Obs, ProviderTerminal};
 impl Engine {
     pub fn conversation_running(&self) -> Result<usize> {
         self.store.active_conversation_count()
     }
     pub fn tick_conversations(&self, limit: usize) -> Result<()> {
-        let _span = self.store.observe_query("runtime.conversations");
-        if !self
-            .store
-            .workflow_runtime_pending(ports::WorkflowRuntimeWork::Conversations)?
-        {
+        self.tick_conversations_with_stop(limit, &|| false)
+    }
+    pub(crate) fn tick_conversations_with_stop(
+        &self,
+        limit: usize,
+        should_stop: &dyn Fn() -> bool,
+    ) -> Result<()> {
+        if should_stop() {
             return Ok(());
         }
-        let state = self.store.snapshot()?;
-        for turn in state
-            .turns
-            .iter()
-            .filter(|t| t.status.active() && t.status != TurnStatus::Queued)
-        {
-            let session = state
-                .sessions
-                .iter()
-                .find(|s| s.id == turn.session_id)
-                .unwrap();
-            let mut effective = session.clone();
-            effective.runtime_binding = Some(state.turn_runtime_binding(turn)?);
-            let session = &effective;
-            if turn.status == TurnStatus::NeedsReconciliation {
-                // Restart never resubmits input. Stop the previous owned writer first and retain unknown outcome.
-                if turn.cancel_requested {
+        if !matches!(
+            self.store.namespace(),
+            crate::concurrency::StoreNamespace::Engineering { .. }
+        ) {
+            return Ok(());
+        }
+        self.drive_conversation_captures()?;
+        self.resume_interaction_replies()?;
+        self.resume_worker_cleanups()?;
+        self.resume_sealed_commands()?;
+        self.resume_provider_polls()?;
+        self.drive_provider_tool_intents()?;
+        let after = self
+            .conversation_active_cursor
+            .lock()
+            .map_err(|e| err("storage", e.to_string()))?
+            .clone();
+        let mut page = self.store.conversation_page(false, after.as_deref())?;
+        if page.ids.is_empty() && after.is_some() {
+            page = self.store.conversation_page(false, None)?;
+        }
+        let started = std::time::Instant::now();
+        let mut visited = 0;
+        let mut last = None;
+        for tid in &page.ids {
+            if should_stop()
+                || (visited > 0 && started.elapsed() >= std::time::Duration::from_millis(25))
+            {
+                break;
+            }
+            visited += 1;
+            last = Some(tid.clone());
+            // Persist cursor progress before work so one unresolved worker does
+            // not repeatedly occupy the head of this project's active page.
+            *self
+                .conversation_active_cursor
+                .lock()
+                .map_err(|e| err("storage", e.to_string()))? = last.clone();
+            let Some(facts) = self.store.conversation_runtime_facts(tid)? else {
+                continue;
+            };
+            if facts.turn.status == TurnStatus::NeedsReconciliation {
+                if facts.turn.cancel_requested || facts.workers.iter().any(|w| !w.writer_revoked) {
                     self.finish_conversation(
-                        session,
-                        turn.id.as_str(),
-                        TurnStatus::Cancelled,
-                        "cancelled_after_reconciliation",
-                        true,
-                    )?;
-                } else if state.executions.iter().any(|e| {
-                    e.kind == RuntimeExecutionKind::Harness
-                        && e.session_id == session.id
-                        && !e.writer_revoked
-                }) {
-                    // Stop + seal facts, while retaining the input's unknown outcome. Never resend it.
-                    self.finish_conversation(
-                        session,
-                        &turn.id,
-                        TurnStatus::NeedsReconciliation,
-                        "recovery_stopped_writer_outcome_unknown",
+                        &facts.session,
+                        tid,
+                        facts.turn.revision,
+                        if facts.turn.cancel_requested {
+                            TurnStatus::Cancelled
+                        } else {
+                            TurnStatus::NeedsReconciliation
+                        },
+                        if facts.turn.cancel_requested {
+                            "cancelled_after_reconciliation"
+                        } else {
+                            "recovery_stopped_writer_outcome_unknown"
+                        },
                         true,
                     )?;
                 }
                 continue;
             }
-            if turn.cancel_requested {
+            if facts.turn.cancel_requested {
                 self.finish_conversation(
-                    session,
-                    &turn.id,
+                    &facts.session,
+                    tid,
+                    facts.turn.revision,
                     TurnStatus::Cancelled,
                     "user_cancelled",
                     true,
                 )?;
                 continue;
             }
+            if facts.turn.status == TurnStatus::Dispatching && facts.worker_active {
+                if let Some(authority) = &facts.authority
+                    && authority
+                        .live(self.store.as_ref(), &facts.session)?
+                        .is_none()
+                {
+                    continue;
+                }
+                let source = self.store.conversation_start_source(tid)?;
+                if source.session.revision != facts.session.revision
+                    || source.turn.revision != facts.turn.revision
+                {
+                    return Err(err("revision_conflict", "恢复准备不能替换原轮询版本"));
+                }
+                if self.resume_conversation_dispatch(&source)? {
+                    continue;
+                }
+            }
+            if !facts.worker_active {
+                let exports = self
+                    .store
+                    .read_resources(&[crate::concurrency::ResourceKey::new(
+                        "session_protocol_exports",
+                        &facts.session.id,
+                    )])?
+                    .remove(0);
+                if exports.value.as_ref().is_some_and(|v| v["pending"] == true) {
+                    continue;
+                }
+                self.unknown_conversation(
+                    &facts.session,
+                    tid,
+                    facts.turn.revision,
+                    "original_worker_stopped_or_stop_pending",
+                )?;
+                continue;
+            }
+            let mut poll = self.prepare_provider_poll(facts)?;
             let work = (|| -> Result<()> {
-                if turn.status == TurnStatus::Dispatching
-                    && let Some(execution) = state.executions.iter().find(|e| {
-                        e.session_id == session.id
-                            && e.status == Status::Prepared
-                            && !e.writer_revoked
-                    })
-                {
-                    if let Some(receipt) = self.harness.poll_session_start(session, execution)? {
-                        self.accept_session_runtime(&state, session, turn, execution, receipt)?;
-                    }
-                    return Ok(());
+                for interaction in self.store.conversation_answers_pending(tid)? {
+                    self.deliver_interaction_answer(&poll, &interaction)?;
                 }
-                for interaction in state
-                    .interactions
-                    .iter()
-                    .filter(|i| i.turn_id == turn.id && i.status == InteractionStatus::Answered)
-                {
-                    self.harness.answer_interaction(session, interaction)?;
-                }
-                let observations = self.harness.poll_session(session)?;
-                let mut pending = Vec::new();
-                for observation in observations {
-                    match observation {
-                        Obs::Terminal {
-                            turn: tid,
-                            outcome,
-                            reason,
-                            quiescent,
-                        } => {
-                            self.commit_conversation_batch(session, &turn.id, &pending)?;
-                            pending.clear();
-                            require(tid == turn.id && quiescent, "终态缺少静止边界")?;
-                            let current = self
-                                .store
-                                .snapshot()?
-                                .turns
-                                .into_iter()
-                                .find(|t| t.id == tid)
-                                .unwrap();
-                            require(current.consumed, "缺少输入实际消费事实")?;
-                            let status = if current.cancel_requested {
-                                TurnStatus::Cancelled
-                            } else {
-                                match outcome {
-                                    ProviderTerminal::Completed => TurnStatus::Completed,
-                                    ProviderTerminal::Failed => TurnStatus::Failed,
-                                    ProviderTerminal::Cancelled => TurnStatus::Cancelled,
-                                }
-                            };
-                            self.finish_conversation(session, &tid, status, &reason, false)?;
-                        }
-                        other => {
-                            pending.push(other);
-                            if pending.len() >= 64 {
-                                self.commit_conversation_batch(session, &turn.id, &pending)?;
-                                pending.clear();
-                            }
-                        }
-                    }
-                }
-                self.commit_conversation_batch(session, &turn.id, &pending)?;
-                Ok(())
+                let observed = self.harness.poll_session(&poll.session);
+                self.journal_provider_poll(&mut poll, &observed)?;
+                self.apply_provider_observations(&mut poll, &observed?)?;
+                self.settle_provider_poll(&poll, "completed", None)
             })();
             if let Err(error) = work {
+                if error.code == "worker_log_unavailable" {
+                    continue;
+                }
+                self.record_conversation_failure(&poll.session, tid, &error)?;
+                if matches!(error.code.as_str(), "revision_conflict" | "invalid_scope") {
+                    return Err(error);
+                }
                 if ["provider_timeout", "provider_rejected"].contains(&error.code.as_str())
                     || error.execution_failure.is_some_and(|f| {
                         f.kind == ExecutionFailureKind::Technical
                             && f.effect == ExecutionFailureEffect::NotApplied
                     })
                 {
-                    self.finish_conversation(
-                        session,
-                        &turn.id,
+                    self.finish_conversation_guarded(
+                        &poll.session,
+                        tid,
                         TurnStatus::Failed,
                         &error.code,
                         true,
+                        poll.guards()?,
                     )?;
-                    self.record_conversation_failure(session, &turn.id, &error)?;
                 } else {
-                    self.unknown_conversation(session, &turn.id, &error.code)?;
-                    self.record_conversation_failure(session, &turn.id, &error)?;
+                    self.unknown_conversation(&poll.session, tid, poll.turn.revision, &error.code)?;
                 }
             }
         }
-        // Polling a running worker does not imply there is a new input to admit.
-        // Recheck the durable queue, then restore admission dependencies only if needed.
-        if limit == 0
-            || !self
-                .store
-                .workflow_runtime_pending(ports::WorkflowRuntimeWork::QueuedConversations)?
-        {
+        *self
+            .conversation_active_cursor
+            .lock()
+            .map_err(|e| err("storage", e.to_string()))? = if visited < page.ids.len() {
+            last
+        } else {
+            page.next_after
+        };
+        let mut available = limit.saturating_sub(self.conversation_running()?);
+        if available == 0 {
             return Ok(());
         }
-        let occupied = self.conversation_running()?;
-        if occupied >= limit {
+        let after = self
+            .conversation_queued_cursor
+            .lock()
+            .map_err(|e| err("storage", e.to_string()))?
+            .clone();
+        let mut page = self.store.conversation_page(true, after.as_deref())?;
+        if page.ids.is_empty() && after.is_some() {
+            page = self.store.conversation_page(true, None)?;
+        }
+        if page.ids.is_empty() {
+            *self
+                .conversation_queued_cursor
+                .lock()
+                .map_err(|e| err("storage", e.to_string()))? = None;
             return Ok(());
         }
-        let snapshot = self.store.snapshot()?;
-        let project_limit = snapshot
-            .projects
-            .first()
-            .map(|p| p.concurrency as usize)
-            .unwrap_or(limit);
-        let mut available = limit.min(project_limit).saturating_sub(occupied);
-        let mut writers = std::collections::BTreeSet::new();
-        for execution in snapshot.executions.iter().filter(|e| !e.writer_revoked) {
-            if let Some(turn) = snapshot
-                .turns
-                .iter()
-                .rev()
-                .find(|t| t.session_id == execution.session_id && t.code_view.is_some())
-                && snapshot.turn_runtime_binding(turn)?.tool_policy != ToolPolicy::ReadOnly
-                && self.configured_task(&snapshot, &turn.id)?.is_some()
+        let started = std::time::Instant::now();
+        let mut visited = 0;
+        let mut last = None;
+        for tid in &page.ids {
+            if should_stop()
+                || available == 0
+                || (visited > 0 && started.elapsed() >= std::time::Duration::from_millis(25))
             {
-                writers.insert(
-                    turn.code_view
-                        .as_ref()
-                        .unwrap()
-                        .context
-                        .source
-                        .worktree
-                        .clone(),
-                );
+                break;
             }
-        }
-        for turn in snapshot
-            .turns
-            .iter()
-            .filter(|t| t.status == TurnStatus::Queued)
-        {
-            if available == 0 {
+            visited += 1;
+            last = Some(tid.clone());
+            *self
+                .conversation_queued_cursor
+                .lock()
+                .map_err(|e| err("storage", e.to_string()))? = last.clone();
+            let source = self.store.conversation_start_source(tid)?;
+            if source.turn.status != TurnStatus::Queued {
                 continue;
             }
-            let binding = snapshot.turn_runtime_binding(turn)?;
-            if binding.tool_policy != ToolPolicy::ReadOnly
-                && self.configured_task(&snapshot, &turn.id)?.is_some()
-                && let Some(view) = turn.code_view.as_ref()
-            {
-                if writers.contains(&view.context.source.worktree) {
-                    continue;
-                }
-                writers.insert(view.context.source.worktree.clone());
-            }
-            available -= 1;
-
-            let session = snapshot
-                .sessions
-                .iter()
-                .find(|s| s.id == turn.session_id)
-                .unwrap()
-                .clone();
-            let mut session = session;
-            session.runtime_binding = Some(snapshot.turn_runtime_binding(turn)?);
-            let installation = &session.runtime_binding.as_ref().unwrap().installation;
-            let image = match &installation.artifact {
-                RuntimeArtifact::DockerImage { image_id } => image_id.clone(),
-                _ => return Err(err("unsupported", "讨论执行缺少固定镜像")),
-            };
-            let execution = RuntimeExecution {
-                permissions: session
-                    .runtime_binding
-                    .as_ref()
-                    .and_then(|b| b.permissions.clone()),
-                kind: RuntimeExecutionKind::Harness,
-                id: id(),
-                session_id: session.id.clone(),
-                operation_id: id(),
-                container_id: None,
-                image_digest: image,
-                status: Status::Prepared,
-                writer_revoked: false,
-                started: Some(now()),
-                finished: None,
-                protocol_artifact: None,
-            };
-            self.store.transact(None, &mut |s| {
-                let t = s.turns.iter_mut().find(|t| t.id == turn.id).unwrap();
-                require(t.status == TurnStatus::Queued, "轮次已被其他调度消费")?;
-                t.status = TurnStatus::Dispatching;
-                t.started = Some(now());
-                t.revision += 1;
-                s.executions.push(execution.clone());
-                s.sessions
-                    .iter_mut()
-                    .find(|s| s.id == session.id)
-                    .unwrap()
-                    .lifecycle = Some(SessionLifecycle::Active);
-                Ok(json!({"ok":true}))
-            })?;
-            let result = self.begin_conversation_runtime(&snapshot, &session, turn, &execution);
-            if let Err(error) = result {
-                if error.execution_failure.is_some_and(|f| {
-                    f.kind == ExecutionFailureKind::Technical
-                        && f.effect == ExecutionFailureEffect::NotApplied
-                }) {
-                    self.finish_conversation(
-                        &session,
-                        &turn.id,
-                        TurnStatus::Failed,
-                        &error.code,
-                        true,
-                    )?;
-                } else {
-                    self.unknown_conversation(&session, &turn.id, &error.to_string())?;
-                }
-                self.record_conversation_failure(&session, &turn.id, &error)?;
+            if self.start_conversation(source, limit)? {
+                available -= 1;
             }
         }
-        Ok(())
-    }
-    fn begin_conversation_runtime(
-        &self,
-        snapshot: &EngineeringState,
-        session: &Session,
-        turn: &ConversationTurn,
-        execution: &RuntimeExecution,
-    ) -> Result<()> {
-        let request = SessionStart {
-            specifications: snapshot
-                .resolve_agent(&session.agent)?
-                .spec_refs
-                .iter()
-                .map(|reference| snapshot.configuration(reference).cloned())
-                .collect::<Result<Vec<_>>>()?,
-            configured_task: self.configured_task(snapshot, &turn.id)?,
-            code_view: turn.code_view.clone(),
-            session: session.clone(),
-            agent: snapshot
-                .definitions
-                .iter()
-                .find(|d| d.id == session.agent)
-                .cloned()
-                .ok_or_else(|| err("blocked", "缺少 Agent 修订"))?,
-            skills: snapshot
-                .definitions
-                .iter()
-                .filter(|d| {
-                    snapshot
-                        .definitions
-                        .iter()
-                        .find(|a| a.id == session.agent)
-                        .and_then(|a| a.agent_profile.as_ref())
-                        .is_some_and(|a| a.skill_revisions.contains(&d.id))
-                })
-                .cloned()
-                .collect(),
-            execution: execution.clone(),
-            project_root: self.store.root(),
-            snapshot: turn
-                .input_snapshot
-                .as_ref()
-                .or(session.snapshot_id.as_ref())
-                .and_then(|id| snapshot.snapshots.iter().find(|v| &v.id == id))
-                .cloned(),
-            documents: snapshot
-                .documents
-                .iter()
-                .filter(|d| {
-                    turn.input_snapshot.as_ref().is_none_or(|id| {
-                        snapshot
-                            .snapshots
-                            .iter()
-                            .find(|snap| &snap.id == id)
-                            .is_some_and(|snap| snap.documents.contains(&d.id))
-                    })
-                })
-                .filter(|d| match session.scope.unwrap() {
-                    SessionScope::Global => {
-                        d.project_id.is_none() && d.feature_id.is_none() && d.task_id.is_none()
-                    }
-                    SessionScope::Project => d.project_id == session.project_id,
-                    SessionScope::Feature | SessionScope::Task => {
-                        snapshot.document_in_feature(d, session.feature_id.as_deref().unwrap())
-                    }
-                })
-                .cloned()
-                .collect(),
-            reconciliation_turn: None,
+        *self
+            .conversation_queued_cursor
+            .lock()
+            .map_err(|e| err("storage", e.to_string()))? = if visited < page.ids.len() {
+            last
+        } else {
+            page.next_after
         };
-        if let Some(receipt) = self.harness.begin_session(&request)? {
-            self.accept_session_runtime(snapshot, session, turn, execution, receipt)?;
-        }
-        Ok(())
-    }
-    fn accept_session_runtime(
-        &self,
-        snapshot: &EngineeringState,
-        session: &Session,
-        turn: &ConversationTurn,
-        execution: &RuntimeExecution,
-        receipt: ports::SessionReceipt,
-    ) -> Result<()> {
-        self.store.transact(None, &mut |s| {
-            let current = s
-                .turns
-                .iter()
-                .find(|t| t.id == turn.id)
-                .ok_or_else(|| err("not_found", "轮次不存在"))?;
-            require(
-                current.status == TurnStatus::Dispatching && !current.cancel_requested,
-                "轮次已停止或启动回执已接纳",
-            )?;
-            require(
-                s.executions.iter().any(|e| {
-                    e.id == execution.id && e.status == Status::Prepared && !e.writer_revoked
-                }),
-                "启动执行已失效",
-            )?;
-            let row = s.sessions.iter_mut().find(|s| s.id == session.id).unwrap();
-            require(
-                row.external_session
-                    .as_ref()
-                    .is_none_or(|id| id == &receipt.external_session),
-                "原生 Session 身份漂移",
-            )?;
-            row.external_session = Some(receipt.external_session.clone());
-            row.revision += 1;
-            let e = s
-                .executions
-                .iter_mut()
-                .find(|e| e.id == execution.id)
-                .unwrap();
-            require(
-                e.operation_id == receipt.operation_id && e.image_digest == receipt.image_digest,
-                "执行回执身份不符",
-            )?;
-            e.container_id = Some(receipt.container_id.clone());
-            e.status = Status::Running;
-            Ok(json!({"ok":true}))
-        })?;
-        let current = self.store.snapshot()?;
-        let t = current.turns.iter().find(|t| t.id == turn.id).unwrap();
-        if t.cancel_requested {
-            return self.finish_conversation(
-                session,
-                &t.id,
-                TurnStatus::Cancelled,
-                "cancelled_before_dispatch",
-                true,
-            );
-        }
-        let updated = current
-            .sessions
-            .iter()
-            .find(|s| s.id == session.id)
-            .unwrap();
-        let specifications = turn
-            .input_snapshot
-            .as_ref()
-            .and_then(|id| snapshot.snapshots.iter().find(|s| &s.id == id))
-            .map(|s| serde_json::from_str::<Value>(&s.content))
-            .transpose()
-            .map_err(|e| err("invalid_configuration", e.to_string()))?
-            .and_then(|v| v.get("specifications").cloned())
-            .unwrap_or(json!([]));
-        let specifications = serde_json::from_value(specifications)
-            .map_err(|e| err("invalid_configuration", e.to_string()))?;
-        self.harness.dispatch_turn(&TurnDispatch {
-            context_references: current
-                .governance
-                .iter()
-                .find(|r| r.r#type == "conversation_context" && r.definition_id == turn.id)
-                .and_then(|r| r.data["experience_refs"].as_array())
-                .cloned()
-                .unwrap_or_default(),
-            configured_task: self.configured_task(snapshot, &turn.id)?,
-            specifications,
-            session: {
-                let mut effective = updated.clone();
-                effective.runtime_binding = Some(current.turn_runtime_binding(t)?);
-                effective
-            },
-            turn: t.clone(),
-        })?;
-        self.store.transact(None, &mut |s| {
-            let t = s.turns.iter_mut().find(|t| t.id == turn.id).unwrap();
-            t.status = TurnStatus::Running;
-            t.revision += 1;
-            Ok(json!({"ok":true}))
-        })?;
         Ok(())
     }
     fn record_conversation_failure(
@@ -507,291 +231,210 @@ impl Engine {
         tid: &str,
         error: &Error,
     ) -> Result<()> {
-        self.store.transact(None, &mut |state| {
-            append(
-                state,
-                session,
-                tid,
-                &format!("{tid}:execution-failure"),
-                ConversationEventKind::Status,
-                &serde_json::to_string(error).unwrap(),
-                MessageMode::Full,
-                None,
-            );
-            Ok(Value::Null)
-        })?;
-        Ok(())
+        self.journal_conversation_failure(session, tid, error)
     }
-    fn unknown_conversation(&self, session: &Session, tid: &str, reason: &str) -> Result<()> {
-        self.store.transact(None, &mut |s| {
-            let t = s.turns.iter_mut().find(|t| t.id == tid).unwrap();
-            if !t.status.active() {
-                return Ok(json!({"ok":true}));
-            }
-            t.status = TurnStatus::NeedsReconciliation;
-            t.revision += 1;
-            s.sessions
-                .iter_mut()
-                .find(|v| v.id == session.id)
-                .unwrap()
-                .lifecycle = Some(SessionLifecycle::NeedsReconciliation);
-            append(
-                s,
-                session,
-                tid,
-                &format!("{tid}:unknown"),
-                ConversationEventKind::Status,
-                &format!("needs_reconciliation: {reason}; input will not be resent"),
-                MessageMode::Full,
-                None,
-            );
-            Ok(json!({"ok":true}))
-        })?;
-        Ok(())
-    }
-    fn commit_conversation_batch(
+    pub(crate) fn unknown_conversation(
         &self,
         session: &Session,
-        turn: &str,
+        tid: &str,
+        revision: u64,
+        reason: &str,
+    ) -> Result<()> {
+        let reason = format!("needs_reconciliation: {reason}; input will not be resent");
+        self.commit_conversation_transition(
+            &crate::conversation_observations::ConversationTransition {
+                session,
+                turn: tid,
+                revision,
+                status: TurnStatus::NeedsReconciliation,
+                reason: &reason,
+                terminal: false,
+                forced: true,
+            },
+            &[],
+        )?;
+        Ok(())
+    }
+    pub(crate) fn apply_provider_observations(
+        &self,
+        poll: &mut crate::provider_tools::ProviderPoll,
         observations: &[Obs],
+    ) -> Result<()> {
+        let mut pending = Vec::new();
+        let mut terminal = false;
+        for observation in observations {
+            require(!terminal, "终态之后不能继续接纳供应商观察")?;
+            if let Obs::Terminal {
+                turn,
+                outcome,
+                reason,
+                quiescent,
+            } = observation
+            {
+                self.commit_conversation_batch(poll, &pending)?;
+                pending.clear();
+                require(
+                    turn == &poll.turn.id && *quiescent && poll.turn.consumed,
+                    "终态缺少原输入消费或静止边界",
+                )?;
+                let status = if poll.turn.cancel_requested {
+                    TurnStatus::Cancelled
+                } else {
+                    match outcome {
+                        ProviderTerminal::Completed => TurnStatus::Completed,
+                        ProviderTerminal::Failed => TurnStatus::Failed,
+                        ProviderTerminal::Cancelled => TurnStatus::Cancelled,
+                    }
+                };
+                self.finish_conversation_guarded(
+                    &poll.session,
+                    turn,
+                    status,
+                    reason,
+                    false,
+                    poll.guards()?,
+                )?;
+                poll.turn.status = status;
+                poll.turn.revision += 1;
+                poll.session.revision += 1;
+                terminal = true;
+            } else {
+                pending.push(observation.clone());
+                if pending.len() >= 64 {
+                    self.commit_conversation_batch(poll, &pending)?;
+                    pending.clear();
+                }
+            }
+        }
+        self.commit_conversation_batch(poll, &pending)
+    }
+    pub(crate) fn commit_conversation_batch(
+        &self,
+        poll: &mut crate::provider_tools::ProviderPoll,
+        observations: &[Obs],
+    ) -> Result<()> {
+        let mut offset = 0;
+        while offset < observations.len() {
+            let native = self.native_provider_observation(poll, &observations[offset]);
+            let end = if native {
+                offset
+                    + observations[offset..]
+                        .iter()
+                        .take_while(|o| self.native_provider_observation(poll, o))
+                        .count()
+            } else {
+                offset + 1
+            };
+            self.commit_conversation_segment(poll, &observations[offset..end], native)?;
+            offset = end;
+        }
+        Ok(())
+    }
+    fn commit_conversation_segment(
+        &self,
+        poll: &mut crate::provider_tools::ProviderPoll,
+        observations: &[Obs],
+        native: bool,
     ) -> Result<()> {
         if observations.is_empty() {
             return Ok(());
         }
-        self.store.transact(None, &mut |s| {
-            for observation in observations {
-                self.project_conversation(s, session, turn, observation)?;
-            }
-            Ok(json!({"ok":true}))
-        })?;
-        Ok(())
+        poll.require_store(self.store.as_ref())?;
+        let journal = poll
+            .journal
+            .as_ref()
+            .ok_or_else(|| err("storage", "供应商事实尚未保留"))?;
+        let command = format!(
+            "provider-observe-batch:{}:{}",
+            journal.resource.id, poll.batch
+        );
+        let fingerprint =
+            configuration_hash(&("provider-observe-batch/v1", poll.basis(), observations));
+        let result = if let Some(receipt) = self.store.replay_commit(&command, &fingerprint)? {
+            receipt.result
+        } else if native {
+            self.admit_provider_observations(poll, observations, &command, &fingerprint)?
+        } else {
+            self.admit_platform_provider_observation(poll, observations, &command, &fingerprint)?
+        };
+        poll.turn.revision = result["turn_revision"]
+            .as_u64()
+            .ok_or_else(|| err("storage", "观察接纳缺少原轮次后继版本"))?;
+        poll.turn.status = serde_json::from_value(result["status"].clone())
+            .map_err(|e| err("storage", e.to_string()))?;
+        poll.turn.external_message = serde_json::from_value(result["external_message"].clone())
+            .map_err(|e| err("storage", e.to_string()))?;
+        poll.turn.external_turn = serde_json::from_value(result["external_turn"].clone())
+            .map_err(|e| err("storage", e.to_string()))?;
+        poll.turn.consumed = result["consumed"] == true;
+        poll.turn.cancel_requested = result["cancel_requested"] == true;
+        poll.batch += 1;
+        self.drive_provider_tool_intents()?;
+        self.drive_agent_context_calls()
     }
-    fn project_conversation(
+    pub(crate) fn finish_conversation(
         &self,
-        s: &mut EngineeringState,
         session: &Session,
         tid: &str,
-        observation: &Obs,
+        revision: u64,
+        status: TurnStatus,
+        reason: &str,
+        forced: bool,
     ) -> Result<()> {
-        let turn = s
-            .turns
-            .iter()
-            .find(|t| t.id == tid)
-            .cloned()
-            .ok_or_else(|| err("not_found", "Turn 不存在"))?;
-        if !turn.status.active() || turn.cancel_requested {
-            return Ok(());
-        }
-        match observation {
-            Obs::ToolCall { .. } => self.project_tool_request(s, session, tid, observation)?,
-            Obs::Admitted {
-                turn,
-                message,
-                external_turn,
-            } => {
-                require(turn == tid, "输入回执跨轮次")?;
-                let t = s.turns.iter_mut().find(|t| t.id == tid).unwrap();
-                if message.is_some() {
-                    t.external_message = message.clone()
-                }
-                if external_turn.is_some() {
-                    t.external_turn = external_turn.clone()
-                }
-                t.revision += 1;
-            }
-            Obs::Consumed { turn, message } => {
-                require(turn == tid, "消费事件跨轮次")?;
-                let t = s.turns.iter_mut().find(|t| t.id == tid).unwrap();
-                require(
-                    message
-                        .as_ref()
-                        .is_none_or(|id| t.external_message.as_ref() == Some(id)),
-                    "原生输入 ID 不符",
-                )?;
-                t.consumed = true;
-                t.revision += 1;
-            }
-            Obs::Message {
-                turn,
-                key,
-                content,
-                kind,
-                mode,
-                item,
-            } => {
-                require(
-                    turn == tid && content.len() <= 1024 * 1024,
-                    "消息跨轮次或过大",
-                )?;
-                append(
-                    s,
-                    session,
-                    tid,
-                    key,
-                    *kind,
-                    content,
-                    *mode,
-                    Some(item.clone()),
-                );
-            }
-            Obs::Interaction {
-                turn,
-                request,
-                kind,
-                questions,
-                tool,
-                reason,
-            } => {
-                require(turn == tid, "交互请求跨轮次")?;
-                if !s
-                    .interactions
-                    .iter()
-                    .any(|i| i.session_id == session.id && i.external_request == *request)
-                {
-                    s.interactions.push(PendingInteraction {
-                        id: id(),
-                        project_id: session.project_id.clone().unwrap(),
-                        session_id: session.id.clone(),
-                        turn_id: tid.into(),
-                        external_request: request.clone(),
-                        kind: *kind,
-                        status: InteractionStatus::Pending,
-                        questions: questions.clone(),
-                        tool: tool.clone(),
-                        reason: reason.clone(),
-                        answer: None,
-                        revision: 1,
-                    });
-                }
-                s.turns.iter_mut().find(|t| t.id == tid).unwrap().status =
-                    TurnStatus::WaitingInteraction;
-            }
-            Obs::Terminal { .. } => unreachable!(),
-        }
-        Ok(())
+        let guards = crate::concurrency::ReadSet::new(vec![
+            crate::concurrency::ResourceVersion {
+                resource: crate::concurrency::ResourceKey::new("session", &session.id),
+                revision: session.revision,
+            },
+            crate::concurrency::ResourceVersion {
+                resource: crate::concurrency::ResourceKey::new("turn", tid),
+                revision,
+            },
+        ])?;
+        self.finish_conversation_guarded(session, tid, status, reason, forced, guards)
     }
-    fn finish_conversation(
+    fn finish_conversation_guarded(
         &self,
         session: &Session,
         tid: &str,
         status: TurnStatus,
         reason: &str,
         forced: bool,
+        guards: crate::concurrency::ReadSet,
     ) -> Result<()> {
-        let state = self.store.snapshot()?;
-        let executions: Vec<_> = state
-            .executions
+        let revision = guards
+            .require(&crate::concurrency::ResourceKey::new("tool_turn", tid))
+            .or_else(|_| guards.require(&crate::concurrency::ResourceKey::new("turn", tid)))?;
+        let transition = crate::conversation_observations::ConversationTransition {
+            session,
+            turn: tid,
+            revision,
+            status,
+            reason,
+            terminal: true,
+            forced,
+        };
+        let fingerprint = transition.fingerprint(self.store.as_ref());
+        if self
+            .store
+            .replay_commit(
+                &format!("conversation-transition:{fingerprint}"),
+                &fingerprint,
+            )?
+            .is_some()
+        {
+            return Ok(());
+        }
+        let stopped = self.stop_conversation_workers(session, tid, &guards)?;
+        let mut final_versions = guards
+            .versions()
             .iter()
-            .filter(|e| {
-                e.session_id == session.id
-                    && [Status::Prepared, Status::Running, Status::Interrupted].contains(&e.status)
-            })
+            .filter(|v| v.resource.kind != "tool_worker")
             .cloned()
-            .collect();
-        let mut results = vec![];
-        for execution in executions {
-            let proof = self.harness.stop_session(session, &execution)?;
-            require(
-                proof.operation_id == execution.operation_id && proof.writer_revoked,
-                "没有停止并撤销写权限的证明",
-            )?;
-            let artifact = if let Some(log) = self.harness.session_log(&execution)? {
-                let mut a = self
-                    .artifacts
-                    .seal_scoped(&owner(session), "protocol", &log)?;
-                a.origin = Origin::External;
-                Some(a)
-            } else {
-                None
-            };
-            results.push((execution, artifact, proof));
-        }
-        self.store.transact(None, &mut |s| {
-            let turn = s.turns.iter_mut().find(|t| t.id == tid).unwrap();
-            require(turn.status.active(), "讨论轮次已结束")?;
-            // A cancellation racing with provider completion remains an explicit cancellation.
-            turn.status = if turn.cancel_requested {
-                TurnStatus::Cancelled
-            } else {
-                status
-            };
-            turn.finished = Some(now());
-            turn.revision += 1;
-            let row = s.sessions.iter_mut().find(|v| v.id == session.id).unwrap();
-            row.lifecycle = Some(
-                if forced || matches!(turn.status, TurnStatus::Cancelled | TurnStatus::Failed) {
-                    SessionLifecycle::RequiresSuccessor
-                } else {
-                    SessionLifecycle::Idle
-                },
-            );
-            row.revision += 1;
-            for (execution, artifact, proof) in &results {
-                if let Some(a) = artifact {
-                    s.artifacts.push(a.clone())
-                }
-                let row = s
-                    .executions
-                    .iter_mut()
-                    .find(|v| v.id == execution.id)
-                    .unwrap();
-                row.writer_revoked = true;
-                row.finished = Some(now());
-                row.status = Status::Released;
-                row.protocol_artifact = artifact.as_ref().map(|a| a.id.clone());
-                append(
-                    s,
-                    session,
-                    tid,
-                    &format!("{}:stop-proof", execution.id),
-                    ConversationEventKind::Status,
-                    &serde_json::to_string(proof).unwrap(),
-                    MessageMode::Full,
-                    None,
-                );
-            }
-            for i in s
-                .interactions
-                .iter_mut()
-                .filter(|i| i.turn_id == tid && i.status == InteractionStatus::Pending)
-            {
-                i.status = InteractionStatus::Cancelled;
-                i.revision += 1;
-            }
-            append(
-                s,
-                session,
-                tid,
-                &format!("{tid}:terminal"),
-                ConversationEventKind::Status,
-                reason,
-                MessageMode::Full,
-                None,
-            );
-            if s.turns
-                .iter()
-                .any(|t| t.id == tid && t.status == TurnStatus::Completed)
-                && s.governance
-                    .iter()
-                    .any(|r| r.r#type == "agent_session" && r.definition_id == session.id)
-            {
-                self.capture_conversation(s, session, "conversation_completed", None)?;
-            }
-            Ok(json!({"ok":true}))
-        })?;
-        for (execution, _, _) in results {
-            if let Err(error) = self.harness.cleanup_worker(session, &execution) {
-                self.store.transact(None, &mut |s| {
-                    s.executions
-                        .iter_mut()
-                        .find(|e| e.id == execution.id)
-                        .unwrap()
-                        .status = Status::CleanupFailed;
-                    event(s, &session.id, "cleanup_failed", &error.code);
-                    Ok(json!({"ok":true}))
-                })?;
-            }
-        }
+            .collect::<Vec<_>>();
+        final_versions.extend(stopped.versions().iter().cloned());
+        let final_guards = crate::concurrency::ReadSet::new(final_versions)?;
+        self.commit_conversation_transition(&transition, final_guards.versions())?;
         Ok(())
     }
 }

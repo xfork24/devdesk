@@ -1,3 +1,6 @@
+#[macro_use]
+#[path = "../../../tests/support/delegating_store.rs"]
+mod delegating_store;
 use devdesk_adapters::{FileArtifacts, GlobalStore, SqliteStore};
 use devdesk_core::*;
 use devdesk_domain::*;
@@ -212,22 +215,20 @@ impl EngineeringStore for Fault {
     fn root(&self) -> String {
         self.inner.root()
     }
-    fn transact(
+    delegated_native_store!();
+    fn submit_changes(
         &self,
-        key: Option<(&str, &str)>,
-        action: &mut dyn FnMut(&mut EngineeringState) -> Result<Value>,
-    ) -> Result<Value> {
-        self.inner.transact(key, &mut |s| {
-            let result = action(s)?;
-            if self.fail.load(Ordering::SeqCst)
-                && s.governance.iter().any(|r| {
-                    r.r#type == "configuration_transfer" && r.data["status"] == "completed"
-                })
-            {
-                return Err(err("injected_exit", "before global commit"));
-            }
-            Ok(result)
-        })
+        changes: &devdesk_core::concurrency::PreparedChangeSet,
+    ) -> Result<devdesk_core::concurrency::CommitOutcome> {
+        if self.fail.load(Ordering::SeqCst)
+            && changes.changes.iter().any(|c| {
+                c.value["type"] == "configuration_transfer"
+                    && c.value["data"]["status"] == "completed"
+            })
+        {
+            return Err(err("injected_exit", "before global commit"));
+        }
+        self.inner.submit_changes(changes)
     }
 }
 #[test]

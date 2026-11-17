@@ -22,7 +22,6 @@ pub struct WorktreeReceipt {
 }
 pub struct CliGit {
     root: PathBuf,
-    writer: Mutex<()>,
 }
 fn valid_oid(value: &str) -> bool {
     matches!(value.len(), 40 | 64)
@@ -44,7 +43,6 @@ impl CliGit {
     pub fn new(root: &Path) -> Result<Self> {
         Ok(Self {
             root: fs::canonicalize(root).map_err(storage)?,
-            writer: Mutex::new(()),
         })
     }
     fn project(&self, project: &str) -> Result<PathBuf> {
@@ -181,7 +179,6 @@ impl CliGit {
         mainline: &str,
         operation: &str,
     ) -> Result<RepositoryFacts> {
-        let _lock = self.writer.lock().map_err(storage)?;
         require(
             valid_repository(repository),
             "仓库必须是明确的 GitHub owner/repo",
@@ -299,7 +296,6 @@ impl CliGit {
         repository: &str,
         mainline: &str,
     ) -> Result<RepositoryFacts> {
-        let _lock = self.writer.lock().map_err(storage)?;
         self.inspect_unlocked(project, repository, mainline)
     }
     pub fn prepare_worktree(
@@ -337,7 +333,6 @@ impl CliGit {
         branch: &str,
         operation: &str,
     ) -> Result<WorktreeReceipt> {
-        let _lock = self.writer.lock().map_err(storage)?;
         checked_uuid(owner)?;
         require(
             ["features", "tasks", "candidates", "mainlines"].contains(&kind),
@@ -443,7 +438,6 @@ impl CliGit {
         allowed_paths: &[String],
         protected_paths: &[String],
     ) -> Result<String> {
-        let _lock = self.writer.lock().map_err(storage)?;
         let repo = self.context(c)?;
         let path = PathBuf::from(&c.source.worktree);
         self.verify_worktree(&repo, &path, &c.source.branch)?;
@@ -567,7 +561,6 @@ impl CliGit {
         revision: &str,
         destination: &Path,
     ) -> Result<()> {
-        let _lock = self.writer.lock().map_err(storage)?;
         let repo = self.context(c)?;
         require(
             valid_oid(revision) && self.oid(&repo, revision)? == revision,
@@ -791,7 +784,6 @@ impl CliGit {
         operation: &str,
         stage: PublishStage,
     ) -> Result<RepositoryReceipt> {
-        let _lock = self.writer.lock().map_err(storage)?;
         let repo = self.context(c)?;
         require(
             valid_oid(revision) && expected.is_none_or(valid_oid),
@@ -850,7 +842,6 @@ impl CliGit {
         revision: &str,
         operation: &str,
     ) -> Result<RepositoryReceipt> {
-        let _lock = self.writer.lock().map_err(storage)?;
         let repo = self.context(c)?;
         require(
             valid_oid(expected)
@@ -959,11 +950,8 @@ impl CliGit {
         Ok(commit)
     }
 }
-impl ports::Git for CliGit {
-    fn identity(&self) -> String {
-        "devdesk_adapters::CliGit/v1".into()
-    }
-    fn repository_operation(&self, op: &RepositoryOperation) -> Result<RepositoryReceipt> {
+impl CliGit {
+    fn perform_repository_operation(&self, op: &RepositoryOperation) -> Result<RepositoryReceipt> {
         let make = |r: WorktreeReceipt, kind: WorktreeKind| RepositoryWorktree {
             id: r.owner.clone(),
             project_id: op.project_id.clone(),
@@ -1077,6 +1065,345 @@ impl ports::Git for CliGit {
             }
         }
     }
+    fn inspect_original_repository_operation(
+        &self,
+        op: &RepositoryOperation,
+    ) -> Result<Option<RepositoryReceipt>> {
+        checked_uuid(&op.id)?;
+        let report = self
+            .project(&op.project_id)?
+            .join("execution/git-operations")
+            .join(format!("repository_receipt-{}.json", op.id));
+        reject_symlink(&report)?;
+        let saved = if report.is_file() {
+            let raw: Value =
+                serde_json::from_slice(&fs::read(&report).map_err(storage)?).map_err(storage)?;
+            require(
+                raw["kind"] == "repository_receipt" && raw["action"] == json!(op.action),
+                "原仓库物理回执改变了请求",
+            )?;
+            Some(
+                serde_json::from_value::<RepositoryReceipt>(raw["receipt"].clone())
+                    .map_err(storage)?,
+            )
+        } else {
+            None
+        };
+        match &op.action {
+            RepositoryAction::Connect {
+                repository,
+                mainline,
+            } => {
+                let Some(receipt @ RepositoryReceipt::Connected { .. }) = saved else {
+                    return Ok(None);
+                };
+                let RepositoryReceipt::Connected {
+                    workspace,
+                    head,
+                    worktree,
+                    policy,
+                } = &receipt
+                else {
+                    unreachable!()
+                };
+                require(
+                    workspace.repository == *repository
+                        && workspace.mainline == *mainline
+                        && policy.compatible
+                        && policy.head.as_ref() == Some(head)
+                        && worktree.base == *head
+                        && worktree.operation_id == op.id,
+                    "原接入物理回执归属不符",
+                )?;
+                let repo = self.repository(&op.project_id)?;
+                require(
+                    workspace.path == repo.to_string_lossy(),
+                    "原接入仓库路径不符",
+                )?;
+                let path = PathBuf::from(&worktree.path);
+                if !path.is_dir() {
+                    return Ok(None);
+                }
+                self.verify_worktree(&repo, &path, &worktree.branch)?;
+                if self.oid(&path, "HEAD")? != *head
+                    || !self
+                        .output(
+                            &path,
+                            &["status", "--porcelain", "--untracked-files=normal"],
+                        )?
+                        .is_empty()
+                {
+                    return Ok(None);
+                }
+                return Ok(Some(receipt));
+            }
+            RepositoryAction::CreateWorktree {
+                owner,
+                worktree_kind,
+                base,
+            } => {
+                let kind = match worktree_kind {
+                    WorktreeKind::Feature => "features",
+                    WorktreeKind::Task => "tasks",
+                    WorktreeKind::Candidate => "candidates",
+                    WorktreeKind::Mainline => {
+                        return Err(err("invalid_params", "Mainline 只由接入创建"));
+                    }
+                };
+                let branch = format!("devdesk/{kind}/{owner}");
+                let path = self
+                    .project(&op.project_id)?
+                    .join("execution/worktrees")
+                    .join(kind)
+                    .join(owner);
+                reject_symlink(&path)?;
+                let request = WorktreeReceipt {
+                    project: op.project_id.clone(),
+                    owner: owner.clone(),
+                    branch: branch.clone(),
+                    path: path.to_string_lossy().into(),
+                    base: base.clone(),
+                    operation: op.id.clone(),
+                };
+                let marker = self
+                    .project(&op.project_id)?
+                    .join("execution/git-operations")
+                    .join(format!("worktree-{}.json", op.id));
+                reject_symlink(&marker)?;
+                if !marker.is_file() || !path.is_dir() {
+                    return Ok(None);
+                }
+                let raw: Value =
+                    serde_json::from_slice(&fs::read(marker).map_err(storage)?).map_err(storage)?;
+                require(
+                    raw == json!({"kind":"worktree","spec":request}),
+                    "原工作副本请求身份不符",
+                )?;
+                let repo = self.repository(&op.project_id)?;
+                self.verify_worktree(&repo, &path, &branch)?;
+                if self.oid(&path, "HEAD")? != *base
+                    || !self
+                        .output(
+                            &path,
+                            &["status", "--porcelain", "--untracked-files=normal"],
+                        )?
+                        .is_empty()
+                {
+                    return Ok(None);
+                }
+                return Ok(Some(RepositoryReceipt::Worktree {
+                    worktree: RepositoryWorktree {
+                        id: owner.clone(),
+                        project_id: op.project_id.clone(),
+                        owner_id: owner.clone(),
+                        kind: *worktree_kind,
+                        branch,
+                        path: request.path,
+                        base: base.clone(),
+                        operation_id: op.id.clone(),
+                    },
+                }));
+            }
+            RepositoryAction::RefreshMainline {
+                context,
+                expected,
+                revision,
+            } => {
+                let marker = self
+                    .project(&op.project_id)?
+                    .join("execution/git-operations")
+                    .join(format!("refresh_mainline-{}.json", op.id));
+                reject_symlink(&marker)?;
+                if !marker.is_file() {
+                    return Ok(None);
+                }
+                let raw: Value =
+                    serde_json::from_slice(&fs::read(marker).map_err(storage)?).map_err(storage)?;
+                require(
+                    raw == json!({"kind":"refresh_mainline","context":context,"expected":expected,"revision":revision}),
+                    "原主干刷新请求身份不符",
+                )?;
+                let repo = self.context(context)?;
+                let path = PathBuf::from(&context.target.worktree);
+                self.verify_worktree(&repo, &path, &context.target.branch)?;
+                if self.oid(&path, "HEAD")? != *revision
+                    || !self
+                        .output(
+                            &path,
+                            &["status", "--porcelain", "--untracked-files=normal"],
+                        )?
+                        .is_empty()
+                {
+                    return Ok(None);
+                }
+                return Ok(Some(RepositoryReceipt::MainlineRefreshed {
+                    previous: expected.clone(),
+                    revision: revision.clone(),
+                }));
+            }
+            _ => {}
+        }
+        let (context, kind, spec, reference) = match &op.action {
+            RepositoryAction::Snapshot {
+                run,
+                context,
+                expected,
+                allowed_paths,
+                protected_paths,
+            } => {
+                require(
+                    run == &op.id && op.project_id == context.project,
+                    "快照核对身份不符",
+                )?;
+                (
+                    context,
+                    "snapshot",
+                    json!({"kind":"snapshot","context":context,"expected":expected,"allowed_paths":allowed_paths,"protected_paths":protected_paths}),
+                    Some(format!("refs/devdesk/snapshots/{}", op.id)),
+                )
+            }
+            RepositoryAction::Candidate {
+                context,
+                source,
+                target,
+                ..
+            } => (
+                context,
+                "candidate",
+                json!({"kind":"candidate","context":context,"source":source,"target":target}),
+                Some(format!("refs/devdesk/candidates/{}", op.id)),
+            ),
+            RepositoryAction::PublishRef {
+                context,
+                branch,
+                revision,
+                expected,
+                stage,
+                ..
+            } => (
+                context,
+                "publish_ref",
+                json!({"kind":"publish_ref","context":context,"branch":branch,"revision":revision,"expected":expected,"stage":stage}),
+                None,
+            ),
+            _ => return Err(err("unsupported", "此仓库操作尚无只读物理证明")),
+        };
+        let repo = self.context(context)?;
+        let path = self
+            .project(&op.project_id)?
+            .join("execution/git-operations")
+            .join(format!("{kind}-{}.json", op.id));
+        reject_symlink(&path)?;
+        if !path.is_file() {
+            return Ok(None);
+        }
+        let original: Value =
+            serde_json::from_slice(&fs::read(path).map_err(storage)?).map_err(storage)?;
+        require(original == spec, "仓库核对改变了原始物理请求")?;
+        match &op.action {
+            RepositoryAction::Snapshot { .. } => {
+                let Some(revision) = self.existing_ref(&repo, reference.as_deref().unwrap())?
+                else {
+                    return Ok(None);
+                };
+                let source = PathBuf::from(&context.source.worktree);
+                self.verify_worktree(&repo, &source, &context.source.branch)?;
+                if self.oid(&source, "HEAD")? != revision
+                    || !self
+                        .output(
+                            &source,
+                            &["status", "--porcelain", "--untracked-files=normal"],
+                        )?
+                        .is_empty()
+                {
+                    return Ok(None);
+                }
+                Ok(Some(RepositoryReceipt::Snapshot { revision }))
+            }
+            RepositoryAction::Candidate { target, .. } => {
+                let Some(revision) = self.existing_ref(&repo, reference.as_deref().unwrap())?
+                else {
+                    return Ok(None);
+                };
+                require(
+                    self.output(&repo, &["rev-list", "--parents", "-n", "1", &revision])?
+                        == format!("{revision} {target}"),
+                    "候选核对父提交不符",
+                )?;
+                Ok(Some(RepositoryReceipt::Candidate { revision }))
+            }
+            RepositoryAction::PublishRef {
+                branch, revision, ..
+            } => Ok(
+                (self.remote_head(&repo, branch)?.as_ref() == Some(revision)).then(|| {
+                    RepositoryReceipt::PublishedRef {
+                        revision: revision.clone(),
+                        branch: branch.clone(),
+                    }
+                }),
+            ),
+            _ => unreachable!(),
+        }
+    }
+}
+impl ports::Git for CliGit {
+    fn identity(&self) -> String {
+        "devdesk_adapters::CliGit/v2-resource-grants".into()
+    }
+    fn repository_operation(&self, op: &RepositoryOperation) -> Result<RepositoryReceipt> {
+        let result = self.perform_repository_operation(op)?;
+        self.operation(
+            &op.project_id,
+            &op.id,
+            &json!({"kind":"repository_receipt","action":op.action,"receipt":result}),
+        )?;
+        Ok(result)
+    }
+    fn inspect_repository_operation(
+        &self,
+        op: &RepositoryOperation,
+    ) -> Result<Option<RepositoryReceipt>> {
+        self.inspect_original_repository_operation(op)
+    }
+    fn inspect_advance(&self, c: &GitContext, operation: &str) -> Result<AdvanceObservation> {
+        checked_uuid(operation)?;
+        let repo = self.context(c)?;
+        let path = self
+            .project(&c.project)?
+            .join("execution/git-operations")
+            .join(format!("advance-{operation}.json"));
+        reject_symlink(&path)?;
+        if !path.is_file() {
+            return Ok(AdvanceObservation::Unknown);
+        }
+        let original: Value =
+            serde_json::from_slice(&fs::read(path).map_err(storage)?).map_err(storage)?;
+        require(
+            original["kind"] == "advance" && original["context"] == json!(c),
+            "推进核对改变了原始请求",
+        )?;
+        let Some(revision) =
+            self.existing_ref(&repo, &format!("refs/devdesk/advances/{operation}"))?
+        else {
+            return Ok(AdvanceObservation::NotApplied {
+                actual_target: self.oid(&repo, &format!("refs/heads/{}", c.target.branch))?,
+            });
+        };
+        require(original["candidate"] == revision, "推进核对 marker 不符")?;
+        let target = PathBuf::from(&c.target.worktree);
+        self.verify_worktree(&repo, &target, &c.target.branch)?;
+        if self.oid(&target, "HEAD")? != revision
+            || !self
+                .output(
+                    &target,
+                    &["status", "--porcelain", "--untracked-files=normal"],
+                )?
+                .is_empty()
+        {
+            return Ok(AdvanceObservation::Unknown);
+        }
+        Ok(AdvanceObservation::Applied { revision })
+    }
     fn workspace_revision(&self, c: &GitContext) -> Result<String> {
         let repo = self.context(c)?;
         self.oid(&repo, &format!("refs/heads/{}", c.source.branch))
@@ -1088,7 +1415,6 @@ impl ports::Git for CliGit {
         target: &str,
         operation: &str,
     ) -> Result<String> {
-        let _lock = self.writer.lock().map_err(storage)?;
         self.candidate_unlocked(c, source, target, operation)
     }
     fn commit_parents(&self, c: &GitContext, revision: &str) -> Result<Vec<String>> {
@@ -1098,7 +1424,6 @@ impl ports::Git for CliGit {
         CliGit::diff(self, c, base, head)
     }
     fn preflight_advance(&self, c: &GitContext, expected: &str) -> Result<()> {
-        let _lock = self.writer.lock().map_err(storage)?;
         self.context(c)?;
         if c.target.branch != c.workspace.mainline {
             self.target_clean(c, expected)?;
@@ -1121,7 +1446,6 @@ impl ports::Git for CliGit {
         candidate: &str,
         operation: &str,
     ) -> Result<String> {
-        let _lock = self.writer.lock().map_err(storage)?;
         let repo = self.context(c)?;
         require(
             actual == expected && valid_oid(expected) && valid_oid(candidate),
@@ -1159,7 +1483,6 @@ impl ports::Git for CliGit {
         Err(err("needs_reconciliation", "CAS 回执未知"))
     }
     fn reconcile_advance(&self, c: &GitContext, operation: &str) -> Result<AdvanceObservation> {
-        let _lock = self.writer.lock().map_err(storage)?;
         checked_uuid(operation)?;
         let repo = self.context(c)?;
         let path = self

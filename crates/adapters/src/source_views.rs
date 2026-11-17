@@ -24,6 +24,62 @@ pub(super) fn is_encoded_text(text: &str) -> bool {
     text.starts_with(SOURCE_TEXT)
 }
 
+pub(super) fn encode_workflow_input_intent(
+    catalog: &ConfigurationCatalogSnapshot,
+    record: &ConfigurationRecord,
+) -> Result<Value> {
+    require(
+        record.r#type == "workflow_intent"
+            && record.data["method"] == "conversation.send"
+            && record.data["configured"] == true,
+        "仅正式输入意图可使用显式任务源",
+    )?;
+    let input = record.data["command"]["payload"]["input"]
+        .as_str()
+        .ok_or_else(|| err("storage", "原正式输入正文缺失"))?;
+    let task: Value = serde_json::from_str(input).map_err(storage)?;
+    require(
+        task["source"]["execution_id"] == record.definition_id
+            && task["source"]["workflow_instance_id"].is_string()
+            && task["source"]["plan_revision_id"].is_string()
+            && task["agent"]["id"].is_string()
+            && task["inputs"].is_object()
+            && task["input_sources"].is_object(),
+        "原输入缺少实际执行、计划或 Agent 来源",
+    )?;
+    let descriptor = json!({"$source":"task","task_digest":configuration_hash(&task),"source":task["source"],"inputs":task["inputs"],"input_sources":task["input_sources"],"agent_ref":task["agent"]["id"],"supplemental_input":task["supplemental_input"]});
+    let mut row = record.clone();
+    row.data["command"]["payload"]
+        .as_object_mut()
+        .unwrap()
+        .remove("input");
+    row = source_store::pack_record(&catalog.state, &row)?;
+    row.data["command"]["payload"]["input"] = json!(format!("{SOURCE_TEXT}{descriptor}"));
+    row.content_hash = content_digest(&row.refs, &row.data);
+    Ok(row.to_storage())
+}
+
+pub(super) fn encode_task(
+    catalog: &ConfigurationCatalogSnapshot,
+    task: &ConfiguredAgentTask,
+) -> Result<(Value, String)> {
+    task.validate()?;
+    require(
+        task.task["source"]["execution_id"] == task.source["execution_id"]
+            && task.task["agent"]["id"] == task.agent_revision_id,
+        "显式任务源与实际 Agent 或执行不符",
+    )?;
+    let descriptor = json!({"$source":"task","task_digest":task.digest,"source":task.task["source"],"inputs":task.task["inputs"],"input_sources":task.task["input_sources"],"agent_ref":task.agent_revision_id,"supplemental_input":task.task["supplemental_input"]});
+    let encoded = format!("{SOURCE_TEXT}{descriptor}");
+    let mut metadata = json!(task);
+    metadata.as_object_mut().unwrap().remove("task");
+    metadata.as_object_mut().unwrap().remove("rendered_input");
+    let mut metadata = pack(&catalog.state, &metadata)?;
+    metadata["task"] = descriptor;
+    metadata["rendered_input"] = json!(encoded);
+    Ok((metadata, encoded))
+}
+
 fn factual_field(key: &str) -> bool {
     [
         "inputs",
@@ -299,6 +355,26 @@ fn restore_reference(
 ) -> Result<Value> {
     let _span = performance::Span::new("source.restore_reference");
     match value["$source"].as_str() {
+        Some("tool_definition") => {
+            let reference = value["ref"]
+                .as_str()
+                .ok_or_else(|| err("storage", "工具定义缺少确切源引用"))?;
+            let source = state.configuration(reference)?;
+            require(source.r#type == "tool", "工具定义引用类型无效")?;
+            source
+                .decode::<ToolDefinition>()
+                .map(|definition| json!(definition))
+        }
+        Some("context_tool") => {
+            let reference = value["ref"]
+                .as_str()
+                .ok_or_else(|| err("storage", "上下文工具缺少源引用"))?;
+            let name = value["name"]
+                .as_str()
+                .ok_or_else(|| err("storage", "上下文工具缺少调用身份"))?;
+            devdesk_core::context_tool_definition(state, reference, name, value["unbound"] == true)
+                .map(|d| json!(d))
+        }
         Some("literal") => Ok(value["value"].clone()),
         Some("source_definition") => Ok(json!(
             state

@@ -39,7 +39,7 @@ fn actual_git_docker_workflow_handoffs() {
     let w = Workspace::open(&root).unwrap();
     let root = std::fs::canonicalize(root).unwrap();
     let project = tests::create(&w, "Dedicated workflow transport probe");
-    let e = w.active_engine(Some(&project)).unwrap();
+    let e = w.project_engine(Some(&project)).unwrap();
     let command = |method: &str, target: Option<&str>, payload: Value| {
         let state = e.store.snapshot().unwrap();
         let global = w.global.snapshot().unwrap();
@@ -73,7 +73,7 @@ fn actual_git_docker_workflow_handoffs() {
     // Seed the dedicated local scene from actual Git receipts. There is no local-repository
     // onboarding RPC; the production GitHub onboarding flow is outside this credential-free test.
     e.store
-        .transact(None, &mut |s| {
+        .seed_fixture_state(None, &mut |s| {
             let p = s.projects.iter_mut().find(|p| p.id == project).unwrap();
             p.workspace_definition = Some(devdesk_domain::Workspace {
                 repository: "probe/local".into(),

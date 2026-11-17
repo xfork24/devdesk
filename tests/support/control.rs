@@ -5,9 +5,14 @@ use devdesk_domain::*;
 use serde_json::{Value, json};
 
 pub fn evaluate(e: &Engine) -> Result<()> {
-    e.evaluate_workflows()?;
     // Act through public commands, as a coordinator would. Human-only gates remain pending.
     for _ in 0..32 {
+        let boundary = e.store.event_cursor()?;
+        for _ in 0..4 {
+            e.evaluate_workflows()?;
+        }
+        e.drive_workflow_changes()?;
+        let mut progress = e.store.event_cursor()? > boundary;
         let state = e.store.snapshot()?;
         let rows: Vec<_> = state
             .governance
@@ -20,7 +25,6 @@ pub fn evaluate(e: &Engine) -> Result<()> {
             })
             .cloned()
             .collect();
-        let mut progress = false;
         for row in rows {
             let view = e.query("workflow.inspect", &json!({"id":row.id}), 4)?;
             for step in view["steps"].as_array().unwrap() {
@@ -40,7 +44,7 @@ pub fn evaluate(e: &Engine) -> Result<()> {
                 let fresh = e.store.snapshot()?;
                 let record = fresh.configuration(&row.id)?;
                 let payload = json!({"plan_revision_id":record.data["active_plan_revision_id"],"step":step["step"],"execution_id":exec["id"],"input_digest":exec["input_digest"],"outputs":exec["outputs"],"reason":"explicit test coordinator"});
-                if e.execute(
+                let admitted = e.execute(
                     method,
                     Command {
                         command_id: id(),
@@ -48,10 +52,17 @@ pub fn evaluate(e: &Engine) -> Result<()> {
                         expected_revision: Some(record.revision),
                         payload,
                     },
-                )
-                .is_ok()
-                {
-                    progress = true;
+                );
+                match admitted {
+                    Ok(_) => progress = true,
+                    Err(error)
+                        if method == "workflow.step.dispatch"
+                            && matches!(
+                                error.code.as_str(),
+                                "blocked" | "invalid_workflow" | "configuration_required"
+                            )
+                            && error.execution_failure.is_none() => {}
+                    Err(error) => return Err(error),
                 }
             }
             let fresh = e.store.snapshot()?;

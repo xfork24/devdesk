@@ -59,13 +59,26 @@ pub fn scheduling(e: &Engine, target: &str, patch: &Value) -> Result<()> {
         &json!({"id":target,"changeset":changes}),
         100,
     )?;
-    execute(
+    let change = execute(
         e,
         "workflow.change.apply",
         Some(target),
         json!({"plan_revision_id":instance.active_plan_revision_id,"changeset":changes,"preview_hash":preview["preview_hash"]}),
     )?;
-    Ok(())
+    for _ in 0..32 {
+        e.drive_workflow_changes()?;
+        let state = e.store.snapshot()?;
+        let row = state.configuration(change["id"].as_str().unwrap())?;
+        if row.data["status"] == "applied" {
+            return Ok(());
+        }
+        if row.data["status"] == "conflicted" {
+            return Err(err("fixture", row.data["error"].to_string()));
+        }
+        e.tick_conversations(8)?;
+        e.evaluate_workflows()?;
+    }
+    Err(err("fixture", "计划变更未在有界夹具轮次内完成"))
 }
 pub fn workflow_with_scheduling(e: &Engine, reference: &str, scheduling: &Value) -> Result<String> {
     let s = e.store.snapshot()?;
@@ -76,7 +89,7 @@ pub fn workflow_with_scheduling(e: &Engine, reference: &str, scheduling: &Value)
         e,
         "workflow.create",
         None,
-        json!({"name":"Fixture scheduled workflow","scope":source.scope,"document":document}),
+        json!({"name":"Fixture scheduled workflow","scope":e.store.project_id().as_deref().map(Scope::project).unwrap_or_else(||source.scope.clone()),"document":document}),
     )?;
     Ok(
         execute(e, "workflow.publish", draft["id"].as_str(), json!({}))?["id"]

@@ -450,6 +450,24 @@
             }
           },
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "source_id"
+          ],
+          "properties": {
+            "kind": {
+              "const": "coordinator"
+            },
+            "source_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false,
+          "description": "Kernel factual continuation only; never accepted as a public decision actor."
         }
       ]
     },

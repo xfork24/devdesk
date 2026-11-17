@@ -11,8 +11,14 @@ use std::sync::Arc;
 #[path = "../../../tests/support/runtime.rs"]
 mod runtime;
 fn engine(path: &std::path::Path) -> Engine {
+    engine_with_store(path, SqliteStore::open(path).unwrap())
+}
+fn project_engine(path: &std::path::Path) -> Engine {
+    engine_with_store(path, SqliteStore::open_fixture(path).unwrap())
+}
+fn engine_with_store(path: &std::path::Path, store: SqliteStore) -> Engine {
     let e = Engine::new(
-        Arc::new(SqliteStore::open(path).unwrap()),
+        Arc::new(store),
         Arc::new(FileArtifacts::new(path.into())),
         runtime::adapters(),
     )
@@ -226,7 +232,7 @@ fn defaults_pin_exact_revisions_without_discarding_published_history() {
 fn source_store_rejects_arbitrary_revision_aliases() {
     let dir = tempfile::tempdir().unwrap();
     let e = engine(dir.path());
-    let result = e.store.transact(None, &mut |s| {
+    let result = e.store.seed_fixture_state(None, &mut |s| {
         let mut source = s.configuration(DEFAULT_MODEL_ID)?.clone();
         source.id = "arbitrary-alias".into();
         source.version += 1;
@@ -264,14 +270,14 @@ fn database_persists_sources_and_rebuilds_execution_views_after_reopen() {
 #[test]
 fn configured_project_discussion_without_standard_captures_its_typed_agent() {
     let dir = tempfile::tempdir().unwrap();
-    let e = engine(dir.path());
+    let e = project_engine(dir.path());
     let p = command(&e, "project.create", None, json!({"title":"Discussion"})).unwrap();
     let pid = p["id"].as_str().unwrap();
     runtime::configure_project(&e, pid);
     let (template, _) = runtime::queue_conversation(&e, pid);
     let sid = id();
     e.store
-        .transact(None, &mut |s| {
+        .seed_fixture_state(None, &mut |s| {
             let mut session = s
                 .sessions
                 .iter()
@@ -324,7 +330,7 @@ fn configured_project_discussion_without_standard_captures_its_typed_agent() {
 #[test]
 fn project_authorization_is_validated_before_selection_and_does_not_modify_agents() {
     let dir = tempfile::tempdir().unwrap();
-    let e = engine(dir.path());
+    let e = project_engine(dir.path());
     let project = command(
         &e,
         "project.create",
@@ -647,7 +653,7 @@ fn dsh_stacks_publish_recommended_models_and_native_only_capabilities() {
 #[test]
 fn only_project_manager_roles_can_be_selected_for_project_orchestration() {
     let dir = tempfile::tempdir().unwrap();
-    let e = engine(dir.path());
+    let e = project_engine(dir.path());
     let project = command(
         &e,
         "project.create",
@@ -695,7 +701,7 @@ fn only_project_manager_roles_can_be_selected_for_project_orchestration() {
 #[test]
 fn deferred_feature_creation_freezes_inputs_and_configuration_until_explicit_start() {
     let dir = tempfile::tempdir().unwrap();
-    let e = engine(dir.path());
+    let e = project_engine(dir.path());
     let project = command(
         &e,
         "project.create",
@@ -706,7 +712,7 @@ fn deferred_feature_creation_freezes_inputs_and_configuration_until_explicit_sta
     let project_id = project["id"].as_str().unwrap();
     let defaults = e.configuration_defaults(Some(project_id)).unwrap();
     let spec = command(&e, "spec.create", None, json!({
-        "name":"Start input content", "scope":"global",
+        "name":"Start input content", "scope":format!("project:{project_id}"),
         "data":{"schema_version":3,"body":"提供明确的业务背景。","checks":[{"key":"brief","name":"业务背景","instructions":"说明工作目标。"}]}
     })).unwrap();
     let delivery = command(
@@ -714,7 +720,7 @@ fn deferred_feature_creation_freezes_inputs_and_configuration_until_explicit_sta
         "delivery_type.create",
         None,
         json!({
-            "name":"Start input", "scope":"global", "spec_refs":[spec["id"]],
+            "name":"Start input", "scope":format!("project:{project_id}"), "spec_refs":[spec["id"]],
             "data":{"format":"json","content_schema":{"type":"string"}}
         }),
     )
@@ -762,7 +768,7 @@ fn deferred_feature_creation_freezes_inputs_and_configuration_until_explicit_sta
         .clone();
     assert_eq!(frozen.data["source_configuration_ref"], selected["id"]);
     drop(e);
-    let e = engine(dir.path());
+    let e = project_engine(dir.path());
     command(&e, "project.configuration.update", Some(project_id), json!({
         "workflow_ref":workflow["id"], "role_agent_bindings":defaults["role_agent_bindings"],
         "orchestrator_role_ref":defaults["orchestrator_role_ref"], "orchestration":{"mode":"manual"}
@@ -794,7 +800,7 @@ fn deferred_feature_creation_freezes_inputs_and_configuration_until_explicit_sta
 #[test]
 fn dsh_agents_cannot_be_bound_as_the_orchestrator() {
     let dir = tempfile::tempdir().unwrap();
-    let e = engine(dir.path());
+    let e = project_engine(dir.path());
     let project = command(
         &e,
         "project.create",
@@ -847,7 +853,7 @@ fn dsh_agents_cannot_be_bound_as_the_orchestrator() {
 #[test]
 fn dsh_workers_compile_custom_workflows_without_platform_tool_grants() {
     let dir = tempfile::tempdir().unwrap();
-    let e = engine(dir.path());
+    let e = project_engine(dir.path());
     let before = e.store.snapshot().unwrap();
     // A custom permission context without the factory's codex-only step tool grants.
     let mut source = selected_harness_profile(&before).unwrap().clone();
@@ -897,7 +903,7 @@ fn dsh_workers_compile_custom_workflows_without_platform_tool_grants() {
 #[test]
 fn project_usage_follows_flattened_agent_and_capability_references() {
     let root = tempfile::tempdir().unwrap();
-    let engine = engine(root.path());
+    let engine = project_engine(root.path());
     let project = command(
         &engine,
         "project.create",

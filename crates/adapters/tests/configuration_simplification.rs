@@ -304,7 +304,7 @@ fn frozen_materialization_uses_its_sandbox_after_the_project_default_changes() {
     let sandbox = source.into_record().unwrap();
     engine
         .store
-        .transact(None, &mut |state| {
+        .seed_fixture_state(None, &mut |state| {
             state.governance.push(sandbox.clone());
             let source = state
                 .governance

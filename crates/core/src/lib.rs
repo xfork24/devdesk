@@ -1,17 +1,43 @@
 //! Application use cases and ports. Adapters cannot advance domain state.
 #![forbid(unsafe_code)]
-mod agent_tasks;
+pub use agent_context::context_tool_definition;
 mod invocation;
 pub use invocation::InvocationContext;
 mod catalog_sync;
 pub mod concurrency;
 mod configuration_catalog;
+mod configuration_publication;
+pub use configuration_publication::{
+    ConfigurationPublication, configuration_transfer_witness, prepare_configuration_publication,
+};
 pub mod credential_updates;
 pub mod experience_directory;
 pub mod integration_operations;
 pub mod project_creation;
 pub mod project_reservation;
 pub mod project_updates;
+mod provider_tools;
+pub use provider_tools::{ConversationRuntimeFacts, ProviderTurn};
+mod conversation_captures;
+mod conversation_controls;
+mod conversation_observations;
+mod conversation_start;
+mod conversation_submission;
+mod conversation_workers;
+mod interaction_delivery;
+mod manager_publication;
+mod material_commands;
+mod native_context_calls;
+mod proposal_commands;
+mod repository_runtime;
+mod runtime_callbacks;
+mod sealed_commands;
+mod session_commands;
+mod work_owners;
+mod workspace_commands;
+pub use conversation_captures::ConversationCaptureFacts;
+pub use conversation_start::{ConversationAuthority, ConversationStartSource};
+pub use native_context_calls::ContextCallFacts;
 pub mod read_models;
 pub mod repository_dispatch;
 pub mod repository_projection;
@@ -46,29 +72,48 @@ mod configured_workflows;
 #[cfg(test)]
 mod controller_event_tests;
 mod controller_events;
+mod controller_interaction_reads;
 mod controller_interactions;
 mod controllers;
 pub use controller_events::append_workflow_events;
 mod manager_workspace;
+pub use manager_workspace::{render_project_artifact, render_project_record};
 mod spec_lint;
 pub use manager_workspace::{MANAGER_TOOLS, ManagerServices, read_project_knowledge};
+mod controller_calls;
+mod controller_lifecycle;
+mod controller_runtime;
+#[cfg(test)]
 mod human_governance;
 mod orchestration;
+mod platform_cleanup;
+mod platform_facts;
+mod platform_observations;
+mod platform_preparation;
+mod platform_publish;
+mod platform_reads;
+mod platform_reconciliation;
+mod platform_replies;
+mod platform_runtime;
 mod platform_tools;
 mod project_standards;
 mod standards;
 mod workflow_driver;
+mod workflow_driving;
 mod workflow_eligibility;
 mod workflow_failure;
+mod workflow_segments;
 pub use controllers::CONTROL_TOOLS;
 pub use standards::{compare_work_standards, work_standard_choices, work_standard_selection};
 pub use workflow_eligibility::{WorkflowActionEligibility, WorkflowStepActions};
-mod workflow_changes;
+mod workflow_change_commit;
+mod workflow_change_preview;
 pub use configured_runtime::task_input as render_source_task;
 pub use configured_runtime::{
     ConfiguredAgentRequest, ConfiguredToolRequest, ConfiguredWorkflowInstance,
 };
 pub use configured_workflows::{ConfiguredWorkflowPlan, compile_workflow_sources};
+pub use platform_preparation::PreparedConfiguredPlatform;
 pub use platform_tools::PlatformToolRequest;
 mod command_catalog;
 pub mod frozen_views;
@@ -108,12 +153,35 @@ pub use permission_resources::{
 };
 mod permission_switch;
 pub use permission_switch::permission_switch_id;
+mod bootstrap_recovery;
+mod controller_definitions;
+mod conversation_admission;
+mod formal_inputs;
+mod formal_sessions;
 pub mod ports;
-mod proposals;
-mod repositories;
+mod worker_reconciliation;
+mod workflow_authorization;
+mod workflow_budget;
+mod workflow_children;
+mod workflow_commits;
+mod workflow_controls;
+mod workflow_detail;
+mod workflow_dispatch;
+mod workflow_evaluation;
+mod workflow_execution_controls;
+mod workflow_facts;
 mod workflow_materials;
+mod workflow_observation_facts;
+mod workflow_outputs;
+mod workflow_readiness;
 mod workflow_reading;
+mod workflow_reconciliation;
+mod workflow_resources;
+mod workflow_retries;
+mod workflow_rule_hints;
+mod workflow_rules;
 mod workflow_runtime;
+mod workflow_start;
 pub use workflow_runtime::{PreparedWorkflowIntent, WorkflowIntentFacts, WorkflowIntentPage};
 mod workflow_runtime_facts;
 // Shared domain types and execution ports.
@@ -135,9 +203,42 @@ pub struct Command {
 pub fn command_fingerprint(method: &str, c: &Command) -> String {
     serde_json::to_string(&(method, &c.target, &c.expected_revision, &c.payload)).unwrap()
 }
+/// Independent coordinator stages; background occupancy is not a business lock.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SchedulingStage {
+    Controllers,
+    Tools,
+    Platform,
+    Repositories,
+    Conversations,
+    Workflows,
+    PlanChanges,
+    Segments,
+    Drivers,
+}
+impl SchedulingStage {
+    pub const ALL: &'static [Self] = &[
+        Self::Conversations,
+        Self::Workflows,
+        Self::Controllers,
+        Self::Tools,
+        Self::Platform,
+        Self::Repositories,
+        Self::PlanChanges,
+        Self::Segments,
+        Self::Drivers,
+    ];
+}
 pub struct Engine {
+    pub(crate) runtime_callback_cursors: std::sync::Mutex<std::collections::BTreeMap<String, Id>>,
     pub(crate) experience_cursor: std::sync::Mutex<Option<Id>>,
     pub(crate) workflow_intent_cursor: std::sync::Mutex<Option<Id>>,
+    pub(crate) provider_tool_cursor: std::sync::Mutex<Option<Id>>,
+    pub(crate) provider_poll_cursor: std::sync::Mutex<Option<Id>>,
+    pub(crate) conversation_capture_cursor: std::sync::Mutex<Option<Id>>,
+    pub(crate) conversation_active_cursor: std::sync::Mutex<Option<Id>>,
+    pub(crate) conversation_queued_cursor: std::sync::Mutex<Option<Id>>,
+    pub(crate) context_call_cursor: std::sync::Mutex<Option<Id>>,
     pub(crate) tool_cursor: std::sync::Mutex<Option<Id>>,
     pub context_reader: Option<Arc<dyn ports::AgentContextReader>>,
     pub manager_services: Option<ManagerServices>,
@@ -179,159 +280,12 @@ fn revision(s: &EngineeringState, id: &str) -> Option<u64> {
         .or_else(|| s.tasks.iter().find(|x| x.id == id).map(|x| x.revision))
         .or_else(|| s.contexts.iter().find(|x| x.id == id).map(|x| x.revision))
 }
-fn mutable_feature(s: &EngineeringState, fid: &str) -> Result<()> {
-    require(
-        s.feature(fid)?.status != Status::Completed,
-        "已完成 Feature 已冻结，请创建关联的新 Feature",
-    )
-}
-fn document_ids(s: &EngineeringState, fid: &str, tid: Option<&str>) -> Vec<Id> {
-    s.documents
-        .iter()
-        .filter(|d| {
-            s.document_in_feature(d, fid)
-                && (d.task_id.is_none() || d.task_id.as_deref() == tid)
-                && !s
-                    .documents
-                    .iter()
-                    .any(|n| n.supersedes.as_deref() == Some(&d.id) && n.kind == d.kind)
-        })
-        .map(|d| d.id.clone())
-        .collect()
-}
 /// Seed shared configuration without creating project or execution facts.
 pub fn seed_configuration(s: &mut EngineeringState) {
     initialize_template_catalog(s).expect("validated embedded template catalog");
 }
 
 impl Engine {
-    fn revise_material(&self, s: &mut EngineeringState, owner: &str, p: &Value) -> Result<Value> {
-        let (project, feature, task) = if s.projects.iter().any(|r| r.id == owner) {
-            (Some(owner.to_owned()), None, None)
-        } else if let Some(t) = s.tasks.iter().find(|t| t.id == owner) {
-            (None, Some(t.feature_id.clone()), Some(t.id.clone()))
-        } else {
-            s.feature(owner)?;
-            (None, Some(owner.to_owned()), None)
-        };
-        let material = material_owner(project.as_deref(), feature.as_deref(), task.as_deref())?;
-        let kind = text(p, "kind")?;
-        let body = text(p, "body")?;
-        let previous = opt(p, "supersedes");
-        let version = if let Some(id) = &previous {
-            let old = s
-                .documents
-                .iter()
-                .find(|d| {
-                    d.id == *id
-                        && d.project_id == project
-                        && d.feature_id == feature
-                        && d.task_id == task
-                        && d.kind == kind
-                })
-                .ok_or_else(|| err("scope_violation", "前版材料归属或类型不匹配"))?;
-            require(
-                !s.documents
-                    .iter()
-                    .any(|d| d.supersedes.as_ref() == Some(id)),
-                "材料已有后继版本",
-            )?;
-            old.version + 1
-        } else {
-            1
-        };
-        let artifact = self.artifacts.seal_scoped(&material, "materials", &body)?;
-        let artifact_id = artifact.id.clone();
-        s.artifacts.push(artifact);
-        let did = id();
-        s.documents.push(Document {
-            id: did.clone(),
-            project_id: project,
-            feature_id: feature,
-            task_id: task,
-            kind,
-            title: text(p, "title")?,
-            body,
-            version,
-            supersedes: previous,
-            input_refs: serde_json::from_value(p.get("input_refs").cloned().unwrap_or(json!([])))
-                .map_err(|e| err("invalid_params", e.to_string()))?,
-            origin: Origin::Human,
-            artifact_id: Some(artifact_id),
-        });
-        if let Some(project) = s.projects.iter_mut().find(|r| r.id == owner) {
-            project.revision += 1;
-        }
-        if let Some(feature) = s.features.iter_mut().find(|r| r.id == owner) {
-            feature.revision += 1;
-        }
-        if let Some(task) = s.tasks.iter_mut().find(|r| r.id == owner) {
-            task.revision += 1;
-        }
-        Ok(json!({"id":did}))
-    }
-    fn save_material_snapshot(
-        &self,
-        s: &mut EngineeringState,
-        target: &str,
-        p: &Value,
-    ) -> Result<Value> {
-        let (project, feature, task) =
-            if let Some(project) = s.projects.iter().find(|v| v.id == target) {
-                (Some(project.id.clone()), None, None)
-            } else if let Some(task) = s.tasks.iter().find(|v| v.id == target) {
-                (None, Some(task.feature_id.clone()), Some(task.id.clone()))
-            } else {
-                (None, Some(s.feature(target)?.id.clone()), None)
-            };
-        let owner = material_owner(project.as_deref(), feature.as_deref(), task.as_deref())?;
-        let documents: Vec<Id> =
-            serde_json::from_value(p.get("documents").cloned().unwrap_or_else(|| {
-                json!(
-                    s.documents
-                        .iter()
-                        .filter(|d| d.project_id == project
-                            && d.feature_id == feature
-                            && (d.task_id == task || d.task_id.is_none()))
-                        .map(|d| &d.id)
-                        .collect::<Vec<_>>()
-                )
-            }))
-            .map_err(|e| err("invalid_params", e.to_string()))?;
-        let snapshot = Snapshot {
-            id: id(),
-            project_id: project,
-            feature_id: feature,
-            task_id: task,
-            kind: "manual".into(),
-            content: s
-                .contexts
-                .iter()
-                .find(|c| c.owner_id == target)
-                .map(|c| c.content.clone())
-                .unwrap_or_default(),
-            documents,
-            inherited_from: None,
-            capture: SnapshotCapture {
-                step_execution_ids: vec![],
-                sessions: vec![],
-                captured_at: Some(now()),
-                reason: opt(p, "reason").unwrap_or_else(|| "User selected materials".into()),
-            },
-            runtime_bindings: vec![],
-            execution_instances: vec![],
-        };
-        let artifact = self.artifacts.seal_scoped(
-            &owner,
-            "snapshots",
-            &serde_json::to_string_pretty(&snapshot)
-                .map_err(|e| err("serialization", e.to_string()))?,
-        )?;
-        let result = json!({"id":snapshot.id});
-        s.artifacts.push(artifact);
-        s.snapshots.push(snapshot);
-        Ok(result)
-    }
     /// Assemble an engine through the same contracts for all provider implementations.
     pub fn new(
         store: Arc<dyn EngineeringStore>,
@@ -339,8 +293,15 @@ impl Engine {
         adapters: ports::ExecutionAdapters,
     ) -> Self {
         Self {
+            runtime_callback_cursors: std::sync::Mutex::new(Default::default()),
             experience_cursor: std::sync::Mutex::new(None),
             workflow_intent_cursor: std::sync::Mutex::new(None),
+            provider_tool_cursor: std::sync::Mutex::new(None),
+            provider_poll_cursor: std::sync::Mutex::new(None),
+            conversation_capture_cursor: std::sync::Mutex::new(None),
+            conversation_active_cursor: std::sync::Mutex::new(None),
+            conversation_queued_cursor: std::sync::Mutex::new(None),
+            context_call_cursor: std::sync::Mutex::new(None),
             tool_cursor: std::sync::Mutex::new(None),
             context_reader: None,
             manager_services: None,
@@ -368,91 +329,6 @@ impl Engine {
     ) -> Self {
         self.configuration_backend = Some(backend);
         self
-    }
-    pub fn bootstrap(&self) -> Result<()> {
-        if self
-            .store
-            .snapshot()?
-            .projects
-            .iter()
-            .any(|p| p.execution_mode != "live")
-        {
-            return Ok(());
-        }
-        self.store.transact(None, &mut |s| {
-            seed_configuration(s);
-            // Reconcile persisted workflow references once after opening, including
-            // idle instances left waiting by an older evaluator.
-            for record in s.governance.iter_mut().filter(|r| {
-                r.r#type == "workflow_instance"
-                    && r.data["status"] != "completed"
-                    && r.data["status"] != "cancelled"
-            }) {
-                let mut data = record.data.clone();
-                data["dirty"] = json!(true);
-                governance::update_record(record, data);
-            }
-            for op in s
-                .repository_operations
-                .iter_mut()
-                .filter(|op| op.status == RepositoryOperationStatus::Dispatched)
-            {
-                op.status = RepositoryOperationStatus::NeedsReconciliation;
-                op.reason = "restart_after_dispatch".into();
-                op.revision += 1;
-            }
-            for op in s
-                .repository_operations
-                .iter_mut()
-                .filter(|op| op.status == RepositoryOperationStatus::Prepared)
-            {
-                op.status = RepositoryOperationStatus::NeedsReconciliation;
-                op.reason = "startup_pending_intent_requires_reconcile".into();
-                op.revision += 1;
-            }
-            for session in s.sessions.iter_mut().filter(|v| {
-                v.scope.is_some()
-                    && v.external_session.is_some()
-                    && !matches!(
-                        v.lifecycle,
-                        Some(SessionLifecycle::Closed | SessionLifecycle::RequiresSuccessor)
-                    )
-            }) {
-                let uncertain = s.turns.iter().any(|t| {
-                    t.session_id == session.id
-                        && t.status.active()
-                        && t.status != TurnStatus::Queued
-                }) || s
-                    .executions
-                    .iter()
-                    .any(|e| e.session_id == session.id && !e.writer_revoked);
-                if uncertain {
-                    session.lifecycle = Some(SessionLifecycle::NeedsReconciliation);
-                    session.revision += 1;
-                } else if session.lifecycle == Some(SessionLifecycle::NeedsReconciliation) {
-                    session.lifecycle = Some(SessionLifecycle::Idle);
-                    session.revision += 1;
-                }
-            }
-            for turn in s.turns.iter_mut().filter(|t| {
-                [
-                    TurnStatus::Dispatching,
-                    TurnStatus::Running,
-                    TurnStatus::WaitingInteraction,
-                ]
-                .contains(&t.status)
-            }) {
-                turn.status = TurnStatus::NeedsReconciliation;
-                turn.revision += 1;
-                if let Some(session) = s.sessions.iter_mut().find(|v| v.id == turn.session_id) {
-                    session.lifecycle = Some(SessionLifecycle::NeedsReconciliation);
-                    session.revision += 1;
-                }
-            }
-            Ok(json!({"ok":true}))
-        })?;
-        self.recover_tool_dispatches()?;
-        Ok(())
     }
     pub fn execute(&self, method: &str, c: Command) -> Result<Value> {
         self.execute_in_context(
@@ -501,6 +377,15 @@ impl Engine {
         original_fingerprint: Option<&str>,
         context: &InvocationContext,
     ) -> Result<Value> {
+        require(
+            !matches!(context.actor(), WorkflowActor::Coordinator { .. }),
+            "系统事实投影不能调用公开业务写入",
+        )?;
+        if let Some(value) =
+            crate::conversation_controls::control(self.store.as_ref(), method, &c, context)?
+        {
+            return Ok(value);
+        }
         if let Some(value) = crate::tool_calls::control(self.store.as_ref(), method, &c, context)? {
             return Ok(value);
         }
@@ -512,28 +397,41 @@ impl Engine {
         let fingerprint = original_fingerprint
             .map(str::to_owned)
             .unwrap_or_else(|| command_fingerprint(method, &c));
-        let mut action = |s: &mut EngineeringState| {
-            configuration_transfers::configuration_transfer_guard(s, method)?;
-            if template_definition_write(method)
-                && let Some(target) = c.target.as_deref().and_then(|id| s.configuration(id).ok())
-            {
-                require(
-                    template_record_current(s, target),
-                    "模板目录已重置，请重新载入后再编辑",
-                )?;
-            }
-
-            let result = self.apply_command(method, &c, s, context.actor())?;
-            self.governance_after_command(method, &c, s, &result)?;
-            context.record(s, method, &c)?;
-            register_template_members(s, template_catalog_generation(s));
-            Ok(result)
-        };
-        let result = self
-            .store
-            .transact(Some((&c.command_id, &fingerprint)), &mut action)?;
-        // Long operations return their durable ID; the scheduler owns supplier dispatch.
-        Ok(result)
+        if let Some(result) = self.native_workspace_command(method, &c, &fingerprint, context)? {
+            return Ok(result);
+        }
+        if let Some(result) = self.native_repository_command(method, &c, &fingerprint, context)? {
+            return Ok(result);
+        }
+        if let Some(result) = self.native_controller_command(method, &c, &fingerprint, context)? {
+            return Ok(result);
+        }
+        if let Some(result) = self.native_workflow_command(method, &c, &fingerprint, context)? {
+            return Ok(result);
+        }
+        if let Some(result) = self.native_material_command(method, &c, &fingerprint, context)? {
+            return Ok(result);
+        }
+        if let Some(result) = self.native_proposal_command(method, &c, &fingerprint, context)? {
+            return Ok(result);
+        }
+        if let Some(result) =
+            self.native_conversation_submission(method, &c, &fingerprint, context)?
+        {
+            return Ok(result);
+        }
+        if let Some(result) = self.native_session_command(method, &c, &fingerprint, context)? {
+            return Ok(result);
+        }
+        if let Some(result) =
+            self.native_configuration_command(method, &c, &fingerprint, context)?
+        {
+            return Ok(result);
+        }
+        Err(err(
+            "method_not_found",
+            format!("未知或未声明原生资源提交的命令 {method}"),
+        ))
     }
     fn apply_command(
         &self,
@@ -543,12 +441,6 @@ impl Engine {
         actor: &WorkflowActor,
     ) -> Result<Value> {
         if let Some(result) = self.configuration_change_command(method, c, s, actor)? {
-            return Ok(result);
-        }
-        if let Some(result) = self.orchestration_command(method, c, s, actor)? {
-            return Ok(result);
-        }
-        if let Some(result) = self.configured_runtime_command(method, c, s)? {
             return Ok(result);
         }
         if let Some(result) = self.standard_command(method, c, s)? {
@@ -574,7 +466,6 @@ impl Engine {
             "历史项目只读，请创建新的 GitHub 项目",
         )?;
         require(c.payload.get("scenario").is_none(), "不再支持模拟场景参数")?;
-        let p = &c.payload;
         if let Some(result) = self.integration_command(method, c, s)? {
             return Ok(result);
         }
@@ -585,213 +476,30 @@ impl Engine {
             event(s, target, method, &format!("command_id={}", c.command_id));
             return Ok(result);
         }
-        if let Some(result) = self.repository_command(method, c, s)? {
-            event(s, target, method, &format!("command_id={}", c.command_id));
-            return Ok(result);
+        Err(err("method_not_found", format!("未知配置命令 {method}")))
+    }
+    pub fn run_scheduling_stage(
+        &self,
+        stage: SchedulingStage,
+        allowance: usize,
+        should_stop: &dyn Fn() -> bool,
+    ) -> Result<()> {
+        if should_stop() {
+            return Ok(());
         }
-        if let Some(result) = self.proposal_command(method, c, s)? {
-            event(s, target, method, &format!("command_id={}", c.command_id));
-            return Ok(result);
+        match stage {
+            SchedulingStage::Controllers => self.drive_controllers(),
+            SchedulingStage::Tools => self.drive_tool_calls(),
+            SchedulingStage::Platform => self.drive_platform_tools(),
+            SchedulingStage::Repositories => self.tick_repositories(),
+            SchedulingStage::Conversations => {
+                self.tick_conversations_with_stop(allowance, should_stop)
+            }
+            SchedulingStage::Workflows => self.evaluate_native_workflows(),
+            SchedulingStage::PlanChanges => self.drive_workflow_changes(),
+            SchedulingStage::Segments => self.drive_workflow_segments(),
+            SchedulingStage::Drivers => self.drive_rust_workflows(),
         }
-        if let Some(result) = self.conversation_command(method, c, s)? {
-            event(s, target, method, &format!("command_id={}", c.command_id));
-            return Ok(result);
-        }
-        let result = match method {
-            "agent.create" | "agent.revise" => {
-                return Err(err(
-                    "invalid_params",
-                    "Agent 必须通过 Role、Capability 与 permission_selection 创建",
-                ));
-            }
-            "project.create" => {
-                let scoped = self.store.project_id();
-                require(
-                    scoped.is_none() || s.projects.is_empty(),
-                    "项目数据库只能保存一个 Project",
-                )?;
-                let pid = scoped.unwrap_or_else(id);
-                let title = text(p, "title")?;
-                s.projects.push(Project {
-                    id: pid.clone(),
-                    title,
-                    workspace: opt(p, "workspace").unwrap_or_default(),
-                    workspace_definition: Some(Workspace {
-                        repository: opt(p, "repository").unwrap_or_default(),
-                        path: opt(p, "workspace").unwrap_or_default(),
-                        mainline: opt(p, "mainline").unwrap_or_else(|| "main".into()),
-                    }),
-                    execution_mode: "live".into(),
-                    concurrency: 2,
-                    revision: 1,
-                });
-                s.contexts.push(Context {
-                    id: id(),
-                    owner_id: pid.clone(),
-                    content: String::new(),
-                    revision: 1,
-                });
-
-                require(
-                    p["use_builtin_defaults"] != true,
-                    "请显式选择 Workflow 并配置项目角色，不再自动采用套件",
-                )?;
-                json!({"id":pid})
-            }
-            "project.update" => {
-                require(
-                    p.as_object().is_some_and(|fields| {
-                        fields.keys().all(|key| {
-                            ["title", "workspace", "concurrency", "workspace_definition"]
-                                .contains(&key.as_str())
-                        })
-                    }),
-                    "Project 更新包含不支持的字段；执行配置请通过 Workflow 和 Agent 管理",
-                )?;
-                let project = s
-                    .projects
-                    .iter_mut()
-                    .find(|x| x.id == target)
-                    .ok_or_else(|| err("not_found", "Project 不存在"))?;
-                if let Some(title) = opt(p, "title") {
-                    project.title = title;
-                }
-                if let Some(workspace) = opt(p, "workspace") {
-                    project.workspace = workspace.clone();
-                    if let Some(definition) = project.workspace_definition.as_mut() {
-                        definition.path = workspace;
-                    }
-                }
-                if let Some(n) = p.get("concurrency").and_then(Value::as_u64) {
-                    require((1..=32).contains(&n), "并发额度需为 1—32")?;
-                    project.concurrency = n as u32;
-                }
-                if let Some(value) = p.get("workspace_definition") {
-                    let workspace: Workspace = serde_json::from_value(value.clone())
-                        .map_err(|_| err("invalid_params", "无效 Workspace 定义"))?;
-                    require(!workspace.mainline.trim().is_empty(), "mainline 不可为空")?;
-                    project.workspace = workspace.path.clone();
-                    project.workspace_definition = Some(workspace);
-                }
-                project.revision += 1;
-                json!({"id":target})
-            }
-            "feature.create" => {
-                let pid = text(p, "project_id")?;
-                let project = s
-                    .projects
-                    .iter()
-                    .find(|x| x.id == pid)
-                    .ok_or_else(|| err("not_found", "Project 不存在"))?;
-                require(
-                    !s.repository_operations.iter().any(|op| {
-                        op.project_id == pid
-                            && matches!(op.action, RepositoryAction::Connect { .. })
-                            && op.status != RepositoryOperationStatus::Completed
-                    }),
-                    "仓库登记尚未完成或需核对，不能创建 Feature",
-                )?;
-                let fid = id();
-                let live = project.execution_mode == "live";
-                let base = s
-                    .heads
-                    .iter()
-                    .find(|h| h.id == format!("main:{pid}"))
-                    .map(|h| h.revision.clone())
-                    .unwrap_or_default();
-                let predecessor = opt(p, "predecessor");
-                if let Some(prev) = &predecessor {
-                    require(
-                        s.feature(prev)?.project_id == pid,
-                        "前序 Feature 必须属于相同 Project",
-                    )?;
-                }
-                let source_materials: Vec<Id> =
-                    serde_json::from_value(p.get("source_materials").cloned().unwrap_or(json!([])))
-                        .map_err(|e| err("invalid_params", e.to_string()))?;
-                require(
-                    source_materials.iter().all(|id| {
-                        s.documents
-                            .iter()
-                            .any(|d| &d.id == id && d.project_id.as_ref() == Some(&pid))
-                    }),
-                    "Feature 输入材料必须属于当前项目",
-                )?;
-                s.features.push(Feature {
-                    source_materials,
-                    id: fid.clone(),
-                    project_id: pid.clone(),
-                    title: text(p, "title")?,
-                    status: Status::Draft,
-                    revision: 1,
-                    input_version: 1,
-                    predecessor,
-                });
-                if p.get("initial_requirement").is_some() || p.get("workflow_inputs").is_some() {
-                    let initial_requirement = if p.get("initial_requirement").is_some() {
-                        text(p, "initial_requirement")?
-                    } else {
-                        String::new()
-                    };
-                    s.governance.push(governance::record(
-                        "feature_request",
-                        fid.clone(),
-                        Scope::feature(pid.clone(), fid.clone()),
-                        "用户初始需求".into(),
-                        1,
-                        None,
-                        json!({"actor":actor,"workflow_inputs":p.get("workflow_inputs").cloned().unwrap_or(json!({})),"user_request":{"feature_id":fid,"title":s.feature(&fid)?.title,"initial_requirement":initial_requirement}}),
-                        true,
-                    ));
-                }
-                s.heads.push(GitHead {
-                    id: fid.clone(),
-                    project_id: pid.clone(),
-                    revision: base.clone(),
-                });
-                s.contexts.push(Context {
-                    id: id(),
-                    owner_id: fid.clone(),
-                    content: "Feature 初始上下文".into(),
-                    revision: 1,
-                });
-                if live && !base.is_empty() {
-                    self.enqueue_worktree(s, &pid, &fid, WorktreeKind::Feature, &base);
-                }
-                self.freeze_feature_configuration(s, &fid, p)?;
-                json!({"id":fid})
-            }
-            "document.revise" => self.revise_material(s, target, p)?,
-            "context.update" => {
-                let x = s
-                    .contexts
-                    .iter()
-                    .find(|x| x.id == target)
-                    .cloned()
-                    .ok_or_else(|| err("not_found", "Context 不存在"))?;
-                let fid = if let Some(t) = s.tasks.iter().find(|t| t.id == x.owner_id) {
-                    require(t.status != Status::Completed, "已完成 Task 已冻结")?;
-                    t.feature_id.clone()
-                } else {
-                    x.owner_id.clone()
-                };
-                if !s.projects.iter().any(|p| p.id == fid) {
-                    mutable_feature(s, &fid)?;
-                }
-                let next = text(p, "content")?;
-                let previous = x.content.clone();
-                let previous_revision = x.revision;
-                let x = s.contexts.iter_mut().find(|x| x.id == target).unwrap();
-                x.content = next.clone();
-                x.revision += 1;
-                event(s,target,"context.revised",&json!({"previous_revision":previous_revision,"revision":previous_revision+1,"previous":previous,"content":next}).to_string());
-                json!({"id":target})
-            }
-            "snapshot.save" => self.save_material_snapshot(s, target, p)?,
-            _ => return Err(err("method_not_found", format!("未知命令 {method}"))),
-        };
-        event(s, target, method, &format!("command_id={}", c.command_id));
-        Ok(result)
     }
     pub fn tick(&self, global_limit: usize) -> Result<()> {
         self.tick_until(global_limit, &|| false)
@@ -826,6 +534,28 @@ impl Engine {
         Ok(())
     }
     pub fn query(&self, method: &str, p: &Value, global_limit: usize) -> Result<Value> {
+        if method == "query.artifact" {
+            let id = text(p, "id")?;
+            if self.store.namespace() == concurrency::StoreNamespace::Configuration {
+                return Err(err("not_found", "Artifact 不存在"));
+            }
+            return self
+                .store
+                .read_resources(&[concurrency::ResourceKey::new("artifact", id)])?
+                .into_iter()
+                .next()
+                .and_then(|row| row.value)
+                .ok_or_else(|| err("not_found", "Artifact 不存在"));
+        }
+        if method == "query.workspace" {
+            if self.store.project_id().is_some() {
+                return self.store.workspace_reading(p);
+            }
+            return Ok(
+                json!({"projects":[],"features":[],"total_features":0,"total_projects":0,"configurations":[],"definitions":[],"delivery_types":[],"harnesses":[],"sandboxes":[],"detail":null,"repository_ready":false,"data_root":self.store.root(),"execution_mode":"live","global_concurrency":global_limit}),
+            );
+        }
+
         if method == "query.events" {
             return Ok(json!(self.store.events_after(
                 p["cursor"].as_u64().unwrap_or(0),
@@ -861,57 +591,7 @@ impl Engine {
             return self.workflow_driver_query(p);
         }
         if method == "query.orchestration" {
-            let s = self.store.snapshot()?;
-            let row = s.governance.iter().rev().find(|r| {
-                r.r#type == "workflow_controller"
-                    && p["workspace_only"].as_bool().is_none_or(|workspace| {
-                        r.data["workspace_only"].as_bool().unwrap_or(false) == workspace
-                    })
-                    && (p["id"].as_str() == Some(r.id.as_str())
-                        || p["root_instance_id"]
-                            .as_str()
-                            .is_some_and(|id| r.data["root_instance_id"] == id)
-                        || p["owner_id"]
-                            .as_str()
-                            .is_some_and(|id| r.data["owner_id"] == id))
-            });
-            let root = p["root_instance_id"]
-                .as_str()
-                .or_else(|| row.and_then(|r| r.data["root_instance_id"].as_str()));
-            if let (Some(root), Some(project)) = (root, p["project_id"].as_str()) {
-                require(
-                    s.configuration(root)?.scope.project_id() == Some(project),
-                    "流程跨项目",
-                )?;
-            }
-            let mut decisions = root
-                .map(|root| controller_interactions::pending_decisions(&s, root))
-                .unwrap_or_default();
-            decisions.extend(
-                s.governance
-                    .iter()
-                    .rev()
-                    .filter(|r| {
-                        r.r#type == "workflow_pending_decision"
-                            && r.data["status"] != "pending"
-                            && root.is_some_and(|root| {
-                                s.configuration(&r.definition_id)
-                                    .is_ok_and(|instance| instance.data["root_instance_id"] == root)
-                            })
-                    })
-                    .take(20)
-                    .map(|r| controller_interactions::decision_view(&s, r)),
-            );
-            if let Some(row) = row {
-                if let Some(project) = p["project_id"].as_str() {
-                    require(row.scope.project_id() == Some(project), "编排控制器跨项目")?;
-                }
-                let sid = row.data["session_id"].as_str();
-                return Ok(
-                    json!({"record":row,"messages":s.conversation_events.iter().filter(|e|Some(e.session_id.as_str())==sid && e.kind==ConversationEventKind::Assistant).rev().take(20).collect::<Vec<_>>(),"calls":s.governance.iter().filter(|r|r.r#type=="controller_tool_call"&&r.definition_id==row.id).rev().take(30).collect::<Vec<_>>(),"interactions":s.governance.iter().filter(|r|r.r#type=="controller_interaction"&&r.definition_id==row.id).rev().take(20).collect::<Vec<_>>(),"decisions":decisions }),
-                );
-            }
-            return Ok(json!({"record":null,"messages":[],"calls":[],"decisions":decisions}));
+            return self.controller_workspace_view(p);
         }
         if let Some(result) = self.workflow_control_query(method, p) {
             return result;
@@ -949,57 +629,6 @@ impl Engine {
                 json!({"project":s.projects.first(),"operations":s.repository_operations.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_operations":s.repository_operations.len(),"worktrees":s.repository_worktrees.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_worktrees":s.repository_worktrees.len()}),
             ),
             "query.runtimes" => Ok(json!({"harnesses":s.harnesses,"sandboxes":s.sandboxes})),
-            "query.workspace" => {
-                let workflows: Vec<_> = s
-                    .governance
-                    .iter()
-                    .filter(|r| r.r#type == "workflow_instance")
-                    .collect();
-                let steps: Vec<_> = workflows
-                    .iter()
-                    .flat_map(|r| r.data["steps"].as_array().into_iter().flatten())
-                    .collect();
-                let filter = p["work_filter"].as_str().unwrap_or("");
-                let features: Vec<_> = s
-                    .features
-                    .iter()
-                    .filter(|f| p["project_id"].as_str().is_none_or(|id| f.project_id == id))
-                    .filter(|f| match filter {
-                        "tasks" => s.tasks.iter().any(|t| t.feature_id == f.id),
-                        "running" | "waiting_confirmation" | "blocked" => workflows
-                            .iter()
-                            .filter(|r| r.data["owner_id"] == f.id)
-                            .any(|r| {
-                                r.data["steps"]
-                                    .as_array()
-                                    .into_iter()
-                                    .flatten()
-                                    .any(|step| match filter {
-                                        "running" => step["status"] == "running",
-                                        "waiting_confirmation" => {
-                                            step["status"] == "waiting_confirmation"
-                                        }
-                                        _ => ["failed", "needs_reconciliation", "waiting_input"]
-                                            .contains(&step["status"].as_str().unwrap_or("")),
-                                    })
-                            }),
-                        _ => true,
-                    })
-                    .collect();
-                let detail = p["feature_id"]
-                    .as_str()
-                    .map(|fid| {
-                        self.feature_detail(&s, fid, limit, global_limit, &p["detail_pages"])
-                    })
-                    .transpose()?;
-                Ok(
-                    json!({"projects":s.projects,"features":features.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_features":features.len(),"total_projects":s.projects.len(),
-                    "summary":{"features":s.features.len(),"tasks":s.tasks.len(),"running":steps.iter().filter(|r|r["status"]=="running").count(),"waiting_confirmation":steps.iter().filter(|r|r["status"]=="waiting_confirmation").count(),"blocked":steps.iter().filter(|r|["failed","needs_reconciliation","waiting_input"].contains(&r["status"].as_str().unwrap_or(""))).count()},
-                    "configurations":s.governance.iter().filter(|r|["workflow_instance","project_configuration","work_configuration"].contains(&r.r#type.as_str())).map(|r|{let mut row=json!(r);if r.r#type=="workflow_instance"{row["work_root"]=json!(standards::is_work_root(&s,r));}row}).collect::<Vec<_>>(),
-                    "delivery_types":s.governance.iter().filter(|r|r.r#type=="delivery_type"&&template_record_current(&s,r)).collect::<Vec<_>>(),"definitions":s.definitions.iter().filter(|d|template_projection_current(&s,d)).collect::<Vec<_>>(),"harnesses":s.harnesses,"sandboxes":s.sandboxes,"detail":detail,"data_root":self.store.root(),"execution_mode":"live",
-                    "repository_ready":s.repository_worktrees.iter().any(|w|w.kind==WorktreeKind::Mainline),"global_concurrency":global_limit}),
-                )
-            }
             "query.history" => Ok(history::query(&s, p, offset, limit)),
             "query.events" => {
                 let cursor = p.get("cursor").and_then(Value::as_u64).unwrap_or(0);
@@ -1011,50 +640,7 @@ impl Engine {
                         .collect::<Vec<_>>()
                 ))
             }
-            "query.artifact" => {
-                let id = text(p, "id")?;
-                let a = s
-                    .artifacts
-                    .iter()
-                    .find(|a| a.id == id)
-                    .ok_or_else(|| err("not_found", "Artifact 不存在"))?;
-                Ok(json!(a))
-            }
             _ => Err(err("method_not_found", "未知查询")),
         }
-    }
-    fn feature_detail(
-        &self,
-        s: &EngineeringState,
-        fid: &str,
-        limit: usize,
-        _global_limit: usize,
-        pages: &Value,
-    ) -> Result<Value> {
-        let feature = s.feature(fid)?;
-        let offset = |key: &str| pages[key].as_u64().unwrap_or(0) as usize * limit;
-        let tasks: Vec<_> = s.tasks.iter().filter(|t| t.feature_id == fid).collect();
-        let documents: Vec<_> = s
-            .documents
-            .iter()
-            .filter(|d| s.document_in_feature(d, fid))
-            .collect();
-        let snapshots: Vec<_> = s
-            .snapshots
-            .iter()
-            .filter(|v| v.feature_id.as_deref() == Some(fid))
-            .collect();
-        let sessions: Vec<_> = s
-            .sessions
-            .iter()
-            .filter(|v| v.feature_id.as_deref() == Some(fid))
-            .collect();
-        Ok(
-            json!({"feature":feature,"tasks":tasks.iter().skip(offset("tasks")).take(limit).collect::<Vec<_>>(),"documents":documents.iter().rev().skip(offset("documents")).take(limit).collect::<Vec<_>>(),
-            "snapshots":snapshots.iter().rev().skip(offset("snapshots")).take(limit).collect::<Vec<_>>(),"contexts":s.contexts.iter().filter(|c|c.owner_id==fid||tasks.iter().any(|t|t.id==c.owner_id)).collect::<Vec<_>>(),
-            "sessions":sessions,"pending_interactions":s.interactions.iter().filter(|i|i.status==InteractionStatus::Pending&&sessions.iter().any(|v|v.id==i.session_id)).collect::<Vec<_>>(),
-            "artifacts":s.artifacts.iter().filter(|a|a.feature_id.as_deref()==Some(fid)).rev().skip(offset("artifacts")).take(limit).collect::<Vec<_>>(),"heads":s.heads.iter().filter(|h|h.project_id==feature.project_id).collect::<Vec<_>>(),
-            "totals":{"tasks":tasks.len(),"documents":documents.len(),"snapshots":snapshots.len()}}),
-        )
     }
 }

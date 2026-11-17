@@ -8,8 +8,14 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 
 fn engine(path: &std::path::Path) -> Engine {
+    engine_with_store(path, SqliteStore::open(path).unwrap())
+}
+fn project_engine(path: &std::path::Path) -> Engine {
+    engine_with_store(path, SqliteStore::open_fixture(path).unwrap())
+}
+fn engine_with_store(path: &std::path::Path, store: SqliteStore) -> Engine {
     let e = Engine::new(
-        Arc::new(SqliteStore::open(path).unwrap()),
+        Arc::new(store),
         Arc::new(FileArtifacts::new(path.into())),
         runtime::adapters(),
     )
@@ -17,7 +23,7 @@ fn engine(path: &std::path::Path) -> Engine {
     e.bootstrap().unwrap();
     runtime::bind_default_permissions(&e);
     e.store
-        .transact(None, &mut |state| {
+        .seed_fixture_state(None, &mut |state| {
             if state
                 .configuration("fixture-standard-collection:1")
                 .is_err()
@@ -72,7 +78,7 @@ fn command(e: &Engine, method: &str, target: Option<&str>, mut payload: Value) -
     {
         payload["plan_revision_id"] = row.data["active_plan_revision_id"].clone();
     }
-    e.execute(
+    let result = e.execute(
         method,
         Command {
             command_id: id(),
@@ -80,7 +86,20 @@ fn command(e: &Engine, method: &str, target: Option<&str>, mut payload: Value) -
             expected_revision: revision,
             payload,
         },
-    )
+    )?;
+    if method == "workflow.change.apply" {
+        for _ in 0..8 {
+            e.drive_workflow_changes()?;
+            if e.store.snapshot()?.governance.iter().any(|r| {
+                r.r#type == "workflow_change"
+                    && r.id == result["id"]
+                    && r.data["status"] == "applied"
+            }) {
+                break;
+            }
+        }
+    }
+    Ok(result)
 }
 fn publish(e: &Engine, doc: Value) -> String {
     let draft = command(
@@ -229,7 +248,7 @@ fn standards_freeze_only_normative_sources_and_detect_relationship_changes() {
 #[test]
 fn tasks_in_one_feature_execute_distinct_standards_and_keep_history_after_switch_and_restart() {
     let dir = tempfile::tempdir().unwrap();
-    let e = engine(dir.path());
+    let e = project_engine(dir.path());
     let a = child(&e, "A");
     let b = child(&e, "B");
     let sb = capture(&e, vec![b.clone()]);
@@ -432,7 +451,7 @@ fn tasks_in_one_feature_execute_distinct_standards_and_keep_history_after_switch
     );
 
     drop(e);
-    let e = engine(dir.path());
+    let e = project_engine(dir.path());
     assert_eq!(row(&e, &old_plan).data, old_basis.data);
     assert_eq!(row(&e, &old_output.id).data, old_output.data);
     assert_eq!(row(&e, &ca).data["plan"]["standard_ref"], sb);
@@ -471,7 +490,7 @@ fn invalid_standard_shapes_and_wrong_entry_are_rejected() {
 #[test]
 fn input_and_agent_binding_changes_preserve_the_normative_snapshot() {
     let dir = tempfile::tempdir().unwrap();
-    let e = engine(dir.path());
+    let e = project_engine(dir.path());
     let workflow = publish(
         &e,
         json!({"schema_version":6,"inputs":{"data":{"delivery_ref":"fixture-delivery-object:1"}},"stages":[{"key":"work","name":"处理"}],"steps":[{"key":"inspect","name":"核对材料","stage":"work","executor":{"type":"agent","role_ref":"builtin-role-analyst:1"},"task_instructions":"核对明确输入的材料。","inputs":{"data":{"type":"source","source":{"step":"$input","port":"data"}}},"outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
@@ -487,8 +506,7 @@ fn input_and_agent_binding_changes_preserve_the_normative_snapshot() {
     let initial = row(&e, &root);
     let standard = initial.data["plan"]["standard_ref"].clone();
     let source_record = row(&e, "builtin-agent-sol-high-analyst:6");
-    let mut payload =
-        json!({"name":"同职责的另一执行者","scope":"global","data":source_record.data});
+    let mut payload = json!({"name":"同职责的另一执行者","scope":format!("project:{}", project["id"].as_str().unwrap()),"data":source_record.data});
     for (key, value) in &source_record.refs {
         payload[key] = value.clone();
     }
@@ -512,7 +530,8 @@ fn input_and_agent_binding_changes_preserve_the_normative_snapshot() {
     .unwrap();
     assert_eq!(row(&e, &root).data["plan"]["standard_ref"], standard);
     assert_eq!(row(&e, &root).data["workflow_ref"], workflow);
-    command(&e,"agent.instance.create",None,json!({"name":"按当前工作冻结依据讨论","agent_revision_id":replacement["id"],"frozen_work_id":project["id"],"scope":format!("project:{}", project["id"].as_str().unwrap())})).unwrap();
+    let refusal=command(&e,"agent.instance.create",None,json!({"name":"拒绝从普通入口伪造冻结来源","agent_revision_id":replacement["id"],"frozen_work_id":project["id"],"scope":format!("project:{}", project["id"].as_str().unwrap())})).unwrap_err();
+    assert_eq!(refusal.code, "permission_denied");
 
     assert_eq!(
         row(
@@ -538,7 +557,29 @@ fn project_execution_selections_rebuild_in_their_own_access_context() {
     );
     let mut roots = Vec::new();
     let mut standards = Vec::new();
-    for title in ["Project A", "Project B"] {
+    let mut snapshots = Vec::new();
+    let mut paths = Vec::new();
+    let sources = e
+        .store
+        .configuration_snapshot()
+        .unwrap()
+        .state
+        .governance
+        .clone();
+    for (index, title) in ["Project A", "Project B"].into_iter().enumerate() {
+        let path = dir.path().join(format!("project-{index}"));
+        let e = project_engine(&path);
+        e.store
+            .seed_fixture_state(None, &mut |state| {
+                for source in &sources {
+                    if source.is_definition() && state.configuration(&source.id).is_err() {
+                        state.governance.push(source.clone());
+                    }
+                }
+                Ok(Value::Null)
+            })
+            .unwrap();
+        paths.push(path);
         let project = command(&e, "project.create", None, json!({"title":title})).unwrap();
         let root = command(
             &e,
@@ -581,24 +622,21 @@ fn project_execution_selections_rebuild_in_their_own_access_context() {
             project["id"].as_str()
         );
         roots.push(root["id"].as_str().unwrap().to_owned());
+        let state = e.store.snapshot().unwrap();
+        snapshots.push(standard_snapshot(&state, &standard, &row(&e, &standard).scope).unwrap());
         standards.push(standard);
     }
     assert_ne!(
         standards[0], standards[1],
         "access envelopes in separate catalogs need distinct source identities"
     );
-    let state = e.store.snapshot().unwrap();
-    let snapshots = standards
-        .iter()
-        .map(|id| standard_snapshot(&state, id, &row(&e, id).scope).unwrap())
-        .collect::<Vec<_>>();
     assert_eq!(
         snapshots[0].snapshot_digest, snapshots[1].snapshot_digest,
         "storage access does not add normative semantics"
     );
     drop(e);
-    let e = engine(dir.path());
-    for (root, standard) in roots.iter().zip(&standards) {
+    for ((root, standard), path) in roots.iter().zip(&standards).zip(&paths) {
+        let e = project_engine(path);
         assert_eq!(
             e.query("workflow.inspect", &json!({"id":root}), 1).unwrap()["runtime"]["plan"]["standard_ref"],
             *standard

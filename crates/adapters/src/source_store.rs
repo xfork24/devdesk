@@ -1,5 +1,6 @@
 //! Only source revisions and execution facts cross the persistence boundary.
 use super::*;
+#[cfg(any(test, feature = "test-fixtures"))]
 use rusqlite::OptionalExtension;
 
 pub(super) fn is_source(r: &ConfigurationRecord) -> bool {
@@ -95,6 +96,7 @@ fn load_records_selected(conn: &Connection, catalog: bool) -> Result<Vec<Configu
     Ok(records)
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 pub(super) fn save_records(
     conn: &Connection,
     state: &EngineeringState,
@@ -125,11 +127,9 @@ pub(super) fn save_records(
         })
         .map(|r| pack_record(state, r))
         .collect::<Result<_>>()?;
-    // Transitional shared writer: controller replacement still revokes pending
-    // intents through its legacy aggregate. It must never blindly overwrite a
-    // callback that committed after that aggregate was read. This runs inside
-    // the caller's SQL transaction and does not add a business mutex.
-    for row in packed.iter().filter(|r| r.r#type == "workflow_intent") {
+    // Offline aggregate fixtures must not overwrite an interleaved native
+    // commit. Production writers use the resource commit protocol.
+    for row in &packed {
         let expected = before
             .governance
             .iter()
@@ -145,11 +145,11 @@ pub(super) fn save_records(
             .map_err(storage)?
             .unwrap_or(0);
         if expected != actual {
-            return Err(err("revision_conflict", "原工作流意图在旧协调保存前已变化"));
+            return Err(err("revision_conflict", "原运行事实在旧协调保存前已变化"));
         }
         require(
             expected == 0 || row.revision > expected,
-            "旧协调不能绕过工作流意图版本递增",
+            "旧协调不能绕过运行事实版本递增",
         )?;
     }
     let runtime: Vec<Value> = packed.iter().map(|r| r.to_storage()).collect();
@@ -161,6 +161,53 @@ pub(super) fn pack_record(
     record: &ConfigurationRecord,
 ) -> Result<ConfigurationRecord> {
     let mut stored = record.clone();
+    if matches!(
+        record.r#type.as_str(),
+        "platform_call"
+            | "agent_platform_request"
+            | "platform_call_preparation"
+            | "platform_reply_work"
+    ) && record.data["request"].is_object()
+    {
+        let request: devdesk_core::PlatformToolRequest =
+            serde_json::from_value(record.data["request"].clone()).map_err(storage)?;
+        let reference = request
+            .definition_ref
+            .clone()
+            .or_else(|| request.caller.as_ref().map(|c| c.tool_ref.clone()))
+            .or_else(|| {
+                let instance = state.configuration(&request.instance_id).ok()?;
+                let execution = instance.data["steps"]
+                    .as_array()?
+                    .iter()
+                    .find(|s| s["id"] == request.execution_id)?;
+                instance.data["plan"]["document"]["steps"]
+                    .as_array()?
+                    .iter()
+                    .find(|s| s["key"] == execution["step"])?["executor"]["tool_ref"]
+                    .as_str()
+                    .map(str::to_owned)
+            })
+            .ok_or_else(|| err("storage", "平台请求缺少原始工具源引用"))?;
+        let source = state.configuration(&reference)?;
+        require(
+            source.r#type == "tool"
+                && json!(source.decode::<ToolDefinition>()?) == json!(request.definition),
+            "平台请求改变了确切工具源定义",
+        )?;
+        // Pack all other metadata normally, then replace the expanded schema
+        // with its exact immutable source. Factual arguments stay literal.
+        let mut metadata = stored.data.clone();
+        metadata["request"]
+            .as_object_mut()
+            .unwrap()
+            .remove("definition");
+        stored.data = source_views::pack(state, &metadata)?;
+        stored.data["request"]["definition_ref"] = json!(reference);
+        stored.data["request"]["definition"] = json!({"$source":"tool_definition","ref":reference});
+        stored.content_hash = content_digest(&stored.refs, &stored.data);
+        return Ok(stored);
+    }
     if record.r#type == "skill_package" {
         stored.data.as_object_mut().unwrap().remove("body");
     } else if matches!(
@@ -182,6 +229,27 @@ pub(super) fn pack_record(
         }
     } else {
         stored.data = source_views::pack(state, &record.data)?;
+    }
+    if record.r#type == "agent_context_call" {
+        let definition: ToolDefinition =
+            serde_json::from_value(record.data["definition"].clone()).map_err(storage)?;
+        let reference = record.data["invocation"]["tool"]["revision_id"]
+            .as_str()
+            .ok_or_else(|| err("storage", "上下文调用缺少原工具引用"))?;
+        let unbound = definition.implementation == "unbound";
+        let expected = devdesk_core::context_tool_definition(
+            state,
+            reference,
+            &definition.qualified_name,
+            unbound,
+        )?;
+        require(
+            json!(expected) == json!(definition),
+            "上下文调用改变了原工具源定义",
+        )?;
+        let descriptor = json!({"$source":"context_tool","ref":reference,"name":definition.qualified_name,"unbound":unbound});
+        stored.data["definition"] = descriptor.clone();
+        stored.data["invocation"]["tool"]["definition"] = descriptor;
     }
     if record.r#type == "configured_execution_task" {
         require(

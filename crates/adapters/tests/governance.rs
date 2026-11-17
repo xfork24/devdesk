@@ -12,12 +12,14 @@ use serde_json::{Value, json};
 use std::{path::Path, sync::Arc};
 
 fn engine(root: &Path) -> Engine {
+    engine_with_store(root, Arc::new(SqliteStore::open(root).unwrap()))
+}
+fn project_engine(root: &Path) -> Engine {
+    engine_with_store(root, Arc::new(SqliteStore::open_fixture(root).unwrap()))
+}
+fn engine_with_store(root: &Path, store: Arc<dyn EngineeringStore>) -> Engine {
     let adapters = runtime::adapters();
-    let e = Engine::new(
-        Arc::new(SqliteStore::open(root).unwrap()),
-        Arc::new(FileArtifacts::new(root.into())),
-        adapters,
-    );
+    let e = Engine::new(store, Arc::new(FileArtifacts::new(root.into())), adapters);
     e.bootstrap().unwrap();
     runtime::bind_default_permissions(&e);
     e
@@ -56,6 +58,12 @@ fn command(e: &Engine, method: &str, target: Option<&str>, mut payload: Value) -
             .find(|r| r.id == id)
             .map(|r| r.revision)
             .or_else(|| s.projects.iter().find(|p| p.id == id).map(|p| p.revision))
+            .or_else(|| {
+                s.repository_operations
+                    .iter()
+                    .find(|op| op.id == id)
+                    .map(|op| op.revision)
+            })
     });
     e.execute(
         method,
@@ -99,18 +107,27 @@ fn setup_agent(e: &Engine, role: &str) -> String {
 #[test]
 fn agent_instances_pin_composition_and_choose_independent_scope() {
     let root = tempfile::tempdir().unwrap();
-    let e = engine(root.path());
+    let directory = Arc::new(GlobalStore::open(root.path()).unwrap());
+    let e = engine_with_store(root.path(), directory.clone());
     let agent = setup_agent(&e, "analyst");
-    let project = command(
-        &e,
-        "project.create",
-        None,
-        json!({"title":"P","workspace":"logical"}),
-    )
-    .unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let create = Command {
+        command_id: id(),
+        target: None,
+        expected_revision: None,
+        payload: json!({"title":"P","workspace":"logical"}),
+    };
+    let project = directory
+        .reserve_project(&create, &InvocationContext::human(None))
+        .unwrap();
+    let project_root = SqliteStore::project_path(root.path(), &project).unwrap();
+    let local_engine = engine_with_store(
+        &project_root,
+        Arc::new(SqliteStore::open_project(root.path(), &project).unwrap()),
+    );
+    local_engine
+        .sync_shared_configuration(directory.as_ref())
+        .unwrap();
+    local_engine.execute("project.create", create).unwrap();
     let global = command(
         &e,
         "agent.instance.create",
@@ -119,7 +136,7 @@ fn agent_instances_pin_composition_and_choose_independent_scope() {
     )
     .unwrap();
     let local = command(
-        &e,
+        &local_engine,
         "agent.instance.create",
         None,
         json!({"name":"项目实例","agent_revision_id":agent,"scope":format!("project:{project}")}),
@@ -128,7 +145,7 @@ fn agent_instances_pin_composition_and_choose_independent_scope() {
     assert_ne!(global["id"], local["id"]);
     assert!(
         e.store
-            .transact(None, &mut |s| {
+            .seed_fixture_state(None, &mut |s| {
                 s.governance
                     .iter_mut()
                     .find(|r| r.id == global["id"].as_str().unwrap())
@@ -250,7 +267,7 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
             created_at: 1000 + index as u64,
         };
         e.store
-            .transact(None, &mut |s| {
+            .seed_fixture_state(None, &mut |s| {
                 s.governance.push(row.clone());
                 if index == 0 {
                     let mut local = row.clone();
@@ -263,7 +280,7 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
             })
             .unwrap();
         global
-            .transact(None, &mut |s| {
+            .seed_fixture_state(None, &mut |s| {
                 s.governance.push(row.clone());
                 Ok(Value::Null)
             })
@@ -437,7 +454,7 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
     current.content_hash = content_digest(&current.refs, &current.data);
     source_engine
         .store
-        .transact(None, &mut |state| {
+        .seed_fixture_state(None, &mut |state| {
             state.governance.push(current.clone());
             Ok(Value::Null)
         })
@@ -453,7 +470,7 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
         .clone();
     source_engine
         .store
-        .transact(None, &mut |state| {
+        .seed_fixture_state(None, &mut |state| {
             let row = state
                 .governance
                 .iter_mut()
@@ -537,7 +554,43 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
 #[test]
 fn mainline_refresh_is_an_explicit_frozen_intent_and_accepts_only_matching_receipts() {
     let root = tempfile::tempdir().unwrap();
-    let e = engine(root.path());
+    struct RefreshPort(std::sync::atomic::AtomicBool);
+    impl ports::Git for RefreshPort {
+        fn repository_operation(&self, op: &RepositoryOperation) -> Result<RepositoryReceipt> {
+            let RepositoryAction::RefreshMainline { expected, .. } = &op.action else {
+                panic!("unexpected operation")
+            };
+            Ok(RepositoryReceipt::MainlineRefreshed {
+                previous: expected.clone(),
+                revision: "3".repeat(40),
+            })
+        }
+        fn inspect_repository_operation(
+            &self,
+            op: &RepositoryOperation,
+        ) -> Result<Option<RepositoryReceipt>> {
+            assert!(self.0.load(std::sync::atomic::Ordering::Relaxed));
+            let RepositoryAction::RefreshMainline {
+                expected, revision, ..
+            } = &op.action
+            else {
+                panic!("unexpected operation")
+            };
+            Ok(Some(RepositoryReceipt::MainlineRefreshed {
+                previous: expected.clone(),
+                revision: revision.clone(),
+            }))
+        }
+        fn candidate(&self, _: &GitContext, _: &str, _: &str, _: &str) -> Result<String> {
+            unreachable!()
+        }
+        fn advance(&self, _: &GitContext, _: &str, _: &str, _: &str, _: &str) -> Result<String> {
+            unreachable!()
+        }
+    }
+    let port = Arc::new(RefreshPort(false.into()));
+    let mut e = project_engine(root.path());
+    e.git = port.clone();
     let pid = command(
         &e,
         "project.create",
@@ -552,7 +605,7 @@ fn mainline_refresh_is_an_explicit_frozen_intent_and_accepts_only_matching_recei
     let new = "2".repeat(40);
     let create = id();
     e.store
-        .transact(None, &mut |s| {
+        .seed_fixture_state(None, &mut |s| {
             let project = s.projects.iter_mut().find(|p| p.id == pid).unwrap();
             project.execution_mode = "live".into();
             project.workspace_definition = Some(Workspace {
@@ -628,42 +681,25 @@ fn mainline_refresh_is_an_explicit_frozen_intent_and_accepts_only_matching_recei
         .is_err(),
         "in-flight operation must settle first"
     );
-    e.store
-        .transact(None, &mut |s| {
-            let intent = s
-                .repository_operations
-                .iter_mut()
-                .find(|r| r.id == op)
-                .unwrap();
-            intent.status = RepositoryOperationStatus::Observed;
-            intent.receipt = Some(RepositoryReceipt::MainlineRefreshed {
-                previous: old.clone(),
-                revision: "3".repeat(40),
-            });
-            Ok(Value::Null)
-        })
-        .unwrap();
     e.tick_repositories().unwrap();
     assert_eq!(
         e.store.snapshot().unwrap().heads[0].revision,
         old,
         "mismatched receipt cannot change the mainline fact"
     );
-    e.store
-        .transact(None, &mut |s| {
-            let intent = s
-                .repository_operations
-                .iter_mut()
-                .find(|r| r.id == op)
-                .unwrap();
-            intent.status = RepositoryOperationStatus::Observed;
-            intent.receipt = Some(RepositoryReceipt::MainlineRefreshed {
-                previous: old.clone(),
-                revision: new.clone(),
-            });
-            Ok(Value::Null)
-        })
-        .unwrap();
+    let rejected = e.store.snapshot().unwrap();
+    assert!(rejected.repository_operations.iter().any(|r| r.id == op
+        && r.status == RepositoryOperationStatus::NeedsReconciliation
+        && r.reason.contains("receipt_rejected")));
+    assert!(
+        rejected
+            .governance
+            .iter()
+            .any(|r| r.r#type == "repository_effect_observation"
+                && r.data["result"]["Ok"]["revision"] == "3".repeat(40))
+    );
+    port.0.store(true, std::sync::atomic::Ordering::Relaxed);
+    command(&e, "repository.reconcile", Some(&op), json!({})).unwrap();
     e.tick_repositories().unwrap();
     let after = e.store.snapshot().unwrap();
     assert_eq!(after.heads[0].revision, new);
@@ -683,7 +719,7 @@ fn mainline_refresh_is_an_explicit_frozen_intent_and_accepts_only_matching_recei
 #[test]
 fn reference_catalog_is_idempotent_and_does_not_configure_new_projects() {
     let root = tempfile::tempdir().unwrap();
-    let e = engine(root.path());
+    let e = project_engine(root.path());
     let before = e.store.snapshot().unwrap();
     assert!(
         !before

@@ -3,6 +3,114 @@ use devdesk_domain::{Result, err};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkflowDetailView {
+    Status,
+    Detail,
+    History,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum WorkflowReadingView {
+    Materials,
+    Contexts,
+    Executions,
+    Record,
+}
+
+#[derive(Debug, Clone)]
+pub struct WorkflowDetailQuery {
+    pub id: Option<String>,
+    pub owner_id: Option<String>,
+    pub view: WorkflowDetailView,
+    pub history_before: Option<u64>,
+    pub child_offset: u64,
+}
+impl WorkflowDetailQuery {
+    pub fn parse(params: &Value) -> Result<Self> {
+        fields(
+            params,
+            &[
+                "project_id",
+                "id",
+                "owner_id",
+                "view",
+                "history_before",
+                "child_offset",
+            ],
+        )?;
+        let id = params
+            .get("id")
+            .map(|_| identifier(params, "id"))
+            .transpose()?;
+        let owner_id = params
+            .get("owner_id")
+            .map(|_| identifier(params, "owner_id"))
+            .transpose()?;
+        if id.is_none() && owner_id.is_none() {
+            return Err(err("invalid_params", "需要流程或工作归属"));
+        }
+        let view = match params.get("view").and_then(Value::as_str) {
+            None if params.get("view").is_none() => WorkflowDetailView::Detail,
+            Some("status") => WorkflowDetailView::Status,
+            Some("detail") => WorkflowDetailView::Detail,
+            Some("history") => WorkflowDetailView::History,
+            _ => return Err(err("invalid_params", "无效的流程读取视图")),
+        };
+        let history_before = params
+            .get("history_before")
+            .map(|v| {
+                v.as_u64()
+                    .filter(|n| *n > 0 && *n <= i64::MAX as u64)
+                    .ok_or_else(|| err("invalid_params", "无效的历史游标"))
+            })
+            .transpose()?;
+        let child_offset = params
+            .get("child_offset")
+            .map(|v| {
+                v.as_u64()
+                    .filter(|n| *n <= 1_000_000)
+                    .ok_or_else(|| err("invalid_params", "无效的子流程偏移"))
+            })
+            .transpose()?
+            .unwrap_or(0);
+        Ok(Self {
+            id,
+            owner_id,
+            view,
+            history_before,
+            child_offset,
+        })
+    }
+}
+
+/// Actual facts for one selected instance, never a partial EngineeringState.
+/// `record.data` is a display projection for Status/History and the exact row
+/// for Detail. These DTOs cannot be used as an action baseline internally.
+pub struct WorkflowDetailFacts {
+    pub cursor: u64,
+    pub record: devdesk_domain::ConfigurationRecord,
+    pub plan_document: Value,
+    pub step_revisions: std::collections::BTreeMap<String, u64>,
+    pub rule_hints: std::collections::BTreeMap<String, Option<bool>>,
+    pub outputs: Vec<devdesk_domain::ConfigurationRecord>,
+    pub confirmations: Vec<devdesk_domain::ConfigurationRecord>,
+    pub waivers: Vec<devdesk_domain::ConfigurationRecord>,
+    pub materials: Vec<devdesk_domain::ConfigurationRecord>,
+    pub actors: std::collections::BTreeMap<String, WorkflowSessionActor>,
+    pub children: Vec<Value>,
+    pub children_more: bool,
+    pub next_child_offset: Option<u64>,
+    pub history: Vec<Value>,
+    pub next_history_before: Option<u64>,
+}
+
+pub struct WorkflowSessionActor {
+    pub session_id: String,
+    pub agent_ref: String,
+    pub agent_instance_id: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub enum ControllerSelector {
     Id(String),
@@ -413,6 +521,7 @@ pub struct ExecutionWorkspace {
 
 #[derive(Debug)]
 pub struct SchedulingHints {
+    pub stages: Vec<crate::SchedulingStage>,
     pub pending: bool,
     pub live: bool,
     pub running_conversations: usize,

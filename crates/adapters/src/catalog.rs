@@ -4,7 +4,6 @@ use rusqlite::{OptionalExtension, params};
 
 pub struct GlobalStore {
     pub(super) connection: connection_pool::ConnectionPool,
-    pub(super) writer: Mutex<()>,
     catalog_cache: configuration_cache::CatalogCache,
     changes: store_changes::StoreChanges,
     root: PathBuf,
@@ -36,10 +35,11 @@ impl GlobalStore {
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(storage)?;
         require(
-            version == 0 || version == 22,
+            version == 0 || version == 24,
             "数据集协议不兼容；请使用新的空数据目录",
         )?;
-        if version == 22 {
+        if version == 24 {
+            check_dataset_layout(&connection)?;
             preflight_engineering_databases(&root, &connection)?;
         }
         connection
@@ -58,7 +58,6 @@ impl GlobalStore {
                 &root.join("global.sqlite3"),
                 connection,
             )?,
-            writer: Mutex::new(()),
             catalog_cache: Default::default(),
             changes: Default::default(),
             root,
@@ -246,6 +245,7 @@ impl GlobalStore {
         Ok(state)
     }
 
+    #[cfg(any(test, feature = "test-fixtures"))]
     fn save_configuration(
         conn: &Connection,
         s: &EngineeringState,
@@ -290,7 +290,8 @@ fn check_engineering_baseline(path: &Path) -> Result<()> {
     require(
         version == PROJECT_SCHEMA_VERSION,
         "数据集协议不兼容；请使用新的空数据目录",
-    )
+    )?;
+    check_dataset_layout(&connection)
 }
 
 impl EngineeringStore for GlobalStore {
@@ -331,6 +332,32 @@ impl EngineeringStore for GlobalStore {
     fn active_conversation_count(&self) -> Result<usize> {
         Ok(0)
     }
+    fn platform_calls_pending(&self) -> Result<bool> {
+        Ok(false)
+    }
+    fn runtime_record_page(
+        &self,
+        kind: &str,
+        status: &str,
+        after: Option<&str>,
+    ) -> Result<devdesk_core::tool_calls::ToolCallPage> {
+        let conn = self.connection.read()?;
+        let mut q=conn.prepare_cached("SELECT id FROM governance_records INDEXED BY idx_runtime_work_seek WHERE type=?1 AND json_extract(data,'$.status')=?2 AND id>?3 ORDER BY id LIMIT 17").map_err(storage)?;
+        let mut ids = q
+            .query_map(rusqlite::params![kind, status, after.unwrap_or("")], |r| {
+                r.get::<_, String>(0)
+            })
+            .map_err(storage)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(storage)?;
+        let more = ids.len() > 16;
+        ids.truncate(16);
+        Ok(devdesk_core::tool_calls::ToolCallPage {
+            next_after: more.then(|| ids.last().unwrap().clone()),
+            ids,
+        })
+    }
+
     fn event_cursor(&self) -> Result<u64> {
         store_changes::cursor(&*self.connection.read()?)
     }
@@ -366,6 +393,26 @@ impl EngineeringStore for GlobalStore {
     fn encode_runtime_record(&self, record: &ConfigurationRecord) -> Result<Value> {
         tool_calls::encode(self.configuration_snapshot()?.as_ref(), record)
     }
+    fn encode_configuration_record(
+        &self,
+        catalog: &ConfigurationCatalogSnapshot,
+        record: &ConfigurationRecord,
+    ) -> Result<Value> {
+        Ok(source_store::pack_record(&catalog.state, record)?.to_storage())
+    }
+    fn encode_configuration_value(
+        &self,
+        catalog: &ConfigurationCatalogSnapshot,
+        value: &Value,
+    ) -> Result<Value> {
+        source_views::pack(&catalog.state, value)
+    }
+    fn restore_runtime_value(&self, value: &Value) -> Result<Value> {
+        source_views::restore(&self.configuration_snapshot()?.state, value)
+    }
+    fn encode_runtime_value(&self, value: &Value) -> Result<Value> {
+        source_views::pack(&self.configuration_snapshot()?.state, value)
+    }
     fn restore_runtime_record(&self, value: &Value) -> Result<Value> {
         tool_calls::restore(self.configuration_snapshot()?.as_ref(), value)
     }
@@ -394,13 +441,13 @@ impl EngineeringStore for GlobalStore {
         conn.execute_batch("COMMIT;").map_err(storage)?;
         Ok(state)
     }
-    fn transact(
+    #[cfg(feature = "test-fixtures")]
+    fn seed_fixture_state(
         &self,
         key: Option<(&str, &str)>,
         action: &mut dyn FnMut(&mut EngineeringState) -> Result<Value>,
     ) -> Result<Value> {
         let _span = performance::Span::new("global.transaction");
-        let _writer = self.writer.lock().map_err(storage)?;
         let conn = self.connection.lock().map_err(storage)?;
         if let Some((id, fp)) = key {
             let previous: Option<(String, String)> = conn
@@ -467,7 +514,6 @@ impl EngineeringStore for GlobalStore {
             self.catalog_cache.invalidate()?;
         }
         drop(conn);
-        drop(_writer);
         if changed {
             self.changes.notify();
         }

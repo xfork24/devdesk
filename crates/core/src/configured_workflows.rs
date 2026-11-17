@@ -26,7 +26,7 @@ pub struct ConfiguredWorkflowPlan {
 
 impl Engine {
     pub fn project_configuration_status(&self) -> Result<Value> {
-        let state = self.store.snapshot()?;
+        let state = self.store.configuration_snapshot()?.state.as_ref().clone();
         let configuration = state
             .governance
             .iter()
@@ -119,8 +119,16 @@ impl Engine {
                 .as_ref()
                 .map(|r| Ok(r.scope.clone()))
                 .unwrap_or_else(|| {
-                    serde_json::from_value(p.get("scope").cloned().unwrap_or(json!("global")))
-                        .map_err(|e| err("invalid_params", e.to_string()))
+                    serde_json::from_value(p.get("scope").cloned().unwrap_or_else(|| {
+                        json!(
+                            self.store
+                                .project_id()
+                                .as_deref()
+                                .map(Scope::project)
+                                .unwrap_or_else(Scope::global)
+                        )
+                    }))
+                    .map_err(|e| err("invalid_params", e.to_string()))
                 })?;
             self.check_configured_workflow_scope(&scope)?;
             serde_json::from_value::<ConfiguredSpecification>(p["data"].clone())
@@ -330,10 +338,16 @@ impl Engine {
             "workflow.create" | "workflow.draft.create" => {
                 let scope: Scope =
                     serde_json::from_value(p.get("scope").cloned().unwrap_or_else(|| {
-                        selected
-                            .as_ref()
-                            .map(|r| json!(r.scope))
-                            .unwrap_or(json!("global"))
+                        json!(
+                            self.store
+                                .project_id()
+                                .as_deref()
+                                .map(Scope::project)
+                                .unwrap_or_else(|| selected
+                                    .as_ref()
+                                    .map(|r| r.scope.clone())
+                                    .unwrap_or_else(Scope::global))
+                        )
                     }))
                     .map_err(|e| err("invalid_params", e.to_string()))?;
                 self.check_configured_workflow_scope(&scope)?;
@@ -495,7 +509,11 @@ impl Engine {
         {
             return None;
         }
-        let state = match self.store.snapshot() {
+        let state = match self
+            .store
+            .configuration_snapshot()
+            .map(|catalog| catalog.state.as_ref().clone())
+        {
             Ok(state) => state,
             Err(error) => return Some(Err(error)),
         };
@@ -528,7 +546,13 @@ impl Engine {
             let scope = params["project_id"]
                 .as_str()
                 .map(Scope::project)
-                .unwrap_or(Scope::global());
+                .unwrap_or_else(|| {
+                    self.store
+                        .project_id()
+                        .as_deref()
+                        .map(Scope::project)
+                        .unwrap_or_else(|| row.scope.clone())
+                });
             let bindings: Option<BTreeMap<Id, Id>> = params
                 .get("role_agent_bindings")
                 .map(|v| {

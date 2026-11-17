@@ -101,7 +101,8 @@ def main():
             if not origin:
                 raise RuntimeError("benchmark server failed to start")
             script = "model-loading.mjs" if args.model_conditions else "execution-loading.mjs" if args.browser_page == "execution" else "configuration-loading.mjs"
-            subprocess.run(["node", str(Path(__file__).with_name(script)), origin, str(args.output.resolve()), str(args.samples), str(server.pid), "cold" if args.cold_browser else "warm", project or ""], check=True)
+            extras = [project or ""] if args.browser_page == "execution" and not args.model_conditions else ["cold" if args.cold_browser else "warm", project or ""]
+            subprocess.run(["node", str(Path(__file__).with_name(script)), origin, str(args.output.resolve()), str(args.samples), str(server.pid), *extras], check=True)
         finally:
             server.send_signal(__import__("signal").SIGINT)
             try:

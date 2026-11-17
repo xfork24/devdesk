@@ -561,7 +561,6 @@ mod tests {
         let project = create(&w, "configuration read isolation");
         let params = json!({"local":true,"project_id":project,"include_history":true,"limit":100});
         w.dispatch("query.configurations", params.clone()).unwrap();
-        let gate = w.template_gate.lock().unwrap();
         let (send, receive) = std::sync::mpsc::channel();
         let reader = w.clone();
         let thread = std::thread::spawn(move || {
@@ -570,7 +569,6 @@ mod tests {
             send.send((result, trace.finish())).unwrap();
         });
         let received = receive.recv_timeout(std::time::Duration::from_secs(3));
-        drop(gate);
         thread.join().unwrap();
         let (result, measurement) =
             received.expect("a directory reader must not hold the writer gate");

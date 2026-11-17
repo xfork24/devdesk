@@ -25,13 +25,13 @@ impl ports::ProjectInventory for GlobalStore {
             json!({"installations":installations,"protocol_reports":reports,"permission_assets":permissions::asset_digests()}),
         )
     }
-    fn snapshots(&self) -> Result<Vec<EngineeringState>> {
+    fn configuration_catalogs(&self) -> Result<Vec<std::sync::Arc<ConfigurationCatalogSnapshot>>> {
         let mut result = Vec::new();
         let mut offset = 0;
         loop {
             let (projects, total) = self.projects(offset, 100)?;
             for p in &projects {
-                result.push(SqliteStore::read_project_snapshot(
+                result.push(SqliteStore::read_project_catalog(
                     Path::new(&self.root()),
                     &p.id,
                 )?);

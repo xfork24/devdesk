@@ -1,4 +1,4 @@
-import { WorkflowInstanceView } from "./WorkflowInstanceView";
+import { WorkflowProgressView } from "./WorkflowProgressView";
 import { WorkflowProjectManager } from "./WorkflowProjectManager";
 import { ReadState } from "./reading";
 import { useReading } from "./reading-state";
@@ -78,7 +78,7 @@ export function WorkflowScope({
             )}
           />
         ) : (
-          <WorkflowInstanceView
+          <WorkflowProgressView
             key={record.id}
             {...{
               request,
