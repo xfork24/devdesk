@@ -363,6 +363,9 @@ impl Workspace {
                 if let Some(value) = e.replay_integration_operation(method, &c, &context)? {
                     return Ok(value);
                 }
+                if method == "integration.discover" {
+                    e.preflight_tool_discovery(&c, &context)?;
+                }
             } else if method == "integration.test" {
                 if let Some(value) = e.replay_tool_test(&c, &context)? {
                     return Ok(value);
@@ -522,14 +525,8 @@ impl Workspace {
                         IntegrationOperationAdmission::Admitted(operation) => operation,
                         IntegrationOperationAdmission::Replay(result) => return Ok(result),
                     };
-                    let result = executor
-                        .discover(&definition, &binding, &image, &permissions)
-                        .and_then(|result| {
-                            require(result["tools"].is_array(), "发现服务未返回有效工具目录")?;
-                            e.record_tool_discovery(&c, &key, result)
-                        });
-                    e.finish_integration_operation(&operation, &result)?;
-                    return result;
+                    let result = executor.discover(&definition, &binding, &image, &permissions);
+                    return e.finish_tool_discovery(&operation, &result);
                 }
                 let tool_id = text(&c.payload, "tool_ref")?;
                 let r = state.configuration(&tool_id)?;
@@ -693,6 +690,32 @@ mod tests {
         assert_eq!(
             workspace
                 .dispatch("integration.test", guarded)
+                .unwrap_err()
+                .code,
+            "not_found"
+        );
+        assert_eq!(workspace.global.event_cursor().unwrap(), before);
+        assert!(workspace.global.runtime_installations().unwrap().is_empty());
+    }
+    #[test]
+    fn discovery_preconditions_reject_before_source_resolution_or_runtime_preparation() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace =
+            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
+        let before = workspace.global.event_cursor().unwrap();
+        let params = json!({"command_id":"discovery-missing-precondition","payload":{"binding_ref":"absent-binding:1"}});
+        assert_eq!(
+            workspace
+                .dispatch("integration.discover", params.clone())
+                .unwrap_err()
+                .code,
+            "precondition_required"
+        );
+        let mut guarded = params;
+        guarded["expected_revision"] = json!(1);
+        assert_eq!(
+            workspace
+                .dispatch("integration.discover", guarded)
                 .unwrap_err()
                 .code,
             "not_found"

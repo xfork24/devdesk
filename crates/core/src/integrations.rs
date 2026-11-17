@@ -535,34 +535,6 @@ impl Engine {
         let prepared = self.prepare_configured_tool(command)?;
         self.enqueue_prepared_configured_tool(command, invocation, &prepared)
     }
-    pub fn record_tool_discovery(
-        &self,
-        _c: &Command,
-        binding_ref: &str,
-        result: Value,
-    ) -> Result<Value> {
-        self.store.transact(None, &mut |s| {
-            let b = s.configuration(binding_ref)?.clone();
-            let previous = latest(s, "integration_discovery", binding_ref).map(|r|r.data["result"]["tools"].as_array().cloned().unwrap_or_default()).unwrap_or_default();
-            let current = result["tools"].as_array().cloned().unwrap_or_default();
-            let added:Vec<_> = current.iter().filter(|v|!previous.iter().any(|p|p["name"] == v["name"])).map(|v|v["name"].clone()).collect();
-            let removed:Vec<_> = previous.iter().filter(|v|!current.iter().any(|p|p["name"] == v["name"])).map(|v|v["name"].clone()).collect();
-            let changed:Vec<_> = current.iter().filter(|v|previous.iter().any(|p|p["name"] == v["name"] && configuration_hash(p) != configuration_hash(v))).map(|v|v["name"].clone()).collect();
-            let r = record(
-                "integration_discovery",
-                binding_ref.into(),
-                b.scope,
-                "工具发现".into(),
-                latest(s, "integration_discovery", binding_ref).map_or(1, |r| r.version + 1),
-                None,
-                json!({"binding_ref":binding_ref,"result":result,"diff":{"added":added,"removed":removed,"changed":changed},"captured_at":now()}),
-                true,
-            );
-            let value = json!(r);
-            s.governance.push(r);
-            Ok(value)
-        })
-    }
     pub(crate) fn recover_tool_dispatches(&self) -> Result<()> {
         let mut after = None;
         loop {

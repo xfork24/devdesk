@@ -931,6 +931,9 @@ function BindingManager({
     endFeedback,
   } = useActionFeedback();
 
+  const discoveryAttempt = useRef<
+    { fingerprint: string; id: string } | undefined
+  >(undefined);
   const bindingDefaults = useRef<Row>({});
   const [bindingReady, setBindingReady] = useState(false);
   const fresh = () => ({
@@ -1619,12 +1622,24 @@ function BindingManager({
                   onClick={() => {
                     captureFeedback();
                     return void run(async () => {
-                      const r = await command(
-                        request,
-                        "integration.discover",
-                        project,
-                        { binding_ref: selected.id },
-                      );
+                      const params = {
+                        local: !!project?.id,
+                        project_id: project?.id,
+                        target: selected.id,
+                        expected_revision: selected.revision,
+                        payload: { binding_ref: selected.id },
+                      };
+                      const fingerprint = JSON.stringify(params);
+                      if (discoveryAttempt.current?.fingerprint !== fingerprint)
+                        discoveryAttempt.current = {
+                          fingerprint,
+                          id: crypto.randomUUID(),
+                        };
+                      const r = await request("integration.discover", {
+                        ...params,
+                        command_id: discoveryAttempt.current!.id,
+                      });
+                      discoveryAttempt.current = undefined;
                       setDiscovery(r);
                       setSelectedNames([]);
                       await reload();

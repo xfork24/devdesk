@@ -318,7 +318,7 @@ fn stale_completion_journals_its_result_and_wrong_scope_is_rejected_before_journ
             .code,
         "invalid_scope"
     );
-    assert_eq!(count(&other, "integration_observation"), 0);
+    assert_eq!(other.store.event_cursor().unwrap(), 0);
 }
 
 #[test]
@@ -438,4 +438,229 @@ fn external_fact_values_and_source_like_text_are_never_interpreted_as_configurat
             .unwrap(),
         result
     );
+}
+
+fn discovery_sources(engine: &Engine) -> (Value, Value) {
+    engine.bootstrap().unwrap();
+    let create = |method, payload| {
+        engine
+            .execute(
+                method,
+                Command {
+                    command_id: devdesk_core::id(),
+                    target: None,
+                    expected_revision: None,
+                    payload,
+                },
+            )
+            .unwrap()
+    };
+    let source = create(
+        "integration.create",
+        json!({"name":"Discovery service","data":{"source":{"kind":"http_api","base_url":"https://discovery.example.test"}}}),
+    );
+    let binding = create(
+        "integration.binding.create",
+        json!({"name":"Discovery binding","data":{"integration_ref":source["id"],"harness_ref":"builtin-harness-codex-managed:1","sandbox_ref":"builtin-sandbox-docker:1","allowed_origins":["https://discovery.example.test"],"allowed_tools":[]}}),
+    );
+    (source, binding)
+}
+fn admit_discovery(
+    engine: &Engine,
+    source: &Value,
+    binding: &Value,
+    id: &str,
+) -> (Command, Box<IntegrationOperation>) {
+    let command = Command {
+        command_id: id.into(),
+        target: Some(binding["id"].as_str().unwrap().into()),
+        expected_revision: Some(binding["revision"].as_u64().unwrap()),
+        payload: json!({"binding_ref":binding["id"]}),
+    };
+    let input = json!({"binding_ref":binding["id"],"binding_hash":binding["content_hash"],"source_ref":source["id"],"source_hash":source["content_hash"],"image_id":"explicit fixture, no I/O","permission_selection":{"fixture":true}});
+    let op = match engine
+        .prepare_integration_operation(
+            "integration.discover",
+            &command,
+            input,
+            &InvocationContext::human(None),
+        )
+        .unwrap()
+    {
+        IntegrationOperationAdmission::Admitted(op) => op,
+        _ => panic!("expected fresh intent"),
+    };
+    (command, op)
+}
+#[test]
+fn discovery_publication_is_atomic_and_one_hundred_callbacks_replay_without_legacy_writer() {
+    let root = tempfile::tempdir().unwrap();
+    let engine = fixture(root.path());
+    let (source, binding) = discovery_sources(&engine);
+    let (command, op) = admit_discovery(&engine, &source, &binding, "directory-once");
+    let op = Arc::new(op);
+    let (ready, waiting) = mpsc::channel();
+    let (release, blocked) = mpsc::channel();
+    let old = engine.clone();
+    let writer = std::thread::spawn(move || {
+        old.store.transact(None, &mut |_| {
+            ready.send(()).unwrap();
+            blocked.recv().unwrap();
+            Ok(Value::Null)
+        })
+    });
+    waiting.recv().unwrap();
+    let conn = rusqlite::Connection::open(root.path().join("engineering.sqlite3")).unwrap();
+    conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('unrestorable-discovery','workflow_instance','fixture','\"global\"','History',1,'fixture','{}',?1,0,1,1)",[json!({"plan":{"$source":"missing-frozen-source"}}).to_string()]).unwrap();
+    let result = Arc::new(Ok(
+        json!({"tools":[{"name":"sum","inputSchema":{"type":"object"}}]}),
+    ));
+    let barrier = Arc::new(Barrier::new(100));
+    let threads = (0..100)
+        .map(|_| {
+            let (engine, op, result, barrier) =
+                (engine.clone(), op.clone(), result.clone(), barrier.clone());
+            std::thread::spawn(move || {
+                barrier.wait();
+                let trace = performance::Trace::start();
+                let result = engine.finish_tool_discovery(&op, &result);
+                (result, trace.finish())
+            })
+        })
+        .collect::<Vec<_>>();
+    let results = threads
+        .into_iter()
+        .map(|t| t.join().unwrap())
+        .collect::<Vec<_>>();
+    release.send(()).unwrap();
+    writer.join().unwrap().unwrap();
+    let expected = results[0].0.as_ref().unwrap().clone();
+    for (result, trace) in results {
+        assert_eq!(result.unwrap(), expected);
+        for span in [
+            "project.full_snapshot",
+            "project.transaction",
+            "source.restore_records",
+            "workflow.compile",
+        ] {
+            assert!(trace["spans"][span].is_null(), "{trace}");
+        }
+    }
+    assert_eq!(expected["version"], 1);
+    assert_eq!(expected["data"]["diff"]["added"], json!(["sum"]));
+    assert_eq!(count(&engine, "integration_discovery"), 1);
+    assert_eq!(count(&engine, "integration_observation"), 1);
+    let replay = engine
+        .replay_integration_operation(
+            "integration.discover",
+            &command,
+            &InvocationContext::human(None),
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(replay, expected);
+    let head = engine
+        .store
+        .read_resources(&[ResourceKey::new(
+            "integration_discovery_head",
+            binding["id"].as_str().unwrap(),
+        )])
+        .unwrap()
+        .remove(0);
+    assert_eq!(head.revision, 1);
+    assert_eq!(head.value.unwrap()["id"], expected["id"]);
+    let plan:String=conn.query_row("EXPLAIN QUERY PLAN SELECT version FROM governance_records WHERE type='integration_discovery' AND definition_id=?1 ORDER BY version DESC LIMIT 1",[binding["id"].as_str().unwrap()],|r|r.get(3)).unwrap();
+    assert!(plan.contains("idx_governance_type"), "{plan}");
+    assert!(!plan.contains("TEMP B-TREE"), "{plan}");
+}
+#[test]
+fn concurrent_discoveries_preserve_conflicting_supplier_facts_and_the_original_directory_baseline()
+{
+    let root = tempfile::tempdir().unwrap();
+    let engine = fixture(root.path());
+    let (source, binding) = discovery_sources(&engine);
+    let (_, first) = admit_discovery(&engine, &source, &binding, "first");
+    let (second_command, second) = admit_discovery(&engine, &source, &binding, "second");
+    let a = engine
+        .finish_tool_discovery(
+            &first,
+            &Ok(json!({"tools":[{"name":"old","description":"before"},{"name":"removed"}]})),
+        )
+        .unwrap();
+    let conflict = Ok(json!({"tools":[{"name":"contradictory"}]}));
+    for _ in 0..2 {
+        assert_eq!(
+            engine
+                .finish_tool_discovery(&second, &conflict)
+                .unwrap_err()
+                .code,
+            "revision_conflict"
+        );
+    }
+    assert_eq!(count(&engine, "integration_discovery"), 1);
+    assert_eq!(count(&engine, "integration_observation"), 2);
+    assert_eq!(
+        engine
+            .replay_integration_operation(
+                "integration.discover",
+                &second_command,
+                &InvocationContext::human(None)
+            )
+            .unwrap_err()
+            .code,
+        "needs_reconciliation"
+    );
+    let (_, third) = admit_discovery(&engine, &source, &binding, "third");
+    let b = engine
+        .finish_tool_discovery(
+            &third,
+            &Ok(json!({"tools":[{"name":"old","description":"after"},{"name":"added"}]})),
+        )
+        .unwrap();
+    assert_ne!(a["id"], b["id"]);
+    assert_eq!(b["version"], 2);
+    assert_eq!(
+        b["data"]["diff"],
+        json!({"added":["added"],"removed":["removed"],"changed":["old"]})
+    );
+    let op = engine
+        .store
+        .read_resources(&[ResourceKey::new("governance", second.id())])
+        .unwrap()
+        .remove(0);
+    let op = ConfigurationRecord::from_storage(op.value.unwrap()).unwrap();
+    assert_eq!(op.data["inputs"]["discovery_baseline"]["version"], 0);
+    assert_eq!(op.data["status"], "prepared");
+}
+#[test]
+fn invalid_discovery_is_journaled_before_rejection_and_callbacks_cannot_change_namespace() {
+    let root = tempfile::tempdir().unwrap();
+    let engine = fixture(root.path());
+    let (source, binding) = discovery_sources(&engine);
+    let (_, op) = admit_discovery(&engine, &source, &binding, "invalid");
+    let other_root = tempfile::tempdir().unwrap();
+    let other = Engine::new(
+        Arc::new(devdesk_adapters::GlobalStore::open(other_root.path()).unwrap()),
+        Arc::new(FileArtifacts::new(other_root.path().into())),
+        runtime::adapters(),
+    );
+    assert_eq!(
+        other
+            .finish_tool_discovery(&op, &Ok(json!({"tools":[]})))
+            .unwrap_err()
+            .code,
+        "invalid_scope"
+    );
+    assert_eq!(other.store.event_cursor().unwrap(), 0);
+    let invalid = json!({"tools":[{"name":"duplicate"},{"name":"duplicate"}],"type":"skill","data":{"$source":"literal"}});
+    assert!(
+        engine
+            .finish_tool_discovery(&op, &Ok(invalid.clone()))
+            .is_err()
+    );
+    assert_eq!(count(&engine, "integration_discovery"), 0);
+    assert_eq!(count(&engine, "integration_observation"), 2);
+    let conn = rusqlite::Connection::open(root.path().join("engineering.sqlite3")).unwrap();
+    let observed:String=conn.query_row("SELECT json_extract(data,'$.value.result.value') FROM governance_records WHERE type='integration_observation' AND json_type(data,'$.value.result')='object'",[],|r|r.get(0)).unwrap();
+    assert_eq!(serde_json::from_str::<Value>(&observed).unwrap(), invalid);
 }

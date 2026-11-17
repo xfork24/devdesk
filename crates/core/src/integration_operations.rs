@@ -115,6 +115,19 @@ pub struct IntegrationOperation {
     revision: u64,
     context: ResourceVersion,
 }
+struct CapturedObservation {
+    digest: String,
+    key: ResourceKey,
+    value: Option<Value>,
+    guards: Vec<ResourceVersion>,
+}
+struct IntegrationCompletion {
+    result: Result<Value>,
+    observation: CapturedObservation,
+    changes: Vec<ResourceChange>,
+    guards: Vec<ResourceVersion>,
+    receipt: Value,
+}
 impl IntegrationOperation {
     pub fn id(&self) -> &str {
         &self.row.id
@@ -179,6 +192,39 @@ fn replay(
     ))
 }
 impl Engine {
+    pub fn preflight_tool_discovery(&self, c: &Command, context: &InvocationContext) -> Result<()> {
+        let scope = scope(self.store.as_ref(), context)?;
+        let expected = c
+            .expected_revision
+            .ok_or_else(|| err("precondition_required", "发现操作需要原绑定版本"))?;
+        let binding = text(&c.payload, "binding_ref")?;
+        require(
+            c.target.as_ref().is_none_or(|id| id == &binding),
+            "发现动作与原绑定目标不符",
+        )?;
+        let key = ResourceKey::new("source", &binding);
+        let rows = self.store.read_resources(std::slice::from_ref(&key))?;
+        require(
+            rows.len() == 1 && rows[0].resource == key,
+            "原接入绑定读取不完整",
+        )?;
+        let source: SourceDefinition = serde_json::from_value(
+            rows[0]
+                .value
+                .clone()
+                .ok_or_else(|| err("not_found", "原接入绑定缺失"))?,
+        )
+        .map_err(|e| err("storage", e.to_string()))?;
+        let row = source.into_record()?;
+        require(
+            row.r#type == "integration_binding" && row.scope.visible_from(&scope),
+            "原接入绑定类型或范围不符",
+        )?;
+        if row.revision != expected {
+            return Err(err("revision_conflict", "接入绑定的原始修订不符"));
+        }
+        Ok(())
+    }
     pub fn replay_integration_operation(
         &self,
         method: &str,
@@ -197,7 +243,7 @@ impl Engine {
         &self,
         method: &str,
         c: &Command,
-        input: Value,
+        mut input: Value,
         context: &InvocationContext,
     ) -> Result<IntegrationOperationAdmission> {
         let expected_scope = scope(self.store.as_ref(), context)?;
@@ -215,15 +261,17 @@ impl Engine {
         }
         let mut guards = vec![];
         if method == "integration.discover" {
+            self.preflight_tool_discovery(c, context)?;
             let binding = text(&input, "binding_ref")?;
             let source = text(&input, "source_ref")?;
             let keys = [
                 ResourceKey::new("source", &binding),
                 ResourceKey::new("source", &source),
+                ResourceKey::new("integration_discovery_head", &binding),
             ];
             let rows = self.store.read_resources(&keys)?;
             require(rows.len() == keys.len(), "接入冻结源读取不完整")?;
-            for (index, row) in rows.iter().enumerate() {
+            for (index, row) in rows[..2].iter().enumerate() {
                 require(row.resource == keys[index], "接入冻结源身份不符")?;
                 let source: SourceDefinition = serde_json::from_value(
                     row.value
@@ -271,6 +319,11 @@ impl Engine {
                     revision: row.revision,
                 });
             }
+            guards.push(ResourceVersion {
+                resource: rows[2].resource.clone(),
+                revision: rows[2].revision,
+            });
+            input["discovery_baseline"] = json!({"version":rows[2].revision,"id":rows[2].value.as_ref().map(|row|row["id"].clone())});
         } else {
             require(
                 input["package_hash"] == configuration_hash(&c.payload),
@@ -341,17 +394,177 @@ impl Engine {
             },
         )))
     }
-    pub fn finish_integration_operation(
+    /// Journal the supplier result before attempting publication against the
+    /// directory head captured by the admitted intent, never a refreshed head.
+    pub fn finish_tool_discovery(
         &self,
         operation: &IntegrationOperation,
         result: &Result<Value>,
-    ) -> Result<()> {
+    ) -> Result<Value> {
+        require(
+            operation.row.name == "integration.discover",
+            "需要原发现意图",
+        )?;
+        let mut observation = self.observe_integration_result(operation, result)?;
+        let accept_id = format!("integration-accept:{}", observation.digest);
+        if let Some(receipt) = self.store.replay_commit(&accept_id, &observation.digest)? {
+            return result
+                .as_ref()
+                .map(|_| receipt.result)
+                .map_err(Clone::clone);
+        }
+        let value = match result {
+            Ok(value) => value,
+            Err(error) => {
+                self.accept_integration_completion(
+                    operation,
+                    IntegrationCompletion {
+                        result: Err(error.clone()),
+                        observation,
+                        changes: vec![],
+                        guards: vec![],
+                        receipt: json!({"recorded":true}),
+                    },
+                )?;
+                return Err(error.clone());
+            }
+        };
+        let prepared = (|| -> Result<(ConfigurationRecord, Vec<ResourceVersion>)> {
+            let binding = text(&operation.row.data["inputs"], "binding_ref")?;
+            let baseline = &operation.row.data["inputs"]["discovery_baseline"];
+            let version = baseline["version"]
+                .as_u64()
+                .ok_or_else(|| err("storage", "发现意图缺少原目录版本"))?;
+            let mut guards = vec![ResourceVersion {
+                resource: ResourceKey::new("integration_discovery_head", &binding),
+                revision: version,
+            }];
+            let previous = if let Some(previous) = baseline["id"].as_str() {
+                let key = ResourceKey::new("governance", previous);
+                let rows = self.store.read_resources(std::slice::from_ref(&key))?;
+                require(
+                    rows.len() == 1 && rows[0].resource == key,
+                    "原发现目录读取不完整",
+                )?;
+                let row = ConfigurationRecord::from_storage(
+                    rows[0]
+                        .value
+                        .clone()
+                        .ok_or_else(|| err("storage", "原发现目录缺失"))?,
+                )?;
+                require(
+                    row.r#type == "integration_discovery"
+                        && row.definition_id == binding
+                        && row.scope == operation.row.scope
+                        && row.immutable
+                        && row.version == version,
+                    "原发现目录身份不符",
+                )?;
+                guards.push(ResourceVersion {
+                    resource: key,
+                    revision: rows[0].revision,
+                });
+                row.data["result"]["tools"].clone()
+            } else {
+                require(version == 0, "发现目录不存在条件不符")?;
+                json!([])
+            };
+            let index = |tools: &Value| -> Result<std::collections::BTreeMap<String, Value>> {
+                let tools = tools
+                    .as_array()
+                    .ok_or_else(|| err("invalid_params", "发现服务未返回有效工具目录"))?;
+                let mut indexed = std::collections::BTreeMap::new();
+                for tool in tools {
+                    let name = text(tool, "name")?;
+                    require(
+                        indexed.insert(name, tool.clone()).is_none(),
+                        "发现目录含重名工具",
+                    )?;
+                }
+                Ok(indexed)
+            };
+            let previous = index(&previous)?;
+            let current = index(&value["tools"])?;
+            let added: Vec<_> = current
+                .keys()
+                .filter(|k| !previous.contains_key(*k))
+                .collect();
+            let removed: Vec<_> = previous
+                .keys()
+                .filter(|k| !current.contains_key(*k))
+                .collect();
+            let changed: Vec<_> = current
+                .keys()
+                .filter(|k| previous.get(*k).is_some_and(|p| p != &current[*k]))
+                .collect();
+            let next = version
+                .checked_add(1)
+                .filter(|n| *n <= i64::MAX as u64)
+                .ok_or_else(|| err("resource_exhausted", "发现目录版本已用尽"))?;
+            let row = record(
+                "integration_discovery",
+                binding.clone(),
+                operation.row.scope.clone(),
+                "工具发现".into(),
+                next,
+                None,
+                json!({"binding_ref":binding,"result":value,"diff":{"added":added,"removed":removed,"changed":changed},"captured_at":now(),"operation_id":operation.row.id,"observation_id":observation.key.id}),
+                true,
+            );
+            Ok((row, guards))
+        })();
+        let (row, mut guards) = match prepared {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                // Invalid supplier data remains in the raw observation even
+                // when the local publication is rejected.
+                self.finish_integration_operation(operation, &Err(error.clone()))?;
+                return Err(error);
+            }
+        };
+        let key = ResourceKey::new("governance", &row.id);
+        guards.push(ResourceVersion {
+            resource: key.clone(),
+            revision: 0,
+        });
+        let value = json!(row);
+        observation.value = Some(json!(OperationValue::Literal {
+            value: value.clone()
+        }));
+        self.accept_integration_completion(
+            operation,
+            IntegrationCompletion {
+                result: Ok(value.clone()),
+                observation,
+                changes: vec![ResourceChange {
+                    resource: key,
+                    value: row.to_storage(),
+                }],
+                guards,
+                receipt: value,
+            },
+        )
+    }
+    fn observe_integration_result(
+        &self,
+        operation: &IntegrationOperation,
+        result: &Result<Value>,
+    ) -> Result<CapturedObservation> {
         if operation.namespace != self.store.namespace() {
             return Err(err("invalid_scope", "接入观察不能提交到另一个命名空间"));
         }
         let (captured, source_guards) = match result {
             Ok(value) => {
-                let (captured, guards) = OperationValue::capture(self.store.as_ref(), value)?;
+                let (captured, guards) = if operation.row.name == "integration.discover" {
+                    (
+                        OperationValue::Literal {
+                            value: value.clone(),
+                        },
+                        vec![],
+                    )
+                } else {
+                    OperationValue::capture(self.store.as_ref(), value)?
+                };
                 (Some(captured), guards)
             }
             Err(_) => (None, vec![]),
@@ -401,9 +614,56 @@ impl Engine {
                 time: now() as i64,
             })?;
         }
+        Ok(CapturedObservation {
+            digest,
+            key: observation_key,
+            value: captured,
+            guards: source_guards,
+        })
+    }
+    pub fn finish_integration_operation(
+        &self,
+        operation: &IntegrationOperation,
+        result: &Result<Value>,
+    ) -> Result<()> {
+        if operation.row.name == "integration.discover" && result.is_ok() {
+            return self.finish_tool_discovery(operation, result).map(|_| ());
+        }
+        let observation = self.observe_integration_result(operation, result)?;
+        self.accept_integration_completion(
+            operation,
+            IntegrationCompletion {
+                result: result.clone(),
+                observation,
+                changes: vec![],
+                guards: vec![],
+                receipt: json!({"recorded":true}),
+            },
+        )
+        .map(|_| ())
+    }
+    fn accept_integration_completion(
+        &self,
+        operation: &IntegrationOperation,
+        completion: IntegrationCompletion,
+    ) -> Result<Value> {
+        let IntegrationCompletion {
+            result,
+            observation,
+            mut changes,
+            mut guards,
+            receipt,
+        } = completion;
+        let CapturedObservation {
+            digest,
+            key: observation_key,
+            value: captured,
+            guards: source_guards,
+        } = observation;
+        let observation_id = observation_key.id.clone();
         let accept_id = format!("integration-accept:{digest}");
-        if self.store.replay_commit(&accept_id, &digest)?.is_some() {
-            return Ok(());
+        if let Some(receipt) = self.store.replay_commit(&accept_id, &digest)? {
+            return Ok(receipt.result);
         }
         // This resource family has no other writer. Use the exact admitted row,
         // including its frozen input, rather than reading/rebasing the callback.
@@ -422,7 +682,7 @@ impl Engine {
         data["observation_id"] = json!(observation_id);
         data["finished_at"] = json!(now());
         update_record(&mut row, data);
-        let mut guards = source_guards;
+        guards.extend(source_guards);
         guards.extend([
             ResourceVersion {
                 resource: ResourceKey::new("governance", &row.id),
@@ -434,17 +694,19 @@ impl Engine {
                 revision: 1,
             },
         ]);
-        self.store.commit_changes(&PreparedChangeSet {
-            command_id: accept_id,
-            fingerprint: digest,
-            read_set: ReadSet::new(guards)?,
-            changes: vec![ResourceChange {
-                resource: ResourceKey::new("governance", &row.id),
-                value: row.to_storage(),
-            }],
-            result: json!({"recorded":true}),
-            time: now() as i64,
-        })?;
-        Ok(())
+        changes.push(ResourceChange {
+            resource: ResourceKey::new("governance", &row.id),
+            value: row.to_storage(),
+        });
+        self.store
+            .commit_changes(&PreparedChangeSet {
+                command_id: accept_id,
+                fingerprint: digest,
+                read_set: ReadSet::new(guards)?,
+                changes,
+                result: receipt,
+                time: now() as i64,
+            })
+            .map(|receipt| receipt.result)
     }
 }

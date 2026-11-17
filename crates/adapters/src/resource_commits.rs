@@ -35,6 +35,7 @@ fn value(conn: &Connection, key: &ResourceKey) -> Result<Option<Value>> {
         // by fact-table triggers and is read atomically with the selected facts.
         "collection" => Ok(None),
         "catalog_clock" => Ok(None),
+        "integration_discovery_head" => Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT id FROM governance_records WHERE type='integration_discovery' AND definition_id=?1 ORDER BY version DESC LIMIT 1)",&[&key.id])?.into_iter().next()),
         "tool_intent" => Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=?1 AND type='workflow_intent'",&[&key.id])?.into_iter().next()),
         "tool_worker" => conn.query_row("SELECT session_id,writer_revoked=0 FROM executions WHERE operation_id=?1",[&key.id],|r|Ok(json!({"session_id":r.get::<_,String>(0)?,"active":r.get::<_,bool>(1)?}))).optional().map_err(storage),
         "tool_turn" => conn.query_row("SELECT session_id,status FROM turns WHERE id=?1",[&key.id],|r|Ok(json!({"session_id":r.get::<_,String>(0)?,"status":r.get::<_,String>(1)?}))).optional().map_err(storage),
@@ -89,6 +90,9 @@ fn current_revision(conn: &Connection, key: &ResourceKey) -> Result<u64> {
     }
     // These read-only predicates track native facts even while their creation
     // families still use legacy insertion. They can never be written as rows.
+    if key.kind == "integration_discovery_head" {
+        return conn.query_row("SELECT version FROM governance_records WHERE type='integration_discovery' AND definition_id=?1 ORDER BY version DESC LIMIT 1",[&key.id],|r|r.get(0)).optional().map(|v|v.unwrap_or(0)).map_err(storage);
+    }
     if key.kind == "tool_worker" {
         return conn.query_row("SELECT EXISTS(SELECT 1 FROM executions WHERE operation_id=?1 AND writer_revoked=0)",[&key.id],|r|r.get(0)).map_err(storage);
     }
