@@ -317,7 +317,8 @@ impl Engine {
             state.governance.push(result);
             return Ok(());
         }
-        state.governance.push(record("workflow_intent",execution.id.clone(),row.scope,"workflow.tool.execute".into(),1,None,json!({"status":"prepared","configured":true,"method":"workflow.tool.execute","command":Command{command_id:invocation.clone(),target:Some(instance.owner_id),expected_revision:None,payload:json!({"execution_id":execution.id,"agent_platform_call_id":invocation})}}),false));
+        let authority = crate::tool_calls::workflow_execution_authority(state, &row, execution)?;
+        state.governance.push(record("workflow_intent",execution.id.clone(),row.scope,"workflow.tool.execute".into(),1,None,json!({"status":"prepared","configured":true,"execution_authority":authority,"owner_id":instance.owner_id,"method":"workflow.tool.execute","command":Command{command_id:invocation.clone(),target:Some(instance.owner_id),expected_revision:None,payload:json!({"execution_id":execution.id,"agent_platform_call_id":invocation})}}),false));
         Ok(())
     }
     pub fn configured_platform_request(

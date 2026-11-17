@@ -12,6 +12,7 @@ mod runtime_queries;
 mod scheduling_read;
 mod store_changes;
 mod tool_calls;
+mod workflow_intents;
 pub use configuration_backend::ConfigurationBackend;
 mod factory_bundle;
 pub mod session_resources;
@@ -47,7 +48,7 @@ pub use catalog::GlobalStore;
 use devdesk_core::*;
 use devdesk_domain::*;
 pub use runtime_registry::configuration_digest;
-const PROJECT_SCHEMA_VERSION: u32 = 56;
+const PROJECT_SCHEMA_VERSION: u32 = 57;
 use rusqlite::{
     Connection,
     types::{Value as SqlValue, ValueRef},
@@ -826,6 +827,28 @@ impl EngineeringStore for SqliteStore {
             self.configuration_snapshot()?.as_ref(),
             id,
         )
+    }
+    fn workflow_intent_page(
+        &self,
+        after: Option<&str>,
+    ) -> Result<devdesk_core::WorkflowIntentPage> {
+        workflow_intents::page(&self.connection, after)
+    }
+    fn workflow_intent_facts(
+        &self,
+        id: &str,
+        runnable_only: bool,
+    ) -> Result<Option<devdesk_core::WorkflowIntentFacts>> {
+        workflow_intents::facts(
+            &self.connection,
+            self.configuration_snapshot()?.as_ref(),
+            id,
+            runnable_only,
+            self.project_id.as_deref(),
+        )
+    }
+    fn workflow_intent_active(&self, id: &str, revision: Option<u64>) -> Result<bool> {
+        workflow_intents::active(&self.connection, id, revision, self.project_id.as_deref())
     }
     fn encode_runtime_record(&self, record: &ConfigurationRecord) -> Result<Value> {
         tool_calls::encode(self.configuration_snapshot()?.as_ref(), record)

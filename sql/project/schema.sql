@@ -397,7 +397,7 @@ END;
 CREATE INDEX idx_repository_pending_project ON repository_operations(project_id,status) WHERE status!='completed';
 CREATE INDEX idx_repository_connect_project ON repository_operations(project_id) WHERE json_extract(action,'$.kind')='connect';
 CREATE INDEX idx_repository_git_calls ON governance_records(owner_project,json_extract(data,'$.status')) WHERE type='platform_call' AND substr(json_extract(data,'$.request.definition.qualified_name'),1,4)='git.';
-PRAGMA user_version=56;
+PRAGMA user_version=57;
 
 CREATE TABLE orchestration_wakeups (
  id TEXT PRIMARY KEY, controller_id TEXT NOT NULL, event_cursor INTEGER NOT NULL,
@@ -432,3 +432,6 @@ COMMIT;
 CREATE INDEX idx_tool_call_drivable ON governance_records(id) WHERE type='tool_call' AND (json_extract(data,'$.status') IN ('prepared','dispatched','needs_reconciliation') OR (json_extract(data,'$.status') IN ('succeeded','failed','cancelled') AND coalesce(json_extract(data,'$.reply_sent'),0)=0 AND json_extract(data,'$.invocation.session_id') IS NOT NULL));
 CREATE TRIGGER execution_no_unrevoke BEFORE UPDATE ON executions WHEN OLD.writer_revoked=1 AND NEW.writer_revoked=0 BEGIN SELECT RAISE(ABORT,'revoked execution cannot resume'); END;
 CREATE TRIGGER execution_no_delete BEFORE DELETE ON executions BEGIN SELECT RAISE(ABORT,'execution identity cannot be reused'); END;
+
+-- Pending commands seek active IDs without scanning completed intent history.
+CREATE INDEX idx_workflow_intent_prepared ON governance_records(id) WHERE type='workflow_intent' AND json_extract(data,'$.status')='prepared';

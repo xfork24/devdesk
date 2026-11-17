@@ -303,6 +303,7 @@ impl Engine {
     pub fn at_configuration(&self, catalog: Arc<ConfigurationCatalogSnapshot>) -> Self {
         Self {
             experience_cursor: std::sync::Mutex::new(None),
+            workflow_intent_cursor: std::sync::Mutex::new(None),
             tool_cursor: std::sync::Mutex::new(None),
             store: Arc::new(CatalogView {
                 catalog,

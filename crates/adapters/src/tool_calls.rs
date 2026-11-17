@@ -147,7 +147,7 @@ pub(super) fn workflow(
     tx.commit().map_err(storage)?;
     Ok(facts)
 }
-fn workflow_on(
+pub(super) fn workflow_on(
     conn: &Connection,
     authority: &WorkflowToolAuthority,
     project: &str,

@@ -10,6 +10,16 @@ pub(super) fn begin_snapshot(memo: &mut BTreeMap<String, Value>) {
     memo.retain(|key, _| !key.starts_with(SNAPSHOT_PERMISSIONS));
 }
 
+/// Only an actual codec task marker selects runtime reconstruction facts.
+/// User strings and literal escapes never become runtime references.
+pub(super) fn task_descriptor(value: &Value) -> Result<Option<Value>> {
+    let Some(encoded) = value.as_str().and_then(|s| s.strip_prefix(SOURCE_TEXT)) else {
+        return Ok(None);
+    };
+    let value: Value = serde_json::from_str(encoded).map_err(storage)?;
+    Ok((value["$source"] == "task").then_some(value))
+}
+
 pub(super) fn is_encoded_text(text: &str) -> bool {
     text.starts_with(SOURCE_TEXT)
 }

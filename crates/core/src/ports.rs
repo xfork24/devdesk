@@ -620,6 +620,19 @@ pub trait EngineeringStore: Send + Sync {
     fn restore_runtime_record(&self, _value: &Value) -> Result<Value> {
         Err(err("unsupported", "存储未实现运行记录源恢复"))
     }
+    fn workflow_intent_page(&self, _after: Option<&str>) -> Result<crate::WorkflowIntentPage> {
+        Err(err("unsupported", "存储未实现待执行意图分页"))
+    }
+    fn workflow_intent_facts(
+        &self,
+        _id: &str,
+        _runnable_only: bool,
+    ) -> Result<Option<crate::WorkflowIntentFacts>> {
+        Err(err("unsupported", "存储未实现工作流意图有限事实"))
+    }
+    fn workflow_intent_active(&self, _id: &str, _revision: Option<u64>) -> Result<bool> {
+        Err(err("unsupported", "存储未实现工作流意图资格读取"))
+    }
     /// Native step and ancestor witnesses; no partial business state.
     fn workflow_tool_facts(
         &self,

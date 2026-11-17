@@ -114,7 +114,7 @@ mod repositories;
 mod workflow_materials;
 mod workflow_reading;
 mod workflow_runtime;
-pub use workflow_runtime::PreparedWorkflowIntent;
+pub use workflow_runtime::{PreparedWorkflowIntent, WorkflowIntentFacts, WorkflowIntentPage};
 mod workflow_runtime_facts;
 // Shared domain types and execution ports.
 use devdesk_domain::*;
@@ -137,6 +137,7 @@ pub fn command_fingerprint(method: &str, c: &Command) -> String {
 }
 pub struct Engine {
     pub(crate) experience_cursor: std::sync::Mutex<Option<Id>>,
+    pub(crate) workflow_intent_cursor: std::sync::Mutex<Option<Id>>,
     pub(crate) tool_cursor: std::sync::Mutex<Option<Id>>,
     pub context_reader: Option<Arc<dyn ports::AgentContextReader>>,
     pub manager_services: Option<ManagerServices>,
@@ -339,6 +340,7 @@ impl Engine {
     ) -> Self {
         Self {
             experience_cursor: std::sync::Mutex::new(None),
+            workflow_intent_cursor: std::sync::Mutex::new(None),
             tool_cursor: std::sync::Mutex::new(None),
             context_reader: None,
             manager_services: None,

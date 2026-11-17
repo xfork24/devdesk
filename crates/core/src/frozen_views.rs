@@ -112,12 +112,58 @@ pub fn restore_permission_choice(
     resolve_bound_permission(state, target, &selection)
 }
 
+/// Exact runtime facts needed only to reconstruct a sealed task, not to decide
+/// current workflow eligibility or to run aggregate business validation.
+pub struct FrozenTaskSource<'a> {
+    pub instance_data: &'a Value,
+    pub plan_record: &'a ConfigurationRecord,
+    pub historical_execution: Option<&'a StepExecution>,
+}
 pub fn restore_task(state: &EngineeringState, value: &Value, plan: Value) -> Result<Value> {
     let source = &value["source"];
     let plan_record = state.configuration(source["plan_revision_id"].as_str().unwrap_or(""))?;
-    let instance_ref = source["workflow_instance_id"].as_str().unwrap_or("");
-
-    let mut instance = state.configuration(instance_ref)?.data.clone();
+    let instance = state.configuration(source["workflow_instance_id"].as_str().unwrap_or(""))?;
+    let historical = if instance.data["steps"]
+        .as_array()
+        .is_some_and(|steps| steps.iter().any(|e| e["id"] == source["execution_id"]))
+    {
+        None
+    } else {
+        state
+            .governance
+            .iter()
+            .find(|r| {
+                r.r#type == "workflow_execution_history"
+                    && r.data["id"] == source["execution_id"]
+                    && r.data["workflow_instance_id"] == source["workflow_instance_id"]
+            })
+            .map(|r| r.decode::<StepExecution>())
+            .transpose()?
+    };
+    restore_task_source(
+        value,
+        plan,
+        FrozenTaskSource {
+            instance_data: &instance.data,
+            plan_record,
+            historical_execution: historical.as_ref(),
+        },
+    )
+}
+pub fn restore_task_source(
+    value: &Value,
+    plan: Value,
+    facts: FrozenTaskSource<'_>,
+) -> Result<Value> {
+    let source = &value["source"];
+    let plan_record = facts.plan_record;
+    require(
+        plan_record.r#type == "workflow_plan_revision"
+            && json!(plan_record.id) == source["plan_revision_id"]
+            && plan_record.data["instance_id"] == source["workflow_instance_id"],
+        "任务原计划与实例不符",
+    )?;
+    let mut instance = facts.instance_data.clone();
     instance["plan"] = plan;
     instance["workflow_ref"] = source["workflow_revision_id"].clone();
     instance["active_plan_revision_id"] = source["plan_revision_id"].clone();
@@ -134,11 +180,13 @@ pub fn restore_task(state: &EngineeringState, value: &Value, plan: Value) -> Res
         .find(|e| e.id == execution_ref)
         .cloned()
         .or_else(|| {
-            state
-                .governance
-                .iter()
-                .find(|r| r.r#type == "workflow_execution_history" && r.data["id"] == execution_ref)
-                .and_then(|r| serde_json::from_value(r.data.clone()).ok())
+            facts
+                .historical_execution
+                .filter(|e| {
+                    json!(e.id) == source["execution_id"]
+                        && json!(e.workflow_instance_id) == source["workflow_instance_id"]
+                })
+                .cloned()
         })
         .ok_or_else(|| err("storage", "任务执行来源缺失"))?;
     execution.inputs = serde_json::from_value(value["inputs"].clone()).map_err(storage)?;

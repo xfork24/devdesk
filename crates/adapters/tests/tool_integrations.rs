@@ -2442,3 +2442,80 @@ fn an_unconfirmed_workflow_response_uses_its_durable_original_command_receipt() 
     assert_eq!(row.data["status"], "completed");
     assert_eq!(row.data["result"]["id"], invocation.id);
 }
+
+#[test]
+fn native_pending_intent_scan_allows_one_hundred_reads_without_old_writer_or_completed_history() {
+    let (root, engine, _, command, prepared) = configured_tool_fixture(false);
+    let intent_id = prepared.request().provenance.intent.id.clone();
+    let original = engine.prepare_workflow_intent(&intent_id).unwrap();
+    let engine = Arc::new(engine);
+    let (ready, waiting) = std::sync::mpsc::channel();
+    let (release, blocked) = std::sync::mpsc::channel();
+    let old = engine.clone();
+    let writer = std::thread::spawn(move || {
+        old.store.transact(None, &mut |_| {
+            ready.send(()).unwrap();
+            blocked.recv().unwrap();
+            Ok(Value::Null)
+        })
+    });
+    waiting.recv().unwrap();
+    let conn = rusqlite::Connection::open(root.path().join("engineering.sqlite3")).unwrap();
+    conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('bad-scan-history','workflow_instance','fixture',?1,'History',1,'fixture','{}',?2,0,1,1)",rusqlite::params![serde_json::to_string(&original.scope).unwrap(),json!({"plan":{"$source":"absent-history"},"large":"x".repeat(1_000_000)}).to_string()]).unwrap();
+    conn.execute("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<2000) INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) SELECT 'settled-intent-'||x,'workflow_intent','fixture',?1,'Settled',1,'fixture','{}',?2,0,1,1 FROM n",rusqlite::params![serde_json::to_string(&original.scope).unwrap(),json!({"status":"completed","plan":{"$source":"absent-history"}}).to_string()]).unwrap();
+    let barrier = Arc::new(std::sync::Barrier::new(100));
+    let threads = (0..100)
+        .map(|_| {
+            let (engine, barrier) = (engine.clone(), barrier.clone());
+            std::thread::spawn(move || {
+                barrier.wait();
+                let trace = devdesk_adapters::performance::Trace::start();
+                let result = engine.pending_workflow_intents().map(|rows| {
+                    rows.into_iter()
+                        .map(|r| r.data["command"].clone())
+                        .collect::<Vec<_>>()
+                });
+                (result, trace.finish())
+            })
+        })
+        .collect::<Vec<_>>();
+    let results = threads
+        .into_iter()
+        .map(|t| t.join().unwrap())
+        .collect::<Vec<_>>();
+    release.send(()).unwrap();
+    writer.join().unwrap().unwrap();
+    for (result, trace) in results {
+        assert_eq!(result.unwrap(), vec![json!(command)]);
+        for name in ["project.full_snapshot", "project.transaction"] {
+            assert!(trace["spans"][name].is_null(), "{trace}");
+        }
+    }
+    assert!(engine.workflow_intent_drivable(&original).unwrap());
+    let plan:String=conn.query_row("EXPLAIN QUERY PLAN SELECT id FROM governance_records INDEXED BY idx_workflow_intent_prepared WHERE type='workflow_intent' AND json_extract(data,'$.status')='prepared' AND id>?1 ORDER BY id LIMIT 17",[""],|r|r.get(3)).unwrap();
+    assert!(plan.contains("idx_workflow_intent_prepared"), "{plan}");
+    assert!(!plan.contains("TEMP B-TREE"), "{plan}");
+}
+#[test]
+fn pending_intent_pages_advance_past_invalidated_steps_and_recheck_pause_and_cancellation() {
+    let (root, engine, _, command, prepared) = configured_tool_fixture(false);
+    let intent_id = prepared.request().provenance.intent.id.clone();
+    let instance = &prepared.request().authority.instances[0];
+    let original = engine.prepare_workflow_intent(&intent_id).unwrap();
+    workflow_control(&engine, "workflow.pause", instance);
+    assert!(!engine.workflow_intent_drivable(&original).unwrap());
+    assert!(engine.pending_workflow_intents().unwrap().is_empty());
+    workflow_control(&engine, "workflow.resume", instance);
+    assert!(engine.workflow_intent_drivable(&original).unwrap());
+    let conn = rusqlite::Connection::open(root.path().join("engineering.sqlite3")).unwrap();
+    conn.execute("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<32) INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) SELECT printf('000-obsolete-intent-%02d',x),type,definition_id,scope,name,version,content_hash,refs,json_set(data,'$.execution_authority.node_id','obsolete-node','$.command.command_id','obsolete-'||x),immutable,revision,created_at FROM governance_records,n WHERE id=?1",[&intent_id]).unwrap();
+    let first = engine.pending_workflow_intents().unwrap();
+    assert!(first.is_empty());
+    let second = engine.pending_workflow_intents().unwrap();
+    assert!(second.is_empty());
+    let third = engine.pending_workflow_intents().unwrap();
+    assert_eq!(third.len(), 1);
+    assert_eq!(third[0].data["command"], json!(command));
+    workflow_control(&engine, "workflow.cancel", instance);
+    assert!(!engine.workflow_intent_drivable(&original).unwrap());
+}

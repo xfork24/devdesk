@@ -4283,3 +4283,72 @@ fn worker_self_lint_checks_the_same_frozen_report_locations_as_admission() {
             .any(|r| r.r#type == "workflow_output")
     );
 }
+
+#[test]
+fn native_pending_tasks_restore_only_the_original_frozen_task_or_authenticated_delivered_body() {
+    for delivered in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let e = engine(dir.path());
+        let (role, agent) = research_agent(&e);
+        launch(&e, &role, &agent, json!({}));
+        control_fixture::evaluate(&e).unwrap();
+        let open = e.pending_workflow_intents().unwrap().remove(0);
+        assert_eq!(open.data["method"], "session.open");
+        let mut c: Command = serde_json::from_value(open.data["command"].clone()).unwrap();
+        let fingerprint = command_fingerprint("session.open", &c);
+        c.payload["binding"] = json!(fixture_binding());
+        let result = e.execute_resolved("session.open", c, &fingerprint);
+        e.observe_workflow_intent(&open, &result).unwrap();
+        result.unwrap();
+        e.evaluate_workflows().unwrap();
+        let state = e.store.snapshot().unwrap();
+        let intent = state
+            .governance
+            .iter()
+            .find(|r| {
+                r.r#type == "workflow_intent"
+                    && r.data["status"] == "prepared"
+                    && r.data["method"] == "conversation.send"
+            })
+            .unwrap();
+        let expected = intent.data["command"].clone();
+        let delivered_result = if delivered {
+            let c: Command = serde_json::from_value(expected.clone()).unwrap();
+            Some(e.execute("conversation.send", c).unwrap())
+        } else {
+            None
+        };
+        let conn = rusqlite::Connection::open(dir.path().join("engineering.sqlite3")).unwrap();
+        conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('unrestorable-task-history','workflow_instance','fixture',?1,'History',1,'fixture','{}',?2,0,1,1)",rusqlite::params![serde_json::to_string(&intent.scope).unwrap(),json!({"plan":{"$source":"absent-history"},"large":"x".repeat(1_000_000)}).to_string()]).unwrap();
+        let trace = devdesk_adapters::performance::Trace::start();
+        let pending = e.pending_workflow_intents().unwrap();
+        let report = trace.finish();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].data["command"], expected);
+        for name in ["project.full_snapshot", "project.transaction"] {
+            assert!(report["spans"][name].is_null(), "{report}");
+        }
+        let used = if delivered {
+            "workflow_intents.delivered_task"
+        } else {
+            "workflow_intents.rebuild_task"
+        };
+        assert_eq!(report["spans"][used]["calls"], 1, "{report}");
+        if let Some(result) = delivered_result {
+            e.observe_workflow_intent(&pending[0], &Ok(result)).unwrap();
+            let raw:String=conn.query_row("SELECT data FROM governance_records WHERE type='workflow_intent_observation' AND definition_id=?1",[&intent.id],|r|r.get(0)).unwrap();
+            assert!(
+                !raw.contains("task_instructions"),
+                "callback must not copy the task body into an operation fingerprint"
+            );
+            let observed: Value = serde_json::from_str(&raw).unwrap();
+            assert_eq!(
+                observed["value"]["operation_fingerprint_digest"]
+                    .as_str()
+                    .unwrap()
+                    .len(),
+                64
+            );
+        }
+    }
+}

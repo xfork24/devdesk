@@ -766,7 +766,7 @@ fn intent(
     method: &str,
     target: &str,
     payload: Value,
-) -> Id {
+) -> Result<Id> {
     let operation = format!(
         "workflow:{}",
         configuration_hash(&(execution.id.as_str(), execution.sequence, method))
@@ -776,7 +776,7 @@ fn intent(
         .iter()
         .find(|r| r.r#type == "workflow_intent" && r.data["command"]["command_id"] == operation)
     {
-        return old.id.clone();
+        return Ok(old.id.clone());
     }
     let revision = revision(state, target).or_else(|| {
         state
@@ -785,6 +785,9 @@ fn intent(
             .find(|s| s.id == target)
             .map(|s| s.revision)
     });
+    let instance = state.configuration(&execution.workflow_instance_id)?;
+    let authority = crate::tool_calls::workflow_execution_authority(state, instance, execution)?;
+    let owner = text(&instance.data, "owner_id")?;
     let row = record(
         "workflow_intent",
         execution.id.clone(),
@@ -792,12 +795,12 @@ fn intent(
         method.into(),
         1,
         None,
-        json!({"status":"prepared","configured":true,"method":method,"command":Command {command_id:operation,target:Some(target.into()),expected_revision:revision,payload}}),
+        json!({"status":"prepared","configured":true,"execution_authority":authority,"owner_id":owner,"method":method,"command":Command {command_id:operation,target:Some(target.into()),expected_revision:revision,payload}}),
         false,
     );
     let id = row.id.clone();
     state.governance.push(row);
-    id
+    Ok(id)
 }
 
 impl Engine {
@@ -1710,7 +1713,7 @@ impl Engine {
                             "conversation.send",
                             execution.session_id.as_deref().unwrap(),
                             json!({"client_message_id":format!("{}:{}",execution.id,instance.steps[index].sequence),"input":input}),
-                        );
+                        )?;
                     }
                     _ => {
                         require(
@@ -2324,7 +2327,7 @@ impl Engine {
                         "session.open",
                         &instance.owner_id,
                         json!({"agent":agent,"work_type":"workflow","force_new":true,"configured_execution_id":execution.id}),
-                    );
+                    )?;
                 }
                 StepExecutor::Control => {
                     execution.finished = Some(now());
@@ -2343,7 +2346,7 @@ impl Engine {
                         "workflow.tool.execute",
                         &instance.owner_id,
                         json!({"execution_id":execution.id}),
-                    );
+                    )?;
                 }
                 StepExecutor::Workflow {
                     workflow_ref,
@@ -2818,7 +2821,7 @@ impl Engine {
                             "conversation.send",
                             session,
                             json!({"client_message_id":format!("{}:{}",execution.id,execution.sequence),"input":input}),
-                        );
+                        )?;
                     }
                 }
             } else {

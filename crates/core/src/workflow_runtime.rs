@@ -5,6 +5,16 @@ use crate::{
     *,
 };
 
+pub struct WorkflowIntentPage {
+    pub ids: Vec<Id>,
+    pub next_after: Option<Id>,
+}
+/// One native intent and its exact decoded command; no aggregate business state.
+pub struct WorkflowIntentFacts {
+    pub row: ResourceSnapshot,
+    pub record: ConfigurationRecord,
+    pub active: bool,
+}
 /// Captured before executing a durable command. Not deserializable or mutable.
 /// The original restored command is readable, while its stored representation
 /// and native version remain private and cannot be replaced by a callback.
@@ -27,99 +37,74 @@ impl Engine {
     }
     fn capture_workflow_intent(
         &self,
-        original: ConfigurationRecord,
+        facts: WorkflowIntentFacts,
     ) -> Result<PreparedWorkflowIntent> {
-        let key = ResourceKey::new("governance", &original.id);
-        let rows = self.store.read_resources(std::slice::from_ref(&key))?;
-        require(
-            rows.len() == 1 && rows[0].resource == key,
-            "工作流意图读取不完整",
-        )?;
+        let original = facts.record;
         let stored = ConfigurationRecord::from_storage(
-            rows[0]
+            facts
+                .row
                 .value
-                .clone()
                 .ok_or_else(|| err("not_found", "工作流意图缺失"))?,
         )?;
         require(
             matches!(self.store.namespace(), StoreNamespace::Engineering { .. })
                 && stored.r#type == "workflow_intent"
-                && original.r#type == stored.r#type
+                && original.id == stored.id
                 && original.scope == stored.scope
-                && original.definition_id == stored.definition_id
-                && original.data["method"] == stored.data["method"]
-                && original.data["command"]["command_id"] == stored.data["command"]["command_id"]
+                && original.revision == stored.revision
                 && self
                     .store
                     .project_id()
                     .is_none_or(|project| stored.scope.project_id() == Some(project.as_str())),
-            "工作流意图范围或原请求不符",
+            "工作流意图范围或原版本不符",
         )?;
-        if stored.revision != original.revision {
-            return Err(err("revision_conflict", "工作流意图在准备前已变化"));
-        }
         Ok(PreparedWorkflowIntent {
             namespace: self.store.namespace(),
             store_root: self.store.root(),
             record: original,
             stored,
             version: ResourceVersion {
-                resource: key,
-                revision: rows[0].revision,
+                resource: facts.row.resource,
+                revision: facts.row.revision,
             },
         })
     }
-    /// Explicit preparation for internal coordinators outside the pending scan.
-    /// This still uses a complete state to restore task inputs; it performs no external execution.
     pub fn prepare_workflow_intent(&self, id: &str) -> Result<PreparedWorkflowIntent> {
-        let original = self.store.snapshot()?.configuration(id)?.clone();
-        self.capture_workflow_intent(original)
+        let facts = self
+            .store
+            .workflow_intent_facts(id, false)?
+            .ok_or_else(|| err("not_found", "工作流意图缺失"))?;
+        self.capture_workflow_intent(facts)
+    }
+    pub fn workflow_intent_drivable(&self, intent: &PreparedWorkflowIntent) -> Result<bool> {
+        if intent.namespace != self.store.namespace() || intent.store_root != self.store.root() {
+            return Err(err("invalid_scope", "工作流意图不能跨数据集"));
+        }
+        self.store
+            .workflow_intent_active(&intent.id, Some(intent.record.revision))
     }
     pub fn pending_workflow_intents(&self) -> Result<Vec<PreparedWorkflowIntent>> {
-        if !self
-            .store
-            .workflow_runtime_pending(ports::WorkflowRuntimeWork::WorkflowIntents)?
-        {
-            return Ok(vec![]);
+        let after = self
+            .workflow_intent_cursor
+            .lock()
+            .map_err(|e| err("storage", e.to_string()))?
+            .clone();
+        let mut page = self.store.workflow_intent_page(after.as_deref())?;
+        if page.ids.is_empty() && after.is_some() {
+            page = self.store.workflow_intent_page(None)?;
         }
-        let s = self.store.snapshot()?;
-        let active: Vec<String> = s
-            .governance
-            .iter()
-            .filter(|r| r.r#type == "workflow_instance" && r.data["status"] != "cancelled")
-            .filter(|r| {
-                !s.workflow_instance_suspended(&r.id)
-                    && r.data["owner_id"]
-                        .as_str()
-                        .is_some_and(|owner| !s.workflow_paused(owner))
-            })
-            .flat_map(|r| {
-                r.data["steps"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter(|step| step["status"] == "running")
-                    .filter_map(|step| step["id"].as_str().map(str::to_owned))
-            })
-            .collect();
-        let mut active = active;
-        active.extend(
-            s.governance
-                .iter()
-                .filter(|r| r.r#type == "workflow_controller" && r.data["status"] == "active")
-                .map(|r| r.id.clone()),
-        );
-        s.governance
-            .iter()
-            .filter(|r| {
-                r.r#type == "workflow_intent"
-                    && r.data["status"] == "prepared"
-                    && active.contains(&r.definition_id)
-            })
-            .take(16)
-            .cloned()
-            .map(|r| self.capture_workflow_intent(r))
-            .collect()
+        let mut result = Vec::new();
+        for id in &page.ids {
+            if let Some(facts) = self.store.workflow_intent_facts(id, true)? {
+                require(facts.active, "待执行意图需要当前资格")?;
+                result.push(self.capture_workflow_intent(facts)?);
+            }
+        }
+        *self
+            .workflow_intent_cursor
+            .lock()
+            .map_err(|e| err("storage", e.to_string()))? = page.next_after;
+        Ok(result)
     }
     pub fn observe_workflow_intent(
         &self,
@@ -162,7 +147,7 @@ impl Engine {
             }
             let summary = json!({"id":id});
             (
-                json!({"status":"completed","reported":reported,"operation_id":command.command_id,"operation_fingerprint":fingerprint,"result_digest":configuration_hash(&receipt.result),"result":summary}),
+                json!({"status":"completed","reported":reported,"operation_id":command.command_id,"operation_fingerprint_digest":configuration_hash(&fingerprint),"result_digest":configuration_hash(&receipt.result),"result":summary}),
                 summary,
             )
         } else if let Err(error) = result {

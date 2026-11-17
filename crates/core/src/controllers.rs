@@ -218,7 +218,7 @@ fn intent(
             .find(|r| r.id == target)
             .map(|r| r.revision)
     });
-    s.governance.push(record("workflow_intent",row.id.clone(),row.scope.clone(),method.into(),1,None,json!({"status":"prepared","controller":true,"method":method,"command":Command{command_id,target:Some(target.into()),expected_revision:expected,payload}}),false));
+    s.governance.push(record("workflow_intent",row.id.clone(),row.scope.clone(),method.into(),1,None,json!({"status":"prepared","controller":true,"owner_id":row.data["owner_id"],"method":method,"command":Command{command_id,target:Some(target.into()),expected_revision:expected,payload}}),false));
 }
 
 impl Engine {

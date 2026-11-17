@@ -77,28 +77,7 @@ impl Workspace {
                 .ok_or_else(|| err("storage", "流程意图缺少动作"))?;
             let command: Command = serde_json::from_value(intent.data["command"].clone())
                 .map_err(|e| err("storage", e.to_string()))?;
-            let state = e.store.snapshot()?;
-            let owner = state
-                .governance
-                .iter()
-                .find(|r| {
-                    r.r#type == "workflow_instance"
-                        && r.data["steps"].as_array().is_some_and(|steps| {
-                            steps.iter().any(|step| step["id"] == intent.definition_id)
-                        })
-                })
-                .and_then(|r| r.data["owner_id"].as_str())
-                .or_else(|| {
-                    state
-                        .governance
-                        .iter()
-                        .find(|r| r.r#type == "workflow_controller" && r.id == intent.definition_id)
-                        .and_then(|r| r.data["owner_id"].as_str())
-                });
-            if owner.is_none()
-                || (intent.data["controller"] != true
-                    && owner.is_some_and(|owner| state.workflow_paused(owner)))
-            {
+            if !e.workflow_intent_drivable(&intent)? {
                 continue;
             }
             if should_stop() {

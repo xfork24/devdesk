@@ -99,8 +99,21 @@ pub(crate) fn workflow_authority(
         .as_array()
         .and_then(|steps| steps.iter().find(|s| s["id"] == execution))
         .ok_or_else(|| err("not_found", "工具原步骤缺失"))?;
+    let execution: StepExecution =
+        serde_json::from_value(step.clone()).map_err(|e| err("storage", e.to_string()))?;
+    workflow_execution_authority(state, row, &execution)
+}
+pub(crate) fn workflow_execution_authority(
+    state: &EngineeringState,
+    row: &ConfigurationRecord,
+    execution: &StepExecution,
+) -> Result<WorkflowToolAuthority> {
+    require(
+        row.r#type == "workflow_instance" && execution.workflow_instance_id == row.id,
+        "步骤资格与原工作流实例不符",
+    )?;
     let mut instances = vec![row.id.clone()];
-    let mut executions = vec![execution.to_owned()];
+    let mut executions = vec![execution.id.clone()];
     let mut parent = row.data["parent_execution_id"].as_str();
     for _ in 0..8 {
         let Some(parent_id) = parent else { break };
@@ -122,11 +135,11 @@ pub(crate) fn workflow_authority(
     Ok(WorkflowToolAuthority {
         instances,
         executions,
-        execution_id: execution.into(),
-        plan_revision_id: text(step, "plan_revision_id")?,
-        input_digest: text(step, "input_digest")?,
-        contract_digest: text(step, "contract_digest")?,
-        node_id: text(step, "node_id")?,
+        execution_id: execution.id.clone(),
+        plan_revision_id: execution.plan_revision_id.clone(),
+        input_digest: execution.input_digest.clone(),
+        contract_digest: execution.contract_digest.clone(),
+        node_id: execution.node_id.clone(),
     })
 }
 /// A native row plus its exact frozen invocation. The adapter restores source
