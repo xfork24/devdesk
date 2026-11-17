@@ -1582,7 +1582,12 @@ fn prepared_workflow_tools_defer_pause_and_reject_cancellation_or_rebound_reques
         .unwrap_err();
     assert_eq!(deferred.code, "workflow_tool_suspended");
     engine
-        .observe_workflow_intent(&prepared.request().provenance.intent.id, &Err(deferred))
+        .observe_workflow_intent(
+            &engine
+                .prepare_workflow_intent(&prepared.request().provenance.intent.id)
+                .unwrap(),
+            &Err(deferred),
+        )
         .unwrap();
     assert_eq!(
         engine
@@ -2228,4 +2233,212 @@ fn schema_validation_rejects_recursive_expansion_and_backtracking_patterns() {
             .validate_arguments(&bounded, &json!({"name":"INVALID"}))
             .is_err()
     );
+}
+
+#[test]
+fn workflow_intent_callbacks_replay_once_without_old_writer_or_history_and_keep_original_receipts()
+{
+    let (root, engine, invocation, command, prepared) = configured_tool_fixture(false);
+    let original = Arc::new(
+        engine
+            .prepare_workflow_intent(&prepared.request().provenance.intent.id)
+            .unwrap(),
+    );
+    let result = Arc::new(Ok(engine
+        .enqueue_prepared_configured_tool(&command, &invocation, &prepared)
+        .unwrap()));
+    let engine = Arc::new(engine);
+    let (ready, waiting) = std::sync::mpsc::channel();
+    let (release, blocked) = std::sync::mpsc::channel();
+    let old = engine.clone();
+    let writer = std::thread::spawn(move || {
+        old.store.transact(None, &mut |_| {
+            ready.send(()).unwrap();
+            blocked.recv().unwrap();
+            Ok(Value::Null)
+        })
+    });
+    waiting.recv().unwrap();
+    let conn = rusqlite::Connection::open(root.path().join("engineering.sqlite3")).unwrap();
+    conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('bad-intent-history','workflow_instance','fixture',?1,'History',1,'fixture','{}',?2,0,1,1)",rusqlite::params![serde_json::to_string(&original.scope).unwrap(),json!({"plan":{"$source":"absent-history"}}).to_string()]).unwrap();
+    let barrier = Arc::new(std::sync::Barrier::new(100));
+    let threads = (0..100)
+        .map(|_| {
+            let (engine, original, result, barrier) = (
+                engine.clone(),
+                original.clone(),
+                result.clone(),
+                barrier.clone(),
+            );
+            std::thread::spawn(move || {
+                barrier.wait();
+                let trace = devdesk_adapters::performance::Trace::start();
+                let result = engine.observe_workflow_intent(&original, &result);
+                (result, trace.finish())
+            })
+        })
+        .collect::<Vec<_>>();
+    let results = threads
+        .into_iter()
+        .map(|t| t.join().unwrap())
+        .collect::<Vec<_>>();
+    release.send(()).unwrap();
+    writer.join().unwrap().unwrap();
+    for (result, trace) in results {
+        result.unwrap();
+        for span in [
+            "project.full_snapshot",
+            "project.transaction",
+            "source.restore_records",
+            "workflow.compile",
+        ] {
+            assert!(trace["spans"][span].is_null(), "{trace}");
+        }
+    }
+    let count: u64 = conn
+        .query_row(
+            "SELECT count(*) FROM governance_records WHERE type='workflow_intent_observation'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 1);
+    let row = engine
+        .store
+        .read_resources(&[devdesk_core::concurrency::ResourceKey::new(
+            "governance",
+            &original.id,
+        )])
+        .unwrap()
+        .remove(0);
+    let row = ConfigurationRecord::from_storage(row.value.unwrap()).unwrap();
+    assert_eq!(row.revision, 2);
+    assert_eq!(row.data["status"], "completed");
+    assert_eq!(row.data["result"], json!({"id":invocation.id}));
+    let raw: String = conn
+        .query_row(
+            "SELECT data FROM governance_records WHERE type='workflow_intent_observation'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(!raw.contains("compiled_permissions"));
+    assert!(!raw.contains("qualified_name"));
+}
+#[test]
+fn workflow_intent_callbacks_preserve_conflicts_and_stale_controller_saves_cannot_overwrite_them() {
+    let (_root, engine, _invocation, _command, prepared) = configured_tool_fixture(false);
+    let original = engine
+        .prepare_workflow_intent(&prepared.request().provenance.intent.id)
+        .unwrap();
+    let engine = Arc::new(engine);
+    let intent_id = original.id.clone();
+    let (ready, waiting) = std::sync::mpsc::channel();
+    let (release, blocked) = std::sync::mpsc::channel();
+    let old = engine.clone();
+    let writer = std::thread::spawn(move || {
+        old.store.transact(None, &mut |s| {
+            ready.send(()).unwrap();
+            blocked.recv().unwrap();
+            let row = s.governance.iter_mut().find(|r| r.id == intent_id).unwrap();
+            row.data["status"] = json!("revoked");
+            row.content_hash = content_digest(&row.refs, &row.data);
+            row.revision += 1;
+            Ok(Value::Null)
+        })
+    });
+    waiting.recv().unwrap();
+    engine
+        .observe_workflow_intent(
+            &original,
+            &Err(err("original-port-failure", "before admission").technical_not_applied()),
+        )
+        .unwrap();
+    release.send(()).unwrap();
+    assert_eq!(
+        writer.join().unwrap().unwrap_err().code,
+        "revision_conflict"
+    );
+    assert_eq!(
+        engine
+            .observe_workflow_intent(
+                &original,
+                &Err(err("late-different-failure", "different callback"))
+            )
+            .unwrap_err()
+            .code,
+        "revision_conflict"
+    );
+    let row = engine
+        .store
+        .read_resources(&[devdesk_core::concurrency::ResourceKey::new(
+            "governance",
+            &original.id,
+        )])
+        .unwrap()
+        .remove(0);
+    let row = ConfigurationRecord::from_storage(row.value.unwrap()).unwrap();
+    assert_eq!(row.data["status"], "failed");
+    assert_eq!(row.data["error"]["code"], "original-port-failure");
+    let (_root, other, _, _, other_prepared) = configured_tool_fixture(false);
+    let other_original = other
+        .prepare_workflow_intent(&other_prepared.request().provenance.intent.id)
+        .unwrap();
+    other
+        .store
+        .transact(None, &mut |s| {
+            let row = s
+                .governance
+                .iter_mut()
+                .find(|r| r.id == other_original.id)
+                .unwrap();
+            row.data["status"] = json!("revoked");
+            row.content_hash = content_digest(&row.refs, &row.data);
+            row.revision += 1;
+            Ok(Value::Null)
+        })
+        .unwrap();
+    assert_eq!(
+        other
+            .observe_workflow_intent(&other_original, &Err(err("late", "after revocation")))
+            .unwrap_err()
+            .code,
+        "revision_conflict"
+    );
+    let before = other.store.event_cursor().unwrap();
+    assert_eq!(
+        other
+            .observe_workflow_intent(&original, &Err(err("scope", "wrong dataset")))
+            .unwrap_err()
+            .code,
+        "invalid_scope"
+    );
+    assert_eq!(other.store.event_cursor().unwrap(), before);
+}
+#[test]
+fn an_unconfirmed_workflow_response_uses_its_durable_original_command_receipt() {
+    let (_root, engine, invocation, command, prepared) = configured_tool_fixture(false);
+    let original = engine
+        .prepare_workflow_intent(&prepared.request().provenance.intent.id)
+        .unwrap();
+    engine
+        .enqueue_prepared_configured_tool(&command, &invocation, &prepared)
+        .unwrap();
+    engine
+        .observe_workflow_intent(
+            &original,
+            &Err(err("unconfirmed", "response lost after command commit").technical_unknown()),
+        )
+        .unwrap();
+    let row = engine
+        .store
+        .read_resources(&[devdesk_core::concurrency::ResourceKey::new(
+            "governance",
+            &original.id,
+        )])
+        .unwrap()
+        .remove(0);
+    let row = ConfigurationRecord::from_storage(row.value.unwrap()).unwrap();
+    assert_eq!(row.data["status"], "completed");
+    assert_eq!(row.data["result"]["id"], invocation.id);
 }

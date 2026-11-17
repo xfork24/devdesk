@@ -1,5 +1,7 @@
 #[path = "../../../tests/support/configuration.rs"]
 mod configuration_fixture;
+#[path = "../../../tests/support/workflow_intents.rs"]
+mod workflow_intents;
 // Explicit Harness control through production commands and SQLite.
 #[path = "../../../tests/support/runtime.rs"]
 mod runtime;
@@ -845,6 +847,7 @@ fn drive_manager_cycle(e: &Engine, allow_send: bool, full_tick: bool) {
             continue;
         }
         let mut c: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
+        let original_fingerprint = devdesk_core::command_fingerprint(method, &c);
         if method == "session.open" {
             let configured = e.configured_agent_request(&c).unwrap().unwrap();
             let s = e.store.snapshot().unwrap();
@@ -902,8 +905,8 @@ fn drive_manager_cycle(e: &Engine, allow_send: bool, full_tick: bool) {
                 })
                 .unwrap();
         }
-        let result = e.execute(method, c);
-        e.observe_workflow_intent(&intent.id, &result).unwrap();
+        let result = workflow_intents::execute(e, method, c, &original_fingerprint);
+        e.observe_workflow_intent(&intent, &result).unwrap();
         result.unwrap();
     }
     if full_tick {
@@ -3633,8 +3636,7 @@ fn recovery_root(e: &Engine, effect: &str) -> (String, String) {
         .find(|r| r.data["method"] == "session.open")
         .unwrap();
     let failure: Error=serde_json::from_value(json!({"code":"fixture_transient","message":"Explicit port failure; no input applied","execution_failure":{"kind":"technical","effect":effect}})).unwrap();
-    e.observe_workflow_intent(&intent.id, &Err(failure))
-        .unwrap();
+    e.observe_workflow_intent(intent, &Err(failure)).unwrap();
     e.evaluate_workflows().unwrap();
     (root, intent.id.clone())
 }
@@ -3660,7 +3662,7 @@ fn rust_retries_only_known_technical_failures_with_a_durable_source_and_budget()
         .find(|r| r.data["method"] == "session.open")
         .unwrap();
     let failure:Error=serde_json::from_value(json!({"code":"fixture_transient","message":"again","execution_failure":{"kind":"technical","effect":"not_applied"}})).unwrap();
-    e.observe_workflow_intent(&next.id, &Err(failure)).unwrap();
+    e.observe_workflow_intent(&next, &Err(failure)).unwrap();
     e.evaluate_workflows().unwrap();
     e.drive_rust_workflows().unwrap();
     let failed = runtime(&e, &root)["runtime"]["steps"][0].clone();
@@ -3729,7 +3731,7 @@ fn tool_preparation_recovers_through_the_same_known_failure_policy() {
         "explicit preparation port rejected before enqueue",
     )
     .technical_not_applied();
-    e.observe_workflow_intent(&failed.id, &Err(error.clone()))
+    e.observe_workflow_intent(&failed, &Err(error.clone()))
         .unwrap();
     e.evaluate_workflows().unwrap();
     let before = runtime(&e, &root)["runtime"]["steps"][0].clone();
@@ -3744,7 +3746,7 @@ fn tool_preparation_recovers_through_the_same_known_failure_policy() {
     let command: Command = serde_json::from_value(next.data["command"].clone()).unwrap();
     let request = e.configured_platform_request(&command).unwrap().unwrap();
     let result = e.enqueue_platform_tool(&command, &request);
-    e.observe_workflow_intent(&next.id, &result).unwrap();
+    e.observe_workflow_intent(&next, &result).unwrap();
     e.drive_platform_tools().unwrap();
     for _ in 0..4 {
         e.evaluate_workflows().unwrap();
@@ -3763,7 +3765,7 @@ fn tool_preparation_recovers_through_the_same_known_failure_policy() {
         .unwrap();
     assert_eq!(history.data["failure"]["source_ref"], failed.id);
     assert!(
-        e.observe_workflow_intent(&failed.id, &Ok(json!({"id":"late-fabricated-result"})))
+        e.observe_workflow_intent(&failed, &Ok(json!({"id":"late-fabricated-result"})))
             .is_err()
     );
 }
@@ -3792,7 +3794,7 @@ fn an_unknown_worker_reserves_its_root_capacity_until_reconciliation() {
     let first = e.pending_workflow_intents().unwrap();
     assert_eq!(first.len(), 1);
     e.observe_workflow_intent(
-        &first[0].id,
+        &first[0],
         &Err(err("fixture_unknown", "outcome unavailable").technical_unknown()),
     )
     .unwrap();
@@ -3899,7 +3901,7 @@ fn task_dependencies_block_dispatch_without_starving_independent_tasks() {
             let command: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
             let request = e.configured_platform_request(&command).unwrap().unwrap();
             let result = e.enqueue_platform_tool(&command, &request);
-            e.observe_workflow_intent(&intent.id, &result).unwrap();
+            e.observe_workflow_intent(&intent, &result).unwrap();
         }
         e.drive_platform_tools().unwrap();
         e.evaluate_workflows().unwrap();
@@ -3922,7 +3924,7 @@ fn task_dependencies_block_dispatch_without_starving_independent_tasks() {
             let command: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
             let request = e.configured_platform_request(&command).unwrap().unwrap();
             let result = e.enqueue_platform_tool(&command, &request);
-            e.observe_workflow_intent(&intent.id, &result).unwrap();
+            e.observe_workflow_intent(&intent, &result).unwrap();
         }
         e.drive_platform_tools().unwrap();
         e.evaluate_workflows().unwrap();
@@ -4041,7 +4043,7 @@ fn one_root_schedules_three_bound_tasks_without_a_dependent_member_taking_a_slot
             let command: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
             let request = e.configured_platform_request(&command).unwrap().unwrap();
             let result = e.enqueue_platform_tool(&command, &request);
-            e.observe_workflow_intent(&intent.id, &result).unwrap();
+            e.observe_workflow_intent(&intent, &result).unwrap();
         }
         e.drive_platform_tools().unwrap();
         e.evaluate_workflows().unwrap();

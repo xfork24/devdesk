@@ -1,5 +1,6 @@
 //! Only source revisions and execution facts cross the persistence boundary.
 use super::*;
+use rusqlite::OptionalExtension;
 
 pub(super) fn is_source(r: &ConfigurationRecord) -> bool {
     r.is_definition()
@@ -124,6 +125,33 @@ pub(super) fn save_records(
         })
         .map(|r| pack_record(state, r))
         .collect::<Result<_>>()?;
+    // Transitional shared writer: controller replacement still revokes pending
+    // intents through its legacy aggregate. It must never blindly overwrite a
+    // callback that committed after that aggregate was read. This runs inside
+    // the caller's SQL transaction and does not add a business mutex.
+    for row in packed.iter().filter(|r| r.r#type == "workflow_intent") {
+        let expected = before
+            .governance
+            .iter()
+            .find(|old| old.id == row.id)
+            .map_or(0, |old| old.revision);
+        let actual = conn
+            .query_row(
+                "SELECT revision FROM governance_records WHERE id=?1",
+                [&row.id],
+                |r| r.get::<_, u64>(0),
+            )
+            .optional()
+            .map_err(storage)?
+            .unwrap_or(0);
+        if expected != actual {
+            return Err(err("revision_conflict", "原工作流意图在旧协调保存前已变化"));
+        }
+        require(
+            expected == 0 || row.revision > expected,
+            "旧协调不能绕过工作流意图版本递增",
+        )?;
+    }
     let runtime: Vec<Value> = packed.iter().map(|r| r.to_storage()).collect();
     save_table(conn, "governance_records", &runtime, &[])
 }

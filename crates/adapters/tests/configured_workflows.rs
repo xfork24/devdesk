@@ -2,6 +2,8 @@
 mod configuration_fixture;
 #[path = "../../../tests/support/control.rs"]
 mod control_fixture;
+#[path = "../../../tests/support/workflow_intents.rs"]
+mod workflow_intents;
 // Configuration-driven execution through actual SQLite and Artifact storage.
 #[path = "../../../tests/support/defaults.rs"]
 mod default_fixture;
@@ -478,11 +480,12 @@ fn custom_agent_executes_actual_task_through_ports_and_persists_typed_artifact()
         for intent in engine.pending_workflow_intents().unwrap() {
             let method = intent.data["method"].as_str().unwrap();
             let mut c: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
+            let original_fingerprint = devdesk_core::command_fingerprint(method, &c);
             if method == "session.open" {
                 c.payload["binding"] = json!(binding);
             }
-            let result = engine.execute(method, c);
-            engine.observe_workflow_intent(&intent.id, &result).unwrap();
+            let result = workflow_intents::execute(&engine, method, c, &original_fingerprint);
+            engine.observe_workflow_intent(&intent, &result).unwrap();
             result.unwrap();
         }
         engine.tick_conversations(4).unwrap();
@@ -639,6 +642,7 @@ fn drive(engine: &Engine, rounds: usize) {
         for row in engine.pending_workflow_intents().unwrap() {
             let method = row.data["method"].as_str().unwrap();
             let mut c: Command = serde_json::from_value(row.data["command"].clone()).unwrap();
+            let original_fingerprint = devdesk_core::command_fingerprint(method, &c);
             let result = if method == "workflow.tool.execute" {
                 let request = engine.configured_platform_request(&c).unwrap().unwrap();
                 engine.enqueue_platform_tool(&c, &request)
@@ -646,9 +650,9 @@ fn drive(engine: &Engine, rounds: usize) {
                 if method == "session.open" {
                     c.payload["binding"] = json!(fixture_binding());
                 }
-                engine.execute(method, c)
+                workflow_intents::execute(engine, method, c, &original_fingerprint)
             };
-            engine.observe_workflow_intent(&row.id, &result).unwrap();
+            engine.observe_workflow_intent(&row, &result).unwrap();
             result.unwrap();
         }
         engine.drive_platform_tools().unwrap();
@@ -2961,13 +2965,14 @@ fn failed_child_send_is_reported_and_retry_resumes_the_parent_invocation() {
         for intent in engine.pending_workflow_intents().unwrap() {
             let method = intent.data["method"].as_str().unwrap();
             let mut cmd: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
+            let original_fingerprint = devdesk_core::command_fingerprint(method, &cmd);
             let result = if method == "conversation.send" {
                 Err(err("blocked", "explicit dispatch failure fixture"))
             } else {
                 cmd.payload["binding"] = json!(fixture_binding());
-                engine.execute(method, cmd)
+                workflow_intents::execute(&engine, method, cmd, &original_fingerprint)
             };
-            engine.observe_workflow_intent(&intent.id, &result).unwrap();
+            engine.observe_workflow_intent(&intent, &result).unwrap();
         }
     }
     control_fixture::evaluate(&engine).unwrap();
@@ -3122,6 +3127,7 @@ fn agent_platform_case(reject_schema: bool, cancel: bool, reject_receipt: bool, 
             let method = intent.data["method"].as_str().unwrap();
             let mut invocation: Command =
                 serde_json::from_value(intent.data["command"].clone()).unwrap();
+            let original_fingerprint = devdesk_core::command_fingerprint(method, &invocation);
             let result = if method == "session.open" {
                 let configured = engine
                     .configured_agent_request(&invocation)
@@ -3156,7 +3162,7 @@ fn agent_platform_case(reject_schema: bool, cancel: bool, reject_receipt: bool, 
                     .unwrap();
                 runtime::set_permissions(&mut binding, permissions);
                 invocation.payload["binding"] = json!(binding);
-                engine.execute(method, invocation)
+                workflow_intents::execute(&engine, method, invocation, &original_fingerprint)
             } else if method == "workflow.tool.execute" {
                 let expected = engine
                     .configured_platform_request(&invocation)
@@ -3179,9 +3185,9 @@ fn agent_platform_case(reject_schema: bool, cancel: bool, reject_receipt: bool, 
                 }
                 result
             } else {
-                engine.execute(method, invocation)
+                workflow_intents::execute(&engine, method, invocation, &original_fingerprint)
             };
-            engine.observe_workflow_intent(&intent.id, &result).unwrap();
+            engine.observe_workflow_intent(&intent, &result).unwrap();
             let value = result.unwrap();
             if ready && method == "workflow.tool.execute" {
                 assert!(harness.replies.lock().unwrap().is_empty());
@@ -3445,11 +3451,12 @@ fn task_agent_steps_own_distinct_sessions_even_while_the_same_agent_has_an_activ
             let method = intent.data["method"].as_str().unwrap();
             let mut request: Command =
                 serde_json::from_value(intent.data["command"].clone()).unwrap();
+            let original_fingerprint = devdesk_core::command_fingerprint(method, &request);
             if method == "session.open" {
                 request.payload["binding"] = json!(fixture_binding());
             }
-            let result = engine.execute(method, request);
-            engine.observe_workflow_intent(&intent.id, &result).unwrap();
+            let result = workflow_intents::execute(&engine, method, request, &original_fingerprint);
+            engine.observe_workflow_intent(&intent, &result).unwrap();
             result.unwrap();
         }
     }
@@ -3468,9 +3475,10 @@ fn task_agent_steps_own_distinct_sessions_even_while_the_same_agent_has_an_activ
     let intent = &intents[0];
     assert_eq!(intent.data["method"], "session.open");
     let mut request: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
+    let original_fingerprint = devdesk_core::command_fingerprint("session.open", &request);
     request.payload["binding"] = json!(fixture_binding());
-    let result = engine.execute("session.open", request);
-    engine.observe_workflow_intent(&intent.id, &result).unwrap();
+    let result = engine.execute_resolved("session.open", request, &original_fingerprint);
+    engine.observe_workflow_intent(intent, &result).unwrap();
     result.unwrap();
     let state = engine.store.snapshot().unwrap();
     assert_eq!(state.sessions.len(), 2);
@@ -3645,6 +3653,7 @@ fn rust_driver_runs_agent_tool_control_and_child_without_manager_turns() {
         for row in e.pending_workflow_intents().unwrap() {
             let method = row.data["method"].as_str().unwrap();
             let mut c: Command = serde_json::from_value(row.data["command"].clone()).unwrap();
+            let original_fingerprint = devdesk_core::command_fingerprint(method, &c);
             let result = if method == "workflow.tool.execute" {
                 let r = e.configured_platform_request(&c).unwrap().unwrap();
                 e.enqueue_platform_tool(&c, &r)
@@ -3652,9 +3661,9 @@ fn rust_driver_runs_agent_tool_control_and_child_without_manager_turns() {
                 if method == "session.open" {
                     c.payload["binding"] = json!(fixture_binding());
                 }
-                e.execute(method, c)
+                workflow_intents::execute(&e, method, c, &original_fingerprint)
             };
-            e.observe_workflow_intent(&row.id, &result).unwrap();
+            e.observe_workflow_intent(&row, &result).unwrap();
             result.unwrap();
         }
         e.drive_platform_tools().unwrap();
@@ -3850,7 +3859,7 @@ fn supplemental_turns_do_not_spend_retry_quota_and_recovery_keeps_the_task_conte
         .find(|r| r.data["method"] == "conversation.send")
         .unwrap();
     e.observe_workflow_intent(
-        &send.id,
+        send,
         &Err(err("temporary_admission_failure", "before input admission").technical_not_applied()),
     )
     .unwrap();
@@ -3935,11 +3944,12 @@ fn drive_native_rust(e: &Engine, rounds: usize) {
         for row in e.pending_workflow_intents().unwrap() {
             let method = row.data["method"].as_str().unwrap();
             let mut c: Command = serde_json::from_value(row.data["command"].clone()).unwrap();
+            let original_fingerprint = devdesk_core::command_fingerprint(method, &c);
             if method == "session.open" {
                 c.payload["binding"] = json!(fixture_binding());
             }
-            let result = e.execute(method, c);
-            e.observe_workflow_intent(&row.id, &result).unwrap();
+            let result = workflow_intents::execute(e, method, c, &original_fingerprint);
+            e.observe_workflow_intent(&row, &result).unwrap();
             result.unwrap();
         }
         e.tick_conversations(4).unwrap();
@@ -4211,16 +4221,17 @@ fn drive_platform_fixture(e: &Engine, rounds: usize) {
         for intent in e.pending_workflow_intents().unwrap() {
             let method = intent.data["method"].as_str().unwrap();
             let mut c: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
+            let original_fingerprint = devdesk_core::command_fingerprint(method, &c);
             let result = if method == "session.open" {
                 c.payload["binding"] = json!(fixture_binding_for_platform_agent(e, &c));
-                e.execute(method, c)
+                workflow_intents::execute(e, method, c, &original_fingerprint)
             } else if method == "workflow.tool.execute" {
                 let request = e.configured_platform_request(&c).unwrap().unwrap();
                 e.enqueue_platform_tool(&c, &request)
             } else {
-                e.execute(method, c)
+                workflow_intents::execute(e, method, c, &original_fingerprint)
             };
-            e.observe_workflow_intent(&intent.id, &result).unwrap();
+            e.observe_workflow_intent(&intent, &result).unwrap();
             result.unwrap();
         }
         e.drive_platform_tools().unwrap();

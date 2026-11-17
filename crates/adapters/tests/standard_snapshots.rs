@@ -135,7 +135,7 @@ fn tools(e: &Engine) {
             assert_eq!(intent.data["method"], "workflow.tool.execute");
             let request = e.configured_platform_request(&c).unwrap().unwrap();
             let result = e.enqueue_platform_tool(&c, &request);
-            e.observe_workflow_intent(&intent.id, &result).unwrap();
+            e.observe_workflow_intent(&intent, &result).unwrap();
             result.unwrap();
         }
         e.drive_platform_tools().unwrap();

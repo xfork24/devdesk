@@ -1,5 +1,7 @@
 #[path = "../../../tests/support/configuration.rs"]
 mod configuration_fixture;
+#[path = "../../../tests/support/workflow_intents.rs"]
+mod workflow_intents;
 // Real native-call admission/receipts with an explicit scripted Harness; no model calls.
 use devdesk_adapters::*;
 use devdesk_core::*;
@@ -214,6 +216,7 @@ fn drive(e: &Engine, rounds: usize) {
         for intent in e.pending_workflow_intents().unwrap() {
             let method = intent.data["method"].as_str().unwrap();
             let mut c: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
+            let original_fingerprint = devdesk_core::command_fingerprint(method, &c);
             if method == "session.open" {
                 let selected = e.configured_agent_request(&c).unwrap().unwrap();
                 let s = e.store.snapshot().unwrap();
@@ -285,8 +288,8 @@ fn drive(e: &Engine, rounds: usize) {
                 };
                 c.payload["binding"] = json!(binding);
             }
-            let result = e.execute(method, c);
-            e.observe_workflow_intent(&intent.id, &result).unwrap();
+            let result = workflow_intents::execute(e, method, c, &original_fingerprint);
+            e.observe_workflow_intent(&intent, &result).unwrap();
             result.unwrap();
         }
         e.tick_conversations(2).unwrap();

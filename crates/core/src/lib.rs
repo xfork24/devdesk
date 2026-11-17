@@ -114,6 +114,7 @@ mod repositories;
 mod workflow_materials;
 mod workflow_reading;
 mod workflow_runtime;
+pub use workflow_runtime::PreparedWorkflowIntent;
 mod workflow_runtime_facts;
 // Shared domain types and execution ports.
 use devdesk_domain::*;

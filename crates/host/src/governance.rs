@@ -119,7 +119,7 @@ impl Workspace {
                 None
             };
             // Persist the dispatched result even if shutdown was requested during the call.
-            e.observe_workflow_intent(&intent.id, &result)?;
+            e.observe_workflow_intent(&intent, &result)?;
             if should_stop() {
                 return Ok(());
             }
