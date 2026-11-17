@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { useReadRequest } from "./use-read-request";
 import {
   ActionButton,
@@ -84,9 +85,9 @@ function JsonField({
 }) {
   return (
     <label>
-      {label}
+      {displayText(label)}
       <textarea
-        aria-label={label}
+        aria-label={displayText(label)}
         required={!optional}
         rows={6}
         spellCheck={false}
@@ -133,7 +134,7 @@ export function Integrations({
                 aria-selected={tab === id}
                 onClick={() => setTab(id)}
               >
-                {names[id]}
+                {displayText(names[id])}
               </ActionButton>
             ))}
           </div>
@@ -232,20 +233,22 @@ function NativeCatalog({
               href={`?tab=components&config_tab=harness${harness ? `&config_object=${encodeURIComponent(harness.id)}` : ""}`}
             >
               <article>
-                <h3>{row.name}</h3>
+                <h3>{displayText(row.name)}</h3>
                 <p>
-                  v{row.version} · {row.scope}
-                  {harness ? ` · ${harness.name}` : ""}
+                  v{displayText(row.version)} · {displayText(row.scope)}
+                  {displayText(harness ? ` · ${harness.name}` : "")}
                 </p>
                 <p>
                   适用 Harness 版本：
-                  <code>{harness?.data.runtime_version || "尚未定义"}</code>
+                  <code>
+                    {displayText(harness?.data.runtime_version || "尚未定义")}
+                  </code>
                 </p>
               </article>
             </a>
           ));
         })}
-        {error && <p role="alert">{error}</p>}
+        {error && <p role="alert">{displayText(error)}</p>}
       </div>
     </section>
   );
@@ -396,9 +399,12 @@ function SourceManager({
   );
   return (
     <>
-      <section className="panel" aria-label={`${names[kind]} 接入管理`}>
+      <section
+        className="panel"
+        aria-label={displayText(`${names[kind]} 接入管理`)}
+      >
         <div className="panel-heading">
-          <h2>{names[kind]} 接入源管理</h2>
+          <h2>{displayText(names[kind])} 接入源管理</h2>
         </div>
         <div className="configuration-layout">
           <div className="configuration-list">
@@ -410,7 +416,7 @@ function SourceManager({
                 startNew();
               }}
             >
-              新建 {names[kind]} 接入源
+              新建 {displayText(names[kind])} 接入源
             </ActionButton>
             {rows.map((r) => (
               <ActionButton
@@ -422,9 +428,9 @@ function SourceManager({
                   return choose(r);
                 }}
               >
-                <strong>{r.name}</strong>
+                <strong>{displayText(r.name)}</strong>
                 <span>
-                  v{r.version} · {r.scope}
+                  v{displayText(r.version)} · {displayText(r.scope)}
                 </span>
               </ActionButton>
             ))}
@@ -678,7 +684,7 @@ function SourceManager({
                     />
                   </label>
                   <p>
-                    在服务端登记回调地址：{window.location.origin}
+                    在服务端登记回调地址：{displayText(window.location.origin)}
                     /oauth/integrations/callback
                   </p>
                 </fieldset>
@@ -694,7 +700,7 @@ function SourceManager({
               />
               <div className="actions">
                 <ActionButton className="primary" disabled={busy}>
-                  {selected ? "保存接入新修订" : "创建接入源"}
+                  {displayText(selected ? "保存接入新修订" : "创建接入源")}
                 </ActionButton>
                 {selected && (
                   <>
@@ -773,7 +779,7 @@ function SourceManager({
                       )
                       .map((r) => (
                         <option key={r.id} value={r.id}>
-                          v{r.version} · {r.name}
+                          v{displayText(r.version)} · {displayText(r.name)}
                         </option>
                       ))}
                   </ActionSelect>
@@ -786,8 +792,8 @@ function SourceManager({
         {missingSource && (
           <p role="alert">原接入源不可用，请选择其他接入源或新建。</p>
         )}
-        {error && <p role="alert">{error}</p>}
-        {message && <p role="status">{message}</p>}
+        {error && <p role="alert">{displayText(error)}</p>}
+        {message && <p role="status">{displayText(message)}</p>}
       </section>
       {selected && !deletedSource && (
         <>
@@ -859,10 +865,10 @@ function PublishedTools({
         ].map((tool) => (
           <article key={tool.id}>
             <h3>
-              {tool.name} · v{tool.version}
+              {displayText(tool.name)} · v{displayText(tool.version)}
             </h3>
             <p>
-              <code>{tool.data.qualified_name}</code>
+              <code>{displayText(tool.data.qualified_name)}</code>
             </p>
             <div className="actions">
               <ActionButton
@@ -890,12 +896,12 @@ function PublishedTools({
                   }
                 }}
               >
-                删除工具 · {tool.name}
+                删除工具 · {displayText(tool.name)}
               </ActionButton>
             </div>
           </article>
         ))}
-        {error && <p role="alert">{error}</p>}
+        {error && <p role="alert">{displayText(error)}</p>}
       </div>
     </section>
   );
@@ -1067,7 +1073,7 @@ function BindingManager({
                 return choose(r);
               }}
             >
-              {r.name} · v{r.version}
+              {displayText(r.name)} · v{displayText(r.version)}
             </ActionButton>
           ))}
         </div>
@@ -1325,7 +1331,9 @@ function BindingManager({
                 </p>
                 <p>
                   授权状态：
-                  {draft.credential_ref ? "已取得凭据引用" : "等待授权"}
+                  {displayText(
+                    draft.credential_ref ? "已取得凭据引用" : "等待授权",
+                  )}
                 </p>
                 <label>
                   OAuth 账户
@@ -1518,7 +1526,7 @@ function BindingManager({
                     )
                     .map((r) => (
                       <option key={r.id} value={r.id}>
-                        v{r.version} · {r.name}
+                        v{displayText(r.version)} · {displayText(r.name)}
                       </option>
                     ))}
                 </ActionSelect>
@@ -1526,7 +1534,7 @@ function BindingManager({
             )}
             <div className="actions">
               <ActionButton className="primary" disabled={busy}>
-                {selected ? "保存绑定新修订" : "创建接入绑定"}
+                {displayText(selected ? "保存绑定新修订" : "创建接入绑定")}
               </ActionButton>
               {selected && (
                 <>
@@ -1635,9 +1643,11 @@ function BindingManager({
         <div className="integration-content">
           <h3>发现的 MCP 工具</h3>
           <p>
-            新增：{discovery.data.diff?.added?.join(", ") || "无"} · 移除：
-            {discovery.data.diff?.removed?.join(", ") || "无"} · 契约变化：
-            {discovery.data.diff?.changed?.join(", ") || "无"}
+            新增：{displayText(discovery.data.diff?.added?.join(", ") || "无")}{" "}
+            · 移除：
+            {displayText(discovery.data.diff?.removed?.join(", ") || "无")} ·
+            契约变化：
+            {displayText(discovery.data.diff?.changed?.join(", ") || "无")}
           </p>
           {(discovery.data?.result?.tools || []).map((tool: Row) => (
             <article key={tool.name}>
@@ -1654,11 +1664,11 @@ function BindingManager({
                     );
                   }}
                 />
-                {tool.name}
+                {displayText(tool.name)}
               </label>
               <MarkdownPreview text={tool.description || ""} />
               <label>
-                动作影响 · {tool.name}
+                动作影响 · {displayText(tool.name)}
                 <ActionSelect
                   value={effects[tool.name] || "unknown"}
                   onChange={(e) => {
@@ -1670,17 +1680,21 @@ function BindingManager({
                   }}
                 >
                   {["unknown", "read_only", "write", "destructive"].map((s) => (
-                    <option key={s}>{s}</option>
+                    <option key={s} value={s}>
+                      {displayText(s)}
+                    </option>
                   ))}
                 </ActionSelect>
               </label>
               <details>
                 <summary>协议契约</summary>
                 <pre>
-                  {JSON.stringify(
-                    { input: tool.inputSchema, output: tool.outputSchema },
-                    null,
-                    2,
+                  {displayText(
+                    JSON.stringify(
+                      { input: tool.inputSchema, output: tool.outputSchema },
+                      null,
+                      2,
+                    ),
                   )}
                 </pre>
               </details>
@@ -1711,17 +1725,21 @@ function BindingManager({
           <h3>接入状态</h3>
           <p>
             定义：已保存 · 认证：
-            {selected.data.auth.kind === "none"
-              ? "无需凭据"
-              : selected.data.auth.kind === "oauth_pending"
-                ? "等待授权"
-                : "请检查凭据"}{" "}
+            {displayText(
+              selected.data.auth.kind === "none"
+                ? "无需凭据"
+                : selected.data.auth.kind === "oauth_pending"
+                  ? "等待授权"
+                  : "请检查凭据",
+            )}{" "}
             · 执行环境：
-            {permissions.targets?.find(
-              (t: Row) => t.target.revision_id === selected.data.harness_ref,
-            )?.materializations?.length
-              ? "已物化"
-              : "待准备"}
+            {displayText(
+              permissions.targets?.find(
+                (t: Row) => t.target.revision_id === selected.data.harness_ref,
+              )?.materializations?.length
+                ? "已物化"
+                : "待准备",
+            )}
           </p>
           <ActionButton
             disabled={busy}
@@ -1758,8 +1776,8 @@ function BindingManager({
           binding={selected}
         />
       )}
-      {error && <p role="alert">{error}</p>}
-      {message && <p role="status">{message}</p>}
+      {error && <p role="alert">{displayText(error)}</p>}
+      {message && <p role="status">{displayText(message)}</p>}
     </section>
   );
 }
@@ -1883,7 +1901,7 @@ function HttpToolEditor({
                 return choose(t);
               }}
             >
-              {t.name} · v{t.version}
+              {displayText(t.name)} · v{displayText(t.version)}
             </ActionButton>
           ))}
         </div>
@@ -1969,7 +1987,9 @@ function HttpToolEditor({
               }}
             >
               {["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"].map((m) => (
-                <option key={m}>{m}</option>
+                <option key={m} value={m}>
+                  {displayText(m)}
+                </option>
               ))}
             </ActionSelect>
           </label>
@@ -1994,7 +2014,9 @@ function HttpToolEditor({
               }}
             >
               {["read_only", "unknown", "write", "destructive"].map((s) => (
-                <option key={s}>{s}</option>
+                <option key={s} value={s}>
+                  {displayText(s)}
+                </option>
               ))}
             </ActionSelect>
           </label>
@@ -2066,7 +2088,9 @@ function HttpToolEditor({
                     }}
                   >
                     {["path", "query", "header"].map((l) => (
-                      <option key={l}>{l}</option>
+                      <option key={l} value={l}>
+                        {displayText(l)}
+                      </option>
                     ))}
                   </ActionSelect>
                 </label>
@@ -2195,7 +2219,7 @@ function HttpToolEditor({
                   )
                   .map((r) => (
                     <option key={r.id} value={r.id}>
-                      v{r.version} · {r.name}
+                      v{displayText(r.version)} · {displayText(r.name)}
                     </option>
                   ))}
               </ActionSelect>
@@ -2205,7 +2229,7 @@ function HttpToolEditor({
             className="primary"
             disabled={busy || !draft.description.trim()}
           >
-            {selected ? "发布 HTTP 动作新修订" : "发布 HTTP 动作"}
+            {displayText(selected ? "发布 HTTP 动作新修订" : "发布 HTTP 动作")}
           </ActionButton>
           {selected && (
             <div className="actions">
@@ -2296,11 +2320,12 @@ function HttpToolEditor({
                   );
                 }}
               />
-              {t.qualified_name} · {t.implementation.method}{" "}
-              {t.implementation.path}
+              {displayText(t.qualified_name)} ·{" "}
+              {displayText(t.implementation.method)}{" "}
+              {displayText(t.implementation.path)}
             </label>
             <label>
-              导入工具名称 · {t.qualified_name}
+              导入工具名称 · {displayText(t.qualified_name)}
               <input
                 value={aliases[t.qualified_name] || t.qualified_name}
                 onChange={(e) => {
@@ -2314,7 +2339,7 @@ function HttpToolEditor({
             </label>
             <details>
               <summary>生成的调用契约</summary>
-              <pre>{JSON.stringify(t, null, 2)}</pre>
+              <pre>{displayText(JSON.stringify(t, null, 2))}</pre>
             </details>
           </article>
         ))}
@@ -2345,8 +2370,8 @@ function HttpToolEditor({
           导入 OpenAPI 动作
         </ActionButton>
       </details>
-      {error && <p role="alert">{error}</p>}
-      {message && <p role="status">{message}</p>}
+      {error && <p role="alert">{displayText(error)}</p>}
+      {message && <p role="status">{displayText(message)}</p>}
     </section>
   );
 }
@@ -2412,8 +2437,8 @@ function ToolTest({
       >
         执行测试调用
       </ActionButton>
-      {message && <p role="status">{message}</p>}
-      {error && <p role="alert">{error}</p>}
+      {message && <p role="status">{displayText(message)}</p>}
+      {error && <p role="alert">{displayText(error)}</p>}
     </div>
   );
 }
@@ -2632,8 +2657,8 @@ function SkillImport({
         >
           导入 Skill 包
         </ActionButton>
-        {message && <p role="status">{message}</p>}
-        {error && <p role="alert">{error}</p>}
+        {message && <p role="status">{displayText(message)}</p>}
+        {error && <p role="alert">{displayText(error)}</p>}
       </ActionForm>
     </section>
   );
@@ -2744,10 +2769,10 @@ export function CallHistory({
   return (
     <section
       className="panel"
-      aria-label={historyScope ? "历史记录" : "工具调用记录"}
+      aria-label={displayText(historyScope ? "历史记录" : "工具调用记录")}
     >
       <div className="panel-heading">
-        <h2>{historyScope ? "历史记录" : "Tools调用记录"}</h2>
+        <h2>{displayText(historyScope ? "历史记录" : "Tools调用记录")}</h2>
         <span className="muted">按时间倒序 · 每页 50 条</span>
         <ActionButton
           disabled={noProject}
@@ -2764,7 +2789,7 @@ export function CallHistory({
             }
           }}
         >
-          {historyScope ? "刷新历史记录" : "刷新调用记录"}
+          {displayText(historyScope ? "刷新历史记录" : "刷新调用记录")}
         </ActionButton>
       </div>
       <div className="tool-call-content">
@@ -2772,13 +2797,15 @@ export function CallHistory({
           {rows.length === 0 && (
             <div className="empty">
               <p>
-                {noProject
-                  ? "请选择当前项目以查看历史记录。"
-                  : !loaded
-                    ? "正在读取历史记录…"
-                    : historyScope
-                      ? "尚无历史记录。"
-                      : "尚无工具调用记录。"}
+                {displayText(
+                  noProject
+                    ? "请选择当前项目以查看历史记录。"
+                    : !loaded
+                      ? "正在读取历史记录…"
+                      : historyScope
+                        ? "尚无历史记录。"
+                        : "尚无工具调用记录。",
+                )}
               </p>
             </div>
           )}
@@ -2787,18 +2814,23 @@ export function CallHistory({
               const e = entry.event;
               return (
                 <div className="history-row" key={`event:${e.id}`}>
-                  <span className="event-id" title={`事件 #${e.id}`}>
+                  <span
+                    className="event-id"
+                    title={displayText(`事件 #${e.id}`)}
+                  >
                     #{offset + index + 1}
                   </span>
                   <div>
-                    <strong>{e.kind}</strong>
-                    <p>持久化事件 · {e.detail}</p>
-                    <code>{e.target}</code>
+                    <strong>{displayText(e.kind)}</strong>
+                    <p>持久化事件 · {displayText(e.detail)}</p>
+                    <code>{displayText(e.target)}</code>
                   </div>
                   <time dateTime={new Date(e.time).toISOString()}>
-                    {new Date(e.time).toLocaleString("zh-CN", {
-                      hour12: false,
-                    })}
+                    {displayText(
+                      new Date(e.time).toLocaleString("zh-CN", {
+                        hour12: false,
+                      }),
+                    )}
                   </time>
                 </div>
               );
@@ -2820,19 +2852,23 @@ export function CallHistory({
                         );
                       }}
                     >
-                      <strong>{r.name}</strong>
+                      <strong>{displayText(r.name)}</strong>
                     </ActionButton>
                     <p>
-                      {historyScope ? "Tools调用 · " : ""}
-                      {r.data.status} ·{" "}
-                      {r.data.invocation?.agent_instance_id || "手工测试"}
+                      {displayText(historyScope ? "Tools调用 · " : "")}
+                      {displayText(r.data.status)} ·{" "}
+                      {displayText(
+                        r.data.invocation?.agent_instance_id || "手工测试",
+                      )}
                     </p>
-                    <code>{r.id}</code>
+                    <code>{displayText(r.id)}</code>
                   </div>
                   <time dateTime={new Date(r.created_at).toISOString()}>
-                    {new Date(r.created_at).toLocaleString("zh-CN", {
-                      hour12: false,
-                    })}
+                    {displayText(
+                      new Date(r.created_at).toLocaleString("zh-CN", {
+                        hour12: false,
+                      }),
+                    )}
                   </time>
                 </div>
                 {selected && selected.id === r.id && (
@@ -2841,27 +2877,35 @@ export function CallHistory({
                     id={`tool-call-detail-${r.id}`}
                     aria-label="调用详情"
                   >
-                    <h3>{selected.name}</h3>
+                    <h3>{displayText(selected.name)}</h3>
                     <p>
-                      状态：{selected.data.status} · 远端副作用：
-                      {selected.data.remote_effect}
+                      状态：{displayText(selected.data.status)} · 远端副作用：
+                      {displayText(selected.data.remote_effect)}
                     </p>
-                    <p>{selected.id}</p>
+                    <p>{displayText(selected.id)}</p>
                     <dl>
                       <dt>工具修订</dt>
-                      <dd>{selected.data.invocation.tool.revision_id}</dd>
+                      <dd>
+                        {displayText(selected.data.invocation.tool.revision_id)}
+                      </dd>
                       <dt>接入绑定</dt>
-                      <dd>{selected.data.invocation.tool.binding_ref}</dd>
+                      <dd>
+                        {displayText(selected.data.invocation.tool.binding_ref)}
+                      </dd>
                       <dt>Agent</dt>
                       <dd>
-                        {selected.data.invocation.agent_instance_id ||
-                          "手工测试"}
+                        {displayText(
+                          selected.data.invocation.agent_instance_id ||
+                            "手工测试",
+                        )}
                       </dd>
                     </dl>
                     <details>
                       <summary>参数与来源</summary>
                       <pre>
-                        {JSON.stringify(selected.data.invocation, null, 2)}
+                        {displayText(
+                          JSON.stringify(selected.data.invocation, null, 2),
+                        )}
                       </pre>
                     </details>
                     <h4>执行回执</h4>
@@ -2903,12 +2947,14 @@ export function CallHistory({
                       </ActionButton>
                     )}
                     <pre>
-                      {JSON.stringify(
-                        selected.data.receipt || {
-                          status: selected.data.status,
-                        },
-                        null,
-                        2,
+                      {displayText(
+                        JSON.stringify(
+                          selected.data.receipt || {
+                            status: selected.data.status,
+                          },
+                          null,
+                          2,
+                        ),
                       )}
                     </pre>
                     {selected.data.status === "awaiting_approval" && (
@@ -3018,7 +3064,7 @@ export function CallHistory({
             下一页
           </ActionButton>
         </div>
-        {error && <p role="alert">{error}</p>}
+        {error && <p role="alert">{displayText(error)}</p>}
       </div>
     </section>
   );

@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { ActionButton } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
 import { useCallback, useEffect, useState } from "react";
@@ -142,8 +143,8 @@ export function ProjectIntegrationBindings({
             管理工具、账户与授权
           </a>
         </div>
-        {message && <p role="status">{message}</p>}
-        {error && <p role="alert">{error}</p>}
+        {message && <p role="status">{displayText(message)}</p>}
+        {error && <p role="alert">{displayText(error)}</p>}
       </div>
     </section>
   );

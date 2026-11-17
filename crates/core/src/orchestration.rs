@@ -409,6 +409,10 @@ impl Engine {
                 .ok_or_else(|| err("invalid_params", "需要明确批准或拒绝"))?;
             let operation = row.data["request"]["operation"].as_str().unwrap_or("");
             let arguments = &row.data["request"]["arguments"];
+            require(
+                crate::controller_interactions::decision_view(state, &row)["current"] == true,
+                "决定对应的执行或材料已变化，请刷新",
+            )?;
             if approved && ["workflow.step.confirm", "workflow.step.accept"].contains(&operation) {
                 let owner = state.configuration(&row.definition_id)?.clone();
                 let runtime: ConfiguredWorkflowInstance = owner.decode()?;
@@ -467,6 +471,21 @@ impl Engine {
             );
             state.governance.push(d);
             event(state, &row.definition_id, "workflow.decision", &row.id);
+            if approved && ["workflow.step.accept", "workflow.step.confirm"].contains(&operation) {
+                let owner = state.configuration(&row.definition_id)?.clone();
+                self.workflow_control_command(
+                    "workflow.step.accept",
+                    &Command {
+                        command_id: format!("{}:accept", c.command_id),
+                        target: Some(owner.id),
+                        expected_revision: Some(owner.revision),
+                        payload: arguments.clone(),
+                    },
+                    state,
+                    actor,
+                )?
+                .ok_or_else(|| err("invalid_params", "无法接纳审批结果"))?;
+            }
             return Ok(Some(
                 json!({"id":row.id,"status":state.configuration(&row.id)?.data["status"]}),
             ));
@@ -487,7 +506,63 @@ impl Engine {
             return Ok(Some(result));
         }
         self.authorize_driver_action(state, method, c, actor)?;
-        if let Some(result) = self.controller_command(method, c, state)? {
+        if let Some(mut result) = self.controller_command(method, c, state)? {
+            if method == "orchestration.input" && matches!(actor, WorkflowActor::Human) {
+                let controller = state.configuration(c.target.as_deref().unwrap_or(""))?;
+                let pending = crate::controller_interactions::approval_context(
+                    state,
+                    controller.data["root_instance_id"].as_str().unwrap_or(""),
+                )?;
+                let observed = c.payload["approval_context"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default();
+                if pending.len() == 1 && observed.len() == 1 {
+                    let decision = &pending[0];
+                    let operation = decision["data"]["request"]["operation"]
+                        .as_str()
+                        .unwrap_or("");
+                    if ["workflow.step.confirm", "workflow.step.accept"].contains(&operation)
+                        && crate::controller_interactions::explicit_approval(
+                            &text(&c.payload, "input")?,
+                            &decision["data"]["request"]["interaction"],
+                        )
+                    {
+                        require(
+                            observed[0]["id"] == decision["id"]
+                                && observed[0]["revision"] == decision["revision"],
+                            "待审批事项已变化，请刷新后重新确认",
+                        )?;
+                        if decision["approval_source"] == "workflow_step" {
+                            let owner = state
+                                .configuration(decision["definition_id"].as_str().unwrap_or(""))?
+                                .clone();
+                            let mut payload = decision["data"]["request"]["arguments"].clone();
+                            payload["reason"] = c.payload["input"].clone();
+                            self.orchestration_command(
+                                "workflow.step.confirm",
+                                &Command {
+                                    command_id: format!("{}:human-approval", c.command_id),
+                                    target: Some(owner.id),
+                                    expected_revision: Some(owner.revision),
+                                    payload,
+                                },
+                                state,
+                                actor,
+                            )?;
+                            result["approval"] = json!({"id":decision["id"],"status":"approved"});
+                        } else {
+                            let approved = self.orchestration_command("workflow.decision.resolve", &Command {
+                            command_id: format!("{}:human-approval", c.command_id),
+                            target: decision["id"].as_str().map(str::to_owned),
+                            expected_revision: decision["revision"].as_u64(),
+                            payload: json!({"approved":true,"reason":text(&c.payload,"input")?,"source":"manager_chat"}),
+                        }, state, actor)?;
+                            result["approval"] = json!(approved);
+                        }
+                    }
+                }
+            }
             return Ok(Some(result));
         }
         if let Some(result) = self.workflow_control_command(method, c, state, actor)? {
@@ -519,6 +594,72 @@ impl Engine {
             )?;
             if let Some(result) = &result {
                 record_auxiliary_decision(state, method, c, actor, result)?;
+            }
+            if result.is_some()
+                && ["workflow.step.confirm", "workflow.step.approve"].contains(&method)
+            {
+                // Both human entry points settle the same exact pending requests.
+                let owner = state
+                    .configuration(c.target.as_deref().unwrap_or(""))?
+                    .clone();
+                let matching: Vec<_> = state
+                    .governance
+                    .iter()
+                    .filter(|r| {
+                        r.r#type == "workflow_pending_decision"
+                            && r.data["status"] == "pending"
+                            && r.definition_id == owner.id
+                            && r.data["plan_revision_id"] == owner.data["active_plan_revision_id"]
+                            && ["workflow.step.confirm", "workflow.step.accept"]
+                                .contains(&r.data["request"]["operation"].as_str().unwrap_or(""))
+                            && r.data["request"]["arguments"]["execution_id"]
+                                == c.payload["execution_id"]
+                            && r.data["request"]["arguments"]["input_digest"]
+                                == c.payload["input_digest"]
+                            && r.data["request"]["arguments"]["outputs"] == c.payload["outputs"]
+                    })
+                    .cloned()
+                    .collect();
+                for pending in matching {
+                    let signed = record(
+                        "workflow_human_decision",
+                        pending.id.clone(),
+                        pending.scope.clone(),
+                        "在流程步骤确认".into(),
+                        1,
+                        None,
+                        json!({"approved":true,"actor":{"kind":"human"},"plan_revision_id":pending.data["plan_revision_id"],"request":pending.data["request"],"reason":c.payload["reason"]}),
+                        true,
+                    );
+                    let mut data = pending.data.clone();
+                    data["status"] = json!("approved");
+                    data["decision_ref"] = json!(signed.id);
+                    update_record(
+                        state
+                            .governance
+                            .iter_mut()
+                            .find(|r| r.id == pending.id)
+                            .unwrap(),
+                        data,
+                    );
+                    state.governance.push(signed);
+                    event(state, &owner.id, "workflow.decision", &pending.id);
+                }
+                if c.payload["accept_result"] == true {
+                    let owner = state.configuration(&owner.id)?.clone();
+                    self.workflow_control_command(
+                        "workflow.step.accept",
+                        &Command {
+                            command_id: format!("{}:accept", c.command_id),
+                            target: Some(owner.id),
+                            expected_revision: Some(owner.revision),
+                            payload: c.payload.clone(),
+                        },
+                        state,
+                        actor,
+                    )?
+                    .ok_or_else(|| err("invalid_params", "无法接纳审批结果"))?;
+                }
             }
             return Ok(result);
         }
@@ -1081,9 +1222,11 @@ impl Engine {
                 .retain(|step| selected_keys.contains(&step.step));
             instance.plan.definitions.clear();
             let mut runtime = json!(instance);
+            let human_gates =
+                crate::controller_interactions::human_gate_summary(&s, &instance.root_instance_id)?;
             runtime["plan"] = json!({"workflow_revision_id":instance.plan.workflow_revision_id,"standard_ref":instance.plan.standard_ref,"work_configuration_ref":instance.plan.work_configuration_ref,"harness_permission_ref":instance.plan.harness_permission_ref,"document":instance.plan.document,"roles":instance.plan.roles});
             Ok(
-                json!({"record":{"id":row.id,"revision":row.revision},"page":{"offset":offset,"limit":limit,"total":total,"next_offset":if offset+limit<total {Some(offset+limit)}else{None},"document_complete":offset==0&&limit>=total},"runtime":runtime,"steps":steps,"allowed_actions":allowed,"children_page":{"offset":offset,"total":children.len(),"next_offset":if offset+limit<children.len(){Some(offset+limit)}else{None}},"delivery_types":delivery_types,"children":children.iter().skip(offset).take(limit).collect::<Vec<_>>()}),
+                json!({"record":{"id":row.id,"revision":row.revision},"human_gates":human_gates,"page":{"offset":offset,"limit":limit,"total":total,"next_offset":if offset+limit<total {Some(offset+limit)}else{None},"document_complete":offset==0&&limit>=total},"runtime":runtime,"steps":steps,"allowed_actions":allowed,"children_page":{"offset":offset,"total":children.len(),"next_offset":if offset+limit<children.len(){Some(offset+limit)}else{None}},"delivery_types":delivery_types,"children":children.iter().skip(offset).take(limit).collect::<Vec<_>>()}),
             )
         })())
     }

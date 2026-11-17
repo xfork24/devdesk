@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import type { Row } from "./rpc-types";
 import { ConfigurationScope } from "./configuration-scope";
 import { loadCatalog } from "./configuration-state";
@@ -101,9 +102,9 @@ export function RevisionSelect(props: RevisionSelectProps) {
   }
   return (
     <label>
-      {label}
+      {displayText(label)}
       <ActionSelect
-        aria-label={label}
+        aria-label={displayText(label)}
         multiple={multiple}
         required={required}
         value={value}
@@ -122,19 +123,19 @@ export function RevisionSelect(props: RevisionSelectProps) {
         {!multiple && <option value="">请选择</option>}
         {options.map((r) => (
           <option key={r.id} value={r.id}>
-            {r.name} · v{r.version}
-            {r.scope?.startsWith("project:") ? " · 项目" : ""}
+            {displayText(r.name)} · v{displayText(r.version)}
+            {displayText(r.scope?.startsWith("project:") ? " · 项目" : "")}
           </option>
         ))}
         {ids
           .filter((id) => id && !options.some((r) => r.id === id))
           .map((id) => (
             <option key={id} value={id}>
-              固定历史修订 · {id}
+              固定历史修订 · {displayText(id)}
             </option>
           ))}
       </ActionSelect>
-      {historyError && <span role="alert">{historyError}</span>}
+      {historyError && <span role="alert">{displayText(historyError)}</span>}
     </label>
   );
 }
@@ -204,7 +205,7 @@ export function MarkdownField({
       ref={field}
       className="markdown-field full-width"
       role="group"
-      aria-label={label}
+      aria-label={displayText(label)}
       aria-disabled={disabled || undefined}
       onBlur={(event) => {
         if (
@@ -216,15 +217,15 @@ export function MarkdownField({
     >
       <div className="markdown-field-heading">
         {editing && !readOnly && !disabled ? (
-          <label htmlFor={id}>{label}</label>
+          <label htmlFor={id}>{displayText(label)}</label>
         ) : (
-          <span>{label}</span>
+          <span>{displayText(label)}</span>
         )}
       </div>
       {editing && !readOnly && !disabled ? (
         <textarea
           id={id}
-          aria-label={label}
+          aria-label={displayText(label)}
           autoFocus
           required={required}
           maxLength={maxLength}
@@ -243,7 +244,7 @@ export function MarkdownField({
           className="markdown-editor-preview"
           role="button"
           tabIndex={0}
-          aria-label={label}
+          aria-label={displayText(label)}
           onClick={(event) => {
             event.preventDefault();
             setEditing(true);
@@ -300,7 +301,7 @@ export function MarkdownTopicsField({
               {!readOnly && (
                 <ActionButton
                   type="button"
-                  aria-label={`删除讨论主题 ${index + 1}`}
+                  aria-label={displayText(`删除讨论主题 ${index + 1}`)}
                   onClick={() => onChange(value.filter((_, i) => i !== index))}
                 >
                   删除主题

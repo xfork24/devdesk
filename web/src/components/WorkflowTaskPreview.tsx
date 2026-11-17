@@ -1,3 +1,4 @@
+import { displayText, truncateText } from "../display-text";
 import { useState } from "react";
 import { ActionButton, ActionSelect } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
@@ -42,7 +43,7 @@ export function AgentTaskView({
     <section aria-label="Agent 任务与上下文" className="reading-body">
       <h4>任务请求</h4>
       <MarkdownPreview
-        text={compact ? instructions.slice(0, 600) : instructions}
+        text={compact ? truncateText(instructions, 600) : instructions}
       />
       {compact && instructions.length > 600 && (
         <p className="muted">此处为任务摘要；完整指令在上下文页阅读。</p>
@@ -62,7 +63,7 @@ export function AgentTaskView({
           {content.user_request && (
             <>
               <h4>用户初始需求</h4>
-              <p>{content.user_request.title}</p>
+              <p>{displayText(content.user_request.title)}</p>
               <MarkdownPreview
                 text={
                   content.user_request.initial_requirement ||
@@ -89,7 +90,7 @@ export function AgentTaskView({
               const origin = source as Row;
               return (
                 <section key={key}>
-                  <strong>{key}</strong>
+                  <strong>{displayText(key)}</strong>
                   {origin.source_output_id && projectId && ownerId ? (
                     <p>
                       <ReadingLink
@@ -98,14 +99,16 @@ export function AgentTaskView({
                         ownerId={ownerId}
                         target={{ output_id: origin.source_output_id }}
                       >
-                        查看输入材料 · {key}
+                        查看输入材料 · {displayText(key)}
                       </ReadingLink>
                     </p>
                   ) : (
                     <p className="muted">
-                      {origin.binding?.type === "constant"
-                        ? "冻结常量"
-                        : "工作范围输入"}
+                      {displayText(
+                        origin.binding?.type === "constant"
+                          ? "冻结常量"
+                          : "工作范围输入",
+                      )}
                     </p>
                   )}
                   {!origin.source_output_id && (
@@ -129,10 +132,11 @@ export function AgentTaskView({
               const r = requirement as Row;
               return (
                 <section key={port}>
-                  <strong>{r.definition?.name || port}</strong>
+                  <strong>{displayText(r.definition?.name || port)}</strong>
                   <p>
-                    {port} · {r.required ? "必需" : "可选"}
-                    {r.content_checks ? " · 需要内容检查" : ""}
+                    {displayText(port)} ·{" "}
+                    {displayText(r.required ? "必需" : "可选")}
+                    {displayText(r.content_checks ? " · 需要内容检查" : "")}
                   </p>
                   <LazyDetails summary="交付规范与检查要求">
                     <ReadableValue value={r} />
@@ -145,9 +149,9 @@ export function AgentTaskView({
             {content.role?.role?.data?.instructions && (
               <section
                 role="group"
-                aria-label={`Role 职责 · ${content.role.name}`}
+                aria-label={displayText(`Role 职责 · ${content.role.name}`)}
               >
-                <h4>Role · {content.role.name}</h4>
+                <h4>Role · {displayText(content.role.name)}</h4>
                 <MarkdownPreview text={content.role.role.data.instructions} />
               </section>
             )}
@@ -155,9 +159,9 @@ export function AgentTaskView({
               <section
                 key={skill.id}
                 role="group"
-                aria-label={`Skill · ${skill.name}`}
+                aria-label={displayText(`Skill · ${skill.name}`)}
               >
-                <h4>Skill · {skill.name}</h4>
+                <h4>Skill · {displayText(skill.name)}</h4>
                 <MarkdownPreview text={skill.data?.body || skill.body || ""} />
               </section>
             ))}
@@ -168,9 +172,9 @@ export function AgentTaskView({
               <section
                 key={spec.id}
                 role="group"
-                aria-label={`Spec · ${spec.name}`}
+                aria-label={displayText(`Spec · ${spec.name}`)}
               >
-                <h4>Spec · {spec.name}</h4>
+                <h4>Spec · {displayText(spec.name)}</h4>
                 <MarkdownPreview text={spec.data?.body || spec.body || ""} />
               </section>
             ))}
@@ -185,7 +189,7 @@ export function AgentTaskView({
           </LazyDetails>
           {frozen.rendered_input && (
             <LazyDetails summary="实际发送的完整输入">
-              <pre>{frozen.rendered_input}</pre>
+              <pre>{displayText(frozen.rendered_input)}</pre>
             </LazyDetails>
           )}
           <LazyDetails summary="冻结来源与运行环境">
@@ -200,7 +204,7 @@ export function AgentTaskView({
       )}
       {(value.diagnostics || []).map((line: string) => (
         <p key={line} className="muted">
-          {line}
+          {displayText(line)}
         </p>
       ))}
       {projectId && value.turn_id && (
@@ -285,7 +289,7 @@ export function WorkflowTaskPreview({
           <option value="">尚未绑定</option>
           {agents.map((agent) => (
             <option key={agent.id} value={agent.id}>
-              {agent.name} · v{agent.version}
+              {displayText(agent.name)} · v{displayText(agent.version)}
             </option>
           ))}
         </ActionSelect>
@@ -304,7 +308,7 @@ export function WorkflowTaskPreview({
       ) : null}
       {error ? (
         <p role="alert" className="error">
-          {error}
+          {displayText(error)}
         </p>
       ) : null}
     </details>
@@ -351,7 +355,7 @@ export function ExecutionTaskDetails({
           <option value="">选择轮次</option>
           {turns.map((t) => (
             <option key={t.id} value={t.id}>
-              {t.id} · {t.status}
+              {displayText(t.id)} · {displayText(t.status)}
             </option>
           ))}
         </ActionSelect>
@@ -383,7 +387,7 @@ export function ExecutionTaskDetails({
       >
         读取冻结任务
       </ActionButton>
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? <p role="alert">{displayText(error)}</p> : null}
       {value && loadedTurn === selected ? (
         <AgentTaskView
           value={value}

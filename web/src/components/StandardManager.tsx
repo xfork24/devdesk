@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { useReadRequest, ignoreCancelledRefresh } from "./use-read-request";
 import { useEffect, useState } from "react";
 import { ActionButton } from "./ActionFeedback";
@@ -10,38 +11,47 @@ export function StandardDiff({ diff }: { diff: Row }) {
   return (
     <div role="status" className="standard-diff">
       <p>
-        {diff.equal
-          ? "规范定义相同"
-          : `${diff.changes?.length || 0} 项规范变化`}
+        {displayText(
+          diff.equal
+            ? "规范定义相同"
+            : `${diff.changes?.length || 0} 项规范变化`,
+        )}
       </p>
       {(diff.changes || []).map((change: Row, index: number) => (
         <details key={index}>
           <summary>
-            {(
-              {
-                added: "新增",
-                removed: "移除",
-                definition_changed: "定义变化",
-                reference_changed: "引用版本变化",
-                relationship_added: "新增关联",
-                relationship_removed: "移除关联",
-                entries_changed: "入口变化",
-              } as Row
-            )[change.kind] || change.kind}{" "}
-            · {change.source_kind || change.edge?.relation || "Workflow"}{" "}
-            {change.before_ref || change.after_ref || change.edge?.path || ""}
+            {displayText(
+              (
+                {
+                  added: "新增",
+                  removed: "移除",
+                  definition_changed: "定义变化",
+                  reference_changed: "引用版本变化",
+                  relationship_added: "新增关联",
+                  relationship_removed: "移除关联",
+                  entries_changed: "入口变化",
+                } as Row
+              )[change.kind] || change.kind,
+            )}{" "}
+            ·{" "}
+            {displayText(
+              change.source_kind || change.edge?.relation || "Workflow",
+            )}{" "}
+            {displayText(
+              change.before_ref || change.after_ref || change.edge?.path || "",
+            )}
           </summary>
           {(change.fields || []).map((field: Row) => (
             <div key={field.path}>
-              <strong>{field.path}</strong>
+              <strong>{displayText(field.path)}</strong>
               <div className="standard-comparison">
-                <pre>{JSON.stringify(field.before, null, 2)}</pre>
-                <pre>{JSON.stringify(field.after, null, 2)}</pre>
+                <pre>{displayText(JSON.stringify(field.before, null, 2))}</pre>
+                <pre>{displayText(JSON.stringify(field.after, null, 2))}</pre>
               </div>
             </div>
           ))}
           {!change.fields?.length ? (
-            <pre>{JSON.stringify(change, null, 2)}</pre>
+            <pre>{displayText(JSON.stringify(change, null, 2))}</pre>
           ) : null}
         </details>
       ))}
@@ -60,8 +70,9 @@ export function StandardDetail({ snapshot }: { snapshot: Row }) {
     <ul>
       {Object.entries(values).map(([name, value]) => (
         <li key={name}>
-          {name} → {sourceName((value as Row).delivery_ref)}
-          {(value as Row).content_checks ? " · 内容检查" : ""}
+          {displayText(name)} →{" "}
+          {displayText(sourceName((value as Row).delivery_ref))}
+          {displayText((value as Row).content_checks ? " · 内容检查" : "")}
         </li>
       ))}
     </ul>
@@ -69,37 +80,40 @@ export function StandardDetail({ snapshot }: { snapshot: Row }) {
   return (
     <div className="standard-detail">
       <p>
-        不可变规范快照 · {snapshot.total_nodes ?? snapshot.nodes.length}{" "}
-        个源修订 · {snapshot.total_edges ?? snapshot.edges.length} 条关联
+        不可变规范快照 ·{" "}
+        {displayText(snapshot.total_nodes ?? snapshot.nodes.length)} 个源修订 ·{" "}
+        {displayText(snapshot.total_edges ?? snapshot.edges.length)} 条关联
       </p>
       <p className="muted">
-        定义摘要：<code>{snapshot.snapshot_digest}</code>
+        定义摘要：<code>{displayText(snapshot.snapshot_digest)}</code>
       </p>
       <h4>Workflow 入口</h4>
       <ul>
         {snapshot.root_workflow_refs.map((reference: string) => (
-          <li key={reference}>{sourceName(reference)}</li>
+          <li key={reference}>{displayText(sourceName(reference))}</li>
         ))}
       </ul>
       {snapshot.nodes.map((node: Row) => (
         <details key={node.reference}>
           <summary>
-            {node.kind === "delivery_type"
-              ? "Delivery"
-              : node.kind === "workflow"
-                ? "Workflow"
-                : "Spec"}{" "}
-            · {sourceName(node.reference)}
+            {displayText(
+              node.kind === "delivery_type"
+                ? "Delivery"
+                : node.kind === "workflow"
+                  ? "Workflow"
+                  : "Spec",
+            )}{" "}
+            · {displayText(sourceName(node.reference))}
           </summary>
           <p className="muted">
-            <code>{node.reference}</code>
+            <code>{displayText(node.reference)}</code>
           </p>
           {node.kind === "spec" ? (
             <>
               <MarkdownPreview text={node.content.body} />
               {(node.content.checks || []).map((check: Row) => (
                 <div key={check.key}>
-                  <strong>{check.name}</strong>
+                  <strong>{displayText(check.name)}</strong>
                   <MarkdownPreview text={check.instructions} />
                 </div>
               ))}
@@ -114,7 +128,7 @@ export function StandardDetail({ snapshot }: { snapshot: Row }) {
               ) : null}
               {(node.content.stages || []).map((stage: Row) => (
                 <section key={stage.key}>
-                  <h4>{stage.name}</h4>
+                  <h4>{displayText(stage.name)}</h4>
                   {stage.description ? (
                     <MarkdownPreview text={stage.description} />
                   ) : null}
@@ -123,8 +137,8 @@ export function StandardDetail({ snapshot }: { snapshot: Row }) {
                     .map((step: Row) => (
                       <details key={step.node_id || step.key}>
                         <summary>
-                          {step.name} ·{" "}
-                          {
+                          {displayText(step.name)} ·{" "}
+                          {displayText(
                             (
                               {
                                 agent: "Agent",
@@ -132,42 +146,54 @@ export function StandardDetail({ snapshot }: { snapshot: Row }) {
                                 workflow: "子流程",
                                 control: "控制",
                               } as Row
-                            )[step.executor.type]
-                          }
+                            )[step.executor.type],
+                          )}
                         </summary>
                         {step.task_instructions ? (
                           <MarkdownPreview text={step.task_instructions} />
                         ) : null}
                         {step.dependencies?.length ? (
-                          <p>前置步骤：{step.dependencies.join("、")}</p>
+                          <p>
+                            前置步骤：
+                            {displayText(step.dependencies.join("、"))}
+                          </p>
                         ) : null}
                         {step.executor.workflow_ref ? (
                           <p>
-                            调用：{sourceName(step.executor.workflow_ref)}
-                            {step.executor.work_binding
-                              ? " · 按工作已采用的规范选择"
-                              : ""}
+                            调用：
+                            {displayText(
+                              sourceName(step.executor.workflow_ref),
+                            )}
+                            {displayText(
+                              step.executor.work_binding
+                                ? " · 按工作已采用的规范选择"
+                                : "",
+                            )}
                           </p>
                         ) : null}
                         {step.spec_refs?.length ? (
                           <p>
                             检查规范：
-                            {step.spec_refs.map(sourceName).join("、")}
+                            {displayText(
+                              step.spec_refs.map(sourceName).join("、"),
+                            )}
                           </p>
                         ) : null}
                         {ports(step.outputs)}
                         <details>
                           <summary>推进与确认条件</summary>
                           <pre>
-                            {JSON.stringify(
-                              {
-                                condition: step.condition,
-                                completion: step.completion,
-                                confirmation: step.confirmation,
-                                budget: step.budget,
-                              },
-                              null,
-                              2,
+                            {displayText(
+                              JSON.stringify(
+                                {
+                                  condition: step.condition,
+                                  completion: step.completion,
+                                  confirmation: step.confirmation,
+                                  budget: step.budget,
+                                },
+                                null,
+                                2,
+                              ),
                             )}
                           </pre>
                         </details>
@@ -178,16 +204,21 @@ export function StandardDetail({ snapshot }: { snapshot: Row }) {
             </>
           ) : (
             <>
-              <p>格式：{node.content.format}</p>
+              <p>格式：{displayText(node.content.format)}</p>
               <p>
                 内容规范：
-                {node.content.spec_refs?.map(sourceName).join("、") || "未关联"}
+                {displayText(
+                  node.content.spec_refs?.map(sourceName).join("、") ||
+                    "未关联",
+                )}
               </p>
               {node.content.content_schema ? (
                 <details>
                   <summary>结构合同</summary>
                   <pre>
-                    {JSON.stringify(node.content.content_schema, null, 2)}
+                    {displayText(
+                      JSON.stringify(node.content.content_schema, null, 2),
+                    )}
                   </pre>
                 </details>
               ) : null}
@@ -198,7 +229,8 @@ export function StandardDetail({ snapshot }: { snapshot: Row }) {
               .filter((edge: Row) => edge.from === node.reference)
               .map((edge: Row) => (
                 <li key={`${edge.path}:${edge.to}`}>
-                  {edge.path} → {edge.to} · {edge.relation}
+                  {displayText(edge.path)} → {displayText(edge.to)} ·{" "}
+                  {displayText(edge.relation)}
                 </li>
               ))}
           </ul>
@@ -311,10 +343,10 @@ export function StandardManager({
       </p>
       {error ? (
         <p className="error" role="alert">
-          {error}
+          {displayText(error)}
         </p>
       ) : null}
-      {message ? <p role="status">{message}</p> : null}
+      {message ? <p role="status">{displayText(message)}</p> : null}
       <RevisionSelect
         label="查看 Standard"
         records={standards}
@@ -418,8 +450,9 @@ export function StandardManager({
       {snapshot ? (
         <>
           <h3>
-            {snapshot.record.name} · v{snapshot.record.version}
-            {snapshot.archived ? " · 已归档" : ""}
+            {displayText(snapshot.record.name)} · v
+            {displayText(snapshot.record.version)}
+            {displayText(snapshot.archived ? " · 已归档" : "")}
           </h3>
           <ActionButton
             disabled={
@@ -442,7 +475,7 @@ export function StandardManager({
               })
             }
           >
-            {snapshot.archived ? "恢复快照选择" : "归档快照"}
+            {displayText(snapshot.archived ? "恢复快照选择" : "归档快照")}
           </ActionButton>
           <StandardDetail snapshot={snapshot} />
           <ActionButton
@@ -495,15 +528,18 @@ export function StandardManager({
           </section>
           <details>
             <summary>
-              使用位置 · 当前 Standard：{snapshot.record.name} · v
-              {snapshot.record.version}（{usage?.total || 0}）
+              使用位置 · 当前 Standard：{displayText(snapshot.record.name)} · v
+              {displayText(snapshot.record.version)}（
+              {displayText(usage?.total || 0)}）
             </summary>
             <ul>
               {usage?.records.map((row: Row) => (
                 <li key={row.id}>
-                  {row.type} ·{" "}
-                  {row.data.owner_id || row.data.work?.id || row.definition_id}{" "}
-                  · {row.data.workflow_ref}
+                  {displayText(row.type)} ·{" "}
+                  {displayText(
+                    row.data.owner_id || row.data.work?.id || row.definition_id,
+                  )}{" "}
+                  · {displayText(row.data.workflow_ref)}
                 </li>
               ))}
             </ul>

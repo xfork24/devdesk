@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { useState } from "react";
 import { ActionButton } from "./ActionFeedback";
 import { MarkdownPreview } from "./configuration-ui";
@@ -11,6 +12,8 @@ type Props = {
   status?: string;
   busy: boolean;
   onDecide?: (approved: boolean, reason: string) => Promise<void>;
+  requireReason?: boolean;
+  awaitingInput?: boolean;
 };
 
 export function ManagerInteraction({
@@ -20,8 +23,19 @@ export function ManagerInteraction({
   status,
   busy,
   onDecide,
+  requireReason = false,
+  awaitingInput = false,
 }: Props) {
   const [reason, setReason] = useState("");
+  const [error, setError] = useState("");
+  async function decide(approved: boolean) {
+    setError("");
+    try {
+      await onDecide?.(approved, reason);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
   const ready = Boolean(
     interaction.title &&
     interaction.requested_action &&
@@ -31,162 +45,203 @@ export function ManagerInteraction({
   return (
     <article
       className="manager-interaction"
-      aria-label={interaction.title || "待决定的操作"}
+      aria-label={displayText(interaction.title || "待决定的操作")}
     >
-      <h4>{interaction.title || "此历史请求尚未记录完整材料说明"}</h4>
-      <MarkdownPreview text={interaction.background || ""} />
-      <h5>需要你做什么</h5>
-      <MarkdownPreview
-        text={
-          interaction.requested_action || "请等待项目经理补齐本次说明和材料。"
-        }
-      />
-      <h5>相关材料</h5>
-      {(interaction.materials || []).length ? (
-        <ul>
-          {(interaction.materials as Row[]).map((reference, index) => (
-            <li key={reference.output_id || index}>
-              <ReadingLink
-                detail="documents"
-                projectId={projectId}
-                ownerId={reference.owner_id || ownerId}
-                target={{
-                  instance_id: reference.instance_id,
-                  execution_id: reference.execution_id,
-                  output_id: reference.output_id,
-                }}
-              >
-                {reference.label}
-              </ReadingLink>
-              <p>{reference.purpose}</p>
-              <p>
-                {reference.session_id && (
-                  <>
-                    <ReadingLink
-                      detail="context"
-                      projectId={projectId}
-                      ownerId={reference.owner_id || ownerId}
-                      target={{
-                        instance_id: reference.instance_id,
-                        execution_id: reference.execution_id,
-                        session_id: reference.session_id,
-                        turn_id: reference.turn_id,
-                      }}
-                    >
-                      材料上下文
-                    </ReadingLink>{" "}
-                  </>
-                )}
-                <ReadingLink
-                  detail="records"
-                  projectId={projectId}
-                  ownerId={reference.owner_id || ownerId}
-                  target={{
-                    instance_id: reference.instance_id,
-                    execution_id: reference.execution_id,
-                  }}
-                >
-                  材料执行记录
-                </ReadingLink>
-              </p>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="muted">本次事项暂无已封存材料，具体原因见经理说明。</p>
-      )}
-      <h5>项目经理已做的工作</h5>
-      <MarkdownPreview text={interaction.completed_work || "尚未记录"} />
-      <h5>初审与验证结果</h5>
-      <MarkdownPreview text={interaction.review_summary || "尚未记录"} />
-      {!!interaction.issues && (
-        <>
-          <h5>待解决问题</h5>
-          <MarkdownPreview text={interaction.issues} />
-        </>
-      )}
-      {!!interaction.recommendation && (
-        <>
-          <h5>项目经理建议</h5>
-          <MarkdownPreview text={interaction.recommendation} />
-        </>
-      )}
-      {!!interaction.evidence?.length && (
-        <>
-          <h5>上下文与执行依据</h5>
-          <ul>
-            {(interaction.evidence as Row[]).map((reference, index) => (
-              <li key={reference.execution_id + ":" + index}>
-                <strong>{reference.label}</strong>
-                <p>{reference.purpose}</p>
-                {reference.session_id && (
+      <details
+        className="manager-disclosure"
+        open={status === "pending" || awaitingInput}
+      >
+        <summary>
+          <strong>
+            {displayText(interaction.title || "此历史请求尚未记录完整材料说明")}
+          </strong>
+          <span className="manager-interaction-status">
+            {displayText(
+              awaitingInput
+                ? "待补充信息"
+                : (
+                    {
+                      pending: "待确认",
+                      approved: "已确认",
+                      rejected: "已退回",
+                      stale: "已过期",
+                    } as Record<string, string>
+                  )[status || ""] || "说明",
+            )}
+          </span>
+        </summary>
+        <div className="manager-disclosure-body">
+          {interaction.source_label && (
+            <p className="muted">
+              所属流程与步骤：{displayText(interaction.source_label)}
+            </p>
+          )}
+          <MarkdownPreview text={interaction.background || ""} />
+          <h5>需要你做什么</h5>
+          <MarkdownPreview
+            text={
+              interaction.requested_action ||
+              "请等待项目经理补齐本次说明和材料。"
+            }
+          />
+          <h5>相关材料</h5>
+          {(interaction.materials || []).length ? (
+            <ul>
+              {(interaction.materials as Row[]).map((reference, index) => (
+                <li key={reference.output_id || index}>
                   <ReadingLink
-                    detail="context"
+                    detail="documents"
                     projectId={projectId}
                     ownerId={reference.owner_id || ownerId}
                     target={{
                       instance_id: reference.instance_id,
                       execution_id: reference.execution_id,
-                      session_id: reference.session_id,
-                      turn_id: reference.turn_id,
+                      output_id: reference.output_id,
                     }}
                   >
-                    查看上下文
+                    {displayText(reference.label)}
                   </ReadingLink>
-                )}{" "}
-                <ReadingLink
-                  detail="records"
-                  projectId={projectId}
-                  ownerId={reference.owner_id || ownerId}
-                  target={{
-                    instance_id: reference.instance_id,
-                    execution_id: reference.execution_id,
-                  }}
+                  <p>{displayText(reference.purpose)}</p>
+                  <p>
+                    {reference.session_id && (
+                      <>
+                        <ReadingLink
+                          detail="context"
+                          projectId={projectId}
+                          ownerId={reference.owner_id || ownerId}
+                          target={{
+                            instance_id: reference.instance_id,
+                            execution_id: reference.execution_id,
+                            session_id: reference.session_id,
+                            turn_id: reference.turn_id,
+                          }}
+                        >
+                          材料上下文
+                        </ReadingLink>{" "}
+                      </>
+                    )}
+                    <ReadingLink
+                      detail="records"
+                      projectId={projectId}
+                      ownerId={reference.owner_id || ownerId}
+                      target={{
+                        instance_id: reference.instance_id,
+                        execution_id: reference.execution_id,
+                      }}
+                    >
+                      材料执行记录
+                    </ReadingLink>
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">
+              本次事项暂无已封存材料，具体原因见经理说明。
+            </p>
+          )}
+          <h5>项目经理已做的工作</h5>
+          <MarkdownPreview text={interaction.completed_work || "尚未记录"} />
+          <h5>初审与验证结果</h5>
+          <MarkdownPreview text={interaction.review_summary || "尚未记录"} />
+          {!!interaction.issues && (
+            <>
+              <h5>待解决问题</h5>
+              <MarkdownPreview text={interaction.issues} />
+            </>
+          )}
+          {!!interaction.recommendation && (
+            <>
+              <h5>项目经理建议</h5>
+              <MarkdownPreview text={interaction.recommendation} />
+            </>
+          )}
+          {!!interaction.evidence?.length && (
+            <>
+              <h5>上下文与执行依据</h5>
+              <ul>
+                {(interaction.evidence as Row[]).map((reference, index) => (
+                  <li key={reference.execution_id + ":" + index}>
+                    <strong>{displayText(reference.label)}</strong>
+                    <p>{displayText(reference.purpose)}</p>
+                    {reference.session_id && (
+                      <ReadingLink
+                        detail="context"
+                        projectId={projectId}
+                        ownerId={reference.owner_id || ownerId}
+                        target={{
+                          instance_id: reference.instance_id,
+                          execution_id: reference.execution_id,
+                          session_id: reference.session_id,
+                          turn_id: reference.turn_id,
+                        }}
+                      >
+                        查看上下文
+                      </ReadingLink>
+                    )}{" "}
+                    <ReadingLink
+                      detail="records"
+                      projectId={projectId}
+                      ownerId={reference.owner_id || ownerId}
+                      target={{
+                        instance_id: reference.instance_id,
+                        execution_id: reference.execution_id,
+                      }}
+                    >
+                      查看执行记录
+                    </ReadingLink>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {onDecide && status === "pending" && (
+            <>
+              <label>
+                意见或修改要求
+                <textarea
+                  aria-label="意见或修改要求"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                />
+              </label>
+              <div className="actions">
+                <ActionButton
+                  disabled={busy || !ready || (requireReason && !reason.trim())}
+                  onClick={() => void decide(true)}
                 >
-                  查看执行记录
-                </ReadingLink>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-      {onDecide && status === "pending" && (
-        <>
-          <label>
-            意见或修改要求
-            <textarea
-              aria-label="意见或修改要求"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-            />
-          </label>
-          <div className="actions">
-            <ActionButton
-              disabled={busy || !ready}
-              onClick={() => void onDecide(true, reason)}
-            >
-              确认：{interaction.title || "当前事项"}
-            </ActionButton>
-            <ActionButton
-              disabled={busy || !ready}
-              onClick={() => void onDecide(false, reason)}
-            >
-              退回并反馈意见
-            </ActionButton>
-          </div>
-        </>
-      )}
-      {status === "stale" && (
-        <p role="status">
-          本次材料或计划已变化，请等待项目经理准备新的确认事项。
-        </p>
-      )}
-      {status === "approved" && (
-        <p role="status">你已确认本轮事项，项目经理将依据决定继续处理。</p>
-      )}
-      {status === "rejected" && (
-        <p role="status">你已退回本轮事项，项目经理将依据意见继续处理。</p>
-      )}
+                  确认：{displayText(interaction.title || "当前事项")}
+                </ActionButton>
+                <ActionButton
+                  disabled={busy || !ready || !reason.trim()}
+                  onClick={() => void decide(false)}
+                >
+                  退回并反馈意见
+                </ActionButton>
+              </div>
+              {requireReason && (
+                <p className="muted">完成条件未满足，手动批准必须填写理由。</p>
+              )}
+              {error && (
+                <p role="alert" className="error">
+                  {displayText(error)}
+                </p>
+              )}
+            </>
+          )}
+          {status === "stale" && (
+            <p role="status">
+              本次材料或计划已变化，请等待项目经理准备新的确认事项。
+            </p>
+          )}
+          {status === "approved" && (
+            <p role="status">你已确认本轮事项，项目经理将依据决定继续处理。</p>
+          )}
+          {status === "rejected" && (
+            <p role="status">你已退回本轮事项，项目经理将依据意见继续处理。</p>
+          )}
+        </div>
+      </details>
     </article>
   );
 }

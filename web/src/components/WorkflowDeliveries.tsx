@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { useEffect, useRef, useState } from "react";
 import { ActionButton, ActionSelect } from "./ActionFeedback";
 import { RevisionSelect } from "./configuration-ui";
@@ -26,7 +27,7 @@ export function JsonField({
   }, [encoded]);
   return (
     <label>
-      {label}
+      {displayText(label)}
       <textarea
         ref={field}
         value={text}
@@ -52,7 +53,7 @@ export function JsonField({
           }
         }}
       />
-      {error ? <span role="alert">{error}</span> : null}
+      {error ? <span role="alert">{displayText(error)}</span> : null}
     </label>
   );
 }
@@ -88,9 +89,9 @@ export function SourceSelect({
   ];
   return (
     <label>
-      {label}
+      {displayText(label)}
       <ActionSelect
-        aria-label={label}
+        aria-label={displayText(label)}
         value={value?.step ? `${value.step}:${value.port}` : ""}
         onChange={(event) => {
           const source = sources.find(
@@ -105,7 +106,7 @@ export function SourceSelect({
             key={`${source.step}:${source.port}`}
             value={`${source.step}:${source.port}`}
           >
-            {source.name}
+            {displayText(source.name)}
           </option>
         ))}
       </ActionSelect>
@@ -143,7 +144,7 @@ export function WorkflowDeliveries({
           onChange({ inputs: { ...inputs, [name]: value } });
         return (
           <fieldset key={name}>
-            <legend>输入 · {name}</legend>
+            <legend>输入 · {displayText(name)}</legend>
             <label>
               输入名称
               <input
@@ -232,7 +233,7 @@ export function WorkflowDeliveries({
                 })
               }
             >
-              移除输入 {name}
+              移除输入 {displayText(name)}
             </ActionButton>
           </fieldset>
         );
@@ -257,7 +258,7 @@ export function WorkflowDeliveries({
         const output = declaration as Row;
         return (
           <fieldset key={name}>
-            <legend>输出 · {name}</legend>
+            <legend>输出 · {displayText(name)}</legend>
             <label>
               输出名称
               <input
@@ -328,7 +329,7 @@ export function WorkflowDeliveries({
                 })
               }
             >
-              移除输出 {name}
+              移除输出 {displayText(name)}
             </ActionButton>
           </fieldset>
         );

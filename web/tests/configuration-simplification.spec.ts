@@ -533,6 +533,7 @@ test("流式回复只有一条消息，工具正文与技术回执在新标签�
         name: "原始事件 ↗",
         exact: true,
       });
+      await body.scrollIntoViewIfNeeded();
       const content = (await body.boundingBox())!;
       const bounds = (await frame.boundingBox())!;
       const eventLink = await link.boundingBox();

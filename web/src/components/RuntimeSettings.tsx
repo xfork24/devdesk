@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { ActionButton, ActionSelect } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
 import { type ResourceVersion, type Request } from "./rpc-types";
@@ -155,11 +156,13 @@ export function RuntimeSettings({
             自动准备，用于官方网页授权、登录状态检查与模型目录查询；登录信息保存在此数据集的独立目录。
           </p>
           <p className="muted">
-            {preparing
-              ? "正在准备登录组件…"
-              : loginComponents.length > 0
-                ? "登录组件已安装"
-                : "登录组件尚未准备，网页登录时自动准备"}
+            {displayText(
+              preparing
+                ? "正在准备登录组件…"
+                : loginComponents.length > 0
+                  ? "登录组件已安装"
+                  : "登录组件尚未准备，网页登录时自动准备",
+            )}
           </p>
           {loginComponents.length > 0 && (
             <details>
@@ -168,18 +171,21 @@ export function RuntimeSettings({
                 <dl className="readable-fields" key={runtime.id}>
                   <div>
                     <dt>版本</dt>
-                    <dd>{runtime.key.version}</dd>
+                    <dd>{displayText(runtime.key.version)}</dd>
                   </div>
                   <div>
                     <dt>平台</dt>
                     <dd>
-                      {runtime.key.os}/{runtime.key.arch}
+                      {displayText(runtime.key.os)}/
+                      {displayText(runtime.key.arch)}
                     </dd>
                   </div>
                   <div>
                     <dt>路径</dt>
                     <dd>
-                      <code>{runtime.artifact.canonical_path}</code>
+                      <code>
+                        {displayText(runtime.artifact.canonical_path)}
+                      </code>
                     </dd>
                   </div>
                 </dl>
@@ -358,22 +364,25 @@ export function RuntimeSettings({
           ) : (
             executionImages.map((runtime) => (
               <p key={runtime.id}>
-                {runtime.key.provider} · {runtime.key.version} ·{" "}
-                {runtime.key.os}/{runtime.key.arch}
+                {displayText(runtime.key.provider)} ·{" "}
+                {displayText(runtime.key.version)} ·{" "}
+                {displayText(runtime.key.os)}/{displayText(runtime.key.arch)}
                 <br />
                 <code>
-                  {runtime.artifact.canonical_path ||
-                    runtime.artifact.reference ||
-                    runtime.artifact.image_id}
+                  {displayText(
+                    runtime.artifact.canonical_path ||
+                      runtime.artifact.reference ||
+                      runtime.artifact.image_id,
+                  )}
                 </code>
               </p>
             ))
           )}
         </div>
       </div>
-      {phase && <p role="status">{phase}</p>}
+      {phase && <p role="status">{displayText(phase)}</p>}
       <p role="status" aria-live="polite">
-        {message}
+        {displayText(message)}
       </p>
     </>
   );

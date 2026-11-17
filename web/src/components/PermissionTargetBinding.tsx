@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { useReadRequest } from "./use-read-request";
 import { useState } from "react";
 import { ActionButton, ActionSelect } from "./ActionFeedback";
@@ -88,29 +89,35 @@ function TargetBinding({
   }
   if (!catalog)
     return (
-      <p role={error ? "alert" : "status"}>{error || "正在读取目标权限…"}</p>
+      <p role={error ? "alert" : "status"}>
+        {displayText(error || "正在读取目标权限…")}
+      </p>
     );
   if (!target) return <p role="alert">此目标修订没有可用的权限执行合同。</p>;
   return (
     <section
       className="permission-target-binding"
-      aria-label={`${kind === "harness" ? "Harness" : "Sandbox"} 权限绑定`}
+      aria-label={displayText(
+        `${kind === "harness" ? "Harness" : "Sandbox"} 权限绑定`,
+      )}
     >
       <h3>目标版本绑定</h3>
       <p>
-        当前目标：{target.name} · v{target.version} · {targetRef}
+        当前目标：{displayText(target.name)} · v{target.version} ·{" "}
+        {displayText(targetRef)}
       </p>
       <p>
-        当前绑定：{target.active?.binding_revision_id || "尚未分配"} · revision{" "}
-        {target.active?.revision || 0}
+        当前绑定：
+        {displayText(target.active?.binding_revision_id || "尚未分配")} ·
+        revision {target.active?.revision || 0}
       </p>
       {error && (
         <p role="alert" className="error">
-          {error}
+          {displayText(error)}
         </p>
       )}
       {!target.supported && (
-        <p className="error">{target.unsupported_reason}</p>
+        <p className="error">{displayText(target.unsupported_reason)}</p>
       )}
       <fieldset disabled={busy}>
         <legend>选择目标权限</legend>
@@ -125,13 +132,16 @@ function TargetBinding({
             }}
           >
             <option value="">
-              {profiles.length
-                ? "请选择可应用的权限修订"
-                : "此目标没有兼容的权限修订"}
+              {displayText(
+                profiles.length
+                  ? "请选择可应用的权限修订"
+                  : "此目标没有兼容的权限修订",
+              )}
             </option>
             {profiles.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name} · v{p.version} · {p.target_kind}
+                {displayText(p.name)} · v{p.version} ·{" "}
+                {displayText(p.target_kind)}
               </option>
             ))}
           </ActionSelect>
@@ -194,7 +204,7 @@ function TargetBinding({
       {bindingPreview !== undefined && (
         <details open>
           <summary>目标兼容性预检结果</summary>
-          <pre>{JSON.stringify(bindingPreview, null, 2)}</pre>
+          <pre>{displayText(JSON.stringify(bindingPreview, null, 2))}</pre>
         </details>
       )}
       <details>
@@ -203,17 +213,19 @@ function TargetBinding({
           安装登记仍需在执行前核验。目标兼容性预检不会下载或安装运行环境。
         </p>
         <pre>
-          {JSON.stringify(
-            {
-              target: target.target,
-              platforms: target.platforms,
-              recipe_digest: target.recipe_digest,
-              enforcement_contract: target.enforcement_contract,
-              registered_installations: target.registered_installations,
-              materializations: target.materializations,
-            },
-            null,
-            2,
+          {displayText(
+            JSON.stringify(
+              {
+                target: target.target,
+                platforms: target.platforms,
+                recipe_digest: target.recipe_digest,
+                enforcement_contract: target.enforcement_contract,
+                registered_installations: target.registered_installations,
+                materializations: target.materializations,
+              },
+              null,
+              2,
+            ),
           )}
         </pre>
       </details>
@@ -225,13 +237,15 @@ function TargetBinding({
         <fieldset disabled={busy}>
           <legend>双层执行范围</legend>
           <label>
-            {otherKind === "harness" ? "Harness 组合目标" : "Sandbox 组合目标"}
+            {displayText(
+              otherKind === "harness" ? "Harness 组合目标" : "Sandbox 组合目标",
+            )}
             <ActionSelect
-              aria-label={
+              aria-label={displayText(
                 otherKind === "harness"
                   ? "Harness 组合目标"
-                  : "Sandbox 组合目标"
-              }
+                  : "Sandbox 组合目标",
+              )}
               value={otherRef}
               onChange={(e) => {
                 setCounterpart(e.target.value);
@@ -239,11 +253,13 @@ function TargetBinding({
               }}
             >
               <option value="">
-                选择{otherKind === "harness" ? " Harness" : " Sandbox"}修订
+                选择
+                {displayText(otherKind === "harness" ? " Harness" : " Sandbox")}
+                修订
               </option>
               {candidates.map((t) => (
                 <option key={t.target.revision_id} value={t.target.revision_id}>
-                  {t.name} · v{t.version}
+                  {displayText(t.name)} · v{t.version}
                 </option>
               ))}
             </ActionSelect>
@@ -274,7 +290,7 @@ function TargetBinding({
         {scopePreview !== undefined && (
           <details open>
             <summary>权限解析结果</summary>
-            <pre>{JSON.stringify(scopePreview, null, 2)}</pre>
+            <pre>{displayText(JSON.stringify(scopePreview, null, 2))}</pre>
           </details>
         )}
       </details>
@@ -285,9 +301,9 @@ function TargetBinding({
             <div className="permission-history-entry" key={binding.id}>
               <strong>
                 绑定 v{binding.version}
-                {binding.id === active?.id ? " · 当前" : ""}
+                {displayText(binding.id === active?.id ? " · 当前" : "")}
               </strong>
-              <span>{binding.data.permission_revision_id}</span>
+              <span>{displayText(binding.data.permission_revision_id)}</span>
               <ActionButton
                 type="button"
                 disabled={
@@ -318,7 +334,7 @@ function TargetBinding({
         catalog={catalog}
         profileId={active?.data.permission_revision_id}
       />
-      {message && <p role="status">{message}</p>}
+      {message && <p role="status">{displayText(message)}</p>}
     </section>
   );
 }

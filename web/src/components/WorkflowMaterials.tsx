@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { useEffect, useState } from "react";
 import { ActionButton } from "./ActionFeedback";
 import { DeliveryOutput } from "./DeliveryContent";
@@ -5,6 +6,7 @@ import { MarkdownPreview } from "./configuration-ui";
 import { type Request, type Row } from "./rpc-types";
 import { RawJsonLink, ReadState } from "./reading";
 import { useReading, navigateReading, executionUrl } from "./reading-state";
+import { WorkflowReferences } from "./WorkflowReferences";
 
 function MaterialReader({
   projectId,
@@ -31,8 +33,8 @@ function MaterialReader({
       <ReadState {...state} />
       {state.value?.document ? (
         <>
-          <h3>{state.value.document.title}</h3>
-          <p>手工材料 · 修订 {state.value.document.version}</p>
+          <h3>{displayText(state.value.document.title)}</h3>
+          <p>手工材料 · 修订 {displayText(state.value.document.version)}</p>
           <MarkdownPreview text={state.value.document.body} />
           <RawJsonLink
             source="material"
@@ -46,12 +48,22 @@ function MaterialReader({
       ) : (
         state.value && (
           <>
-            <h3>{state.value.record.delivery_name}</h3>
+            <h3>{displayText(state.value.record.delivery_name)}</h3>
             <p className="muted">
-              {state.value.record.owner_title} · {state.value.record.step_name}{" "}
-              · {state.value.record.port} · 第 {state.value.record.round} 轮 ·{" "}
-              {state.value.record.status}
+              {displayText(state.value.record.owner_title)} ·{" "}
+              {displayText(state.value.record.step_name)} ·{" "}
+              {displayText(state.value.record.port)} · 第{" "}
+              {displayText(state.value.record.round)} 轮 ·{" "}
+              {displayText(state.value.record.status)}
             </p>
+            {state.value.record.historical && (
+              <p className="muted">历史执行产物 · 保留产生时的来源与规范</p>
+            )}
+            <WorkflowReferences
+              source={{ ...state.value.record, output_id: outputId }}
+              {...{ projectId, ownerId }}
+              current="documents"
+            />
             <RawJsonLink
               source="material"
               params={{
@@ -100,8 +112,10 @@ export function WorkflowMaterials({
     setDraft("");
   }, [target.execution_id]);
   const records: Row[] = state.value?.records || [];
-  const selected = target.output_id || "";
-  const manual = documents.find((d) => d.id === selected);
+  const manualDocuments: Row[] = state.value?.documents || documents;
+  const selected =
+    target.output_id || records[0]?.id || manualDocuments[0]?.id || "";
+  const manual = manualDocuments.find((d) => d.id === selected);
   const groups = new Map<string, Row[]>();
   for (const item of records) {
     const key = item.delivery_ref;
@@ -127,7 +141,7 @@ export function WorkflowMaterials({
         <div>
           <h3>材料目录</h3>
           <p className="muted">
-            选择一份交付物阅读正文。步骤和任务用于定位来源。
+            当前范围内的流程产物与历史材料；每份材料可追溯到产生它的步骤和上下文。
           </p>
         </div>
         <ActionButton onClick={state.retry} disabled={state.loading}>
@@ -172,42 +186,51 @@ export function WorkflowMaterials({
         <nav className="reading-directory" aria-label="材料目录">
           <ReadState {...state} />
           {state.value && (
-            <p role="status">共 {state.value.total} 项工作流产物</p>
+            <p role="status">
+              共 {displayText(state.value.total)} 项工作流产物
+            </p>
           )}
           {[...groups].map(([key, items]) => (
             <section key={key}>
-              <h4>{items[0].delivery_name}</h4>
+              <h4>{displayText(items[0].delivery_name)}</h4>
               {items.map((item) => (
-                <button
-                  key={item.id}
-                  aria-current={selected === item.id}
-                  onClick={() => select(item.id)}
-                >
-                  {item.delivery_name}
-                  <small>
-                    {item.owner_title} · {item.step_name} · {item.port}
-                  </small>
-                </button>
+                <div key={item.id}>
+                  <button
+                    aria-current={selected === item.id}
+                    onClick={() => select(item.id)}
+                  >
+                    {displayText(item.delivery_name)}
+                    <small>
+                      {displayText(item.owner_title)} ·{" "}
+                      {displayText(item.step_name)} · {displayText(item.port)}
+                      {displayText(item.historical ? " · 历史产物" : "")}
+                    </small>
+                  </button>
+                </div>
               ))}
             </section>
           ))}
-          {documents.length > 0 && (
+          {manualDocuments.length > 0 && (
             <section>
               <h4>手工材料修订</h4>
-              {documents.map((doc) => (
+              {manualDocuments.map((doc) => (
                 <button
                   key={doc.id}
                   aria-current={selected === doc.id}
                   onClick={() => select(doc.id)}
                 >
-                  {doc.title}
-                  <small>修订 {doc.version}</small>
+                  {displayText(doc.title)}
+                  <small>修订 {displayText(doc.version)}</small>
                 </button>
               ))}
             </section>
           )}
           {state.value && !records.length && (
-            <p>{search ? "没有匹配的工作流产物。" : "当前范围尚无产物。"}</p>
+            <p>
+              {displayText(
+                search ? "没有匹配的工作流产物。" : "当前范围尚无产物。",
+              )}
+            </p>
           )}
           {(state.value?.total || 0) > 20 && (
             <div className="pager">
@@ -229,8 +252,10 @@ export function WorkflowMaterials({
         </nav>
         {manual ? (
           <article className="reading-body" id={`material-${selected}`}>
-            <h3>{manual.title}</h3>
-            <p className="muted">手工材料 · 修订 {manual.version}</p>
+            <h3>{displayText(manual.title)}</h3>
+            <p className="muted">
+              手工材料 · 修订 {displayText(manual.version)}
+            </p>
             <MarkdownPreview text={manual.body} />
             <RawJsonLink
               source="material"

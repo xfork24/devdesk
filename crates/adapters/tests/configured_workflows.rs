@@ -1163,6 +1163,64 @@ fn dynamic_spec_rejection_cannot_be_confirmed_and_rework_keeps_the_original_repo
     drive(&engine, 12);
     let after = instance(&engine, &run["id"]);
     assert_ne!(before["steps"][0]["id"], after["steps"][0]["id"]);
+    // Every perspective keeps the exact producer and original Turn, including
+    // outputs from a rejected round after rework creates a new execution.
+    let scope = json!({"project_id":before["project_id"],"owner_id":before["owner_id"]});
+    let materials = engine
+        .query("query.workflow_materials", &scope, 100)
+        .unwrap();
+    assert_eq!(materials["total"], 2);
+    let original = materials["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == output)
+        .unwrap();
+    assert_eq!(original["execution_id"], before["steps"][0]["id"]);
+    assert_eq!(original["turn_id"], before["steps"][0]["turn_id"]);
+    assert_eq!(original["session_id"], before["steps"][0]["session_id"]);
+    assert_eq!(original["historical"], true);
+    let contexts = engine
+        .query("query.workflow_contexts", &scope, 100)
+        .unwrap();
+    assert_eq!(contexts["executions"].as_array().unwrap().len(), 2);
+    let entries: Vec<_> = contexts["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|agent| agent["entries"].as_array().unwrap())
+        .collect();
+    let frozen = entries
+        .iter()
+        .find(|entry| entry["turn_id"] == original["turn_id"])
+        .unwrap();
+    assert_eq!(frozen["execution_id"], original["execution_id"]);
+    assert_eq!(frozen["outputs"][0]["id"], output);
+    assert!(entries.iter().all(|entry| {
+        let source = engine
+            .query(
+                "query.execution_task",
+                &json!({"turn_id":entry["turn_id"]}),
+                100,
+            )
+            .unwrap();
+        source["task"]["source"]["execution_id"] == entry["execution_id"]
+    }));
+    let mut detail = scope.clone();
+    detail["output_id"] = json!(output);
+    assert_eq!(
+        engine
+            .query("query.workflow_materials", &detail, 100)
+            .unwrap()["record"]["execution_id"],
+        original["execution_id"]
+    );
+    detail = scope.clone();
+    detail["execution_id"] = original["execution_id"].clone();
+    let audit = engine
+        .query("query.workflow_executions", &detail, 100)
+        .unwrap();
+    assert_eq!(audit["record"]["turn_id"], original["turn_id"]);
+    assert!(!audit["facts"].as_array().unwrap().is_empty());
     assert_eq!(
         engine
             .store
@@ -1176,6 +1234,18 @@ fn dynamic_spec_rejection_cannot_be_confirmed_and_rework_keeps_the_original_repo
     command(&engine,"workflow.step.confirm",run["id"].as_str(),json!({"step":"study","input_digest":after["steps"][0]["input_digest"],"outputs":after["steps"][0]["outputs"]})).unwrap();
     drive(&engine, 2);
     assert_eq!(instance(&engine, &run["id"])["status"], "completed");
+    command(&engine, "workflow.start", before["owner_id"].as_str(), json!({"workflow_ref":before["workflow_ref"],"role_agent_bindings":{role["id"].as_str().unwrap():agent["id"]}})).unwrap();
+    let retained = engine
+        .query("query.workflow_materials", &scope, 100)
+        .unwrap();
+    assert_eq!(retained["total"], 2);
+    assert!(
+        retained["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|record| record["historical"] == true)
+    );
 }
 
 #[test]
@@ -3335,6 +3405,28 @@ fn task_agent_steps_own_distinct_sessions_even_while_the_same_agent_has_an_activ
         ]}),
     );
     let run = command(&engine, "workflow.start", Some(&task), json!({"workflow_ref":workflow["id"],"role_agent_bindings":{role["id"].as_str().unwrap():agent["id"]}})).unwrap();
+    let scope = json!({"project_id":project["id"],"owner_id":project["id"]});
+    let pending_contexts = engine
+        .query("query.workflow_contexts", &scope, 100)
+        .unwrap();
+    assert!(
+        pending_contexts["executions"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(pending_contexts["agents"].as_array().unwrap().is_empty());
+    let planned = engine
+        .query("query.workflow_executions", &scope, 100)
+        .unwrap();
+    assert_eq!(planned["records"].as_array().unwrap().len(), 3);
+    assert!(
+        planned["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|record| record["execution_available"] == false)
+    );
     // Prepare the first Turn without dispatching it. It remains an actual active queued Turn.
     for _ in 0..2 {
         control_fixture::evaluate(&engine).unwrap();
@@ -3380,6 +3472,31 @@ fn task_agent_steps_own_distinct_sessions_even_while_the_same_agent_has_an_activ
     );
     assert!(state.turns.iter().any(|turn| turn.status.active()));
     assert_ne!(state.sessions[0].runtime_binding, None);
+    let scope = json!({"project_id":project["id"],"owner_id":project["id"]});
+    let records = engine
+        .query("query.workflow_executions", &scope, 100)
+        .unwrap();
+    assert_eq!(records["records"].as_array().unwrap().len(), 3);
+    assert!(
+        records["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|record| record["owner_id"] == task && record["feature_id"] == feature)
+    );
+    let contexts = engine
+        .query("query.workflow_contexts", &scope, 100)
+        .unwrap();
+    assert_eq!(contexts["executions"].as_array().unwrap().len(), 3);
+    assert!(
+        engine
+            .query(
+                "query.workflow_executions",
+                &json!({"project_id":"another-project","owner_id":project["id"]}),
+                100
+            )
+            .is_err()
+    );
 }
 
 #[test]

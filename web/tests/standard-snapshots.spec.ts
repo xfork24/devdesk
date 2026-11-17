@@ -1,4 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
+import { test } from "./support/kernel";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -474,6 +475,7 @@ test("同一 Feature 的 Task 实际采用不同 Standard 且切换保留执行�
   const card = page
     .locator(".task-grid article")
     .filter({ has: page.getByText("Task B", { exact: true }) });
+  await page.getByText("待启动任务的规范配置", { exact: true }).click();
   await card.locator(".work-standard > summary").click();
   await expect(
     card.getByRole("button", { name: "保存采用的规范", exact: true }),
@@ -527,9 +529,10 @@ test("同一 Feature 的 Task 实际采用不同 Standard 且切换保留执行�
   const oldOutput = old.view.outputs[old.execution.outputs.result];
   expect(oldOutput.value.inputs.marker).toBe("B");
   await page.reload();
-  const updatedCard = page
-    .locator(".task-grid article")
-    .filter({ has: page.getByText("Task B", { exact: true }) });
+  await expect(page.locator(".task-grid article")).toHaveCount(0);
+  const updatedCard = page.locator(
+    `.manager-child-flow[data-instance-id="${childB.id}"]`,
+  );
   await updatedCard.locator(".work-standard > summary").click();
   await updatedCard.getByText("与其他工作比较规范", { exact: true }).click();
   const ta = workspace.detail.tasks.find((t: any) => t.title === "Task A");

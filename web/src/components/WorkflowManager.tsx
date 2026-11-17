@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { useReadRequest, ignoreCancelledRefresh } from "./use-read-request";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronRight } from "lucide-react";
@@ -7,6 +8,7 @@ import {
   latest,
   loadCatalog,
   loadConfigurationRecord,
+  mergeConfigurationRecords,
   useDraft,
 } from "./configuration-state";
 import { MarkdownField, RevisionSelect } from "./configuration-ui";
@@ -162,7 +164,7 @@ export function WorkflowManager({
         )
           return;
         epoch.current++;
-        setRows((rows) => [...rows.filter((r) => r.id !== row.id), row]);
+        setRows((rows) => mergeConfigurationRecords(rows, [row]));
         const document =
           row.type === "workflow_draft" ? row.data.document : row.data;
         setDraft({
@@ -390,14 +392,18 @@ export function WorkflowManager({
           {latest(visibleRows).map((row) => (
             <ActionButton
               key={row.id}
+              aria-pressed={draft.selected === row.id}
+              className={draft.selected === row.id ? "selected" : ""}
               onClick={() => {
                 capture();
                 choose(row);
               }}
             >
-              <strong>{row.name}</strong>
+              <strong>{displayText(row.name)}</strong>
               <small>
-                {row.type === "workflow_draft" ? "草稿" : `v${row.version}`}
+                {displayText(
+                  row.type === "workflow_draft" ? "草稿" : `v${row.version}`,
+                )}
               </small>
             </ActionButton>
           ))}
@@ -576,7 +582,7 @@ export function WorkflowManager({
                   setDraft((current) => ({ ...current, node: "workflow" }));
                 }}
               >
-                {draft.name || "流程配置"}
+                {displayText(draft.name || "流程配置")}
               </ActionButton>
               {document.stages.map((item: Row) => {
                 const expanded = draft.expandedStages.includes(item.key);
@@ -589,7 +595,9 @@ export function WorkflowManager({
                       <ActionButton
                         type="button"
                         className="tree-toggle"
-                        aria-label={`${expanded ? "折叠" : "展开"}阶段：${item.name}`}
+                        aria-label={displayText(
+                          `${expanded ? "折叠" : "展开"}阶段：${item.name}`,
+                        )}
                         aria-expanded={expanded}
                         onClick={() =>
                           setDraft((current) => ({
@@ -620,9 +628,9 @@ export function WorkflowManager({
                           }));
                         }}
                       >
-                        {item.name}
+                        {displayText(item.name)}
                       </ActionButton>
-                      <small>{steps.length} 个步骤</small>
+                      <small>{displayText(steps.length)} 个步骤</small>
                     </div>
                     {expanded ? (
                       <div className="workflow-stage-children">
@@ -643,8 +651,10 @@ export function WorkflowManager({
                               }));
                             }}
                           >
-                            {step.name}
-                            <small>{executorNames[step.executor.type]}</small>
+                            {displayText(step.name)}
+                            <small>
+                              {displayText(executorNames[step.executor.type])}
+                            </small>
                           </ActionButton>
                         ))}
                         {!steps.length ? <small>暂无步骤</small> : null}
@@ -815,7 +825,7 @@ export function WorkflowManager({
                             update({ stages });
                           }}
                         >
-                          {delta < 0 ? "上移阶段" : "下移阶段"}
+                          {displayText(delta < 0 ? "上移阶段" : "下移阶段")}
                         </ActionButton>
                       ))}
                     </div>
@@ -892,7 +902,7 @@ export function WorkflowManager({
                       >
                         {document.stages.map((stage: Row) => (
                           <option key={stage.key} value={stage.key}>
-                            {stage.name}
+                            {displayText(stage.name)}
                           </option>
                         ))}
                       </ActionSelect>
@@ -925,7 +935,7 @@ export function WorkflowManager({
                       >
                         {Object.entries(executorNames).map(([key, name]) => (
                           <option key={key} value={key}>
-                            {name}
+                            {displayText(name)}
                           </option>
                         ))}
                       </ActionSelect>
@@ -1219,7 +1229,7 @@ export function WorkflowManager({
                           .filter((item: Row) => item.key !== step.key)
                           .map((item: Row) => (
                             <option key={item.key} value={item.key}>
-                              {item.name}
+                              {displayText(item.name)}
                             </option>
                           ))}
                       </ActionSelect>
@@ -1393,20 +1403,20 @@ export function WorkflowManager({
           </div>
           {validation ? (
             <p role="status">
-              已解析 {validation.roles?.length || 0} 个 Role，
-              {validation.specification_view?.length || 0} 个步骤。
+              已解析 {displayText(validation.roles?.length || 0)} 个 Role，
+              {displayText(validation.specification_view?.length || 0)} 个步骤。
             </p>
           ) : null}
         </>
       )}
       {error ? (
         <p role="alert" className="error">
-          {error}
+          {displayText(error)}
         </p>
       ) : null}
       {message ? (
         <p role="status" className="notice">
-          {message}
+          {displayText(message)}
         </p>
       ) : null}
     </section>

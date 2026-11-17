@@ -818,8 +818,17 @@ impl Engine {
                     .filter(|controller| controller.data["session_id"] == sid)
             });
             let output_contract: Option<Value> = None;
+            let approval_context = controller
+                .map(|controller| {
+                    crate::controller_interactions::approval_context(
+                        &s,
+                        controller.data["root_instance_id"].as_str().unwrap_or(""),
+                    )
+                })
+                .transpose()?
+                .unwrap_or_default();
             Ok(
-                json!({"session":session,"controller":controller,"current_runtime_binding":session.runtime_binding,"workflow_context":crate::agent_tasks::session_workflow_context(&s, sid),"formal_execution":formal_execution,"output_contract":output_contract,"agent_instance_id":session_instance(&s,session),"experience_reads":crate::agent_context::experience_read_history(&s,sid),"turns":turns.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_turns":turns.len(),"events":events,"next_cursor":next,"interactions":s.interactions.iter().filter(|i|i.session_id==sid).rev().take(limit).collect::<Vec<_>>(),"proposals":s.proposals.iter().filter(|v|v.session_id==sid).rev().take(limit).collect::<Vec<_>>(),"executions":s.executions.iter().filter(|e|e.session_id==sid).rev().take(limit).collect::<Vec<_>>()}),
+                json!({"session":session,"controller":controller,"approval_context":approval_context,"current_runtime_binding":session.runtime_binding,"workflow_context":crate::agent_tasks::session_workflow_context(&s, sid),"formal_execution":formal_execution,"output_contract":output_contract,"agent_instance_id":session_instance(&s,session),"experience_reads":crate::agent_context::experience_read_history(&s,sid),"turns":turns.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_turns":turns.len(),"events":events,"next_cursor":next,"interactions":s.interactions.iter().filter(|i|i.session_id==sid).rev().take(limit).collect::<Vec<_>>(),"proposals":s.proposals.iter().filter(|v|v.session_id==sid).rev().take(limit).collect::<Vec<_>>(),"executions":s.executions.iter().filter(|e|e.session_id==sid).rev().take(limit).collect::<Vec<_>>()}),
             )
         })())
     }

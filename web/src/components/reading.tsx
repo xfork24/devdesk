@@ -1,3 +1,4 @@
+import { displayText, truncateText } from "../display-text";
 import {
   executionUrl,
   navigateReading,
@@ -32,7 +33,7 @@ export function ReadingLink({
         }
       }}
     >
-      {children}
+      {displayText(children)}
     </a>
   );
 }
@@ -49,7 +50,7 @@ export function ReadState({
     <p role="status">正在读取…</p>
   ) : error ? (
     <div role="alert">
-      <p className="error">{error}</p>
+      <p className="error">{displayText(error)}</p>
       <button onClick={retry}>重试读取</button>
     </div>
   ) : null;
@@ -82,7 +83,7 @@ export function RawJsonLink({
       target="_blank"
       rel="noopener noreferrer"
     >
-      {title} ↗
+      {displayText(title)} ↗
     </a>
   );
 }
@@ -102,16 +103,22 @@ export function RawJsonReader({ request }: { request: Request }) {
   return (
     <main className="raw-reader">
       <header>
-        <h1>{source === "event" ? "原始事件" : `原始 JSON · ${source}`}</h1>
+        <h1>
+          {displayText(
+            source === "event" ? "原始事件" : `原始 JSON · ${source}`,
+          )}
+        </h1>
         <p>
           只读来源 ·{" "}
-          {params.event_id ||
-            params.diagnostic_turn_id ||
-            params.output_id ||
-            params.turn_id ||
-            params.execution_id ||
-            params.record_id ||
-            params.context_id}
+          {displayText(
+            params.event_id ||
+              params.diagnostic_turn_id ||
+              params.output_id ||
+              params.turn_id ||
+              params.execution_id ||
+              params.record_id ||
+              params.context_id,
+          )}
         </p>
         <button
           disabled={!raw}
@@ -124,13 +131,16 @@ export function RawJsonReader({ request }: { request: Request }) {
         >
           复制 JSON
         </button>
-        <span role="status">{copied}</span>
+        <span role="status">{displayText(copied)}</span>
       </header>
       {!rawMethods[source] && <p role="alert">不支持的原始数据来源。</p>}
       <ReadState {...state} />
       {raw && (
+        <p className="muted">UUID 显示前 8 位，复制 JSON 保留完整响应。</p>
+      )}
+      {raw && (
         <pre aria-label="完整原始 JSON">
-          <code>{raw}</code>
+          <code>{displayText(raw)}</code>
         </pre>
       )}
     </main>
@@ -160,7 +170,9 @@ export function ReadableValue({
   if (typeof value !== "object")
     return (
       <span>
-        {typeof value === "boolean" ? (value ? "是" : "否") : String(value)}
+        {displayText(
+          typeof value === "boolean" ? (value ? "是" : "否") : String(value),
+        )}
       </span>
     );
   if (Array.isArray(value)) {
@@ -188,7 +200,7 @@ export function ReadableValue({
     <dl className="readable-fields">
       {entries.map(([key, item]) => (
         <div key={key}>
-          <dt>{fieldName(key)}</dt>
+          <dt>{displayText(fieldName(key))}</dt>
           <dd>
             <ReadableValue value={item} depth={depth + 1} />
           </dd>
@@ -203,12 +215,16 @@ export function DiscussionLink({
   ownerId,
   sessionId,
   taskId,
+  featureId,
+  turnId,
   children,
 }: {
   projectId: string;
   ownerId: string;
   sessionId: string;
   taskId?: string;
+  featureId?: string;
+  turnId?: string;
   children: React.ReactNode;
 }) {
   const p = new URLSearchParams(
@@ -216,8 +232,10 @@ export function DiscussionLink({
   );
   p.set("tab", "discussion");
   p.delete("detail");
+  if (featureId) p.set("feature_id", featureId);
   if (taskId) p.set("task_id", taskId);
   else p.delete("task_id");
+  if (turnId) p.set("turn_id", turnId);
   const url = `?${p}`;
   return (
     <a
@@ -229,7 +247,7 @@ export function DiscussionLink({
         }
       }}
     >
-      {children}
+      {displayText(children)}
     </a>
   );
 }
@@ -244,8 +262,8 @@ export function LazyDetails({
   const [open, setOpen] = useState(false);
   return (
     <details onToggle={(e) => setOpen(e.currentTarget.open)}>
-      <summary>{summary}</summary>
-      {open && children}
+      <summary>{displayText(summary)}</summary>
+      {displayText(open && children)}
     </details>
   );
 }
@@ -262,7 +280,7 @@ function compactValue(value: unknown, depth = 0): unknown {
       }
     }
     return value.length > 400
-      ? value.slice(0, 400) +
+      ? truncateText(value, 400) +
           "\n\n（预览已缩短，完整内容可展开或查看原始 JSON）"
       : value;
   }

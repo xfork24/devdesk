@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { ActionButton, ActionForm, ActionSelect } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
 import {
@@ -124,9 +125,11 @@ export function DshProviderSettings({ request }: { request: Request }) {
     <div className="setting-row">
       <div>
         <h3>
-          {provider === "deepseek"
-            ? "DeepSeek 官方 API key"
-            : selected?.label || "DSH 模型服务商"}
+          {displayText(
+            provider === "deepseek"
+              ? "DeepSeek 官方 API key"
+              : selected?.label || "DSH 模型服务商",
+          )}
         </h3>
         <label>
           DSH 模型服务商
@@ -146,7 +149,7 @@ export function DshProviderSettings({ request }: { request: Request }) {
             {providers.length ? (
               providers.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.label}
+                  {displayText(p.label)}
                 </option>
               ))
             ) : (
@@ -163,21 +166,27 @@ export function DshProviderSettings({ request }: { request: Request }) {
         ) : (
           <>
             <p>
-              {status
-                ? status.configured
-                  ? "已配置"
-                  : "尚未配置"
-                : "正在读取配置状态…"}
+              {displayText(
+                status
+                  ? status.configured
+                    ? "已配置"
+                    : "尚未配置"
+                  : "正在读取配置状态…",
+              )}
             </p>
             <p className="muted">
               密钥保存在本机系统凭据库。
-              {provider === "deepseek" ? "" : "请使用所选国内订阅套餐的 key。"}
+              {displayText(
+                provider === "deepseek" ? "" : "请使用所选国内订阅套餐的 key。",
+              )}
             </p>
             {status?.available === false && (
               <p role="alert">
-                {status.storage === "macos_keychain"
-                  ? "凭据助手不可用或版本过旧；新服务商需要显式升级同证书签名的共享助手。"
-                  : "系统凭据库不可用；Linux 请安装 libsecret-tools 并启动桌面 Secret Service。"}
+                {displayText(
+                  status.storage === "macos_keychain"
+                    ? "凭据助手不可用或版本过旧；新服务商需要显式升级同证书签名的共享助手。"
+                    : "系统凭据库不可用；Linux 请安装 libsecret-tools 并启动桌面 Secret Service。",
+                )}
               </p>
             )}
             {status?.configured && (
@@ -241,11 +250,11 @@ export function DshProviderSettings({ request }: { request: Request }) {
         )}
         {selected?.endpoint && (
           <p className="muted">
-            默认服务地址：<code>{selected.endpoint}</code>
+            默认服务地址：<code>{displayText(selected.endpoint)}</code>
           </p>
         )}
         <p role="status" aria-live="polite">
-          {message}
+          {displayText(message)}
         </p>
       </div>
     </div>
@@ -370,8 +379,10 @@ export function ModelFields({
     <div className="full-width model-fields">
       {!codex && (
         <p className="muted">
-          {selected?.label} ·{" "}
-          {ollama ? "通过本机 Ollama 服务连接" : selected?.endpoint}
+          {displayText(selected?.label)} ·{" "}
+          {displayText(
+            ollama ? "通过本机 Ollama 服务连接" : selected?.endpoint,
+          )}
         </p>
       )}
       {ollama && (
@@ -415,10 +426,12 @@ export function ModelFields({
             </option>
             {available.map((model) => (
               <option key={model.id} value={model.id}>
-                {model.id}
-                {model.displayName && model.displayName !== model.id
-                  ? ` · ${model.displayName}`
-                  : ""}
+                {displayText(model.id)}
+                {displayText(
+                  model.displayName && model.displayName !== model.id
+                    ? ` · ${model.displayName}`
+                    : "",
+                )}
               </option>
             ))}
           </ActionSelect>
@@ -432,11 +445,11 @@ export function ModelFields({
             刷新模型目录
           </ActionButton>
         </div>
-        {parameters}
+        {displayText(parameters)}
       </div>
       {error && (
         <p className="action-feedback error" role="alert">
-          {error}
+          {displayText(error)}
         </p>
       )}
       {loading && (
@@ -444,9 +457,11 @@ export function ModelFields({
       )}
       {source && (
         <p className="muted">
-          {source}
-          {readAt ? ` · ${new Date(readAt).toLocaleTimeString()}` : ""} ·
-          读取目录不会发起推理。
+          {displayText(source)}
+          {displayText(
+            readAt ? ` · ${new Date(readAt).toLocaleTimeString()}` : "",
+          )}{" "}
+          · 读取目录不会发起推理。
         </p>
       )}
       {!codex && (
@@ -456,7 +471,7 @@ export function ModelFields({
             { key: "max_output_tokens", label: "最大输出容量", max: 1000000 },
           ].map((field) => (
             <label key={field.key}>
-              {field.label}
+              {displayText(field.label)}
               <input
                 type="number"
                 min={1}

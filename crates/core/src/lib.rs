@@ -836,16 +836,43 @@ impl Engine {
                             .as_str()
                             .is_some_and(|id| r.data["owner_id"] == id))
             });
+            let root = p["root_instance_id"]
+                .as_str()
+                .or_else(|| row.and_then(|r| r.data["root_instance_id"].as_str()));
+            if let (Some(root), Some(project)) = (root, p["project_id"].as_str()) {
+                require(
+                    s.configuration(root)?.scope.project_id() == Some(project),
+                    "流程跨项目",
+                )?;
+            }
+            let mut decisions = root
+                .map(|root| controller_interactions::pending_decisions(&s, root))
+                .unwrap_or_default();
+            decisions.extend(
+                s.governance
+                    .iter()
+                    .rev()
+                    .filter(|r| {
+                        r.r#type == "workflow_pending_decision"
+                            && r.data["status"] != "pending"
+                            && root.is_some_and(|root| {
+                                s.configuration(&r.definition_id)
+                                    .is_ok_and(|instance| instance.data["root_instance_id"] == root)
+                            })
+                    })
+                    .take(20)
+                    .map(|r| controller_interactions::decision_view(&s, r)),
+            );
             if let Some(row) = row {
                 if let Some(project) = p["project_id"].as_str() {
                     require(row.scope.project_id() == Some(project), "编排控制器跨项目")?;
                 }
                 let sid = row.data["session_id"].as_str();
                 return Ok(
-                    json!({"record":row,"messages":s.conversation_events.iter().filter(|e|Some(e.session_id.as_str())==sid && e.kind==ConversationEventKind::Assistant).rev().take(20).collect::<Vec<_>>(),"calls":s.governance.iter().filter(|r|r.r#type=="controller_tool_call"&&r.definition_id==row.id).rev().take(30).collect::<Vec<_>>(),"interactions":s.governance.iter().filter(|r|r.r#type=="controller_interaction"&&r.definition_id==row.id).rev().take(20).collect::<Vec<_>>(),"decisions":s.governance.iter().filter(|r|r.r#type=="workflow_pending_decision"&&s.configuration(&r.definition_id).is_ok_and(|instance| instance.data["root_instance_id"]==row.data["root_instance_id"])).rev().take(20).map(|r|controller_interactions::decision_view(&s,r)).collect::<Vec<_>>() }),
+                    json!({"record":row,"messages":s.conversation_events.iter().filter(|e|Some(e.session_id.as_str())==sid && e.kind==ConversationEventKind::Assistant).rev().take(20).collect::<Vec<_>>(),"calls":s.governance.iter().filter(|r|r.r#type=="controller_tool_call"&&r.definition_id==row.id).rev().take(30).collect::<Vec<_>>(),"interactions":s.governance.iter().filter(|r|r.r#type=="controller_interaction"&&r.definition_id==row.id).rev().take(20).collect::<Vec<_>>(),"decisions":decisions }),
                 );
             }
-            return Ok(json!({"record":null,"messages":[],"calls":[],"decisions":[]}));
+            return Ok(json!({"record":null,"messages":[],"calls":[],"decisions":decisions}));
         }
         if let Some(result) = self.workflow_control_query(method, p) {
             return result;

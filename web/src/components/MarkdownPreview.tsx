@@ -1,6 +1,7 @@
 import { createContext, useContext, type ReactNode } from "react";
 import Markdown, { type Components, type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { displayText } from "../display-text";
 
 type Element = NonNullable<ExtraProps["node"]>;
 type Container = Pick<Element, "children">;
@@ -39,6 +40,22 @@ function appendTrailing() {
   };
 }
 
+function abbreviateUuids() {
+  const visit = (container: Container) => {
+    for (const node of container.children) {
+      if (node.type === "text") node.value = displayText(node.value);
+      else if (node.type === "element") {
+        for (const key of ["title", "alt"]) {
+          if (typeof node.properties[key] === "string")
+            node.properties[key] = displayText(node.properties[key]);
+        }
+        visit(node);
+      }
+    }
+  };
+  return visit;
+}
+
 export default function MarkdownPreview({
   text,
   trailing,
@@ -50,7 +67,9 @@ export default function MarkdownPreview({
     <TrailingContext.Provider value={trailing}>
       <Markdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={trailing ? [appendTrailing] : []}
+        rehypePlugins={
+          trailing ? [abbreviateUuids, appendTrailing] : [abbreviateUuids]
+        }
         components={trailing ? trailingComponents : undefined}
       >
         {text}

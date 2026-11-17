@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { ActionButton } from "./ActionFeedback";
 import { ResourceEditor } from "./AgentCatalog";
 import { Integrations } from "./Integrations";
@@ -44,7 +45,9 @@ export function ConfigurationPage({
     <>
       <section className="panel">
         <div className="panel-heading">
-          <h2>{group === "processes" ? "流程与规范" : "基础组件"}</h2>
+          <h2>
+            {displayText(group === "processes" ? "流程与规范" : "基础组件")}
+          </h2>
         </div>
         <div
           className="configuration-tabs"
@@ -65,7 +68,7 @@ export function ConfigurationPage({
                 }
               }}
             >
-              {name}
+              {displayText(name)}
             </ActionButton>
           ))}
         </div>

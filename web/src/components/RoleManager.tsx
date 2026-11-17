@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { useReadRequest, ignoreCancelledRefresh } from "./use-read-request";
 import { ActionButton, ActionForm, ActionSelect } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
@@ -6,6 +7,7 @@ import {
   latest,
   loadCatalog,
   loadConfigurationRecord,
+  mergeConfigurationRecords,
   useDraft,
 } from "./configuration-state";
 import { MarkdownField } from "./configuration-ui";
@@ -85,7 +87,7 @@ export function RoleManager({
           controller.signal,
         );
         if (controller.signal.aborted || row.type !== "role") return;
-        setRows((rows) => [...rows.filter((r) => r.id !== row.id), row]);
+        setRows((rows) => mergeConfigurationRecords(rows, [row]));
         setDraft({
           selected: row.id,
           name: row.name,
@@ -205,6 +207,7 @@ export function RoleManager({
           {latest(rows).map((row) => (
             <ActionButton
               key={row.id}
+              aria-pressed={draft.selected === row.id}
               className={draft.selected === row.id ? "selected" : ""}
               onClick={() => {
                 captureFeedback();
@@ -213,8 +216,8 @@ export function RoleManager({
                 setMessage("");
               }}
             >
-              <strong>{row.name}</strong>
-              <span>v{row.version}</span>
+              <strong>{displayText(row.name)}</strong>
+              <span>v{displayText(row.version)}</span>
             </ActionButton>
           ))}
         </div>
@@ -278,7 +281,7 @@ export function RoleManager({
               >
                 {projects.map((row) => (
                   <option value={row.id} key={row.id}>
-                    {row.title}
+                    {displayText(row.title)}
                   </option>
                 ))}
               </ActionSelect>
@@ -302,7 +305,7 @@ export function RoleManager({
                 busy || !draft.name.trim() || !draft.instructions.trim()
               }
             >
-              {old ? "保存 Role 新版本" : "创建 Role"}
+              {displayText(old ? "保存 Role 新版本" : "创建 Role")}
             </ActionButton>
             <ActionButton
               type="button"
@@ -319,12 +322,12 @@ export function RoleManager({
       </div>
       {error && (
         <p role="alert" className="error">
-          {error}
+          {displayText(error)}
         </p>
       )}
       {message && (
         <p role="status" className="notice">
-          {message}
+          {displayText(message)}
         </p>
       )}
     </section>

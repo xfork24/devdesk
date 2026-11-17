@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { ActionButton } from "./ActionFeedback";
 import type {
   PermissionCatalog,
@@ -33,21 +34,23 @@ export function PermissionProfileHistory({
               disabled={disabled}
               onClick={() => onSelect(version)}
             >
-              {version.name} · v{version.version}
+              {displayText(version.name)} · v{version.version}
             </ActionButton>
           ) : (
             <strong>
-              {version.name} · v{version.version}
+              {displayText(version.name)} · v{version.version}
             </strong>
           )}
-          <span>{version.id}</span>
+          <span>{displayText(version.id)}</span>
           <pre>
-            {JSON.stringify(
-              catalog.origins
-                .filter((origin) => origin.definition_id === version.id)
-                .map((origin) => origin.data),
-              null,
-              2,
+            {displayText(
+              JSON.stringify(
+                catalog.origins
+                  .filter((origin) => origin.definition_id === version.id)
+                  .map((origin) => origin.data),
+                null,
+                2,
+              ),
             )}
           </pre>
         </div>

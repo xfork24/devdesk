@@ -1,9 +1,12 @@
+import { displayText, truncateText } from "../display-text";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { ActionButton } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
 import { type Request, type Row } from "./rpc-types";
-import { ReadingLink } from "./reading";
+import { ReadingLink, ReadState } from "./reading";
+import { WorkflowReferences } from "./WorkflowReferences";
+import { useReading } from "./reading-state";
 
 type Props = {
   nested?: boolean;
@@ -11,7 +14,9 @@ type Props = {
   record: Row;
   projectId: string;
   refresh: () => Promise<void>;
-  onDiscussion: (id: string, owner: string) => void;
+  onDiscussion: (id: string, owner: string, turnId?: string) => void;
+  target?: Row;
+  ownerId?: string;
 };
 const stateLabels: Record<string, string> = {
   queued: "等待前置",
@@ -55,6 +60,8 @@ export function WorkflowInstanceView({
   projectId,
   refresh,
   onDiscussion,
+  target = {},
+  ownerId,
 }: Props) {
   const { error, setError, capture, beginFeedback, endFeedback } =
     useActionFeedback();
@@ -72,6 +79,7 @@ export function WorkflowInstanceView({
     }
   });
   const epoch = useRef(0);
+  const focusedTarget = useRef("");
   const invalidate = useCallback(() => {
     epoch.current += 1;
   }, []);
@@ -110,6 +118,61 @@ export function WorkflowInstanceView({
   const runtime = data?.runtime || record.data,
     current = data?.record || record,
     plan = data?.plan || runtime.plan?.document;
+  const historical = useReading(
+    request,
+    "query.workflow_executions",
+    {
+      project_id: projectId,
+      owner_id: ownerId || runtime.owner_id,
+      instance_id: record.id,
+      execution_id: target.execution_id,
+    },
+    Boolean(
+      data &&
+      target.execution_id &&
+      target.instance_id === record.id &&
+      !runtime.steps.some((step: Row) => step.id === target.execution_id),
+    ),
+  );
+  useEffect(() => {
+    if (!target.execution_id) {
+      focusedTarget.current = "";
+      return;
+    }
+    if (!data) return;
+    const focus = `${record.id}:${target.instance_id}:${target.execution_id}`;
+    if (focusedTarget.current === focus) return;
+    const selected = data.runtime.steps.find(
+      (step: Row) => step.id === target.execution_id,
+    );
+    const next: Record<string, boolean> = {};
+    if (selected) {
+      const definition = data.plan?.steps?.find(
+        (step: Row) => step.key === selected.step,
+      );
+      if (definition) next[`stage:${definition.stage}`] = true;
+      next[`step:${selected.id}`] = true;
+    } else if (target.instance_id && target.instance_id !== record.id) {
+      for (const child of data.children || []) {
+        const parent = data.runtime.steps.find(
+          (step: Row) => step.id === child.data.parent_execution_id,
+        );
+        const definition = data.plan?.steps?.find(
+          (step: Row) => step.key === parent?.step,
+        );
+        if (definition) next[`stage:${definition.stage}`] = true;
+        if (parent) next[`step:${parent.id}`] = true;
+        next[child.id] = true;
+      }
+    }
+    if (!Object.keys(next).length) return;
+    focusedTarget.current = focus;
+    setOpen((current) =>
+      Object.keys(next).some((key) => !current[key])
+        ? { ...current, ...next }
+        : current,
+    );
+  }, [target.execution_id, target.instance_id, record.id, data]);
   async function act(method: string, payload: Row = {}) {
     capture();
     beginFeedback();
@@ -151,14 +214,14 @@ export function WorkflowInstanceView({
   return (
     <section
       className={`panel workflow-instance${nested ? " workflow-instance-child" : ""}`}
-      aria-label={nested ? "子流程进度" : "当前工作流"}
+      aria-label={displayText(nested ? "子流程进度" : "当前工作流")}
     >
       <div className="panel-heading">
         <div>
-          <h3>{current.name || "工作流程"}</h3>
+          <h3>{displayText(current.name || "工作流程")}</h3>
           <p>
-            {stateLabels[runtime.status] || runtime.status}
-            {runtime.paused ? " · 已暂停" : ""}
+            {displayText(stateLabels[runtime.status] || runtime.status)}
+            {displayText(runtime.paused ? " · 已暂停" : "")}
           </p>
         </div>
         <div className="actions">
@@ -182,7 +245,7 @@ export function WorkflowInstanceView({
                   )
                 }
               >
-                {runtime.paused ? "恢复流程" : "暂停流程"}
+                {displayText(runtime.paused ? "恢复流程" : "暂停流程")}
               </ActionButton>
               <ActionButton
                 type="button"
@@ -211,6 +274,35 @@ export function WorkflowInstanceView({
           ) : null}
         </div>
       </div>
+      {historical.loading && <ReadState {...historical} />}
+      {historical.error && <ReadState {...historical} />}
+      {historical.value?.record && (
+        <article className="workflow-step-runtime" aria-label="历史流程步骤">
+          <h4>
+            {displayText(historical.value.record.step_name)} · 历史执行第{" "}
+            {displayText(historical.value.record.round)} 轮
+          </h4>
+          <p>
+            {displayText(
+              historical.value.record.reason || historical.value.record.status,
+            )}
+          </p>
+          <p className="muted">
+            此步骤属于原计划{" "}
+            {displayText(historical.value.record.plan_revision_id)}
+            ，下方展示当前流程。
+          </p>
+          <WorkflowReferences
+            source={{
+              ...historical.value.record,
+              execution_id: historical.value.record.id,
+            }}
+            projectId={projectId}
+            ownerId={ownerId || runtime.owner_id}
+            current="overview"
+          />
+        </article>
+      )}
       {(plan?.stages || []).map((stage: Row) => {
         const definitions = plan.steps.filter(
           (step: Row) => step.stage === stage.key,
@@ -241,17 +333,18 @@ export function WorkflowInstanceView({
               onClick={() => toggle(stageKey)}
             >
               <ChevronRight aria-hidden="true" />
-              <strong>{stage.name}</strong>
+              <strong>{displayText(stage.name)}</strong>
               <span>
-                {completed} / {executions.length} · {status.label}
+                {displayText(completed)} / {displayText(executions.length)} ·{" "}
+                {displayText(status.label)}
               </span>
             </ActionButton>
             {stageOpen ? (
               <div className="workflow-stage-body">
                 {stage.description ? (
                   <p className="muted">
-                    {stage.description.slice(0, 180)}
-                    {stage.description.length > 180 ? "…" : ""}
+                    {displayText(truncateText(stage.description, 180))}
+                    {displayText(stage.description.length > 180 ? "…" : "")}
                   </p>
                 ) : null}
                 {executions.map(({ definition, execution }: Row) => {
@@ -270,7 +363,13 @@ export function WorkflowInstanceView({
                   return (
                     <article
                       key={execution.id}
-                      aria-label={`步骤 · ${definition.name}`}
+                      id={`workflow-execution-${execution.id}`}
+                      aria-current={
+                        target.execution_id === execution.id
+                          ? "step"
+                          : undefined
+                      }
+                      aria-label={displayText(`步骤 · ${definition.name}`)}
                       className={`workflow-step-runtime status-${execution.status}`}
                     >
                       <ActionButton
@@ -280,17 +379,23 @@ export function WorkflowInstanceView({
                         onClick={() => toggle(stepKey)}
                       >
                         <ChevronRight aria-hidden="true" />
-                        <strong>{definition.name}</strong>
+                        <strong>{displayText(definition.name)}</strong>
                         <span className={`badge status-${execution.status}`}>
-                          {stateLabels[execution.status] || execution.status}
+                          {displayText(
+                            stateLabels[execution.status] || execution.status,
+                          )}
                         </span>
                       </ActionButton>
                       <p className="workflow-step-summary">
-                        {data?.actors?.[execution.id]?.name ||
-                          definition.executor?.type ||
-                          "执行方式未记录"}{" "}
-                        · 第 {execution.round} 轮
-                        {execution.reason ? ` · ${execution.reason}` : ""}
+                        {displayText(
+                          data?.actors?.[execution.id]?.name ||
+                            definition.executor?.type ||
+                            "执行方式未记录",
+                        )}{" "}
+                        · 第 {displayText(execution.round)} 轮
+                        {displayText(
+                          execution.reason ? ` · ${execution.reason}` : "",
+                        )}
                       </p>
                       {stepOpen ? (
                         <div className="workflow-step-body">
@@ -300,9 +405,11 @@ export function WorkflowInstanceView({
                             !humanSatisfied && (
                               <div role="status">
                                 <p>
-                                  {unmet
-                                    ? "本步骤验收未通过，需要先返工。"
-                                    : "本步骤验收已通过，请核对产物并确认此版本，后续步骤将等待你的确认。"}
+                                  {displayText(
+                                    unmet
+                                      ? "本步骤验收未通过，需要先返工。"
+                                      : "本步骤验收已通过，请核对产物并确认此版本，后续步骤将等待你的确认。",
+                                  )}
                                 </p>
                                 <div className="reading-links">
                                   {Object.entries(definition.inputs || {}).map(
@@ -320,13 +427,15 @@ export function WorkflowInstanceView({
                                           key={name}
                                           detail="documents"
                                           projectId={projectId}
-                                          ownerId={runtime.owner_id}
+                                          ownerId={ownerId || runtime.owner_id}
                                           target={{ output_id: outputId }}
                                         >
                                           核对产物 ·{" "}
-                                          {plan.steps.find(
-                                            (s: Row) => s.key === source.step,
-                                          )?.name || name}
+                                          {displayText(
+                                            plan.steps.find(
+                                              (s: Row) => s.key === source.step,
+                                            )?.name || name,
+                                          )}
                                         </ReadingLink>
                                       ) : null;
                                     },
@@ -334,6 +443,19 @@ export function WorkflowInstanceView({
                                 </div>
                               </div>
                             )}
+                          <WorkflowReferences
+                            source={{
+                              owner_kind: record._reading?.owner_kind,
+                              feature_id: record._reading?.feature_id,
+                              ...execution,
+                              execution_id: execution.id,
+                              instance_id: current.id,
+                              owner_id: runtime.owner_id,
+                            }}
+                            projectId={projectId}
+                            ownerId={ownerId || runtime.owner_id}
+                            current="overview"
+                          />
                           <div className="actions">
                             {execution.status === "queued" && (
                               <ActionButton
@@ -375,6 +497,7 @@ export function WorkflowInstanceView({
                                   onDiscussion(
                                     execution.session_id,
                                     runtime.owner_id,
+                                    execution.turn_id,
                                   )
                                 }
                               >
@@ -470,9 +593,21 @@ export function WorkflowInstanceView({
                                   Approve；原校验报告会保留。
                                 </p>
                               ) : null}
+                              {!unmet &&
+                                definition.confirmation !== "human" && (
+                                  <p className="muted">
+                                    此步骤由项目经理自动接纳，无需人工确认；也可在此手动接纳当前结果。
+                                  </p>
+                                )}
                               <div className="workflow-step-inline-input">
                                 <label>
-                                  {unmet ? "手动批准理由（必填）" : "确认说明"}
+                                  {displayText(
+                                    unmet
+                                      ? "手动批准理由（必填）"
+                                      : definition.confirmation === "human"
+                                        ? "确认说明"
+                                        : "接纳说明",
+                                  )}
                                   <textarea
                                     value={reasons[execution.id] || ""}
                                     onChange={(event) =>
@@ -494,107 +629,80 @@ export function WorkflowInstanceView({
                                     void act(
                                       unmet
                                         ? "workflow.step.approve"
-                                        : "workflow.step.confirm",
+                                        : definition.confirmation === "human"
+                                          ? "workflow.step.confirm"
+                                          : "workflow.step.accept",
                                       {
                                         step: execution.step,
                                         execution_id: execution.id,
                                         input_digest: execution.input_digest,
                                         outputs: execution.outputs,
+                                        accept_result: true,
                                         reason: reasons[execution.id] || "",
                                       },
                                     )
                                   }
                                 >
-                                  {unmet
-                                    ? "手动 Approve 此版本"
-                                    : "确认此版本结果"}
+                                  {displayText(
+                                    unmet
+                                      ? "手动 Approve 此版本"
+                                      : definition.confirmation === "human"
+                                        ? "确认此版本结果"
+                                        : "接纳此版本结果",
+                                  )}
                                 </ActionButton>
                               </div>
                             </div>
                           ) : null}
                           {confirmation ? (
                             <p role="status">
-                              {confirmation.override_completion
-                                ? "已手动批准，原完成条件未满足"
-                                : "已人工确认"}
-                              {confirmation.reason
-                                ? `：${confirmation.reason}`
-                                : ""}
+                              {displayText(
+                                confirmation.override_completion
+                                  ? "已手动批准，原完成条件未满足"
+                                  : "已人工确认",
+                              )}
+                              {displayText(
+                                confirmation.reason
+                                  ? `：${confirmation.reason}`
+                                  : "",
+                              )}
                             </p>
                           ) : null}
-                          <div className="reading-links">
-                            {Object.keys(execution.outputs || {}).length >
-                              0 && (
-                              <ReadingLink
-                                detail="documents"
-                                projectId={projectId}
-                                ownerId={runtime.owner_id}
-                                target={{
-                                  execution_id: execution.id,
-                                  ...(Object.values(execution.outputs)
-                                    .length === 1
-                                    ? {
-                                        output_id: Object.values(
-                                          execution.outputs,
-                                        )[0],
-                                      }
-                                    : {}),
-                                }}
-                              >
-                                查看材料 ·{" "}
-                                {Object.keys(execution.outputs).length} 项
-                              </ReadingLink>
-                            )}
-                            {execution.session_id && (
-                              <ReadingLink
-                                detail="context"
-                                projectId={projectId}
-                                ownerId={runtime.owner_id}
-                                target={{
-                                  execution_id: execution.id,
-                                  turn_id: execution.turn_id,
-                                  session_id: execution.session_id,
-                                }}
-                              >
-                                查看执行者上下文
-                              </ReadingLink>
-                            )}
-                            <ReadingLink
-                              detail="records"
-                              projectId={projectId}
-                              ownerId={runtime.owner_id}
-                              target={{
-                                instance_id: current.id,
-                                execution_id: execution.id,
-                              }}
-                            >
-                              查看执行记录
-                            </ReadingLink>
-                          </div>
                           {children.map((child: Row) => (
                             <div className="workflow-child" key={child.id}>
                               <ActionButton
                                 type="button"
                                 className="workflow-child-toggle"
                                 aria-expanded={!!open[child.id]}
-                                aria-label={`子流程 · ${child.name} · ${stateLabels[child.data.status] || child.data.status} · ${open[child.id] ? "折叠" : "展开"}`}
+                                aria-label={displayText(
+                                  `子流程 · ${child.name} · ${stateLabels[child.data.status] || child.data.status} · ${open[child.id] ? "折叠" : "展开"}`,
+                                )}
                                 onClick={() => toggle(child.id)}
                               >
                                 <ChevronRight aria-hidden="true" />
-                                <strong>子流程 · {child.name}</strong>
+                                <strong>
+                                  子流程 · {displayText(child.name)}
+                                </strong>
                                 <span
                                   className={`badge status-${child.data.status}`}
                                 >
-                                  {stateLabels[child.data.status] ||
-                                    child.data.status}
+                                  {displayText(
+                                    stateLabels[child.data.status] ||
+                                      child.data.status,
+                                  )}
                                 </span>
                               </ActionButton>
                               {open[child.id] ? (
                                 <div className="workflow-inline-subflow">
                                   <WorkflowInstanceView
                                     nested
+                                    target={target}
                                     request={request}
-                                    record={child}
+                                    record={{
+                                      ...child,
+                                      _reading: record._reading,
+                                    }}
+                                    ownerId={ownerId}
                                     projectId={projectId}
                                     refresh={refresh}
                                     onDiscussion={onDiscussion}
@@ -615,7 +723,7 @@ export function WorkflowInstanceView({
       })}
       {error ? (
         <p role="alert" className="error">
-          {error}
+          {displayText(error)}
         </p>
       ) : null}
     </section>

@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { useEffect, useState } from "react";
 type Preparation = { provider: string; status: string; message: string };
 export function RuntimePreparationStatus({
@@ -35,7 +36,8 @@ export function RuntimePreparationStatus({
             className={p.status === "failed" ? "error" : "notice"}
             role="status"
           >
-            {p.provider === "dsh" ? "DeepSeek Harness" : "Codex"} · {p.message}
+            {displayText(p.provider === "dsh" ? "DeepSeek Harness" : "Codex")} ·{" "}
+            {displayText(p.message)}
           </div>
         ))}
     </>

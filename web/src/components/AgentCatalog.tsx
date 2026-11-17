@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { useReadRequest, ignoreCancelledRefresh } from "./use-read-request";
 import { ActionButton, ActionForm, ActionSelect } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
@@ -22,6 +23,7 @@ import {
   latest,
   loadCatalog,
   loadConfigurationRecord,
+  mergeConfigurationRecords,
   templateSourceLabel,
   loadIntegrationRecords,
   useDraft,
@@ -122,11 +124,13 @@ export function AgentCatalog({
       <section className="panel">
         <div className="panel-heading">
           <h2>
-            {group === "actors"
-              ? "角色与代理"
-              : group === "foundations"
-                ? "基础组件"
-                : "规范"}
+            {displayText(
+              group === "actors"
+                ? "角色与代理"
+                : group === "foundations"
+                  ? "基础组件"
+                  : "规范",
+            )}
           </h2>
         </div>
         <div
@@ -141,7 +145,7 @@ export function AgentCatalog({
               aria-selected={id === kind}
               onClick={() => setKind(id)}
             >
-              {labels[id]}
+              {displayText(labels[id])}
             </ActionButton>
           ))}
         </div>
@@ -268,10 +272,7 @@ export function ResourceEditor({
     )
       .then((rows) => {
         if (!controller.signal.aborted)
-          setRecords((old) => [
-            ...old.filter((r) => !refs.includes(r.id)),
-            ...rows,
-          ]);
+          setRecords((old) => mergeConfigurationRecords(old, rows));
       })
       .catch((error) => {
         if (!controller.signal.aborted) setError(String(error));
@@ -313,7 +314,7 @@ export function ResourceEditor({
   };
   const field = (label: string, key: string, required = false) => (
     <label>
-      {label}
+      {displayText(label)}
       <input
         required={required}
         value={data[key] || ""}
@@ -337,7 +338,7 @@ export function ResourceEditor({
           controller.signal,
         );
         if (controller.signal.aborted || row.type !== kind) return;
-        setRecords((rows) => [...rows.filter((r) => r.id !== row.id), row]);
+        setRecords((rows) => mergeConfigurationRecords(rows, [row]));
         setShowAdditionalEditor(false);
         let value = sourceContent(row);
         if (kind === "agent") {
@@ -461,19 +462,23 @@ export function ResourceEditor({
   const model = records.find((r) => r.id === data.model_ref),
     harness = records.find((r) => r.id === data.harness_ref);
   return (
-    <section className="panel" aria-label={`${labels[kind]} 管理`}>
+    <section className="panel" aria-label={displayText(`${labels[kind]} 管理`)}>
       <div className="panel-heading">
         <div>
-          <h2>{labels[kind]} 管理</h2>
+          <h2>{displayText(labels[kind])} 管理</h2>
           {templateSourceLabel(old) && (
-            <span className="muted">{templateSourceLabel(old)}</span>
+            <span className="muted">
+              {displayText(templateSourceLabel(old))}
+            </span>
           )}
           <p>
-            {kind === "agent"
-              ? "给一个 Role 与一个 Capability 的组合命名。"
-              : kind === "capability"
-                ? "选择可复用的 Model、Harness、Tools 和 Skills。"
-                : "修订独立保存，修改后由使用方显式采用。"}
+            {displayText(
+              kind === "agent"
+                ? "给一个 Role 与一个 Capability 的组合命名。"
+                : kind === "capability"
+                  ? "选择可复用的 Model、Harness、Tools 和 Skills。"
+                  : "修订独立保存，修改后由使用方显式采用。",
+            )}
           </p>
         </div>
       </div>
@@ -501,7 +506,7 @@ export function ResourceEditor({
               });
             }}
           >
-            新建 {labels[kind]}
+            新建 {displayText(labels[kind])}
           </ActionButton>
           {additionalEditor && (
             <ActionButton
@@ -512,13 +517,14 @@ export function ResourceEditor({
                 setMessage("");
               }}
             >
-              {additionalEditor.label}
+              {displayText(additionalEditor.label)}
             </ActionButton>
           )}
 
           {latest(records.filter((r) => r.type === kind)).map((row) => (
             <ActionButton
               key={row.id}
+              aria-pressed={!showAdditionalEditor && draft.selected === row.id}
               className={
                 !showAdditionalEditor && draft.selected === row.id
                   ? "selected"
@@ -529,15 +535,18 @@ export function ResourceEditor({
                 return choose(row);
               }}
             >
-              <strong>{row.name}</strong>
+              <strong>{displayText(row.name)}</strong>
               <span>
-                v{row.version} · {row.scope === "global" ? "Global" : "项目"}
+                v{displayText(row.version)} ·{" "}
+                {displayText(row.scope === "global" ? "Global" : "项目")}
               </span>
             </ActionButton>
           ))}
         </div>
         {additionalEditor && (
-          <div hidden={!showAdditionalEditor}>{additionalEditor.content}</div>
+          <div hidden={!showAdditionalEditor}>
+            {displayText(additionalEditor.content)}
+          </div>
         )}
         <ActionForm
           hidden={showAdditionalEditor}
@@ -600,21 +609,25 @@ export function ResourceEditor({
                 )}
                 {role && (
                   <div className="notice">
-                    <strong>{role.name}</strong>
+                    <strong>{displayText(role.name)}</strong>
                     <MarkdownPreview text={role.data.instructions} />
                   </div>
                 )}
                 {capability && (
                   <div className="notice">
                     Model：
-                    {records.find((r) => r.id === capability.model_ref)?.name ||
-                      "固定修订"}{" "}
+                    {displayText(
+                      records.find((r) => r.id === capability.model_ref)
+                        ?.name || "固定修订",
+                    )}{" "}
                     · Harness：
-                    {records.find((r) => r.id === capability.harness_ref)
-                      ?.name || "固定修订"}{" "}
-                    · Tools {capability.tools.length} · Skills{" "}
-                    {capability.skills.length} · Specs{" "}
-                    {capability.spec_refs?.length || 0}
+                    {displayText(
+                      records.find((r) => r.id === capability.harness_ref)
+                        ?.name || "固定修订",
+                    )}{" "}
+                    · Tools {displayText(capability.tools.length)} · Skills{" "}
+                    {displayText(capability.skills.length)} · Specs{" "}
+                    {displayText(capability.spec_refs?.length || 0)}
                   </div>
                 )}
                 <p className="muted full-width">
@@ -652,10 +665,12 @@ export function ResourceEditor({
                   );
                   return (
                     <p key={id} className={missing.length ? "error" : "notice"}>
-                      {records.find((r) => r.id === id)?.name}：
-                      {missing.length
-                        ? `缺少工具依赖 ${missing.join(", ")}`
-                        : "工具依赖已满足"}
+                      {displayText(records.find((r) => r.id === id)?.name)}：
+                      {displayText(
+                        missing.length
+                          ? `缺少工具依赖 ${missing.join(", ")}`
+                          : "工具依赖已满足",
+                      )}
                     </p>
                   );
                 })}
@@ -673,14 +688,16 @@ export function ResourceEditor({
 
                 {model && harness && (
                   <p className="notice">
-                    {harness.model_providers?.length &&
-                    !harness.model_providers.some(
-                      (ref: string) =>
-                        providers.find((p) => p.reference === ref)?.id ===
-                        model.data.provider,
-                    )
-                      ? "此 Harness 不支持选定模型后端，保存时会拒绝。"
-                      : `${model.name} / ${harness.name}`}
+                    {displayText(
+                      harness.model_providers?.length &&
+                        !harness.model_providers.some(
+                          (ref: string) =>
+                            providers.find((p) => p.reference === ref)?.id ===
+                            model.data.provider,
+                        )
+                        ? "此 Harness 不支持选定模型后端，保存时会拒绝。"
+                        : `${model.name} / ${harness.name}`,
+                    )}
                   </p>
                 )}
               </>
@@ -706,7 +723,7 @@ export function ResourceEditor({
                   >
                     {providers.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.label}
+                        {displayText(p.label)}
                       </option>
                     ))}
                   </ActionSelect>
@@ -741,7 +758,9 @@ export function ResourceEditor({
                             "xhigh",
                             "max",
                           ].map((v) => (
-                            <option key={v}>{v}</option>
+                            <option key={v} value={v}>
+                              {displayText(v)}
+                            </option>
                           ))}
                         </ActionSelect>
                       </label>
@@ -859,7 +878,7 @@ export function ResourceEditor({
                             });
                           }}
                         />
-                        <span>{p.label}</span>
+                        <span>{displayText(p.label)}</span>
                       </label>
                     ))}
                 </fieldset>
@@ -870,7 +889,8 @@ export function ResourceEditor({
                   )}
                   {projectInstallations.map((r) => (
                     <p key={r.id}>
-                      {r.key.version} · {r.key.os}/{r.key.arch}
+                      {displayText(r.key.version)} · {displayText(r.key.os)}/
+                      {displayText(r.key.arch)}
                     </p>
                   ))}
                   {old && (
@@ -911,27 +931,31 @@ export function ResourceEditor({
                 );
                 return pkg ? (
                   <div className="notice">
-                    <p>来源：{pkg.data.source}</p>
+                    <p>来源：{displayText(pkg.data.source)}</p>
                     <p>
-                      静态材料：{pkg.data.files.length} 个 ·{" "}
-                      {pkg.data.scripts_disabled ? "脚本执行未启用" : "无脚本"}
+                      静态材料：{displayText(pkg.data.files.length)} 个 ·{" "}
+                      {displayText(
+                        pkg.data.scripts_disabled ? "脚本执行未启用" : "无脚本",
+                      )}
                     </p>
                     <p>
                       必需工具：
-                      {pkg.data.requires_tools
-                        .map(
-                          (id: string) =>
-                            records.find((r) => r.id === id)?.name || id,
-                        )
-                        .join(", ") || "无"}
+                      {displayText(
+                        pkg.data.requires_tools
+                          .map(
+                            (id: string) =>
+                              records.find((r) => r.id === id)?.name || id,
+                          )
+                          .join(", ") || "无",
+                      )}
                     </p>
                     {pkg.data.files.map((file: Row) => (
                       <details key={file.path}>
-                        <summary>{file.path}</summary>
+                        <summary>{displayText(file.path)}</summary>
                         {file.path.endsWith(".md") ? (
                           <MarkdownPreview text={file.content} />
                         ) : (
-                          <pre>{file.content}</pre>
+                          <pre>{displayText(file.content)}</pre>
                         )}
                       </details>
                     ))}
@@ -1059,14 +1083,18 @@ export function ResourceEditor({
                   {data.producer ? (
                     <p>
                       产出来源：
-                      {{
-                        agent: "Agent",
-                        platform: "平台工具",
-                        workflow: "Workflow",
-                      }[data.producer.kind as string] || data.producer.kind}
-                      {data.producer.tools
-                        ? ` · ${data.producer.tools.join("、")}`
-                        : ""}
+                      {displayText(
+                        {
+                          agent: "Agent",
+                          platform: "平台工具",
+                          workflow: "Workflow",
+                        }[data.producer.kind as string] || data.producer.kind,
+                      )}
+                      {displayText(
+                        data.producer.tools
+                          ? ` · ${data.producer.tools.join("、")}`
+                          : "",
+                      )}
                     </p>
                   ) : null}
                   <WorkflowSpecifications
@@ -1118,7 +1146,9 @@ export function ResourceEditor({
                 (kind === "delivery_type" && !data.spec_refs?.length)
               }
             >
-              {old ? `保存 ${labels[kind]} 新版本` : `创建 ${labels[kind]}`}
+              {displayText(
+                old ? `保存 ${labels[kind]} 新版本` : `创建 ${labels[kind]}`,
+              )}
             </ActionButton>
             <>
               <ActionButton
@@ -1129,7 +1159,7 @@ export function ResourceEditor({
                   return void save(true);
                 }}
               >
-                删除 {labels[kind]}
+                删除 {displayText(labels[kind])}
               </ActionButton>
               {kind === "skill" && old && (
                 <ActionButton
@@ -1173,17 +1203,19 @@ export function ResourceEditor({
           </div>
         </ActionForm>
         {detailFooter && (
-          <div className="resource-detail-footer">{detailFooter(old)}</div>
+          <div className="resource-detail-footer">
+            {displayText(detailFooter(old))}
+          </div>
         )}
       </div>
       {error && (
         <p role="alert" className="error">
-          {error}
+          {displayText(error)}
         </p>
       )}
       {message && (
         <p role="status" className="notice">
-          {message}
+          {displayText(message)}
         </p>
       )}
     </section>

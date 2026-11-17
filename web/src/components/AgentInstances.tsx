@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { useEffect, useState } from "react";
 import { ActionButton, ActionForm, ActionSelect } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
@@ -106,21 +107,24 @@ export function AgentInstances({
           创建 Agent
         </ActionButton>
       </ActionForm>
-      {message && <p role="status">{message}</p>}
-      {error && <p role="alert">{error}</p>}
+      {message && <p role="status">{displayText(message)}</p>}
+      {error && <p role="alert">{displayText(error)}</p>}
       <h3>已有 Agent</h3>
       {records
         .filter((r) => r.type === "agent_instance")
         .map((instance) => (
           <article key={instance.id} className="document-row">
             <div>
-              <strong>{instance.name}</strong>
+              <strong>{displayText(instance.name)}</strong>
               <p>
-                {instance.scope === "global" ? "全局" : "当前项目"} ·{" "}
-                {records.find((r) => r.id === instance.data.agent_revision_id)
-                  ?.name || instance.data.agent_revision_id}
+                {displayText(instance.scope === "global" ? "全局" : "当前项目")}{" "}
+                ·{" "}
+                {displayText(
+                  records.find((r) => r.id === instance.data.agent_revision_id)
+                    ?.name || instance.data.agent_revision_id,
+                )}
               </p>
-              <code>{instance.id}</code>
+              <code>{displayText(instance.id)}</code>
             </div>
           </article>
         ))}

@@ -1,3 +1,4 @@
+import { displayText, shortId } from "../display-text";
 import { ActionButton } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -158,23 +159,25 @@ export function AgentExperience({
       ) : (
         <>
           <p className="mono">
-            {instanceId} · {data?.scope || ""}
+            {displayText(instanceId)} · {displayText(data?.scope || "")}
           </p>
           {filters}
           <p>
-            {data?.total || 0} 条经验 · 同一 Feature 持续更新一条记录 ·
-            时间按当前时区显示
+            {displayText(data?.total || 0)} 条经验 · 同一 Feature
+            持续更新一条记录 · 时间按当前时区显示
           </p>
           {data?.records.map((entry: Row) => (
             <article key={entry.snapshot_id + entry.session_id}>
               <strong>
-                {entry.project_name} / {entry.feature_name}
+                {displayText(entry.project_name)} /{" "}
+                {displayText(entry.feature_name)}
               </strong>
               <p>
-                {new Date(entry.captured_at).toLocaleString()} · {entry.kind} ·{" "}
-                {entry.task_id
-                  ? `Task ${entry.task_id.slice(0, 8)}`
-                  : "Feature"}
+                {displayText(new Date(entry.captured_at).toLocaleString())} ·{" "}
+                {displayText(entry.kind)} ·{" "}
+                {displayText(
+                  entry.task_id ? `Task ${shortId(entry.task_id)}` : "Feature",
+                )}
               </p>
               <div className="actions">
                 {onReference && (
@@ -220,7 +223,7 @@ export function AgentExperience({
           ))}
           {data?.unavailable.map((p: Row) => (
             <p key={p.project_id} className="notice">
-              {p.project_name}：历史项目当前不可用
+              {displayText(p.project_name)}：历史项目当前不可用
             </p>
           ))}
           <div className="actions">
@@ -245,14 +248,16 @@ export function AgentExperience({
           </div>
           {detail && (
             <article className="notice">
-              <h3>{detail.entry.feature_name} · 快照摘要</h3>
+              <h3>{displayText(detail.entry.feature_name)} · 快照摘要</h3>
               <p>
-                {detail.entry.workflow_name
-                  ? `工作流 ${detail.entry.workflow_name} · `
-                  : ""}
-                Model {detail.entry.binding?.model} · Harness{" "}
-                {detail.entry.binding?.installation?.key.provider} · 完整性{" "}
-                {detail.integrity}
+                {displayText(
+                  detail.entry.workflow_name
+                    ? `工作流 ${detail.entry.workflow_name} · `
+                    : "",
+                )}
+                Model {displayText(detail.entry.binding?.model)} · Harness{" "}
+                {displayText(detail.entry.binding?.installation?.key.provider)}{" "}
+                · 完整性 {displayText(detail.integrity)}
               </p>
               <MarkdownPreview
                 text={
@@ -262,7 +267,7 @@ export function AgentExperience({
               />
               <details>
                 <summary>完整快照与证据引用</summary>
-                <pre>{JSON.stringify(detail, null, 2)}</pre>
+                <pre>{displayText(JSON.stringify(detail, null, 2))}</pre>
               </details>
               <ActionButton
                 disabled={busy}
@@ -304,7 +309,7 @@ export function AgentExperience({
       )}
       {error && (
         <p role="alert" className="error">
-          {error}
+          {displayText(error)}
         </p>
       )}
     </details>

@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { normalizeKernelAddress } from "./kernel-address";
 import { ActionButton, ActionForm } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
@@ -89,7 +90,7 @@ export function KernelConnection() {
     <section className="kernel-connection" aria-label="内核连接">
       <h3>连接内核</h3>
       <p className="muted">
-        当前内核：<code>{window.location.origin}</code>
+        当前内核：<code>{displayText(window.location.origin)}</code>
       </p>
       <ActionForm onSubmit={connect} noValidate>
         <label>
@@ -109,7 +110,7 @@ export function KernelConnection() {
           />
         </label>
         <ActionButton className="primary" disabled={busy}>
-          {busy ? "正在连接…" : "连接内核"}
+          {displayText(busy ? "正在连接…" : "连接内核")}
         </ActionButton>
       </ActionForm>
       <p className="muted">
@@ -117,7 +118,7 @@ export function KernelConnection() {
       </p>
       {error && (
         <p className="error" role="alert">
-          {error}
+          {displayText(error)}
         </p>
       )}
     </section>
@@ -186,7 +187,7 @@ export function KernelAuthentication({
     <section aria-label="内核认证">
       <h1>连接内核</h1>
       <p>
-        此内核需要连接密钥：<code>{window.location.origin}</code>
+        此内核需要连接密钥：<code>{displayText(window.location.origin)}</code>
       </p>
       <ActionForm onSubmit={login}>
         <label>
@@ -205,12 +206,12 @@ export function KernelAuthentication({
           />
         </label>
         <ActionButton className="primary" disabled={busy}>
-          {busy ? "正在验证…" : "验证并连接"}
+          {displayText(busy ? "正在验证…" : "验证并连接")}
         </ActionButton>
       </ActionForm>
       {error && (
         <p className="error" role="alert">
-          {error}
+          {displayText(error)}
         </p>
       )}
     </section>

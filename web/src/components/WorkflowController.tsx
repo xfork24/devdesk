@@ -1,4 +1,6 @@
+import { displayText } from "../display-text";
 import { ManagerInteraction } from "./ManagerInteraction";
+import { RuntimeApproval } from "./RuntimeApproval";
 import { DiscussionLink, ReadingLink } from "./reading";
 import { StandardDiff } from "./StandardManager";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -13,7 +15,13 @@ type Props = {
   projectId: string;
   refresh: () => Promise<void>;
   workspaceOnly?: boolean;
+  shared?: WorkflowCollaboration;
+  onRead?: (next: WorkflowCollaboration) => void;
+  nested?: boolean;
+  embedded?: boolean;
 };
+
+export type WorkflowCollaboration = { data: Row; reload: () => Promise<void> };
 
 export function WorkflowController({
   request,
@@ -21,8 +29,13 @@ export function WorkflowController({
   projectId,
   refresh,
   workspaceOnly = false,
+  shared,
+  onRead,
+  nested = false,
+  embedded = false,
 }: Props) {
-  const [data, setData] = useState<Row>();
+  const [localData, setData] = useState<Row>();
+  const data = shared?.data || localData;
   const [catalog, setCatalog] = useState<Row[]>([]);
   const [catalogError, setCatalogError] = useState("");
   const [managerAgent, setManagerAgent] = useState("");
@@ -30,43 +43,53 @@ export function WorkflowController({
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [readError, setReadError] = useState("");
   const epoch = useRef(0);
   const invalidate = useCallback(() => {
     epoch.current += 1;
   }, []);
-  const load = useCallback(async () => {
+  const rootId = instance.data.root_instance_id || instance.id;
+  const load: () => Promise<void> = useCallback(async () => {
     const ticket = ++epoch.current;
     const [next, driver] = await Promise.all([
       request("query.orchestration", {
         ...(workspaceOnly
           ? { owner_id: projectId, workspace_only: true }
-          : { root_instance_id: instance.id }),
+          : { root_instance_id: rootId }),
         project_id: projectId,
       }),
       workspaceOnly
         ? Promise.resolve({ driver: null })
         : request("query.workflow_driver", {
-            id: instance.id,
+            id: rootId,
             project_id: projectId,
           }),
     ]);
-    if (ticket === epoch.current)
-      setData({
+    if (ticket === epoch.current) {
+      const value = {
         ...next,
         driver: driver.driver,
         driverWaiting: driver.waiting || [],
-      });
-  }, [request, instance.id, projectId, workspaceOnly]);
+        approvals: driver.approvals || [],
+        runtimeApprovals: driver.runtime_approvals || [],
+      };
+      setData(value);
+      onRead?.({ data: value, reload: load });
+      setReadError("");
+    }
+  }, [request, rootId, projectId, workspaceOnly, onRead]);
   useEffect(() => {
+    if (nested) return;
     let active = true;
     let timer: ReturnType<typeof setTimeout>;
     setData(undefined);
     setError("");
+    setReadError("");
     async function poll() {
       try {
         await load();
       } catch (e) {
-        if (active) setError(String(e));
+        if (active) setReadError(String(e));
       } finally {
         if (active) timer = setTimeout(() => void poll(), 2500);
       }
@@ -77,7 +100,7 @@ export function WorkflowController({
       clearTimeout(timer);
       invalidate();
     };
-  }, [invalidate, load]);
+  }, [invalidate, load, nested]);
   useEffect(() => {
     if (!workspaceOnly) return;
     let active = true;
@@ -139,7 +162,7 @@ export function WorkflowController({
         },
       });
       if (method === "orchestration.input") setInput("");
-      await Promise.all([load(), refresh()]);
+      await Promise.all([(shared?.reload || load)(), refresh()]);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -188,14 +211,62 @@ export function WorkflowController({
             (approved ? "用户批准当前确切请求" : "用户拒绝当前请求"),
         },
       });
-      await Promise.all([load(), refresh()]);
-    } catch (e) {
-      setError(String(e));
+      await Promise.all([(shared?.reload || load)(), refresh()]);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function confirmStep(
+    approval: Row,
+    approved: boolean,
+    opinion: string,
+  ) {
+    setBusy(true);
+    try {
+      await request(approved ? approval.operation : "workflow.step.rework", {
+        project_id: projectId,
+        command_id: crypto.randomUUID(),
+        target: approval.instance_id,
+        expected_revision: approval.revision,
+        payload: {
+          ...approval.arguments,
+          reason: opinion.trim() || "用户确认当前版本结果",
+        },
+      });
+      await Promise.all([(shared?.reload || load)(), refresh()]);
     } finally {
       setBusy(false);
     }
   }
   const controller = data?.record?.data;
+  const inScope = (id: string | undefined) =>
+    id ? id === instance.id : instance.id === rootId;
+  const decisions: Row[] = (data?.decisions || []).filter((decision: Row) =>
+    inScope(
+      decision.definition_id || decision.data.request.arguments.instance_id,
+    ),
+  );
+  const approvals: Row[] = (data?.approvals || []).filter((approval: Row) =>
+    inScope(approval.instance_id),
+  );
+  const runtimeApprovals: Row[] = (data?.runtimeApprovals || []).filter(
+    (item: Row) => inScope(item.instance_id),
+  );
+  const notices: Row[] = (data?.interactions || []).filter((notice: Row) =>
+    inScope(notice.data.instance_id),
+  );
+  const inputRequests = ((data?.driverWaiting || []) as Row[]).filter(
+    (item) => item.status === "waiting_input" && inScope(item.instance_id),
+  );
+  const currentInputNotice = notices.find((notice) =>
+    (notice.data.interaction?.evidence || []).some((reference: Row) =>
+      inputRequests.some(
+        (item) => item.execution_id === reference.execution_id,
+      ),
+    ),
+  )?.id;
+  const interactive =
+    workspaceOnly || !["completed", "cancelled"].includes(instance.data.status);
   const managerRole = catalog.find(
     (row) => row.type === "role" && row.id === controller?.role_ref,
   );
@@ -227,21 +298,108 @@ export function WorkflowController({
     needs_reconciliation: "执行结果需要核对",
     queued: "等待执行条件",
   };
+  const interactionCards = (
+    <>
+      {decisions.map((decision: Row) => (
+        <ManagerInteraction
+          key={decision.id}
+          interaction={{
+            ...(data?.approvals?.find(
+              (approval: Row) =>
+                approval.arguments.execution_id ===
+                decision.data.request.arguments.execution_id,
+            )?.interaction || {}),
+            ...(decision.data.request.interaction || {}),
+          }}
+          projectId={projectId}
+          ownerId={controller?.owner_id || projectId}
+          status={
+            decision.current === false && decision.data.status === "pending"
+              ? "stale"
+              : decision.data.status
+          }
+          busy={busy}
+          onDecide={(approved, opinion) =>
+            resolveDecision(decision, approved, opinion)
+          }
+        />
+      ))}
+      {runtimeApprovals.map((interaction: Row) => (
+        <RuntimeApproval
+          key={interaction.id}
+          request={request}
+          interaction={interaction}
+          projectId={projectId}
+          ownerId={instance.data.owner_id || projectId}
+          refresh={async () => {
+            await Promise.all([(shared?.reload || load)(), refresh()]);
+          }}
+        />
+      ))}
+      {approvals
+        .filter(
+          (approval: Row) =>
+            !(data?.decisions || []).some(
+              (decision: Row) =>
+                decision.current !== false &&
+                decision.data.status === "pending" &&
+                decision.data.request.arguments.execution_id ===
+                  approval.arguments.execution_id,
+            ),
+        )
+        .map((approval: Row) => (
+          <ManagerInteraction
+            key={approval.arguments.execution_id}
+            interaction={approval.interaction}
+            projectId={projectId}
+            ownerId={approval.owner_id}
+            status="pending"
+            busy={busy}
+            requireReason={approval.operation === "workflow.step.approve"}
+            onDecide={(approved, opinion) =>
+              confirmStep(approval, approved, opinion)
+            }
+          />
+        ))}
+      {notices.map((notice: Row) => (
+        <ManagerInteraction
+          key={notice.id}
+          interaction={notice.data.interaction}
+          projectId={projectId}
+          ownerId={controller?.owner_id || projectId}
+          busy={busy}
+          awaitingInput={notice.id === currentInputNotice}
+        />
+      ))}
+    </>
+  );
   return (
     <section
-      aria-label={workspaceOnly ? "项目经理工作台" : "项目经理协作"}
-      className="panel"
+      aria-label={displayText(
+        workspaceOnly ? "项目经理工作台" : "项目经理协作",
+      )}
+      className={embedded ? "manager-collaboration" : "panel"}
     >
-      <h3>{workspaceOnly ? "项目经理工作台" : "项目经理协作"}</h3>
+      <h3>{displayText(workspaceOnly ? "项目经理工作台" : "项目经理协作")}</h3>
+      {!workspaceOnly && (
+        <p className="muted">
+          在此处理当前流程的待确认事项。主工作流与子流程由同一位项目经理协调，接管或恢复项目经理会影响整个
+          Feature。
+        </p>
+      )}
       {!data && <p role="status">正在读取经理状态…</p>}
       {!workspaceOnly && data?.driver?.data.reason && (
         <p role="status">
-          {typeof data.driver.data.reason === "string"
-            ? data.driver.data.reason
-            : data.driver.data.reason.message}
+          {displayText(
+            typeof data.driver.data.reason === "string"
+              ? data.driver.data.reason
+              : data.driver.data.reason.message,
+          )}
         </p>
       )}
-      {data?.driverWaiting?.length > 0 && (
+      {(data?.driverWaiting || []).some((item: Row) =>
+        inScope(item.instance_id),
+      ) && (
         <section
           className="manager-blockers"
           aria-label="当前阻塞点"
@@ -249,38 +407,60 @@ export function WorkflowController({
         >
           <h4>当前阻塞点</h4>
           <p className="muted">
-            可直接在下方回复项目经理，由经理转交你的回答并协调后续执行。需要确认的产物或计划会在这里请求你的决定。
+            需要确认的产物或计划在下方处理；需要补充信息时，可通过“与项目经理继续讨论”回复。
           </p>
           <ul aria-label="调度等待条件">
-            {((data?.driverWaiting || []) as Row[]).map((item) => {
-              const gate = (Object.values(item.actions || {}) as Row[]).find(
-                (action) => item.waiting_for?.includes(action.code),
-              );
-              return (
-                <li key={item.execution_id}>
-                  <strong>
-                    {item.step_name || item.path || item.step} ·{" "}
-                    {waitingLabels[item.status] || item.status}
-                  </strong>
-                  <p>
-                    {gate?.reason || item.reason || "正在等待执行条件就绪。"}
-                  </p>
-                  <ReadingLink
-                    detail="records"
-                    projectId={projectId}
-                    ownerId={
-                      item.owner_id || instance.data.owner_id || projectId
-                    }
-                    target={{
-                      instance_id: item.instance_id,
-                      execution_id: item.execution_id,
-                    }}
-                  >
-                    查看执行详情
-                  </ReadingLink>
-                </li>
-              );
-            })}
+            {((data?.driverWaiting || []) as Row[])
+              .filter((item) => inScope(item.instance_id))
+              .map((item) => {
+                const gate = (Object.values(item.actions || {}) as Row[]).find(
+                  (action) => item.waiting_for?.includes(action.code),
+                );
+                return (
+                  <li key={item.execution_id}>
+                    <details
+                      className="manager-disclosure"
+                      open={
+                        item.status === "waiting_input" && !currentInputNotice
+                      }
+                    >
+                      <summary>
+                        <strong>
+                          {displayText(
+                            item.step_name || item.path || item.step,
+                          )}{" "}
+                          ·{" "}
+                          {displayText(
+                            waitingLabels[item.status] || item.status,
+                          )}
+                        </strong>
+                      </summary>
+                      <div className="manager-disclosure-body">
+                        <p>
+                          {displayText(
+                            gate?.reason ||
+                              item.reason ||
+                              "正在等待执行条件就绪。",
+                          )}
+                        </p>
+                        <ReadingLink
+                          detail="records"
+                          projectId={projectId}
+                          ownerId={
+                            item.owner_id || instance.data.owner_id || projectId
+                          }
+                          target={{
+                            instance_id: item.instance_id,
+                            execution_id: item.execution_id,
+                          }}
+                        >
+                          查看执行详情
+                        </ReadingLink>
+                      </div>
+                    </details>
+                  </li>
+                );
+              })}
           </ul>
         </section>
       )}
@@ -317,7 +497,7 @@ export function WorkflowController({
                   : act("orchestration.resume"))
               }
             >
-              {workspaceOnly ? "采用工作台配置" : "采用并恢复经理"}
+              {displayText(workspaceOnly ? "采用工作台配置" : "采用并恢复经理")}
             </ActionButton>
           </div>
           <p className="muted">
@@ -327,15 +507,19 @@ export function WorkflowController({
         </details>
       )}
       <p>
-        {controller
-          ? statuses[controller.status] || controller.status
-          : data
-            ? workspaceOnly
-              ? "发送消息后开始讨论"
-              : "项目经理会话尚未建立"
-            : ""}
+        {displayText(
+          controller
+            ? statuses[controller.status] || controller.status
+            : data
+              ? workspaceOnly
+                ? "发送消息后开始讨论"
+                : "项目经理会话尚未建立"
+              : "",
+        )}
       </p>
-      {controller?.reason && <p role="status">{controller.reason}</p>}
+      {controller?.reason && (
+        <p role="status">{displayText(controller.reason)}</p>
+      )}
       {controller?.session_id && (
         <p>
           <DiscussionLink
@@ -347,94 +531,90 @@ export function WorkflowController({
           </DiscussionLink>
         </p>
       )}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void act("orchestration.input");
-        }}
-      >
-        <label>
-          {workspaceOnly ? "给项目经理的指令" : "回复项目经理"}
-          <textarea
-            aria-label={workspaceOnly ? "给项目经理的指令" : "回复项目经理"}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="回答经理的问题，或提供你的业务意见"
-          />
-        </label>
-        <div className="actions">
-          <ActionButton
-            type="submit"
-            disabled={
-              busy ||
-              !data ||
-              !input.trim() ||
-              ["completed", "cancelled"].includes(instance.data.status)
-            }
-          >
-            {workspaceOnly ? "发送" : "发送回复"}
-          </ActionButton>
-          {controller && (
+      {workspaceOnly && interactive && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void act("orchestration.input");
+          }}
+        >
+          <label>
+            {displayText(workspaceOnly ? "给项目经理的指令" : "回复项目经理")}
+            <textarea
+              aria-label={displayText(
+                workspaceOnly ? "给项目经理的指令" : "回复项目经理",
+              )}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="回答经理的问题，或提供你的业务意见"
+            />
+          </label>
+          <div className="actions">
             <ActionButton
-              type="button"
-              disabled={busy}
-              onClick={() =>
-                void act(
-                  controller.status === "active"
-                    ? "orchestration.takeover"
-                    : "orchestration.resume",
-                )
+              type="submit"
+              disabled={
+                busy ||
+                !data ||
+                !input.trim() ||
+                ["completed", "cancelled"].includes(instance.data.status)
               }
             >
-              {controller.status === "active" ? "人工接管" : "恢复项目经理"}
+              {displayText(workspaceOnly ? "发送" : "发送回复")}
             </ActionButton>
+          </div>
+        </form>
+      )}
+      {interactive && controller && (
+        <ActionButton
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            void act(
+              controller.status === "active"
+                ? "orchestration.takeover"
+                : "orchestration.resume",
+            )
+          }
+        >
+          {displayText(
+            controller.status === "active" ? "人工接管" : "恢复项目经理",
           )}
-        </div>
-      </form>
+        </ActionButton>
+      )}
+      {readError && (
+        <p role="status" className="notice" title={displayText(readError)}>
+          暂时无法刷新经理状态，正在重试；当前显示为上次读取的状态。
+        </p>
+      )}
       {error && (
         <p className="error" role="alert">
-          {error}
+          {displayText(error)}
         </p>
       )}
       {catalogError && (
         <p className="error" role="alert">
-          配置选项暂不可用：{catalogError}
+          配置选项暂不可用：{displayText(catalogError)}
         </p>
       )}
-      {(data?.decisions || []).map((decision: Row) => (
-        <ManagerInteraction
-          key={decision.id}
-          interaction={decision.data.request.interaction || {}}
-          projectId={projectId}
-          ownerId={controller?.owner_id || projectId}
-          status={
-            decision.current === false && decision.data.status === "pending"
-              ? "stale"
-              : decision.data.status
-          }
-          busy={busy}
-          onDecide={(approved, opinion) =>
-            resolveDecision(decision, approved, opinion)
-          }
-        />
-      ))}
-      {(data?.interactions || []).map((notice: Row) => (
-        <ManagerInteraction
-          key={notice.id}
-          interaction={notice.data.interaction}
-          projectId={projectId}
-          ownerId={controller?.owner_id || projectId}
-          busy={busy}
-        />
-      ))}
-      {(data?.messages || [])
-        .slice()
-        .reverse()
-        .map((m: Row) => (
-          <div key={m.id} className="notice">
-            <MarkdownPreview text={m.content} />
+      {interactionCards}
+      {!!data?.messages?.length && (
+        <details className="manager-disclosure manager-log">
+          <summary>
+            <strong>项目经理日志</strong>
+            <span>{displayText(data.messages.length)} 条</span>
+          </summary>
+          <div className="manager-disclosure-body">
+            {data.messages
+              .slice()
+              .reverse()
+              .map((m: Row) => (
+                <div key={m.id} className="notice">
+                  <MarkdownPreview text={m.content} />
+                </div>
+              ))}
           </div>
-        ))}
+        </details>
+      )}
     </section>
   );
 }
@@ -444,6 +624,7 @@ export function WorkflowPlanChanges({
   instance,
   projectId,
   refresh,
+  embedded = false,
 }: Props) {
   const runtime = instance.data;
   const plan = runtime.plan.document;
@@ -574,7 +755,7 @@ export function WorkflowPlanChanges({
   }
   const choices = kind === "bypass" ? plan.stages : plan.steps;
   return (
-    <details className="panel">
+    <details className={embedded ? "manager-plan-changes" : "panel"}>
       <summary>调整当前运行计划</summary>
       <label>
         调整方式
@@ -594,7 +775,7 @@ export function WorkflowPlanChanges({
         </select>
       </label>
       <label>
-        {kind === "bypass" ? "阶段" : "步骤"}
+        {displayText(kind === "bypass" ? "阶段" : "步骤")}
         <select
           aria-label="计划调整对象"
           value={selected}
@@ -603,7 +784,7 @@ export function WorkflowPlanChanges({
           <option value="">请选择</option>
           {choices.map((s: Row) => (
             <option key={s.node_id || s.key} value={s.key}>
-              {s.name}
+              {displayText(s.name)}
             </option>
           ))}
         </select>
@@ -668,7 +849,7 @@ export function WorkflowPlanChanges({
                       setPreview(undefined);
                     }}
                   />
-                  {s.name}
+                  {displayText(s.name)}
                 </label>
               ))}
           </fieldset>
@@ -691,7 +872,7 @@ export function WorkflowPlanChanges({
                 .flatMap((s: Row) =>
                   Object.keys(s.outputs || {}).map((port) => (
                     <option key={`${s.key}.${port}`} value={`${s.key}.${port}`}>
-                      {s.name} · {port}
+                      {displayText(s.name)} · {displayText(port)}
                     </option>
                   )),
                 )}
@@ -738,15 +919,17 @@ export function WorkflowPlanChanges({
       {preview && (
         <div role="status">
           <p>
-            受影响步骤：{preview.affected.join("、") || "无"}；需要停止：
-            {preview.must_stop.length} 项。
+            受影响步骤：{displayText(preview.affected.join("、") || "无")}
+            ；需要停止：
+            {displayText(preview.must_stop.length)} 项。
           </p>
           <p>
-            绕过：{preview.bypassed.join("、") || "无"}。原执行记录和报告保留。
+            绕过：{displayText(preview.bypassed.join("、") || "无")}
+            。原执行记录和报告保留。
           </p>
           {!!preview.budget_updates?.length && (
             <p>
-              延长子流程预算：{preview.budget_updates.join("、")}
+              延长子流程预算：{displayText(preview.budget_updates.join("、"))}
               。保留当前调用和原合同。
             </p>
           )}
@@ -761,7 +944,7 @@ export function WorkflowPlanChanges({
       )}
       {error && (
         <p className="error" role="alert">
-          {error}
+          {displayText(error)}
         </p>
       )}
     </details>

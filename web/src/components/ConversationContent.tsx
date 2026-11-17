@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { MarkdownPreview } from "./configuration-ui";
 import { type Row } from "./rpc-types";
 import { RawJsonLink } from "./reading";
@@ -57,11 +58,14 @@ export function ConversationContent({
   return (
     <article className={`conversation-message ${event.kind}`}>
       <header>
-        <strong>{kindNames[event.kind] || event.kind}</strong>
+        <strong>{displayText(kindNames[event.kind] || event.kind)}</strong>
         {event.time && (
           <small>
             {" "}
-            · {new Date(event.time).toLocaleString("zh-CN", { hour12: false })}
+            ·{" "}
+            {displayText(
+              new Date(event.time).toLocaleString("zh-CN", { hour12: false }),
+            )}
           </small>
         )}
       </header>
@@ -84,16 +88,18 @@ export function ConversationContent({
           <div className="markdown-preview" aria-label="工具类型">
             <h4>
               <span aria-label="工具名称">
-                {[
-                  value?.tool,
-                  value?.name,
-                  value?.method,
-                  value?.message?.tool,
-                  value?.message?.name,
-                  value?.message?.method,
-                  value?.type,
-                ].find((name) => typeof name === "string" && name) ||
-                  "工具事件"}
+                {displayText(
+                  [
+                    value?.tool,
+                    value?.name,
+                    value?.method,
+                    value?.message?.tool,
+                    value?.message?.name,
+                    value?.message?.method,
+                    value?.type,
+                  ].find((name) => typeof name === "string" && name) ||
+                    "工具事件",
+                )}
               </span>
               <span className="markdown-trailing">{rawEvent}</span>
             </h4>

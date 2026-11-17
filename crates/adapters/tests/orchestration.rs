@@ -2443,9 +2443,8 @@ fn a_pending_human_decision_signs_only_the_exact_current_business_gate() {
     assert_eq!(signed.definition_id, execution["id"]);
     assert_eq!(
         runtime(&e, &root)["runtime"]["steps"][0]["status"],
-        "waiting_confirmation"
+        "completed"
     );
-    accept(&e, &root, "one");
     let decision = state
         .governance
         .iter()
@@ -2470,6 +2469,297 @@ fn a_pending_human_decision_signs_only_the_exact_current_business_gate() {
             json!({"approved":true,"reason":"不可重复签署"})
         )
         .is_err()
+    );
+}
+
+fn pending_business_gate(e: &Engine, root: &str) -> Value {
+    let current = runtime(e, root);
+    let execution = &current["runtime"]["steps"][0];
+    cmd(e, "workflow.decision.request", Some(root), json!({
+        "operation":"workflow.step.accept", "reason":"请核对当前PRD",
+        "arguments":{"instance_id":root,"plan_revision_id":current["runtime"]["active_plan_revision_id"],"step":"one","execution_id":execution["id"],"input_digest":execution["input_digest"],"outputs":execution["outputs"]},
+        "interaction":{"title":"确认PRD","background":"当前需求已整理","requested_action":"确认当前版本","completed_work":"已产生当前结果","review_summary":"当前检查通过","materials":[],"evidence":[{"label":"当前执行","purpose":"核对执行结果","instance_id":root,"execution_id":execution["id"]}]}
+    })).unwrap()
+}
+
+#[test]
+fn manager_chat_signs_only_one_observed_gate_and_never_conditional_or_stale_approval() {
+    let directory = tempfile::tempdir().unwrap();
+    let e = engine(directory.path());
+    let mut doc = document();
+    doc["steps"][0]["confirmation"] = json!("human");
+    let root = start(&e, doc);
+    cmd(
+        &e,
+        "workflow.step.dispatch",
+        Some(&root),
+        json!({"step":"one"}),
+    )
+    .unwrap();
+    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
+    let controller = opened["id"].as_str().unwrap();
+    let pending = pending_business_gate(&e, &root);
+    let context = json!([{"id":pending["id"],"revision":1}]);
+    for input in [
+        "不要确认PRD",
+        "确认PRD前先修改标题",
+        "确认PRD，如果测试通过",
+        "如果通过就批准",
+        "确认是否符合要求",
+        "确认PRD，但先不要继续",
+    ] {
+        cmd(
+            &e,
+            "orchestration.input",
+            Some(controller),
+            json!({"epoch":1,"input":input,"approval_context":context}),
+        )
+        .unwrap();
+        assert_eq!(
+            runtime(&e, &root)["runtime"]["steps"][0]["status"],
+            "waiting_confirmation",
+            "{input}"
+        );
+    }
+    assert!(cmd(&e,"orchestration.input",Some(controller),json!({"epoch":1,"input":"确认PRD","approval_context":[{"id":pending["id"],"revision":99}]})).is_err());
+    cmd(
+        &e,
+        "orchestration.input",
+        Some(controller),
+        json!({"epoch":1,"input":"确认PRD"}),
+    )
+    .unwrap();
+    assert_eq!(
+        runtime(&e, &root)["runtime"]["steps"][0]["status"],
+        "waiting_confirmation"
+    );
+    let approved = cmd(
+        &e,
+        "orchestration.input",
+        Some(controller),
+        json!({"epoch":1,"input":"确认PRD，继续执行后续步骤","approval_context":context}),
+    )
+    .unwrap();
+    assert_eq!(approved["approval"]["status"], "approved");
+    assert_eq!(
+        runtime(&e, &root)["runtime"]["steps"][0]["status"],
+        "completed"
+    );
+    assert!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .governance
+            .iter()
+            .any(|r| r.r#type == "workflow_confirmation" && r.data["actor"]["kind"] == "human")
+    );
+    cmd(
+        &e,
+        "workflow.step.dispatch",
+        Some(&root),
+        json!({"step":"two"}),
+    )
+    .unwrap();
+    assert_eq!(
+        runtime(&e, &root)["runtime"]["steps"][1]["status"],
+        "awaiting_acceptance"
+    );
+}
+
+#[test]
+fn workflow_confirmation_settles_the_same_request_and_accepts_the_exact_result() {
+    let directory = tempfile::tempdir().unwrap();
+    let e = engine(directory.path());
+    let mut doc = document();
+    doc["steps"][0]["confirmation"] = json!("human");
+    let root = start(&e, doc);
+    cmd(
+        &e,
+        "workflow.step.dispatch",
+        Some(&root),
+        json!({"step":"one"}),
+    )
+    .unwrap();
+    let inbox = e.workflow_driver_query(&json!({"id":root})).unwrap();
+    assert_eq!(inbox["approvals"].as_array().unwrap().len(), 1);
+    assert_eq!(inbox["approvals"][0]["operation"], "workflow.step.confirm");
+    let pending = pending_business_gate(&e, &root);
+    let without_manager = e
+        .query("query.orchestration", &json!({"root_instance_id":root}), 1)
+        .unwrap();
+    assert!(without_manager["record"].is_null());
+    assert_eq!(without_manager["decisions"][0]["id"], pending["id"]);
+    let mut args = inbox["approvals"][0]["arguments"].clone();
+    args["reason"] = json!("已核对材料");
+    cmd(&e, "workflow.step.confirm", Some(&root), args).unwrap();
+    assert_eq!(
+        runtime(&e, &root)["runtime"]["steps"][0]["status"],
+        "completed"
+    );
+    assert_eq!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .configuration(pending["id"].as_str().unwrap())
+            .unwrap()
+            .data["status"],
+        "approved"
+    );
+    assert!(
+        e.workflow_driver_query(&json!({"id":root})).unwrap()["approvals"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn manager_sees_and_signs_a_deep_child_gate_before_any_model_decision_request() {
+    let directory = tempfile::tempdir().unwrap();
+    let e = engine(directory.path());
+    let mut leaf_doc = document();
+    leaf_doc["steps"][0]["name"] = json!("子流程人工验收");
+    leaf_doc["steps"][0]["confirmation"] = json!("human");
+    let draft = cmd(
+        &e,
+        "workflow.create",
+        None,
+        json!({"name":"叶子流程","document":leaf_doc}),
+    )
+    .unwrap();
+    let leaf = cmd(&e, "workflow.publish", draft["id"].as_str(), json!({})).unwrap();
+    let middle_doc = json!({"schema_version":6,"stages":[{"key":"work","name":"Task执行"}],"steps":[{"key":"call","name":"运行任务子流程","stage":"work","executor":{"type":"workflow","workflow_ref":leaf["id"]}}]});
+    let draft = cmd(
+        &e,
+        "workflow.create",
+        None,
+        json!({"name":"中间流程","document":middle_doc}),
+    )
+    .unwrap();
+    let middle = cmd(&e, "workflow.publish", draft["id"].as_str(), json!({})).unwrap();
+    let root = start(
+        &e,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"Feature"}],"steps":[{"key":"call","name":"执行Task","stage":"work","executor":{"type":"workflow","workflow_ref":middle["id"]}}]}),
+    );
+    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(
+        &e,
+        "workflow.step.dispatch",
+        Some(&root),
+        json!({"step":"call"}),
+    )
+    .unwrap();
+    let mid = e
+        .query("query.workflow_instance", &json!({"id":root}), 1)
+        .unwrap()["children"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    cmd(
+        &e,
+        "workflow.step.dispatch",
+        Some(&mid),
+        json!({"step":"call"}),
+    )
+    .unwrap();
+    let child = e
+        .query("query.workflow_instance", &json!({"id":mid}), 1)
+        .unwrap()["children"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    cmd(
+        &e,
+        "workflow.step.dispatch",
+        Some(&child),
+        json!({"step":"one"}),
+    )
+    .unwrap();
+    let inbox = e.workflow_driver_query(&json!({"id":root})).unwrap();
+    assert_eq!(inbox["approvals"].as_array().unwrap().len(), 1);
+    assert_eq!(inbox["approvals"][0]["instance_id"], child);
+    assert_eq!(inbox["approvals"][0]["human_required"], true);
+    assert_eq!(
+        runtime(&e, &root)["human_gates"]["items"][0]["instance_id"],
+        child
+    );
+    assert!(
+        !e.store
+            .snapshot()
+            .unwrap()
+            .governance
+            .iter()
+            .any(|r| r.r#type == "workflow_pending_decision")
+    );
+    for _ in 0..4 {
+        drive_manager_with_send(&e, false);
+    }
+    let state = e.store.snapshot().unwrap();
+    let send = state
+        .governance
+        .iter()
+        .rev()
+        .find(|r| r.r#type == "workflow_intent" && r.data["method"] == "conversation.send")
+        .unwrap();
+    let input: Value =
+        serde_json::from_str(send.data["command"]["payload"]["input"].as_str().unwrap()).unwrap();
+    assert_eq!(input["human_gates"]["items"][0]["instance_id"], child);
+    let controller = state.configuration(opened["id"].as_str().unwrap()).unwrap();
+    let session = controller.data["session_id"].as_str().unwrap();
+    let detail = e.query("query.session", &json!({"id":session}), 1).unwrap();
+    let context = &detail["approval_context"][0];
+    assert_eq!(context["approval_source"], "workflow_step");
+    assert_eq!(context["definition_id"], child);
+    let result = cmd(&e,"orchestration.input",Some(&controller.id),json!({"epoch":controller.data["epoch"],"input":"确认，继续执行后续步骤","approval_context":[{"id":context["id"],"revision":context["revision"]}]})).unwrap();
+    assert_eq!(result["approval"]["status"], "approved");
+    assert_eq!(
+        runtime(&e, &child)["runtime"]["steps"][0]["status"],
+        "completed"
+    );
+    assert_eq!(
+        e.workflow_driver_query(&json!({"id":root})).unwrap()["approvals"],
+        json!([])
+    );
+    let policy = rust_policy(&e, 32);
+    cmd(
+        &e,
+        "workflow.driver.select",
+        Some(&root),
+        json!({"mode":"rust","policy_ref":policy}),
+    )
+    .unwrap();
+    for _ in 0..40 {
+        e.drive_rust_workflows().unwrap();
+        e.evaluate_workflows().unwrap();
+        if runtime(&e, &root)["runtime"]["status"] == "completed" {
+            break;
+        }
+    }
+    assert_eq!(runtime(&e, &root)["runtime"]["status"], "completed");
+}
+
+#[test]
+fn manager_chat_does_not_approve_multiple_pending_requests() {
+    let directory = tempfile::tempdir().unwrap();
+    let e = engine(directory.path());
+    let mut doc = document();
+    doc["steps"][0]["confirmation"] = json!("human");
+    let root = start(&e, doc);
+    cmd(
+        &e,
+        "workflow.step.dispatch",
+        Some(&root),
+        json!({"step":"one"}),
+    )
+    .unwrap();
+    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
+    let one = pending_business_gate(&e, &root);
+    let two = pending_business_gate(&e, &root);
+    let result = cmd(&e,"orchestration.input",opened["id"].as_str(),json!({"epoch":1,"input":"确认PRD，继续执行后续步骤","approval_context":[{"id":one["id"],"revision":1},{"id":two["id"],"revision":1}]})).unwrap();
+    assert!(result["approval"].is_null());
+    assert_eq!(
+        runtime(&e, &root)["runtime"]["steps"][0]["status"],
+        "waiting_confirmation"
     );
 }
 
@@ -3691,6 +3981,21 @@ fn one_root_schedules_three_bound_tasks_without_a_dependent_member_taking_a_slot
             .all(|step| step["status"] == "queued")
     );
     let view = runtime(&e, &children[0]);
+    let inbox = e.workflow_driver_query(&json!({"id":root})).unwrap();
+    assert!(
+        inbox["approvals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a["instance_id"] == children[0] && a["owner_id"] == tasks[0])
+    );
+    assert!(
+        runtime(&e, &root)["human_gates"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|g| g["instance_id"] == children[0])
+    );
     let gate = &view["runtime"]["steps"][0];
     cmd(&e,"workflow.step.confirm",Some(&children[0]),json!({"step":"gate","input_digest":gate["input_digest"],"outputs":gate["outputs"],"reason":"Fixture Human signs the exact waiting gate; no completion override"})).unwrap();
     for _ in 0..20 {
@@ -3819,7 +4124,10 @@ fn native_manager_prepares_human_request_waits_and_resumes_from_the_decision_alo
         .iter()
         .filter(|r| r.r#type == "workflow_decision")
     {
-        if row.data["operation"] == "start" {
+        if row.data["operation"] == "start"
+            || (row.data["operation"] == "accept"
+                && row.data["execution_id"] == waiting["runtime"]["steps"][0]["id"])
+        {
             assert_eq!(row.data["actor"]["kind"], "human");
             continue;
         }

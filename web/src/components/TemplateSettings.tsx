@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { useEffect, useRef, useState } from "react";
 import { ActionButton } from "./ActionFeedback";
 import { type Request, type Row } from "./rpc-types";
@@ -108,13 +109,13 @@ export function TemplateSettings({
       <div>
         <h3>模板定义</h3>
         <p className="muted">
-          默认版本 {catalog?.bundle_version ?? "读取中…"}
+          默认版本 {displayText(catalog?.bundle_version ?? "读取中…")}
           。编辑内容保存在数据库副本中，可恢复应用发布的完整默认定义。
         </p>
-        {message && <p role="status">{message}</p>}
+        {message && <p role="status">{displayText(message)}</p>}
         {error && !preview && (
           <p role="alert" className="error">
-            {error}
+            {displayText(error)}
           </p>
         )}
       </div>
@@ -136,14 +137,15 @@ export function TemplateSettings({
         <h2 id="template-reset-title">确认重置模板定义</h2>
         <p>
           将当前数据集的全局与项目模板定义恢复为默认版本{" "}
-          {preview?.bundle_version}
+          {displayText(preview?.bundle_version)}
           。自建定义、自定义修订和流程草稿将从当前目录归档。
         </p>
         <p>已有项目绑定、执行历史、会话、经验和登录凭据保留原值。</p>
         <p>
-          自建或已修改定义 {preview?.custom_count ?? 0} 项；未发布流程草稿{" "}
-          {preview?.draft_count ?? 0} 项；保留固定绑定的项目{" "}
-          {preview?.pinned_projects?.length ?? 0} 个。
+          自建或已修改定义 {displayText(preview?.custom_count ?? 0)}{" "}
+          项；未发布流程草稿 {displayText(preview?.draft_count ?? 0)}{" "}
+          项；保留固定绑定的项目{" "}
+          {displayText(preview?.pinned_projects?.length ?? 0)} 个。
         </p>
         <ul>
           {[
@@ -155,14 +157,15 @@ export function TemplateSettings({
             .filter((kind) => names[kind])
             .map((kind) => (
               <li key={kind}>
-                {names[kind]}：当前 {preview?.current_counts?.[kind] ?? 0} 项 →
-                默认 {preview?.restore_counts?.[kind] ?? 0} 项
+                {displayText(names[kind])}：当前{" "}
+                {displayText(preview?.current_counts?.[kind] ?? 0)} 项 → 默认{" "}
+                {displayText(preview?.restore_counts?.[kind] ?? 0)} 项
               </li>
             ))}
         </ul>
         {error && (
           <p role="alert" className="error">
-            {error}
+            {displayText(error)}
           </p>
         )}
         <div className="actions">
@@ -180,7 +183,7 @@ export function TemplateSettings({
             重新预览
           </ActionButton>
           <ActionButton className="primary" disabled={busy} onClick={reset}>
-            {busy ? "正在重置…" : "确认重置"}
+            {displayText(busy ? "正在重置…" : "确认重置")}
           </ActionButton>
         </div>
       </dialog>

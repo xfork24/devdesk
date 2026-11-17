@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import {
   actionTargetFor,
   useActionTarget,
@@ -33,7 +34,7 @@ function Feedback({ target }: { target: ActionTarget }) {
       className={`action-feedback ${value.kind === "alert" ? "error" : "notice"}`}
       role={value.kind}
     >
-      {value.text}
+      {displayText(value.text)}
     </span>
   ) : null;
 }
@@ -108,7 +109,7 @@ export function ActionSelect({
     <>
       <select
         {...props}
-        aria-label={name}
+        aria-label={displayText(name)}
         ref={ref}
         data-feedback-id={target.id}
         onChange={(event) => withActionTarget(target, () => onChange?.(event))}
@@ -127,7 +128,7 @@ export function ActionInput({
     <>
       <input
         {...props}
-        aria-label={name}
+        aria-label={displayText(name)}
         ref={ref}
         data-feedback-id={target.id}
         onChange={(event) => withActionTarget(target, () => onChange?.(event))}

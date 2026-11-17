@@ -146,16 +146,20 @@ test("通用工作流按阶段排列，真实子流程内联展开且折叠可�
   await expect(childRegion.locator(".work-standard")).toHaveCount(0);
   await page.getByRole("tab", { name: "项目经理", exact: true }).click();
   const manager = page.getByRole("region", { name: "项目经理", exact: true });
-  await expect(manager.locator(":scope > .work-standard")).toBeVisible();
+  await expect(
+    manager.locator(".manager-standard > .work-standard"),
+  ).toBeVisible();
   await expect(
     manager.getByRole("region", { name: "项目经理协作" }),
   ).toBeVisible();
   await expect(page.locator(".workflow-stage-row")).toHaveCount(0);
-  await manager.getByText(/^子流程 ·/).click();
+  const childManager = page.locator(".manager-child-flow");
   await expect(
-    manager
-      .getByRole("region", { name: "子流程管理" })
-      .locator(".work-standard"),
+    childManager.locator(".manager-standard > .work-standard"),
+  ).toBeVisible();
+  await expect(childManager.locator(":scope > summary")).toHaveCount(0);
+  await expect(
+    childManager.getByRole("region", { name: "项目经理协作", exact: true }),
   ).toBeVisible();
   await page.getByRole("tab", { name: "工作流程", exact: true }).click();
   await expect(

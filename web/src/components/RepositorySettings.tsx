@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { ActionButton } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
 import { type Request, type Row } from "./rpc-types";
@@ -86,20 +87,22 @@ export function RepositorySettings({
             target="_blank"
             rel="noopener noreferrer"
           >
-            {repository}
+            {displayText(repository)}
           </a>{" "}
-          · {project.workspace_definition?.mainline}{" "}
+          · {displayText(project.workspace_definition?.mainline)}{" "}
           <span role="status">
-            {ready
-              ? "仓库已接入"
-              : connectionBlocked
-                ? "仓库接入未完成，请根据下方原因核对后重试"
-                : "正在准备仓库，完成后即可开始工作"}
+            {displayText(
+              ready
+                ? "仓库已接入"
+                : connectionBlocked
+                  ? "仓库接入未完成，请根据下方原因核对后重试"
+                  : "正在准备仓库，完成后即可开始工作",
+            )}
           </span>
         </p>
         {error && (
           <div className="error" role="alert">
-            {error}
+            {displayText(error)}
           </div>
         )}
         {state?.operations
@@ -108,15 +111,22 @@ export function RepositorySettings({
             <div className="setting-row" key={op.id}>
               <div>
                 <strong>
-                  {op.action.kind === "connect" ? "仓库接入" : op.action.kind} ·{" "}
-                  {op.reason === "reconcile_requested"
-                    ? "等待后台核对"
-                    : operationLabels[op.status] || op.status}
+                  {displayText(
+                    op.action.kind === "connect" ? "仓库接入" : op.action.kind,
+                  )}{" "}
+                  ·{" "}
+                  {displayText(
+                    op.reason === "reconcile_requested"
+                      ? "等待后台核对"
+                      : operationLabels[op.status] || op.status,
+                  )}
                 </strong>
                 <p className="muted">
-                  {op.reason === "reconcile_requested"
-                    ? "已收到重试请求，后台将继续核对原仓库操作。"
-                    : op.reason}
+                  {displayText(
+                    op.reason === "reconcile_requested"
+                      ? "已收到重试请求，后台将继续核对原仓库操作。"
+                      : op.reason,
+                  )}
                 </p>
               </div>
               {op.status === "needs_reconciliation" && (
@@ -153,10 +163,10 @@ export function RepositorySettings({
         {state?.worktrees.map((w: Row) => (
           <div key={w.id}>
             <strong>
-              {w.kind} · {w.branch}
+              {displayText(w.kind)} · {displayText(w.branch)}
             </strong>
             <p className="muted">
-              {w.path} · base {w.base}
+              {displayText(w.path)} · base {displayText(w.base)}
             </p>
           </div>
         ))}

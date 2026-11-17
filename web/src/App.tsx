@@ -1,3 +1,4 @@
+import { displayText, shortId as short } from "./display-text";
 import { WorkflowExecutionRecords } from "./components/WorkflowExecutionRecords";
 import { WorkflowContexts } from "./components/WorkflowContexts";
 import { RawJsonReader } from "./components/reading";
@@ -76,9 +77,8 @@ import { ConfigurationPage } from "./components/ConfigurationPages";
 import { CallHistory } from "./components/Integrations";
 import { AgentCatalog } from "./components/AgentCatalog";
 import { WorkStandard } from "./components/WorkStandard";
-import { WorkflowInstanceView } from "./components/WorkflowInstanceView";
-import { WorkflowProjectManager } from "./components/WorkflowProjectManager";
 import { WorkflowMaterials } from "./components/WorkflowMaterials";
+import { WorkflowScope } from "./components/WorkflowScope";
 import { RepositorySettings } from "./components/RepositorySettings";
 import { RoleConversation } from "./components/RoleConversation";
 import { RuntimeSettings } from "./components/RuntimeSettings";
@@ -99,7 +99,7 @@ function ConfigurationMain({
 }) {
   return (
     <ConfigurationScope.Provider value={scope}>
-      <main className={className}>{children}</main>
+      <main className={className}>{displayText(children)}</main>
     </ConfigurationScope.Provider>
   );
 }
@@ -142,7 +142,6 @@ const labels: Record<string, string> = {
   cleanup_failed: "清理失败",
 };
 const pretty = (v: unknown) => JSON.stringify(v, null, 2);
-const short = (id: string) => id?.slice(0, 8) || "—";
 let sequence = 0;
 async function rpc(
   method: string,
@@ -215,14 +214,16 @@ async function rpc(
 }
 function Badge({ value }: { value: string }) {
   return (
-    <span className={`badge status-${value}`}>{labels[value] || value}</span>
+    <span className={`badge status-${value}`}>
+      {displayText(labels[value] || value)}
+    </span>
   );
 }
 function Empty({ children }: { children: React.ReactNode }) {
   return (
     <div className="empty">
       <Box size={26} />
-      <p>{children}</p>
+      <p>{displayText(children)}</p>
     </div>
   );
 }
@@ -349,6 +350,7 @@ function App() {
             route.get("feature_id") ||
             route.get("project_id"),
           project_id: route.get("project_id"),
+          turn_id: route.get("turn_id"),
         }
       : undefined,
   );
@@ -457,6 +459,7 @@ function App() {
           id: p.get("session_id"),
           owner_id: p.get("task_id") || p.get("feature_id") || pid,
           project_id: pid,
+          turn_id: p.get("turn_id"),
         });
       setWorkFilter(p.get("filter") || "");
       setFeaturePage(Number(p.get("page") || 0));
@@ -912,7 +915,7 @@ function App() {
           />
           {error && (
             <div className="error" role="alert">
-              {error}
+              {displayText(error)}
             </div>
           )}
           <KernelConnection />
@@ -972,7 +975,7 @@ function App() {
           </ActionForm>
           {error && (
             <div className="error" role="alert">
-              {error}
+              {displayText(error)}
             </div>
           )}
           <KernelConnection />
@@ -1000,7 +1003,7 @@ function App() {
             {projects.length === 0 && <option value="">尚无项目</option>}
             {projectOptions.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.title}
+                {displayText(p.title)}
               </option>
             ))}
           </ActionSelect>
@@ -1060,14 +1063,16 @@ function App() {
               }}
             >
               <Icon size={18} />
-              {title}
+              {displayText(title)}
             </ActionButton>
           ))}
         </nav>
         <div className="sidebar-bottom">
           <div className="runtime-dot" />
           <div>
-            <strong>{project ? "GitHub 项目" : "打开 GitHub 仓库"}</strong>
+            <strong>
+              {displayText(project ? "GitHub 项目" : "打开 GitHub 仓库")}
+            </strong>
             <p>工程流程与角色讨论</p>
           </div>
         </div>
@@ -1076,23 +1081,25 @@ function App() {
         <header>
           <div className="breadcrumb">
             <FolderOpen size={15} />
-            <span>{project?.title || "工作空间"}</span>
+            <span>{displayText(project?.title || "工作空间")}</span>
             <ChevronRight size={14} />
-            <span>{f?.title || "总览"}</span>
+            <span>{displayText(f?.title || "总览")}</span>
           </div>
           <div className="header-right">
             <span
               className={`connection ${connection === "已连接" ? "online" : ""}`}
             >
               <CircleDot size={12} />
-              {connection}
+              {displayText(connection)}
             </span>
             <span className="repository-status">
-              {project
-                ? repositoryReady
-                  ? "GitHub 已接入"
-                  : "仓库接入中"
-                : "尚未打开仓库"}
+              {displayText(
+                project
+                  ? repositoryReady
+                    ? "GitHub 已接入"
+                    : "仓库接入中"
+                  : "尚未打开仓库",
+              )}
             </span>
           </div>
         </header>
@@ -1103,7 +1110,7 @@ function App() {
           {error && (
             <div className="error" role="alert">
               <AlertTriangle size={16} />
-              <span>{error}</span>
+              <span>{displayText(error)}</span>
               <ActionButton aria-label="关闭错误" onClick={() => setError("")}>
                 <X size={16} />
               </ActionButton>
@@ -1142,21 +1149,23 @@ function App() {
           <div className="page-heading">
             <div>
               <span className="eyebrow">ENGINEERING WORKSPACE</span>
-              <h1>{nav.find((n) => n[0] === tab)?.[1]}</h1>
+              <h1>{displayText(nav.find((n) => n[0] === tab)?.[1])}</h1>
               <p>
-                {tab === "overview"
-                  ? "从需求到交付，每一次决定都有依据。"
-                  : tab === "execution"
-                    ? "运行、验证与评审，由领域规则驱动。"
-                    : tab === "documents"
-                      ? "可编辑的上下文，不可变的交付版本。"
-                      : tab === "workflows"
-                        ? "定义角色交互、开发步骤、门禁和推进策略。"
-                        : tab === "definitions"
-                          ? "锁定规范与身份，为每次执行建立确定起点。"
-                          : tab === "history"
-                            ? "持久记录命令、执行边界与关键决定。"
-                            : "内核数据与执行能力。"}
+                {displayText(
+                  tab === "overview"
+                    ? "从需求到交付，每一次决定都有依据。"
+                    : tab === "execution"
+                      ? "运行、验证与评审，由领域规则驱动。"
+                      : tab === "documents"
+                        ? "可编辑的上下文，不可变的交付版本。"
+                        : tab === "workflows"
+                          ? "定义角色交互、开发步骤、门禁和推进策略。"
+                          : tab === "definitions"
+                            ? "锁定规范与身份，为每次执行建立确定起点。"
+                            : tab === "history"
+                              ? "持久记录命令、执行边界与关键决定。"
+                              : "内核数据与执行能力。",
+                )}
               </p>
             </div>
             <div className="actions">
@@ -1181,11 +1190,13 @@ function App() {
           {!data && (
             <section className="panel">
               <Empty>
-                {connection === "已断开"
-                  ? "内核已退出，请连接其他内核或重新启动后连接。"
-                  : error
-                    ? "当前内核无法连接，可重试或连接其他内核。"
-                    : "正在连接内核…"}
+                {displayText(
+                  connection === "已断开"
+                    ? "内核已退出，请连接其他内核或重新启动后连接。"
+                    : error
+                      ? "当前内核无法连接，可重试或连接其他内核。"
+                      : "正在连接内核…",
+                )}
               </Empty>
               <KernelConnection />
             </section>
@@ -1263,7 +1274,8 @@ function App() {
                 <section className="panel">
                   <div className="panel-heading">
                     <h2>
-                      Feature 工作队列 <span>{data.total_features}</span>
+                      Feature 工作队列{" "}
+                      <span>{displayText(data.total_features)}</span>
                     </h2>
                     <span className="muted">持久化工程库</span>
                   </div>
@@ -1285,11 +1297,11 @@ function App() {
                             <Layers3 size={18} />
                           </div>
                           <div>
-                            <strong>{feature.title}</strong>
+                            <strong>{displayText(feature.title)}</strong>
                             <p>
-                              {short(feature.id)} · 输入 v
-                              {feature.input_version} · revision{" "}
-                              {feature.revision}
+                              {displayText(short(feature.id))} · 输入 v
+                              {displayText(feature.input_version)} · revision{" "}
+                              {displayText(feature.revision)}
                             </p>
                           </div>
                           <Badge value={feature.status} />
@@ -1314,8 +1326,8 @@ function App() {
                     )?.data.plan.document.stages || []
                   ).map((stage: Row) => (
                     <div className="journey-step" key={stage.key}>
-                      <strong>{stage.name}</strong>
-                      <p>{stage.description}</p>
+                      <strong>{displayText(stage.name)}</strong>
+                      <p>{displayText(stage.description)}</p>
                     </div>
                   ))}
                   <p className="muted">
@@ -1329,7 +1341,7 @@ function App() {
                   <div className="panel-heading">
                     <div>
                       <span className="eyebrow">SELECTED FEATURE</span>
-                      <h2>{f.title}</h2>
+                      <h2>{displayText(f.title)}</h2>
                     </div>
                     <Badge value={f.status} />
                   </div>
@@ -1344,8 +1356,9 @@ function App() {
                     </ActionButton>
                   </div>
                   <p className="muted">
-                    {detail.tasks.length} Tasks · {detail.documents.length} 材料
-                    · {detail.snapshots.length} Snapshots
+                    {displayText(detail.tasks.length)} Tasks ·{" "}
+                    {displayText(detail.documents.length)} 材料 ·{" "}
+                    {displayText(detail.snapshots.length)} Snapshots
                   </p>
                 </section>
               )}
@@ -1366,11 +1379,11 @@ function App() {
                 >
                   <option value="">请选择 Feature</option>
                   {f && !features.some((x) => x.id === f.id) && (
-                    <option value={f.id}>{f.title}</option>
+                    <option value={f.id}>{displayText(f.title)}</option>
                   )}
                   {features.map((x) => (
                     <option key={x.id} value={x.id}>
-                      {x.title}
+                      {displayText(x.title)}
                     </option>
                   ))}
                 </ActionSelect>
@@ -1379,7 +1392,8 @@ function App() {
                 <>
                   <Badge value={f.status} />
                   <span className="muted">
-                    输入 v{f.input_version} · revision {f.revision}
+                    输入 v{displayText(f.input_version)} · revision{" "}
+                    {displayText(f.revision)}
                   </span>
                 </>
               )}
@@ -1403,6 +1417,7 @@ function App() {
                   ? focusedSession.id
                   : undefined
               }
+              initialTurn={focusedSession?.turn_id || undefined}
               project={project}
               feature={f}
               tasks={detail?.tasks || []}
@@ -1424,8 +1439,12 @@ function App() {
           )}
           {tab === "execution" && f && (
             <>
-              <section className="panel">
-                <h2>{f.title}</h2>
+              <section
+                className={
+                  executionTab === "manager" ? "manager-feature-view" : "panel"
+                }
+              >
+                <h2>{displayText(f.title)}</h2>
                 <div
                   className="detail-tabs"
                   role="tablist"
@@ -1436,9 +1455,12 @@ function App() {
                       key={key}
                       role="tab"
                       aria-selected={executionTab === key}
-                      onClick={() => setExecutionTab(key)}
+                      onClick={() => {
+                        setReadingTarget({});
+                        setExecutionTab(key);
+                      }}
                     >
-                      {label}
+                      {displayText(label)}
                     </ActionButton>
                   ))}
                 </div>
@@ -1484,68 +1506,6 @@ function App() {
                       refresh={load}
                     />
                   )}
-                {["manager", "overview"].includes(executionTab) &&
-                  data?.configurations
-                    ?.filter(
-                      (r: Row) =>
-                        r.type === "workflow_instance" &&
-                        r.data.owner_id === f.id &&
-                        r.data.parent_execution_id == null,
-                    )
-                    .map((r: Row) =>
-                      executionTab === "manager" ? (
-                        <WorkflowProjectManager
-                          key={r.id}
-                          record={r}
-                          projectId={projectId}
-                          request={rpc}
-                          refresh={load}
-                        />
-                      ) : (
-                        <WorkflowInstanceView
-                          key={r.id}
-                          record={r}
-                          projectId={projectId}
-                          request={rpc}
-                          refresh={load}
-                          onDiscussion={(id, owner) => {
-                            setFocusedSession({
-                              id,
-                              owner_id: owner,
-                              project_id: projectId,
-                            });
-                            setTab("discussion");
-                          }}
-                        />
-                      ),
-                    )}
-                {["manager", "overview"].includes(executionTab) && (
-                  <div className="task-grid">
-                    {detail.tasks.map((task: Row) => (
-                      <article key={task.id}>
-                        <strong>{task.title}</strong>
-                        <Badge value={task.status} />
-                        <p>{task.dependencies.length} 个依赖</p>
-                        {executionTab === "manager" && (
-                          <WorkStandard
-                            request={rpc}
-                            projectId={projectId}
-                            owner={task}
-                            instance={data?.configurations
-                              ?.filter(
-                                (r: Row) =>
-                                  r.type === "workflow_instance" &&
-                                  r.work_root !== false &&
-                                  r.data.owner_id === task.id,
-                              )
-                              .at(-1)}
-                            refresh={load}
-                          />
-                        )}
-                      </article>
-                    ))}
-                  </div>
-                )}
                 {executionTab === "documents" && (
                   <>
                     <WorkflowMaterials
@@ -1583,7 +1543,7 @@ function App() {
                     >
                       新建材料
                     </ActionButton>
-                    {pager("documents")}
+                    {displayText(pager("documents"))}
                   </>
                 )}
                 {executionTab === "context" && (
@@ -1631,9 +1591,12 @@ function App() {
                     key={key}
                     role="tab"
                     aria-selected={executionTab === key}
-                    onClick={() => setExecutionTab(key)}
+                    onClick={() => {
+                      setReadingTarget({});
+                      setExecutionTab(key);
+                    }}
                   >
-                    {label}
+                    {displayText(label)}
                   </ActionButton>
                 ))}
               </div>
@@ -1668,53 +1631,44 @@ function App() {
           )}
           {tab === "execution" &&
             ["manager", "overview"].includes(executionTab) &&
-            !f &&
-            data?.configurations
-              ?.filter(
-                (r: Row) =>
-                  r.type === "workflow_instance" &&
-                  r.data.owner_id === projectId &&
-                  r.data.parent_execution_id == null,
-              )
-              .map((r: Row) =>
-                executionTab === "manager" ? (
-                  <WorkflowProjectManager
-                    key={r.id}
-                    record={r}
-                    projectId={projectId}
-                    request={rpc}
-                    refresh={load}
-                  />
-                ) : (
-                  <WorkflowInstanceView
-                    key={r.id}
-                    record={r}
-                    projectId={projectId}
-                    request={rpc}
-                    refresh={load}
-                    onDiscussion={(id, owner) => {
-                      setFocusedSession({
-                        id,
-                        owner_id: owner,
-                        project_id: projectId,
-                      });
-                      setTab("discussion");
-                    }}
-                  />
-                ),
-              )}
+            projectId && (
+              <WorkflowScope
+                key={`${projectId}:${featureId || projectId}`}
+                projectId={projectId}
+                ownerId={featureId || projectId}
+                request={rpc}
+                refresh={load}
+                records={data?.configurations || []}
+                tasks={detail?.tasks || []}
+                view={executionTab}
+                target={activeReadingTarget}
+                onDiscussion={(id, owner, turnId) => {
+                  setFocusedSession({
+                    id,
+                    owner_id: owner,
+                    turn_id: turnId,
+                    project_id: projectId,
+                  });
+                  setTab("discussion");
+                }}
+              />
+            )}
           {tab === "execution" &&
             !f &&
             ["manager", "overview"].includes(executionTab) && (
               <section className="panel">
-                <h2>Feature 工作队列{workFilter ? ` · ${workFilter}` : ""}</h2>
+                <h2>
+                  Feature 工作队列
+                  {displayText(workFilter ? ` · ${workFilter}` : "")}
+                </h2>
                 {features.map((feature) => (
                   <ActionButton
                     className="feature-row"
                     key={feature.id}
                     onClick={() => setFeatureId(feature.id)}
                   >
-                    {feature.title} · {labels[feature.status] || feature.status}
+                    {displayText(feature.title)} ·{" "}
+                    {displayText(labels[feature.status] || feature.status)}
                   </ActionButton>
                 ))}
                 <Pagination
@@ -1793,7 +1747,7 @@ function App() {
                 <div className="setting-row">
                   <div>
                     <h3>内核 data 目录</h3>
-                    <code>{data.data_root}</code>
+                    <code>{displayText(data.data_root)}</code>
                     <p className="muted">
                       全局配置与各项目分别保存；打开项目即可切换。更改 data
                       路径需退出后以 --data 新路径重启。
@@ -1813,7 +1767,7 @@ function App() {
                 <div className="setting-row">
                   <div>
                     <h3>全局配置数据库</h3>
-                    <code>{data.global_database}</code>
+                    <code>{displayText(data.global_database)}</code>
                     <p className="muted">并发配置、共享定义与项目索引。</p>
                   </div>
                 </div>
@@ -1821,7 +1775,7 @@ function App() {
                   <div className="setting-row">
                     <div>
                       <h3>当前项目数据库</h3>
-                      <code>{data.project_database}</code>
+                      <code>{displayText(data.project_database)}</code>
                       <p className="muted">
                         工程状态、执行历史和产物归属仅限当前项目。
                       </p>
@@ -1848,7 +1802,10 @@ function App() {
                 <div className="setting-row">
                   <div>
                     <h3>全局并发额度</h3>
-                    <p>{data.global_concurrency} 个 Run · 单项目默认 2 个</p>
+                    <p>
+                      {displayText(data.global_concurrency)} 个 Run · 单项目默认
+                      2 个
+                    </p>
                   </div>
                   <ActionButton
                     onClick={() =>
@@ -1872,10 +1829,10 @@ function App() {
                 {project && (
                   <div className="setting-row">
                     <div>
-                      <h3>{project.title} · Project 设置</h3>
+                      <h3>{displayText(project.title)} · Project 设置</h3>
                       <p className="muted">
-                        Workspace: {project.workspace || "未设置"} · 项目并发{" "}
-                        {project.concurrency}
+                        Workspace: {displayText(project.workspace || "未设置")}{" "}
+                        · 项目并发 {displayText(project.concurrency)}
                       </p>
                     </div>
                     <div className="actions">
@@ -1997,7 +1954,7 @@ function App() {
       )}
       {view && (
         <Reader
-          title={view.title}
+          title={displayText(view.title)}
           body={view.body}
           format={view.format}
           metadata={view.metadata}
@@ -2021,10 +1978,10 @@ function Metric({
   return (
     <ActionButton className="metric" onClick={onClick}>
       <div>
-        <span>{title}</span>
-        <strong>{value.toString().padStart(2, "0")}</strong>
+        <span>{displayText(title)}</span>
+        <strong>{displayText(value.toString().padStart(2, "0"))}</strong>
       </div>
-      <div className="metric-icon">{icon}</div>
+      <div className="metric-icon">{displayText(icon)}</div>
     </ActionButton>
   );
 }
@@ -2115,10 +2072,10 @@ function CommandDialog({
       />
     ) : (
       <label key={f.key}>
-        {f.label}
+        {displayText(f.label)}
         {f.type === "textarea" || f.type === "json" ? (
           <textarea
-            aria-label={f.label}
+            aria-label={displayText(f.label)}
             autoFocus={i === 0 && !f.advanced}
             required={!f.optional}
             value={values[f.key]}
@@ -2126,19 +2083,19 @@ function CommandDialog({
           />
         ) : f.type === "select" ? (
           <ActionSelect
-            aria-label={f.label}
+            aria-label={displayText(f.label)}
             value={values[f.key]}
             onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
           >
             {f.options?.map((o) => (
               <option value={o.value} key={o.value}>
-                {o.label}
+                {displayText(o.label)}
               </option>
             ))}
           </ActionSelect>
         ) : (
           <input
-            aria-label={f.label}
+            aria-label={displayText(f.label)}
             autoFocus={i === 0 && !f.advanced}
             required={!f.optional}
             type={f.type === "number" ? "number" : "text"}
@@ -2146,7 +2103,9 @@ function CommandDialog({
             onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
           />
         )}
-        {f.description && <span className="muted">{f.description}</span>}
+        {f.description && (
+          <span className="muted">{displayText(f.description)}</span>
+        )}
       </label>
     );
   return (
@@ -2156,11 +2115,11 @@ function CommandDialog({
         ref={formRef}
         role="dialog"
         aria-modal="true"
-        aria-label={spec.title}
+        aria-label={displayText(spec.title)}
         onSubmit={send}
       >
         <div className="modal-heading">
-          <h2>{spec.title}</h2>
+          <h2>{displayText(spec.title)}</h2>
           <ActionButton
             type="button"
             aria-label="关闭"
@@ -2172,7 +2131,7 @@ function CommandDialog({
         </div>
         {localError && (
           <div className="error" role="alert">
-            {localError}
+            {displayText(localError)}
           </div>
         )}
         {spec.fields.length === 0 && (
@@ -2190,7 +2149,7 @@ function CommandDialog({
             取消
           </ActionButton>
           <ActionButton className="primary" disabled={busy}>
-            {busy ? "保存中…" : "确认"}
+            {displayText(busy ? "保存中…" : "确认")}
           </ActionButton>
         </div>
       </ActionForm>
@@ -2261,11 +2220,11 @@ function Reader({
         ref={ref}
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-label={displayText(title)}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-heading">
-          <h2>{title}</h2>
+          <h2>{displayText(title)}</h2>
           <ActionButton aria-label="关闭" onClick={close}>
             <X size={18} />
           </ActionButton>
@@ -2273,12 +2232,12 @@ function Reader({
         {format === "markdown" ? (
           <MarkdownPreview text={body} />
         ) : (
-          <pre>{body}</pre>
+          <pre>{displayText(body)}</pre>
         )}
         {metadata && (
           <details>
             <summary>文档信息</summary>
-            <pre>{pretty(metadata)}</pre>
+            <pre>{displayText(pretty(metadata))}</pre>
           </details>
         )}
       </section>

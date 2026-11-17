@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { useReadRequest } from "./use-read-request";
 import { ActionButton, ActionSelect, ActionInput } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
@@ -149,7 +150,9 @@ export function PermissionResources({
   if (!catalog)
     return (
       <section>
-        <p role="status">{error || message || "正在读取版本化权限…"}</p>
+        <p role="status">
+          {displayText(error || message || "正在读取版本化权限…")}
+        </p>
       </section>
     );
   return (
@@ -165,7 +168,7 @@ export function PermissionResources({
           </p>
           {error && (
             <p role="alert" className="error">
-              {error}
+              {displayText(error)}
             </p>
           )}
           <fieldset disabled={busy}>
@@ -205,7 +208,8 @@ export function PermissionResources({
                     .filter((p) => p.target_kind === kind)
                     .map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.name} · {p.target_kind} · v{p.version}
+                        {displayText(p.name)} · {displayText(p.target_kind)} · v
+                        {p.version}
                       </option>
                     ))}
                 </ActionSelect>
@@ -336,12 +340,13 @@ export function PermissionResources({
           <details>
             <summary>预定义来源与历史</summary>
             <p>
-              当前预设目录（{catalog.source.is_builtin ? "内置" : "自定义"}）：
+              当前预设目录（
+              {displayText(catalog.source.is_builtin ? "内置" : "自定义")}）：
               <span
                 className="permission-source-path"
                 aria-label="当前预设目录"
               >
-                {catalog.source.path}
+                {displayText(catalog.source.path)}
               </span>
             </p>
             <p className="muted">
@@ -409,18 +414,21 @@ export function PermissionResources({
               />
             ) : null}
             <pre>
-              {JSON.stringify(
-                {
-                  origins: catalog.origins.filter(
-                    (origin) => !selected || origin.definition_id === selected,
-                  ),
-                },
-                null,
-                2,
+              {displayText(
+                JSON.stringify(
+                  {
+                    origins: catalog.origins.filter(
+                      (origin) =>
+                        !selected || origin.definition_id === selected,
+                    ),
+                  },
+                  null,
+                  2,
+                ),
               )}
             </pre>
           </details>
-          <p role="status">{message}</p>
+          <p role="status">{displayText(message)}</p>
         </div>
       </section>
     </>

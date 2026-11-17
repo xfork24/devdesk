@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { useReadRequest, ignoreCancelledRefresh } from "./use-read-request";
 import { ActionButton, ActionForm, ActionSelect } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
@@ -322,14 +323,17 @@ export function ProjectManager({
         )}
         {project && (
           <p>
-            仓库：{health?.repository_ready ? "已接入" : "待接入"} · 项目配置：
-            {health?.configuration_ready ? "已保存且有效" : "待保存或调整"} ·
-            运行环境：首次执行时核验安装与凭据
+            仓库：{displayText(health?.repository_ready ? "已接入" : "待接入")}{" "}
+            · 项目配置：
+            {displayText(
+              health?.configuration_ready ? "已保存且有效" : "待保存或调整",
+            )}{" "}
+            · 运行环境：首次执行时核验安装与凭据
           </p>
         )}
         {health?.configuration_status?.issues?.map((issue: string) => (
           <p key={issue} className="muted">
-            {issue}
+            {displayText(issue)}
           </p>
         ))}
         <div className="configuration-list project-list">
@@ -351,9 +355,11 @@ export function ProjectManager({
                   });
               }}
             >
-              <strong>{row.title}</strong>
+              <strong>{displayText(row.title)}</strong>
               <span>
-                {row.workspace_definition?.repository || "待配置仓库"}
+                {displayText(
+                  row.workspace_definition?.repository || "待配置仓库",
+                )}
               </span>
             </ActionButton>
           ))}
@@ -430,16 +436,18 @@ export function ProjectManager({
         <section className="panel" aria-label="项目配置">
           <div className="panel-heading">
             <div>
-              <h2>{project.title} · 配置</h2>
+              <h2>{displayText(project.title)} · 配置</h2>
               {configuration?.uses_archived_templates && (
                 <p className="muted">
                   来自重置前定义：当前项目继续使用已保存的精确版本。重新选择并保存后采用新的定义。
                 </p>
               )}
               <p>
-                {configuration?.data.workflow_ref
-                  ? `已保存 v${configuration.version}`
-                  : "待配置：选择 Standard 并完成角色的 Agent 绑定"}
+                {displayText(
+                  configuration?.data.workflow_ref
+                    ? `已保存 v${configuration.version}`
+                    : "待配置：选择 Standard 并完成角色的 Agent 绑定",
+                )}
               </p>
             </div>
           </div>
@@ -467,17 +475,22 @@ export function ProjectManager({
             />
             <p aria-label="默认启动入口">
               默认启动入口：
-              {preview?.snapshot.nodes.find(
-                (n: Row) => n.reference === preview.default_workflow_ref,
-              )?.name ||
-                baseline?.default_workflow_ref ||
-                "由所选 Standard 指定"}
+              {displayText(
+                preview?.snapshot.nodes.find(
+                  (n: Row) => n.reference === preview.default_workflow_ref,
+                )?.name ||
+                  baseline?.default_workflow_ref ||
+                  "由所选 Standard 指定",
+              )}
             </p>
             {savedStandard && (
               <p>
-                {savedStandard.provenance ? "当前项目快照" : "当前 Standard"}：
-                {savedStandard.record.name} · v{savedStandard.record.version} ·{" "}
-                {savedStandard.record.id}
+                {displayText(
+                  savedStandard.provenance ? "当前项目快照" : "当前 Standard",
+                )}
+                ：{displayText(savedStandard.record.name)} · v
+                {displayText(savedStandard.record.version)} ·{" "}
+                {displayText(savedStandard.record.id)}
               </p>
             )}
             <details>
@@ -522,7 +535,8 @@ export function ProjectManager({
                       .filter((node: Row) => node.kind === overrideKind)
                       .map((node: Row) => (
                         <option key={node.reference} value={node.reference}>
-                          {node.name} · {node.reference}
+                          {displayText(node.name)} ·{" "}
+                          {displayText(node.reference)}
                         </option>
                       ))}
                   </ActionSelect>
@@ -562,11 +576,12 @@ export function ProjectManager({
               {draft.standard_overrides.map((item) => (
                 <div key={item.source_ref} className="setting-row">
                   <span>
-                    {item.source_ref} → {item.replacement_ref}
+                    {displayText(item.source_ref)} →{" "}
+                    {displayText(item.replacement_ref)}
                   </span>
                   <ActionButton
                     type="button"
-                    aria-label={`移除覆盖 ${item.source_ref}`}
+                    aria-label={displayText(`移除覆盖 ${item.source_ref}`)}
                     onClick={() => {
                       captureFeedback();
                       setDraft({
@@ -590,10 +605,12 @@ export function ProjectManager({
               >
                 <summary>保存前查看来源与差异</summary>
                 <p>
-                  基础版本：{draft.standard_ref} ·{" "}
-                  {draft.standard_overrides.length
-                    ? "覆盖后生成项目专属快照。"
-                    : "无覆盖，直接使用所选 Standard。"}
+                  基础版本：{displayText(draft.standard_ref)} ·{" "}
+                  {displayText(
+                    draft.standard_overrides.length
+                      ? "覆盖后生成项目专属快照。"
+                      : "无覆盖，直接使用所选 Standard。",
+                  )}
                   已有 Feature 不会随项目配置变化。
                 </p>
                 <StandardDiff diff={preview.provenance.diff} />
@@ -698,7 +715,7 @@ export function ProjectManager({
                       )
                       .map((r) => (
                         <option key={r.id} value={r.id}>
-                          {r.name}
+                          {displayText(r.name)}
                         </option>
                       ))}
                   </select>
@@ -777,7 +794,7 @@ export function ProjectManager({
                   })}
                 </div>
                 <p className="notice">
-                  已解析 {requirements.specification_view.length}{" "}
+                  已解析 {displayText(requirements.specification_view.length)}{" "}
                   个规范节点（包含子流程）。
                 </p>
                 <p className="muted">
@@ -787,15 +804,17 @@ export function ProjectManager({
                   <summary>查看规范审计快照</summary>
                   {requirements.specification_view.map((binding: Row) => (
                     <div className="document-row" key={binding.path}>
-                      <strong>{binding.path}</strong>
+                      <strong>{displayText(binding.path)}</strong>
                       <span>
-                        {binding.spec_refs
-                          .map(
-                            (id: string) =>
-                              records.find((r) => r.id === id)?.name ||
-                              "固定 Spec",
-                          )
-                          .join("、") || "系统动作"}
+                        {displayText(
+                          binding.spec_refs
+                            .map(
+                              (id: string) =>
+                                records.find((r) => r.id === id)?.name ||
+                                "固定 Spec",
+                            )
+                            .join("、") || "系统动作",
+                        )}
                       </span>
                     </div>
                   ))}
@@ -813,12 +832,12 @@ export function ProjectManager({
       )}
       {(error || previewError) && (
         <p role="alert" className="error">
-          {error || previewError}
+          {displayText(error || previewError)}
         </p>
       )}
       {message && (
         <p role="status" className="notice">
-          {message}
+          {displayText(message)}
         </p>
       )}
       {project && (

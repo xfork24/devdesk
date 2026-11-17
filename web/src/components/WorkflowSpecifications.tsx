@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { ActionButton, ActionSelect } from "./ActionFeedback";
 import { JsonField } from "./WorkflowDeliveries";
 import { MarkdownField } from "./configuration-ui";
@@ -86,7 +87,7 @@ export function WorkflowSpecifications({
               <label>
                 自动检查原语
                 <ActionSelect
-                  aria-label={`自动检查原语 ${index + 1}`}
+                  aria-label={displayText(`自动检查原语 ${index + 1}`)}
                   value={check.assertion?.type || "semantic"}
                   onChange={(event) => {
                     const type = event.target.value;

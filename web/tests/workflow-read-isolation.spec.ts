@@ -325,6 +325,245 @@ test("manager prepares exact materials and review evidence for a human decision"
   await expect(card).toContainText("你已确认本轮事项");
 });
 
+test("manager collects child confirmations and tool approvals, with errors beside the relevant card", async ({
+  page,
+}) => {
+  const url = await fixture(page);
+  let attempts = 0;
+  let approved = false;
+  let toolApproved = false;
+  let managerStatus = "paused";
+  const commands: any[] = [];
+  const args = {
+    plan_revision_id: "child-plan",
+    control_version: 4,
+    step: "review",
+    execution_id: "child-execution",
+    input_digest: "frozen-digest",
+    outputs: { result: "frozen-output" },
+    accept_result: true,
+  };
+  const plan = { stages: [], steps: [] };
+  const rootRecord = {
+    id: "read-instance",
+    name: "读取隔离流程",
+    revision: 1,
+    data: {
+      owner_id: "read-feature",
+      root_instance_id: "read-instance",
+      status: "running",
+      steps: [],
+      plan: { document: plan },
+      active_plan_revision_id: "plan-current",
+    },
+  };
+  const childRecord = {
+    id: "child-instance",
+    name: "当前Task",
+    revision: 8,
+    data: {
+      owner_id: "read-feature",
+      root_instance_id: "read-instance",
+      parent_execution_id: "parent-execution",
+      status: "running",
+      steps: [],
+      plan: { document: plan },
+      active_plan_revision_id: "child-plan",
+    },
+  };
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    let result: any;
+    if (call.method === "query.workflow_instance") {
+      const record =
+        call.params.id === "child-instance" ? childRecord : rootRecord;
+      result = {
+        record,
+        runtime: record.data,
+        plan,
+        history: [],
+        children: record.id === rootRecord.id ? [childRecord] : [],
+      };
+    } else if (call.method === "query.orchestration") {
+      result = {
+        record: {
+          id: "shared-controller",
+          revision: 3,
+          data: {
+            status: managerStatus,
+            epoch: 7,
+            owner_id: "read-feature",
+            session_id: "shared-manager-session",
+          },
+        },
+        decisions: [],
+        messages: [{ id: "manager-message", content: "已同步当前流程进度" }],
+      };
+    } else if (call.method === "orchestration.resume") {
+      commands.push(call);
+      managerStatus = "active";
+      result = { resumed: true };
+    } else if (call.method === "query.workflow_driver") {
+      result = {
+        driver: null,
+        waiting: approved
+          ? []
+          : [
+              {
+                instance_id: "child-instance",
+                owner_id: "read-feature",
+                execution_id: "child-execution",
+                step: "review",
+                step_name: "子流程待确认点",
+                status: "waiting_confirmation",
+              },
+            ],
+        approvals: approved
+          ? []
+          : [
+              {
+                instance_id: "child-instance",
+                owner_id: "read-feature",
+                revision: 8,
+                operation: "workflow.step.confirm",
+                arguments: args,
+                interaction: {
+                  title: "确认子流程需求",
+                  background: "子流程等待确认",
+                  requested_action: "确认当前版本后继续",
+                  completed_work: "需求已完成",
+                  review_summary: "检查通过",
+                  materials: [],
+                  evidence: [],
+                },
+              },
+            ],
+        runtime_approvals: toolApproved
+          ? []
+          : [
+              {
+                id: "tool-interaction",
+                instance_id: "child-instance",
+                revision: 3,
+                session_id: "child-session",
+                turn_id: "child-turn",
+                reason: "执行测试需要工具权限",
+                tool: "test.run",
+              },
+            ],
+      };
+    } else if (call.method === "workflow.step.confirm") {
+      commands.push(call);
+      if (++attempts === 1)
+        return route.fulfill({
+          json: {
+            jsonrpc: "2.0",
+            id: call.id,
+            error: { code: -32000, message: "审批暂不可用，请重试" },
+          },
+        });
+      approved = true;
+      result = { confirmed: true };
+    } else if (call.method === "interaction.answer") {
+      commands.push(call);
+      toolApproved = true;
+      result = { answered: true };
+    } else return route.fallback();
+    return route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
+  });
+  await page.goto(url);
+  const childPanel = page.locator(".manager-child-flow");
+  await expect(childPanel).toBeVisible();
+  await expect(childPanel.locator(":scope > summary")).toHaveCount(0);
+  const mainCollaboration = page
+    .locator(".manager-workflow-summary")
+    .getByRole("region", { name: "项目经理协作", exact: true });
+  const childCollaboration = childPanel.getByRole("region", {
+    name: "项目经理协作",
+    exact: true,
+  });
+  await expect(
+    childCollaboration.getByRole("heading", {
+      name: "项目经理协作",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    childCollaboration.getByRole("region", { name: "当前阻塞点", exact: true }),
+  ).toContainText("子流程待确认点");
+  await expect(
+    mainCollaboration.getByRole("region", { name: "当前阻塞点", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    childCollaboration.getByRole("link", {
+      name: "与项目经理继续讨论",
+      exact: true,
+    }),
+  ).toHaveAttribute("href", /session_id=shared-manager-session/);
+  await expect(childCollaboration.locator(".manager-log")).not.toHaveAttribute(
+    "open",
+  );
+  await childCollaboration.locator(".manager-log > summary").click();
+  await expect(
+    childCollaboration.getByText("已同步当前流程进度", { exact: true }),
+  ).toBeVisible();
+  await childCollaboration
+    .getByRole("button", { name: "恢复项目经理", exact: true })
+    .click();
+  expect(commands.at(-1).params).toMatchObject({
+    target: "shared-controller",
+    expected_revision: 3,
+    payload: { epoch: 7 },
+  });
+  await expect(
+    mainCollaboration.getByRole("button", { name: "人工接管", exact: true }),
+  ).toBeVisible();
+  await expect(
+    childCollaboration.getByRole("button", { name: "人工接管", exact: true }),
+  ).toBeVisible();
+  await expect(
+    mainCollaboration.getByRole("article", {
+      name: "确认子流程需求",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  const card = childPanel.getByRole("article", {
+    name: "确认子流程需求",
+    exact: true,
+  });
+  await expect(
+    card.getByRole("button", { name: "退回并反馈意见", exact: true }),
+  ).toBeDisabled();
+  await card
+    .getByRole("button", { name: "确认：确认子流程需求", exact: true })
+    .click();
+  await expect(card.getByRole("alert")).toContainText("审批暂不可用，请重试");
+  await card
+    .getByRole("button", { name: "确认：确认子流程需求", exact: true })
+    .click();
+  await expect(card).toHaveCount(0);
+  expect(commands.at(-1).params).toMatchObject({
+    target: "child-instance",
+    expected_revision: 8,
+    payload: args,
+  });
+  const tool = childPanel.getByRole("article", {
+    name: "运行时工具审批",
+    exact: true,
+  });
+  await tool.getByRole("button", { name: "仅允许本次", exact: true }).click();
+  await expect(tool).toHaveCount(0);
+  expect(commands.at(-1).params).toMatchObject({
+    target: "tool-interaction",
+    expected_revision: 3,
+    payload: {
+      session_id: "child-session",
+      turn_id: "child-turn",
+      answer: { kind: "tool_approval", outcome: "allowed_once" },
+    },
+  });
+});
+
 test("slow controller polling renders its result without overlapping requests and stops on unmount", async ({
   page,
 }) => {
@@ -416,6 +655,7 @@ test("manager context pins its session through delayed role discovery and accept
     data: { epoch: 1, status: "active" },
   };
   let submitted: any;
+  let chatApproved = false;
   const lookups: any[] = [];
   await page.route("**/rpc", async (route) => {
     const call = route.request().postDataJSON();
@@ -476,10 +716,20 @@ test("manager context pins its session through delayed role discovery and accept
         result = {
           session,
           controller,
-          turns: [],
+          approval_context: chatApproved
+            ? []
+            : [
+                {
+                  id: "observed-decision",
+                  revision: 7,
+                  data: { request: { interaction: { title: "确认本轮PRD" } } },
+                },
+              ],
+          turns: [{ id: "manager-turn", status: "completed" }],
           events: [
             {
               id: "manager-response",
+              turn_id: "manager-turn",
               kind: "assistant",
               content: "经理会话已正确加载",
               sequence: 1,
@@ -497,7 +747,12 @@ test("manager context pins its session through delayed role discovery and accept
         break;
       case "orchestration.input":
         submitted = call.params;
-        result = { accepted: true };
+        chatApproved =
+          call.params.payload.input === "确认PRD，继续执行后续步骤";
+        result = {
+          accepted: true,
+          ...(chatApproved ? { approval: { status: "approved" } } : {}),
+        };
         break;
       default:
         return route.fallback();
@@ -518,6 +773,9 @@ test("manager context pins its session through delayed role discovery and accept
   await expect(page.getByLabel("讨论会话", { exact: true })).toHaveValue(
     session.id,
   );
+  await expect(page.getByLabel("讨论轮次", { exact: true })).toHaveValue(
+    "manager-turn",
+  );
   expect(
     lookups.every((params) => !params.agent && !params.agent_instance_id),
   ).toBe(true);
@@ -530,8 +788,29 @@ test("manager context pins its session through delayed role discovery and accept
     .poll(() => submitted)
     .toMatchObject({
       target: controller.id,
-      payload: { epoch: 1, input: "只导出 ID 和名称。" },
+      payload: {
+        epoch: 1,
+        input: "只导出 ID 和名称。",
+        approval_context: [{ id: "observed-decision", revision: 7 }],
+      },
     });
+  await expect(
+    page.getByText("当前待审批：确认本轮PRD", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "讨论输入", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "讨论输入", exact: true })
+    .fill("确认PRD，继续执行后续步骤");
+  await page.getByRole("button", { name: "发送", exact: true }).click();
+  await expect
+    .poll(() => submitted.payload.input)
+    .toBe("确认PRD，继续执行后续步骤");
+  await expect(
+    page.getByText(
+      "已登记人工批准并处理当前结果，后续步骤由流程驱动继续执行。",
+      { exact: true },
+    ),
+  ).toBeVisible();
 });
 
 test("manager shows the current blocker without scheduling configuration at desktop and mobile widths", async ({
@@ -578,14 +857,94 @@ test("manager shows the current blocker without scheduling configuration at desk
   );
   await expect(manager.locator(".manager-configuration-row")).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(
-    manager.getByLabel("回复项目经理", { exact: true }),
-  ).toBeVisible();
+  await expect(manager.getByLabel("回复项目经理", { exact: true })).toHaveCount(
+    0,
+  );
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+});
+
+test("流程经理只保留审批入口和接管操作，状态刷新恢复后清除超时提示", async ({
+  page,
+}) => {
+  const url = await fixture(page);
+  let failRead = false;
+  let status = "active";
+  const commands: { method: string; params: any }[] = [];
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    if (call.method === "query.orchestration") {
+      expect(call.params.root_instance_id).toBe("read-instance");
+      if (failRead)
+        return route.fulfill({
+          json: {
+            jsonrpc: "2.0",
+            id: call.id,
+            error: { code: -32000, message: "TimeoutError: signal timed out" },
+          },
+        });
+      return route.fulfill({
+        json: {
+          jsonrpc: "2.0",
+          id: call.id,
+          result: {
+            record: {
+              id: "flow-controller",
+              revision: 2,
+              data: { status, epoch: 1, owner_id: "read-feature" },
+            },
+          },
+        },
+      });
+    }
+    if (
+      [
+        "orchestration.input",
+        "orchestration.takeover",
+        "orchestration.resume",
+      ].includes(call.method)
+    ) {
+      commands.push({ method: call.method, params: call.params });
+      if (call.method === "orchestration.takeover") status = "paused";
+      if (call.method === "orchestration.resume") status = "active";
+      return route.fulfill({
+        json: { jsonrpc: "2.0", id: call.id, result: { accepted: true } },
+      });
+    }
+    return route.fallback();
+  });
+  await page.goto(url);
+  const manager = page.getByRole("region", {
+    name: "项目经理协作",
+    exact: true,
+  });
+  await expect(manager).toContainText("协作中");
+  await expect(manager).toContainText("在此处理当前流程的待确认事项");
+  failRead = true;
+  await expect(manager).toContainText("暂时无法刷新经理状态");
+  failRead = false;
+  await expect(manager).not.toContainText("暂时无法刷新经理状态");
+  await expect(manager.getByLabel("回复项目经理", { exact: true })).toHaveCount(
+    0,
+  );
+  await expect(
+    manager.getByRole("button", { name: "发送回复", exact: true }),
+  ).toHaveCount(0);
+  await manager.getByRole("button", { name: "人工接管", exact: true }).click();
+  await expect(
+    manager.getByRole("button", { name: "恢复项目经理", exact: true }),
+  ).toBeVisible();
+  expect(
+    commands.find((command) => command.method === "orchestration.takeover")
+      ?.params.target,
+  ).toBe("flow-controller");
+  await manager
+    .getByRole("button", { name: "恢复项目经理", exact: true })
+    .click();
+  await expect(manager).toContainText("协作中");
 });
 
 test("paused root manager resumes its frozen sources without configuration controls", async ({
@@ -678,7 +1037,7 @@ for (const failure of ["catalog", "defaults"] as const) {
     const url = await fixture(page, failure);
     await page.goto(url);
     const standard = page
-      .getByRole("region", { name: "项目经理", exact: true })
+      .getByRole("region", { name: "流程规范", exact: true })
       .locator(".work-standard");
     await standard.locator(":scope > summary").click();
     await standard.getByText("规范采用历史（2）", { exact: true }).click();
@@ -736,7 +1095,7 @@ test("a late defaults read preserves an already displayed Standard comparison", 
   });
   await page.goto(url);
   const standard = page
-    .getByRole("region", { name: "项目经理", exact: true })
+    .getByRole("region", { name: "流程规范", exact: true })
     .locator(".work-standard");
   await standard.locator(":scope > summary").click();
   await standard.getByText("与其他工作比较规范", { exact: true }).click();
@@ -829,3 +1188,342 @@ for (const catalogState of ["pending", "failed"] as const) {
     }
   });
 }
+
+test("流程、材料、步骤上下文、Agent 讨论和审计定位同一执行与轮次", async ({
+  page,
+}, info) => {
+  const url = await fixture(page);
+  const execution = {
+    id: "11111111-2222-4333-8444-555555555555",
+    step: "requirements",
+    node_id: "77777777-8888-4999-8aaa-bbbbbbbbbbbb",
+    round: 1,
+    status: "completed",
+    reason: "需求已整理",
+    session_id: "22222222-3333-4444-8555-666666666666",
+    turn_id: "33333333-4444-4555-8666-777777777777",
+    plan_revision_id: "55555555-6666-4777-8888-999999999999",
+    inputs: {},
+    outputs: { report: "44444444-5555-4666-8777-888888888888" },
+  };
+  const record = {
+    ...execution,
+    execution_id: execution.id,
+    instance_id: "read-instance",
+    instance_name: "需求流程",
+    owner_id: "read-feature",
+    owner_kind: "feature",
+    feature_id: "read-feature",
+    owner_title: "读取隔离 Feature",
+    step_name: "澄清需求",
+    actor: {
+      name: "需求分析师",
+      agent_instance_id: "66666666-7777-4888-8999-aaaaaaaaaaaa",
+    },
+    historical: false,
+    outputs: [
+      {
+        id: "44444444-5555-4666-8777-888888888888",
+        name: "需求报告",
+        port: "report",
+        turn_id: "33333333-4444-4555-8666-777777777777",
+      },
+    ],
+  };
+  const pendingExecution = {
+    ...execution,
+    id: "future-execution",
+    step: "future",
+    node_id: "future-node",
+    status: "queued",
+    reason: "",
+    session_id: null,
+    turn_id: null,
+    outputs: {},
+  };
+  const pendingRecord = {
+    ...record,
+    ...pendingExecution,
+    execution_id: pendingExecution.id,
+    step_name: "尚未产生的步骤",
+    outputs: [],
+    context_available: false,
+    execution_available: false,
+  };
+  const plan = {
+    stages: [{ key: "requirements", name: "需求阶段" }],
+    steps: [
+      {
+        key: "requirements",
+        node_id: "77777777-8888-4999-8aaa-bbbbbbbbbbbb",
+        name: "澄清需求",
+        stage: "requirements",
+        executor: { type: "agent" },
+        outputs: {},
+      },
+      {
+        key: "future",
+        node_id: "future-node",
+        name: "尚未产生的步骤",
+        stage: "requirements",
+        executor: { type: "control" },
+      },
+    ],
+  };
+  const worker = {
+    id: "worker:1",
+    type: "agent",
+    definition_id: "worker",
+    name: "需求分析师",
+    version: 1,
+    capability_ref: "capability:1",
+    data: {},
+  };
+  const binding = {
+    installation: { key: { provider: "codex" } },
+    model: "fixture",
+    agent_configuration: {
+      agent_instance_id: "66666666-7777-4888-8999-aaaaaaaaaaaa",
+    },
+  };
+  const session = {
+    id: "22222222-3333-4444-8555-666666666666",
+    project_id: "read-project",
+    feature_id: "read-feature",
+    owner_id: "read-feature",
+    agent: worker.id,
+    runtime_binding: binding,
+    lifecycle: "idle",
+  };
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    let result: any;
+    switch (call.method) {
+      case "query.workflow_executions":
+        result = call.params.execution_id
+          ? {
+              record,
+              execution,
+              facts: [
+                {
+                  id: "decision",
+                  type: "workflow_confirmation",
+                  name: "人类确认回执",
+                  created_at: 1,
+                  data: { actor: "human", reason: "核对完成" },
+                },
+              ],
+            }
+          : { records: [record, pendingRecord] };
+        break;
+      case "query.workflow_instance": {
+        const runtime = {
+          owner_id: "read-feature",
+          status: "running",
+          steps: [execution, pendingExecution],
+          plan: { document: plan },
+        };
+        result = {
+          record: { id: "read-instance", name: "需求流程", data: runtime },
+          runtime,
+          plan,
+          children: [],
+          history: [],
+          actors: { [execution.id]: record.actor },
+        };
+        break;
+      }
+      case "query.workflow_materials":
+        result = call.params.output_id
+          ? {
+              record: { ...record, delivery_name: "需求报告", port: "report" },
+              output: {
+                delivery_ref: "report:1",
+                value: "这份材料来自本轮需求分析",
+              },
+              definitions: {},
+            }
+          : {
+              records: [
+                {
+                  ...record,
+                  id: "44444444-5555-4666-8777-888888888888",
+                  delivery_name: "需求报告",
+                },
+              ],
+              total: 1,
+            };
+        break;
+      case "query.workflow_contexts":
+        result = {
+          executions: [record, pendingRecord],
+          agents: [
+            {
+              id: "66666666-7777-4888-8999-aaaaaaaaaaaa",
+              actor: record.actor,
+              entries: [{ ...record, task_available: true, kind: "step" }],
+            },
+          ],
+        };
+        break;
+      case "query.execution_task":
+        expect(call.params.turn_id).toBe(
+          "33333333-4444-4555-8666-777777777777",
+        );
+        result = {
+          configured: true,
+          turn_id: "33333333-4444-4555-8666-777777777777",
+          task: { task_instructions: "这是此轮实际冻结的需求输入" },
+        };
+        break;
+      case "query.configuration_index":
+        result = {
+          records: [
+            worker,
+            {
+              id: "66666666-7777-4888-8999-aaaaaaaaaaaa",
+              type: "agent_instance",
+              name: "需求分析师实例",
+              data: { agent_revision_id: worker.id },
+            },
+          ],
+          total: 2,
+        };
+        break;
+      case "query.sessions":
+        result = { sessions: [session] };
+        break;
+      case "query.session":
+        expect(call.params.id).toBe(session.id);
+        result = {
+          session,
+          workflow_context: {
+            instance_id: "read-instance",
+            step_instance_id: execution.id,
+          },
+          formal_execution: true,
+          turns: [
+            { id: "33333333-4444-4555-8666-777777777777", status: "completed" },
+            { id: "other-turn", status: "completed" },
+          ],
+          events: [
+            {
+              id: "response",
+              turn_id: "33333333-4444-4555-8666-777777777777",
+              kind: "assistant",
+              content: "需求分析师的本轮回答",
+              sequence: 1,
+            },
+            {
+              id: "other",
+              turn_id: "other-turn",
+              kind: "assistant",
+              content: "另一个轮次的回答",
+              sequence: 2,
+            },
+          ],
+          next_cursor: 2,
+          interactions: [],
+          proposals: [],
+          executions: [],
+        };
+        break;
+      case "query.agent_experience":
+        result = { records: [], total: 0, unavailable: [] };
+        break;
+      default:
+        return route.fallback();
+    }
+    await route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
+  });
+  await page.goto(
+    url.replace("detail=manager", "detail=documents") +
+      "&output_id=44444444-5555-4666-8777-888888888888",
+  );
+  const material = page.getByRole("article", { name: "选中材料正文" });
+  await expect(material).toContainText("这份材料来自本轮需求分析");
+  await expect(
+    material.getByRole("link", { name: "查看流程步骤", exact: true }),
+  ).toHaveAttribute(
+    "href",
+    /execution_id=11111111-2222-4333-8444-555555555555/,
+  );
+  await material
+    .getByRole("link", { name: "查看执行者上下文", exact: true })
+    .click();
+  const context = page.getByRole("article", { name: "选中步骤上下文" });
+  await expect(context).toContainText("这是此轮实际冻结的需求输入");
+  await expect(
+    page.getByLabel("上下文任务与轮次", { exact: true }),
+  ).toHaveValue("33333333-4444-4555-8666-777777777777");
+  await expect(
+    page.getByRole("navigation", { name: "流程步骤上下文目录" }),
+  ).not.toContainText("尚未产生的步骤");
+  await expect(
+    page.getByRole("navigation", { name: "Agent 实例目录" }),
+  ).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await context
+    .getByRole("link", { name: "查看此轮会话", exact: true })
+    .click();
+  await expect(page.getByLabel("讨论会话", { exact: true })).toHaveValue(
+    "22222222-3333-4444-8555-666666666666",
+  );
+  await expect(page.getByLabel("讨论轮次", { exact: true })).toHaveValue(
+    "33333333-4444-4555-8666-777777777777",
+  );
+  const log = page.getByRole("log", { name: "讨论记录" });
+  await expect(log).toContainText("需求分析师的本轮回答");
+  await expect(log).not.toContainText("另一个轮次的回答");
+  await page
+    .getByRole("region", { name: "会话与流程关联" })
+    .getByRole("link", { name: "查看流程步骤", exact: true })
+    .click();
+  const step = page.getByRole("article", {
+    name: "步骤 · 澄清需求",
+    exact: true,
+  });
+  await expect(step).toHaveAttribute("aria-current", "step");
+  const future = page.getByRole("article", {
+    name: "步骤 · 尚未产生的步骤",
+    exact: true,
+  });
+  await expect(future).toBeVisible();
+  await expect(
+    future.getByRole("link", { name: "查看执行者上下文", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    step.getByRole("link", { name: "材料 · report", exact: true }),
+  ).toBeVisible();
+  await step.getByRole("link", { name: "查看执行记录", exact: true }).click();
+  await expect(
+    page.getByRole("article", { name: "选中执行记录" }),
+  ).toContainText("人类确认回执");
+  await expect(
+    page.getByRole("navigation", { name: "执行轮次目录" }),
+  ).not.toContainText("尚未产生的步骤");
+  await expect(
+    page.getByRole("article", { name: "选中步骤上下文" }),
+  ).toHaveCount(0);
+  await page.getByRole("tab", { name: "项目经理", exact: true }).click();
+  await expect(
+    page.getByRole("region", { name: "当前工作进度" }),
+  ).toContainText("已完成 1 / 2 个步骤");
+  await expect(page.getByRole("region", { name: "步骤上下文" })).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: info.outputPath("execution-perspectives.png"),
+    fullPage: true,
+  });
+});

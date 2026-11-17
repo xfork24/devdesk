@@ -279,10 +279,19 @@ impl Engine {
             .as_str()
             .unwrap_or(&instance.id);
         let mut waiting = vec![];
+        let mut approvals = vec![];
+        let mut sessions: std::collections::BTreeSet<String> = s
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "workflow_controller" && r.data["root_instance_id"] == root)
+            .filter_map(|r| r.data["session_id"].as_str())
+            .map(str::to_owned)
+            .collect();
         for row in s.governance.iter().filter(|r| {
             r.r#type == "workflow_instance" && (r.id == root || r.data["root_instance_id"] == root)
         }) {
             let instance: ConfiguredWorkflowInstance = row.decode()?;
+            sessions.extend(instance.steps.iter().filter_map(|e| e.session_id.clone()));
             let facts = crate::configured_runtime::facts(&s, &instance)?;
             for execution in &instance.steps {
                 let step = instance
@@ -295,6 +304,11 @@ impl Engine {
                 let actions = crate::workflow_eligibility::step_actions_with_facts(
                     &s, &row.id, &instance, step, execution, &facts,
                 )?;
+                if let Some(approval) = crate::controller_interactions::step_approval(
+                    &s, row, &instance, step, execution, &actions,
+                )? {
+                    approvals.push(approval);
+                }
                 let mut gates = vec![];
                 if matches!(
                     execution.status,
@@ -320,12 +334,20 @@ impl Engine {
                             | StepExecutionStatus::NeedsReconciliation
                     )
                 {
-                    waiting.push(json!({"instance_id":row.id,"owner_id":instance.owner_id,"execution_id":execution.id,"step":execution.step,"step_name":step.name,"path":execution.path,"status":execution.status,"reason":execution.reason,"waiting_for":gates,"actions":actions}));
+                    waiting.push(json!({"instance_id":row.id,"owner_id":instance.owner_id,"execution_id":execution.id,"step":execution.step,"step_name":step.name,"path":execution.path,"status":execution.status,"ancestor_instance_ids":crate::controller_interactions::instance_ancestors(&s, &row.id),"reason":execution.reason,"waiting_for":gates,"actions":actions}));
                 }
             }
         }
         Ok(
-            json!({"waiting":waiting,"driver":driver(&s,root),"root_instance_id":root,"children_inherit":true}),
+            json!({"waiting":waiting,"approvals":approvals,"runtime_approvals":s.interactions.iter()
+                .filter(|i| sessions.contains(&i.session_id) && i.status == InteractionStatus::Pending && i.kind == InteractionKind::ToolApproval).map(|i| {
+                    let mut value = json!(i);
+                    value["instance_id"] = s.governance.iter().find(|r| r.r#type == "workflow_instance" && r.data["steps"].as_array().is_some_and(|steps| steps.iter().any(|e| e["session_id"] == i.session_id))).map(|r| json!(r.id)).unwrap_or(json!(root));
+                    value["ancestor_instance_ids"] = json!(crate::controller_interactions::instance_ancestors(&s, value["instance_id"].as_str().unwrap_or(root)));
+                    value["owner_id"] = s.sessions.iter().find(|session| session.id == i.session_id).map(|session| json!(session.owner_id)).unwrap_or(Value::Null);
+                    value
+                }).collect::<Vec<_>>(),
+                "driver":driver(&s,root),"root_instance_id":root,"children_inherit":true}),
         )
     }
     pub fn drive_rust_workflows(&self) -> Result<()> {

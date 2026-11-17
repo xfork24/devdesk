@@ -1,13 +1,9 @@
+import { displayText } from "../display-text";
 import { useState } from "react";
 import { type Request, type Row } from "./rpc-types";
-import {
-  DiscussionLink,
-  RawJsonLink,
-  ReadableValue,
-  ReadingLink,
-  ReadState,
-} from "./reading";
+import { RawJsonLink, ReadableValue, ReadingLink, ReadState } from "./reading";
 import { useReading, navigateReading, executionUrl } from "./reading-state";
+import { WorkflowReferences } from "./WorkflowReferences";
 const labels: Record<string, string> = {
   completed: "已完成",
   running: "执行中",
@@ -46,56 +42,40 @@ function ExecutionReader({
       {value && record && (
         <>
           <h3>
-            {record.step_name} · 第 {record.round} 轮
-            {record.historical ? " · 历史执行" : ""}
+            {displayText(record.step_name)} · 第 {displayText(record.round)} 轮
+            {displayText(record.historical ? " · 历史执行" : "")}
           </h3>
           <h4>执行身份与结果</h4>
           <p>
-            {record.owner_title} · {record.instance_name}
+            {displayText(record.owner_title)} ·{" "}
+            {displayText(record.instance_name)}
           </p>
-          <p>执行者/方式：{record.actor.name}</p>
-          <p>状态：{labels[record.status] || record.status}</p>
+          <p>执行者/方式：{displayText(record.actor.name)}</p>
+          <p>状态：{displayText(labels[record.status] || record.status)}</p>
           <ReadableValue value={record.reason || "未记录额外说明"} />
           <p className="muted">
             开始：
-            {record.started
-              ? new Date(record.started).toLocaleString("zh-CN", {
-                  hour12: false,
-                })
-              : "未记录"}{" "}
+            {displayText(
+              record.started
+                ? new Date(record.started).toLocaleString("zh-CN", {
+                    hour12: false,
+                  })
+                : "未记录",
+            )}{" "}
             · 结束：
-            {record.finished
-              ? new Date(record.finished).toLocaleString("zh-CN", {
-                  hour12: false,
-                })
-              : "未记录"}
+            {displayText(
+              record.finished
+                ? new Date(record.finished).toLocaleString("zh-CN", {
+                    hour12: false,
+                  })
+                : "未记录",
+            )}
           </p>
-          <div className="reading-links">
-            {record.turn_id && (
-              <ReadingLink
-                detail="context"
-                projectId={projectId}
-                ownerId={ownerId}
-                target={{ execution_id: record.id, turn_id: record.turn_id }}
-              >
-                查看执行者上下文
-              </ReadingLink>
-            )}
-            {record.session_id && (
-              <DiscussionLink
-                projectId={projectId}
-                ownerId={ownerId}
-                sessionId={record.session_id}
-                taskId={
-                  record.owner_id !== ownerId && record.owner_id !== projectId
-                    ? record.owner_id
-                    : undefined
-                }
-              >
-                查看会话
-              </DiscussionLink>
-            )}
-          </div>
+          <WorkflowReferences
+            source={{ ...record, execution_id: record.id }}
+            {...{ projectId, ownerId }}
+            current="records"
+          />
           {record.outputs.length > 0 && (
             <section>
               <h4>关联交付物</h4>
@@ -108,7 +88,7 @@ function ExecutionReader({
                       ownerId={ownerId}
                       target={{ output_id: o.id }}
                     >
-                      {o.name || o.port}
+                      {displayText(o.name || o.port)}
                     </ReadingLink>
                   </li>
                 ))}
@@ -121,12 +101,14 @@ function ExecutionReader({
           )}
           {value.facts.map((fact: Row) => (
             <section key={fact.id} className="execution-fact">
-              <h4>{fact.name}</h4>
+              <h4>{displayText(fact.name)}</h4>
               <p className="muted">
-                {fact.type} ·{" "}
-                {new Date(fact.created_at).toLocaleString("zh-CN", {
-                  hour12: false,
-                })}
+                {displayText(fact.type)} ·{" "}
+                {displayText(
+                  new Date(fact.created_at).toLocaleString("zh-CN", {
+                    hour12: false,
+                  }),
+                )}
               </p>
               {fact.type === "workflow_decision" ||
               fact.type === "workflow_confirmation" ? (
@@ -140,7 +122,7 @@ function ExecutionReader({
                 />
               ) : (
                 <>
-                  <p>记录状态：{fact.data.status || "已记录"}</p>
+                  <p>记录状态：{displayText(fact.data.status || "已记录")}</p>
                   {fact.data.error && <ReadableValue value={fact.data.error} />}
                   <details>
                     <summary>核对回执字段</summary>
@@ -202,7 +184,9 @@ export function WorkflowExecutionRecords({
     owner_id: ownerId,
   });
   const [showHistory, setShowHistory] = useState(false);
-  const records: Row[] = state.value?.records || [];
+  const records: Row[] = (state.value?.records || []).filter(
+    (record: Row) => record.execution_available ?? record.status !== "queued",
+  );
   const hasTarget = Boolean(target.execution_id);
   const selected =
     records.find((r) => r.id === target.execution_id) ||
@@ -222,7 +206,9 @@ export function WorkflowExecutionRecords({
   return (
     <section aria-label="工作流执行记录">
       <h3>执行记录</h3>
-      <p className="muted">选择一次执行，核对实际参与者、决定和回执。</p>
+      <p className="muted">
+        审计视角：核对步骤的派发、人工决定、确认与工具回执。冻结输入在上下文页，会话消息在角色讨论页。
+      </p>
       <ReadState {...state} />
       <label>
         <input
@@ -237,8 +223,13 @@ export function WorkflowExecutionRecords({
           {instances.map((id) => (
             <section key={id}>
               <h4>
-                {records.find((r) => r.instance_id === id)?.owner_title} ·{" "}
-                {records.find((r) => r.instance_id === id)?.instance_name}
+                {displayText(
+                  records.find((r) => r.instance_id === id)?.owner_title,
+                )}{" "}
+                ·{" "}
+                {displayText(
+                  records.find((r) => r.instance_id === id)?.instance_name,
+                )}
               </h4>
               {records
                 .filter(
@@ -259,10 +250,11 @@ export function WorkflowExecutionRecords({
                       )
                     }
                   >
-                    {r.step_name}
+                    {displayText(r.step_name)}
                     <small>
-                      第 {r.round} 轮 · {r.historical ? "历史 · " : ""}
-                      {labels[r.status] || r.status}
+                      第 {displayText(r.round)} 轮 ·{" "}
+                      {displayText(r.historical ? "历史 · " : "")}
+                      {displayText(labels[r.status] || r.status)}
                     </small>
                   </button>
                 ))}
@@ -278,11 +270,13 @@ export function WorkflowExecutionRecords({
           />
         ) : (
           <p className="muted">
-            {state.loading
-              ? "正在读取执行目录…"
-              : hasTarget
-                ? "目标执行不属于当前工作范围或尚不可读。"
-                : "当前工作流程没有可读取的执行记录。"}
+            {displayText(
+              state.loading
+                ? "正在读取执行目录…"
+                : hasTarget
+                  ? "目标执行不属于当前工作范围或尚不可读。"
+                  : "当前工作流程没有可读取的执行记录。",
+            )}
           </p>
         )}
       </div>

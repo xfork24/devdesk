@@ -20,6 +20,12 @@ export function latest(records: Row[]) {
   }
   return [...map.values()];
 }
+export function mergeConfigurationRecords(records: Row[], updates: Row[]) {
+  // Updating a record's details must retain its position in the catalog.
+  return [
+    ...new Map([...records, ...updates].map((row) => [row.id, row])).values(),
+  ];
+}
 export async function loadCatalog(
   request: Request,
   projectId?: string,

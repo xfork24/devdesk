@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { useEffect, useRef, useState } from "react";
 import { ActionButton } from "./ActionFeedback";
 import { loadCatalog } from "./configuration-state";
@@ -162,18 +163,23 @@ export function WorkStandard({
     <details className="work-standard">
       <summary>
         采用的规范 ·{" "}
-        {records.find((r) => r.id === activeStandard)?.name ||
-          activeStandard ||
-          "待配置"}
+        {displayText(
+          records.find((r) => r.id === activeStandard)?.name ||
+            activeStandard ||
+            "待配置",
+        )}
       </summary>
       {activeStandard ? (
         <p>
           <a
             href={`?tab=workflows&config_tab=standard&project_id=${encodeURIComponent(projectId)}&standard_id=${encodeURIComponent(activeStandard)}`}
           >
-            {activeStandard}
+            {displayText(activeStandard)}
           </a>{" "}
-          · 入口 {runtime?.workflow_ref || configuration?.data.workflow_ref}
+          · 入口{" "}
+          {displayText(
+            runtime?.workflow_ref || configuration?.data.workflow_ref,
+          )}
         </p>
       ) : null}
       <p className="muted">
@@ -181,7 +187,7 @@ export function WorkStandard({
       </p>
       {error ? (
         <p role="alert" className="error">
-          {error}
+          {displayText(error)}
         </p>
       ) : null}
       {!ended ? (
@@ -300,12 +306,14 @@ export function WorkStandard({
               })
             }
           >
-            {instance ? "预演规范切换" : "保存采用的规范"}
+            {displayText(instance ? "预演规范切换" : "保存采用的规范")}
           </ActionButton>
           {preview ? (
             <>
               <StandardDiff diff={preview.standard_diff} />
-              <p>受影响步骤：{preview.affected.join("、") || "无"}</p>
+              <p>
+                受影响步骤：{displayText(preview.affected.join("、") || "无")}
+              </p>
               <ActionButton
                 disabled={busy}
                 onClick={() =>
@@ -366,13 +374,15 @@ export function WorkStandard({
               .filter((row) => row.id !== owner.id)
               .map((row) => (
                 <option key={row.id} value={row.id}>
-                  {row.project_title} /{" "}
-                  {row.work.kind === "project"
-                    ? "Project"
-                    : row.work.kind === "feature"
-                      ? "Feature"
-                      : "Task"}{" "}
-                  · {row.title}
+                  {displayText(row.project_title)} /{" "}
+                  {displayText(
+                    row.work.kind === "project"
+                      ? "Project"
+                      : row.work.kind === "feature"
+                        ? "Feature"
+                        : "Task",
+                  )}{" "}
+                  · {displayText(row.title)}
                 </option>
               ))}
           </select>
@@ -423,20 +433,24 @@ export function WorkStandard({
                 (selection: Row, index: number) => (
                   <section key={index}>
                     <p>
-                      {index === 0 ? "当前工作" : "比较工作"} ·{" "}
-                      {selection.standard_ref} ·{" "}
-                      {selection.basis === "execution"
-                        ? "实际运行计划"
-                        : "尚未执行的配置"}
+                      {displayText(index === 0 ? "当前工作" : "比较工作")} ·{" "}
+                      {displayText(selection.standard_ref)} ·{" "}
+                      {displayText(
+                        selection.basis === "execution"
+                          ? "实际运行计划"
+                          : "尚未执行的配置",
+                      )}
                     </p>
                     <p>
-                      子工作：{selection.children.length} · 运行例外：
-                      {selection.exceptions.length}
+                      子工作：{displayText(selection.children.length)} ·
+                      运行例外：
+                      {displayText(selection.exceptions.length)}
                     </p>
                     <ul>
                       {selection.children.map((child: Row, index: number) => (
                         <li key={index}>
-                          {child.owner_id} · {child.standard_ref}
+                          {displayText(child.owner_id)} ·{" "}
+                          {displayText(child.standard_ref)}
                         </li>
                       ))}
                     </ul>
@@ -449,12 +463,14 @@ export function WorkStandard({
       </details>
       <details>
         <summary>
-          规范采用历史（{historyLoading ? "加载中" : history.length}）
+          规范采用历史（
+          {displayText(historyLoading ? "加载中" : history.length)}）
         </summary>
         <ul>
           {history.map((plan: Row) => (
             <li key={plan.id}>
-              {plan.data.standard_ref} · {plan.data.reason}
+              {displayText(plan.data.standard_ref)} ·{" "}
+              {displayText(plan.data.reason)}
               <ActionButton
                 disabled={busy || !activeStandard}
                 onClick={() =>

@@ -945,6 +945,9 @@ impl Engine {
                     "root_instance_id":controller.root_instance_id,"project_id":controller.project_id,
                     "workspace_only":controller.workspace_only,"bootstrap":bootstrap,"events":events,
                     "deadline_reached":deadline,"user_messages":user.iter().map(|r|&r.data["input"]).collect::<Vec<_>>()});
+                if let Some(root) = controller.root_instance_id.as_deref() {
+                    scope_snapshot["human_gates"] = crate::controller_interactions::human_gate_summary(s, root)?;
+                }
                 if bootstrap {
                     scope_snapshot["root"]=root.map(|r|json!({"id":r.id,"plan_revision_id":r.data["active_plan_revision_id"],"status":r.data["status"],"human_governance":r.data["human_governance"],"user_request":r.data["user_request"]})).unwrap_or(Value::Null);
                     scope_snapshot["policy"]=json!(controller.policy);

@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { useEffect, useState } from "react";
 import { ActionButton, ActionSelect } from "./ActionFeedback";
 import { sourcePayload } from "./configuration-state";
@@ -81,27 +82,31 @@ export function SpecLint({
       <ActionButton type="button" disabled={busy} onClick={() => void lint()}>
         运行结构自检
       </ActionButton>
-      {error && <p role="alert">{error}</p>}
+      {error && <p role="alert">{displayText(error)}</p>}
       {result && (
         <div role="status">
           <p>
-            {result.structure_valid ? "结构检查通过" : "结构检查未通过"}
+            {displayText(
+              result.structure_valid ? "结构检查通过" : "结构检查未通过",
+            )}
             ；语义质量仍需明确判断。
           </p>
           <ul>
             {(result.checks || []).map((check: Row) => (
               <li key={`${check.spec_ref}:${check.key}`}>
-                {check.name}：
-                {check.status === "requires_judgment"
-                  ? "等待语义判断"
-                  : check.passed
-                    ? "通过"
-                    : "未通过"}
+                {displayText(check.name)}：
+                {displayText(
+                  check.status === "requires_judgment"
+                    ? "等待语义判断"
+                    : check.passed
+                      ? "通过"
+                      : "未通过",
+                )}
               </li>
             ))}
           </ul>
           {result.format_schema_error && (
-            <p>{result.format_schema_error.message}</p>
+            <p>{displayText(result.format_schema_error.message)}</p>
           )}
         </div>
       )}

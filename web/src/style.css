@@ -2541,6 +2541,89 @@ pre {
 .reading-body select {
   max-width: 100%;
 }
+.workflow-references,
+.conversation-panel code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.manager-progress {
+  margin: 16px 0;
+}
+.manager-progress progress {
+  width: min(100%, 32rem);
+}
+.manager-workflow-card
+  > :is(
+    .manager-standard,
+    .manager-plan-changes,
+    .manager-history,
+    .manager-collaboration,
+    .manager-task-settings
+  ) {
+  border-top: 1px solid #edf0f5;
+  padding-top: 14px;
+  margin-top: 14px;
+}
+.manager-workflow-card > details > summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.manager-child-flow > .panel-heading .manager-interaction-status {
+  margin-left: 10px;
+  color: #6c778b;
+  font-size: 12px;
+}
+.execution-page .manager-workflow-card > .panel-heading {
+  min-height: 0;
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-bottom: 0;
+}
+.manager-interaction,
+.manager-disclosure {
+  min-width: 0;
+}
+.manager-interaction,
+.manager-log {
+  margin-top: 12px;
+}
+.manager-disclosure {
+  border: 1px solid #e3e7ef;
+  border-radius: 8px;
+  background: #fff;
+}
+.manager-disclosure > summary {
+  padding: 12px 14px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.manager-disclosure > summary > :last-child:not(:first-child) {
+  margin-left: 10px;
+  color: #6c778b;
+  font-size: 12px;
+}
+.manager-disclosure[open] > summary {
+  border-bottom: 1px solid #edf0f5;
+}
+.manager-disclosure-body {
+  padding: 14px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.manager-disclosure-body > :first-child {
+  margin-top: 0;
+}
+.manager-disclosure-body > :last-child {
+  margin-bottom: 0;
+}
+.manager-blockers > ul {
+  list-style: none;
+  padding: 0;
+  margin-bottom: 0;
+}
+.workflow-step-runtime[aria-current="step"] {
+  border-color: var(--accent, #6455df);
+}
 
 /* Permission details follow the selected resource revision in the editor. */
 .resource-detail-footer {

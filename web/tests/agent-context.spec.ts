@@ -26,6 +26,9 @@ test("没有项目时可以选择 Agent 并查看完整能力和经验入口", a
   });
   await page.reload();
   await page.getByRole("button", { name: "角色讨论", exact: true }).click();
+  await expect(page.getByLabel("讨论角色", { exact: true })).toHaveValue(
+    "builtin-agent-sol-high-project-manager:10",
+  );
   await page.getByLabel("讨论角色", { exact: true }).selectOption(agent);
   await page.getByLabel("Agent", { exact: true }).selectOption(instance.id);
   await expect(page.getByLabel("讨论范围", { exact: true })).toHaveValue(
@@ -92,6 +95,9 @@ test("无项目讨论可以选择来源项目的原 Agent 实例并保持活动�
   });
   await page.reload();
   await page.getByRole("button", { name: "角色讨论", exact: true }).click();
+  await expect(page.getByLabel("讨论角色", { exact: true })).toHaveValue(
+    "builtin-agent-sol-high-project-manager:10",
+  );
   await page.getByLabel("讨论范围", { exact: true }).selectOption("global");
   await page.getByLabel("讨论角色", { exact: true }).selectOption(agent.id);
   await page.getByLabel("Agent", { exact: true }).selectOption(instance.id);

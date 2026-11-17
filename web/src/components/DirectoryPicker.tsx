@@ -1,3 +1,4 @@
+import { displayText } from "../display-text";
 import { useEffect, useRef, useState } from "react";
 import { Folder, ArrowUp } from "lucide-react";
 
@@ -101,7 +102,7 @@ export function DirectoryPicker({
               key={location.name}
               onClick={() => void navigate(location.path)}
             >
-              {location.name}
+              {displayText(location.name)}
             </button>
           ))}
           {!listing ? (
@@ -111,7 +112,7 @@ export function DirectoryPicker({
           ) : null}
         </nav>
         <p className="directory-picker-path" aria-label="正在浏览的文件夹">
-          {listing?.path || initialPath}
+          {displayText(listing?.path || initialPath)}
         </p>
         <button
           type="button"
@@ -131,7 +132,8 @@ export function DirectoryPicker({
                 type="button"
                 onClick={() => void navigate(directory.path)}
               >
-                <Folder size={18} aria-hidden="true" /> {directory.name}
+                <Folder size={18} aria-hidden="true" />{" "}
+                {displayText(directory.name)}
               </button>
             </li>
           ))}
@@ -141,7 +143,7 @@ export function DirectoryPicker({
         ) : null}
       </fieldset>
       {loading ? <p role="status">正在读取文件夹…</p> : null}
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? <p role="alert">{displayText(error)}</p> : null}
       <div className="actions">
         <button type="button" disabled={selecting} onClick={onClose}>
           取消
@@ -151,7 +153,7 @@ export function DirectoryPicker({
           disabled={!listing || loading || selecting}
           onClick={() => void select()}
         >
-          {selecting ? "正在切换…" : "选择此文件夹"}
+          {displayText(selecting ? "正在切换…" : "选择此文件夹")}
         </button>
       </div>
     </dialog>
