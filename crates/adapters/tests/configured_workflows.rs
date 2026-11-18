@@ -4891,3 +4891,398 @@ fn native_pending_tasks_restore_only_the_original_frozen_task_or_authenticated_d
         }
     }
 }
+
+// Business rejection regression: a real persisted report and actual producer,
+// not a review-round approximation or an auto-generated approval notification.
+fn rejection_plan(engine: &Engine, role: &Value, agent: &Value, limit: u64, nested: bool) -> Value {
+    rejection_plan_with_policies(engine, role, agent, limit, nested, true)
+}
+fn rejection_plan_with_policies(
+    engine: &Engine,
+    role: &Value,
+    agent: &Value,
+    limit: u64,
+    nested: bool,
+    with_policies: bool,
+) -> Value {
+    let mut document = json!({"schema_version":6,"stages":[{"key":"work","name":"返工验收"}],
+        "rework_policies":{"repair":{"entry_step":"author","allowed_targets":["producer_step","after_confirmed_checkpoint","child_workflow"],"max_reworks":limit}},
+        "review_policies":{"review":{"review_step":"review","rejected_when":{"op":"equals","source":{"step":"review","port":"report","pointer":"/approve"},"value":false},"rework_policy":"repair","allow_human_approval":true}},
+        "steps":[
+        {"key":"anchor","name":"已确认输入","stage":"work","executor":{"type":"control"},"confirmation":"human"},
+        {"key":"author","name":"责任文档","stage":"work","dependencies":["anchor"],"executor":{"type":"agent","role_ref":role["id"]},"task_instructions":"编写文档并提供实际验收材料","outputs":{"doc":{"delivery_ref":"fixture-delivery-object:1"}}},
+        {"key":"review","name":"独立评审","stage":"work","dependencies":["author"],"executor":{"type":"agent","role_ref":role["id"]},"task_instructions":"核对文档和浏览器证据，缺失时拒绝","inputs":{"doc":{"type":"source","source":{"step":"author","port":"doc"}}},"outputs":{"report":{"delivery_ref":"fixture-delivery-object:1"}},"completion":{"op":"equals","source":{"step":"review","port":"report","pointer":"/approve"},"value":true}},
+        {"key":"unrelated","name":"无关分支","stage":"work","executor":{"type":"control"}}
+    ]});
+    if !with_policies {
+        document.as_object_mut().unwrap().remove("rework_policies");
+        document.as_object_mut().unwrap().remove("review_policies");
+    }
+    let workflow = publish(engine, document);
+    let workflow = if nested {
+        publish(
+            engine,
+            json!({"schema_version":6,"stages":[{"key":"work","name":"父流程"}],"steps":[{"key":"child","name":"仅此子流程","stage":"work","executor":{"type":"workflow","workflow_ref":workflow["id"]}}]}),
+        )
+    } else {
+        workflow
+    };
+    let project = command(
+        engine,
+        "project.create",
+        None,
+        json!({"title":"浏览器证据缺失返工"}),
+    )
+    .unwrap();
+    let run=command(engine,"workflow.start",project["id"].as_str(),json!({"workflow_ref":workflow["id"],"role_agent_bindings":{role["id"].as_str().unwrap():agent["id"]}})).unwrap();
+    control_fixture::evaluate(engine).unwrap();
+    let run = if nested {
+        let state = engine.store.snapshot().unwrap();
+        let child = state
+            .governance
+            .iter()
+            .find(|r| r.r#type == "workflow_instance" && r.data["parent_execution_id"].is_string())
+            .unwrap();
+        json!({"id":child.id})
+    } else {
+        run
+    };
+    let current = instance(engine, &run["id"]);
+    let anchor = current["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["step"] == "anchor")
+        .unwrap();
+    command(engine,"workflow.step.confirm",run["id"].as_str(),json!({"step":"anchor","execution_id":anchor["id"],"input_digest":anchor["input_digest"],"outputs":anchor["outputs"],"reason":"确认有效输入"})).unwrap();
+    drive(engine, 12);
+    run
+}
+fn enqueue_rejection(recorder: &RecordingAgent) {
+    recorder.responses.lock().unwrap().extend([
+        json!({"status":"completed","summary":"产出文档","outputs":{"doc":{"content":"交付页面","candidate":"actual-candidate"}}}),
+        json!({"status":"completed","summary":"缺少浏览器观察","outputs":{"report":{"approve":false,"checks":[{"key":"content","passed":false},{"key":"evidence","passed":false}],"summary":"M-001 至 M-004 浏览器观察未提供；自动测试已通过"}}})
+    ]);
+}
+fn selected_rework(engine: &Engine, run: &Value, target: &str) -> Value {
+    let current = instance(engine, &run["id"]);
+    let steps = current["steps"].as_array().unwrap();
+    let author = steps.iter().find(|e| e["step"] == "author").unwrap();
+    let review = steps.iter().find(|e| e["step"] == "review").unwrap();
+    let anchor = steps.iter().find(|e| e["step"] == "anchor").unwrap();
+    let state = engine.store.snapshot().unwrap();
+    let checkpoint = state
+        .governance
+        .iter()
+        .find(|r| {
+            r.r#type == "workflow_confirmation" && r.definition_id == anchor["id"].as_str().unwrap()
+        })
+        .unwrap();
+    json!({"policy":"repair","target":target,"review_instance_id":run["id"],"review_execution_id":review["id"],"report_output_id":review["outputs"]["report"],"producer_output_id":author["outputs"]["doc"],"checkpoint_ref":checkpoint.id,"assessment":"上游确认有效；责任文档缺少实际浏览器观察，只重做依赖链并保留无关分支","acceptance_requirements":"实际执行 M-001 至 M-004 浏览器观察，关联当前候选、测试及封存证据"})
+}
+#[test]
+fn policy_rework_shares_limits_preserves_checkpoint_and_replays_once() {
+    for limit in [0, 1, 3] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = engine(dir.path());
+        let recorder = Arc::new(RecordingAgent::default());
+        engine.harness = recorder.clone();
+        enqueue_rejection(&recorder);
+        let (role, agent) = research_agent(&engine);
+        let run = rejection_plan(&engine, &role, &agent, limit, false);
+        let original = instance(&engine, &run["id"]);
+        let anchor = original["steps"][0].clone();
+        let unrelated = original["steps"][3].clone();
+        for round in 0..=limit {
+            let current = instance(&engine, &run["id"]);
+            let target = if round % 2 == 0 {
+                "producer_step"
+            } else {
+                "after_confirmed_checkpoint"
+            };
+            let selection = selected_rework(&engine, &run, target);
+            let params = json!({"instance_id":run["id"],"plan_revision_id":current["active_plan_revision_id"],"rework":selection});
+            let preview = engine.query("workflow.rework.preview", &params, 4).unwrap();
+            let state = engine.store.snapshot().unwrap();
+            let row = state.configuration(run["id"].as_str().unwrap()).unwrap();
+            let c = Command {
+                command_id: id(),
+                target: run["id"].as_str().map(str::to_owned),
+                expected_revision: Some(row.revision),
+                payload: json!({"plan_revision_id":current["active_plan_revision_id"],"step":"author","execution_id":current["steps"][1]["id"],"rework":selection,"preview_hash":preview["preview_hash"],"reason":"补齐真实浏览器证据"}),
+            };
+            let result = engine.execute("workflow.step.rework", c.clone());
+            if round == limit {
+                assert_eq!(result.unwrap_err().code, "rework_budget_exhausted");
+                break;
+            }
+            let result = result.unwrap();
+            assert_eq!(engine.execute("workflow.step.rework", c).unwrap(), result);
+            let next = instance(&engine, &run["id"]);
+            assert_eq!(next["steps"][0], anchor);
+            assert_eq!(next["steps"][3], unrelated);
+            assert_ne!(next["steps"][1]["id"], current["steps"][1]["id"]);
+            enqueue_rejection(&recorder);
+            drive(&engine, 12);
+        }
+        let view = engine
+            .query("workflow.inspect", &json!({"id":run["id"]}), 4)
+            .unwrap();
+        assert_eq!(view["rework_budgets"][0]["used"], limit);
+        assert_eq!(view["rework_budgets"][0]["remaining"], 0);
+        assert_eq!(
+            engine
+                .store
+                .snapshot()
+                .unwrap()
+                .governance
+                .iter()
+                .filter(|r| r.r#type == "workflow_rework_consumption")
+                .count(),
+            limit as usize
+        );
+    }
+}
+#[test]
+fn proposed_exception_requires_real_signature_preserves_report_and_cannot_repeat() {
+    for approved in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = engine(dir.path());
+        let recorder = Arc::new(RecordingAgent::default());
+        engine.harness = recorder.clone();
+        enqueue_rejection(&recorder);
+        let (role, agent) = research_agent(&engine);
+        let run = rejection_plan(&engine, &role, &agent, 1, false);
+        let current = instance(&engine, &run["id"]);
+        let review = &current["steps"][2];
+        let report = review["outputs"]["report"].as_str().unwrap();
+        let args = json!({"instance_id":run["id"],"plan_revision_id":current["active_plan_revision_id"],"step":"review","execution_id":review["id"],"input_digest":review["input_digest"],"outputs":review["outputs"]});
+        let payload = json!({"plan_revision_id":current["active_plan_revision_id"],"operation":"workflow.step.approve","arguments":args,"reason":"建议接受此候选的浏览器证据缺口","interaction":{"title":"批准当前候选的具体例外","background":"独立评审拒绝","requested_action":"批准或拒绝 M-001 至 M-004 观察缺口","completed_work":"自动测试通过","review_summary":"缺少浏览器观察","issues":"接受未完成浏览器验收的风险，仅适用于此候选","recommendation":"建议用户例外批准；拒绝后在剩余额度内补证","materials":[{"label":"原报告","purpose":"核对失败项","instance_id":run["id"],"execution_id":review["id"],"output_id":report}],"evidence":[]}});
+        let pending = command(
+            &engine,
+            "workflow.decision.request",
+            run["id"].as_str(),
+            payload.clone(),
+        )
+        .unwrap();
+        assert!(
+            command(
+                &engine,
+                "workflow.decision.request",
+                run["id"].as_str(),
+                payload.clone()
+            )
+            .is_err()
+        );
+        let decided = command(
+            &engine,
+            "workflow.decision.resolve",
+            pending["id"].as_str(),
+            json!({"approved":approved,"reason":"用户明确核对并签署当前候选"}),
+        )
+        .unwrap();
+        assert_eq!(
+            decided["status"],
+            if approved { "approved" } else { "rejected" }
+        );
+        assert!(
+            command(
+                &engine,
+                "workflow.decision.request",
+                run["id"].as_str(),
+                payload
+            )
+            .is_err()
+        );
+        let state = engine.store.snapshot().unwrap();
+        assert_eq!(
+            state.configuration(report).unwrap().data["value"]["approve"],
+            false
+        );
+        let signatures = state
+            .governance
+            .iter()
+            .filter(|r| {
+                r.r#type == "workflow_confirmation"
+                    && r.definition_id == review["id"].as_str().unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(signatures.len(), usize::from(approved));
+        if approved {
+            assert_eq!(signatures[0].data["manual_approval"], true);
+            assert_eq!(signatures[0].data["actor"]["kind"], "human");
+            command(&engine, "workflow.step.accept", run["id"].as_str(), args).unwrap();
+        }
+    }
+}
+
+#[test]
+fn child_rework_keeps_work_budget_and_replaces_only_the_selected_invocation_member() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut engine = engine(dir.path());
+    let recorder = Arc::new(RecordingAgent::default());
+    engine.harness = recorder.clone();
+    enqueue_rejection(&recorder);
+    let (role, agent) = research_agent(&engine);
+    let run = rejection_plan(&engine, &role, &agent, 1, true);
+    let current = instance(&engine, &run["id"]);
+    let report = current["steps"][2]["outputs"]["report"].as_str().unwrap();
+    // A protocol fixture represents a sealed platform checkpoint. Production
+    // checks the immutable output, exact receipt, root, owner and current head.
+    let state = engine.store.snapshot().unwrap();
+    let template = state.configuration(report).unwrap().clone();
+    let workspace = json!({"owner_id":current["owner_id"],"workspace_id":"fixture-workspace","revision":"a".repeat(40)});
+    engine.store.seed_fixture_state(None,&mut |state|{
+        let mut call=template.clone();call.id="fixture-baseline-call".into();call.r#type="platform_call".into();call.immutable=false;
+        call.data=json!({"status":"succeeded","request":{"definition_ref":"builtin-tool-workspace-snapshot:2","execution_id":current["steps"][2]["id"],"instance_id":run["id"],"owner_id":current["owner_id"],"project_id":current["project_id"],"definition":state.configuration("builtin-tool-workspace-snapshot:2")?.decode::<ToolDefinition>()?,"arguments":{},"runtime":null,"permissions":null},"receipt":workspace});call.content_hash=content_digest(&call.refs,&call.data);state.governance.push(call);
+        let mut output=template.clone();output.id="fixture-baseline-output".into();output.data["value"]=workspace.clone();
+        output.data["provenance"]=json!({"kind":"platform","tool":"workspace.snapshot","call_id":"fixture-baseline-call","pointer":""});
+        output.content_hash=content_digest(&output.refs,&output.data);state.governance.push(output);
+        state.heads.push(GitHead{id:current["owner_id"].as_str().unwrap().into(),project_id:current["project_id"].as_str().unwrap().into(),revision:"a".repeat(40)});
+        Ok(Value::Null)
+    }).unwrap();
+    let mut selection = selected_rework(&engine, &run, "child_workflow");
+    selection["baseline_output_id"] = json!("fixture-baseline-output");
+    let preview=engine.query("workflow.rework.preview",&json!({"instance_id":run["id"],"plan_revision_id":current["active_plan_revision_id"],"rework":selection}),4).unwrap();
+    command(&engine,"workflow.step.rework",run["id"].as_str(),json!({"plan_revision_id":current["active_plan_revision_id"],"step":"author","rework":selection,"preview_hash":preview["preview_hash"],"reason":"重建对应子流程并保留 Task 身份"})).unwrap();
+    let state = engine.store.snapshot().unwrap();
+    assert_eq!(
+        state
+            .configuration(run["id"].as_str().unwrap())
+            .unwrap()
+            .data["status"],
+        "cancelled"
+    );
+    let successor = state
+        .governance
+        .iter()
+        .rfind(|r| {
+            r.r#type == "workflow_instance"
+                && r.data["parent_execution_id"] == current["parent_execution_id"]
+                && r.id != run["id"].as_str().unwrap()
+        })
+        .unwrap();
+    assert_eq!(successor.data["owner_id"], current["owner_id"]);
+    assert_eq!(
+        successor.data["root_instance_id"],
+        current["root_instance_id"]
+    );
+    assert_eq!(successor.data["plan"], current["plan"]);
+    let view = engine
+        .query("workflow.inspect", &json!({"id":successor.id}), 4)
+        .unwrap();
+    assert_eq!(view["rework_budgets"][0]["used"], 1);
+    assert_eq!(view["rework_budgets"][0]["remaining"], 0);
+    let original_report = state.configuration(report).unwrap();
+    assert_eq!(original_report.data["value"]["approve"], false);
+}
+
+#[test]
+fn historical_rework_baseline_is_explicit_and_cannot_reset_existing_consumption() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut engine = engine(dir.path());
+    let recorder = Arc::new(RecordingAgent::default());
+    engine.harness = recorder.clone();
+    enqueue_rejection(&recorder);
+    let (role, agent) = research_agent(&engine);
+    let run = rejection_plan_with_policies(&engine, &role, &agent, 3, false, false);
+    let original = instance(&engine, &run["id"]);
+    // Adopt only follow-up policies into an existing frozen run. Keep every
+    // original execution and report; Human explicitly supplies its baseline.
+    let mut document = original["plan"]["document"].clone();
+    document["rework_policies"] = json!({"repair":{"entry_step":"author","allowed_targets":["producer_step","after_confirmed_checkpoint","child_workflow"],"max_reworks":3}});
+    document["review_policies"] = json!({"review":{"review_step":"review","rejected_when":{"op":"equals","source":{"step":"review","port":"report","pointer":"/approve"},"value":false},"rework_policy":"repair","allow_human_approval":true}});
+    let adoption = json!({"plan_revision_id":original["active_plan_revision_id"],"reason":"用户核对历史返工决定，明确以已用两次起算","operations":[{"type":"set_review_policies","rework_policies":document["rework_policies"],"review_policies":document["review_policies"]},{"type":"adopt_rework_baseline","policy":"repair","used":2,"evidence":"覆盖原实施及两次业务返工；评审重跑不计入。用户明确接受此基准。"}]});
+    let preview = engine
+        .query(
+            "workflow.change.preview",
+            &json!({"id":run["id"],"changeset":adoption}),
+            4,
+        )
+        .unwrap();
+    assert_eq!(preview["affected"], json!([]));
+    command(&engine,"workflow.change.apply",run["id"].as_str(),json!({"plan_revision_id":original["active_plan_revision_id"],"changeset":adoption,"preview_hash":preview["preview_hash"]})).unwrap();
+    let after = instance(&engine, &run["id"]);
+    assert_eq!(after["steps"], original["steps"]);
+    let view = engine
+        .query("workflow.inspect", &json!({"id":run["id"]}), 4)
+        .unwrap();
+    assert_eq!(view["rework_budgets"][0]["used"], 2);
+    assert_eq!(view["rework_budgets"][0]["remaining"], 1);
+    let again = json!({"plan_revision_id":after["active_plan_revision_id"],"reason":"不能重置历史","operations":[{"type":"adopt_rework_baseline","policy":"repair","used":0,"evidence":"试图重新起算"}]});
+    assert!(
+        engine
+            .query(
+                "workflow.change.preview",
+                &json!({"id":run["id"],"changeset":again}),
+                4
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn two_managers_cannot_consume_the_last_rework_twice() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut engine = engine(dir.path());
+    let recorder = Arc::new(RecordingAgent::default());
+    engine.harness = recorder.clone();
+    enqueue_rejection(&recorder);
+    let (role, agent) = research_agent(&engine);
+    let run = rejection_plan(&engine, &role, &agent, 1, false);
+    let current = instance(&engine, &run["id"]);
+    let selection = selected_rework(&engine, &run, "producer_step");
+    let preview=engine.query("workflow.rework.preview",&json!({"instance_id":run["id"],"plan_revision_id":current["active_plan_revision_id"],"rework":selection}),4).unwrap();
+    let row = engine
+        .store
+        .snapshot()
+        .unwrap()
+        .configuration(run["id"].as_str().unwrap())
+        .unwrap()
+        .clone();
+    let payload = json!({"plan_revision_id":current["active_plan_revision_id"],"step":"author","execution_id":current["steps"][1]["id"],"rework":selection,"preview_hash":preview["preview_hash"],"reason":"抢占最后一次合法返工"});
+    let barrier = std::sync::Barrier::new(2);
+    let results = std::thread::scope(|scope| {
+        let handles = (0..2)
+            .map(|_| {
+                let engine = &engine;
+                let barrier = &barrier;
+                let payload = payload.clone();
+                let target = run["id"].as_str().unwrap().to_owned();
+                let revision = row.revision;
+                scope.spawn(move || {
+                    barrier.wait();
+                    engine.execute(
+                        "workflow.step.rework",
+                        Command {
+                            command_id: id(),
+                            target: Some(target),
+                            expected_revision: Some(revision),
+                            payload,
+                        },
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        handles
+            .into_iter()
+            .map(|h| h.join().unwrap())
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1);
+    let state = engine.store.snapshot().unwrap();
+    assert_eq!(
+        state
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "workflow_rework_consumption")
+            .count(),
+        1
+    );
+    assert_eq!(
+        engine
+            .query("workflow.inspect", &json!({"id":run["id"]}), 4)
+            .unwrap()["rework_budgets"][0]["used"],
+        1
+    );
+}

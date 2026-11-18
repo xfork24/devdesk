@@ -8,6 +8,15 @@ use std::collections::{BTreeMap, BTreeSet};
 // would churn every construction site for no measured benefit.
 #[allow(clippy::large_enum_variant)]
 pub enum WorkflowChangeOperation {
+    SetReviewPolicies {
+        rework_policies: BTreeMap<String, ReworkPolicy>,
+        review_policies: BTreeMap<String, ReviewPolicy>,
+    },
+    AdoptReworkBaseline {
+        policy: String,
+        used: u64,
+        evidence: String,
+    },
     AdoptStandard {
         standard_ref: Id,
         workflow_ref: Id,

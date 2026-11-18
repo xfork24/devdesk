@@ -121,7 +121,16 @@ impl Engine {
         let context = self
             .store
             .workflow_decision_context(&row.definition_id, execution)?;
-        let current = context.active_plan_revision_id == row.data["plan_revision_id"]
+        let run = one(
+            self.store.as_ref(),
+            "workflow_run_authority",
+            &row.definition_id,
+        )?;
+        let current = run
+            .value
+            .as_ref()
+            .is_some_and(|r| r["cancel_requested"] != true && r["status"] != "cancelled")
+            && context.active_plan_revision_id == row.data["plan_revision_id"]
             && (execution.is_none()
                 || context.execution.as_ref().is_some_and(|e| {
                     json!(e.input_digest) == request["arguments"]["input_digest"]
@@ -135,6 +144,33 @@ impl Engine {
         let mut value = json!(row);
         value["current"] = json!(current);
         value["ancestor_instance_ids"] = json!(context.ancestor_instance_ids);
+        if let Some(id) = row.data["decision_ref"].as_str() {
+            let selected = one(self.store.as_ref(), "governance", id)?;
+            if let Some(signed) = selected
+                .value
+                .as_ref()
+                .filter(|r| r["type"] == "workflow_human_decision" && r["immutable"] == true)
+            {
+                value["signed_reason"] = signed["data"]["reason"].clone();
+            }
+        }
+        if request["operation"] == "workflow.step.approve" {
+            let root = WorkflowHeaderFacts::read(self, &row.definition_id)?;
+            value["rework_budgets"] = json!(
+                root.instance
+                    .plan
+                    .document
+                    .rework_policies
+                    .keys()
+                    .map(|key| self.rework_budget_view(&root, key).map(|(_, v)| v))
+                    .collect::<Result<Vec<_>>>()?
+            );
+            value["data"]["request"]["interaction"]["source_label"] = json!(format!(
+                "{} / {}",
+                root.record.name,
+                request["arguments"]["step"].as_str().unwrap_or("评审")
+            ));
+        }
         Ok(value)
     }
     pub(crate) fn controller_step_approvals(&self, root: &str) -> Result<Vec<Value>> {

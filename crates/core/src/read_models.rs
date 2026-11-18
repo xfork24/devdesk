@@ -27,6 +27,8 @@ pub struct WorkflowDetailQuery {
     pub child_offset: u64,
     pub step_offset: u64,
     pub step_limit: u64,
+    pub focus_instance_id: Option<String>,
+    pub focus_execution_id: Option<String>,
 }
 impl WorkflowDetailQuery {
     pub fn parse(params: &Value) -> Result<Self> {
@@ -41,6 +43,8 @@ impl WorkflowDetailQuery {
                 "child_offset",
                 "step_offset",
                 "step_limit",
+                "focus_instance_id",
+                "focus_execution_id",
             ],
         )?;
         let id = params
@@ -79,6 +83,14 @@ impl WorkflowDetailQuery {
             .transpose()?
             .unwrap_or(0);
         Ok(Self {
+            focus_instance_id: params
+                .get("focus_instance_id")
+                .map(|_| identifier(params, "focus_instance_id"))
+                .transpose()?,
+            focus_execution_id: params
+                .get("focus_execution_id")
+                .map(|_| identifier(params, "focus_execution_id"))
+                .transpose()?,
             id,
             owner_id,
             view,
@@ -110,6 +122,9 @@ impl WorkflowDetailQuery {
 /// `record.data` is a display projection for Status/History and the exact row
 /// for Detail. These DTOs cannot be used as an action baseline internally.
 pub struct WorkflowDetailFacts {
+    pub step_offset: u64,
+    pub child_offset: u64,
+    pub focus: Value,
     pub cursor: u64,
     pub record: devdesk_domain::ConfigurationRecord,
     pub plan_document: Value,
@@ -288,6 +303,8 @@ pub struct DriverState {
 }
 #[derive(Debug, Serialize)]
 pub struct WaitingStep {
+    pub feature_id: Option<String>,
+    pub task_id: Option<String>,
     pub instance_id: String,
     pub owner_id: String,
     pub execution_id: String,

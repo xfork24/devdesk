@@ -145,6 +145,9 @@ pub(crate) fn read_chunk(value: &Value, p: &Value) -> Result<Value> {
 
 impl Engine {
     pub(crate) fn workflow_control_query(&self, method: &str, p: &Value) -> Option<Result<Value>> {
+        if method == "workflow.rework.preview" {
+            return Some(self.preview_native_rework(p));
+        }
         if method == "workflow.change.preview" || method == "query.workflow_change_preview" {
             return Some(self.preview_native_workflow_change(p));
         }

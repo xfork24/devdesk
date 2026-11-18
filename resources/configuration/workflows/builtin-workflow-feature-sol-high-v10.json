@@ -1,7 +1,7 @@
 {
   "type": "workflow",
   "identity": "builtin-workflow-feature-sol-high",
-  "revision": 9,
+  "revision": 10,
   "name": "默认 Feature 开发流程",
   "scope": "global",
   "data": {
@@ -606,7 +606,7 @@
         },
         "executor": {
           "type": "workflow",
-          "workflow_ref": "builtin-workflow-task-sol-high:8",
+          "workflow_ref": "builtin-workflow-task-sol-high:9",
           "foreach": {
             "source": {
               "step": "tasks",
@@ -1196,7 +1196,7 @@
           "type": "agent",
           "role_ref": "builtin-role-reviewer:1"
         },
-        "task_instructions": "按独立评审 Skill 与当前 Spec 核对确切候选、真实候选测试回执和交付报告。提交逐项内容判断；发现问题时拒绝通过。仅当当前完成条件和独立检查全部通过时，由编排项目经理通过 Harness 显式接纳确切输入及候选，无需人工确认；证据缺失、评审拒绝或测试失败必须阻塞，不请求人工放行，不修改原结论。 必须读取 tasks 中每个 Task 交接的原始 evidence：逐增量 Red/Green/回归命令、输出、退出码、文件快照、environment 和 termination；与确切候选和候选测试交叉核对，缺少事实时拒绝，不能用上游评审摘要代替。 显式读取提供的 Diff 端口及平台标识的比较端点，核对完整差异与实际测试版本；不得以变更说明替代真实 patch。",
+        "task_instructions": "按独立评审 Skill 与当前 Spec 核对确切候选、真实候选测试回执和交付报告。提交逐项内容判断；发现问题时拒绝通过。仅当当前完成条件和独立检查全部通过时，由编排项目经理通过 Harness 显式接纳确切输入及候选，无需人工确认；证据缺失、评审拒绝或测试失败如实报告并保留原结论。经理读取报告后自主决定有限返工，或针对业务评审缺口请求用户例外批准；不得伪造测试成功或自行签署批准。核对 runtime_context.human_exceptions 的真实决定及覆盖范围，同一确切材料的已批准缺口按其范围处理，新候选、新问题不沿用旧例外。 必须读取 tasks 中每个 Task 交接的原始 evidence：逐增量 Red/Green/回归命令、输出、退出码、文件快照、environment 和 termination；与确切候选和候选测试交叉核对，缺少事实时拒绝，不能用上游评审摘要代替。 显式读取提供的 Diff 端口及平台标识的比较端点，核对完整差异与实际测试版本；不得以变更说明替代真实 patch。",
         "required_skill_refs": [
           "builtin-skill-independent-review:2"
         ],
@@ -1435,6 +1435,112 @@
         "max_turns_per_wakeup": 8,
         "max_tool_calls_per_turn": 64,
         "timeout_seconds": 600
+      }
+    },
+    "rework_policies": {
+      "feature_requirements": {
+        "entry_step": "requirements",
+        "allowed_targets": [
+          "producer_step",
+          "after_confirmed_checkpoint"
+        ],
+        "max_reworks": 3
+      },
+      "feature_design": {
+        "entry_step": "design",
+        "allowed_targets": [
+          "producer_step",
+          "after_confirmed_checkpoint"
+        ],
+        "max_reworks": 3
+      },
+      "feature_planning": {
+        "entry_step": "planning",
+        "allowed_targets": [
+          "producer_step",
+          "after_confirmed_checkpoint"
+        ],
+        "max_reworks": 3
+      },
+      "feature_closure": {
+        "entry_step": "closure",
+        "allowed_targets": [
+          "producer_step",
+          "after_confirmed_checkpoint"
+        ],
+        "max_reworks": 3
+      }
+    },
+    "review_policies": {
+      "requirements_review": {
+        "review_step": "requirements_review",
+        "rejected_when": {
+          "op": "equals",
+          "source": {
+            "step": "requirements_review",
+            "port": "result",
+            "pointer": "/approve"
+          },
+          "value": false
+        },
+        "rework_policy": "feature_requirements",
+        "allow_human_approval": true
+      },
+      "design_review": {
+        "review_step": "design_review",
+        "rejected_when": {
+          "op": "equals",
+          "source": {
+            "step": "design_review",
+            "port": "result",
+            "pointer": "/approve"
+          },
+          "value": false
+        },
+        "rework_policy": "feature_design",
+        "allow_human_approval": true
+      },
+      "plan_review": {
+        "review_step": "plan_review",
+        "rejected_when": {
+          "op": "equals",
+          "source": {
+            "step": "plan_review",
+            "port": "result",
+            "pointer": "/approve"
+          },
+          "value": false
+        },
+        "rework_policy": "feature_planning",
+        "allow_human_approval": true
+      },
+      "closure_review": {
+        "review_step": "closure_review",
+        "rejected_when": {
+          "op": "equals",
+          "source": {
+            "step": "closure_review",
+            "port": "result",
+            "pointer": "/approve"
+          },
+          "value": false
+        },
+        "rework_policy": "feature_closure",
+        "allow_human_approval": true
+      },
+      "candidate_review": {
+        "review_step": "candidate_review",
+        "rejected_when": {
+          "op": "equals",
+          "source": {
+            "step": "candidate_review",
+            "port": "result",
+            "pointer": "/approve"
+          },
+          "value": false
+        },
+        "rework_policy": "feature_closure",
+        "allow_human_approval": true
       }
     }
   }

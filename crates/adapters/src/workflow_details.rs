@@ -131,7 +131,36 @@ pub(super) fn detail(
         return Ok(None);
     };
     if query.view == WorkflowDetailView::Status {
-        let result = status(&conn, catalog, project, &id, query)?;
+        let mut focused = query.clone();
+        let mut focus = json!({});
+        if let (Some(target), Some(execution)) =
+            (&query.focus_instance_id, &query.focus_execution_id)
+        {
+            let mut cursor = target.clone();
+            let mut selected_execution = execution.clone();
+            let mut branch = None;
+            for _ in 0..=WORKFLOW_DEPTH_LIMIT {
+                if cursor == id {
+                    let offset: u64 = conn.query_row("SELECT count(*) FROM workflow_display_steps WHERE instance_id=?1 AND execution_id<?2",params![id,selected_execution],|r|r.get(0)).map_err(storage)?;
+                    focused.step_offset = offset / focused.step_limit * focused.step_limit;
+                    if let Some(child) = &branch {
+                        let offset: u64 = conn.query_row("SELECT count(*) FROM workflow_display_headers WHERE json_extract(record,'$.data.parent_execution_id') IN (SELECT execution_id FROM workflow_display_steps WHERE instance_id=?1) AND instance_id<?2",params![id,child],|r|r.get(0)).map_err(storage)?;
+                        focused.child_offset = offset / 100 * 100;
+                    }
+                    focus = json!({"child_id":branch,"execution_id":selected_execution});
+                    break;
+                }
+                let parent: Option<String> = conn.query_row("SELECT json_extract(record,'$.data.parent_execution_id') FROM workflow_display_headers WHERE instance_id=?1 AND json_extract(record,'$.data.project_id')=?2",params![cursor,project],|r|r.get(0)).optional().map_err(storage)?.flatten();
+                let Some(parent) = parent else { break };
+                let owner: Option<String> = conn.query_row("SELECT s.instance_id FROM workflow_display_steps s JOIN workflow_display_headers h ON h.instance_id=s.instance_id WHERE s.execution_id=?1 AND json_extract(h.record,'$.data.project_id')=?2",params![parent,project],|r|r.get(0)).optional().map_err(storage)?;
+                let Some(owner) = owner else { break };
+                branch = Some(cursor);
+                cursor = owner;
+                selected_execution = parent;
+            }
+        }
+        let mut result = status(&conn, catalog, project, &id, &focused)?;
+        result.focus = focus;
         conn.execute_batch("COMMIT;").map_err(storage)?;
         return Ok(Some(result));
     }
@@ -341,6 +370,9 @@ pub(super) fn detail(
         row.data.as_object_mut().unwrap().remove("plan");
     }
     Ok(Some(WorkflowDetailFacts {
+        step_offset: query.step_offset,
+        child_offset: query.child_offset,
+        focus: Value::Null,
         cursor,
         step_total: row.data["steps"].as_array().map_or(0, |s| s.len()) as u64,
         next_step_offset: None,
@@ -501,6 +533,9 @@ fn status(
         })
         .map_err(storage)?;
     Ok(WorkflowDetailFacts {
+        step_offset: query.step_offset,
+        child_offset: query.child_offset,
+        focus: Value::Null,
         step_total,
         next_step_offset: (query.step_offset + query.step_limit < step_total)
             .then_some(query.step_offset + query.step_limit),

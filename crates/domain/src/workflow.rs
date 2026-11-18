@@ -12,6 +12,10 @@ pub const WORKFLOW_INSTANCE_SCHEMA: u64 = 6;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkflowDefinition {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub rework_policies: BTreeMap<String, ReworkPolicy>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub review_policies: BTreeMap<String, ReviewPolicy>,
     #[serde(default)]
     pub scheduling: WorkflowScheduling,
     pub schema_version: u64,
@@ -26,6 +30,31 @@ pub struct WorkflowDefinition {
     pub outputs: BTreeMap<String, PortSource>,
     #[serde(default)]
     pub completion: CompletionRule,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReworkTarget {
+    ProducerStep,
+    AfterConfirmedCheckpoint,
+    ChildWorkflow,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReworkPolicy {
+    pub entry_step: String,
+    pub allowed_targets: BTreeSet<ReworkTarget>,
+    pub max_reworks: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReviewPolicy {
+    pub review_step: String,
+    pub rejected_when: CompletionRule,
+    pub rework_policy: String,
+    pub allow_human_approval: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -599,6 +628,43 @@ impl WorkflowDefinition {
                 .map(|s| (s.key.clone(), s.dependencies.clone()))
                 .collect::<Vec<_>>(),
         )?;
+        require(
+            self.rework_policies.len() <= 128 && self.review_policies.len() <= 128,
+            "返工及评审策略超过预算",
+        )?;
+        for (key, policy) in &self.rework_policies {
+            valid_key(key)?;
+            require(
+                keys.contains(policy.entry_step.as_str())
+                    && !policy.allowed_targets.is_empty()
+                    && policy.max_reworks <= 100,
+                "返工策略需要有效入口、允许方式及 0—100 次额度",
+            )?;
+        }
+        let mut reviews = BTreeSet::new();
+        for (key, policy) in &self.review_policies {
+            valid_key(key)?;
+            let step = self
+                .steps
+                .iter()
+                .find(|s| s.key == policy.review_step)
+                .ok_or_else(|| err("invalid_workflow", "评审策略引用不存在的步骤"))?;
+            require(
+                reviews.insert(&policy.review_step),
+                "同一评审步骤不能绑定多个策略",
+            )?;
+            let rework = self
+                .rework_policies
+                .get(&policy.rework_policy)
+                .ok_or_else(|| err("invalid_workflow", "评审策略引用不存在的返工策略"))?;
+            let mut allowed = self.ancestors(step);
+            require(
+                allowed.contains(rework.entry_step.as_str()),
+                "返工入口必须在评审依赖链中",
+            )?;
+            allowed.insert(&step.key);
+            policy.rejected_when.validate(self, &allowed, 0)?;
+        }
         let mut task_bytes = 0;
         for step in &self.steps {
             valid_key(&step.key)?;
@@ -778,6 +844,8 @@ pub struct StepReworkContext {
     pub previous_execution_id: Id,
     pub reason: String,
     pub outputs: BTreeMap<String, Id>,
+    #[serde(default, skip_serializing_if = "Value::is_null")]
+    pub assessment: Value,
 }
 
 /// A new business round starts from an already sealed, platform-owned workspace.
@@ -1017,11 +1085,25 @@ impl EngineeringState {
                     "步骤身份重复或归属错误",
                 )?;
                 if let Some(rework) = &step.rework {
+                    let predecessor = self
+                        .governance
+                        .iter()
+                        .find(|r| {
+                            r.r#type == "workflow_invocation"
+                                && r.immutable
+                                && r.data["child_instance_id"] == record.id
+                                && r.data["owner_id"] == record.data["owner_id"]
+                        })
+                        .and_then(|r| r.data["predecessor_instance_id"].as_str());
+                    let same_work = |old: &ConfigurationRecord| {
+                        old.data["workflow_instance_id"] == record.id
+                            || predecessor.is_some_and(|id| old.data["workflow_instance_id"] == id)
+                    };
                     require(
                         self.governance.iter().any(|old| {
                             old.r#type == "workflow_execution_history"
                                 && old.definition_id == rework.previous_execution_id
-                                && old.data["workflow_instance_id"] == record.id
+                                && same_work(old)
                                 && old.data["step"] == step.step
                         }),
                         "返工来源执行不属于当前步骤历史",
@@ -1030,7 +1112,7 @@ impl EngineeringState {
                         require(
                             self.governance.iter().any(|old| {
                                 old.r#type == "workflow_execution_history"
-                                    && old.data["workflow_instance_id"] == record.id
+                                    && same_work(old)
                                     && old.data["step"] == step.step
                                     && old.data["outputs"].as_object().is_some_and(|outputs| {
                                         outputs.values().any(|id| id == output)

@@ -19,7 +19,20 @@ export function executionUrl(
   p.set("tab", "execution");
   p.set("detail", detail);
   p.set("project_id", projectId);
-  if (ownerId !== projectId && !p.get("feature_id"))
+  if (
+    new URLSearchParams(location.search).get("project_id") !== projectId ||
+    target.feature_id ||
+    target.task_id
+  ) {
+    p.delete("feature_id");
+    p.delete("task_id");
+  }
+  if (
+    !target.task_id &&
+    !target.feature_id &&
+    ownerId !== projectId &&
+    !p.get("feature_id")
+  )
     p.set("feature_id", ownerId);
   for (const [key, value] of Object.entries(target))
     if (value) p.set(key, String(value));

@@ -157,10 +157,13 @@ impl Engine {
                 .ok_or_else(|| err("invalid_params", "缺少原流程"))?,
         )?;
         require(
-            !matches!(
-                root.instance.status,
-                StepExecutionStatus::Completed | StepExecutionStatus::Cancelled
-            ),
+            (method == "workflow.step.rework"
+                && !c.payload["rework"].is_null()
+                && root.instance.status == StepExecutionStatus::Completed)
+                || !matches!(
+                    root.instance.status,
+                    StepExecutionStatus::Completed | StepExecutionStatus::Cancelled
+                ),
             "流程终态不可重新控制",
         )?;
         let key = c.payload["execution_id"]
@@ -179,7 +182,12 @@ impl Engine {
         ]
         .contains(&method)
         {
-            root.active()?;
+            if !(method == "workflow.step.rework"
+                && !c.payload["rework"].is_null()
+                && root.instance.status == StepExecutionStatus::Completed)
+            {
+                root.active()?;
+            }
             commit.require_no_change(&root.record.id)?;
         }
         let reason = c.payload["reason"].as_str().unwrap_or(method);
@@ -228,6 +236,9 @@ impl Engine {
                 commit.runtime_intent(&resources,&next,"conversation.send",next.session_id.as_deref().unwrap(),Some(session.revision),json!({"client_message_id":format!("{}:{}",next.id,next.sequence),"input":rendered}))?;
                 commit.step(&resources, &next)?;
                 next
+            }
+            "workflow.step.rework" if !c.payload["rework"].is_null() => {
+                self.prepare_selected_rework(&mut commit, &root)?
             }
             "workflow.step.retry" | "workflow.step.rework" => self.prepare_native_retry(
                 &mut commit,

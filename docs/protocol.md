@@ -226,7 +226,7 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 
 `query.orchestration_decision({project_id,id})` 按需返回待决定项的确切修订、状态、计划引用与 request_json；请求以 JSON 字符串传输，避免浏览器 Number 将大整数舍入。普通摘要不携带完整请求。界面先显示并核对确切请求，再允许决定，提交使用已读修订；后续摘要发现更新时保留原内容并要求重新读取，不自动替换签署依据。待决定/人类决定记录的 request 是原始输入事实，不进入配置源的展开/引用编解码。
 
-控制工具：`workflow.inspect/events.read/outputs.read/execution.inspect`，`step.dispatch/accept/input/retry/rework`，`execution.stop/reconcile`，`pause/resume/cancel/complete`，`change.preview/apply`，`materials.import`，`decision.request` 和 `segment.dispatch`（均带 workflow 前缀）。人类通过 `workflow.decision.resolve` 签署确切请求。agent 根驱动的签署只形成 Human 决定和步骤确认，接纳及后继派发仍由经理完成；显式 accept_result=true 在此模式拒绝。manual 模式的显式接纳行为保留。根范围先分页 pending 决定，首屏另附少量最近已处理项，避免旧决定挤掉待办。`workflow.inspect({decision_ref})` 对待决定引用和 Human 签署引用均返回确切批准/拒绝、reason、actor 与关联引用；长意见继续按块读取原记录。写入绑定活动 plan_revision_id；接纳还绑定 execution_id、input_digest 及输出 ID，变更绑定预演哈希。
+控制工具：`workflow.inspect/events.read/outputs.read/execution.inspect`，`step.dispatch/accept/input/retry/rework`，`execution.stop/reconcile`，`pause/resume/cancel/complete`，`change.preview/apply`，`materials.import`，`decision.request` 和 `segment.dispatch`（均带 workflow 前缀）。人类通过 `workflow.decision.resolve` 签署确切请求。 经理可以申请 `operation=workflow.step.approve`，但该操作不属于 Agent 直接可执行的控制工具；申请核对当前执行、input_digest、完整 outputs 和真实候选输入。interaction 的 issues/recommendation 必填，同一结果的重复申请被阻止。用户非空理由与 manual_approval 单独保存，原拒绝报告不变；这类申请的签署始终与经理接纳分开。agent 根驱动的签署只形成 Human 决定和步骤确认，接纳及后继派发仍由经理完成；显式 accept_result=true 在此模式拒绝。manual 模式的显式接纳行为保留。根范围先分页 pending 决定，首屏另附少量最近已处理项，避免旧决定挤掉待办。`workflow.inspect({decision_ref})` 对待决定引用和 Human 签署引用均返回确切批准/拒绝、reason、actor 与关联引用；长意见继续按块读取原记录。写入绑定活动 plan_revision_id；接纳还绑定 execution_id、input_digest 及输出 ID，变更绑定预演哈希。
 
 控制工具还包括 `workflow.start`。根/子实例派发和完成、Rust tick、人工直接命令遵守同一业务规则；有界 segment 不是独立根驱动。默认流程 automatic 确认不产生 Human 签署，显式 human 门禁、人工例外和授权内 waiver 分别记录。
 
@@ -298,3 +298,13 @@ Workflow 写命令携带原 expected_revision、plan_revision_id、control_versi
 HTTP 的执行工作台、经理交互及运行摘要复用 Workspace 所属的有界显示缓存（100 ms、128 项/12 MiB）；键包含数据集、明确项目、方法、完整查询参数及单调变化的项目失效代次。成功命令失效相应项目，旧在途响应不能回填新代次；项目缺失时全失效。并发未命中在缓存结构锁外计算，较旧快照不得覆盖较新游标，数据集切换使用新缓存。完整驱动资格、单份待决定请求、原始任务/材料/调用正文和所有命令不进入此短缓存，原生经理工具保持直接权威读取。摘要中的修订始终属于该快照，签署和业务操作仍核对原版本。
 
 原生 workflow.step.* 回执保留执行身份、计划/控制版本、输入摘要、输出标识及状态，不重复发送 execution.inputs/runtime_context；省略字段以 inputs_omitted/runtime_context_omitted 标记，并返回 receipt_ref。耐久原回执不裁剪，后续读取仍按确切身份及权限校验。
+
+## 评审业务返工协议
+
+`workflow.rework.preview({instance_id,plan_revision_id,rework})` 只读返回 preview_hash、invalidated、retained、withdrawn_parent_results 与 budgets。`rework` 包含 policy、target（producer_step / after_confirmed_checkpoint / child_workflow）、review_instance_id、review_execution_id、report_output_id、assessment、acceptance_requirements；三种方式分别还需 producer_output_id、checkpoint_ref、baseline_output_id。业务提交使用现有 `workflow.step.rework` 并原样携带 rework、preview_hash 及最初读取的实例/步骤版本。预演过期或 Git/活动执行者校验失败不扣费，命令重放不重复消费。
+
+额度由 Workflow 定义，不复用 ExecutionBudget.retry_limit。计数身份为根/工作/策略，持久化在现有 governance 事实中，计划重置和子实例替换不重新起算。used/limit/remaining 通过 inspect 返回；耗尽错误为 rework_budget_exhausted。已有工作采用通过有 Human 授权的 ChangeSet adopt_rework_baseline 明确 used 与 evidence；只允许首次建基准，不覆盖已有计数。
+
+`query.workflow_instance({view:"status",focus_instance_id,focus_execution_id})` 可按实际祖先链定位目标所在步骤页与子流程页，返回实际 step_offset、child_offset 和 focus。页面打开父调用、阶段、子流程与步骤；历史执行保留原 ID，通过独立历史入口读取。
+
+运行中的流程使用 ChangeSet `set_review_policies{rework_policies,review_policies}` 只调整后续拒绝处置规则，保留原步骤合同、执行和报告；首次采用时同批提交 adopt_rework_baseline 明确历史额度。

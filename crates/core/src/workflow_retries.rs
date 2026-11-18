@@ -17,7 +17,21 @@ impl Engine {
         resources: &WorkflowResources,
         rework: bool,
     ) -> Result<StepExecution> {
+        self.prepare_native_retry_scope(commit, root, resources, rework, None)
+    }
+    pub(crate) fn prepare_native_retry_scope(
+        &self,
+        commit: &mut WorkflowCommit<'_>,
+        root: &WorkflowHeaderFacts,
+        resources: &WorkflowResources,
+        rework: bool,
+        scope: Option<&BTreeSet<String>>,
+    ) -> Result<StepExecution> {
         let execution = &resources.execution;
+        require(
+            !rework || scope.is_some() || root.instance.plan.document.rework_policies.is_empty(),
+            "此 Workflow 的业务返工需要经理选择方式、评审依据及确切预演",
+        )?;
         let definition = resources
             .instance
             .plan
@@ -39,6 +53,31 @@ impl Engine {
             "原执行或未知副作用尚未停止并核对",
         )?;
         if !rework {
+            let group = one(
+                self.store.as_ref(),
+                "workflow_children_source",
+                &execution.id,
+            )?;
+            commit.witness([version(&group)])?;
+            for id in group
+                .value
+                .as_ref()
+                .and_then(|r| r["data"]["children"].as_array())
+                .into_iter()
+                .flatten()
+            {
+                let child = WorkflowHeaderFacts::read(
+                    self,
+                    id.as_str()
+                        .ok_or_else(|| err("storage", "子流程身份无效"))?,
+                )?;
+                commit.witness([version(&child.header)])?;
+                require(
+                    child.instance.plan.document.rework_policies.is_empty()
+                        || !child.instance.steps.iter().any(|e| e.started.is_some()),
+                    "已开始的子流程不能通过技术重试重建；请重试原子执行或使用共享额度的业务返工",
+                )?;
+            }
             if execution
                 .failure
                 .as_ref()
@@ -64,7 +103,9 @@ impl Engine {
             )?;
             commit.witness([version(&retries)])?;
         }
-        let impacted = if rework {
+        let impacted = if let Some(scope) = scope {
+            scope.clone()
+        } else if rework {
             root.instance
                 .plan
                 .document
@@ -72,6 +113,10 @@ impl Engine {
         } else {
             BTreeSet::new()
         };
+        if rework {
+            self.reopen_rework_owner(commit, root)?;
+            self.consume_native_rework_budgets(commit, root, &impacted)?;
+        }
         let checkpoint = if rework {
             self.native_rework_checkpoint(commit, resources, definition)?
         } else {
@@ -103,6 +148,30 @@ impl Engine {
             )?;
             self.cancel_quiescent_native_children(commit, &selected.execution, 0)?;
             let current = &selected.execution;
+            let physical = root
+                .instance
+                .plan
+                .document
+                .steps
+                .iter()
+                .find(|s| s.key == current.step)
+                .is_some_and(|s| {
+                    matches!(
+                        s.executor,
+                        StepExecutor::Agent { .. } | StepExecutor::Tool { .. }
+                    )
+                });
+            if physical
+                && current
+                    .failure
+                    .as_ref()
+                    .is_some_and(|f| f.effect == ExecutionFailureEffect::Unknown)
+            {
+                return Err(err(
+                    "needs_reconciliation",
+                    "返工不能绕过未知副作用，必须先核对原执行",
+                ));
+            }
             commit.new_record(
                 record(
                     "workflow_execution_history",
@@ -158,6 +227,12 @@ impl Engine {
                 next.inputs.clear();
                 next.input_digest.clear();
                 next.rework = Some(StepReworkContext {
+                    assessment: commit
+                        .command
+                        .payload
+                        .get("rework")
+                        .cloned()
+                        .unwrap_or_default(),
                     previous_execution_id: current.id.clone(),
                     reason: commit.command.payload["reason"]
                         .as_str()
@@ -199,7 +274,7 @@ impl Engine {
         self.reopen_native_ancestors(commit, root)?;
         result.ok_or_else(|| err("storage", "未生成原执行的后继"))
     }
-    fn cancel_quiescent_native_children(
+    pub(crate) fn cancel_quiescent_native_children(
         &self,
         commit: &mut WorkflowCommit<'_>,
         execution: &StepExecution,
@@ -223,7 +298,32 @@ impl Engine {
                     id.as_str()
                         .ok_or_else(|| err("storage", "子流程身份无效"))?,
                 )?;
+                self.reopen_rework_owner(commit, &child)?;
                 for execution in &child.instance.steps {
+                    let physical = child
+                        .instance
+                        .plan
+                        .document
+                        .steps
+                        .iter()
+                        .find(|s| s.key == execution.step)
+                        .is_some_and(|s| {
+                            matches!(
+                                s.executor,
+                                StepExecutor::Agent { .. } | StepExecutor::Tool { .. }
+                            )
+                        });
+                    if physical
+                        && execution
+                            .failure
+                            .as_ref()
+                            .is_some_and(|f| f.effect == ExecutionFailureEffect::Unknown)
+                    {
+                        return Err(err(
+                            "needs_reconciliation",
+                            "子流程仍有未知副作用，不能取消并返工",
+                        ));
+                    }
                     self.cancel_quiescent_native_children(commit, execution, depth + 1)?;
                 }
                 if !matches!(
@@ -321,7 +421,7 @@ impl Engine {
             workspace: row["data"]["value"].clone(),
         }))
     }
-    fn reopen_native_ancestors(
+    pub(crate) fn reopen_native_ancestors(
         &self,
         commit: &mut WorkflowCommit<'_>,
         root: &WorkflowHeaderFacts,
@@ -349,6 +449,15 @@ impl Engine {
                 break;
             }
             let resources = ancestor.step(self, &id)?;
+            if matches!(
+                resources.execution.status,
+                StepExecutionStatus::Completed
+                    | StepExecutionStatus::AwaitingAcceptance
+                    | StepExecutionStatus::WaitingConfirmation
+            ) {
+                self.invalidate_rework_ancestors(commit, &ancestor, &resources.execution)?;
+                return Ok(());
+            }
             if matches!(
                 resources.execution.status,
                 StepExecutionStatus::Failed | StepExecutionStatus::NeedsReconciliation

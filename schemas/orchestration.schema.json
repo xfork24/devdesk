@@ -342,6 +342,61 @@
             "workflow_ref"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "adopt_rework_baseline"
+            },
+            "policy": {
+              "type": "string",
+              "minLength": 1
+            },
+            "used": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000
+            },
+            "evidence": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8192
+            }
+          },
+          "required": [
+            "type",
+            "policy",
+            "used",
+            "evidence"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "set_review_policies"
+            },
+            "rework_policies": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "rpc.schema.json#/$defs/ReworkPolicy"
+              }
+            },
+            "review_policies": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "rpc.schema.json#/$defs/ReviewPolicy"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "rework_policies",
+            "review_policies"
+          ],
+          "additionalProperties": false
         }
       ]
     },

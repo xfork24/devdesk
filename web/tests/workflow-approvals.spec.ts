@@ -173,7 +173,7 @@ for (const nested of [false, true]) {
           featureFrame
             .getByRole("region", { name: "项目经理协作", exact: true })
             .getByRole("article", { name: "确认需求", exact: true }),
-        ).toHaveCount(0);
+        ).toHaveCount(1);
         await expect(
           featureFrame.getByRole("heading", {
             name: "主工作流 · Feature开发",
@@ -210,9 +210,10 @@ for (const nested of [false, true]) {
           .status,
       ).toBe("approved");
       if (nested) {
-        const designCard = page
-          .locator(".manager-child-flow")
-          .getByRole("article", { name: "确认设计", exact: true });
+        const designCard = featureFrame.getByRole("article", {
+          name: "确认设计",
+          exact: true,
+        });
         await designCard
           .getByRole("button", { name: "确认：确认设计", exact: true })
           .click();

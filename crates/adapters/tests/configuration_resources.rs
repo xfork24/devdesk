@@ -578,7 +578,7 @@ fn delivery_catalog_has_content_standards_and_real_diff_ports() {
         }
     }
     let mut forged = state
-        .configuration("builtin-workflow-task-sol-high:8")
+        .configuration("builtin-workflow-task-sol-high:9")
         .unwrap()
         .data
         .clone();
@@ -635,7 +635,7 @@ fn dsh_stacks_publish_recommended_models_and_native_only_capabilities() {
             let composition = state
                 .resolve_agent(&format!(
                     "builtin-agent-{vendor}-{role}:{}",
-                    if role == "project-manager" { 4 } else { 2 }
+                    if role == "project-manager" { 5 } else { 2 }
                 ))
                 .unwrap();
             assert_eq!(
@@ -679,7 +679,7 @@ fn dsh_stacks_publish_recommended_models_and_native_only_capabilities() {
         .unwrap();
     assert!(
         pm.skills
-            .contains(&"builtin-skill-workflow-orchestration:4".to_string())
+            .contains(&"builtin-skill-workflow-orchestration:5".to_string())
     );
 }
 
@@ -845,7 +845,7 @@ fn dsh_agents_cannot_be_bound_as_the_orchestrator() {
     let defaults = e.configuration_defaults(Some(project_id)).unwrap();
     // Binding the PM role to a dsh agent while designating it the orchestrator is rejected.
     let mut bindings = defaults["role_agent_bindings"].clone();
-    bindings["builtin-role-project-manager:1"] = json!("builtin-agent-minimax-project-manager:4");
+    bindings["builtin-role-project-manager:1"] = json!("builtin-agent-minimax-project-manager:5");
     let error = command(
         &e,
         "project.configuration.update",

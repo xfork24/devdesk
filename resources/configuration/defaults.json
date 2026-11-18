@@ -1,15 +1,15 @@
 {
-  "workflow_ref": "builtin-workflow-feature-sol-high:9",
-  "task_workflow_ref": "builtin-workflow-task-sol-high:8",
+  "workflow_ref": "builtin-workflow-feature-sol-high:10",
+  "task_workflow_ref": "builtin-workflow-task-sol-high:9",
   "model_ref": "builtin-model-gpt-6-1-sol-high:1",
   "harness_ref": "builtin-harness-codex-managed:1",
   "sandbox_ref": "builtin-sandbox-docker:1",
   "capability_ref": "builtin-capability-sol-high-codex:4",
-  "standard_ref": "builtin-standard-engineering:7",
+  "standard_ref": "builtin-standard-engineering:8",
   "role_agent_bindings": {
     "builtin-role-analyst:1": "builtin-agent-sol-high-analyst:6",
     "builtin-role-architect:1": "builtin-agent-sol-high-architect:6",
-    "builtin-role-project-manager:1": "builtin-agent-sol-high-project-manager:12",
+    "builtin-role-project-manager:1": "builtin-agent-sol-high-project-manager:13",
     "builtin-role-developer:1": "builtin-agent-sol-high-developer:6",
     "builtin-role-tester:1": "builtin-agent-sol-high-tester:6",
     "builtin-role-reviewer:1": "builtin-agent-sol-high-reviewer:6"

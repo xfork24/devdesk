@@ -272,6 +272,7 @@ impl WorkflowCommit<'_> {
                 &format!("workflow-invocation:{item}"),
             )?;
             records.push(invocation);
+            self.initialize_rework_budgets(&runtime, &scope)?;
             let mut row = record(
                 "workflow_instance",
                 runtime.owner_id.clone(),

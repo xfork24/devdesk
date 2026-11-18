@@ -29,6 +29,17 @@ export function WorkflowScope({
     project_id: projectId,
     owner_id: ownerId,
   });
+  const destination = useReading(
+    request,
+    "query.workflow_executions",
+    {
+      project_id: projectId,
+      owner_id: ownerId,
+      instance_id: target.instance_id,
+      execution_id: target.execution_id,
+    },
+    Boolean(target.instance_id && target.execution_id),
+  );
   const roots = new Map<string, Row>();
   const startedTaskOwners = new Set<string>([
     ...records
@@ -62,6 +73,18 @@ export function WorkflowScope({
         data: { owner_id: entry.owner_id, steps: [], status: "queued" },
       });
     }
+  }
+  for (const entry of destination.value?.record
+    ? [destination.value.record]
+    : destination.value?.records || []) {
+    const id = entry.root_instance_id || entry.instance_id;
+    if (!roots.has(id))
+      roots.set(id, {
+        id,
+        name: entry.instance_name,
+        _reading: entry,
+        data: { owner_id: ownerId, steps: [], status: "queued" },
+      });
   }
   return (
     <>

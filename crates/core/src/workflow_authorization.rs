@@ -285,7 +285,7 @@ impl WorkflowCommit<'_> {
                     && r["data"]["epoch"] == *epoch
             }))
     }
-    fn require_signed_change(&mut self, root: &WorkflowHeaderFacts) -> Result<()> {
+    pub(crate) fn require_signed_change(&mut self, root: &WorkflowHeaderFacts) -> Result<()> {
         let mut arguments = self.command.payload.clone();
         let id = arguments
             .as_object_mut()

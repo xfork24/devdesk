@@ -289,7 +289,9 @@ export function RoleConversation({
     const selected =
       candidates.find((r) => r.id === recommendation) ||
       candidates.find(
-        (r) => r.id === "builtin-agent-sol-high-project-manager:12",
+        (r) =>
+          r.definition_id === "builtin-agent-sol-high-project-manager" &&
+          !candidates.some((next) => next.supersedes === r.id),
       ) ||
       candidates.find(
         (r) => !candidates.some((next) => next.supersedes === r.id),

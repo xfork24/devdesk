@@ -1,7 +1,7 @@
 {
   "type": "tool",
   "identity": "builtin-tool-workflow-decision-request",
-  "revision": 3,
+  "revision": 4,
   "name": "请求真正的人类决定",
   "scope": "global",
   "data": {
@@ -149,7 +149,7 @@
         "control_version"
       ],
       "additionalProperties": false,
-      "description": "Ask a human to approve exact current-plan action arguments. Only a human resolves it. Use workflow.step.confirm for a business human gate; never claim a human signature yourself."
+      "description": "Request a real Human decision for exact current-plan results. For rejected reviews use operation=workflow.step.approve, include full execution/input_digest/outputs, and explain issues, risks and recommendation in interaction. Never invoke step.approve directly. On approval the kernel signs only these results; the manager must step.accept. Do not re-request the same rejected result."
     },
     "output_schema": {
       "type": "object"

@@ -197,6 +197,16 @@ impl WorkflowCommit<'_> {
         let overridden = matching
             .iter()
             .any(|r| r["data"]["override_completion"] == true);
+        if overridden
+            && instance
+                .plan
+                .document
+                .review_policies
+                .values()
+                .any(|p| p.review_step == execution.step)
+        {
+            crate::workflow_review::require_exception_hard_rules(&step.completion, facts)?;
+        }
         if !overridden && !self.rule(instance, &step.node_id, &step.completion, facts)? {
             return Err(err("completion", "步骤完成条件尚未满足"));
         }
