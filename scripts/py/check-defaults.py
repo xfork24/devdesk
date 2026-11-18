@@ -10,6 +10,10 @@ import json
 import sys
 from pathlib import Path
 
+# The gate runs with -I; load only the explicitly owned sibling generator.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from configuration_usage import usage_index
+
 ROOT = Path(__file__).resolve().parents[2] / "resources" / "configuration"
 
 REFERENCE_FIELDS = (
@@ -86,6 +90,7 @@ def main() -> None:
         "manifest.json",
         "defaults.json",
         "README.md",
+        manifest["usage_index"],
     }
     listed = {
         rel for paths in manifest.get("types", {}).values() for rel in paths
@@ -101,6 +106,9 @@ def main() -> None:
     )
     if orphans:
         fail(f"files not owned by any published definition or root meta: {orphans}")
+    usage = json.loads((ROOT / manifest["usage_index"]).read_text())
+    if usage != {"schema_version": 1, "references": usage_index(list(sources.values()))}:
+        fail("reference usage index is stale; run python3 scripts/py/configuration_usage.py --write")
 
     def resolve(ref: str, what: str) -> None:
         identity, _, revision = ref.rpartition(":")

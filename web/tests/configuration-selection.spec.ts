@@ -48,6 +48,7 @@ for (const [group, kind, label] of [
 test("Workflow 查看后返回列表保持原顺序和选中状态", async ({ page }) => {
   await page.goto("/?tab=workflows&config_tab=workflow");
   const list = page.getByRole("region", { name: "工作流程管理" });
+  await list.getByRole("button", { name: "返回流程列表", exact: true }).click();
   const entries = list.locator(".configuration-list button:has(strong)");
   await expect(entries.first()).toBeVisible();
   const names = await entries.locator("strong").allTextContents();

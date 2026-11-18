@@ -10,11 +10,13 @@ import { useActionFeedback } from "./action-feedback";
 import { ConfigurationList } from "./ConfigurationList";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ResourceEditor } from "./AgentCatalog";
+import { ConfigurationUsage } from "./ConfigurationUsage";
 import {
   latest,
   isPristineConfigurationDraft,
   loadCatalog,
   loadConfigurationRecord,
+  mergeConfigurationRecords,
   useDraft,
   useGroupTab,
 } from "./configuration-state";
@@ -144,12 +146,15 @@ export function Integrations({
         </section>
       )}
       {["http", "mcp"].includes(tab) ? (
-        <SourceManager
-          key={`${tab}:${project?.id}`}
-          kind={tab}
-          request={request}
-          project={project}
-        />
+        <>
+          <LinkedToolDefinition request={request} project={project} />
+          <SourceManager
+            key={`${tab}:${project?.id}`}
+            kind={tab}
+            request={request}
+            project={project}
+          />
+        </>
       ) : tab === "skills" ? (
         <ResourceEditor
           key={`skills:${project?.id}`}
@@ -189,69 +194,234 @@ function NativeCatalog({
   project?: Row;
 }) {
   const { error, setError } = useActionFeedback();
-
   const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [detail, setDetail] = useState<Row>();
+  const [selection, setSelection] = useDraft(
+    `devdesk:native-tools:${project?.id || "global"}`,
+    () => ({ selected: "" }),
+  );
+  const selectedRef = useRef(selection.selected);
+  const choice = useRef<AbortController | null>(null);
+  useEffect(() => () => choice.current?.abort(), []);
+  const choose = useCallback(
+    async (row: Row) => {
+      choice.current?.abort();
+      const controller = new AbortController();
+      choice.current = controller;
+      try {
+        const record = await loadConfigurationRecord(
+          request,
+          row,
+          project?.id,
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
+        if (
+          record.type !== "tool" ||
+          record.data.implementation !== "harness.native"
+        )
+          return;
+        setRows((rows) => mergeConfigurationRecords(rows, [record]));
+        setDetail(record);
+        selectedRef.current = record.id;
+        setSelection({ selected: record.id });
+        setError("");
+        const params = new URLSearchParams(location.search);
+        params.set("config_object", record.id);
+        history.replaceState(null, "", `?${params}`);
+      } catch (error) {
+        if (!controller.signal.aborted) setError(String(error));
+      }
+    },
+    [request, project?.id, setSelection, setError],
+  );
   useEffect(() => {
-    let active = true;
-    void loadCatalog(request, project?.id)
-      .then((rows) => {
-        if (active) setRows(rows);
+    const controller = new AbortController();
+    void loadCatalog(
+      (method, params, options) =>
+        request(method, params, { ...options, signal: controller.signal }),
+      project?.id,
+    )
+      .then(async (rows) => {
+        if (controller.signal.aborted) return;
+        setRows(rows);
+        const target =
+          new URLSearchParams(location.search).get("config_object") ||
+          selectedRef.current;
+        if (target) {
+          const row = rows.find((row) => row.id === target);
+          if (
+            !row ||
+            (row.type === "tool" &&
+              row.data.implementation === "harness.native")
+          ) {
+            await choose(row || { id: target, _index: true });
+          }
+        }
+        if (!controller.signal.aborted) setLoading(false);
       })
-      .catch((e) => {
-        if (active) setError(String(e));
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          setError(String(error));
+          setLoading(false);
+        }
       });
-    return () => {
-      active = false;
-    };
-  }, [request, project?.id, setError]);
+    return () => controller.abort();
+  }, [request, project?.id, choose, setError]);
+  const selected = detail?.id === selection.selected ? detail : undefined;
+  const nativeTools = latest(
+    rows.filter(
+      (row) =>
+        row.type === "tool" && row.data.implementation === "harness.native",
+    ),
+  ).map((row) =>
+    selected && selected.definition_id === row.definition_id ? selected : row,
+  );
+  const harnesses = selected
+    ? latest(
+        rows.filter(
+          (row) =>
+            row.type === "harness" &&
+            row.data.provider === (selected.data.harness_provider || "codex"),
+        ),
+      )
+    : [];
   return (
     <section className="panel" aria-label="原生工具目录">
       <div className="panel-heading">
         <h2>Harness 原生工具</h2>
       </div>
-      <div className="integration-content">
-        <p role="note" aria-label="原生工具组说明">
-          原生工具随 Harness 提供，无需手工配置输入或输出
-          Schema。可访问范围以实际生效的 Permission 为准。
-        </p>
-        {latest(
-          rows.filter(
-            (row) =>
-              row.type === "tool" &&
-              row.data.implementation === "harness.native",
-          ),
-        ).flatMap((row) => {
-          const harnesses = latest(
-            rows.filter(
-              (harness) =>
-                harness.type === "harness" &&
-                harness.data.provider ===
-                  (row.data.harness_provider || "codex"),
-            ),
-          );
-          return (harnesses.length ? harnesses : [undefined]).map((harness) => (
-            <a
+      <div className="configuration-layout">
+        <ConfigurationList
+          records={nativeTools}
+          selectedId={selection.selected}
+          ready={!loading}
+          autoSelectFirst={
+            !selection.selected &&
+            !new URLSearchParams(location.search).has("config_object")
+          }
+          onSelect={choose}
+          emptyMessage="尚无 Harness 原生工具。"
+        />
+        <div className="native-tool-detail">
+          <p role="note" aria-label="原生工具组说明">
+            原生工具随 Harness 提供，无需手工配置输入或输出
+            Schema。可访问范围以实际生效的 Permission 为准。
+          </p>
+          {selected ? (
+            <article
               className="native-tool-group"
-              key={`${row.id}:${harness?.id || "unconfigured"}`}
-              href={`?tab=components&config_tab=harness${harness ? `&config_object=${encodeURIComponent(harness.id)}` : ""}`}
+              id={`configuration-native:${selected.id}`}
+              aria-label="原生工具详情"
             >
-              <article>
-                <h3>{displayText(row.name)}</h3>
-                <p>
-                  v{displayText(row.version)} · {displayText(row.scope)}
-                  {displayText(harness ? ` · ${harness.name}` : "")}
+              <h3>{displayText(selected.name)}</h3>
+              <p>
+                v{selected.version} · {displayText(selected.scope)}
+              </p>
+              <ConfigurationUsage
+                request={request}
+                projectId={project?.id}
+                id={selected.id}
+                kind="tool"
+              />
+              {selected.data.description ? (
+                <MarkdownPreview text={selected.data.description} />
+              ) : null}
+              {harnesses.map((harness) => (
+                <p key={harness.id}>
+                  适用 Harness：
+                  {displayText(
+                    harness.data.provider === "codex"
+                      ? "Codex Harness"
+                      : harness.data.provider === "dsh"
+                        ? "DeepSeek Harness"
+                        : harness.name,
+                  )}{" "}
+                  {displayText(harness.data.runtime_version || "尚未定义")}
                 </p>
-                <p>
-                  适用 Harness 版本：
-                  <code>
-                    {displayText(harness?.data.runtime_version || "尚未定义")}
-                  </code>
-                </p>
-              </article>
-            </a>
-          ));
-        })}
-        {error && <p role="alert">{displayText(error)}</p>}
+              ))}
+              {!harnesses.length ? (
+                <p className="muted">尚未定义匹配的 Harness。</p>
+              ) : null}
+            </article>
+          ) : (
+            <p className="muted">
+              {loading ? "正在读取原生工具…" : "请选择左侧的原生工具。"}
+            </p>
+          )}
+          {error ? <p role="alert">{displayText(error)}</p> : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+function LinkedToolDefinition({
+  request,
+  project,
+}: {
+  request: Request;
+  project?: Row;
+}) {
+  const target = new URLSearchParams(location.search).get("tool_ref");
+  const [tool, setTool] = useState<Row>();
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (!target) return;
+    const controller = new AbortController();
+    void loadConfigurationRecord(
+      request,
+      { id: target, _index: true },
+      project?.id,
+      controller.signal,
+    )
+      .then((row) => {
+        if (!controller.signal.aborted) setTool(row);
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) setError(String(error));
+      });
+    return () => controller.abort();
+  }, [request, project?.id, target]);
+  if (!target || tool?.data.implementation?.kind === "http_api") return null;
+  return (
+    <section className="panel" aria-label="Tool 定义">
+      <div className="panel-heading">
+        <h2>{displayText(tool?.name || "Tool 定义")}</h2>
+      </div>
+      <div className="integration-content">
+        {tool?.type === "tool" ? (
+          <>
+            <p>
+              <code>{displayText(tool.data.qualified_name)}</code> · v
+              {tool.version}
+            </p>
+            <ConfigurationUsage
+              request={request}
+              projectId={project?.id}
+              id={tool.id}
+              kind="tool"
+            />
+            <MarkdownPreview text={tool.data.description || ""} />
+            <details>
+              <summary>工具输入与输出合同</summary>
+              <pre>
+                {displayText(
+                  JSON.stringify(
+                    {
+                      input: tool.data.input_schema,
+                      output: tool.data.output_schema,
+                    },
+                    null,
+                    2,
+                  ),
+                )}
+              </pre>
+            </details>
+          </>
+        ) : (
+          <p>{error ? displayText(error) : "正在读取工具定义…"}</p>
+        )}
       </div>
     </section>
   );
@@ -868,6 +1038,12 @@ function PublishedTools({
             <p>
               <code>{displayText(tool.data.qualified_name)}</code>
             </p>
+            <ConfigurationUsage
+              request={request}
+              projectId={project?.id}
+              id={tool.id}
+              kind="tool"
+            />
             <div className="actions">
               <ActionButton
                 disabled={busy || removed.some((r) => r.id === tool.id)}
@@ -1914,6 +2090,16 @@ function HttpToolEditor({
       setBusy(false);
     }
   }
+  const routeToolSelected = useRef(false);
+  useEffect(() => {
+    if (routeToolSelected.current || !catalog.length) return;
+    const id = new URLSearchParams(location.search).get("tool_ref");
+    if (!id) return;
+    routeToolSelected.current = true;
+    const row = catalog.find((r) => r.id === id);
+    if (!row || row.data.integration_ref === source.id)
+      void choose(row || { id, _index: true });
+  }, [catalog, source.id, choose]);
   return (
     <section className="panel" aria-label="HTTP 动作管理">
       <div className="panel-heading">
@@ -1923,7 +2109,10 @@ function HttpToolEditor({
         <ConfigurationList
           records={tools}
           selectedId={draft.selected}
-          autoSelectFirst={isPristineConfigurationDraft(draft, initial())}
+          autoSelectFirst={
+            !new URLSearchParams(location.search).has("tool_ref") &&
+            isPristineConfigurationDraft(draft, initial())
+          }
           onSelect={(row) => {
             captureFeedback();
             return choose(row);
@@ -1994,6 +2183,12 @@ function HttpToolEditor({
               }}
             />
           </label>
+          <ConfigurationUsage
+            request={request}
+            projectId={project?.id}
+            id={draft.selected}
+            kind="tool"
+          />
           <MarkdownField
             key={draft.selected || "new"}
             label="工具说明"

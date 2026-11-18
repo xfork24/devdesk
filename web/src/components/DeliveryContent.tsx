@@ -1,6 +1,8 @@
 import { displayText } from "../display-text";
 import { useContext, useEffect, useState } from "react";
 import { ConfigurationScope } from "./configuration-scope";
+import { configurationHref } from "./configuration-links";
+import { ConfigurationLink } from "./ConfigurationLink";
 import { loadConfigurationRecord } from "./configuration-state";
 import { MarkdownPreview } from "./configuration-ui";
 import { type Row } from "./rpc-types";
@@ -64,7 +66,18 @@ function ConfigurationSpec({ id, record }: { id: string; record?: Row }) {
       }}
     >
       <summary>
-        {displayText(spec?.name || "规范不可用")} · {displayText(id)}
+        <span className="configuration-summary-title">
+          <span>
+            {displayText(spec?.name || "规范不可用")} · {displayText(id)}
+          </span>
+          <ConfigurationLink
+            href={configurationHref(
+              spec || { id, type: "spec" },
+              scope?.projectId,
+            )}
+            label={`查看此 Spec：${spec?.name || id}`}
+          />
+        </span>
       </summary>
       {error && <p role="alert">{displayText(error)}</p>}
       {spec && !spec._index ? (

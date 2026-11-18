@@ -447,6 +447,8 @@ impl EngineeringState {
 
 mod configuration_graph;
 pub use configuration_graph::*;
+mod configuration_usages;
+pub use configuration_usages::*;
 
 mod execution_recipe;
 pub use execution_recipe::*;

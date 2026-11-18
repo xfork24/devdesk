@@ -106,6 +106,10 @@ test("MiniMax 默认选择、行左侧反馈、自动模型目录与原生工具
   await page.getByRole("button", { name: "基础组件", exact: true }).click();
   const backend = page.getByLabel("模型后端", { exact: true });
   const model = page.getByRole("combobox", { name: "模型标识", exact: true });
+  await expect(
+    page.locator('.configuration-list button[aria-pressed="true"] strong'),
+  ).toHaveText("GLM 5.3 Flash");
+  await backend.selectOption("openai");
   await expect(model.locator('option[value="gpt-6.1-sol"]')).toHaveCount(1);
   await expect(
     page.getByRole("textbox", { name: "模型标识", exact: true }),
@@ -169,8 +173,22 @@ test("MiniMax 默认选择、行左侧反馈、自动模型目录与原生工具
   const dsh = native.locator(".native-tool-group").filter({
     has: page.getByRole("heading", { name: "DSH 原生工具组", exact: true }),
   });
-  await expect(dsh).toContainText("适用 Harness 版本：0.2.2-rc.1");
-  await dsh.click();
+  await native
+    .locator(".configuration-list")
+    .getByRole("button", { name: /DSH 原生工具组/ })
+    .click();
+  await expect(dsh).toContainText("适用 Harness：DeepSeek Harness 0.2.2-rc.1");
+  await dsh
+    .getByRole("heading", { name: "DSH 原生工具组", exact: true })
+    .click();
+  await expect(
+    page.getByRole("tab", { name: "Harness原生工具", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("tab", { name: "Harness", exact: true }).click();
+  await page
+    .locator(".configuration-list")
+    .getByRole("button", { name: /DeepSeek Harness 多模型服务商/ })
+    .click();
   await expect(page.getByLabel("运行时后端", { exact: true })).toHaveValue(
     "dsh",
   );

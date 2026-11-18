@@ -153,169 +153,176 @@ export function AgentExperience({
   );
   return (
     <details className="experience-panel">
-      <summary>Agent 经验 · 项目 / Feature / 时间</summary>
-      {!instanceId ? (
-        <p>选择 Agent 后查看该实例的工作履历。</p>
-      ) : (
-        <>
-          <p className="mono">
-            {displayText(instanceId)} · {displayText(data?.scope || "")}
-          </p>
-          {filters}
-          <p>
-            {displayText(data?.total || 0)} 条经验 · 同一 Feature
-            持续更新一条记录 · 时间按当前时区显示
-          </p>
-          {data?.records.map((entry: Row) => (
-            <article key={entry.snapshot_id + entry.session_id}>
-              <strong>
-                {displayText(entry.project_name)} /{" "}
-                {displayText(entry.feature_name)}
-              </strong>
-              <p>
-                {displayText(new Date(entry.captured_at).toLocaleString())} ·{" "}
-                {displayText(entry.kind)} ·{" "}
-                {displayText(
-                  entry.task_id ? `Task ${shortId(entry.task_id)}` : "Feature",
-                )}
-              </p>
-              {entry.availability === "unavailable" &&
-              entry.metadata_excerpt ? (
-                <p className="notice">来源暂不可用，当前显示缓存的历史摘要。</p>
-              ) : null}
-              <div className="actions">
-                {onReference && (
-                  <ActionButton onClick={() => onReference(entry)}>
-                    引用到当前讨论
+      <summary>Agent经验</summary>
+      <div className="agent-information-content">
+        {!instanceId ? (
+          <p>选择 Agent 后查看该实例的工作履历。</p>
+        ) : (
+          <>
+            {filters}
+            <p>
+              {displayText(data?.total || 0)} 条经验 · 同一 Feature
+              持续更新一条记录 · 时间按当前时区显示
+            </p>
+            {data?.records.map((entry: Row) => (
+              <article key={entry.snapshot_id + entry.session_id}>
+                <strong>
+                  {displayText(entry.project_name)} /{" "}
+                  {displayText(entry.feature_name)}
+                </strong>
+                <p>
+                  {displayText(new Date(entry.captured_at).toLocaleString())} ·{" "}
+                  {displayText(entry.kind)} ·{" "}
+                  {displayText(
+                    entry.task_id
+                      ? `Task ${shortId(entry.task_id)}`
+                      : "Feature",
+                  )}
+                </p>
+                {entry.availability === "unavailable" &&
+                entry.metadata_excerpt ? (
+                  <p className="notice">
+                    来源暂不可用，当前显示缓存的历史摘要。
+                  </p>
+                ) : null}
+                <div className="actions">
+                  {onReference && (
+                    <ActionButton onClick={() => onReference(entry)}>
+                      引用到当前讨论
+                    </ActionButton>
+                  )}
+                  <ActionButton
+                    onClick={async () => {
+                      captureFeedback();
+
+                      setError("");
+                      const g = ++generation.current;
+                      try {
+                        const value = await request("query.agent_experience", {
+                          ...(projectId === "global"
+                            ? { scope: "global" }
+                            : { project_id: projectId }),
+                          agent_instance_id: instanceId,
+                          snapshot_id: entry.snapshot_id,
+                          source_project_id: entry.project_id,
+                        });
+                        if (g === generation.current) setDetail(value);
+                      } catch (e) {
+                        if (g === generation.current) setError(String(e));
+                      }
+                    }}
+                  >
+                    展开摘要与快照
                   </ActionButton>
-                )}
+                  {onLocate && (
+                    <ActionButton
+                      onClick={() => {
+                        captureFeedback();
+                        return onLocate(entry);
+                      }}
+                    >
+                      定位来源工作
+                    </ActionButton>
+                  )}
+                </div>
+              </article>
+            ))}
+            {data?.unavailable.map((p: Row) => (
+              <p key={p.project_id} className="notice">
+                {displayText(p.project_name)}：历史项目当前不可用
+              </p>
+            ))}
+            <div className="actions">
+              <ActionButton
+                disabled={!page}
+                onClick={() => {
+                  captureFeedback();
+                  return setPage((p) => p - 1);
+                }}
+              >
+                上一页
+              </ActionButton>
+              <ActionButton
+                disabled={(page + 1) * 20 >= (data?.total || 0)}
+                onClick={() => {
+                  captureFeedback();
+                  return setPage((p) => p + 1);
+                }}
+              >
+                下一页
+              </ActionButton>
+            </div>
+            {detail && (
+              <article className="notice">
+                <h3>{displayText(detail.entry.feature_name)} · 快照摘要</h3>
+                <p>
+                  {displayText(
+                    detail.entry.workflow_name
+                      ? `工作流 ${detail.entry.workflow_name} · `
+                      : "",
+                  )}
+                  Model {displayText(detail.entry.binding?.model)} · Harness{" "}
+                  {displayText(
+                    detail.entry.binding?.installation?.key.provider,
+                  )}{" "}
+                  · 完整性 {displayText(detail.integrity)}
+                </p>
+                <MarkdownPreview
+                  text={
+                    detail.snapshot.content ||
+                    "该快照没有附加文字上下文；文档与执行引用仍可读取。"
+                  }
+                />
+                <details>
+                  <summary>完整快照与证据引用</summary>
+                  <pre>{displayText(JSON.stringify(detail, null, 2))}</pre>
+                </details>
                 <ActionButton
+                  disabled={busy}
                   onClick={async () => {
                     captureFeedback();
 
+                    beginFeedback();
+                    setBusy(true);
                     setError("");
-                    const g = ++generation.current;
                     try {
-                      const value = await request("query.agent_experience", {
+                      const result = await request("experience.restore", {
                         ...(projectId === "global"
                           ? { scope: "global" }
                           : { project_id: projectId }),
-                        agent_instance_id: instanceId,
-                        snapshot_id: entry.snapshot_id,
-                        source_project_id: entry.project_id,
+                        command_id: crypto.randomUUID(),
+                        target: owner.id,
+                        expected_revision: owner.revision,
+                        payload: {
+                          agent_instance_id: instanceId,
+                          snapshot_id: detail.snapshot.id,
+                          source_project_id: detail.entry.project_id,
+                        },
                       });
-                      if (g === generation.current) setDetail(value);
+                      onRestored(result.id);
                     } catch (e) {
-                      if (g === generation.current) setError(String(e));
+                      setError(String(e));
+                    } finally {
+                      endFeedback();
+                      setBusy(false);
                     }
                   }}
                 >
-                  展开摘要与快照
+                  基于此快照开启新讨论
                 </ActionButton>
-                {onLocate && (
-                  <ActionButton
-                    onClick={() => {
-                      captureFeedback();
-                      return onLocate(entry);
-                    }}
-                  >
-                    定位来源工作
-                  </ActionButton>
-                )}
-              </div>
-            </article>
-          ))}
-          {data?.unavailable.map((p: Row) => (
-            <p key={p.project_id} className="notice">
-              {displayText(p.project_name)}：历史项目当前不可用
-            </p>
-          ))}
-          <div className="actions">
-            <ActionButton
-              disabled={!page}
-              onClick={() => {
-                captureFeedback();
-                return setPage((p) => p - 1);
-              }}
-            >
-              上一页
-            </ActionButton>
-            <ActionButton
-              disabled={(page + 1) * 20 >= (data?.total || 0)}
-              onClick={() => {
-                captureFeedback();
-                return setPage((p) => p + 1);
-              }}
-            >
-              下一页
-            </ActionButton>
-          </div>
-          {detail && (
-            <article className="notice">
-              <h3>{displayText(detail.entry.feature_name)} · 快照摘要</h3>
-              <p>
-                {displayText(
-                  detail.entry.workflow_name
-                    ? `工作流 ${detail.entry.workflow_name} · `
-                    : "",
-                )}
-                Model {displayText(detail.entry.binding?.model)} · Harness{" "}
-                {displayText(detail.entry.binding?.installation?.key.provider)}{" "}
-                · 完整性 {displayText(detail.integrity)}
-              </p>
-              <MarkdownPreview
-                text={
-                  detail.snapshot.content ||
-                  "该快照没有附加文字上下文；文档与执行引用仍可读取。"
-                }
-              />
-              <details>
-                <summary>完整快照与证据引用</summary>
-                <pre>{displayText(JSON.stringify(detail, null, 2))}</pre>
-              </details>
-              <ActionButton
-                disabled={busy}
-                onClick={async () => {
-                  captureFeedback();
-
-                  beginFeedback();
-                  setBusy(true);
-                  setError("");
-                  try {
-                    const result = await request("experience.restore", {
-                      ...(projectId === "global"
-                        ? { scope: "global" }
-                        : { project_id: projectId }),
-                      command_id: crypto.randomUUID(),
-                      target: owner.id,
-                      expected_revision: owner.revision,
-                      payload: {
-                        agent_instance_id: instanceId,
-                        snapshot_id: detail.snapshot.id,
-                        source_project_id: detail.entry.project_id,
-                      },
-                    });
-                    onRestored(result.id);
-                  } catch (e) {
-                    setError(String(e));
-                  } finally {
-                    endFeedback();
-                    setBusy(false);
-                  }
-                }}
-              >
-                基于此快照开启新讨论
-              </ActionButton>
-              <p>恢复保留来源引用，当前代码、文档和工作流配置保持各自版本。</p>
-            </article>
-          )}
-        </>
-      )}
-      {error && (
-        <p role="alert" className="error">
-          {displayText(error)}
-        </p>
-      )}
+                <p>
+                  恢复保留来源引用，当前代码、文档和工作流配置保持各自版本。
+                </p>
+              </article>
+            )}
+          </>
+        )}
+        {error && (
+          <p role="alert" className="error">
+            {displayText(error)}
+          </p>
+        )}
+      </div>
     </details>
   );
 }

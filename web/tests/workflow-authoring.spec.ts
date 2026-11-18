@@ -69,7 +69,7 @@ test("内置 Delivery 全部关联内容标准并可查看确切规范", async (
   );
   await page
     .getByLabel("交付内容标准", { exact: true })
-    .locator("summary")
+    .locator("summary .configuration-summary-title > span")
     .click();
   await expect(page.getByLabel("交付内容标准", { exact: true })).toContainText(
     "平台 tests.run",
@@ -162,7 +162,7 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
     role.getByRole("button", { name: new RegExp(name + " v2") }),
   ).toHaveCount(0);
 });
-test("原生工具目录提供独立当前入口且不编辑 Schema", async ({ page }) => {
+test("原生工具目录提供独立当前入口且不编辑 Schema", async ({ page }, info) => {
   await setup(page);
   await page.goto(
     "/?tab=components&config_tab=native&config_object=builtin-tool-codex-native:1",
@@ -182,6 +182,75 @@ test("原生工具目录提供独立当前入口且不编辑 Schema", async ({ p
   await expect(
     page.getByRole("button", { name: "新建 Tool", exact: true }),
   ).toHaveCount(0);
+  const native = page.locator(".native-tool-group").filter({
+    has: page.getByRole("heading", { name: "Codex 原生工具组", exact: true }),
+  });
+  await expect(native.locator('a[href*="config_tab=harness"]')).toHaveCount(0);
+  await native
+    .getByRole("heading", { name: "Codex 原生工具组", exact: true })
+    .click();
+  await expect(
+    page.getByRole("tab", { name: "Harness原生工具", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  const list = page
+    .getByRole("region", { name: "原生工具目录" })
+    .locator(".configuration-list");
+  await expect(list.locator("button strong")).toHaveText([
+    "Codex 原生工具组",
+    "DSH 原生工具组",
+  ]);
+  const selected = list.getByRole("button", { name: /Codex 原生工具组/ });
+  await expect(selected).toHaveAttribute("aria-pressed", "true");
+  await expect(native).toContainText("适用 Harness：Codex Harness 0.167.0");
+  await expect(native).not.toContainText("Native Codex tool contracts");
+  await expect(native.getByLabel("内容预览")).toHaveCount(0);
+  const listBox = (await list.boundingBox())!;
+  const detailBox = (await page
+    .getByLabel("原生工具详情", { exact: true })
+    .boundingBox())!;
+  expect(listBox.x + listBox.width).toBeLessThan(detailBox.x);
+  await list.getByRole("button", { name: /DSH 原生工具组/ }).click();
+  await expect(
+    page
+      .getByLabel("原生工具详情")
+      .getByRole("heading", { name: "DSH 原生工具组", exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    list.getByRole("button", { name: /DSH 原生工具组/ }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("原生工具详情")).toContainText(
+    "适用 Harness：DeepSeek Harness 0.2.2-rc.1",
+  );
+  await expect(page.getByLabel("原生工具详情")).not.toContainText(
+    "DSH native tools",
+  );
+  await expect(
+    page.getByLabel("原生工具详情").getByLabel("内容预览"),
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: info.outputPath("native-tool-list.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 430, height: 932 });
+  await expect(page.locator(".app")).toHaveCount(1);
+  const mobileList = (await list.boundingBox())!;
+  const mobileDetail = (await page
+    .getByLabel("原生工具详情", { exact: true })
+    .boundingBox())!;
+  expect(mobileList.y + mobileList.height).toBeLessThan(mobileDetail.y);
+  await page
+    .getByRole("region", { name: "原生工具目录", exact: true })
+    .evaluate((node) => node.scrollIntoView({ block: "start" }));
+  await page.screenshot({
+    path: info.outputPath("native-tool-list-mobile.png"),
+  });
+  await page.goto(
+    "/?tab=components&config_tab=native&config_object=builtin-tool-codex-native%3A1",
+  );
+  await expect(
+    list.getByRole("button", { name: /Codex 原生工具组/ }),
+  ).toHaveAttribute("aria-pressed", "true");
 });
 
 test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保留草稿", async ({
@@ -619,13 +688,9 @@ test("项目默认绑定保存时生成不可变 Standard", async ({ page }) => 
     .locator(":scope > label")
     .evaluateAll((rows) =>
       rows.map((row) => {
-        const text = Array.from(row.childNodes).find(
-          (node) =>
-            node.nodeType === Node.TEXT_NODE && node.textContent?.trim(),
-        );
-        const range = document.createRange();
-        range.selectNode(text!);
-        const label = range.getBoundingClientRect();
+        const label = row
+          .querySelector(".configuration-field-title")!
+          .getBoundingClientRect();
         const select = row.querySelector("select")!.getBoundingClientRect();
         return {
           labelLeft: label.x,

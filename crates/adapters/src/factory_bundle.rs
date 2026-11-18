@@ -72,7 +72,14 @@ fn load() -> Result<()> {
             .ok_or_else(|| err("invalid_template", "默认清单缺失"))?,
     )?)
     .map_err(storage)?;
-    let hash = configuration_hash(&json!({"sources":hashed,"defaults":defaults}));
+    let usage_path = manifest["usage_index"]
+        .as_str()
+        .ok_or_else(|| err("invalid_template", "缺少引用索引"))?;
+    let usage: Value = serde_json::from_str(resource(usage_path)?).map_err(storage)?;
+    let usage_index: ConfigurationUsageIndex =
+        serde_json::from_value(usage["references"].clone()).map_err(storage)?;
+    let hash =
+        configuration_hash(&json!({"sources":hashed,"defaults":defaults,"usage_index":usage}));
     devdesk_core::install_configuration_bundle(devdesk_core::ConfigurationBundle {
         bundle_version: manifest["bundle_version"]
             .as_str()
@@ -81,6 +88,7 @@ fn load() -> Result<()> {
         types,
         entries,
         defaults,
+        usage_index,
         hash,
     })
 }

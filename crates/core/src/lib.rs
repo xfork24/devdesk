@@ -52,8 +52,9 @@ pub use configuration_catalog::*;
 pub use tool_creation::PreparedConfiguredTool;
 mod configuration_queries;
 pub use configuration_queries::{
-    configuration_index, configuration_records, configuration_selection_record,
-    configuration_summary, project_configuration_context, summarize_configuration_result,
+    configuration_index, configuration_records, configuration_reference_usages,
+    configuration_selection_record, configuration_summary, project_configuration_context,
+    summarize_configuration_result,
 };
 mod default_permissions;
 mod resource_receipts;

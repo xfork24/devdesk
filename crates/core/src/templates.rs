@@ -14,10 +14,15 @@ pub struct ConfigurationBundle {
     pub types: BTreeMap<String, Vec<String>>,
     pub entries: Vec<ConfigurationRecord>,
     pub defaults: Value,
+    pub usage_index: ConfigurationUsageIndex,
     pub hash: String,
 }
 static BUNDLE: OnceLock<ConfigurationBundle> = OnceLock::new();
 pub fn install_configuration_bundle(bundle: ConfigurationBundle) -> Result<()> {
+    require(
+        bundle.usage_index == configuration_usage_index(&bundle.entries)?,
+        "内置配置引用索引与源定义不一致",
+    )?;
     if let Some(current) = BUNDLE.get() {
         require(current.hash == bundle.hash, "出厂资源已初始化为另一内容")?;
         return Ok(());
@@ -35,6 +40,15 @@ fn bundle() -> Result<&'static ConfigurationBundle> {
     BUNDLE
         .get()
         .ok_or_else(|| err("configuration_required", "外层尚未提供出厂配置资源"))
+}
+pub(crate) fn builtin_configuration_usages(
+    reference: &str,
+) -> Result<Vec<ConfigurationReferenceUsage>> {
+    Ok(bundle()?
+        .usage_index
+        .get(reference)
+        .cloned()
+        .unwrap_or_default())
 }
 pub fn template_bundle_info() -> Result<Value> {
     let b = bundle()?;
@@ -447,8 +461,9 @@ mod portable_bundle_tests {
         install_configuration_bundle(ConfigurationBundle {
             bundle_version: "arbitrary-label".into(),
             types: BTreeMap::from([("skill".into(), vec!["not-a-real-file".into()])]),
-            entries: vec![source],
+            entries: vec![source.clone()],
             defaults: json!({}),
+            usage_index: configuration_usage_index([&source]).unwrap(),
             hash: "unit-test-bundle".into(),
         })
         .unwrap();

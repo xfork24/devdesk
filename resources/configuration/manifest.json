@@ -1,6 +1,7 @@
 {
   "schema_version": 2,
-  "bundle_version": "2026.11.18-review-rework-and-human-approval-v1",
+  "bundle_version": "2026.11.18-reference-usage-v1",
+  "usage_index": "reference-usage.json",
   "types": {
     "role": [
       "roles/builtin-role-analyst-v1.json",

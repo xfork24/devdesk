@@ -14,6 +14,14 @@ export function subscribeModels(listener: () => void) {
   };
 }
 const listeners = new Set<() => void>();
+const queryListeners = new Set<() => void>();
+export const getConfigurationQueryEpoch = () => serial;
+export function subscribeConfigurationQueries(listener: () => void) {
+  queryListeners.add(listener);
+  return () => {
+    queryListeners.delete(listener);
+  };
+}
 const projects = new Map<string, number>();
 const sourceEpochs = new Map<string, number>();
 let identity = "",
@@ -35,6 +43,7 @@ export function subscribeConfigurationSession(listener: () => void) {
 export function invalidateConfigurationQueries() {
   serial++;
   queries.clear();
+  queryListeners.forEach((listener) => listener());
 }
 export function invalidateModelCatalogs() {
   modelEpoch++;
@@ -111,6 +120,7 @@ export function observeConfigurationResponse(value: Row, params: Row): boolean {
 const cachedMethods = new Set([
   "query.configuration_index",
   "query.configuration_records",
+  "query.configuration_usage",
   "query.configuration_defaults",
   "query.project_configuration",
   "query.project_standard_preview",

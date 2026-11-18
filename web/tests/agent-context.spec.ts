@@ -35,21 +35,48 @@ test("没有项目时可以选择 Agent 并查看完整能力和经验入口", a
   await expect(
     page.getByRole("button", { name: "开始 / 续用讨论", exact: true }),
   ).toBeEnabled();
-  await page.getByText("Agent 完整能力", { exact: true }).click();
+  const information = page.getByLabel("Agent信息", { exact: true });
+  const summaries = information.locator(":scope > details > summary");
+  await expect(summaries).toHaveText(["Agent定义", "Agent能力", "Agent经验"]);
+  const positions = await summaries.evaluateAll((nodes) =>
+    nodes.map((node) => node.getBoundingClientRect().top),
+  );
+  expect(Math.max(...positions) - Math.min(...positions)).toBeLessThan(2);
+  await expect(
+    page
+      .locator(".conversation-panel > .actions > p")
+      .filter({ hasText: /^Model / }),
+  ).toHaveCount(0);
+  await expect(information.locator(".experience-panel")).toHaveCSS(
+    "border-top-width",
+    "0px",
+  );
+  await information.getByText("Agent定义", { exact: true }).click();
+  await expect(information.locator("pre").first()).toContainText(agent);
+  await page.getByText("Agent能力", { exact: true }).click();
   await expect(page.getByText("Agent Specs", { exact: true })).toBeVisible();
   await expect(
     page.getByText("Agent 经验：检索与读取，可在当前讨论中按需使用。", {
       exact: true,
     }),
   ).toBeVisible();
-  await page
-    .getByText("Agent 经验 · 项目 / Feature / 时间", { exact: true })
-    .click();
+  await page.getByText("Agent经验", { exact: true }).click();
   await expect(page.getByText(/0\s*条经验/)).toBeVisible();
   const workspace = await rpc(page, "query.workspace");
   expect(workspace.active_project).toBeNull();
   await page.screenshot({
     path: info.outputPath("detached-agent.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 430, height: 932 });
+  const mobilePositions = await summaries.evaluateAll((nodes) =>
+    nodes.map((node) => node.getBoundingClientRect().top),
+  );
+  expect(
+    Math.max(...mobilePositions) - Math.min(...mobilePositions),
+  ).toBeLessThan(2);
+  await page.screenshot({
+    path: info.outputPath("detached-agent-mobile.png"),
     fullPage: true,
   });
 });
@@ -177,10 +204,8 @@ test("来源不可用时明确显示经验目录为历史摘要", async ({ page 
   await page.getByRole("button", { name: "角色讨论", exact: true }).click();
   await page.getByLabel("讨论角色", { exact: true }).selectOption(agent);
   await page.getByLabel("Agent", { exact: true }).selectOption(instance.id);
-  await page.getByText("Agent 完整能力", { exact: true }).click();
-  await page
-    .getByText("Agent 经验 · 项目 / Feature / 时间", { exact: true })
-    .click();
+  await page.getByText("Agent能力", { exact: true }).click();
+  await page.getByText("Agent经验", { exact: true }).click();
   await expect(
     page.getByText("来源暂不可用，当前显示缓存的历史摘要。", { exact: true }),
   ).toBeVisible();

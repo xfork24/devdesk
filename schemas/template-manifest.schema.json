@@ -6,7 +6,8 @@
     "schema_version",
     "bundle_version",
     "types",
-    "defaults"
+    "defaults",
+    "usage_index"
   ],
   "additionalProperties": false,
   "properties": {
@@ -47,6 +48,10 @@
       }
     },
     "defaults": {
+      "type": "string",
+      "minLength": 1
+    },
+    "usage_index": {
       "type": "string",
       "minLength": 1
     }

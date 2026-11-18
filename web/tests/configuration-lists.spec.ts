@@ -1,8 +1,69 @@
-import { expect } from "@playwright/test";
+import { expect, type Locator } from "@playwright/test";
 import { test } from "./support/kernel";
 import { useMockCodexCatalog } from "./support/model-catalog";
 
 useMockCodexCatalog();
+
+async function expectUniformRows(container: Locator) {
+  const rows = await container.evaluate((node) => {
+    const rows: { top: number; bottom: number }[] = [];
+    for (const child of Array.from(node.children)) {
+      const rect = child.getBoundingClientRect();
+      if (!rect.height || !rect.width) continue;
+      const row = rows.at(-1);
+      if (row && Math.abs(row.top - rect.top) < 1)
+        row.bottom = Math.max(row.bottom, rect.bottom);
+      else rows.push({ top: rect.top, bottom: rect.bottom });
+    }
+    return rows;
+  });
+  expect(rows.length).toBeGreaterThan(1);
+  for (let i = 1; i < rows.length; i++)
+    expect(Math.abs(rows[i].top - rows[i - 1].bottom - 10)).toBeLessThan(1);
+}
+
+test("Role、Capability 与 Agent 的内容区块和段落间距统一为 10px", async ({
+  page,
+}, info) => {
+  for (const width of [1440, 430]) {
+    await page.setViewportSize({ width, height: 1000 });
+    for (const [kind, reference, name] of [
+      ["agent", "builtin-agent-glm-tester:2", "测试 · GLM 5.3 Flash / DSH"],
+      ["role", "builtin-role-tester:1", "测试"],
+      [
+        "capability",
+        "builtin-capability-tester-glm-dsh:2",
+        "测试能力 · GLM 5.3 Flash / DSH",
+      ],
+    ]) {
+      await page.goto(
+        `/?tab=actors&config_tab=${kind}&config_object=${encodeURIComponent(reference)}`,
+      );
+      await expect(
+        page.getByLabel(kind === "role" ? "Role 名称" : "名称", {
+          exact: true,
+        }),
+      ).toHaveValue(name);
+      const form = page.locator("form.actor-configuration-form");
+      if (kind !== "capability")
+        await expect(
+          form.getByRole("heading", { name: "职责", exact: true }),
+        ).toBeVisible();
+      await expectUniformRows(
+        kind === "role" ? form : form.locator(":scope > .form-grid"),
+      );
+      if (kind !== "role") await expectUniformRows(form);
+      for (const preview of await form.locator(".markdown-preview").all())
+        await expectUniformRows(preview);
+      if (kind === "agent")
+        await expectUniformRows(form.locator(".actor-role-summary"));
+      await form.evaluate((node) => node.scrollIntoView({ block: "start" }));
+      await page.screenshot({
+        path: info.outputPath(`${kind}-spacing-${width}.png`),
+      });
+    }
+  }
+});
 
 test("配置各 Tab 的共享目录按名称排序并默认选中首个已有条目", async ({
   page,
@@ -12,6 +73,7 @@ test("配置各 Tab 的共享目录按名称排序并默认选中首个已有条
     ["components", "harness"],
     ["components", "sandbox"],
     ["components", "skills"],
+    ["components", "native"],
     ["actors", "role"],
     ["actors", "capability"],
     ["actors", "agent"],
@@ -27,10 +89,24 @@ test("配置各 Tab 的共享目录按名称排序并默认选中首个已有条
     await expect(items.first()).toHaveAttribute("aria-pressed", "true");
     const labels = await items.locator("strong").allTextContents();
     expect(labels).toEqual([...labels].sort(names.compare));
-    await expect(list.locator(".new-resource")).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
+    if (tab === "native")
+      await expect(list.locator(".new-resource")).toHaveCount(0);
+    else
+      await expect(list.locator(".new-resource")).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+    if (["harness", "sandbox"].includes(tab)) {
+      const label = tab === "harness" ? "Harness" : "Sandbox";
+      const select = page.getByLabel(label, { exact: true });
+      await expect(select).not.toHaveValue("");
+      await expect(
+        select.locator("..").locator(".configuration-field-title a"),
+      ).toHaveCount(0);
+      await expect(
+        page.getByLabel(`${label} 修订`, { exact: true }),
+      ).toHaveCount(0);
+    }
     if (tab === "model") {
       await expect(items.first().locator("strong")).toHaveText("GLM 5.3 Flash");
       await page.screenshot({
@@ -65,7 +141,9 @@ test("配置各 Tab 的共享目录按名称排序并默认选中首个已有条
     expect(labels).toEqual([...labels].sort(names.compare));
   }
   await page.goto("/?tab=components&config_tab=native");
-  const native = page.locator(".native-tool-group h3");
+  const native = page
+    .getByRole("region", { name: "原生工具目录" })
+    .locator(".configuration-list button strong");
   await expect(native.first()).toBeVisible();
   const nativeNames = await native.allTextContents();
   expect(nativeNames).toEqual([...nativeNames].sort(names.compare));

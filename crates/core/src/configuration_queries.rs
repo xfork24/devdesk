@@ -193,6 +193,60 @@ pub fn configuration_records(
     Ok(json!({"records":records}))
 }
 
+pub fn configuration_reference_usages(
+    catalog: &ConfigurationCatalogSnapshot,
+    p: &Value,
+    project: Option<&str>,
+) -> Result<Value> {
+    let id = p["id"]
+        .as_str()
+        .ok_or_else(|| err("invalid_params", "需要确切配置修订"))?;
+    let record = catalog
+        .record(id)
+        .ok_or_else(|| err("not_found", "配置修订不存在"))?;
+    require(
+        configuration_visible(&catalog.state, record, project),
+        "配置修订不属于当前作用域",
+    )?;
+    require(
+        ["spec", "skill", "tool", "delivery_type"].contains(&record.r#type.as_str()),
+        "此类型不提供引用位置目录",
+    )?;
+    let builtin = match p["view"].as_str() {
+        None | Some("current") => false,
+        Some("builtin") => true,
+        _ => return Err(err("invalid_params", "引用视图必须为 current 或 builtin")),
+    };
+    let users: Vec<ConfigurationReferenceUsage> = if builtin {
+        crate::templates::builtin_configuration_usages(id)?
+    } else {
+        let index = catalog.cached_query(format!("reference-usage-index:{project:?}"), || {
+            let records = catalog.state.governance.iter().filter(|r| {
+                catalog.is_current_head(r)
+                    && !catalog.is_retired(r)
+                    && !catalog.is_archived(r)
+                    && configuration_visible(&catalog.state, r, project)
+            });
+            Ok(json!(configuration_usage_index(records)?))
+        })?;
+        serde_json::from_value(index.get(id).cloned().unwrap_or_else(|| json!([])))
+            .map_err(|e| err("storage", e.to_string()))?
+    };
+    let version = configuration_hash(&(&catalog.fingerprint, project, builtin, id));
+    let offset = p["offset"].as_u64().unwrap_or(0) as usize;
+    let limit = p["limit"].as_u64().unwrap_or(100).clamp(1, 100) as usize;
+    if offset > 0 && p["index_version"].as_str() != Some(&version) {
+        return Err(err("catalog_changed", "引用目录已变化，请重新读取"));
+    }
+    let result = json!({"id":id,"users":users.iter().skip(offset).take(limit).collect::<Vec<_>>(),
+        "total":users.len(),"index_version":version,"view":if builtin {"builtin"} else {"current"}});
+    require(
+        result.to_string().len() <= 128 * 1024,
+        "引用摘要超过预算，请缩小分页",
+    )?;
+    Ok(result)
+}
+
 pub fn project_configuration_context(
     catalog: &ConfigurationCatalogSnapshot,
     project: Option<&str>,

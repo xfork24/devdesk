@@ -9,6 +9,8 @@ import { loadCatalog, decodeConfigurationIndex } from "./configuration-state";
 import { MarkdownField } from "./configuration-ui";
 import { type Request, type Row } from "./rpc-types";
 import { AgentExperience } from "./AgentExperience";
+import { configurationHref } from "./configuration-links";
+import { ConfigurationLink } from "./ConfigurationLink";
 import { WorkflowReferences } from "./WorkflowReferences";
 import { useReading } from "./reading-state";
 import {
@@ -810,92 +812,148 @@ export function RoleConversation({
                 ；已有工作按此身份保留。
               </p>
             )}
-            <p>
-              Model{" "}
-              {displayText(
-                catalog.find((r) => r.id === capability?.model_ref)?.data
-                  .model || capability?.model_ref,
-              )}{" "}
-              · Harness{" "}
-              {displayText(
-                catalog.find((r) => r.id === capability?.harness_ref)?.data
-                  .provider,
-              )}{" "}
-              /{" "}
-              {displayText(
-                catalog.find((r) => r.id === capability?.harness_ref)?.data
-                  .runtime_version,
-              )}{" "}
-              · Agent v{displayText(running?.version ?? composite.version)}
-            </p>
-            <details className="agent-capabilities">
-              <summary>Agent 完整能力</summary>
-              <div className="agent-capability-lists">
-                {(
-                  [
-                    ["skills", "Skills"],
-                    ["tools", "Tools"],
-                    ["spec_refs", "Agent Specs"],
-                  ] as const
-                ).map(([key, label]) => (
-                  <div key={key}>
-                    <strong>{displayText(label)}</strong>
-                    <ul>
-                      {(capability?.[key] || []).map((id: string) => (
-                        <li key={id}>
-                          {displayText(
-                            catalog.find((row) => row.id === id)?.name || id,
-                          )}
-                          {currentBinding?.agent_configuration?.integration_lock
-                            ?.unbound_reasons?.[id] && (
-                            <span>
-                              {" · "}
-                              {displayText(
-                                currentBinding.agent_configuration
-                                  .integration_lock.unbound_reasons[id],
-                              )}
-                            </span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-              <p>Agent 经验：检索与读取，可在当前讨论中按需使用。</p>
-            </details>
-            <details
-              onToggle={(event) => {
-                const target = running || composite;
-                if (!event.currentTarget.open || !target?._index) return;
-                void request(
-                  global
-                    ? "query.discussion_agents"
-                    : "query.configuration_records",
-                  {
-                    refs: [target.id],
-                    ...(global ? {} : { project_id: project.id, local: true }),
-                  },
-                )
-                  .then((result) =>
-                    setCatalog((rows) =>
-                      rows.map(
-                        (row) =>
-                          result.records.find((r: Row) => r.id === row.id) ||
-                          row,
-                      ),
-                    ),
-                  )
-                  .catch((error) => setError(String(error)));
-              }}
-            >
-              <summary>Role / Capability 及定义 Scope</summary>
-              <pre>
-                {displayText(JSON.stringify(running || composite, null, 2))}
-              </pre>
-            </details>
           </>
         )}
+        <div className="agent-information-row" aria-label="Agent信息">
+          {composite && (
+            <>
+              <details
+                onToggle={(event) => {
+                  const target = running || composite;
+                  if (!event.currentTarget.open || !target?._index) return;
+                  void request(
+                    global
+                      ? "query.discussion_agents"
+                      : "query.configuration_records",
+                    {
+                      refs: [target.id],
+                      ...(global
+                        ? {}
+                        : { project_id: project.id, local: true }),
+                    },
+                  )
+                    .then((result) =>
+                      setCatalog((rows) =>
+                        rows.map(
+                          (row) =>
+                            result.records.find((r: Row) => r.id === row.id) ||
+                            row,
+                        ),
+                      ),
+                    )
+                    .catch((error) => setError(String(error)));
+                }}
+              >
+                <summary>Agent定义</summary>
+                <div className="agent-information-content">
+                  <pre>
+                    {displayText(JSON.stringify(running || composite, null, 2))}
+                  </pre>
+                </div>
+              </details>
+              <details className="agent-capabilities">
+                <summary>Agent能力</summary>
+                <div className="agent-information-content">
+                  <div className="agent-capability-lists">
+                    {(
+                      [
+                        ["skills", "Skills"],
+                        ["tools", "Tools"],
+                        ["spec_refs", "Agent Specs"],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <div key={key}>
+                        <strong>{displayText(label)}</strong>
+                        <ul>
+                          {(capability?.[key] || []).map((id: string) => (
+                            <li key={id}>
+                              {displayText(
+                                catalog.find((row) => row.id === id)?.name ||
+                                  id,
+                              )}
+                              <ConfigurationLink
+                                href={configurationHref(
+                                  catalog.find((row) => row.id === id) || {
+                                    id,
+                                    type:
+                                      key === "skills"
+                                        ? "skill"
+                                        : key === "tools"
+                                          ? "tool"
+                                          : "spec",
+                                  },
+                                  global ? undefined : project.id,
+                                )}
+                                label={`查看 ${catalog.find((row) => row.id === id)?.name || id}`}
+                              />
+                              {currentBinding?.agent_configuration
+                                ?.integration_lock?.unbound_reasons?.[id] && (
+                                <span>
+                                  {" · "}
+                                  {displayText(
+                                    currentBinding.agent_configuration
+                                      .integration_lock.unbound_reasons[id],
+                                  )}
+                                </span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                  <p>Agent 经验：检索与读取，可在当前讨论中按需使用。</p>
+                </div>
+              </details>
+            </>
+          )}
+          <AgentExperience
+            revision={lastCompleted?.id}
+            key={instanceId || detail?.session.id || owner}
+            request={request}
+            projectId={global ? "global" : project.id}
+            instanceId={
+              instanceId ||
+              detail?.session.runtime_binding?.agent_configuration
+                ?.agent_instance_id ||
+              ""
+            }
+            owner={selectedOwner || project}
+            onReference={
+              formalOutput
+                ? undefined
+                : (entry) =>
+                    setExperienceRefs((old) =>
+                      old.some(
+                        (r) =>
+                          r.snapshot_id === entry.snapshot_id &&
+                          r.project_id === entry.project_id,
+                      )
+                        ? old
+                        : [...old, entry],
+                    )
+            }
+            onRestored={(id) => {
+              manualSession.current = true;
+              void loadSessions();
+              setSessionId(id);
+            }}
+            onLocate={(entry) => {
+              if (entry.project_id === "00000000-0000-4000-8000-000000000000") {
+                if (global) {
+                  manualSession.current = true;
+                  setSessionId(entry.session_id);
+                } else {
+                  pendingFocus.current = {
+                    owner: "global",
+                    session: entry.session_id,
+                  };
+                  setOwner("global");
+                }
+              } else onLocateExperience?.(entry);
+            }}
+          />
+        </div>
         <ActionButton
           disabled={busy || !selectedOwner || !composite || !instanceId}
           onClick={() => open()}
@@ -927,52 +985,6 @@ export function RoleConversation({
           )}
         </p>
       )}
-      <AgentExperience
-        revision={lastCompleted?.id}
-        key={instanceId || detail?.session.id || owner}
-        request={request}
-        projectId={global ? "global" : project.id}
-        instanceId={
-          instanceId ||
-          detail?.session.runtime_binding?.agent_configuration
-            ?.agent_instance_id ||
-          ""
-        }
-        owner={selectedOwner || project}
-        onReference={
-          formalOutput
-            ? undefined
-            : (entry) =>
-                setExperienceRefs((old) =>
-                  old.some(
-                    (r) =>
-                      r.snapshot_id === entry.snapshot_id &&
-                      r.project_id === entry.project_id,
-                  )
-                    ? old
-                    : [...old, entry],
-                )
-        }
-        onRestored={(id) => {
-          manualSession.current = true;
-          void loadSessions();
-          setSessionId(id);
-        }}
-        onLocate={(entry) => {
-          if (entry.project_id === "00000000-0000-4000-8000-000000000000") {
-            if (global) {
-              manualSession.current = true;
-              setSessionId(entry.session_id);
-            } else {
-              pendingFocus.current = {
-                owner: "global",
-                session: entry.session_id,
-              };
-              setOwner("global");
-            }
-          } else onLocateExperience?.(entry);
-        }}
-      />
       {experienceRefs.length > 0 && (
         <div className="notice" aria-label="当前讨论引用的经验">
           {experienceRefs.map((entry) => (

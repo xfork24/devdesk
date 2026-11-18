@@ -1209,6 +1209,15 @@
       ]
     },
     {
+      "method": "query.configuration_usage",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/configuration_read.rs"
+      ]
+    },
+    {
       "method": "query.configuration_references",
       "access": "read",
       "scope": "explicit",

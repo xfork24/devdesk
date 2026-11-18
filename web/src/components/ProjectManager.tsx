@@ -10,7 +10,6 @@ import {
   useDraft,
 } from "./configuration-state";
 import { RevisionSelect } from "./configuration-ui";
-import { StandardDiff, StandardDetail } from "./StandardManager";
 import { type Row, type Request } from "./rpc-types";
 export function ProjectManager({
   request: parentRequest,
@@ -47,8 +46,6 @@ export function ProjectManager({
   const [preview, setPreview] = useState<Row>();
   const [previewError, setPreviewError] = useState("");
   const [baseline, setBaseline] = useState<Row>();
-  const [savedStandard, setSavedStandard] = useState<Row>();
-  const [showPreviewDetails, setShowPreviewDetails] = useState(false);
   const health = bootstrap;
   const [overrideKind, setOverrideKind] = useState("");
   const [overrideSource, setOverrideSource] = useState("");
@@ -120,7 +117,6 @@ export function ProjectManager({
         : undefined,
     );
     setDefaults(preset);
-    setSavedStandard(saved);
     if (configuration.configuration?.data.workflow_ref)
       setDraft((current) =>
         current.workflow_ref
@@ -199,7 +195,7 @@ export function ProjectManager({
       standard_ref: draft.standard_ref,
       standard_overrides: draft.standard_overrides,
       harness_permission_ref: draft.harness_permission_ref || undefined,
-      view: showPreviewDetails ? "full" : "summary",
+      view: "summary",
     })
       .then((result) => {
         if (active) {
@@ -220,7 +216,6 @@ export function ProjectManager({
     draft.standard_ref,
     draft.standard_overrides,
     draft.harness_permission_ref,
-    showPreviewDetails,
   ]);
   const managerRole = records.find(
     (r) => r.type === "role" && r.id === defaults?.orchestrator_role_ref,
@@ -473,26 +468,6 @@ export function ProjectManager({
                 setDraft({ ...draft, standard_ref, standard_overrides: [] });
               }}
             />
-            <p aria-label="默认启动入口">
-              默认启动入口：
-              {displayText(
-                preview?.snapshot.nodes.find(
-                  (n: Row) => n.reference === preview.default_workflow_ref,
-                )?.name ||
-                  baseline?.default_workflow_ref ||
-                  "由所选 Standard 指定",
-              )}
-            </p>
-            {savedStandard && (
-              <p>
-                {displayText(
-                  savedStandard.provenance ? "当前项目快照" : "当前 Standard",
-                )}
-                ：{displayText(savedStandard.record.name)} · v
-                {displayText(savedStandard.record.version)} ·{" "}
-                {displayText(savedStandard.record.id)}
-              </p>
-            )}
             <details>
               <summary>
                 项目覆盖（{draft.standard_overrides.length} 项）
@@ -597,30 +572,6 @@ export function ProjectManager({
                 </div>
               ))}
             </details>
-            {preview && (
-              <details
-                onToggle={(event) =>
-                  setShowPreviewDetails(event.currentTarget.open)
-                }
-              >
-                <summary>保存前查看来源与差异</summary>
-                <p>
-                  基础版本：{displayText(draft.standard_ref)} ·{" "}
-                  {displayText(
-                    draft.standard_overrides.length
-                      ? "覆盖后生成项目专属快照。"
-                      : "无覆盖，直接使用所选 Standard。",
-                  )}
-                  已有 Feature 不会随项目配置变化。
-                </p>
-                <StandardDiff diff={preview.provenance.diff} />
-                {showPreviewDetails && !preview.summary ? (
-                  <StandardDetail snapshot={preview.snapshot} />
-                ) : showPreviewDetails ? (
-                  <p>正在读取规范详情…</p>
-                ) : null}
-              </details>
-            )}
             <p>
               <a
                 href={`?tab=workflows&config_tab=workflow&project_id=${encodeURIComponent(project.id)}`}
@@ -681,7 +632,7 @@ export function ProjectManager({
                 onChange={(sandbox_ref) => setDraft({ ...draft, sandbox_ref })}
               />
               <RevisionSelect
-                label="Sandbox Profile（默认可留空）"
+                label="Sandbox Profile"
                 records={records.filter(
                   (r) =>
                     r.type === "permission_profile" &&
@@ -800,25 +751,6 @@ export function ProjectManager({
                 <p className="muted">
                   保存后固定项目规范、来源和差异；实际验收以执行证据为准。
                 </p>
-                <details>
-                  <summary>查看规范审计快照</summary>
-                  {requirements.specification_view.map((binding: Row) => (
-                    <div className="document-row" key={binding.path}>
-                      <strong>{displayText(binding.path)}</strong>
-                      <span>
-                        {displayText(
-                          binding.spec_refs
-                            .map(
-                              (id: string) =>
-                                records.find((r) => r.id === id)?.name ||
-                                "固定 Spec",
-                            )
-                            .join("、") || "系统动作",
-                        )}
-                      </span>
-                    </div>
-                  ))}
-                </details>
               </>
             )}
             <ActionButton

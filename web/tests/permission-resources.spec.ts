@@ -331,6 +331,9 @@ test("Sandbox 版本独立绑定权限，范围预览固定当前目标并可查
     exact: true,
   });
   await editor
+    .getByRole("button", { name: "新建 Sandbox", exact: true })
+    .click();
+  await editor
     .getByLabel("名称", { exact: true })
     .fill("浏览器 Sandbox 独立版本");
   await expect(
@@ -423,11 +426,13 @@ test("Sandbox 版本独立绑定权限，范围预览固定当前目标并可查
   await editor
     .getByRole("button", { name: "保存 Sandbox 新版本", exact: true })
     .click();
-  await expect(editor.getByLabel("Sandbox 修订")).not.toHaveValue(original);
+  await expect(editor.getByLabel("Sandbox", { exact: true })).not.toHaveValue(
+    original,
+  );
   await expect(panel.getByText(/当前绑定：尚未分配/)).toBeVisible();
   await expect(panel.getByLabel("目标资源权限")).toHaveValue("");
-  await editor.getByLabel("Sandbox 修订").focus();
-  await editor.getByLabel("Sandbox 修订").selectOption(original);
+  await editor.getByLabel("Sandbox", { exact: true }).focus();
+  await editor.getByLabel("Sandbox", { exact: true }).selectOption(original);
   await expect(panel.getByText(/当前绑定：.*revision 1/)).toBeVisible();
   expect(
     (
@@ -435,7 +440,9 @@ test("Sandbox 版本独立绑定权限，范围预览固定当前目标并可查
     ).targets.find((t: any) => t.target.revision_id === original).active,
   ).toEqual(before);
   await page.reload();
-  await expect(editor.getByLabel("Sandbox 修订")).toHaveValue(original);
+  await expect(editor.getByLabel("Sandbox", { exact: true })).toHaveValue(
+    original,
+  );
   await expect(panel.getByText(/当前绑定：.*revision 1/)).toBeVisible();
   await panel.getByRole("link", { name: "查看 Permission 定义与来源" }).click();
   await expect(page.getByLabel("权限类型", { exact: true })).toHaveValue(

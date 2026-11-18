@@ -1,6 +1,8 @@
 # 默认源配置
 
-此目录使用扁平源定义协议，只发布源数据。每个 JSON 包含 `type`、`identity`、`revision`、`name`、`scope`、根级引用字段及 `data`；引用统一为 `identity:revision`（Delivery 的 `producer.tools` 例外，按工具 `qualified_name` 声明行为约束而非内容引用）。修订不可变，使用方显式采用新引用。`manifest.json` 只声明发布资源与默认选择，不指定数据库表，也不重复维护引用图。文件名统一为 `<identity>-v<revision>.json`，目录内修订以文件内部的 `revision` 字段为准。
+此目录使用扁平源定义协议，发布源数据和只读引用说明索引。每个源 JSON 包含 `type`、`identity`、`revision`、`name`、`scope`、根级引用字段及 `data`；引用统一为 `identity:revision`（Delivery 的 `producer.tools` 例外，按工具 `qualified_name` 声明行为约束而非内容引用）。修订不可变，使用方显式采用新引用。`manifest.json` 声明发布资源、默认选择与引用索引文件，不指定数据库表。文件名统一为 `<identity>-v<revision>.json`，目录内修订以文件内部的 `revision` 字段为准。
+
+`reference-usage.json` 按确切源引用保存 Spec 的 Delivery/Capability 使用方、Skill/Tool 的 Capability 使用方和 Delivery 的 Workflow 阶段、步骤、输入/输出位置。该文件随内置包发布并纳入包摘要，可通过 `query.configuration_usage({id,view:"builtin"})` 读取；不是执行依赖，也不改写已发布源。修改正向引用后运行 `python3 scripts/py/configuration_usage.py --write` 更新索引，出厂检查与 Rust 加载器均核对其与源数据一致。页面默认查询当前配置使用情况，因此自建或后继修订不会被旧的内置说明覆盖。
 
 本地目录中每个配置身份只保留最新修订。发布后继时同步移除旧 JSON 及不再引用的正文文件，并更新清单、默认选择和依赖引用。数据集中的历史源修订及运行快照按原引用保留，供已有执行追溯。
 

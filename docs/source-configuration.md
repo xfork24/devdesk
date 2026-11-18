@@ -61,6 +61,8 @@ Standard 不是持久化的展开投影，它是持有确切 Workflow 根引用�
 
 `query.configuration_graph` 返回对象、带类型和字段路径的依赖边、使用方和诊断。根级引用、流程端口/角色/子流程、权限授权、目录、Integration 和工作选择有明确边定义；说明、示例与常量输入不产生依赖。递归 Workflow 由编译器拒绝，不把历史/普通引用一律当成 DAG。停用以身份为边界检查当前消费者，也检查它们对旧修订的引用；历史与冻结源保留。
 
+`query.configuration_usage` 为 Spec、Skill、Tool 和 Delivery 提供按确切修订的展示目录：Spec 查询直接引用它的 Delivery/Capability，Skill/Tool 查询 Capability，Delivery 查询 Workflow 的阶段、步骤与端口位置。步骤输入沿显式来源解析上游 Delivery，常量和说明文字不产生引用。默认基于当前可见、未停用和未归档的消费者修订，支持分页与目录版本校验；不展开执行历史，也不改变冻结源。`view:"builtin"` 读取包内 `reference-usage.json` 固定索引；该索引由已发布源生成，随包摘要封存，加载及出厂检查核对其与源定义一致。它是只读说明元数据，不构成反向执行依赖，不写入源修订或数据库投影表。
+
 修订选择器允许主动选择任何可见历史修订，包括未曾采用的中间版本；目录/定义编辑列表仍可只显示当前 head。Project 默认选择与 Work 冻结选择保留各自生命周期。新 Work 选择有稳定身份，选择本身不启动流程，已开始的工作必须通过现有运行计划变更入口切换。
 
 共享源发布与项目采用可使用 `configuration.transfer.stage/apply/cancel`。暂存候选不进入可用源目录；采用时在项目库一次提交所需源副本和选择，再完成共享目录发布。途中状态持久化，Host 打开项目时先恢复 applying 操作，再同步目录。prepared 可取消；项目冲突在无采用回执时记录失败。该协议不宣称两个 SQLite 库存在原子事务。

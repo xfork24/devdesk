@@ -12,6 +12,7 @@ import {
 } from "react";
 import { RoleManager } from "./RoleManager";
 import { ConfigurationList } from "./ConfigurationList";
+import { ConfigurationUsage } from "./ConfigurationUsage";
 import {
   modelProviderLabel,
   normalizeOllamaServiceAddress,
@@ -557,6 +558,11 @@ export function ResourceEditor({
         )}
         <ActionForm
           hidden={showAdditionalEditor}
+          className={
+            ["agent", "capability"].includes(kind)
+              ? "actor-configuration-form"
+              : undefined
+          }
           onSubmit={(e) => {
             captureFeedback();
 
@@ -567,7 +573,8 @@ export function ResourceEditor({
           <div className="form-grid">
             {old && ["harness", "sandbox"].includes(kind) && (
               <RevisionSelect
-                label={`${labels[kind]} 修订`}
+                label={labels[kind]}
+                showReferenceLinks={false}
                 records={records.filter(
                   (r) =>
                     r.type === kind && r.definition_id === old.definition_id,
@@ -615,7 +622,7 @@ export function ResourceEditor({
                   true,
                 )}
                 {role && (
-                  <div className="notice">
+                  <div className="notice actor-role-summary">
                     <strong>{displayText(role.name)}</strong>
                     <MarkdownPreview text={role.data.instructions} />
                   </div>
@@ -1052,6 +1059,14 @@ export function ResourceEditor({
                   </>
                 )}
               </>
+            )}
+            {["spec", "skill", "tool", "delivery_type"].includes(kind) && (
+              <ConfigurationUsage
+                request={request}
+                projectId={project?.id}
+                id={draft.selected}
+                kind={kind}
+              />
             )}
             {kind === "delivery_type" && (
               <>

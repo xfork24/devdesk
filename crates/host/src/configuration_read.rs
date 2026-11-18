@@ -7,6 +7,7 @@ pub(super) fn directory_query(method: &str) -> bool {
         "query.configurations"
             | "query.configuration_index"
             | "query.configuration_records"
+            | "query.configuration_usage"
             | "query.standard"
             | "query.project_standard_preview"
             | "query.roles"
@@ -265,6 +266,7 @@ impl Workspace {
                 "query.project_configuration" => true,
                 "query.configuration_index"
                 | "query.configuration_records"
+                | "query.configuration_usage"
                 | "query.project_standard_preview" => project.is_some() || params["local"] == true,
                 "query.integrations"
                 | "query.integration_bindings"
@@ -318,6 +320,7 @@ impl Workspace {
                 match method {
                     "query.configuration_index" => configuration_index(&view, params, project),
                     "query.configuration_records" => configuration_records(&view, params, project),
+                    "query.configuration_usage" => configuration_reference_usages(&view, params, project),
                     "query.configuration_defaults" if params["view"]=="selection" => pinned.configuration_default_selection(project),
                     "query.configuration_defaults" => pinned.configuration_defaults(project),
                     "query.project_configuration" if params["view"]=="selection" => project_configuration_context(&view,project),
@@ -499,6 +502,116 @@ mod tests {
             .unwrap();
         assert_eq!(identity["available"], false);
         assert!(identity["identity"].is_string());
+    }
+
+    #[test]
+    fn reference_usage_reads_packaged_positions_and_tracks_scoped_committed_heads() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
+        let project = create(&w, "usage owner");
+        let other = create(&w, "usage other");
+        let skill = "builtin-skill-engineering-context:3";
+        let params = json!({"id":skill,"project_id":project});
+        let before = w
+            .dispatch("query.configuration_usage", params.clone())
+            .unwrap();
+        let factory = w
+            .dispatch(
+                "query.configuration_usage",
+                json!({"id":skill,"view":"builtin"}),
+            )
+            .unwrap();
+        assert_eq!(before["users"], factory["users"]);
+        let payload = json!({"name":"Scoped usage","scope":format!("project:{project}"),
+            "model_ref":"builtin-model-gpt-6-1-sol-high:1","harness_ref":"builtin-harness-codex-managed:1",
+            "skills":[skill],"tools":["builtin-tool-codex-native:1"],"data":{}});
+        let capability = w
+            .dispatch(
+                "capability.create",
+                json!({"command_id":id(),"project_id":project,"payload":payload}),
+            )
+            .unwrap();
+        let after = w
+            .dispatch("query.configuration_usage", params.clone())
+            .unwrap();
+        assert!(
+            after["users"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|u| u["reference"] == capability["id"])
+        );
+        let isolated = w
+            .dispatch(
+                "query.configuration_usage",
+                json!({"id":skill,"project_id":other}),
+            )
+            .unwrap();
+        assert!(
+            !isolated["users"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|u| u["reference"] == capability["id"])
+        );
+        assert!(w.dispatch("query.configuration_usage",json!({"id":skill,"project_id":project,"offset":1,"index_version":before["index_version"]})).is_err());
+        let mut revised = payload;
+        revised["skills"] = json!([]);
+        w.dispatch("capability.revise",json!({"command_id":id(),"project_id":project,"target":capability["id"],"expected_revision":capability["revision"],"payload":revised})).unwrap();
+        let changed = w.dispatch("query.configuration_usage", params).unwrap();
+        assert!(
+            !changed["users"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|u| u["name"] == "Scoped usage")
+        );
+        assert_eq!(
+            w.dispatch(
+                "query.configuration_usage",
+                json!({"id":skill,"view":"builtin"})
+            )
+            .unwrap()["users"],
+            factory["users"]
+        );
+        let delivery = w
+            .dispatch(
+                "query.configuration_usage",
+                json!({"id":"builtin-delivery-prd:3"}),
+            )
+            .unwrap();
+        let locations = delivery["users"].as_array().unwrap();
+        assert!(locations.iter().any(|u| u["step"]["key"] == "requirements"
+            && u["kind"] == "step_output"
+            && u["stage"]["name"] == "需求"));
+        assert!(
+            locations
+                .iter()
+                .any(|u| u["step"]["key"] == "requirements_review" && u["kind"] == "step_input")
+        );
+        let recipe = w
+            .dispatch(
+                "query.configuration_usage",
+                json!({"id":"builtin-delivery-test-recipe:2"}),
+            )
+            .unwrap();
+        assert!(
+            recipe["users"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|u| u["kind"] == "step_argument"
+                    && u["step"]["key"] == "red"
+                    && u["port"] == "recipe")
+        );
+        let trace = performance::Trace::start();
+        w.dispatch(
+            "query.configuration_usage",
+            json!({"id":"builtin-delivery-prd:3"}),
+        )
+        .unwrap();
+        let measured = trace.finish();
+        assert!(measured["spans"]["project.full_snapshot"].is_null());
     }
 
     #[test]

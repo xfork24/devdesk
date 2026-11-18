@@ -1,6 +1,8 @@
 import { displayText } from "../display-text";
 import type { Row } from "./rpc-types";
 import { ConfigurationScope } from "./configuration-scope";
+import { configurationHref } from "./configuration-links";
+import { ConfigurationLink } from "./ConfigurationLink";
 import {
   compareConfigurationRecords,
   loadCatalog,
@@ -22,12 +24,20 @@ type RevisionSelectProps = {
   label: string;
   records: Row[];
   required?: boolean;
+  showReferenceLinks?: boolean;
 } & (
   | { multiple: true; value: string[]; onChange: (value: string[]) => void }
   | { multiple?: false; value: string; onChange: (value: string) => void }
 );
 export function RevisionSelect(props: RevisionSelectProps) {
-  const { label, records, value, multiple = false, required = false } = props;
+  const {
+    label,
+    records,
+    value,
+    multiple = false,
+    required = false,
+    showReferenceLinks = true,
+  } = props;
   const scope = useContext(ConfigurationScope);
   const family = records[0]?.type;
   const [focused, setFocused] = useState(false);
@@ -101,7 +111,27 @@ export function RevisionSelect(props: RevisionSelectProps) {
   }
   return (
     <label>
-      {displayText(label)}
+      <span className="configuration-field-title">
+        <span>{displayText(label)}</span>
+        {showReferenceLinks && (
+          <span className="configuration-reference-links">
+            {ids.filter(Boolean).map((id) => {
+              const row = options.find((row) => row.id === id) || {
+                id,
+                type: family,
+                name: "固定历史修订",
+              };
+              return (
+                <ConfigurationLink
+                  key={id}
+                  href={configurationHref(row, scope?.projectId)}
+                  label={`查看 ${row.name}${row.version ? ` · v${row.version}` : ""}`}
+                />
+              );
+            })}
+          </span>
+        )}
+      </span>
       <ActionSelect
         aria-label={displayText(label)}
         multiple={multiple}

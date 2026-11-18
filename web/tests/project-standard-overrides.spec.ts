@@ -66,17 +66,22 @@ test("Standard 决定入口，项目覆盖保存来源与差异并在重载后�
   await expect(panel.getByLabel("基础 Standard", { exact: true })).toHaveValue(
     defaults.standard_ref,
   );
-  await expect(panel.getByLabel("默认启动入口")).toContainText(
-    "默认 Feature 开发流程",
-  );
+  await expect(panel.getByLabel("默认启动入口")).toHaveCount(0);
+  await expect(
+    panel.getByText("查看规范审计快照", { exact: true }),
+  ).toHaveCount(0);
   const save = panel.getByRole("button", { name: "保存项目配置", exact: true });
   await expect(save).toBeEnabled();
   await save.click();
-  await expect(panel.getByText(/^当前 Standard：/)).toBeVisible();
+  await expect(save.locator("..").getByRole("status")).toContainText(
+    "项目配置已保存",
+  );
+  await expect(panel.getByText(/^当前 Standard：/)).toHaveCount(0);
   const initial = await rpc(page, "query.project_configuration", {
     project_id: project.id,
   });
   expect(initial.configuration.data.standard_ref).toBe(defaults.standard_ref);
+  expect(initial.configuration.data.workflow_ref).toBe(defaults.workflow_ref);
 
   const orchestration = panel.locator(".project-orchestration-fields select");
   const orchestrationBoxes = await orchestration.evaluateAll((nodes) =>
@@ -160,8 +165,10 @@ test("Standard 决定入口，项目覆盖保存来源与差异并在重载后�
     .selectOption(replacement.id);
   await panel.getByRole("button", { name: "添加覆盖", exact: true }).click();
   await expect(save).toBeEnabled();
-  await panel.getByText("保存前查看来源与差异", { exact: true }).click();
-  await expect(panel.locator(".standard-diff")).toContainText("规范变化");
+  await expect(
+    panel.getByText("保存前查看来源与差异", { exact: true }),
+  ).toHaveCount(0);
+  await expect(panel.locator(".standard-diff")).toHaveCount(0);
   await save.click();
   await expect(
     page.getByText(
@@ -196,10 +203,11 @@ test("Standard 决定入口，项目覆盖保存来源与差异并在重载后�
     panel.getByText(`${spec.id} → ${replacement.id}`, { exact: true }),
   ).toBeVisible();
   await expect(save).toBeEnabled();
-  await expect(panel.getByText(/^当前项目快照：/)).toBeVisible();
-  await expect(panel.getByLabel("默认启动入口")).toContainText(
-    "默认 Feature 开发流程",
-  );
+  await expect(panel.getByText(/^当前项目快照：/)).toHaveCount(0);
+  await expect(panel.getByLabel("默认启动入口")).toHaveCount(0);
+  await expect(
+    panel.getByText("查看规范审计快照", { exact: true }),
+  ).toHaveCount(0);
   await page.screenshot({
     path: info.outputPath("project-standard-overrides.png"),
     fullPage: true,
@@ -224,7 +232,7 @@ test("Standard 决定入口，项目覆盖保存来源与差异并在重载后�
   });
   expect(reverted.configuration.data.standard_ref).toBe(defaults.standard_ref);
   expect(restored.provenance).toBeNull();
-  await expect(panel.getByText(/^当前 Standard：/)).toBeVisible();
+  await expect(panel.getByText(/^当前 Standard：/)).toHaveCount(0);
   await kind.selectOption("workflow");
   const workflow = baseline.nodes.find((node: any) => node.kind === "workflow");
   await source.selectOption(workflow.reference);

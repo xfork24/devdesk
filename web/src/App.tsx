@@ -461,6 +461,9 @@ function App() {
       "config_tab",
       "config_object",
       "workflow_id",
+      "workflow_node",
+      "workflow_port",
+      "tool_ref",
       "standard_id",
       "permission_ref",
     ]) {
@@ -1940,7 +1943,6 @@ function App() {
                   refresh={load}
                 />
               )}
-              <TemplateSettings request={rpc} refresh={load} />
               <RuntimeSettings
                 provider={data.default_harness || "codex"}
                 installations={data.runtime_installations || []}
@@ -1948,79 +1950,82 @@ function App() {
                 request={rpc}
                 refresh={load}
               />
-              <div className="setting-row">
-                <div>
-                  <h3>全局并发额度</h3>
-                  <p>
-                    {displayText(data.global_concurrency)} 个 Run · 单项目默认 2
-                    个
-                  </p>
-                </div>
-                <ActionButton
-                  onClick={() =>
-                    show({
-                      title: "修改全局并发",
-                      method: "settings.update",
-                      fields: [
-                        {
-                          key: "global_concurrency",
-                          label: "并发额度 1—32",
-                          type: "number",
-                          value: String(data.global_concurrency),
-                        },
-                      ],
-                    })
-                  }
-                >
-                  调整
-                </ActionButton>
-              </div>
-              {project && (
+              <section className="panel" aria-label="模板与额度设置">
+                <TemplateSettings request={rpc} refresh={load} />
                 <div className="setting-row">
                   <div>
-                    <h3>{displayText(project.title)} · Project 设置</h3>
-                    <p className="muted">
-                      Workspace: {displayText(project.workspace || "未设置")} ·
-                      项目并发 {displayText(project.concurrency)}
+                    <h3>全局并发额度</h3>
+                    <p>
+                      {displayText(data.global_concurrency)} 个 Run · 单项目默认
+                      2 个
                     </p>
                   </div>
-                  <div className="actions">
-                    <ActionButton onClick={() => setTab("workflows")}>
-                      默认绑定
-                    </ActionButton>
-                    <ActionButton
-                      onClick={() =>
-                        show({
-                          title: "编辑 Project",
-                          method: "project.update",
-                          target: project.id,
-                          fields: [
-                            {
-                              key: "title",
-                              label: "名称",
-                              value: project.title,
-                            },
-                            {
-                              key: "workspace",
-                              label: "Workspace 描述",
-                              value: project.workspace,
-                              optional: true,
-                            },
-                            {
-                              key: "concurrency",
-                              label: "项目并发额度",
-                              type: "number",
-                              value: String(project.concurrency),
-                            },
-                          ],
-                        })
-                      }
-                    >
-                      编辑
-                    </ActionButton>
-                  </div>
+                  <ActionButton
+                    onClick={() =>
+                      show({
+                        title: "修改全局并发",
+                        method: "settings.update",
+                        fields: [
+                          {
+                            key: "global_concurrency",
+                            label: "并发额度 1—32",
+                            type: "number",
+                            value: String(data.global_concurrency),
+                          },
+                        ],
+                      })
+                    }
+                  >
+                    调整
+                  </ActionButton>
                 </div>
-              )}
+                {project && (
+                  <div className="setting-row">
+                    <div>
+                      <h3>{displayText(project.title)} · Project 设置</h3>
+                      <p className="muted">
+                        Workspace: {displayText(project.workspace || "未设置")}{" "}
+                        · 项目并发 {displayText(project.concurrency)}
+                      </p>
+                    </div>
+                    <div className="actions">
+                      <ActionButton onClick={() => setTab("workflows")}>
+                        默认绑定
+                      </ActionButton>
+                      <ActionButton
+                        onClick={() =>
+                          show({
+                            title: "编辑 Project",
+                            method: "project.update",
+                            target: project.id,
+                            fields: [
+                              {
+                                key: "title",
+                                label: "名称",
+                                value: project.title,
+                              },
+                              {
+                                key: "workspace",
+                                label: "Workspace 描述",
+                                value: project.workspace,
+                                optional: true,
+                              },
+                              {
+                                key: "concurrency",
+                                label: "项目并发额度",
+                                type: "number",
+                                value: String(project.concurrency),
+                              },
+                            ],
+                          })
+                        }
+                      >
+                        编辑
+                      </ActionButton>
+                    </div>
+                  </div>
+                )}
+              </section>
               <div className="setting-row">
                 <div>
                   <h3>退出内核</h3>

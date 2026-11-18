@@ -1,5 +1,8 @@
 import { displayText } from "../display-text";
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
+import { ConfigurationScope } from "./configuration-scope";
+import { configurationHref } from "./configuration-links";
+import { ConfigurationLink } from "./ConfigurationLink";
 import { ActionButton, ActionSelect } from "./ActionFeedback";
 import { RevisionSelect } from "./configuration-ui";
 import { type Row } from "./rpc-types";
@@ -64,13 +67,31 @@ export function SourceSelect({
   value,
   onChange,
   label,
+  records = [],
 }: {
   document: Row;
   step: Row;
   value: Row;
   onChange: (value: Row) => void;
   label: string;
+  records?: Row[];
 }) {
+  const scope = useContext(ConfigurationScope);
+  const sourcePort =
+    value?.step === "$input"
+      ? document.inputs?.[value.port]
+      : document.steps.find((s: Row) => s.key === value?.step)?.outputs?.[
+          value?.port
+        ];
+  const delivery =
+    records.find((r) => r.id === sourcePort?.delivery_ref) ||
+    (sourcePort?.delivery_ref
+      ? {
+          id: sourcePort.delivery_ref,
+          type: "delivery_type",
+          name: "来源 Delivery",
+        }
+      : undefined);
   const sources = [
     ...Object.keys(document.inputs || {}).map((port) => ({
       step: "$input",
@@ -89,7 +110,15 @@ export function SourceSelect({
   ];
   return (
     <label>
-      {displayText(label)}
+      <span className="configuration-field-title">
+        <span>{displayText(label)}</span>
+        {delivery ? (
+          <ConfigurationLink
+            href={configurationHref(delivery, scope?.projectId)}
+            label={`查看 ${delivery.name}`}
+          />
+        ) : null}
+      </span>
       <ActionSelect
         aria-label={displayText(label)}
         value={value?.step ? `${value.step}:${value.port}` : ""}
@@ -143,7 +172,7 @@ export function WorkflowDeliveries({
         const replace = (value: Row) =>
           onChange({ inputs: { ...inputs, [name]: value } });
         return (
-          <fieldset key={name}>
+          <fieldset key={name} id={`workflow-port:input:${name}`}>
             <legend>输入 · {displayText(name)}</legend>
             <label>
               输入名称
@@ -203,6 +232,7 @@ export function WorkflowDeliveries({
             ) : (
               <SourceSelect
                 document={document}
+                records={records}
                 step={step}
                 value={input.source}
                 label={`材料来源 · ${name}`}
@@ -257,7 +287,7 @@ export function WorkflowDeliveries({
       {Object.entries(outputs).map(([name, declaration]) => {
         const output = declaration as Row;
         return (
-          <fieldset key={name}>
+          <fieldset key={name} id={`workflow-port:output:${name}`}>
             <legend>输出 · {displayText(name)}</legend>
             <label>
               输出名称

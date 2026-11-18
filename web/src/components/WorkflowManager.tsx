@@ -21,6 +21,8 @@ import {
 } from "./WorkflowDeliveries";
 import { WorkflowTaskPreview } from "./WorkflowTaskPreview";
 import { ConfigurationList } from "./ConfigurationList";
+import { configurationHref } from "./configuration-links";
+import { ConfigurationLink } from "./ConfigurationLink";
 
 type Props = {
   request: Request;
@@ -172,6 +174,19 @@ export function WorkflowManager({
         setRows((rows) => mergeConfigurationRecords(rows, [row]));
         const document =
           row.type === "workflow_draft" ? row.data.document : row.data;
+        const params = new URLSearchParams(location.search);
+        const requestedNode =
+          params.get("workflow_id") === row.id
+            ? params.get("workflow_node")
+            : null;
+        const requestedStep = requestedNode?.startsWith("step:")
+          ? document.steps.find((s: Row) => s.key === requestedNode.slice(5))
+          : undefined;
+        const requestedStage = requestedNode?.startsWith("stage:")
+          ? document.stages.find((s: Row) => s.key === requestedNode.slice(6))
+          : undefined;
+        const node =
+          requestedStep || requestedStage ? requestedNode! : "workflow";
         setDraft({
           selected: row.id,
           revision: row.revision,
@@ -179,13 +194,20 @@ export function WorkflowManager({
           scope: row.scope === "global" ? "global" : "project",
           view: "editor",
           editing: row.type === "workflow_draft",
-          node: "workflow",
+          node,
           document: structuredClone(document),
-          expandedStages: [],
+          expandedStages: requestedStep
+            ? [requestedStep.stage]
+            : requestedStage
+              ? [requestedStage.key]
+              : [],
         });
         setValidation(undefined);
-        const params = new URLSearchParams(location.search);
         params.set("workflow_id", row.id);
+        if (!requestedNode) {
+          params.delete("workflow_node");
+          params.delete("workflow_port");
+        }
         history.replaceState(null, "", `?${params}`);
       } catch (error) {
         if (!controller.signal.aborted) setError(String(error));
@@ -200,10 +222,53 @@ export function WorkflowManager({
     const row =
       rows.find((row) => row.id === selected) ||
       (selected ? { id: selected, _index: true } : undefined);
-    if (row && (draft.selected !== row.id || draft.view !== "editor"))
+    const node = new URLSearchParams(location.search).get("workflow_node");
+    if (
+      row &&
+      (draft.selected !== row.id ||
+        draft.view !== "editor" ||
+        (!!node && draft.node !== node))
+    )
       choose(row);
   }, [rows, choose, draft]);
+  const scrolledLocation = useRef("");
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const node = params.get("workflow_node");
+    const port = params.get("workflow_port");
+    if (
+      draft.view !== "editor" ||
+      params.get("workflow_id") !== draft.selected ||
+      !node ||
+      draft.node !== node
+    )
+      return;
+    const key = `${draft.selected}:${node}:${port}`;
+    if (scrolledLocation.current === key) return;
+    const target = port
+      ? globalThis.document.getElementById(`workflow-port:${port}`)
+      : editorRef.current;
+    if (target) {
+      scrolledLocation.current = key;
+      target.scrollIntoView({ block: "center" });
+    }
+  }, [draft.selected, draft.view, draft.node]);
   const document = draft.document;
+  const sourceDelivery = (source?: Row) => {
+    const port =
+      source?.step === "$input"
+        ? document.inputs?.[source.port]
+        : document.steps.find((s: Row) => s.key === source?.step)?.outputs?.[
+            source?.port
+          ];
+    return port
+      ? records.find((r) => r.id === port.delivery_ref) || {
+          id: port.delivery_ref,
+          type: "delivery_type",
+          name: "来源 Delivery",
+        }
+      : undefined;
+  };
   const roles = records
     .filter((row) => row.type === "role")
     .map((row) => ({ ...row, id: row.id }));
@@ -213,6 +278,21 @@ export function WorkflowManager({
   const step = draft.node.startsWith("step:")
     ? document.steps.find((step: Row) => step.key === draft.node.slice(5))
     : undefined;
+  function selectNode(node: string, stage?: string) {
+    capture();
+    const params = new URLSearchParams(location.search);
+    params.set("workflow_node", node);
+    params.delete("workflow_port");
+    history.replaceState(null, "", `?${params}`);
+    setDraft((current) => ({
+      ...current,
+      node,
+      expandedStages:
+        stage && !current.expandedStages.includes(stage)
+          ? [...current.expandedStages, stage]
+          : current.expandedStages,
+    }));
+  }
   const workflows = rows.filter((row) => row.type === "workflow");
   const update = (patch: Row) => {
     setValidation(undefined);
@@ -577,10 +657,7 @@ export function WorkflowManager({
             <aside className="workflow-stages">
               <ActionButton
                 type="button"
-                onClick={() => {
-                  capture();
-                  setDraft((current) => ({ ...current, node: "workflow" }));
-                }}
+                onClick={() => selectNode("workflow")}
               >
                 {displayText(draft.name || "流程配置")}
               </ActionButton>
@@ -615,18 +692,9 @@ export function WorkflowManager({
                       <ActionButton
                         type="button"
                         className="workflow-stage-name"
-                        onClick={() => {
-                          capture();
-                          setDraft((current) => ({
-                            ...current,
-                            node: `stage:${item.key}`,
-                            expandedStages: current.expandedStages.includes(
-                              item.key,
-                            )
-                              ? current.expandedStages
-                              : [...current.expandedStages, item.key],
-                          }));
-                        }}
+                        onClick={() =>
+                          selectNode(`stage:${item.key}`, item.key)
+                        }
                       >
                         {displayText(item.name)}
                       </ActionButton>
@@ -643,13 +711,9 @@ export function WorkflowManager({
                                 : ""
                             }
                             type="button"
-                            onClick={() => {
-                              capture();
-                              setDraft((current) => ({
-                                ...current,
-                                node: `step:${step.key}`,
-                              }));
-                            }}
+                            onClick={() =>
+                              selectNode(`step:${step.key}`, step.stage)
+                            }
                           >
                             {displayText(step.name)}
                             <small>
@@ -873,8 +937,68 @@ export function WorkflowManager({
                         }
                       />
                     </details>
-                    <details>
+                    <details
+                      open={
+                        new URLSearchParams(location.search)
+                          .get("workflow_port")
+                          ?.startsWith("workflow_") || undefined
+                      }
+                    >
                       <summary>流程输入输出与完成要求</summary>
+                      {Object.entries(document.inputs || {}).map(
+                        ([name, raw]) => {
+                          const port = raw as Row;
+                          const delivery = records.find(
+                            (r) => r.id === port.delivery_ref,
+                          ) || {
+                            id: port.delivery_ref,
+                            type: "delivery_type",
+                            name: "Delivery",
+                          };
+                          return (
+                            <p
+                              key={name}
+                              id={`workflow-port:workflow_input:${name}`}
+                            >
+                              流程输入：{name} · {displayText(delivery.name)}{" "}
+                              <ConfigurationLink
+                                href={configurationHref(delivery, project?.id)}
+                                label={`查看 ${delivery.name}`}
+                              />
+                            </p>
+                          );
+                        },
+                      )}
+                      {Object.entries(document.outputs || {}).map(
+                        ([name, raw]) => {
+                          const source = raw as Row;
+                          const port =
+                            source.step === "$input"
+                              ? document.inputs?.[source.port]
+                              : document.steps.find(
+                                  (s: Row) => s.key === source.step,
+                                )?.outputs?.[source.port];
+                          const delivery = records.find(
+                            (r) => r.id === port?.delivery_ref,
+                          ) || {
+                            id: port?.delivery_ref,
+                            type: "delivery_type",
+                            name: "Delivery",
+                          };
+                          return port ? (
+                            <p
+                              key={name}
+                              id={`workflow-port:workflow_output:${name}`}
+                            >
+                              流程输出：{name} · {displayText(delivery.name)}{" "}
+                              <ConfigurationLink
+                                href={configurationHref(delivery, project?.id)}
+                                label={`查看 ${delivery.name}`}
+                              />
+                            </p>
+                          ) : null;
+                        },
+                      )}
                       <JsonField
                         label="流程输入端口"
                         value={document.inputs}
@@ -1133,6 +1257,30 @@ export function WorkflowManager({
                             })
                           }
                         />
+                        {Object.entries(step.executor.arguments || {}).map(
+                          ([name, raw]) => {
+                            const binding = raw as Row;
+                            const delivery =
+                              binding.type === "source"
+                                ? sourceDelivery(binding.source)
+                                : undefined;
+                            return delivery ? (
+                              <p
+                                key={name}
+                                id={`workflow-port:argument:${name}`}
+                              >
+                                工具参数：{name} · {displayText(delivery.name)}{" "}
+                                <ConfigurationLink
+                                  href={configurationHref(
+                                    delivery,
+                                    project?.id,
+                                  )}
+                                  label={`查看 ${delivery.name}`}
+                                />
+                              </p>
+                            ) : null;
+                          },
+                        )}
                         <JsonField
                           label="工具输出映射（端口名 → JSON Pointer）"
                           value={step.executor.output_mapping || {}}
@@ -1160,13 +1308,6 @@ export function WorkflowManager({
                             })
                           }
                         />
-                        {step.executor.workflow_ref ? (
-                          <a
-                            href={`?tab=workflows&workflow_id=${encodeURIComponent(step.executor.workflow_ref)}${project ? `&project_id=${encodeURIComponent(project.id)}` : ""}`}
-                          >
-                            编辑所引用的子流程
-                          </a>
-                        ) : null}
                         <label>
                           <input
                             type="checkbox"
@@ -1251,32 +1392,35 @@ export function WorkflowManager({
                         </label>
                         {step.executor.foreach ? (
                           <>
-                            <SourceSelect
-                              document={document}
-                              step={step}
-                              value={step.executor.foreach.source}
-                              label="集合来源"
-                              onChange={(source) =>
-                                updateStep({
-                                  executor: {
-                                    ...step.executor,
-                                    foreach: {
-                                      ...step.executor.foreach,
-                                      source,
+                            <div id="workflow-port:collection">
+                              <SourceSelect
+                                document={document}
+                                records={records}
+                                step={step}
+                                value={step.executor.foreach.source}
+                                label="集合来源"
+                                onChange={(source) =>
+                                  updateStep({
+                                    executor: {
+                                      ...step.executor,
+                                      foreach: {
+                                        ...step.executor.foreach,
+                                        source,
+                                      },
                                     },
-                                  },
-                                  dependencies:
-                                    source.step === "$input"
-                                      ? step.dependencies
-                                      : [
-                                          ...new Set([
-                                            ...step.dependencies,
-                                            source.step,
-                                          ]),
-                                        ],
-                                })
-                              }
-                            />
+                                    dependencies:
+                                      source.step === "$input"
+                                        ? step.dependencies
+                                        : [
+                                            ...new Set([
+                                              ...step.dependencies,
+                                              source.step,
+                                            ]),
+                                          ],
+                                  })
+                                }
+                              />
+                            </div>
                             <label>
                               子流程条目输入名
                               <input

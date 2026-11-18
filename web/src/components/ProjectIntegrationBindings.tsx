@@ -71,11 +71,13 @@ export function ProjectIntegrationBindings({
   return (
     <section className="panel" aria-label="项目工具接入绑定">
       <div className="panel-heading">
-        <h2>项目工具接入绑定</h2>
-        <p>
-          为所选 Agent
-          的外部工具选择账户、执行环境和访问限制；模型服务商登录在设置中管理。
-        </p>
+        <div>
+          <h2>项目工具接入绑定</h2>
+          <p>
+            为所选 Agent
+            的外部工具选择账户、执行环境和访问限制；模型服务商登录在设置中管理。
+          </p>
+        </div>
       </div>
       <div className="integration-content">
         {!required.size && (

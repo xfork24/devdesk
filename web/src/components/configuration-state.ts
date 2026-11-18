@@ -226,6 +226,9 @@ export function useGroupTab(group: string, allowed: string[]) {
     const params = new URLSearchParams(location.search);
     params.set("config_tab", value);
     params.delete("config_object");
+    params.delete("workflow_node");
+    params.delete("workflow_port");
+    params.delete("tool_ref");
     history.pushState(null, "", `?${params}`);
     try {
       localStorage.setItem(`devdesk:v2:tab:${group}`, value);

@@ -220,7 +220,7 @@ export function RoleManager({
           }}
         />
         <ActionForm
-          className="form-grid"
+          className="form-grid actor-configuration-form"
           onSubmit={(e) => {
             captureFeedback();
 
