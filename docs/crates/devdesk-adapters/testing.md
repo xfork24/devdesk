@@ -341,7 +341,7 @@ ignored 场景实际在 Docker 中跑 HTTP/MCP 协议夹具，覆盖支持的协
 
 代码定位：[`engine`](../../../crates/adapters/tests/workflows.rs#L8)、[`revision`](../../../crates/adapters/tests/workflows.rs#L22)、[`cmd`](../../../crates/adapters/tests/workflows.rs#L43)、[`call`](../../../crates/adapters/tests/workflows.rs#L55)。
 
-关联阅读：[adapters/src/lib.rs](storage-and-source-codecs.md#file-src-lib-rs)、[core/src/history.rs](../devdesk-core/conversations-and-history.md#file-src-history-rs)、[host/src/history_tests.rs](../devdesk-host/testing.md#file-src-history-tests-rs)。
+关联阅读：[adapters/src/lib.rs](storage-and-source-codecs.md#file-src-lib-rs)、[运行历史读取端口](../devdesk-core/conversations-and-history.md#file-src-history-rs)、[host/src/history_tests.rs](../devdesk-host/testing.md#file-src-history-tests-rs)。
 
 ---
 

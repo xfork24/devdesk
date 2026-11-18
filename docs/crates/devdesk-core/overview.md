@@ -45,7 +45,7 @@ core 把领域规则组织成应用用例。它负责发布配置、固定执行
 | [src/environment.rs](../../../crates/core/src/environment.rs) | [可复现的 ID 与时间来源](engine-and-ports.md#file-src-environment-rs) |
 | [src/frozen_views.rs](../../../crates/core/src/frozen_views.rs) | [从历史源选择纯重建 Plan 与任务](workflow-compilation.md#file-src-frozen-views-rs) |
 | [src/governance.rs](../../../crates/core/src/governance.rs) | [单项源命令、Agent 实例和工程配置冻结](configuration-and-catalog.md#file-src-governance-rs) |
-| [src/history.rs](../../../crates/core/src/history.rs) | [先合并排序、再分页的事实时间线](conversations-and-history.md#file-src-history-rs) |
+| [operational read 端口](../../../crates/core/src/ports.rs) | [先过滤分页的事实时间线](conversations-and-history.md#file-src-history-rs) |
 | [src/integrations.rs](../../../crates/core/src/integrations.rs) | [外部工具冻结、调用状态和接纳回执](integrations-and-repositories.md#file-src-integrations-rs) |
 | [src/invocation.rs](../../../crates/core/src/invocation.rs) | [调用者身份不能来自 RPC 自填](engine-and-ports.md#file-src-invocation-rs) |
 | [src/lib.rs](../../../crates/core/src/lib.rs) | [命令事务、总分派与恢复入口](engine-and-ports.md#file-src-lib-rs) |

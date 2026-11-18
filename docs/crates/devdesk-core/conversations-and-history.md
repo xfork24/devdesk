@@ -9,7 +9,7 @@
 - [src/conversations.rs](#file-src-conversations-rs)：会话打开、排队输入、交互与快照
 - [src/conversation_runtime.rs](#file-src-conversation-runtime-rs)：派发原生 Turn、批量观察与真实终态裁定
 - [src/proposals.rs](#file-src-proposals-rs)：讨论提案的提取、修订与显式采纳
-- [src/history.rs](#file-src-history-rs)：先合并排序、再分页的事实时间线
+- [运行历史读取端口](#file-src-history-rs)：SQL 先过滤分页，再恢复当前页或确切详情
 
 <a id="file-src-conversations-rs"></a>
 
@@ -65,17 +65,15 @@ Turn 的失败终态与步骤的效果判断是两层：工作流随后从该事
 
 <a id="file-src-history-rs"></a>
 
-## src/history.rs：先合并排序、再分页的事实时间线
+## 运行历史读取端口：先选页，再恢复确切记录
 
-源码：[crates/core/src/history.rs](../../../crates/core/src/history.rs)。
+源码：[core/src/ports.rs](../../../crates/core/src/ports.rs)、[adapters/src/operational_reads.rs](../../../crates/adapters/src/operational_reads.rs)。
 
-不带 include_tool_calls 时，query 按事件 time/id 倒序返回事件。带该标记时，将项目事件与 integration_records 提供的工具/平台调用投影合并，再统一排序和分页；total 是组合后的总量，而非当前页数。
+Engine.query 的 history、tool_calls、repository、runtimes 通过 Store 的 operational read 端口读取。history 在 SQL 内过滤、排序及分页，include_tool_calls 将当前库中的事件和工具/平台调用合并后选页；total 表示符合条件的总量，target 过滤在分页前进行。此路径不调用完整工程 snapshot，不通过恢复历史后截断实现分页。
 
-同时间有稳定的事件/调用次序，工具投影沿用敏感参数遮蔽和来源信息；target 过滤在分页前进行。Global 与项目读哪个状态由 Host 选择，本函数不越库读取，也不生成补写事件。
+view=summary 的调用列表只恢复 metadata；确切调用用 id 再读，事件正文用 event_id 按需读取。分页及正文保持既有敏感字段处理和来源信息。普通查询不补写业务事件，也不编译历史 Workflow。Host 按显式项目或全局讨论作用域选择数据库，不依赖共享的活动项目。
 
-代码定位：[`HistoryRecord`](../../../crates/core/src/history.rs#L5)、[`query`](../../../crates/core/src/history.rs#L24)。
-
-关联阅读：[core/src/integrations.rs](integrations-and-repositories.md#file-src-integrations-rs)、[host/src/history_tests.rs](../devdesk-host/testing.md#file-src-history-tests-rs)、[adapters/tests/workflows.rs](../devdesk-adapters/testing.md#file-tests-workflows-rs)。
+关联阅读：[host 历史隔离测试](../devdesk-host/testing.md#file-src-history-tests-rs)、[adapters 读取实现](../devdesk-adapters/storage-and-source-codecs.md)、[公开读取合同](../../protocol.md)。
 
 ---
 

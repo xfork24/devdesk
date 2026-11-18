@@ -43,7 +43,7 @@ SSE 可显式传入 `configuration=true`，接收无持久化事件 ID 的 `conf
 
 设置 `DEVDESK_PERF_LOG=1` 可输出启动和 RPC 的 JSON 性能日志，包含请求编号、队列等待、连接等待、源解码/校验、恢复、编译、响应编码、字节数与阶段调用次数；嵌套阶段为包含关系，不能直接相加。RPC 同时返回 `Server-Timing` 和 `X-DevDesk-Request-Id`。日志不包含请求参数或响应正文，默认关闭。
 
-历史记录页使用 `query.history({scope,project_id?,include_tool_calls:true,offset,limit})`：Global 读取全局配置库，项目历史必须指定 project_id；先合并持久化事件、外部工具及平台工具调用，按事件 time / 调用 created_at 倒序排列，再统一分页，默认每页 50 条、上限 100 条。返回 `{records,total}`，每条为 `{type:"event",time,event}` 或 `{type:"tool_call",time,call}`；调用沿用 `query.tool_calls` 的来源投影和敏感参数脱敏。不传 include_tool_calls 时仍返回 `{events,total}`，`query.events` 的 SSE 游标语义不变。通用历史和工具调用列表仍有完整快照读取成本，不能等同于已迁移的流程范围历史分页。
+历史记录页使用 `query.history({scope,project_id?,include_tool_calls:true,offset,limit})`：Global 读取全局配置库，项目历史必须指定 project_id；先合并持久化事件、外部工具及平台工具调用，按事件 time / 调用 created_at 倒序排列，再统一分页，默认每页 50 条、上限 100 条。返回 `{records,total}`，每条为 `{type:"event",time,event}` 或 `{type:"tool_call",time,call}`；调用沿用 `query.tool_calls` 的来源投影和敏感参数脱敏。不传 include_tool_calls 时仍返回 `{events,total}`，`query.events` 的 SSE 游标语义不变。历史、仓库、运行时和工具调用读取使用独立 SQL 已提交快照，先选页再解码，不恢复完整工程历史。`view:"summary"` 的历史事件仅含 512 字符节选并标记 metadata_only；`event_id` 读取确切原文。工具调用列表的 summary 只含来源及状态元数据，传确切 id 按需读取脱敏后的调用与回执。未指定 summary 的既有详情表示保持兼容。
 
 JSON-RPC 使用 -32600 / -32601 / -32602 / -32000；领域说明位于 `error.message`，领域代码位于 `error.data.code`，常见为 invalid_params、not_found、blocked、revision_conflict、project_required、configuration_required、dataset_locked 和 storage。
 
@@ -88,7 +88,7 @@ Capability 可通过根级 `spec_refs` 引用 Agent 自身规范，业务能力�
 
 `feature.create` 可通过 initial_requirement 提供自然语言初始需求，保存不可变 feature_request；工作流将其以 user_request 冻结到实际任务，独立于声明的 workflow_inputs。`workflow.start` 固定 owner、输入、配置闭包和绑定；`query.workflow_instance` 返回 record、runtime、plan、outputs、children，实际执行者的展示索引 actors，以及按执行 ID 索引的 completion_status（satisfied、human_satisfied、当前确切版本的 confirmation）。调用路径、Step key、执行 ID、round 和 sequence 分别表示不同身份。
 
-`query.workflow_materials` 在项目内只读汇总当前工作的交付物，必填 `owner_id`（Project、Feature 或 Task），可传 `project_id` 核对项目。Feature 包含所属 Task 的当前工作流，当前执行指向的嵌套子流程一并读取；历史轮次输出不会冒充当前产物。列表支持 `search`、`offset`、`limit`（默认 20、最多 100），仅返回交付类型、所属工作、流程/步骤、端口及执行状态等索引，不返回正文。列表可用 `execution_id` 限定来源执行；传 `output_id` 独立于搜索和分页读取同一范围内的单份封存产物和该生产执行计划冻结的 Delivery/Spec 定义。查询不写 Document、Artifact 或工作流状态，不重新验收交付物。同范围手工材料的 ID 返回 `{document}`。
+`query.workflow_materials` 在项目内只读汇总当前工作的交付物，必填 `owner_id`（Project、Feature 或 Task），可传 `project_id` 核对项目。Feature 包含所属 Task 的当前工作流，当前执行指向的嵌套子流程一并读取；归档轮次的产物仍可读取，并以 historical 标记；原 instance/execution/Session/Turn 身份保留，历史轮次输出不会冒充当前产物。列表支持 `search`、`offset`、`limit`（默认 20、最多 100），仅返回交付类型、所属工作、流程/步骤、端口及执行状态等索引，不返回正文。列表可用 `execution_id` 限定来源执行；传 `output_id` 独立于搜索和分页读取同一范围内的单份封存产物和该生产执行计划冻结的 Delivery/Spec 定义。查询不写 Document、Artifact 或工作流状态，不重新验收交付物。同范围手工材料的 ID 返回 `{document}`。
 
 `query.workflow_contexts({owner_id,project_id?,instance_id?,agent_instance_id?})` 返回 `{agents}`，按实际 Agent 实例组织当前工作根、Task 根和嵌套流程中的会话/任务轮次索引；不返回全部冻结任务正文。同名实例不合并；缺少身份的会话单独成组。每项保留 instance/execution/session/turn、归档/历史及正文可用标记。传 `session_id,snapshot_id` 只读取属于此范围会话的继承快照。传 `context_id` 返回同一工作范围当前手工背景的原始记录（`source:current_manual_context`），与冻结任务来源区分。
 
@@ -206,11 +206,11 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 
 ## 编排与运行计划
 
-项目和工作选择中的 `orchestration` 为 `{mode:"manual"|"rust"|"agent"}`。每个 Workflow 的 scheduling 包含并发、每轮动作、租约、技术重试和 agent 唤醒预算，随工作流和 Standard 冻结。`workflow.driver.select` 是人类命令，显式携带 project_id，target 为根实例，expected_revision 为编辑时的根修订，payload 为 `{mode,expected_driver_epoch}`，可附原 `plan_revision_id`。不存在驱动时 epoch 为 0；命令同时核对根修订和驱动代次，缺失前置条件拒绝，过期返回 revision_conflict。它撤销旧控制代次和未派发控制意图，不停止业务 worker。`query.workflow_driver` 保留冻结调度参数与动作资格的完整查询语义。
+项目和工作选择中的 `orchestration` 为 `{mode:"manual"|"rust"|"agent"}`。每个 Workflow 的 scheduling 包含并发、每轮动作、租约、技术重试和 agent 唤醒预算，随工作流和 Standard 冻结。`workflow.driver.select` 是人类命令，显式携带 project_id，target 为根实例，expected_revision 为编辑时的根修订，payload 为 `{mode,expected_driver_epoch}`，可附原 `plan_revision_id`。不存在驱动时 epoch 为 0；命令同时核对根修订和驱动代次，缺失前置条件拒绝，过期返回 revision_conflict。它撤销旧控制代次和未派发控制意图，不停止业务 worker。`query.workflow_driver` 保留冻结调度参数与动作资格的完整查询语义；`view:"summary"` 只读有界显示投影，含 runtime_approval_pending/workflow_approval_pending 提示，不授予动作资格。Web 只在实际门禁需要操作资格时读取完整表示。
 
 `orchestration.open/input/takeover/resume` 管理项目经理及后继会话；`query.orchestration` 返回对话、实际控制调用和待人类决定请求。输入是用户自然语言，只有冻结 Capability/Permission 允许的原生工具调用才产生控制效果。
 
-Web 经理面板改用 `query.orchestration_summary` 与 `query.workflow_driver_summary`。两者要求 project_id，在独立只读快照中读取原生运行元数据，不取得模板门闩、不同步配置、不恢复完整工程状态或编译计划。前者用 id/root_instance_id/owner_id 唯一定位经理，可附 workspace_only；返回最近 10 条消息节选（每条 512 字符）、5 条调用状态、10 条待决定摘要和 more 标记，待决定项按 next_decision_before 翻页。后者用实例 id 定位根驱动，返回当前根代次、所查实例的原生修订与至多 20 条等待节选；observed_only=true，不能据此推导动作授权。两者 cursor 是各自读快照内的项目事件游标，不是跨查询的原子快照。
+`query.orchestration_summary` 与 `query.workflow_driver_summary` 提供有界显示接口；Web 经理面板使用 `query.orchestration` 的根范围交互页及 `query.workflow_driver({view:"summary"})`。两者要求 project_id，在独立只读快照中读取原生运行元数据，不取得模板门闩、不同步配置、不恢复完整工程状态或编译计划。前者用 id/root_instance_id/owner_id 唯一定位经理，可附 workspace_only；返回最近 10 条消息节选（每条 512 字符）、5 条调用状态、10 条待决定摘要和 more 标记，待决定项按 next_decision_before 翻页。后者用实例 id 定位根驱动，返回当前根代次、所查实例的原生修订与至多 20 条等待节选；observed_only=true，不能据此推导动作授权。两者 cursor 是各自读快照内的项目事件游标，不是跨查询的原子快照。
 
 `query.workflow_management_summary({project_id,id,child_offset?})` 为经理页上层提供实例原生版本、运行状态、控制代次与规范/工作流引用，以及每页 20 个子流程标识。子流程页偏移范围为 0–1000000，后续页用 next_child_offset。摘要不包含展开计划、输出正文、历史或派发资格；配置绑定超过 8192 字节时 configuration_truncated=true，必须明确读取完整执行配置后才能编辑。经理页的计划调整在首次展开时读取确切计划，折叠及后续摘要刷新保留原编辑版本与草稿；历史使用 query.workflow_instance 的 history 视图独立分页。普通驱动切换只使用驱动摘要内配套读取的实例修订和代次，不以父组件版本替补缺失前置条件。
 
@@ -218,7 +218,7 @@ Web 经理面板改用 `query.orchestration_summary` 与 `query.workflow_driver_
 
 该响应 kind 为 execution_workspace，实例 metadata_only=true，observed_only=true，不包含完整任务/计划、绑定或历史。面板编辑前按需读取管理配置；摘要不能被用作完整对象保存或动作授权。Host 将整个响应限制在 128 KiB，超限要求缩小分页，不静默删字段。该查询不计算配置健康或产生业务写入；未返回的 configuration_ready 表示未在此查询求值。工作总览读取有界工作台元数据；材料、上下文、执行记录通过对应的流程范围查询按需读取。
 
-`query.workflow_progress({project_id,id,stage_offset?})` 返回实例原生修订、运行状态、暂停/停止标记、当前步骤总数与已完成/运行/等待/失败计数，以及每页 20 个阶段的名称和计数。阶段偏移范围为 0–1000000，后续页用 next_stage_offset；响应至多 64 KiB。阶段来自该实例冻结计划的精确 Workflow 源引用，缺失时拒绝，不使用新的默认或 head 替换。该读取不恢复工程历史、不编译配置、不读取输出正文或执行授权。工作流程页轮询该摘要；“展开步骤与操作”后才挂载实例的 status 视图，收起后停止该详情轮询。完整 detail 和 history 视图分别按需读取；摘要不能作为动作授权或完整对象保存。
+`query.workflow_progress({project_id,id,stage_offset?})` 返回实例原生修订、运行状态、暂停/停止标记、当前步骤总数与已完成/运行/等待/失败计数，以及每页 20 个阶段的名称和计数。阶段偏移范围为 0–1000000，后续页用 next_stage_offset；响应至多 64 KiB。阶段来自该实例冻结计划的精确 Workflow 源引用，缺失时拒绝，不使用新的默认或 head 替换。该读取不恢复工程历史、不编译配置、不读取输出正文或执行授权。项目经理页使用该摘要显示总体进度。工作流程页同时展示横向阶段进度和实例的 status 视图：阶段卡片用箭头连接，上方显示名称，下方显示完成计数与状态；窄屏可在阶段栏内横向滚动。点击阶段卡片会展开并滚动到对应详细阶段，目标步骤不在当前页时按需读取步骤分页；定位遵循减少动画偏好，并将键盘焦点移到阶段标题。步骤与操作始终挂载，不提供总展开/收起开关；执行阶段默认展开，保留阶段、步骤与子流程的折叠状态。页面按运行事件失效当前视图，串行读取并合并在途更新，以 30 秒低频补扫恢复遗漏；隐藏页停止自动读取，重新可见时刷新。status 视图支持 step_offset/step_limit（默认 20、最多 100）、step_total/next_step_offset，计划定义只展开当前步骤页，子流程按 child_offset 独立分页；显式 detail 仍可读取完整实例。完整 detail 和 history 视图分别按需读取；摘要不能作为动作授权或完整对象保存。 `view:"qualification"` 要求 project_id、id 与确切 execution_id，只计算该执行的当前完成检查（completion_status 按执行 ID 返回，advisory=true）。Web 仅为当前页已展开且待确认/待接纳的步骤读取该视图；human_can_accept 区分手工合并接纳和 agent 根的人类签署，真正提交仍重新验证原执行、输入摘要、输出和控制代次。
 
 “采用规范”面板折叠时不请求目录、工作配置或采用历史。首次展开后保留独立编辑基线，摘要更新及折叠不覆盖草稿；规范切换使用原实例修订，失败重试保留同一命令身份，提交前不刷新版本。成功后结束该编辑基线，重新展开读取新状态。配置版本通知只查询 catalog_clock 标量，不为版本比较组装目录或角色闭包。
 
@@ -226,7 +226,7 @@ Web 经理面板改用 `query.orchestration_summary` 与 `query.workflow_driver_
 
 `query.orchestration_decision({project_id,id})` 按需返回待决定项的确切修订、状态、计划引用与 request_json；请求以 JSON 字符串传输，避免浏览器 Number 将大整数舍入。普通摘要不携带完整请求。界面先显示并核对确切请求，再允许决定，提交使用已读修订；后续摘要发现更新时保留原内容并要求重新读取，不自动替换签署依据。待决定/人类决定记录的 request 是原始输入事实，不进入配置源的展开/引用编解码。
 
-控制工具：`workflow.inspect/events.read/outputs.read/execution.inspect`，`step.dispatch/accept/input/retry/rework`，`execution.stop/reconcile`，`pause/resume/cancel/complete`，`change.preview/apply`，`materials.import`，`decision.request` 和 `segment.dispatch`（均带 workflow 前缀）。人类通过 `workflow.decision.resolve` 签署确切请求。写入绑定活动 plan_revision_id；接纳还绑定 execution_id、input_digest 及输出 ID，变更绑定预演哈希。
+控制工具：`workflow.inspect/events.read/outputs.read/execution.inspect`，`step.dispatch/accept/input/retry/rework`，`execution.stop/reconcile`，`pause/resume/cancel/complete`，`change.preview/apply`，`materials.import`，`decision.request` 和 `segment.dispatch`（均带 workflow 前缀）。人类通过 `workflow.decision.resolve` 签署确切请求。agent 根驱动的签署只形成 Human 决定和步骤确认，接纳及后继派发仍由经理完成；显式 accept_result=true 在此模式拒绝。manual 模式的显式接纳行为保留。根范围先分页 pending 决定，首屏另附少量最近已处理项，避免旧决定挤掉待办。`workflow.inspect({decision_ref})` 对待决定引用和 Human 签署引用均返回确切批准/拒绝、reason、actor 与关联引用；长意见继续按块读取原记录。写入绑定活动 plan_revision_id；接纳还绑定 execution_id、input_digest 及输出 ID，变更绑定预演哈希。
 
 控制工具还包括 `workflow.start`。根/子实例派发和完成、Rust tick、人工直接命令遵守同一业务规则；有界 segment 不是独立根驱动。默认流程 automatic 确认不产生 Human 签署，显式 human 门禁、人工例外和授权内 waiver 分别记录。
 
@@ -236,9 +236,11 @@ Web 经理面板改用 `query.orchestration_summary` 与 `query.workflow_driver_
 
 业务任务的 `runtime_context.binding` 是当前 Session 的冻结资源选择，`runtime_context.inputs.<input>.runtime_executions` 是绑定上游真实 Turn 和停止证明的外层执行事实。渲染器也将同一执行事实附到 `input_sources.<input>.runtime_executions`，与该输入的来源引用/摘要一同提供。冻结选择不等于实际运行观察；公开运行投影不含凭据、模型连接参数或宿主可执行路径。
 
-workflow.controller.wait 接受当前 plan_revision_id、delivery_id、summary、可选 waiting_for（当前根范围的实例或决定记录）和 timeout_seconds；它只保存控制器检查点与等待，不派发业务。等待期限受当前策略限制。workflow.controller.notify 接受 plan_revision_id 与 interaction，持久化经理向人类准备的业务说明。
+workflow.controller.wait 接受当前 plan_revision_id、delivery_id、summary、可选 waiting_for（当前根范围的实例、步骤执行或待决定记录）和 timeout_seconds；它只保存控制器检查点与等待，不派发业务。等待期限受当前策略限制。workflow.controller.notify 接受 plan_revision_id 与 interaction，持久化经理向人类准备的业务说明。
 
 interaction 包含 title、background、requested_action、completed_work、review_summary、materials、evidence，支持 issues 与 recommendation。材料项有 label、purpose、instance_id、execution_id、output_id；证据项可省略 output_id。后端验证来源并补齐 owner_id、session_id 和 turn_id。decision.request 的新工具修订要求同样的 interaction，同时保留待批准 operation/arguments 的确切绑定；正文不能授予权限。query.orchestration 返回这些已发布交互和决定的 current 状态，原生 calls 仍可用于审计。
+
+审批卡片的 current 和 ancestor_instance_ids 只读取同项目、同根的活动计划标识、确切执行的状态/输入摘要/输出标识及有界祖先链，不展开历史冻结计划或重复编译配置。它们属于展示依据；签署、接纳和计划变更仍重新核对权威事实与原版本。
 
 ## 独立经理工作台
 
@@ -292,3 +294,7 @@ Workflow 写命令携带原 expected_revision、plan_revision_id、control_versi
 平台/仓库/后台回调保留原操作、源修订、参数、准备句柄及实际 Actor。持久单次授权后才能执行外部 I/O；原观察独立保存，接纳使用原读集合。迟到冲突不能重新准备或以当前版本补交。显式核对另建来源，仅检查原物理身份或记录实际 Human 判断，不伪造供应商回执。
 
 执行页状态只读小型流程/步骤投影和有版本见证的条件提示，不读取产物正文。条件提示缺失或过期为 pending；实际派发/接纳重做领域检查。历史、材料、上下文、执行及产物按需分页/分块。一次命令封存支持 1–64 个文件，总准备内容上限 32 MiB。
+
+HTTP 的执行工作台、经理交互及运行摘要复用 Workspace 所属的有界显示缓存（100 ms、128 项/12 MiB）；键包含数据集、明确项目、方法、完整查询参数及单调变化的项目失效代次。成功命令失效相应项目，旧在途响应不能回填新代次；项目缺失时全失效。并发未命中在缓存结构锁外计算，较旧快照不得覆盖较新游标，数据集切换使用新缓存。完整驱动资格、单份待决定请求、原始任务/材料/调用正文和所有命令不进入此短缓存，原生经理工具保持直接权威读取。摘要中的修订始终属于该快照，签署和业务操作仍核对原版本。
+
+原生 workflow.step.* 回执保留执行身份、计划/控制版本、输入摘要、输出标识及状态，不重复发送 execution.inputs/runtime_context；省略字段以 inputs_omitted/runtime_context_omitted 标记，并返回 receipt_ref。耐久原回执不裁剪，后续读取仍按确切身份及权限校验。

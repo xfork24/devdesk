@@ -26,11 +26,11 @@ SSE 建立时通过 event_engine 固定当前工程 Engine；无活动工程时�
 
 /oauth/integrations/callback 不在 cookie 保护列表中，以原 OAuth flow/state 和授权码完成交换；guard 仍核对 Host 及请求中出现的 Origin。回调只说明交换结果，用户还需回到接入页保存新的绑定修订，不因收到 callback 就自动替换旧执行锁。
 
-启动处理 --data/--host/--port/--public-url、固定助手更新与显式凭据授权等入口，嵌入 web/dist。75ms 定时器串行等待 spawn_blocking 中的 Workspace.tick 完成，再进行下一轮；这是调度唤醒周期，不是外部作业完成时限。关闭先阻止新调度、等待当前调度阶段退出，再停止并封存已打开 Engine 的 Harness writer，保留未知结果与排队输入。文件末测试覆盖远程密钥、wildcard 和 origin 规范化；完整 HTTP 行为由跨进程测试补充。
+启动处理 --data/--host/--port/--public-url、固定助手更新与显式凭据授权等入口，嵌入 web/dist。提交、原生收包与异步启动完成通知唤醒调度；活动工作以 75 ms 补扫，空闲以 1 s 补扫，目录维护另作限频。通知合并后仍从耐久待办核对资格，不赋予业务调度权。关闭先阻止新调度、等待当前调度阶段退出，再停止并封存已打开 Engine 的 Harness writer，保留未知结果与排队输入。文件末测试覆盖远程密钥、wildcard 和 origin 规范化；完整 HTTP 行为由跨进程测试补充。
 
 代码定位：[`App`](../../../crates/host/src/main.rs#L34)、[`guard`](../../../crates/host/src/main.rs#L67)、[`connection`](../../../crates/host/src/main.rs#L121)、[`session`](../../../crates/host/src/main.rs#L133)、[`connection_origin`](../../../crates/host/src/main.rs#L161)、[`connection_key`](../../../crates/host/src/main.rs#L185)、[`rpc`](../../../crates/host/src/main.rs#L237)、[`events`](../../../crates/host/src/main.rs#L355)、[`run`](../../../crates/host/src/main.rs#L422)。
 
-关联阅读：[host/src/workspace.rs](workspace-and-lifecycle.md#file-src-workspace-rs)、[core/src/history.rs](../devdesk-core/conversations-and-history.md#file-src-history-rs)、[adapters/src/lib.rs](../devdesk-adapters/storage-and-source-codecs.md#file-src-lib-rs)、[adapters/src/credentials_macos.rs](../devdesk-adapters/credentials-and-permissions.md#file-src-credentials-macos-rs)。
+关联阅读：[host/src/workspace.rs](workspace-and-lifecycle.md#file-src-workspace-rs)、[运行历史读取端口](../devdesk-core/conversations-and-history.md#file-src-history-rs)、[adapters/src/lib.rs](../devdesk-adapters/storage-and-source-codecs.md#file-src-lib-rs)、[adapters/src/credentials_macos.rs](../devdesk-adapters/credentials-and-permissions.md#file-src-credentials-macos-rs)。
 
 ---
 

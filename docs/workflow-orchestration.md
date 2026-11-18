@@ -46,13 +46,17 @@ agent 模式启动时只交付一次冻结目标、根引用、当前摘要与�
 
 workflow.controller.wait 保存有界工作记录、等待对象、当前 delivery_id 和可选期限，在同一次事务中检查尚未交付的事件。结果先于等待登记到达时返回 pending_events，登记后到达则唤醒后续轮次。本方动作只有对应原生回复已经交付才能合并，不越过并发外部结果。正常租约维护、空轮询及保存工作记录不构成新的模型任务。
 
+并发结果使等待登记的版本比较失败时，该技术操作最多尝试三次；每次重新核对原经理/worker、代次、投递、等待对象和事件头，不复用旧读集合。持续竞争仍明确拒绝，原代次撤销立即停止。该机制不重试派发、接纳、编辑或其他业务动作；追踪开启时用 controller.wait.attempt 记录尝试数与时间。
+
 source_cursor 是已投递或已核对的业务事件位置，acknowledged_cursor 是经理等待时确认的处理位置，event_cursor 只编号耐久投递。run_state 区分 running、runnable、waiting、needs_attention；它与 active/paused/failed 等控制授权状态分开。没有新事实且经理结束正常轮次却未登记等待时展示诊断，平台不补发后继动作指令。
 
 ## 项目经理的人类交互材料
 
 经理通过 decision.request 发起审批，通过 workflow.controller.notify 发布进展、业务问题或异常求助。每次交互包含本次事项、需要人类的操作、相关材料、经理已做工作、初审与验证、问题和建议。材料引用绑定确切 output 与执行，证据关联真实上下文和记录；内核核对本次全部产物及冻结输入的上游材料，并补齐来源 Session/Turn。
 
-项目经理页面直接展示这些说明和链接，审批按钮对应确切业务事项，可填写意见。审批改变材料或计划版本后，旧卡片不可签署；批准或退回后由经理依据真实事件继续，无需额外发送“继续”。原始工具流水、参数和调度配置不在经理业务页面堆放，审计仍保存在相应执行记录。
+经理的只读工具按原生流程归属检查根范围；产物及单个执行的输入/状态读取不展开无关冻结计划，原合同仍按确切计划分块读取。发布执行的 `workflow.execution.inspect` 与活动步骤检查可以返回 `publication`：原调用、确切候选、PR 创建回执及原观察身份/时间。该信息是有界历史观察，不代表当前远端状态、外部合入授权或最终发布接纳；经理可据此呈现需要人类审查的外部操作，平台仍不代为合入。
+
+项目经理页面直接展示这些说明和链接，审批按钮对应确切业务事项，可填写意见。审批改变材料或计划版本后，旧卡片不可签署；agent 模式中，批准只提交 Human 决定和确切步骤确认，不顺带接纳；批准或退回后由经理依据真实事件继续，无需额外发送“继续”。拒绝意见在待决定及 Human 决定两个引用下均可读取，不能以空 request 覆盖反馈。原始工具流水、参数和调度配置不在经理业务页面堆放，审计仍保存在相应执行记录。
 
 ## 步骤生命周期与产物接纳
 
@@ -63,6 +67,8 @@ StepExecution 有 10 种状态（queued → running → waiting_input / waiting_
 3. 按步骤确认策略（automatic/human）进入等待确认或等待接纳；`workflow.step.accept` 绑定确切的 input_digest 与输出 ID。
 
 技术重试（retry）保留输入并创建新执行；业务返工（rework）沿依赖闭包重置后继步骤。模型自述永远不能替代真实测试与 Git 回执。
+
+带正式代码输入的 Agent 写者，在派发及 retry/rework 创建后继执行前，只读核对实际 worktree 的冻结版本和未封存修改；返工使用已验证的平台快照作为有效基线。未封存修改或版本偏移返回 `workspace_recovery_required`，保留现场、当前执行和历史，不启动新会话或消耗重试次数。运行时挂载前再次核对，防止预检后的外部改动；此类失败记为 `business/not_applied`，不可自动技术重试。须先备份并核对修改来源，再通过真实快照封存或恢复至已核对基线，不能自动丢弃或把未知修改当作成功实现。只读 Agent 仍读取冻结提交的独立副本，不受实时 worktree 修改影响。
 
 ## 完成规则与四层批准语义
 
@@ -104,16 +110,20 @@ ChangeSet 当前提供 13 类类型化操作：adopt_standard、revert_change、
 
 展示重组不复制材料，不更改接纳事实、人工门禁和授权，也不产生新的模型轮次或工程操作。
 
+工具步骤仅改变 `stage` 归属时，运行计划变更保留原执行身份、冻结合同和平台回执，不触发返工；参数、权限、依赖等业务字段改变仍重置受影响执行。Agent 的阶段背景及默认 Role 继续参与业务影响分析。
+
 ## TDD 证据链与平台动作门禁
 
 测试与候选的事实只能来自真实回执：`tests.run` 按冻结配方（固定镜像 SHA、文件清单、超时）在无网只读容器执行，区分断言失败与环境失败；`git.candidate` 产出单父提交与确切 diff；`git.advance` 必须持有 WorkflowActionPermit——按计划的 action_requirements 核对与候选匹配的成功测试回执；`git.publish` 用精确租约推送并创建 GitHub PR（平台不合入）。
 
+直接发布步骤的显式技术重试沿 `retry_of` 核对最多 32 个原执行。若同一项目、根、节点、计划、轮次、合同和输入的原发布已由不可变物理观察或内核核对证明确切候选合入，则新执行在当前权限与接纳条件下复用原回执，不再次推送或创建 PR。原取消、原物理 operation 身份及观察保留；中间明确未生效的尝试可以继续追溯，未知效果仍须先核对。返工、新候选、不同发布参数和 Agent 内部独立调用不复用该结果。
+
 ## 默认流程概览
 
-默认入口为 `builtin-workflow-feature-sol-high:8`（7 阶段 22 步）与 `builtin-workflow-task-sol-high:7`（7 阶段 20 步）：
+默认入口为 `builtin-workflow-feature-sol-high:9`（8 阶段 22 步）与 `builtin-workflow-task-sol-high:8`（8 阶段 20 步），由 `builtin-standard-engineering:7` 引用。本地配置目录仅发布最新修订，数据集中的既有执行按原冻结修订追溯：
 
-- **Feature 流程**：requirements（PRD + 独立评审）→ design（基线快照、工程约束、Design Doc + 评审）→ planning（Task Plan + 评审 + tasks.create）→ implementation（foreach 对每个 Task 运行 Task 子流程）→ verification（回归测试配方、版本冻结、真实执行）→ delivery（Feature 报告 + 评审）→ integration（候选、候选测试、候选评审、接纳、发布）。
-- **Task 流程**：tests（读取工作空间、编写独立测试）→ red（测试快照、最小可调用基线、Red 快照、真实 Red）→ implementation（实现、实现快照、Green）→ documentation（只读交付说明、复验）→ review（独立实现评审）→ integration（目标、候选、候选测试、候选评审、接纳、发布）→ handoff（证据封存、完成）。Red 必须是预期失败的真实断言，模块加载或环境错误不能包装为 Red。规则强制 Red 先于实现，测试/实现/评审身份独立，并核对确切代码版本。
+- **Feature 流程**：requirements（PRD + 独立评审）→ design（基线快照、工程约束、Design Doc + 评审）→ planning（Task Plan + 评审 + tasks.create）→ implementation（foreach 对每个 Task 运行 Task 子流程）→ verification（回归测试配方、版本冻结、真实执行）→ candidate_preparation（目标工作空间、候选、候选测试）→ delivery（Feature 报告 + 评审）→ integration（候选评审、接纳、发布）。
+- **Task 流程**：tests（读取工作空间、编写独立测试）→ red（测试快照、最小可调用基线、Red 快照、真实 Red）→ implementation（实现、实现快照、Green）→ documentation（只读交付说明、复验）→ candidate_preparation（目标工作空间、候选、候选测试）→ review（独立实现评审）→ integration（候选评审、接纳、发布）→ handoff（证据封存、完成）。Red 必须是预期失败的真实断言，模块加载或环境错误不能包装为 Red。规则强制 Red 先于实现，测试/实现/评审身份独立，并核对确切代码版本。
 
 默认 Feature 的 requirements_review、design_review、plan_review 使用 human 确认：独立 Agent 按 Spec 验收通过后，人类确认本轮确切输入和产物，才能接纳并派发后继步骤。其他 Feature 步骤及默认 Task 步骤保持 automatic。返工会重置受影响执行，原确认不得用于新产物；模型评审不能代替人类确认。
 
@@ -129,7 +139,7 @@ ChangeSet 当前提供 13 类类型化操作：adopt_standard、revert_change、
 
 根实例的 `workflow_driver` 保存策略快照、来源和 epoch；子实例继承该控制归属。`workflow.driver.select` 是人类入口，必须同时核对原根实例 revision 与 payload.expected_driver_epoch（不存在驱动时为 0）；驱动变化未必改变根实例 revision，二者不能互相替代。界面保留开始编辑时的两个值，冲突后不在保存前刷新版本。切换撤销原经理控制代次、未派发控制意图和委托，不停止业务 worker。已有运行 worker/结果继续通过实际回执接纳。Rust tick 从分页的共同 inspect/ready 投影稳定选择动作，事务内保存决定及外部 worker 意图；外部效果由现有 intent/receipt 管线执行。每项逻辑动作有幂等键，计划和代次变化后旧动作不能生效。
 
-Web 经理面板用 `query.workflow_driver_summary` 展示模式、epoch 和有界等待节选，`query.orchestration_summary` 展示有界消息、控制调用及待决定摘要；均按显式项目作用域直接只读查询。节选只表达观察，不提供动作资格；完整 `query.workflow_driver` 和 workflow.inspect 保留原控制查询语义。人工决定前按需读取确切请求与修订，不用节选代替签署依据，协议见 [本地协议](protocol.md)。项目管理可选择未来默认模式，流程的经理协作面可切换当前根实例。没有选择驱动的已有实例维持明确的人工控制行为。经理工作台查询/配置创作与根实例调度授权分别处理。
+Web 经理面板用 `query.workflow_driver({view:"summary"})` 展示模式、epoch 和有界等待节选，`query.orchestration` 展示根范围有界交互与决定；均按显式项目作用域直接只读查询。节选只表达观察，不提供动作资格；完整 `query.workflow_driver` 和 workflow.inspect 保留原控制查询语义。人工决定前按需读取确切请求与修订，不用节选代替签署依据，协议见 [本地协议](protocol.md)。项目管理可选择未来默认模式，流程的经理协作面可切换当前根实例。没有选择驱动的已有实例维持明确的人工控制行为。经理工作台查询/配置创作与根实例调度授权分别处理。
 
 Agent 的实际任务包含冻结的 `runtime_context`：`runtime_context.binding` 是本次 Session 选择的执行安装身份；`runtime_context.inputs.<input>.runtime_executions` 来自对应上游 Turn 的真实 Harness 执行和停止证明，包含镜像、operation 与执行身份，并以 source_output_id 关联产物。同一运行事实也出现在 `input_sources.<input>.runtime_executions`。前者是选择，后者是已观察到的外层执行事实，均不能证明任意嵌套或远程程序的环境。该投影排除凭据、模型连接、模型参数与宿主可执行路径；不会从模型自述推导环境事实。旧任务仍按实际发送的历史合同读取。
 
@@ -168,3 +178,21 @@ Task 所属流程派发还要求该 Task 的业务依赖全部 completed。该�
 同一开关另记录 native_phase（call_id、阶段、耗时），区分经理门等待、授权快照、目标读取、动作、结果事务和回复；native_startup 单列 Docker/协议初始化。嵌套阶段不能直接相加。数据库中的 finished 时间字段在提交前写入，不是精确的事务提交终点。权限编译只共享二进制内固定资产的期望摘要与固定语义摘要，动态源、绑定、作用域和实际安装校验不跨快照缓存。
 
 Docker 测试的本轮 inspect 已证明容器停止时，结果采集复用该证明，并按固定容器 ID 导出日志；确实需要 stop 的容器仍在 stop 后重新取得停止证明。不得从仍运行的容器读取成功终态。
+
+Host 在已提交变化、原生协议收包和异步启动完成时唤醒调度，活跃工作保留 75 ms 补扫、空闲使用 1 s 补扫，目录维护单独限频。通知可以合并或丢失，实际资格仍从耐久待办及原授权读取；唤醒不派发下一业务步骤。
+
+平台外部尝试仍先持久化授权，原始结果观察先于接纳保存。步骤完整版本只参与授权当下的 CAS；长期回执保持原执行、计划、契约、输入及祖先运行资格，Host 填入 tool_call_id 不撤销该授权。原业务、源、上游及写入目标版本继续精确校验；取消、契约改变或原写入目标变化仍拒收且保留观察，不自动重发外部效果。
+
+页面按项目/实例的事件失效共享读取，合并同键在途请求并施加背压。普通日志追加不刷新整个工作区，隐藏页暂停读取；运行时准备的空闲状态每 30 秒补扫，正在准备时保持短检查。背景、原始事件和工具调用正文在展开时读取，刷新不替换未保存草稿的原版本。
+
+同一进程内，平台授权提交到原结果观察保存之间有按调用区分的技术在途登记。并发扫描跳过仍在执行的原尝试，不将它当作重启后遗留的未知效果；登记不跨 I/O 持锁、不等待其他业务调用，不授权外部执行，进程退出后不伪造完成证明。
+
+Codex Harness 将本次原生 operation 的已脱敏 commandExecution 完成原件另存为不可覆盖 JSON；执行上下文给出本次 command_output_directory，Docker 只读挂载到 /run/devdesk/command-output。模型输出展示截断时可分块读取这些原件，目录不包含协调器其他状态或凭据，最多 512 文件/64 MiB。原件是原生观察，不是平台 tests.run 回执；执行者仍须提交符合冻结 Delivery 的完整测试证据，不能只交文件路径或把展示截断称为测试日志丢失。DSH 不发布该 Codex 协议专用目录。
+
+Codex 恢复已有原生线程时使用 `thread/resume` 的 `excludeTurns: true`，由原生运行时恢复自身历史，Host 只接收线程元数据；不在每次经理唤醒时回传全部旧 Turn。原始协议、会话和业务记录继续保留，正常帧及恢复响应的有界限制不变；恢复未得到确切成功回执时不发送轮次输入或盲目重发。
+
+材料文件封存和平台调用均按确切意图保持技术在途登记；恢复扫描跳过当前进程的活跃尝试，登记不持有跨 I/O 业务锁、不改变原授权/接纳校验。重启后没有在途证明的 prepared 意图仍按未知结果核对。写入工作树的启动前校验拒绝属于已知未执行；它不允许把脏工作树当作新基线。
+
+Web 命令成功后使相应项目的显示缓存失效；显式刷新绕过标签页短缓存并更新经理进度及协作状态。自动事件刷新仍按根范围合并、串行读取并有背压，不以每次 token/tool 日志追加刷新整个执行页。显示没有变化时保留原组件和编辑草稿，自动刷新不替换用户编辑时的版本。
+
+Rust 驱动与已授权委托的纯控制阶段若一轮未产生提交，Host 用该项目已提交事件游标暂记空闲；游标变化立即使提示过期，另以一秒补扫核对租约及遗漏。记录最多 128 项，不保存或授予业务资格；外部轮询、取消停止及原生回执交付不受此提示限制。实际命令仍重新读取权威状态并验证原资源读集合。

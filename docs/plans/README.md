@@ -6,6 +6,7 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
+| [main 三项改动联合验收与性能改进](integrated-workflow-performance-acceptance/PLAN.md) | [阶段验收](integrated-workflow-performance-acceptance/ACCEPTANCE.md)、[性能基准](integrated-workflow-performance-acceptance/PERFORMANCE.md)、[后续修复计划](integrated-workflow-performance-acceptance/FOLLOW-UP-PLAN.md)、[实施记录](integrated-workflow-performance-acceptance/EXECUTION.md) | 已按用户要求暂停测试并交付阶段结果；最新后台回归/子流程审批通过，完整 Feature 和正式100浏览器容量未通过；未解决问题另列计划，未继续执行 |
 | [项目经理通过事件自主推进工作流](event-driven-project-manager/PLAN.md) | [实施与验证](event-driven-project-manager/EXECUTION.md)、[main 合入验收](event-driven-project-manager/MERGE.md) | 已完整合入本地 main；Rust 392、debug/release 各 85、证据回归 33 项通过；真实 Feature 42 步已复核，feature worktree 和分支已清理 |
 | main 剩余改动整理 | [内容与定向验证](main-uncommitted-review/EXECUTION.md) | 运行诊断、权限恢复与执行页改动已复核；定向回归通过，未运行完整 workflow/Feature 交付回归 |
 | [Workflow 执行性能与运行稳定性](workflow-runtime-performance/PLAN.md) | [分工边界](workflow-runtime-performance/SCOPE.md)、[真实运行验证](workflow-runtime-performance/LIVE.md)、[验收](workflow-runtime-performance/ACCEPTANCE.md) | 独立 worktree 实施中；真实 Git/Docker、Codex 原生衔接与 Host 中断恢复已验证，完整 SLA 未通过；公共存储、调度、执行页与 100 前端容量待联合 |
