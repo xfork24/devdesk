@@ -1149,6 +1149,9 @@ impl Workspace {
             engine.store.subscribe_changes(listener.clone());
         }
     }
+    pub(crate) fn invalidate_project_display_reads(&self, project: &str) -> Result<()> {
+        self.runtime_reads.invalidate(Some(project))
+    }
     pub fn event_engine(&self, expected: Option<&str>) -> Result<(String, Arc<Engine>)> {
         match self.project_engine(expected) {
             Ok(e) => Ok((e.store.project_id().unwrap(), e)),

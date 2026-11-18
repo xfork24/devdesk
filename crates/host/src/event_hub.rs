@@ -118,6 +118,7 @@ async fn pump(weak: Weak<EventHub>) {
         let cursor = previous.cursor;
         #[cfg(test)]
         hub.reads.fetch_add(1, Ordering::Relaxed);
+        let read_workspace = workspace.clone();
         let read = tokio::task::spawn_blocking(move || -> devdesk_domain::Result<_> {
             let _span = devdesk_adapters::performance::Span::new("events.shared_read");
             let (head, events) = if initialized {
@@ -125,7 +126,7 @@ async fn pump(weak: Weak<EventHub>) {
             } else {
                 (engine.store.event_cursor()?, vec![])
             };
-            Ok((head, events, workspace.configuration_version(&engine)?))
+            Ok((head, events, read_workspace.configuration_version(&engine)?))
         })
         .await;
         let mut caught_up = true;
@@ -147,6 +148,14 @@ async fn pump(weak: Weak<EventHub>) {
                         }
                     }
                     next.configuration_version = version;
+                    // A subscriber may refresh immediately. Fence snapshots
+                    // cached before a background commit before sending its hint.
+                    if hub.scope != "global"
+                        && (!initialized || next.cursor != cursor)
+                        && let Err(error) = workspace.invalidate_project_display_reads(&hub.scope)
+                    {
+                        eprintln!("display cache invalidation failed: {}", error.code);
+                    }
                     hub.window.send_replace(Arc::new(next));
                 }
             }

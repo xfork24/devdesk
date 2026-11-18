@@ -13,7 +13,7 @@ async function rpc(page: Page, method: string, params: object = {}) {
 for (const nested of [false, true]) {
   test(
     nested
-      ? "nested human gates are confirmed inside their manager subflow card and resume the full tree"
+      ? "nested human gates are confirmed in the root manager card and resume the full tree"
       : "manager and workflow approvals both persist human decisions and continue the real driver",
     async ({ page }) => {
       await page.goto("/");

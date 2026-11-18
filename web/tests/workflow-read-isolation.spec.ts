@@ -679,7 +679,7 @@ test("manager collects child confirmations and tool approvals, with errors besid
   ).toContainText("子流程待确认点");
   await expect(
     mainCollaboration.getByRole("region", { name: "当前阻塞点", exact: true }),
-  ).toHaveCount(0);
+  ).toContainText("子流程待确认点");
   await expect(
     childCollaboration.getByRole("link", {
       name: "与项目经理继续讨论",
@@ -718,12 +718,12 @@ test("manager collects child confirmations and tool approvals, with errors besid
     childCollaboration.getByRole("button", { name: "人工接管", exact: true }),
   ).toBeVisible();
   await expect(
-    mainCollaboration.getByRole("article", {
+    childCollaboration.getByRole("article", {
       name: "确认子流程需求",
       exact: true,
     }),
   ).toHaveCount(0);
-  const card = childPanel.getByRole("article", {
+  const card = mainCollaboration.getByRole("article", {
     name: "确认子流程需求",
     exact: true,
   });
@@ -743,7 +743,13 @@ test("manager collects child confirmations and tool approvals, with errors besid
     expected_revision: 8,
     payload: args,
   });
-  const tool = childPanel.getByRole("article", {
+  await expect(
+    childCollaboration.getByRole("article", {
+      name: "运行时工具审批",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  const tool = mainCollaboration.getByRole("article", {
     name: "运行时工具审批",
     exact: true,
   });
