@@ -129,6 +129,7 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
   });
   await page.getByRole("button", { name: "角色与代理", exact: true }).click();
   const role = page.getByRole("region", { name: "角色管理" });
+  await role.getByRole("button", { name: "新建 Role", exact: true }).click();
   const name = "安全评审 " + crypto.randomUUID().slice(0, 6);
   await role.getByLabel("Role 名称", { exact: true }).fill(name);
   await role.getByRole("button", { name: "职责说明", exact: true }).click();
@@ -199,6 +200,7 @@ test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保
   await setup(page);
   await page.getByRole("button", { name: "基础组件", exact: true }).click();
   const name = "Browser Model " + crypto.randomUUID().slice(0, 5);
+  await page.getByRole("button", { name: "新建 Model", exact: true }).click();
   await page.getByLabel("名称", { exact: true }).fill(name);
   await page
     .getByLabel("模型标识", { exact: true })
@@ -209,6 +211,9 @@ test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保
   ).toBeVisible();
   await page.getByRole("button", { name: "角色与代理", exact: true }).click();
   await page.getByRole("tab", { name: "Capability", exact: true }).click();
+  await page
+    .getByRole("button", { name: "新建 Capability", exact: true })
+    .click();
   await page.getByLabel("名称", { exact: true }).fill("Unfinished capability");
   await page.getByRole("tab", { name: "Agent", exact: true }).click();
   await page.getByRole("tab", { name: "Capability", exact: true }).click();
@@ -245,6 +250,7 @@ test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保
   expect(cap.data).toEqual({});
   await page.getByRole("tab", { name: "Agent", exact: true }).click();
   const agentName = "Browser analyst " + crypto.randomUUID().slice(0, 5);
+  await page.getByRole("button", { name: "新建 Agent", exact: true }).click();
   await page.getByLabel("名称", { exact: true }).fill(agentName);
   await page
     .getByLabel("Role 精确版本", { exact: true })
@@ -732,6 +738,9 @@ test("Delivery 定义和输入输出端口保存后保留精确修订", async ({
   await page.getByRole("button", { name: "流程与规范", exact: true }).click();
   await page.getByRole("tab", { name: "Delivery", exact: true }).click();
   const name = "风险材料 " + crypto.randomUUID().slice(0, 6);
+  await page
+    .getByRole("button", { name: "新建 Delivery", exact: true })
+    .click();
   await page.getByLabel("名称", { exact: true }).fill(name);
   const specification = await rpc(page, "spec.create", {
     command_id: crypto.randomUUID(),

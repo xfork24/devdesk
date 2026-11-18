@@ -12,7 +12,40 @@ struct AuthWorker {
     restart_required: bool,
 }
 impl AuthWorker {
+    fn reconcile_login(&mut self) {
+        if self
+            .process
+            .login_completed
+            .as_ref()
+            .is_some_and(|(id, _)| {
+                self.login.as_ref().and_then(|v| v["loginId"].as_str()) == Some(id.as_str())
+            })
+        {
+            self.pending = false;
+            self.login = None;
+        }
+    }
+    fn poll_login(&mut self) {
+        self.reconcile_login();
+        if !self.pending {
+            return;
+        }
+        if let Ok(frames) = self.process.drain() {
+            for frame in frames {
+                if frame["method"] == "account/login/completed"
+                    && let (Some(id), Some(success)) = (
+                        frame["params"]["loginId"].as_str(),
+                        frame["params"]["success"].as_bool(),
+                    )
+                {
+                    self.process.login_completed = Some((id.into(), success));
+                    self.reconcile_login();
+                }
+            }
+        }
+    }
     fn start_login(&mut self, device: bool, timeout: std::time::Duration) -> Result<Value> {
+        self.poll_login();
         // A page reload or a lost HTTP response must recover the same login,
         // rather than dispatch another request or leave the user blocked.
         if self.pending {
@@ -21,6 +54,7 @@ impl AuthWorker {
                 .clone()
                 .ok_or_else(|| err("needs_reconciliation", "登录状态未知，请重新开始认证"));
         }
+        self.process.login_completed = None;
         match self.process.request_for(
             "account/login/start",
             json!({"type":if device {"chatgptDeviceCode"} else {"chatgpt"}}),
@@ -246,10 +280,16 @@ impl CodexAuthentication {
         result
     }
     pub fn status(&self, store: &GlobalStore, installation: &str) -> Result<Value> {
-        self.with_worker(store,installation,|worker| {
-            let response=worker.process.request("account/read",json!({"refreshToken":false}))?;
-            let authenticated=response["account"].is_object();
-            if authenticated || worker.process.login_completed.as_ref().is_some_and(|(id,_)|worker.login.as_ref().and_then(|v|v["loginId"].as_str())==Some(id.as_str())) {worker.pending=false;worker.login=None;}
+        self.with_worker(store, installation, |worker| {
+            let response = worker
+                .process
+                .request("account/read", json!({"refreshToken":false}))?;
+            let authenticated = response["account"].is_object();
+            worker.reconcile_login();
+            if authenticated {
+                worker.pending = false;
+                worker.login = None;
+            }
             Ok(json!({"authenticated":authenticated,"type":response["account"]["type"],"pending":worker.pending}))
         })
     }
@@ -265,13 +305,7 @@ impl CodexAuthentication {
     ) -> Result<Value> {
         self.with_worker_progress(store, installation, progress, |worker| {
             progress("请求官方授权地址");
-            let result = worker.start_login(device, std::time::Duration::from_secs(20));
-            progress(if result.is_ok() {
-                "等待用户完成官方网页授权"
-            } else {
-                "获取官方授权地址失败"
-            });
-            result
+            worker.start_login(device, std::time::Duration::from_secs(20))
         })
     }
     pub fn local_status(&self) -> Value {
@@ -280,13 +314,18 @@ impl CodexAuthentication {
             .ok()
             .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
             .is_some_and(|v| v["tokens"]["account_id"].is_string());
-        let pending_login = self.worker.try_lock().ok().and_then(|worker| {
+        let pending_login = self.worker.try_lock().ok().map(|mut worker| {
+            if let Some(worker) = worker.as_mut() {
+                worker.poll_login();
+            }
             worker
                 .as_ref()
                 .filter(|worker| worker.pending)
                 .and_then(|worker| worker.login.clone())
         });
-        json!({"authenticated":configured,"verification":"local credential presence","pending":pending_login.is_some(),"pending_login":pending_login})
+        // A busy worker is unknown, not proof that an in-flight login ended.
+        let pending = pending_login.as_ref().map(|login| login.is_some());
+        json!({"authenticated":configured,"verification":"local credential presence","pending":pending,"pending_login":pending_login.flatten()})
     }
     pub fn cancel(&self, store: &GlobalStore, installation: &str, login: &str) -> Result<Value> {
         self.with_worker(store, installation, |worker| {
@@ -321,6 +360,9 @@ for line in sys.stdin:
     if sys.argv[1]=='exit':sys.exit(0)
     if sys.argv[1]=='timeout':time.sleep(60)
     print(json.dumps({'id':frame['id'],'result':{'type':'chatgpt','loginId':'fixture-login','authUrl':'https://auth.openai.com/fixture'}}),flush=True)
+    if sys.argv[1] in ('complete','fail'):
+        while not receipt.with_suffix('.complete').exists():time.sleep(0.01)
+        print(json.dumps({'method':'account/login/completed','params':{'loginId':'fixture-login','success':sys.argv[1]=='complete'}}),flush=True)
 "#, mode]);
         command.arg(receipt);
         AuthWorker {
@@ -378,6 +420,67 @@ for line in sys.stdin:
         assert_eq!(first, recovered);
         let value: Value = serde_json::from_slice(&fs::read(&receipt).unwrap()).unwrap();
         assert_eq!(value["requests"], 1);
+    }
+
+    #[test]
+    fn an_explicit_login_after_completion_dispatches_a_fresh_request() {
+        let directory = tempfile::tempdir().unwrap();
+        let receipt = directory.path().join("requests");
+        let mut worker = fixture("reply", &receipt);
+        let login = worker.start_login(false, Duration::from_secs(2)).unwrap();
+        worker.process.login_completed = Some((login["loginId"].as_str().unwrap().into(), true));
+        worker.start_login(false, Duration::from_secs(2)).unwrap();
+        worker.poll_login();
+        assert!(worker.pending);
+        let value: Value = serde_json::from_slice(&fs::read(&receipt).unwrap()).unwrap();
+        assert_eq!(value["requests"], 2);
+    }
+
+    #[test]
+    fn local_status_observes_login_completion_without_native_requests_or_stale_recovery() {
+        let directory = tempfile::tempdir().unwrap();
+        for mode in ["complete", "fail"] {
+            let auth = CodexAuthentication::new(&directory.path().join(mode)).unwrap();
+            let receipt = directory.path().join(format!("{mode}-requests"));
+            let mut worker = fixture(mode, &receipt);
+            worker.start_login(false, Duration::from_secs(2)).unwrap();
+            *auth.worker.lock().unwrap() = Some(worker);
+            assert_eq!(auth.local_status()["pending"], true);
+
+            fs::write(receipt.with_extension("complete"), "complete").unwrap();
+            let deadline = std::time::Instant::now() + Duration::from_secs(2);
+            while auth.local_status()["pending"] != false {
+                assert!(std::time::Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            let status = auth.local_status();
+            assert!(status["pending_login"].is_null());
+            assert_eq!(status["authenticated"], false);
+            let value: Value = serde_json::from_slice(&fs::read(&receipt).unwrap()).unwrap();
+            assert_eq!(value["requests"], 1);
+        }
+    }
+
+    #[test]
+    fn local_status_preserves_a_pending_login_with_old_credentials_or_an_unrelated_completion() {
+        let directory = tempfile::tempdir().unwrap();
+        let auth = CodexAuthentication::new(directory.path()).unwrap();
+        fs::write(
+            auth.home.join("auth.json"),
+            json!({"tokens":{"account_id":"previous-account"}}).to_string(),
+        )
+        .unwrap();
+        let mut worker = fixture("reply", &directory.path().join("requests"));
+        worker.start_login(false, Duration::from_secs(2)).unwrap();
+        worker.process.login_completed = Some(("previous-login".into(), true));
+        *auth.worker.lock().unwrap() = Some(worker);
+        let status = auth.local_status();
+        assert_eq!(status["authenticated"], true);
+        assert_eq!(status["pending"], true);
+        assert_eq!(status["pending_login"]["loginId"], "fixture-login");
+
+        let _guard = auth.worker.lock().unwrap();
+        assert!(auth.local_status()["pending"].is_null());
     }
 }
 

@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { DirectoryPicker } from "./DirectoryPicker";
 import { type Request } from "./rpc-types";
 import { PermissionProfileHistory } from "./PermissionProfileHistory";
+import { compareConfigurationRecords } from "./configuration-state";
 import {
   profileView,
   profileSource,
@@ -58,12 +59,17 @@ export function PermissionResources({
   );
   const profile = catalog?.profiles.find((p) => p.id === selected);
   useEffect(() => {
-    if (hydrated.current || !linkedProfile || !catalog) return;
-    const profile = catalog.profiles.find((p) => p.id === linkedProfile);
+    if (hydrated.current || !catalog) return;
+    const profile = linkedProfile
+      ? catalog.profiles.find((p) => p.id === linkedProfile)
+      : catalog.profiles
+          .filter((p) => p.target_kind === "harness")
+          .sort(compareConfigurationRecords)[0];
+    hydrated.current = true;
     if (profile) {
+      setSelected(profile.id);
       setKind(profile.target_kind);
       setDraft(JSON.stringify(profileSource(profile), null, 2));
-      hydrated.current = true;
     }
   }, [catalog, linkedProfile]);
   async function reload() {
@@ -121,6 +127,7 @@ export function PermissionResources({
     history.replaceState(null, "", `?${params}`);
   }
   function fresh() {
+    hydrated.current = true;
     setSelected("");
     const params = new URLSearchParams(location.search);
     params.delete("permission_ref");
@@ -183,9 +190,16 @@ export function PermissionResources({
                   aria-label="权限类型"
                   value={kind}
                   onChange={(e) => {
-                    setKind(e.target.value as PermissionKind);
-                    setSelected("");
-                    setDraft("");
+                    const kind = e.target.value as PermissionKind;
+                    const first = catalog.profiles
+                      .filter((profile) => profile.target_kind === kind)
+                      .sort(compareConfigurationRecords)[0];
+                    setKind(kind);
+                    if (first) edit(first);
+                    else {
+                      setSelected("");
+                      setDraft("");
+                    }
                   }}
                 >
                   <option value="harness">Harness</option>
@@ -209,6 +223,7 @@ export function PermissionResources({
                   <option value="">选择权限</option>
                   {catalog.profiles
                     .filter((p) => p.target_kind === kind)
+                    .sort(compareConfigurationRecords)
                     .map((p) => (
                       <option key={p.id} value={p.id}>
                         {displayText(p.name)} · {displayText(p.target_kind)} · v

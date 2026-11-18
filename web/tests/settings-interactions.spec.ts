@@ -313,6 +313,7 @@ test("项目与 Global 历史合并事件和工具调用，统一排序分页并
     exact: true,
   });
   await expect(history.locator(".history-row")).toHaveCount(3);
+  await expect(history.locator(".history-row code")).toHaveCount(0);
   await expect(history.locator(".event-id")).toHaveText(["#1", "#2", "#3"]);
   await expect(history).not.toContainText(globalCall.name);
   await expect(

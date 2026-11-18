@@ -319,6 +319,89 @@ mod tests {
     }
 
     #[test]
+    fn ollama_service_address_is_persisted_and_explicit_models_freeze_the_same_route() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = Workspace::open(root.path()).unwrap();
+        let before = workspace
+            .configuration
+            .store
+            .configuration_snapshot()
+            .unwrap();
+        let provider = before
+            .state
+            .governance
+            .iter()
+            .find(|record| record.r#type == "model_provider" && record.data["id"] == "ollama")
+            .unwrap();
+        let address = "http://192.168.1.10:11435";
+        let mut data = provider.data.clone();
+        data["endpoint"] = json!(address);
+        let saved = workspace
+            .dispatch(
+                "model_provider.revise",
+                json!({
+                    "command_id":id(),"target":provider.id,"expected_revision":provider.revision,
+                    "payload":{"data":data}
+                }),
+            )
+            .unwrap();
+        let providers = workspace
+            .dispatch("query.model_providers", json!({}))
+            .unwrap();
+        let current = providers["providers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|provider| provider["id"] == "ollama")
+            .unwrap();
+        assert_eq!(current["reference"], saved["id"]);
+        assert_eq!(current["endpoint"], address);
+        let model = workspace
+            .dispatch(
+                "model.create",
+                json!({
+                    "command_id":id(),"payload":{"name":"Local route fixture","data":{
+                        "provider":"ollama","endpoint":address,"model":"fixture-local",
+                        "context_window":32768,"max_output_tokens":4096
+                    }}
+                }),
+            )
+            .unwrap();
+        let catalog = workspace
+            .configuration
+            .store
+            .configuration_snapshot()
+            .unwrap();
+        let harness = catalog
+            .state
+            .configuration("builtin-harness-dsh-multi-provider:1")
+            .unwrap();
+        assert_ne!(
+            catalog
+                .state
+                .provider_facts(harness, "ollama")
+                .unwrap()
+                .endpoint,
+            address
+        );
+        let definition: ModelDefinition = catalog
+            .state
+            .configuration(model["id"].as_str().unwrap())
+            .unwrap()
+            .decode()
+            .unwrap();
+        let connection = catalog
+            .state
+            .resolve_model_connection(&definition, harness)
+            .unwrap()
+            .unwrap();
+        assert_eq!(connection.endpoint, format!("{address}/v1"));
+        assert_eq!(connection.worker_endpoint, format!("{address}/v1"));
+        assert_eq!(definition.endpoint.as_deref(), Some(address));
+        assert!(workspace.global.runtime_installations().unwrap().is_empty());
+    }
+
+    #[test]
     fn removed_agent_diagnostics_have_no_dispatch_or_runtime_side_effects() {
         let root = tempfile::tempdir().unwrap();
         let w =

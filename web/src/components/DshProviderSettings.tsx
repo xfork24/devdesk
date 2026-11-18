@@ -15,6 +15,11 @@ import {
   readModelCatalog,
 } from "../configuration-client";
 import { type Request, type Row, type ResourceVersion } from "./rpc-types";
+import {
+  modelProviderLabel,
+  normalizeOllamaServiceAddress,
+  ollamaServiceAddress,
+} from "./ollama-endpoint";
 
 export type ModelProvider = {
   id: string;
@@ -50,6 +55,12 @@ export function DshProviderSettings({ request }: { request: Request }) {
   const [status, setStatus] = useState<Status>();
   const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState(false);
+  const [endpoint, setEndpoint] = useState("");
+  const [endpointRecord, setEndpointRecord] = useState<Row>();
+  const endpointDraft = useRef<Row | undefined>(undefined);
+  const endpointAttempt = useRef<
+    { value: string; commandId: string } | undefined
+  >(undefined);
   const modelEpoch = useSyncExternalStore(subscribeModels, getModelEpoch);
   const draft = useRef<
     | { version: ResourceVersion; providerRef: string; commandId: string }
@@ -71,7 +82,32 @@ export function DshProviderSettings({ request }: { request: Request }) {
     return () => {
       active = false;
     };
-  }, [request, setMessage]);
+  }, [request, setMessage, modelEpoch]);
+  const ollamaReference = providers.find(
+    (provider) => provider.id === "ollama",
+  )?.reference;
+  useEffect(() => {
+    if (provider !== "ollama" || !ollamaReference || endpointDraft.current)
+      return;
+    let active = true;
+    void request("query.configuration_records", { refs: [ollamaReference] })
+      .then((value) => {
+        const record = value.records.find(
+          (record: Row) => record.id === ollamaReference,
+        );
+        if (active && record && !endpointDraft.current) {
+          setEndpointRecord(record);
+          setEndpoint(ollamaServiceAddress(record.data.endpoint));
+        }
+      })
+      .catch(() => {
+        if (active)
+          setMessage("无法读取 Ollama 服务地址，请重新选择服务商重试");
+      });
+    return () => {
+      active = false;
+    };
+  }, [provider, ollamaReference, request, setMessage]);
   useEffect(() => {
     let active = true;
     setStatus(undefined);
@@ -133,17 +169,48 @@ export function DshProviderSettings({ request }: { request: Request }) {
       setBusy(false);
     }
   }
+  async function saveEndpoint(event: FormEvent) {
+    event.preventDefault();
+    captureFeedback();
+    beginFeedback();
+    setBusy(true);
+    setMessage("");
+    try {
+      const record = endpointDraft.current;
+      if (!record)
+        throw new Error("缺少服务地址的原始版本，请重新读取后再保存");
+      const value = normalizeOllamaServiceAddress(endpoint);
+      if (endpointAttempt.current?.value !== value)
+        endpointAttempt.current = { value, commandId: crypto.randomUUID() };
+      const saved = await request("model_provider.revise", {
+        command_id: endpointAttempt.current.commandId,
+        target: record.id,
+        expected_revision: record.revision,
+        payload: { data: { ...record.data, endpoint: value } },
+      });
+      const result = await request("query.configuration_records", {
+        refs: [saved.id],
+      });
+      setEndpointRecord(
+        result.records.find((record: Row) => record.id === saved.id),
+      );
+      endpointDraft.current = undefined;
+      endpointAttempt.current = undefined;
+      setEndpoint(value);
+      window.dispatchEvent(new Event("devdesk:runtime-options-changed"));
+      setMessage("Ollama 默认服务地址已保存；创建或保存 Model 时采用此地址");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      endFeedback();
+      setBusy(false);
+    }
+  }
   const selected = providers.find((p) => p.id === provider);
   return (
     <div className="setting-row">
       <div>
-        <h3>
-          {displayText(
-            provider === "deepseek"
-              ? "DeepSeek 官方 API key"
-              : selected?.label || "DSH 模型服务商",
-          )}
-        </h3>
+        <h3>DeepSeek Harness</h3>
         <label>
           DSH 模型服务商
           <ActionSelect
@@ -154,6 +221,10 @@ export function DshProviderSettings({ request }: { request: Request }) {
               captureFeedback();
 
               setProvider(event.target.value);
+              endpointDraft.current = undefined;
+              endpointAttempt.current = undefined;
+              setEndpointRecord(undefined);
+              setEndpoint("");
               draft.current = undefined;
               setSecret("");
               setStatus(undefined);
@@ -163,7 +234,7 @@ export function DshProviderSettings({ request }: { request: Request }) {
             {providers.length ? (
               providers.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {displayText(p.label)}
+                  {displayText(modelProviderLabel(p))}
                 </option>
               ))
             ) : (
@@ -172,11 +243,38 @@ export function DshProviderSettings({ request }: { request: Request }) {
           </ActionSelect>
         </label>
         {provider === "ollama" ? (
-          <p className="muted">
-            本地服务无需 API key。在 Model
-            中配置服务地址、模型与容量。订阅云模型使用本机 Ollama
-            的登录；容器连通与推理结果分别验证。
-          </p>
+          <>
+            <p className="muted">
+              本地服务无需 API key。在 Model
+              中选择模型并填写容量。订阅云模型使用本地 Ollama
+              的登录；容器连通与推理结果分别验证。
+            </p>
+            <ActionForm onSubmit={saveEndpoint}>
+              <label>
+                Ollama 协议地址
+                <input
+                  type="url"
+                  required
+                  value={endpoint}
+                  placeholder="http://127.0.0.1:11434"
+                  disabled={busy || !endpointRecord}
+                  onChange={(event) => {
+                    endpointDraft.current ??= endpointRecord;
+                    setEndpoint(event.target.value);
+                  }}
+                />
+              </label>
+              <p className="muted">
+                填写服务根地址，无需包含 /v1。Model 中可单独指定服务地址。
+              </p>
+              <ActionButton
+                type="submit"
+                disabled={busy || !endpointDraft.current || !endpoint}
+              >
+                保存 Ollama 地址
+              </ActionButton>
+            </ActionForm>
+          </>
         ) : (
           <>
             <p>
@@ -283,7 +381,7 @@ export function DshProviderSettings({ request }: { request: Request }) {
             </ActionForm>
           </>
         )}
-        {selected?.endpoint && (
+        {provider !== "ollama" && selected?.endpoint && (
           <p className="muted">
             默认服务地址：<code>{displayText(selected.endpoint)}</code>
           </p>
@@ -328,6 +426,7 @@ export function ModelFields({
   const codex = data.provider === "openai";
   const ollama = data.provider === "ollama";
   const selected = providers.find((provider) => provider.id === data.provider);
+  const endpoint = ollama ? data.endpoint || selected?.endpoint : undefined;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -357,7 +456,7 @@ export function ModelFields({
           "query.model_catalog_identity",
           {
             model_provider: data.provider,
-            ...(ollama && data.endpoint ? { endpoint: data.endpoint } : {}),
+            ...(endpoint ? { endpoint } : {}),
           },
           { signal: controller.signal },
         )
@@ -372,7 +471,7 @@ export function ModelFields({
             const result = await readModelCatalog(
               request,
               data.provider,
-              ollama ? data.endpoint : undefined,
+              endpoint,
               identity.identity,
               identity.installation_id,
               { signal: controller.signal, fresh: forceRefresh },
@@ -393,15 +492,7 @@ export function ModelFields({
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [
-    request,
-    data.provider,
-    data.endpoint,
-    codex,
-    ollama,
-    revision,
-    modelEpoch,
-  ]);
+  }, [request, data.provider, endpoint, codex, ollama, revision, modelEpoch]);
 
   const choices: Candidate[] = [...(selected?.models || []), ...candidates];
   if (data.model && !choices.some((model) => model.id === data.model))
@@ -414,9 +505,9 @@ export function ModelFields({
     <div className="full-width model-fields">
       {!codex && (
         <p className="muted">
-          {displayText(selected?.label)} ·{" "}
+          {displayText(selected && modelProviderLabel(selected))} ·{" "}
           {displayText(
-            ollama ? "通过本机 Ollama 服务连接" : selected?.endpoint,
+            ollama ? "通过本地 Ollama 服务连接" : selected?.endpoint,
           )}
         </p>
       )}
@@ -425,8 +516,8 @@ export function ModelFields({
           Ollama 服务地址
           <input
             type="url"
-            value={data.endpoint || ""}
-            placeholder="http://127.0.0.1:11434/v1"
+            value={ollamaServiceAddress(endpoint || "")}
+            placeholder="http://127.0.0.1:11434"
             onChange={(event) =>
               patch({ endpoint: event.target.value || undefined })
             }

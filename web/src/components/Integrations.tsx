@@ -7,11 +7,14 @@ import {
   ActionInput,
 } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ConfigurationList } from "./ConfigurationList";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ResourceEditor } from "./AgentCatalog";
 import {
   latest,
+  isPristineConfigurationDraft,
   loadCatalog,
+  loadConfigurationRecord,
   useDraft,
   useGroupTab,
 } from "./configuration-state";
@@ -407,34 +410,29 @@ function SourceManager({
           <h2>{displayText(names[kind])} 接入源管理</h2>
         </div>
         <div className="configuration-layout">
-          <div className="configuration-list">
-            <ActionButton
-              className={!selected ? "new-resource selected" : "new-resource"}
-              disabled={loading || busy}
-              onClick={() => {
+          <ConfigurationList
+            records={rows}
+            selectedId={selected?.id}
+            ready={!loading}
+            disabled={loading || busy}
+            autoSelectFirst={
+              !new URLSearchParams(location.search).has("config_object") &&
+              isPristineConfigurationDraft(draft, fresh())
+            }
+            onSelect={(row) => {
+              captureFeedback();
+              routeConsumed.current = true;
+              choose(row);
+            }}
+            newAction={{
+              label: `新建 ${names[kind]} 接入源`,
+              selected: !selected,
+              onClick: () => {
                 captureFeedback();
                 startNew();
-              }}
-            >
-              新建 {displayText(names[kind])} 接入源
-            </ActionButton>
-            {rows.map((r) => (
-              <ActionButton
-                key={r.id}
-                className={r.id === selected?.id ? "selected" : ""}
-                disabled={loading || busy}
-                onClick={() => {
-                  captureFeedback();
-                  return choose(r);
-                }}
-              >
-                <strong>{displayText(r.name)}</strong>
-                <span>
-                  v{displayText(r.version)} · {displayText(r.scope)}
-                </span>
-              </ActionButton>
-            ))}
-          </div>
+              },
+            }}
+          />
           <ActionForm
             className="form-grid"
             onSubmit={(e) => {
@@ -935,6 +933,7 @@ function BindingManager({
     { fingerprint: string; id: string } | undefined
   >(undefined);
   const bindingDefaults = useRef<Row>({});
+  const allowInitialSelection = useRef(true);
   const [bindingReady, setBindingReady] = useState(false);
   const fresh = () => ({
     selected: "",
@@ -1009,32 +1008,35 @@ function BindingManager({
       (r) => r.type === "tool" && r.data.integration_ref === source.id,
     ),
   );
-  const choose = (r: Row) => {
-    setDeletedBinding(undefined);
-    const b = r.data;
-    setDraft({
-      selected: r.id,
-      name: r.name,
-      scope: r.scope === "global" ? "global" : "project",
-      harness_ref: b.harness_ref,
-      sandbox_ref: b.sandbox_ref,
-      auth_kind:
-        b.auth?.kind === "oauth_pending" || b.auth?.kind === "oauth"
-          ? "oauth"
-          : b.auth?.kind || "none",
-      credential_ref: b.auth?.credential_ref || "",
-      header: b.auth?.header || "X-API-Key",
-      account: b.auth?.account || "",
-      scopes: (b.auth?.scopes || []).join("\n"),
-      origins: (b.allowed_origins || []).join("\n"),
-      private_network: b.allow_private_network,
-      allowed_tools: b.allowed_tools,
-      timeout: b.timeout_ms,
-      limit: b.max_result_bytes,
-    });
-    setDiscovery(undefined);
-    setSelectedNames([]);
-  };
+  const choose = useCallback(
+    (r: Row) => {
+      setDeletedBinding(undefined);
+      const b = r.data;
+      setDraft({
+        selected: r.id,
+        name: r.name,
+        scope: r.scope === "global" ? "global" : "project",
+        harness_ref: b.harness_ref,
+        sandbox_ref: b.sandbox_ref,
+        auth_kind:
+          b.auth?.kind === "oauth_pending" || b.auth?.kind === "oauth"
+            ? "oauth"
+            : b.auth?.kind || "none",
+        credential_ref: b.auth?.credential_ref || "",
+        header: b.auth?.header || "X-API-Key",
+        account: b.auth?.account || "",
+        scopes: (b.auth?.scopes || []).join("\n"),
+        origins: (b.allowed_origins || []).join("\n"),
+        private_network: b.allow_private_network,
+        allowed_tools: b.allowed_tools,
+        timeout: b.timeout_ms,
+        limit: b.max_result_bytes,
+      });
+      setDiscovery(undefined);
+      setSelectedNames([]);
+    },
+    [setDraft],
+  );
   async function run(fn: () => Promise<void>) {
     captureFeedback();
 
@@ -1058,6 +1060,7 @@ function BindingManager({
           onClick={() => {
             captureFeedback();
 
+            allowInitialSelection.current = false;
             setDraft(fresh());
             setSecret("");
             setMessage("");
@@ -1067,19 +1070,19 @@ function BindingManager({
         </ActionButton>
       </div>
       <div className="configuration-layout">
-        <div className="configuration-list">
-          {bindings.map((r) => (
-            <ActionButton
-              key={r.id}
-              onClick={() => {
-                captureFeedback();
-                return choose(r);
-              }}
-            >
-              {displayText(r.name)} · v{displayText(r.version)}
-            </ActionButton>
-          ))}
-        </div>
+        <ConfigurationList
+          records={bindings}
+          selectedId={selected?.id}
+          ready={bindingReady}
+          autoSelectFirst={
+            allowInitialSelection.current &&
+            isPristineConfigurationDraft(draft, fresh())
+          }
+          onSelect={(row) => {
+            captureFeedback();
+            choose(row);
+          }}
+        />
         <ActionForm
           className="form-grid"
           onSubmit={(e) => {
@@ -1852,31 +1855,50 @@ function HttpToolEditor({
     ),
   );
   const selected = catalog.find((r) => r.id === draft.selected);
-  const choose = (r: Row) => {
-    const t = r.data;
-    const h = t.implementation;
-    setDraft({
-      selected: r.id,
-      name: t.qualified_name,
-      description: t.description,
-      method: h.method,
-      path: h.path,
-      parameters: h.parameters || [],
-      body_pointer: h.body_pointer || "",
-      input: JSON.stringify(t.input_schema, null, 2),
-      output:
-        t.output_schema === undefined || t.output_schema === null
-          ? ""
-          : JSON.stringify(t.output_schema, null, 2),
-      effect: t.effect,
-      idempotency_header: h.idempotency_header || "",
-      constraints: JSON.stringify(t.constraints || {}, null, 2),
-      sensitive: (t.sensitive_parameters || []).join("\n"),
-      required_auth: t.required_auth
-        ? JSON.stringify(t.required_auth, null, 2)
-        : "",
-    });
-  };
+  const choice = useRef<AbortController | null>(null);
+  useEffect(() => () => choice.current?.abort(), []);
+  const choose = useCallback(
+    async (r: Row) => {
+      choice.current?.abort();
+      const controller = new AbortController();
+      choice.current = controller;
+      try {
+        r = await loadConfigurationRecord(
+          request,
+          r,
+          project?.id,
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
+        const t = r.data;
+        const h = t.implementation;
+        setDraft({
+          selected: r.id,
+          name: t.qualified_name,
+          description: t.description,
+          method: h.method,
+          path: h.path,
+          parameters: h.parameters || [],
+          body_pointer: h.body_pointer || "",
+          input: JSON.stringify(t.input_schema, null, 2),
+          output:
+            t.output_schema === undefined || t.output_schema === null
+              ? ""
+              : JSON.stringify(t.output_schema, null, 2),
+          effect: t.effect,
+          idempotency_header: h.idempotency_header || "",
+          constraints: JSON.stringify(t.constraints || {}, null, 2),
+          sensitive: (t.sensitive_parameters || []).join("\n"),
+          required_auth: t.required_auth
+            ? JSON.stringify(t.required_auth, null, 2)
+            : "",
+        });
+      } catch (error) {
+        if (!controller.signal.aborted) setError(String(error));
+      }
+    },
+    [request, project?.id, setDraft, setError],
+  );
   async function run(fn: () => Promise<void>) {
     captureFeedback();
 
@@ -1898,28 +1920,24 @@ function HttpToolEditor({
         <h2>HTTP 可调用动作</h2>
       </div>
       <div className="configuration-layout">
-        <div className="configuration-list">
-          <ActionButton
-            className="new-resource"
-            onClick={() => {
+        <ConfigurationList
+          records={tools}
+          selectedId={draft.selected}
+          autoSelectFirst={isPristineConfigurationDraft(draft, initial())}
+          onSelect={(row) => {
+            captureFeedback();
+            return choose(row);
+          }}
+          newAction={{
+            label: "新建 HTTP 动作",
+            selected: !draft.selected,
+            onClick: () => {
               captureFeedback();
-              return setDraft(initial());
-            }}
-          >
-            新建 HTTP 动作
-          </ActionButton>
-          {tools.map((t) => (
-            <ActionButton
-              key={t.id}
-              onClick={() => {
-                captureFeedback();
-                return choose(t);
-              }}
-            >
-              {displayText(t.name)} · v{displayText(t.version)}
-            </ActionButton>
-          ))}
-        </div>
+              choice.current?.abort();
+              setDraft(initial());
+            },
+          }}
+        />
         <ActionForm
           className="form-grid"
           onSubmit={(e) => {
@@ -2714,6 +2732,7 @@ function HistoryEvent({
   const [detail, setDetail] = useState<Row>();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const detailId = useId();
   const current = detail || event;
   return (
     <div className="history-row">
@@ -2722,11 +2741,19 @@ function HistoryEvent({
       </span>
       <div>
         <strong>{displayText(event.kind)}</strong>
-        <p>持久化事件 · {displayText(current.detail)}</p>
-        <code>{displayText(event.target)}</code>
+        <p
+          id={detailId}
+          className={detail ? "history-event-detail" : undefined}
+        >
+          持久化事件 · {displayText(current.detail)}
+        </p>
         {event.metadata_only && (
           <ActionButton
+            type="button"
             disabled={loading}
+            aria-busy={loading}
+            aria-expanded={!!detail}
+            aria-controls={detailId}
             onClick={async () => {
               if (detail) {
                 setDetail(undefined);
@@ -2754,7 +2781,7 @@ function HistoryEvent({
               }
             }}
           >
-            {detail ? "收起事件" : "展开事件"}
+            {loading ? "正在读取事件…" : detail ? "收起事件" : "展开事件"}
           </ActionButton>
         )}
         {error && <p role="alert">{displayText(error)}</p>}
@@ -3027,7 +3054,6 @@ export function CallHistory({
                         r.data.invocation?.agent_instance_id || "手工测试",
                       )}
                     </p>
-                    <code>{displayText(r.id)}</code>
                   </div>
                   <time dateTime={new Date(r.created_at).toISOString()}>
                     {displayText(
@@ -3048,7 +3074,6 @@ export function CallHistory({
                       状态：{displayText(selected.data.status)} · 远端副作用：
                       {displayText(selected.data.remote_effect)}
                     </p>
-                    <p>{displayText(selected.id)}</p>
                     <dl>
                       <dt>工具修订</dt>
                       <dd>

@@ -5,12 +5,14 @@ import { useActionFeedback } from "./action-feedback";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   latest,
+  isPristineConfigurationDraft,
   loadCatalog,
   loadConfigurationRecord,
   mergeConfigurationRecords,
   useDraft,
 } from "./configuration-state";
 import { MarkdownField } from "./configuration-ui";
+import { ConfigurationList } from "./ConfigurationList";
 import { type Row, type Request } from "./rpc-types";
 export function RoleManager({
   request: parentRequest,
@@ -118,11 +120,11 @@ export function RoleManager({
     const id = new URLSearchParams(location.search).get("config_object");
     const row =
       rows.find((r) => r.id === id) || (id ? { id, _index: true } : undefined);
+    routeConsumed.current = true;
     if (row) {
-      routeConsumed.current = true;
       if (draft.selected !== row.id) choose(row);
     }
-  }, [choose, draft.selected, rows]);
+  }, [choose, draft, rows]);
   const old = rows.find((r) => r.id === draft.selected);
   async function save(remove = false) {
     captureFeedback();
@@ -187,40 +189,36 @@ export function RoleManager({
         </div>
       </div>
       <div className="configuration-layout">
-        <div className="configuration-list">
-          <ActionButton
-            className="new-resource"
-            onClick={() => {
+        <ConfigurationList
+          records={latest(rows)}
+          selectedId={draft.selected}
+          ready={rows.length > 0}
+          autoSelectFirst={
+            !new URLSearchParams(location.search).has("config_object") &&
+            isPristineConfigurationDraft(draft, empty())
+          }
+          onSelect={(row) => {
+            captureFeedback();
+            routeConsumed.current = true;
+            setMessage("");
+            return choose(row);
+          }}
+          newAction={{
+            label: "新建 Role",
+            selected: !draft.selected,
+            onClick: () => {
               captureFeedback();
 
+              routeConsumed.current = true;
               const params = new URLSearchParams(location.search);
               params.delete("config_object");
               history.replaceState(null, "", `?${params}`);
               choice.current?.abort();
               setDetailLoading(false);
               setDraft(empty());
-            }}
-          >
-            新建 Role
-          </ActionButton>
-
-          {latest(rows).map((row) => (
-            <ActionButton
-              key={row.id}
-              aria-pressed={draft.selected === row.id}
-              className={draft.selected === row.id ? "selected" : ""}
-              onClick={() => {
-                captureFeedback();
-
-                choose(row);
-                setMessage("");
-              }}
-            >
-              <strong>{displayText(row.name)}</strong>
-              <span>v{displayText(row.version)}</span>
-            </ActionButton>
-          ))}
-        </div>
+            },
+          }}
+        />
         <ActionForm
           className="form-grid"
           onSubmit={(e) => {

@@ -43,7 +43,7 @@ SSE 可显式传入 `configuration=true`，接收无持久化事件 ID 的 `conf
 
 设置 `DEVDESK_PERF_LOG=1` 可输出启动和 RPC 的 JSON 性能日志，包含请求编号、队列等待、连接等待、源解码/校验、恢复、编译、响应编码、字节数与阶段调用次数；嵌套阶段为包含关系，不能直接相加。RPC 同时返回 `Server-Timing` 和 `X-DevDesk-Request-Id`。日志不包含请求参数或响应正文，默认关闭。
 
-历史记录页使用 `query.history({scope,project_id?,include_tool_calls:true,offset,limit})`：Global 读取全局配置库，项目历史必须指定 project_id；先合并持久化事件、外部工具及平台工具调用，按事件 time / 调用 created_at 倒序排列，再统一分页，默认每页 50 条、上限 100 条。返回 `{records,total}`，每条为 `{type:"event",time,event}` 或 `{type:"tool_call",time,call}`；调用沿用 `query.tool_calls` 的来源投影和敏感参数脱敏。不传 include_tool_calls 时仍返回 `{events,total}`，`query.events` 的 SSE 游标语义不变。历史、仓库、运行时和工具调用读取使用独立 SQL 已提交快照，先选页再解码，不恢复完整工程历史。`view:"summary"` 的历史事件仅含 512 字符节选并标记 metadata_only；`event_id` 读取确切原文。工具调用列表的 summary 只含来源及状态元数据，传确切 id 按需读取脱敏后的调用与回执。未指定 summary 的既有详情表示保持兼容。
+历史记录页使用 `query.history({scope,project_id?,include_tool_calls:true,offset,limit})`：Global 读取全局配置库，项目历史必须指定 project_id；先合并持久化事件、外部工具及平台工具调用，按事件 time / 调用 created_at 倒序排列，再统一分页，默认每页 50 条、上限 100 条。返回 `{records,total}`，每条为 `{type:"event",time,event}` 或 `{type:"tool_call",time,call}`；调用沿用 `query.tool_calls` 的来源投影和敏感参数脱敏。不传 include_tool_calls 时仍返回 `{events,total}`，`query.events` 的 SSE 游标语义不变。历史、仓库、运行时和工具调用读取使用独立 SQL 已提交快照，先选页再解码，不恢复完整工程历史。`view:"summary"` 的历史事件最多返回 512 字符，仅当正文确实被截断时标记 `metadata_only:true`，短事件标记为 false；SQL 仅多取一个字符判断截断，不加载完整长正文。`event_id` 读取确切原文。工具调用列表的 summary 只含来源及状态元数据，传确切 id 按需读取脱敏后的调用与回执。未指定 summary 的既有详情表示保持兼容。
 
 JSON-RPC 使用 -32600 / -32601 / -32602 / -32000；领域说明位于 `error.message`，领域代码位于 `error.data.code`，常见为 invalid_params、not_found、blocked、revision_conflict、project_required、configuration_required、dataset_locked 和 storage。
 

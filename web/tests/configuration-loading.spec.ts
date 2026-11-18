@@ -56,12 +56,9 @@ test("配置页面用轻量启动和项目目录，配置变更通过 SSE 更新
   ).toContainText("SSE 配置版本");
   expect(methods).not.toContain("query.workspace");
   await page.getByRole("button", { name: "流程与规范", exact: true }).click();
-  await expect(
-    page
-      .getByRole("region", { name: "工作流程管理" })
-      .locator(".configuration-list button")
-      .first(),
-  ).toBeVisible();
+  await expect(page.getByLabel("流程名称", { exact: true })).not.toHaveValue(
+    "",
+  );
   expect(methods).not.toContain("query.workspace");
 });
 
@@ -166,7 +163,7 @@ test("项目预览后台刷新保留可操作表单与角色绑定", async ({ pa
   }
 });
 
-test("配置索引跨页复用，正文只在选择对象后读取", async ({ page }) => {
+test("配置索引跨页复用，仅读取默认或明确选中的配置正文", async ({ page }) => {
   const methods: string[] = [];
   page.on("request", (r) => {
     if (r.url().endsWith("/rpc")) methods.push(r.postDataJSON().method);
@@ -177,8 +174,6 @@ test("配置索引跨页复用，正文只在选择对象后读取", async ({ pa
     .locator(".configuration-list button:has(strong)");
   await expect(list.first()).toBeVisible();
   expect(methods).not.toContain("query.configurations");
-  expect(methods).not.toContain("query.configuration_records");
-  await list.first().click();
   await expect(page.getByLabel("Role 名称", { exact: true })).not.toHaveValue(
     "",
   );
@@ -187,16 +182,17 @@ test("配置索引跨页复用，正文只在选择对象后读取", async ({ pa
       () => methods.filter((m) => m === "query.configuration_records").length,
     )
     .toBe(1);
+  await list.first().click();
+  expect(
+    methods.filter((m) => m === "query.configuration_records"),
+  ).toHaveLength(1);
   const indexes = methods.filter(
     (m) => m === "query.configuration_index",
   ).length;
   await page.getByRole("button", { name: "流程与规范", exact: true }).click();
-  await expect(
-    page
-      .getByRole("region", { name: "工作流程管理" })
-      .locator(".configuration-list button:has(strong)")
-      .first(),
-  ).toBeVisible();
+  await expect(page.getByLabel("流程名称", { exact: true })).not.toHaveValue(
+    "",
+  );
   const afterB = methods.filter(
     (m) => m === "query.configuration_index",
   ).length;
@@ -246,6 +242,9 @@ test("模型目录慢或失败时仍能编辑；切回复用，换账号隔离",
     panel.locator(".configuration-list button:has(strong)").first(),
   ).toBeVisible();
   await panel.getByRole("button", { name: /GPT-6.1 Sol High/ }).click();
+  await expect(panel.locator('button[aria-pressed="true"] strong')).toHaveText(
+    "GPT-6.1 Sol High",
+  );
   const select = page.getByLabel("模型标识", { exact: true });
   await expect(select).toBeEnabled();
   await expect(select).not.toHaveValue("");

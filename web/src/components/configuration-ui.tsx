@@ -1,7 +1,10 @@
 import { displayText } from "../display-text";
 import type { Row } from "./rpc-types";
 import { ConfigurationScope } from "./configuration-scope";
-import { loadCatalog } from "./configuration-state";
+import {
+  compareConfigurationRecords,
+  loadCatalog,
+} from "./configuration-state";
 import { ActionButton, ActionSelect } from "./ActionFeedback";
 import {
   lazy,
@@ -91,11 +94,7 @@ export function RevisionSelect(props: RevisionSelectProps) {
   const ids = Array.isArray(value) ? value : [value];
   const options = [
     ...new Map([...history, ...records].map((row) => [row.id, row])).values(),
-  ].sort(
-    (a, b) =>
-      String(a.definition_id).localeCompare(String(b.definition_id)) ||
-      b.version - a.version,
-  );
+  ].sort(compareConfigurationRecords);
   for (const id of ids) {
     const old = records.find((r) => r.id === id);
     if (old && !options.some((r) => r.id === id)) options.push(old);

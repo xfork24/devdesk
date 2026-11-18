@@ -6,6 +6,7 @@ import { ActionButton, ActionSelect } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
 import {
   latest,
+  isPristineConfigurationDraft,
   loadCatalog,
   loadConfigurationRecord,
   mergeConfigurationRecords,
@@ -19,6 +20,7 @@ import {
   WorkflowDeliveries,
 } from "./WorkflowDeliveries";
 import { WorkflowTaskPreview } from "./WorkflowTaskPreview";
+import { ConfigurationList } from "./ConfigurationList";
 
 type Props = {
   request: Request;
@@ -104,19 +106,20 @@ export function WorkflowManager({
     [validation, setValidation] = useState<Row>();
   const [authoring, setAuthoring] = useState<Row>();
   const [importText, setImportText] = useState("");
+  const emptyDraft = () => ({
+    selected: "",
+    revision: 1,
+    name: "",
+    scope: "global",
+    view: "list",
+    editing: true,
+    node: "workflow",
+    document: emptyDocument() as Row,
+    expandedStages: [] as string[],
+  });
   const [draft, setDraft] = useDraft(
     `devdesk:v6:workflow:${project?.id || "global"}`,
-    () => ({
-      selected: "",
-      revision: 1,
-      name: "",
-      scope: "global",
-      view: "list",
-      editing: true,
-      node: "workflow",
-      document: emptyDocument() as Row,
-      expandedStages: [] as string[],
-    }),
+    emptyDraft,
   );
   const editorRef = useRef<HTMLElement>(null);
   const epoch = useRef(0),
@@ -199,7 +202,7 @@ export function WorkflowManager({
       (selected ? { id: selected, _index: true } : undefined);
     if (row && (draft.selected !== row.id || draft.view !== "editor"))
       choose(row);
-  }, [rows, choose, draft.selected, draft.view]);
+  }, [rows, choose, draft]);
   const document = draft.document;
   const roles = records
     .filter((row) => row.type === "role")
@@ -371,6 +374,7 @@ export function WorkflowManager({
           type="button"
           onClick={() => {
             capture();
+            routeSelected.current = true;
             choice.current?.abort();
             setDraft({
               selected: "",
@@ -390,27 +394,21 @@ export function WorkflowManager({
         </ActionButton>
       </div>
       {draft.view === "list" ? (
-        <div className="configuration-list">
-          {latest(visibleRows).map((row) => (
-            <ActionButton
-              key={row.id}
-              aria-pressed={draft.selected === row.id}
-              className={draft.selected === row.id ? "selected" : ""}
-              onClick={() => {
-                capture();
-                choose(row);
-              }}
-            >
-              <strong>{displayText(row.name)}</strong>
-              <small>
-                {displayText(
-                  row.type === "workflow_draft" ? "草稿" : `v${row.version}`,
-                )}
-              </small>
-            </ActionButton>
-          ))}
-          {!visibleRows.length ? <p>暂无流程，可创建新的工作流程。</p> : null}
-        </div>
+        <ConfigurationList
+          records={latest(visibleRows)}
+          selectedId={draft.selected}
+          ready={records.length > 0}
+          autoSelectFirst={
+            !new URLSearchParams(location.search).has("workflow_id") &&
+            isPristineConfigurationDraft(draft, emptyDraft())
+          }
+          onSelect={(row) => {
+            capture();
+            routeSelected.current = true;
+            return choose(row);
+          }}
+          emptyMessage="暂无流程，可创建新的工作流程。"
+        />
       ) : (
         <>
           <div className="actions">

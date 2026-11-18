@@ -98,6 +98,57 @@ fn revision_conflicts_and_pagination_are_enforced() {
 }
 
 #[test]
+fn history_summaries_mark_only_bodies_that_exceed_the_character_limit() {
+    let directory = tempfile::tempdir().unwrap();
+    let e = engine(directory.path());
+    let lengths = [0, 511, 512, 513, 1024];
+    e.store
+        .seed_fixture_state(None, &mut |state| {
+            let first = state.events.last().map_or(1, |event| event.id + 1);
+            for (index, length) in lengths.into_iter().enumerate() {
+                state.events.push(Event {
+                    id: first + index as u64,
+                    target: "summary-length-fixture".into(),
+                    kind: format!("event-length-{length}"),
+                    detail: "🧪".repeat(length),
+                    time: 9_000_000_000_000 + index as u64,
+                });
+            }
+            Ok(Value::Null)
+        })
+        .unwrap();
+    let cursor = e.store.event_cursor().unwrap();
+    for combined in [false, true] {
+        let result = e
+            .query(
+                "query.history",
+                &json!({"target":"summary-length-fixture","include_tool_calls":combined,"view":"summary","limit":100}),
+                4,
+            )
+            .unwrap();
+        let rows = result[if combined { "records" } else { "events" }]
+            .as_array()
+            .unwrap();
+        assert_eq!(rows.len(), lengths.len());
+        for (row, length) in rows.iter().zip(lengths.into_iter().rev()) {
+            let event = if combined { &row["event"] } else { row };
+            assert_eq!(event["metadata_only"], length > 512);
+            assert_eq!(event["detail"], "🧪".repeat(length.min(512)));
+            let exact = e
+                .query(
+                    "query.history",
+                    &json!({"event_id":event["id"],"limit":1}),
+                    4,
+                )
+                .unwrap();
+            assert_eq!(exact["events"][0]["detail"], "🧪".repeat(length));
+            assert!(exact["events"][0]["metadata_only"].is_null());
+        }
+    }
+    assert_eq!(e.store.event_cursor().unwrap(), cursor);
+}
+
+#[test]
 fn combined_history_sorts_before_paging_and_reuses_redacted_call_projections() {
     let dir = tempfile::tempdir().unwrap();
     let e = engine(dir.path());

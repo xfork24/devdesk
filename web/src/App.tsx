@@ -168,6 +168,10 @@ async function rpc(
     "runtime.prepare_sandbox",
     "session.open",
     "experience.restore",
+    "codex.auth.start",
+    "codex.auth.status",
+    "codex.auth.cancel",
+    "codex.auth.preparation_cancel",
   ].includes(method);
   if (preparingRuntime)
     window.dispatchEvent(
@@ -1242,7 +1246,13 @@ function App() {
         </header>
         <ConfigurationMain
           scope={configurationScope}
-          className={tab === "execution" ? "execution-page" : undefined}
+          className={
+            tab === "execution"
+              ? "execution-page"
+              : tab === "settings"
+                ? "settings-page"
+                : undefined
+          }
         >
           {error && (
             <div className="error" role="alert">
@@ -1920,117 +1930,117 @@ function App() {
                     </div>
                   </div>
                 )}
-                {project && (
-                  <RepositorySettings
-                    key={`${project.id}:${catalogGeneration}`}
-                    project={project}
-                    ready={repositoryReady}
-                    request={rpc}
-                    refresh={load}
-                  />
-                )}
-                <TemplateSettings request={rpc} refresh={load} />
-                <RuntimeSettings
-                  provider={data.default_harness || "codex"}
-                  installations={data.runtime_installations || []}
-                  settingsVersions={data.settings_versions || []}
+              </section>
+              {project && (
+                <RepositorySettings
+                  key={`${project.id}:${catalogGeneration}`}
+                  project={project}
+                  ready={repositoryReady}
                   request={rpc}
                   refresh={load}
                 />
-                <div className="setting-row">
-                  <div>
-                    <h3>全局并发额度</h3>
-                    <p>
-                      {displayText(data.global_concurrency)} 个 Run · 单项目默认
-                      2 个
-                    </p>
-                  </div>
-                  <ActionButton
-                    onClick={() =>
-                      show({
-                        title: "修改全局并发",
-                        method: "settings.update",
-                        fields: [
-                          {
-                            key: "global_concurrency",
-                            label: "并发额度 1—32",
-                            type: "number",
-                            value: String(data.global_concurrency),
-                          },
-                        ],
-                      })
-                    }
-                  >
-                    调整
-                  </ActionButton>
+              )}
+              <TemplateSettings request={rpc} refresh={load} />
+              <RuntimeSettings
+                provider={data.default_harness || "codex"}
+                installations={data.runtime_installations || []}
+                settingsVersions={data.settings_versions || []}
+                request={rpc}
+                refresh={load}
+              />
+              <div className="setting-row">
+                <div>
+                  <h3>全局并发额度</h3>
+                  <p>
+                    {displayText(data.global_concurrency)} 个 Run · 单项目默认 2
+                    个
+                  </p>
                 </div>
-                {project && (
-                  <div className="setting-row">
-                    <div>
-                      <h3>{displayText(project.title)} · Project 设置</h3>
-                      <p className="muted">
-                        Workspace: {displayText(project.workspace || "未设置")}{" "}
-                        · 项目并发 {displayText(project.concurrency)}
-                      </p>
-                    </div>
-                    <div className="actions">
-                      <ActionButton onClick={() => setTab("workflows")}>
-                        默认绑定
-                      </ActionButton>
-                      <ActionButton
-                        onClick={() =>
-                          show({
-                            title: "编辑 Project",
-                            method: "project.update",
-                            target: project.id,
-                            fields: [
-                              {
-                                key: "title",
-                                label: "名称",
-                                value: project.title,
-                              },
-                              {
-                                key: "workspace",
-                                label: "Workspace 描述",
-                                value: project.workspace,
-                                optional: true,
-                              },
-                              {
-                                key: "concurrency",
-                                label: "项目并发额度",
-                                type: "number",
-                                value: String(project.concurrency),
-                              },
-                            ],
-                          })
-                        }
-                      >
-                        编辑
-                      </ActionButton>
-                    </div>
-                  </div>
-                )}
+                <ActionButton
+                  onClick={() =>
+                    show({
+                      title: "修改全局并发",
+                      method: "settings.update",
+                      fields: [
+                        {
+                          key: "global_concurrency",
+                          label: "并发额度 1—32",
+                          type: "number",
+                          value: String(data.global_concurrency),
+                        },
+                      ],
+                    })
+                  }
+                >
+                  调整
+                </ActionButton>
+              </div>
+              {project && (
                 <div className="setting-row">
                   <div>
-                    <h3>退出内核</h3>
+                    <h3>{displayText(project.title)} · Project 设置</h3>
                     <p className="muted">
-                      未确认的运行在下次启动后标记中断，可显式重试。
+                      Workspace: {displayText(project.workspace || "未设置")} ·
+                      项目并发 {displayText(project.concurrency)}
                     </p>
                   </div>
-                  <ActionButton
-                    className="danger"
-                    onClick={() =>
-                      show({
-                        title: "退出当前内核",
-                        method: "shutdown",
-                        fields: [],
-                      })
-                    }
-                  >
-                    退出
-                  </ActionButton>
+                  <div className="actions">
+                    <ActionButton onClick={() => setTab("workflows")}>
+                      默认绑定
+                    </ActionButton>
+                    <ActionButton
+                      onClick={() =>
+                        show({
+                          title: "编辑 Project",
+                          method: "project.update",
+                          target: project.id,
+                          fields: [
+                            {
+                              key: "title",
+                              label: "名称",
+                              value: project.title,
+                            },
+                            {
+                              key: "workspace",
+                              label: "Workspace 描述",
+                              value: project.workspace,
+                              optional: true,
+                            },
+                            {
+                              key: "concurrency",
+                              label: "项目并发额度",
+                              type: "number",
+                              value: String(project.concurrency),
+                            },
+                          ],
+                        })
+                      }
+                    >
+                      编辑
+                    </ActionButton>
+                  </div>
                 </div>
-              </section>
+              )}
+              <div className="setting-row">
+                <div>
+                  <h3>退出内核</h3>
+                  <p className="muted">
+                    未确认的运行在下次启动后标记中断，可显式重试。
+                  </p>
+                </div>
+                <ActionButton
+                  className="danger"
+                  onClick={() =>
+                    show({
+                      title: "退出当前内核",
+                      method: "shutdown",
+                      fields: [],
+                    })
+                  }
+                >
+                  退出
+                </ActionButton>
+              </div>
               <div className="notice">
                 Web UI 连接当前 Rust Host。真实工程需配置 Harness、Docker 和
                 GitHub；平台验收记录见文档。

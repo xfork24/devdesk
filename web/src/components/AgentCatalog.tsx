@@ -11,6 +11,11 @@ import {
   type ReactNode,
 } from "react";
 import { RoleManager } from "./RoleManager";
+import { ConfigurationList } from "./ConfigurationList";
+import {
+  modelProviderLabel,
+  normalizeOllamaServiceAddress,
+} from "./ollama-endpoint";
 import { JsonField } from "./WorkflowDeliveries";
 import { StandardManager } from "./StandardManager";
 import { SpecLint } from "./SpecLint";
@@ -21,6 +26,7 @@ import {
   sourceContent,
   sourcePayload,
   latest,
+  isPristineConfigurationDraft,
   loadCatalog,
   loadConfigurationRecord,
   mergeConfigurationRecords,
@@ -367,6 +373,7 @@ export function ResourceEditor({
   useEffect(() => {
     if (routeConsumed.current || !records.length) return;
     const selected = new URLSearchParams(location.search).get("config_object");
+    routeConsumed.current = true;
     if (selected) {
       const instance = records.find(
         (r) => r.id === selected && r.type === "agent_instance",
@@ -381,11 +388,10 @@ export function ResourceEditor({
         _index: true,
       };
       if (row) {
-        routeConsumed.current = true;
         if (draft.selected !== row.id) choose(row);
       }
     }
-  }, [records, kind, draft.selected, choose]);
+  }, [records, kind, draft, choose]);
   async function save(remove = false) {
     captureFeedback();
 
@@ -394,6 +400,12 @@ export function ResourceEditor({
     setError("");
     try {
       const payload = structuredClone(data);
+      if (kind === "model" && payload.provider === "ollama")
+        payload.endpoint = normalizeOllamaServiceAddress(
+          payload.endpoint ||
+            providers.find((provider) => provider.id === "ollama")?.endpoint ||
+            "",
+        );
       if (kind === "model" && !payload.model)
         throw new Error("请先从模型目录中选择模型标识");
       if (kind === "agent" && !payload.instructions)
@@ -483,17 +495,33 @@ export function ResourceEditor({
         </div>
       </div>
       <div className="configuration-layout">
-        <div className="configuration-list">
-          <ActionButton
-            className={
-              !old && !showAdditionalEditor
-                ? "new-resource selected"
-                : "new-resource"
-            }
-            onClick={() => {
+        <ConfigurationList
+          records={latest(records.filter((row) => row.type === kind))}
+          selectedId={showAdditionalEditor ? undefined : draft.selected}
+          ready={records.length > 0}
+          autoSelectFirst={
+            !showAdditionalEditor &&
+            !new URLSearchParams(location.search).has("config_object") &&
+            isPristineConfigurationDraft(draft, {
+              selected: "",
+              name: "",
+              scope: "global",
+              data: initial(kind),
+            })
+          }
+          onSelect={(row) => {
+            captureFeedback();
+            routeConsumed.current = true;
+            return choose(row);
+          }}
+          newAction={{
+            label: `新建 ${labels[kind]}`,
+            selected: !draft.selected && !showAdditionalEditor,
+            onClick: () => {
               captureFeedback();
 
               setShowAdditionalEditor(false);
+              routeConsumed.current = true;
               choice.current?.abort();
               const params = new URLSearchParams(location.search);
               params.delete("config_object");
@@ -504,45 +532,24 @@ export function ResourceEditor({
                 scope: "global",
                 data: initial(kind),
               });
-            }}
-          >
-            新建 {displayText(labels[kind])}
-          </ActionButton>
-          {additionalEditor && (
-            <ActionButton
-              className={showAdditionalEditor ? "selected" : ""}
-              onClick={() => {
-                setShowAdditionalEditor(true);
-                setError("");
-                setMessage("");
-              }}
-            >
-              {displayText(additionalEditor.label)}
-            </ActionButton>
-          )}
-
-          {latest(records.filter((r) => r.type === kind)).map((row) => (
-            <ActionButton
-              key={row.id}
-              aria-pressed={!showAdditionalEditor && draft.selected === row.id}
-              className={
-                !showAdditionalEditor && draft.selected === row.id
-                  ? "selected"
-                  : ""
-              }
-              onClick={() => {
-                captureFeedback();
-                return choose(row);
-              }}
-            >
-              <strong>{displayText(row.name)}</strong>
-              <span>
-                v{displayText(row.version)} ·{" "}
-                {displayText(row.scope === "global" ? "Global" : "项目")}
-              </span>
-            </ActionButton>
-          ))}
-        </div>
+            },
+          }}
+          actions={
+            additionalEditor && (
+              <ActionButton
+                className={showAdditionalEditor ? "selected" : ""}
+                onClick={() => {
+                  routeConsumed.current = true;
+                  setShowAdditionalEditor(true);
+                  setError("");
+                  setMessage("");
+                }}
+              >
+                {displayText(additionalEditor.label)}
+              </ActionButton>
+            )
+          }
+        />
         {additionalEditor && (
           <div hidden={!showAdditionalEditor}>
             {displayText(additionalEditor.content)}
@@ -723,7 +730,7 @@ export function ResourceEditor({
                   >
                     {providers.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {displayText(p.label)}
+                        {displayText(modelProviderLabel(p))}
                       </option>
                     ))}
                   </ActionSelect>

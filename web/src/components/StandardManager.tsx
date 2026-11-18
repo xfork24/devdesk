@@ -1,9 +1,9 @@
 import { displayText } from "../display-text";
 import { useReadRequest, ignoreCancelledRefresh } from "./use-read-request";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActionButton } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
-import { loadCatalog } from "./configuration-state";
+import { latest, loadCatalog } from "./configuration-state";
 import { MarkdownPreview, RevisionSelect } from "./configuration-ui";
 import { type Request, type Row } from "./rpc-types";
 
@@ -249,6 +249,7 @@ export function StandardManager({
 }) {
   const request = useReadRequest(parentRequest);
   const [records, setRecords] = useState<Row[]>([]);
+  const initialized = useRef(false);
   const [selected, setSelected] = useState(
     () => new URLSearchParams(location.search).get("standard_id") || "",
   );
@@ -280,6 +281,14 @@ export function StandardManager({
       active = false;
     };
   }, [request, project?.id, setError]);
+  useEffect(() => {
+    if (initialized.current || !records.length) return;
+    initialized.current = true;
+    if (!selected) {
+      const first = latest(records.filter((row) => row.type === "standard"))[0];
+      if (first) setSelected(first.id);
+    }
+  }, [records, selected]);
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     if (selected) params.set("standard_id", selected);

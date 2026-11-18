@@ -860,6 +860,7 @@ main {
 }
 .history-row > div {
   flex: 1;
+  min-width: 0;
 }
 .history-row strong {
   font-size: 11px;
@@ -868,6 +869,12 @@ main {
   font-size: 10px;
   color: #9aa3b3;
   margin: 3px 0;
+}
+.history-row .history-event-detail {
+  max-height: 32rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .history-row time {
   font-size: 10px;
@@ -921,6 +928,21 @@ main {
   min-width: 0;
   max-width: 100%;
   overflow-wrap: anywhere;
+}
+.settings-page > .panel,
+.settings-page > .setting-row {
+  margin-bottom: 16px;
+}
+.settings-page > .setting-row {
+  border: 1px solid #e3e7ef;
+  border-radius: 8px;
+  background: white;
+}
+.settings-page > p:empty {
+  display: none;
+}
+.settings-page > .panel > .setting-row:last-child {
+  border-bottom: 0;
 }
 .action-feedback {
   display: block;

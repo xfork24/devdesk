@@ -12,13 +12,30 @@ export const templateSourceLabel = (row?: Row) =>
       archived: "来自重置前定义",
     }) as Record<string, string>
   )[row?.template_source?.origin as string] || "";
+const configurationNames = new Intl.Collator("zh-CN", { sensitivity: "base" });
+export function compareConfigurationRecords(
+  left: { name?: string; id?: string; version?: number },
+  right: { name?: string; id?: string; version?: number },
+) {
+  return (
+    configurationNames.compare(
+      left.name || left.id || "",
+      right.name || right.id || "",
+    ) ||
+    (right.version || 0) - (left.version || 0) ||
+    String(left.id).localeCompare(String(right.id))
+  );
+}
+export function isPristineConfigurationDraft(draft: Row, empty: Row) {
+  return JSON.stringify(draft) === JSON.stringify(empty);
+}
 export function latest(records: Row[]) {
   const map = new Map<string, Row>();
   for (const r of records) {
     const key = `${r.type}:${r.definition_id}`;
     if (!map.has(key) || map.get(key)!.version < r.version) map.set(key, r);
   }
-  return [...map.values()];
+  return [...map.values()].sort(compareConfigurationRecords);
 }
 export function mergeConfigurationRecords(records: Row[], updates: Row[]) {
   // Updating a record's details must retain its position in the catalog.

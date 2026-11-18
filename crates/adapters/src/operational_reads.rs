@@ -249,9 +249,9 @@ pub(super) fn read(
         let mut rows = vec![];
         for (kind, id, time) in selected {
             if kind == "event" {
-                let event = tx
+                let mut event = tx
                     .query_row(
-                        if p["view"] == "summary" {"SELECT id,target,kind,substr(detail,1,512),time FROM events WHERE id=?1"} else {"SELECT id,target,kind,detail,time FROM events WHERE id=?1"},
+                        if p["view"] == "summary" {"SELECT id,target,kind,substr(detail,1,513),time FROM events WHERE id=?1"} else {"SELECT id,target,kind,detail,time FROM events WHERE id=?1"},
                         [id],
                         |r| {
                             Ok(Event {
@@ -264,9 +264,15 @@ pub(super) fn read(
                         },
                     )
                     .map_err(storage)?;
+                // Fetch one extra character to distinguish a complete short
+                // event from a truncated excerpt without loading its full body.
+                let truncated = p["view"] == "summary" && event.detail.chars().count() > 512;
+                if truncated {
+                    event.detail = event.detail.chars().take(512).collect();
+                }
                 let mut event = json!(event);
                 if p["view"] == "summary" {
-                    event["metadata_only"] = json!(true);
+                    event["metadata_only"] = json!(truncated);
                 }
                 rows.push(if combined {
                     json!({"type":"event","time":time,"event":event})

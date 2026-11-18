@@ -57,14 +57,25 @@ impl RuntimePreparation {
         self.auth_cancel.load(std::sync::atomic::Ordering::SeqCst)
     }
     pub fn auth_progress(&self, message: &str) {
-        self.status
-            .write()
-            .unwrap()
-            .entry("codex-auth".into())
-            .and_modify(|v| {
-                v["message"] = json!(message);
-                v["status"] = json!("preparing");
-            });
+        self.update_auth_status("preparing", message);
+    }
+    pub fn auth_login_result(&self, result: &Result<Value>) {
+        match result {
+            Ok(_) => self.update_auth_status("waiting", "等待用户完成官方网页授权"),
+            Err(error) => self.update_auth_status("failed", &error.message),
+        }
+    }
+    fn update_auth_status(&self, status: &str, message: &str) {
+        let mut preparations = self.status.write().unwrap();
+        let row = preparations.entry("codex-auth".into()).or_insert_with(|| {
+            let started = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            json!({"provider":"codex-auth","started":started})
+        });
+        row["message"] = json!(message);
+        row["status"] = json!(status);
     }
     pub fn prepare_auth(&self, global: &GlobalStore) -> Result<RuntimeInstallation> {
         self.run("codex-auth", |progress| {

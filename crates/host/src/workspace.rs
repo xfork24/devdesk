@@ -822,7 +822,7 @@ impl Workspace {
             return self.open_github_project(params);
         }
         if method == "runtime.preparation_status" {
-            let mut status = self.runtime_setup.status();
+            let mut status = self.runtime_preparation_status();
             status["intents"] = json!(self.global.runtime_preparation_records()?);
             return Ok(status);
         }
@@ -862,7 +862,7 @@ impl Workspace {
             return Ok(json!(self.global.discover_docker_runtime(provider)?));
         }
         if method == "codex.auth.preparation_status" {
-            return Ok(self.runtime_setup.status());
+            return Ok(self.runtime_preparation_status());
         }
         if method == "codex.auth.preparation_cancel" {
             self.runtime_setup.cancel_auth();
@@ -890,7 +890,7 @@ impl Workspace {
                         params["device"].as_bool().unwrap_or(false),
                         &|message| self.runtime_setup.auth_progress(message),
                     );
-                    if self.runtime_setup.auth_cancelled() {
+                    let result = if self.runtime_setup.auth_cancelled() {
                         if let Ok(value) = &result
                             && let Some(login) = value["loginId"].as_str()
                         {
@@ -899,7 +899,9 @@ impl Workspace {
                         Err(err("cancelled", "登录已取消，所属认证请求已停止"))
                     } else {
                         result
-                    }
+                    };
+                    self.runtime_setup.auth_login_result(&result);
+                    result
                 }
                 "codex.auth.cancel" => self.codex_auth.cancel(
                     &self.global,

@@ -95,6 +95,12 @@ test("OAuth 登录组件诊断与执行镜像分别展示", async ({
   const execution = page.locator(".setting-row").filter({
     has: page.getByRole("heading", { name: "执行镜像", exact: true }),
   });
+  const harness = page.getByRole("region", {
+    name: "默认 Agent Harness 配置",
+    exact: true,
+  });
+  await expect(harness).toContainText("默认 Agent Harness");
+  await expect(harness).toContainText("执行镜像");
   await expect(
     page.getByText("本地安装与执行镜像", { exact: true }),
   ).toHaveCount(0);
@@ -732,6 +738,93 @@ test("刷新设置恢复同一待授权请求，取消仍指向原登录", async
   await page.getByRole("button", { name: "取消登录", exact: true }).click();
   await expect.poll(() => cancelled).toBe("pending-original");
   expect(starts).toBe(0);
+});
+
+test("顶部授权等待提示在登录结束或取消后消失，刷新不恢复旧请求", async ({
+  page,
+}, info) => {
+  let pending = true;
+  let authenticated = false;
+  let busy = false;
+  const login = {
+    loginId: "fixture-banner-login",
+    authUrl: "https://auth.openai.com/authorize?fixture=banner",
+  };
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    let result;
+    if (call.method === "runtime.preparation_status") {
+      result = {
+        preparations: [
+          {
+            provider: "codex-auth",
+            status: pending ? "waiting" : "ready",
+            message: pending
+              ? "等待用户完成官方网页授权"
+              : "官方网页授权流程已结束",
+          },
+        ],
+      };
+    } else if (call.method === "codex.auth.status") {
+      result = {
+        authenticated,
+        pending: busy ? null : pending,
+        pending_login: pending && !busy ? login : null,
+      };
+    } else if (call.method === "codex.auth.start") {
+      pending = true;
+      result = login;
+    } else if (call.method === "codex.auth.cancel") {
+      expect(call.params.login_id).toBe(login.loginId);
+      pending = false;
+      result = {};
+    } else return route.fallback();
+    await route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
+  });
+  await page.goto("/?tab=settings");
+  const banner = page.getByRole("status").filter({
+    hasText: "等待用户完成官方网页授权",
+  });
+  const link = page.getByRole("link", { name: "打开官方授权网页" });
+  await expect(banner).toBeVisible();
+  await expect(link).toBeVisible();
+
+  authenticated = true;
+  busy = true;
+  await page.getByRole("button", { name: "检查登录状态", exact: true }).click();
+  await expect(link).toBeVisible();
+  await expect(banner).toBeVisible();
+
+  busy = false;
+  pending = false;
+  await expect(banner).toHaveCount(0);
+  await page.getByRole("button", { name: "检查登录状态", exact: true }).click();
+  await expect(link).toHaveCount(0);
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Codex · ChatGPT OAuth" }),
+  ).toBeVisible();
+  await expect(banner).toHaveCount(0);
+  await expect(link).toHaveCount(0);
+
+  await page.evaluate(() => {
+    window.open = () => null;
+  });
+  await page.getByRole("button", { name: "网页登录", exact: true }).click();
+  await expect(banner).toBeVisible();
+  await page.getByRole("button", { name: "取消登录", exact: true }).click();
+  await expect(banner).toHaveCount(0);
+  await expect(link).toHaveCount(0);
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Codex · ChatGPT OAuth" }),
+  ).toBeVisible();
+  await expect(banner).toHaveCount(0);
+  await expect(link).toHaveCount(0);
+  await page.screenshot({
+    path: info.outputPath("oauth-completed-no-waiting-banner.png"),
+    fullPage: true,
+  });
 });
 
 test("项目默认调度与 Profile 保存恢复，工具接入空状态区分模型登录", async ({

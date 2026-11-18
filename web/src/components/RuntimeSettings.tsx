@@ -101,53 +101,107 @@ export function RuntimeSettings({
 
   return (
     <>
-      <div className="setting-row">
-        <div>
-          <h3>默认 Agent Harness</h3>
-          <p className="muted">
-            分配任务或开始讨论时自动准备所选 Harness。已有执行继续使用冻结绑定。
-          </p>
-        </div>
-        <ActionSelect
-          aria-label="默认 Agent Harness"
-          value={provider}
-          disabled={busy}
-          onChange={async (event) => {
-            captureFeedback();
+      <section className="panel" aria-label="默认 Agent Harness 配置">
+        <div className="setting-row">
+          <div>
+            <h3>默认 Agent Harness</h3>
+            <p className="muted">
+              分配任务或开始讨论时自动准备所选
+              Harness。已有执行继续使用冻结绑定。
+            </p>
+          </div>
+          <ActionSelect
+            aria-label="默认 Agent Harness"
+            value={provider}
+            disabled={busy}
+            onChange={async (event) => {
+              captureFeedback();
 
-            beginFeedback();
-            setBusy(true);
-            setMessage("");
-            try {
-              await request("settings.update", {
-                command_id: crypto.randomUUID(),
-                preconditions: settingsVersions.filter(
-                  (version) =>
-                    version.resource.kind === "setting" &&
-                    version.resource.id === "default_harness",
-                ),
-                payload: { default_harness: event.target.value },
-              });
-              await refresh();
-              window.dispatchEvent(
-                new Event("devdesk:runtime-options-changed"),
-              );
-            } catch (error) {
-              setMessage(
-                error instanceof Error
-                  ? `默认 Harness 保存失败：${error.message}`
-                  : "默认 Harness 保存失败",
-              );
-            } finally {
-              endFeedback();
-              setBusy(false);
-            }
-          }}
-        >
-          <option value="codex">Codex</option>
-          <option value="dsh">DeepSeek Harness</option>
-        </ActionSelect>
-      </div>
+              beginFeedback();
+              setBusy(true);
+              setMessage("");
+              try {
+                await request("settings.update", {
+                  command_id: crypto.randomUUID(),
+                  preconditions: settingsVersions.filter(
+                    (version) =>
+                      version.resource.kind === "setting" &&
+                      version.resource.id === "default_harness",
+                  ),
+                  payload: { default_harness: event.target.value },
+                });
+                await refresh();
+                window.dispatchEvent(
+                  new Event("devdesk:runtime-options-changed"),
+                );
+              } catch (error) {
+                setMessage(
+                  error instanceof Error
+                    ? `默认 Harness 保存失败：${error.message}`
+                    : "默认 Harness 保存失败",
+                );
+              } finally {
+                endFeedback();
+                setBusy(false);
+              }
+            }}
+          >
+            <option value="codex">Codex</option>
+            <option value="dsh">DeepSeek Harness</option>
+          </ActionSelect>
+        </div>
+        <div className="setting-row">
+          <div>
+            <h3>执行镜像</h3>
+            <ActionButton
+              disabled={busy}
+              onClick={async () => {
+                captureFeedback();
+                beginFeedback();
+                setBusy(true);
+                setRuntimePreparing(true);
+                setMessage("");
+                try {
+                  await request("runtime.prepare", { provider });
+                  await refresh();
+                  setMessage("所选 Harness 执行镜像已准备并通过协议核验");
+                } catch (error) {
+                  setMessage(`执行镜像准备失败：${String(error)}`);
+                } finally {
+                  setRuntimePreparing(false);
+                  setPhase("");
+                  setBusy(false);
+                  endFeedback();
+                }
+              }}
+            >
+              准备所选 Harness 执行镜像
+            </ActionButton>
+            <p className="muted">
+              执行镜像在本机保存复用；只有缺少匹配镜像时才下载或构建。
+            </p>
+            {executionImages.length === 0 ? (
+              <p className="muted">尚未准备执行镜像；首次执行时自动准备</p>
+            ) : (
+              executionImages.map((runtime) => (
+                <p key={runtime.id}>
+                  {displayText(runtime.key.provider)} ·{" "}
+                  {displayText(runtime.key.version)} ·{" "}
+                  {displayText(runtime.key.os)}/{displayText(runtime.key.arch)}
+                  <br />
+                  <code>
+                    {displayText(
+                      runtime.artifact.canonical_path ||
+                        runtime.artifact.reference ||
+                        runtime.artifact.image_id,
+                    )}
+                  </code>
+                </p>
+              ))
+            )}
+          </div>
+        </div>
+      </section>
       <div className="setting-row">
         <div>
           <h3>Codex · ChatGPT OAuth</h3>
@@ -271,7 +325,7 @@ export function RuntimeSettings({
                         : "Codex OAuth 已登录"
                       : "Codex 尚未登录",
                   );
-                  if (result.authenticated && !result.pending)
+                  if (result.authenticated && result.pending === false)
                     setLogin(undefined);
                 } catch {
                   setMessage("无法核对登录状态，请检查运行环境或稍后重试");
@@ -329,57 +383,6 @@ export function RuntimeSettings({
         </div>
       </div>
       <DshProviderSettings request={request} />
-      <div className="setting-row">
-        <div>
-          <h3>执行镜像</h3>
-          <ActionButton
-            disabled={busy}
-            onClick={async () => {
-              captureFeedback();
-              beginFeedback();
-              setBusy(true);
-              setRuntimePreparing(true);
-              setMessage("");
-              try {
-                await request("runtime.prepare", { provider });
-                await refresh();
-                setMessage("所选 Harness 执行镜像已准备并通过协议核验");
-              } catch (error) {
-                setMessage(`执行镜像准备失败：${String(error)}`);
-              } finally {
-                setRuntimePreparing(false);
-                setPhase("");
-                setBusy(false);
-                endFeedback();
-              }
-            }}
-          >
-            准备所选 Harness 执行镜像
-          </ActionButton>
-          <p className="muted">
-            执行镜像在本机保存复用；只有缺少匹配镜像时才下载或构建。
-          </p>
-          {executionImages.length === 0 ? (
-            <p className="muted">尚未准备执行镜像；首次执行时自动准备</p>
-          ) : (
-            executionImages.map((runtime) => (
-              <p key={runtime.id}>
-                {displayText(runtime.key.provider)} ·{" "}
-                {displayText(runtime.key.version)} ·{" "}
-                {displayText(runtime.key.os)}/{displayText(runtime.key.arch)}
-                <br />
-                <code>
-                  {displayText(
-                    runtime.artifact.canonical_path ||
-                      runtime.artifact.reference ||
-                      runtime.artifact.image_id,
-                  )}
-                </code>
-              </p>
-            ))
-          )}
-        </div>
-      </div>
       {phase && <p role="status">{displayText(phase)}</p>}
       <p role="status" aria-live="polite">
         {displayText(message)}

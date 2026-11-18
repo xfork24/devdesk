@@ -200,7 +200,7 @@ fn ollama_directory_discovery_reads_host_metadata_without_inference() {
         let body = r#"{"data":[{"id":"devdesk-mock-model"}]}"#;
         write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
     });
-    let endpoint = format!("http://127.0.0.1:{port}/v1");
+    let endpoint = format!("http://127.0.0.1:{port}");
     let catalog = discover_ollama_models(&endpoint).unwrap();
     assert_eq!(catalog["source"], "host_endpoint");
     assert_eq!(catalog["models"], json!([{"id":"devdesk-mock-model"}]));
