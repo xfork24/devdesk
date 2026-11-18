@@ -2081,16 +2081,52 @@ pre {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.workflow-progress-summary {
+  margin: 0 20px 20px;
+  min-width: 0;
+}
+.workflow-progress-stages {
+  display: flex;
+  gap: 28px;
+  list-style: none;
+  padding: 4px 2px 12px;
+  margin: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.workflow-progress-stage {
+  flex: 1 0 116px;
+  position: relative;
+  min-width: 0;
+}
 .workflow-stage-progress {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.8rem 1rem;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  width: 100%;
+  align-items: flex-start;
+  justify-content: flex-start;
+  text-align: left;
+  white-space: normal;
+  color: inherit;
+  padding: 14px 12px;
+}
+.workflow-stage-progress > span {
+  color: #66728a;
+  font-size: 12px;
+}
+.workflow-stage-arrow {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  right: -22px;
+  top: calc(50% - 8px);
+  color: #8793a7;
 }
 .workflow-instance > .workflow-stage-row {
   margin: 12px 20px 14px;
+  scroll-margin-top: 16px;
 }
 .workflow-stage-row {
   min-width: 0;
@@ -2567,12 +2603,14 @@ pre {
   > :is(
     .manager-standard,
     .manager-plan-changes,
-    .manager-history,
     .manager-collaboration,
     .manager-task-settings
   ) {
   border-top: 1px solid #edf0f5;
   padding-top: 14px;
+  margin-top: 14px;
+}
+.manager-plan-changes > .manager-history {
   margin-top: 14px;
 }
 .manager-workflow-card > details > summary {

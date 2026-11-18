@@ -15,6 +15,40 @@ pub(crate) fn session_actor_brief(
 
 impl Engine {
     pub(crate) fn workflow_instance_detail(&self, p: &Value) -> Result<Value> {
+        if p["view"] == "qualification" {
+            crate::read_models::fields(p, &["project_id", "id", "execution_id", "view"])?;
+            let project = crate::read_models::identifier(p, "project_id")?;
+            require(
+                self.store.project_id().as_deref() == Some(&project),
+                "工作流不属于当前项目",
+            )?;
+            let root = crate::workflow_commits::WorkflowHeaderFacts::read(
+                self,
+                &crate::read_models::identifier(p, "id")?,
+            )?;
+            let execution = crate::read_models::identifier(p, "execution_id")?;
+            let resources = root.step(self, &execution)?;
+            let ready = self.native_step_readiness(&root, &resources)?;
+            let driver = crate::platform_facts::one(
+                self.store.as_ref(),
+                "workflow_driver_root",
+                &root.instance.root_instance_id,
+            )?;
+            let human_can_accept = driver
+                .value
+                .as_ref()
+                .is_none_or(|r| r["data"]["mode"] != "agent");
+            let confirmation = if let Some(id) = ready["confirmation_ref"].as_str() {
+                crate::platform_facts::one(self.store.as_ref(), "governance", id)?
+                    .value
+                    .map(|r| r["data"].clone())
+            } else {
+                None
+            };
+            return Ok(
+                json!({"id":root.record.id,"execution_id":execution,"step_revision":resources.step.revision,"completion_status":{execution.clone():{"satisfied":ready["completion_satisfied"],"pending":false,"human_satisfied":ready["human_satisfied"],"human_can_accept":human_can_accept,"confirmation":confirmation}},"advisory":true}),
+            );
+        }
         let query = WorkflowDetailQuery::parse(p)?;
         if let Some(project) = p["project_id"].as_str() {
             require(
@@ -162,7 +196,7 @@ impl Engine {
         Ok(
             json!({"cursor":selected.cursor,"record":visible_record,"runtime":display.data,"plan":if query.view==WorkflowDetailView::Status {status_plan(&selected.plan_document)} else {selected.plan_document},
             "outputs":outputs,"children":selected.children,"children_more":selected.children_more,"next_child_offset":selected.next_child_offset,
-            "step_revisions":selected.step_revisions,"completion_status":completion_status,"actors":actors,"history":selected.history,
+            "step_total":selected.step_total,"next_step_offset":selected.next_step_offset,"step_offset":query.step_offset,"step_revisions":selected.step_revisions,"completion_status":completion_status,"actors":actors,"history":selected.history,
             "history_more":selected.next_history_before.is_some(),"next_history_before":selected.next_history_before,
             "representation":if query.view==WorkflowDetailView::Status {"workflow_status"} else {"workflow_detail"}}),
         )

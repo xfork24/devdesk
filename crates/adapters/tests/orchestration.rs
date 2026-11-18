@@ -274,6 +274,53 @@ fn accept(e: &Engine, id: &str, key: &str) {
 }
 
 #[test]
+fn workflow_status_pages_every_step_without_restoring_aggregate_history() {
+    let directory = tempfile::tempdir().unwrap();
+    let e = engine(directory.path());
+    let steps=(0..73).map(|n|json!({"key":format!("control-{n}"),"name":format!("Control {n}"),"stage":"work","executor":{"type":"control"}})).collect::<Vec<_>>();
+    let root = start(
+        &e,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"Paged controls"}],"steps":steps}),
+    );
+    let trace = devdesk_adapters::performance::Trace::start();
+    let mut offset = 0;
+    let mut identities = std::collections::BTreeSet::new();
+    loop {
+        let view = e
+            .query(
+                "query.workflow_instance",
+                &json!({"id":root,"view":"status","step_offset":offset}),
+                4,
+            )
+            .unwrap();
+        assert_eq!(view["step_total"], 73);
+        assert!(view.to_string().len() < 64 * 1024);
+        let executions = view["runtime"]["steps"].as_array().unwrap();
+        assert!(executions.len() <= 20);
+        assert_eq!(
+            view["plan"]["steps"].as_array().unwrap().len(),
+            executions.len()
+        );
+        for execution in executions {
+            assert!(identities.insert(execution["id"].as_str().unwrap().to_owned()));
+        }
+        match view["next_step_offset"].as_u64() {
+            Some(next) => offset = next,
+            None => break,
+        }
+    }
+    assert_eq!(identities.len(), 73);
+    let measurement = trace.finish();
+    for stage in [
+        "project.full_snapshot",
+        "project.transaction",
+        "source.restore_records",
+    ] {
+        assert!(measurement["spans"][stage].is_null(), "{measurement}");
+    }
+}
+
+#[test]
 fn observing_unstarted_and_waiting_steps_does_not_clone_rollback_snapshots() {
     let directory = tempfile::tempdir().unwrap();
     let e = engine(directory.path());
@@ -362,6 +409,183 @@ fn observations_never_dispatch_or_accept_without_an_explicit_command() {
     )
     .unwrap();
     assert_eq!(runtime(&e, &id)["runtime"]["status"], "completed");
+}
+
+#[test]
+fn regrouping_tools_preserves_receipts_and_queued_execution_contracts() {
+    let directory = tempfile::tempdir().unwrap();
+    let e = engine(directory.path());
+    let tool = |key: &str, dependencies: Vec<&str>| {
+        json!({
+            "key":key,"name":key,"stage":"integration","dependencies":dependencies,
+            "executor":{"type":"tool","tool_ref":"builtin-tool-materials-capture:1",
+                "arguments":{"material":{"type":"constant","value":{"data":key}}}}
+        })
+    };
+    let root = start(
+        &e,
+        json!({"schema_version":6,
+        "stages":[{"key":"review","name":"独立评审"},{"key":"integration","name":"接纳发布"}],
+        "steps":[tool("candidate",vec![]),tool("candidate_tests",vec!["candidate"]),
+            {"key":"review","name":"独立评审","stage":"review","dependencies":["candidate_tests"],"executor":{"type":"control"}},
+            tool("publish",vec!["review"])]}),
+    );
+    let run_tool = |key: &str| {
+        cmd(
+            &e,
+            "workflow.step.dispatch",
+            Some(&root),
+            json!({"step":key}),
+        )
+        .unwrap();
+        let intent = e
+            .pending_workflow_intents()
+            .unwrap()
+            .into_iter()
+            .find(|r| r.data["method"] == "workflow.tool.execute")
+            .unwrap();
+        let command: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
+        let prepared = e.prepare_configured_platform(&command).unwrap().unwrap();
+        let result = e.enqueue_prepared_platform_tool(&command, prepared.request(), &prepared);
+        e.observe_workflow_intent(&intent, &result).unwrap();
+        result.unwrap();
+        e.drive_platform_tools().unwrap();
+        e.evaluate_workflows().unwrap();
+        accept(&e, &root, key);
+    };
+    run_tool("candidate");
+    let before = runtime(&e, &root);
+    let frozen_plan = || {
+        let rows = e
+            .store
+            .read_resources(&[concurrency::ResourceKey::new("governance", &root)])
+            .unwrap();
+        let record = e
+            .store
+            .restore_runtime_record(rows[0].value.as_ref().unwrap())
+            .unwrap();
+        record["data"]["plan"].clone()
+    };
+    let original_plan = frozen_plan();
+    let mut doc = before["runtime"]["plan"]["document"].clone();
+    doc["stages"]
+        .as_array_mut()
+        .unwrap()
+        .insert(0, json!({"key":"candidate_preparation","name":"候选准备"}));
+    for step in doc["steps"].as_array_mut().unwrap() {
+        if matches!(step["key"].as_str(), Some("candidate" | "candidate_tests")) {
+            step["stage"] = json!("candidate_preparation");
+        }
+    }
+    let changes = json!({"plan_revision_id":before["runtime"]["active_plan_revision_id"],
+        "reason":"仅把候选准备移到评审之前，保留执行与回执",
+        "operations":[{"type":"replace_plan","document":doc}]});
+    let trace = devdesk_adapters::performance::Trace::start();
+    let preview = e
+        .query(
+            "workflow.change.preview",
+            &json!({"id":root,"changeset":changes}),
+            4,
+        )
+        .unwrap();
+    assert!(trace.finish()["spans"]["workflow.compile"].is_null());
+    assert_eq!(preview["affected"], json!([]));
+    assert_eq!(preview["must_stop"], json!([]));
+    cmd(
+        &e,
+        "workflow.change.apply",
+        Some(&root),
+        json!({"changeset":changes,"preview_hash":preview["preview_hash"]}),
+    )
+    .unwrap();
+    let after = runtime(&e, &root);
+    let current_plan = frozen_plan();
+    assert_eq!(after["runtime"]["steps"], before["runtime"]["steps"]);
+    for key in [
+        "roles",
+        "permission_locks",
+        "tool_bindings",
+        "integration_locks",
+    ] {
+        assert_eq!(current_plan[key], original_plan[key]);
+    }
+    for (id, definition) in original_plan["definitions"].as_object().unwrap() {
+        if !matches!(
+            definition["type"].as_str(),
+            Some("workflow" | "runtime_workflow" | "standard")
+        ) {
+            assert_eq!(&current_plan["definitions"][id], definition);
+        }
+    }
+    let frozen = e
+        .query(
+            "workflow.execution.inspect",
+            &json!({"id":root,
+        "execution_id":before["runtime"]["steps"][0]["id"],"part":"contract"}),
+            4,
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(frozen["value_chunk"].as_str().unwrap()).unwrap()["stage"],
+        "integration"
+    );
+    assert_ne!(
+        after["runtime"]["active_plan_revision_id"],
+        before["runtime"]["active_plan_revision_id"]
+    );
+    assert_eq!(
+        after["runtime"]["plan"]["document"]["stages"][0]["key"],
+        "candidate_preparation"
+    );
+    assert!(e.pending_workflow_intents().unwrap().is_empty());
+    // Keeping the original queued identity must still allow its real dispatch.
+    run_tool("candidate_tests");
+    let latest = runtime(&e, &root);
+    assert_eq!(
+        latest["runtime"]["steps"][1]["id"],
+        before["runtime"]["steps"][1]["id"]
+    );
+    assert_eq!(latest["runtime"]["steps"][1]["status"], "completed");
+    assert!(
+        cmd(
+            &e,
+            "workflow.step.dispatch",
+            Some(&root),
+            json!({"step":"publish"})
+        )
+        .is_err()
+    );
+    // A change to actual arguments still invalidates this tool and its consumers.
+    let mut changed = latest["runtime"]["plan"]["document"]["steps"][0].clone();
+    changed["executor"]["arguments"]["material"]["value"]["data"] = json!("different input");
+    let changes = json!({"plan_revision_id":latest["runtime"]["active_plan_revision_id"],"reason":"实际输入变化必须返工","operations":[{"type":"upsert_step","step":changed}]});
+    let preview = e
+        .query(
+            "workflow.change.preview",
+            &json!({"id":root,"changeset":changes}),
+            4,
+        )
+        .unwrap();
+    assert!(
+        preview["affected"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("candidate_tests"))
+    );
+    assert!(
+        preview["affected"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("review"))
+    );
+    assert!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .governance
+            .iter()
+            .all(|r| r.r#type != "workflow_execution_history")
+    );
 }
 
 #[test]
@@ -678,6 +902,8 @@ fn bounded_segment_requires_explicit_authorization_and_stops_at_plan_change() {
 struct NativeManager {
     segment: bool,
     human: bool,
+    wait_for_execution: bool,
+    wait_target: Option<String>,
     deliveries: std::sync::Mutex<std::collections::HashMap<String, Value>>,
     observed: std::sync::Mutex<std::collections::HashMap<String, Value>>,
     reject_replies: std::sync::atomic::AtomicBool,
@@ -870,11 +1096,21 @@ impl ports::Harness for NativeManager {
         {
             let delivery = self.deliveries.lock().unwrap()[&s.id].clone();
             let instance = self.observed.lock().unwrap()[&s.id].clone();
+            let waiting_for = self.wait_target.as_ref().map_or_else(
+                || {
+                    if self.wait_for_execution {
+                        instance["steps"][0]["id"].clone()
+                    } else {
+                        instance["id"].clone()
+                    }
+                },
+                |target| json!(target),
+            );
             self.pending.lock().unwrap().insert(s.id.clone(),vec![ports::ConversationObservation::ToolCall {
                 turn:turn.clone(),request:json!(18),thread:s.external_session.clone().unwrap(),
                 external_turn:format!("native-turn-{turn}"),call:format!("wait-{turn}"),
                 tool:"devdesk_workflow_controller_wait".into(),worktree:String::new(),
-                arguments:json!({"instance_id":instance["id"],"plan_revision_id":instance["plan"],"delivery_id":delivery["delivery_id"],"summary":"已准备材料并请求人类决定，等待实际签署","waiting_for":[instance["id"]]})
+                arguments:json!({"instance_id":instance["id"],"plan_revision_id":instance["plan"],"delivery_id":delivery["delivery_id"],"summary":"已准备材料并请求人类决定，等待实际签署","waiting_for":[waiting_for]})
             }]);
             return Ok(());
         }
@@ -917,10 +1153,16 @@ fn drive_manager_cycle(e: &Engine, allow_send: bool, full_tick: bool) {
         }
         let c: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
         let original_fingerprint = devdesk_core::command_fingerprint(method, &c);
-        let result = workflow_intents::execute(e, method, c, &original_fingerprint);
+        let result = if method == "workflow.tool.execute" {
+            let prepared = e.prepare_configured_platform(&c).unwrap().unwrap();
+            e.enqueue_prepared_platform_tool(&c, prepared.request(), &prepared)
+        } else {
+            workflow_intents::execute(e, method, c, &original_fingerprint)
+        };
         e.observe_workflow_intent(&intent, &result).unwrap();
         result.unwrap();
     }
+    e.drive_platform_tools().unwrap();
     if full_tick {
         e.tick(1).unwrap();
     } else {
@@ -949,7 +1191,7 @@ fn manager_starts_without_extra_input_and_surfaces_rejected_startup_until_resume
     let mut e = engine(directory.path());
     e.harness = Arc::new(RejectedManager);
     let root = start(&e, document());
-    cmd(&e, "orchestration.open", Some(&root), json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:11"})).unwrap();
+    cmd(&e, "orchestration.open", Some(&root), json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:12"})).unwrap();
     cmd(
         &e,
         "workflow.driver.select",
@@ -1066,7 +1308,7 @@ fn a_controller_does_not_inherit_a_live_owners_code_view() {
             Ok(Value::Null)
         })
         .unwrap();
-    let controller = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:11","policy":WorkflowControlPolicy::default()})).unwrap();
+    let controller = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:12","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..50 {
         drive_manager(&e);
         if runtime(&e, &root)["runtime"]["status"] == "completed" {
@@ -1097,7 +1339,7 @@ fn a_native_manager_controls_without_a_running_step_and_persists_its_real_call_c
     let harness = Arc::new(NativeManager::default());
     e.harness = harness.clone();
     let id = start(&e, document());
-    cmd(&e,"orchestration.open",Some(&id),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:11","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&id),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:12","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..60 {
         drive_manager(&e);
         if runtime(&e, &id)["runtime"]["status"] == "completed" {
@@ -1346,7 +1588,7 @@ fn native_result_is_delivered_in_the_same_drive_and_never_redispatched() {
     let mut e = engine(directory.path());
     e.harness = harness.clone();
     let root = start(&e, document());
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:11","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:12","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..20 {
         drive_manager_cycle(&e, true, false);
         if e.store
@@ -1434,7 +1676,7 @@ fn human_takeover_revokes_an_already_authorized_native_segment() {
         ..Default::default()
     });
     let root = start(&e, document());
-    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:11","policy":WorkflowControlPolicy::default()})).unwrap();
+    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:12","policy":WorkflowControlPolicy::default()})).unwrap();
     cmd(
         &e,
         "workflow.driver.select",
@@ -1771,7 +2013,18 @@ fn revising_one_child_preserves_its_sibling_and_parent_output_contract() {
         json!({"reason":"右调用完成"}),
     )
     .unwrap();
-    e.evaluate_workflows().unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while runtime(&e, &root)["runtime"]["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["step"] == "right")
+        .unwrap()["status"]
+        == "running"
+        && std::time::Instant::now() < deadline
+    {
+        e.evaluate_workflows().unwrap();
+    }
     accept(&e, &root, "right");
     let before = runtime(&e, &left);
     let sibling = runtime(&e, &right);
@@ -1818,7 +2071,18 @@ fn revising_one_child_preserves_its_sibling_and_parent_output_contract() {
         json!({"reason":"左调用新计划完成"}),
     )
     .unwrap();
-    e.evaluate_workflows().unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while runtime(&e, &root)["runtime"]["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["step"] == "left")
+        .unwrap()["status"]
+        == "running"
+        && std::time::Instant::now() < deadline
+    {
+        e.evaluate_workflows().unwrap();
+    }
     accept(&e, &root, "left");
     cmd(
         &e,
@@ -2123,7 +2387,7 @@ fn takeover_fences_a_late_native_command_without_advancing_the_next_node() {
     let harness = Arc::new(NativeManager::default());
     e.harness = harness;
     let root = start(&e, document());
-    let controller=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:11","policy":WorkflowControlPolicy::default()})).unwrap()["id"].as_str().unwrap().to_owned();
+    let controller=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:12","policy":WorkflowControlPolicy::default()})).unwrap()["id"].as_str().unwrap().to_owned();
     for _ in 0..8 {
         drive_manager(&e);
         if e.store
@@ -2227,7 +2491,7 @@ fn changes_before_send_admission_are_coalesced_into_one_pending_wakeup() {
     let mut e = engine(directory.path());
     e.harness = Arc::new(NativeManager::default());
     let root = start(&e, document());
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:11","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:12","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..3 {
         drive_manager_with_send(&e, false);
     }
@@ -2262,7 +2526,7 @@ fn human_input_follows_the_controller_epoch_across_background_revision_updates()
     let mut e = engine(directory.path());
     e.harness = Arc::new(NativeManager::default());
     let root = start(&e, document());
-    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:11","policy":WorkflowControlPolicy::default()})).unwrap();
+    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:12","policy":WorkflowControlPolicy::default()})).unwrap();
     let controller = opened["id"].as_str().unwrap();
     let original = e
         .store
@@ -2349,7 +2613,7 @@ fn signing_an_unchanged_waiting_gate_wakes_the_idle_manager() {
         json!({"step":"one"}),
     )
     .unwrap();
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:11","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:12","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..20 {
         drive_manager(&e);
     }
@@ -2652,6 +2916,60 @@ fn manager_chat_signs_only_one_observed_gate_and_never_conditional_or_stale_appr
 }
 
 #[test]
+fn native_decision_read_preserves_signed_feedback_for_pending_and_human_references() {
+    for approved in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let e = engine(directory.path());
+        let mut doc = document();
+        doc["steps"][0]["confirmation"] = json!("human");
+        let root = start(&e, doc);
+        cmd(
+            &e,
+            "workflow.step.dispatch",
+            Some(&root),
+            json!({"step":"one"}),
+        )
+        .unwrap();
+        let pending = pending_business_gate(&e, &root);
+        let reason = "请补充可核对的审核来源；业务标准不变。\n保留人类原始意见，不得以摘要替代。";
+        cmd(
+            &e,
+            "workflow.decision.resolve",
+            pending["id"].as_str(),
+            json!({"approved":approved,"reason":reason}),
+        )
+        .unwrap();
+        let state = e.store.snapshot().unwrap();
+        let pending = state
+            .configuration(pending["id"].as_str().unwrap())
+            .unwrap();
+        let human = state
+            .configuration(pending.data["decision_ref"].as_str().unwrap())
+            .unwrap();
+        for reference in [&pending.id, &human.id] {
+            let view = e
+                .query(
+                    "workflow.inspect",
+                    &json!({"id":root,"decision_ref":reference}),
+                    1,
+                )
+                .unwrap();
+            assert_eq!(view["approved"], approved);
+            assert_eq!(view["reason"], reason);
+            assert_eq!(view["actor"]["kind"], "human");
+            assert_eq!(view["human_decision_ref"], human.id);
+            assert_eq!(view["request_ref"], pending.id);
+            if reference == &human.id {
+                let body: Value =
+                    serde_json::from_str(view["value_chunk"].as_str().unwrap()).unwrap();
+                assert_eq!(body["reason"], reason);
+                assert_eq!(body["approved"], approved);
+            }
+        }
+    }
+}
+
+#[test]
 fn workflow_confirmation_settles_the_same_request_and_accepts_the_exact_result() {
     let directory = tempfile::tempdir().unwrap();
     let e = engine(directory.path());
@@ -2891,7 +3209,7 @@ fn source_control_policy_is_canonical_after_reload_without_changing_authorizatio
     let dir = tempfile::tempdir().unwrap();
     let e = engine(dir.path());
     let root = start(&e, document());
-    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:11"})).unwrap();
+    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:12"})).unwrap();
     let controller = opened["id"].as_str().unwrap().to_owned();
     let before = e
         .store
@@ -2937,7 +3255,7 @@ fn human_adopts_root_manager_sources_only_after_the_old_writer_is_stopped() {
     let root = start(&e, document());
     let state = e.store.snapshot().unwrap();
     let original = state
-        .configuration("builtin-agent-sol-high-project-manager:11")
+        .configuration("builtin-agent-sol-high-project-manager:12")
         .unwrap();
     let mut successor = original.source();
     successor.identity = format!("selected-manager-{}", id());
@@ -3374,7 +3692,7 @@ fn switching_agent_to_rust_rejects_already_prepared_native_calls() {
     let harness = Arc::new(NativeManager::default());
     e.harness = harness;
     let root = start(&e, document());
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:11","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:12","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..20 {
         drive_manager_cycle(&e, true, false);
         if e.store
@@ -4161,14 +4479,96 @@ fn scheduling_adoption_updates_driver_and_budget_from_the_new_workflow_revision(
 
 #[test]
 fn native_manager_prepares_human_request_waits_and_resumes_from_the_decision_alone() {
+    assert_native_human_gate(false);
+}
+
+#[test]
+fn native_manager_can_wait_for_the_exact_execution_before_human_signature() {
+    assert_native_human_gate(true);
+}
+
+#[test]
+fn native_manager_can_wait_for_a_platform_execution_with_a_same_id_call() {
+    assert_native_human_gate_with_platform(true, true);
+}
+
+#[test]
+fn native_manager_cannot_wait_for_another_roots_platform_execution() {
     let directory = tempfile::tempdir().unwrap();
     let mut e = engine(directory.path());
+    let mut doc = document();
+    doc["steps"][0]["executor"] = json!({"type":"tool","tool_ref":"builtin-tool-materials-capture:1","arguments":{"material":{"type":"constant","value":{"data":"foreign root input"}}}});
+    let foreign = start(&e, doc);
+    cmd(
+        &e,
+        "workflow.step.dispatch",
+        Some(&foreign),
+        json!({"step":"one"}),
+    )
+    .unwrap();
+    for _ in 0..3 {
+        drive_manager(&e);
+    }
+    let execution = runtime(&e, &foreign)["runtime"]["steps"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .governance
+            .iter()
+            .any(|r| r.r#type == "platform_call" && r.id == execution)
+    );
     e.harness = Arc::new(NativeManager {
         human: true,
+        wait_target: Some(execution),
         ..Default::default()
     });
     let mut doc = document();
     doc["steps"][0]["confirmation"] = json!("human");
+    let root = start(&e, doc);
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:12"})).unwrap();
+    cmd(
+        &e,
+        "workflow.driver.select",
+        Some(&root),
+        json!({"mode":"agent"}),
+    )
+    .unwrap();
+    for _ in 0..30 {
+        drive_manager(&e);
+        let state = e.store.snapshot().unwrap();
+        if let Some(call) = state.governance.iter().find(|r| {
+            r.r#type == "controller_tool_call"
+                && r.data["method"] == "workflow.controller.wait"
+                && r.data["status"] == "failed"
+        }) {
+            assert_eq!(call.data["error"]["message"], "等待对象不属于当前根实例");
+            return;
+        }
+    }
+    panic!("foreign-root execution wait was not explicitly rejected");
+}
+
+fn assert_native_human_gate(wait_for_execution: bool) {
+    assert_native_human_gate_with_platform(wait_for_execution, false);
+}
+
+fn assert_native_human_gate_with_platform(wait_for_execution: bool, platform: bool) {
+    let directory = tempfile::tempdir().unwrap();
+    let mut e = engine(directory.path());
+    e.harness = Arc::new(NativeManager {
+        human: true,
+        wait_for_execution,
+        ..Default::default()
+    });
+    let mut doc = document();
+    doc["steps"][0]["confirmation"] = json!("human");
+    if platform {
+        doc["steps"][0]["executor"] = json!({"type":"tool","tool_ref":"builtin-tool-materials-capture:1","arguments":{"material":{"type":"constant","value":{"data":"frozen input"}}}});
+    }
     let root = start(&e, doc);
     cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:12"})).unwrap();
     cmd(
@@ -4191,6 +4591,22 @@ fn native_manager_prepares_human_request_waits_and_resumes_from_the_decision_alo
         }
     }
     let state = e.store.snapshot().unwrap();
+    if platform {
+        let view = runtime(&e, &root);
+        let execution = view["runtime"]["steps"][0]["id"].as_str().unwrap();
+        assert!(
+            state
+                .governance
+                .iter()
+                .any(|r| r.r#type == "platform_call" && r.id == execution)
+        );
+    }
+    assert!(
+        state
+            .governance
+            .iter()
+            .any(|r| r.r#type == "workflow_controller" && r.data["run_state"] == "waiting")
+    );
     let request = state
         .governance
         .iter()
@@ -4220,6 +4636,19 @@ fn native_manager_prepares_human_request_waits_and_resumes_from_the_decision_alo
         json!({"approved":true,"reason":"Explicit fixture Human signs this exact result"}),
     )
     .unwrap();
+    let signed = runtime(&e, &root);
+    assert_eq!(
+        signed["runtime"]["steps"][0]["status"], "waiting_confirmation",
+        "a Human decision must leave business acceptance to the manager"
+    );
+    assert!(
+        !e.store.snapshot().unwrap().governance.iter().any(|row| {
+            row.r#type == "workflow_decision"
+                && row.data["operation"] == "accept"
+                && row.data["execution_id"] == waiting["runtime"]["steps"][0]["id"]
+        }),
+        "signing must not create an acceptance decision"
+    );
     for _ in 0..40 {
         drive_manager(&e);
         if runtime(&e, &root)["runtime"]["status"] == "completed" {
@@ -4247,13 +4676,154 @@ fn native_manager_prepares_human_request_waits_and_resumes_from_the_decision_alo
         .iter()
         .filter(|r| r.r#type == "workflow_decision")
     {
-        if row.data["operation"] == "start"
-            || (row.data["operation"] == "accept"
-                && row.data["execution_id"] == waiting["runtime"]["steps"][0]["id"])
-        {
+        if row.data["operation"] == "start" {
             assert_eq!(row.data["actor"]["kind"], "human");
             continue;
         }
         assert_eq!(row.data["actor"]["kind"], "controller");
+    }
+}
+
+#[test]
+fn wait_registration_rechecks_concurrent_events_without_replaying_business_actions() {
+    use devdesk_core::concurrency::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct WaitRace {
+        inner: Arc<dyn EngineeringStore>,
+        root: String,
+        budget: usize,
+        attempts: AtomicUsize,
+        revoke: bool,
+    }
+    impl EngineeringStore for WaitRace {
+        fn root(&self) -> String {
+            self.inner.root()
+        }
+        fn snapshot(&self) -> Result<EngineeringState> {
+            self.inner.snapshot()
+        }
+        fn replay(&self, id: &str, fp: &str) -> Result<Option<Value>> {
+            self.inner.replay(id, fp)
+        }
+        delegated_native_store!();
+        fn submit_changes(&self, prepared: &PreparedChangeSet) -> Result<CommitOutcome> {
+            if prepared.command_id.ends_with(":action")
+                && matches!(
+                    prepared.result["status"].as_str(),
+                    Some("waiting" | "pending_events")
+                )
+            {
+                let attempt = self.attempts.fetch_add(1, Ordering::SeqCst);
+                if attempt < self.budget {
+                    let identity = format!("fixture-wait-event-{attempt}");
+                    let event = ResourceKey::new("event_entry", &identity);
+                    self.inner.submit_changes(&PreparedChangeSet { command_id:identity.clone(), fingerprint:identity, read_set:ReadSet::new(vec![ResourceVersion { resource:event.clone(), revision:0 }])?, changes:vec![ResourceChange {resource:event,value:json!({"target":self.root,"kind":"workflow.runtime","detail":json!({"root_instance_id":self.root,"instance_id":self.root,"change":{"kind":"fixture.concurrent_observation"}}).to_string(),"time":1})}], result:Value::Null,time:1 })?;
+                    if self.revoke {
+                        self.inner.seed_fixture_state(None, &mut |state| {
+                            let row = state
+                                .governance
+                                .iter_mut()
+                                .find(|r| {
+                                    r.r#type == "workflow_controller"
+                                        && r.data["root_instance_id"] == self.root
+                                })
+                                .unwrap();
+                            row.data["epoch"] = json!(row.data["epoch"].as_u64().unwrap() + 1);
+                            row.revision += 1;
+                            row.content_hash = content_digest(&row.refs, &row.data);
+                            Ok(Value::Null)
+                        })?;
+                    }
+                }
+            }
+            self.inner.submit_changes(prepared)
+        }
+    }
+    for (budget, revoke, expected_attempts, success) in [
+        (1, false, 2, true),
+        (99, false, 3, false),
+        (1, true, 1, false),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let mut e = engine(directory.path());
+        e.harness = Arc::new(NativeManager {
+            human: true,
+            ..Default::default()
+        });
+        let mut doc = document();
+        doc["steps"][0]["confirmation"] = json!("human");
+        let root = start(&e, doc);
+        cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:12"})).unwrap();
+        cmd(
+            &e,
+            "workflow.driver.select",
+            Some(&root),
+            json!({"mode":"agent"}),
+        )
+        .unwrap();
+        let race = Arc::new(WaitRace {
+            inner: e.store.clone(),
+            root: root.clone(),
+            budget,
+            attempts: AtomicUsize::new(0),
+            revoke,
+        });
+        e.store = race.clone();
+        let mut result = None;
+        for _ in 0..35 {
+            e.drive_controllers().unwrap();
+            for intent in e.pending_workflow_intents().unwrap() {
+                let method = intent.data["method"].as_str().unwrap();
+                let command: Command =
+                    serde_json::from_value(intent.data["command"].clone()).unwrap();
+                let fingerprint = command_fingerprint(method, &command);
+                let result = workflow_intents::execute(&e, method, command, &fingerprint);
+                e.observe_workflow_intent(&intent, &result).unwrap();
+                result.unwrap();
+            }
+            e.drive_platform_tools().unwrap();
+            if let Err(error) = e.tick(1) {
+                assert!(
+                    revoke && race.attempts.load(Ordering::SeqCst) > 0 && error.code == "blocked",
+                    "{error}"
+                );
+            }
+            let state = e.store.snapshot().unwrap();
+            if let Some(call) = state.governance.iter().find(|r| {
+                r.r#type == "controller_tool_call"
+                    && r.data["method"] == "workflow.controller.wait"
+                    && ["succeeded", "failed"].contains(&r.data["status"].as_str().unwrap_or(""))
+            }) {
+                result = Some(call.clone());
+                break;
+            }
+        }
+        let call = result.expect("fixture manager issued its actual wait request");
+        assert_eq!(race.attempts.load(Ordering::SeqCst), expected_attempts);
+        if success {
+            assert_eq!(call.data["status"], "succeeded", "{}", call.data);
+            assert_eq!(call.data["receipt"]["status"], "pending_events");
+            assert!(call.data["receipt"]["pending"].as_u64().unwrap() > 0);
+        } else {
+            assert_eq!(call.data["status"], "failed", "{}", call.data);
+            assert_eq!(
+                call.data["error"]["code"],
+                if revoke {
+                    "blocked"
+                } else {
+                    "revision_conflict"
+                }
+            );
+        }
+        let state = e.store.snapshot().unwrap();
+        assert_eq!(
+            state
+                .governance
+                .iter()
+                .filter(|r| r.r#type == "workflow_decision" && r.data["operation"] == "dispatch")
+                .count(),
+            1,
+            "wait retry must not perform another business dispatch"
+        );
     }
 }

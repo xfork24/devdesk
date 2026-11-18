@@ -781,3 +781,142 @@ fn custom_role_create_edit_delete_preserves_history_without_deriving_agents() {
             .any(|r| r["definition_id"] == role["id"])
     );
 }
+
+fn sealing_interleaving(mode: &str) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let root = tempfile::tempdir().unwrap();
+    let e = Arc::new(project_engine(root.path()));
+    let project = command(&e, "project.create", None, json!({"title":"Sealing race"})).unwrap();
+    let cmd = Command {
+        command_id: "original-seal".into(),
+        target: Some(project["id"].as_str().unwrap().into()),
+        expected_revision: Some(1),
+        payload: json!({"kind":"prd","title":"Exact material","body":"Original body"}),
+    };
+    let fired = Arc::new(AtomicBool::new(false));
+    let entered = fired.clone();
+    let weak = Arc::downgrade(&e);
+    let duplicate = cmd.clone();
+    let mode = mode.to_owned();
+    let action = mode.clone();
+    let listener: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+        if entered.load(Ordering::Acquire) {
+            return;
+        }
+        let e = weak.upgrade().unwrap();
+        let state = e.store.snapshot().unwrap();
+        let Some(intent) = state
+            .governance
+            .iter()
+            .find(|r| r.r#type == "sealed_command_intent" && r.data["status"] == "prepared")
+        else {
+            return;
+        };
+        if entered.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        if action == "interrupted" {
+            panic!("interrupt after durable intent, before file I/O");
+        }
+        // A real concurrent Conversations recovery scan sees the prepared
+        // intent before its original file observations have been journaled.
+        let other = e.clone();
+        std::thread::spawn(move || other.tick_conversations(0).unwrap())
+            .join()
+            .unwrap();
+        assert_eq!(
+            e.store
+                .snapshot()
+                .unwrap()
+                .configuration(&intent.id)
+                .unwrap()
+                .data["status"],
+            "prepared"
+        );
+        assert_eq!(
+            e.execute("document.revise", duplicate.clone())
+                .unwrap_err()
+                .code,
+            "resource_pending"
+        );
+        if action == "owner_changed" {
+            command(
+                &e,
+                "project.update",
+                duplicate.target.as_deref(),
+                json!({"title":"Changed after grant"}),
+            )
+            .unwrap();
+        }
+    });
+    e.store.subscribe_changes(Arc::downgrade(&listener));
+    if mode == "interrupted" {
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+                || e.execute("document.revise", cmd)
+            ))
+            .is_err()
+        );
+        drop(listener);
+        drop(e);
+        let restarted = project_engine(root.path());
+        assert!(
+            restarted
+                .store
+                .scheduling_hints()
+                .unwrap()
+                .stages
+                .contains(&SchedulingStage::Conversations),
+            "an interrupted seal with no Turn must still be discoverable"
+        );
+        restarted.tick_conversations(0).unwrap();
+        assert!(
+            !restarted
+                .store
+                .scheduling_hints()
+                .unwrap()
+                .stages
+                .contains(&SchedulingStage::Conversations)
+        );
+        let state = restarted.store.snapshot().unwrap();
+        let intent = state
+            .governance
+            .iter()
+            .find(|r| r.r#type == "sealed_command_intent")
+            .unwrap();
+        assert_eq!(intent.data["status"], "needs_reconciliation");
+        assert!(state.documents.is_empty());
+        assert!(state.artifacts.is_empty());
+    } else {
+        let result = e.execute("document.revise", cmd.clone());
+        assert!(fired.load(Ordering::Acquire));
+        let state = e.store.snapshot().unwrap();
+        let intent = state
+            .governance
+            .iter()
+            .find(|r| r.r#type == "sealed_command_intent")
+            .unwrap();
+        if mode == "owner_changed" {
+            assert_eq!(result.unwrap_err().code, "revision_conflict");
+            assert_eq!(intent.data["status"], "conflicted");
+            assert!(state.documents.is_empty());
+        } else {
+            assert_eq!(e.execute("document.revise", cmd).unwrap(), result.unwrap());
+            assert_eq!(intent.data["status"], "completed");
+            assert_eq!(state.documents.len(), 1);
+            assert_eq!(state.artifacts.len(), 1);
+        }
+    }
+}
+#[test]
+fn a_live_material_seal_is_not_recovered_as_an_interrupted_attempt() {
+    sealing_interleaving("live");
+}
+#[test]
+fn live_material_sealing_retains_its_original_owner_witness() {
+    sealing_interleaving("owner_changed");
+}
+#[test]
+fn interrupted_material_sealing_remains_unknown_after_restart() {
+    sealing_interleaving("interrupted");
+}

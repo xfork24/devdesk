@@ -27,6 +27,7 @@ struct Journal {
     secrets: Vec<String>,
     private_requests: Mutex<HashSet<u64>>,
     stream_tails: Mutex<HashMap<String, String>>,
+    command_outputs: Option<crate::native_command_output::CommandOutputs>,
 }
 impl Journal {
     fn sanitize(&self, value: &Value, parent: &str) -> Value {
@@ -121,6 +122,9 @@ impl Journal {
             self.stream_tails.lock().map_err(storage)?.remove(&key);
         }
         let mut clean = self.sanitize(&frame, "");
+        if let Some(outputs) = &self.command_outputs {
+            outputs.record(&clean)?;
+        }
         if clean["params"]["delta"].is_string() {
             clean["params"]["delta"] =
                 json!("[tool stream delta omitted; sanitized final item retained]");
@@ -227,15 +231,25 @@ pub(crate) struct JsonlProcess {
 }
 impl JsonlProcess {
     pub fn spawn(command: Command) -> Result<Self> {
-        Self::spawn_inner(command, None, vec![])
+        Self::spawn_inner(command, None, vec![], None)
     }
+    #[cfg(test)]
     pub fn managed(command: Command, journal: &Path, secrets: Vec<String>) -> Result<Self> {
-        Self::spawn_inner(command, Some(journal), secrets)
+        Self::spawn_inner(command, Some(journal), secrets, None)
+    }
+    pub fn managed_with_wakeup(
+        command: Command,
+        journal: &Path,
+        secrets: Vec<String>,
+        wakeup: Arc<dyn Fn() + Send + Sync>,
+    ) -> Result<Self> {
+        Self::spawn_inner(command, Some(journal), secrets, Some(wakeup))
     }
     fn spawn_inner(
         mut command: Command,
         path: Option<&Path>,
         secrets: Vec<String>,
+        wakeup: Option<Arc<dyn Fn() + Send + Sync>>,
     ) -> Result<Self> {
         let journal = if let Some(path) = path {
             reject_symlink(path)?;
@@ -248,6 +262,7 @@ impl JsonlProcess {
             }
             Some(Arc::new(Journal {
                 file: Mutex::new(options.open(path).map_err(storage)?),
+                command_outputs: Some(crate::native_command_output::CommandOutputs::open(path)?),
                 timing: performance::NativeProtocolTiming::new(path),
                 secrets,
                 private_requests: Mutex::new(HashSet::new()),
@@ -318,6 +333,9 @@ impl JsonlProcess {
                     budget.fetch_sub(cost, Ordering::AcqRel);
                     signal.store(true, Ordering::Release);
                     return false;
+                }
+                if let Some(wakeup) = &wakeup {
+                    wakeup();
                 }
                 true
             };
@@ -492,6 +510,13 @@ impl JsonlProcess {
         )?;
         self.send(&json!({"method":"initialized","params":{}}))
     }
+    pub fn resume_codex(&mut self, mut params: Value) -> Result<Value> {
+        // Codex restores its retained conversation itself. Re-transmitting all
+        // historical turns grows with every manager wakeup and can exceed the
+        // bounded transport even though the caller only needs the thread ID.
+        params["excludeTurns"] = json!(true);
+        self.request_for("thread/resume", params, Duration::from_secs(60))
+    }
     pub fn request(&mut self, method: &str, params: Value) -> Result<Value> {
         self.request_for(method, params, Duration::from_secs(20))
     }
@@ -586,6 +611,24 @@ impl Drop for JsonlProcess {
 mod tests {
     use super::*;
     #[test]
+    fn codex_resume_does_not_retransmit_retained_history() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let mut command = Command::new("node");
+        command.args(["-e", "require('node:readline').createInterface({input:process.stdin}).on('line',line=>{const q=JSON.parse(line);if(q.method==='thread/resume'){const thread={id:q.params.threadId};if(q.params.excludeTurns!==true)thread.turns=[{text:'x'.repeat(20000000)}];console.log(JSON.stringify({id:q.id,result:{thread}}));}else console.log(JSON.stringify({id:q.id,result:{ok:true}}));});"]);
+        let mut wire = JsonlProcess::managed(command, file.path(), vec![]).unwrap();
+        let result = wire
+            .resume_codex(json!({"threadId":"retained-thread"}))
+            .unwrap();
+        assert_eq!(result["thread"]["id"], "retained-thread");
+        assert!(result["thread"].get("turns").is_none());
+        assert_eq!(wire.request("ping", json!({})).unwrap()["ok"], true);
+        assert!(!wire.failed.load(Ordering::Acquire));
+        let text = fs::read_to_string(file.path()).unwrap();
+        assert!(text.len() < 1024);
+        let request: Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
+        assert_eq!(request["frame"]["params"]["excludeTurns"], true);
+    }
+    #[test]
     fn resume_restores_large_history_without_requeueing_it_or_losing_the_journal() {
         let file = tempfile::NamedTempFile::new().unwrap();
         let secret = "HARMLESS_RESUME_SECRET";
@@ -664,6 +707,28 @@ mod tests {
     }
 
     #[test]
+    fn managed_frames_wake_the_scheduler_after_the_frame_is_available() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut command = Command::new("node");
+        command.args(["-e", "console.log(JSON.stringify({method:'turn/completed',params:{turn:{id:'wake',status:'completed'}}}));setTimeout(()=>{},1000);"]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let wakeup = Arc::new(move || {
+            let _ = sender.send(());
+        });
+        let mut wire = JsonlProcess::managed_with_wakeup(
+            command,
+            &directory.path().join("wire.jsonl"),
+            vec![],
+            wakeup,
+        )
+        .unwrap();
+        receiver.recv_timeout(Duration::from_secs(5)).unwrap();
+        let frames = wire.drain().unwrap();
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0]["method"], "turn/completed");
+    }
+
+    #[test]
     fn text_batches_never_cross_other_events_or_message_identities() {
         let delta = |item: &str, text: &str| json!({"method":"item/agentMessage/delta","params":{"threadId":"t","turnId":"u","itemId":item,"delta":text}});
         let mut batch = AgentMessageBatch::default();
@@ -678,11 +743,45 @@ mod tests {
     }
 
     #[test]
+    fn command_output_export_retains_full_sanitized_results_without_changing_the_event() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("operation.jsonl");
+        let journal = Journal {
+            file: Mutex::new(File::create(&path).unwrap()),
+            timing: None,
+            secrets: vec!["private-canary".into()],
+            private_requests: Mutex::new(HashSet::new()),
+            stream_tails: Mutex::new(HashMap::new()),
+            command_outputs: Some(
+                crate::native_command_output::CommandOutputs::open(&path).unwrap(),
+            ),
+        };
+        let text = format!("{}private-canary", "complete-output ".repeat(5000));
+        let event=journal.inbound(json!({"method":"item/completed","params":{"threadId":"t","turnId":"u","item":{"id":"shell-item","type":"commandExecution","command":"node --test","aggregatedOutput":text,"exitCode":0}}})).unwrap().unwrap();
+        let directory = crate::native_command_output::directory(&path).unwrap();
+        let file = fs::read_dir(&directory)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let bytes = fs::read(file).unwrap();
+        assert!(!String::from_utf8_lossy(&bytes).contains("private-canary"));
+        let saved: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(saved["item"], event["params"]["item"]);
+        assert_eq!(
+            saved["item"]["aggregatedOutput"].as_str().unwrap().len(),
+            text.len() - "private-canary".len() + "[redacted]".len()
+        );
+    }
+
+    #[test]
     fn split_secret_deltas_never_become_reconstructable_logs_or_ui_events() {
         let temp = tempfile::NamedTempFile::new().unwrap();
         let secret = "HARMLESS_SECRET_CANARY";
         let journal = Journal {
             file: Mutex::new(temp.reopen().unwrap()),
+            command_outputs: None,
             timing: None,
             secrets: vec![secret.into()],
             private_requests: Mutex::new(HashSet::new()),

@@ -148,14 +148,14 @@ export function RoleConversation({
         r.work_root !== false,
     )
     .at(-1);
-  const plan = runtime?.data.plan.document;
-  const recommendedExecution = runtime?.data.steps.find(
+  const plan = runtime?.data.plan?.document;
+  const recommendedExecution = runtime?.data.steps?.find(
     (s: Row) =>
       ["running", "waiting_input", "waiting_confirmation"].includes(s.status) &&
       s.agent_revision_id,
   );
   const recommendation = recommendedExecution?.agent_revision_id;
-  const recommended = plan?.steps.find(
+  const recommended = plan?.steps?.find(
     (s: Row) => s.key === recommendedExecution?.step,
   );
   const boundAgents = useMemo(
@@ -289,7 +289,7 @@ export function RoleConversation({
     const selected =
       candidates.find((r) => r.id === recommendation) ||
       candidates.find(
-        (r) => r.id === "builtin-agent-sol-high-project-manager:10",
+        (r) => r.id === "builtin-agent-sol-high-project-manager:12",
       ) ||
       candidates.find(
         (r) => !candidates.some((next) => next.supersedes === r.id),
@@ -1087,9 +1087,9 @@ export function RoleConversation({
                     ...workflowContext,
                     execution_id: workflowContext.step_instance_id,
                     session_id: detail.session.id,
-                    turn_id: turnId || executionSource.value?.record.turn_id,
+                    turn_id: turnId || executionSource.value?.record?.turn_id,
                     outputs: (
-                      executionSource.value?.record.outputs || []
+                      executionSource.value?.record?.outputs || []
                     ).filter(
                       (output: Row) => !turnId || output.turn_id === turnId,
                     ),

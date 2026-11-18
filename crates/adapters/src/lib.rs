@@ -5,6 +5,7 @@ mod connection_pool;
 mod execution_read;
 mod experience_directory;
 mod named_artifacts;
+mod operational_reads;
 pub mod performance;
 mod read_models;
 mod repository_contexts;
@@ -51,6 +52,7 @@ pub mod harness;
 pub mod model_providers;
 pub use git::CliGit;
 mod jsonl;
+mod native_command_output;
 pub use harness::{CodexHarness, DshHarness, RoutingHarness, RuntimeWorkers};
 mod process;
 mod runtime_images;
@@ -866,6 +868,15 @@ impl SqliteStore {
     }
 }
 impl EngineeringStore for SqliteStore {
+    fn operational_read(&self, method: &str, params: &Value) -> Result<Value> {
+        operational_reads::read(
+            &self.connection,
+            self.configuration_snapshot()?.as_ref(),
+            self.project_id.as_deref(),
+            method,
+            params,
+        )
+    }
     fn workspace_reading(&self, p: &Value) -> Result<Value> {
         workspace_read::read(self, p)
     }
@@ -962,6 +973,20 @@ impl EngineeringStore for SqliteStore {
                 .as_deref()
                 .ok_or_else(|| err("project_required", "决定请求需要明确项目"))?,
             id,
+        )
+    }
+    fn workflow_decision_context(
+        &self,
+        instance: &str,
+        execution: Option<&str>,
+    ) -> Result<devdesk_core::read_models::DecisionContext> {
+        read_models::decision_context(
+            &self.connection,
+            self.project_id
+                .as_deref()
+                .ok_or_else(|| err("project_required", "审批展示依据需要明确项目"))?,
+            instance,
+            execution,
         )
     }
     fn workflow_management_summary(
@@ -1238,12 +1263,22 @@ impl EngineeringStore for SqliteStore {
         after: Option<&str>,
     ) -> Result<devdesk_core::tool_calls::ToolCallPage> {
         let conn = self.connection.read()?;
-        let sql = if kind == "workflow_driver" {
-            "SELECT id FROM governance_records WHERE type=?1 AND json_extract(data,'$.mode')=?2 AND id>?3 ORDER BY id LIMIT 17"
+        let sql = if kind == "workflow_controller" {
+            format!(
+                "SELECT c.id FROM governance_records c INDEXED BY idx_runtime_work_seek WHERE c.type=?1 AND json_extract(c.data,'$.status')=?2 AND c.id>?3 AND {} ORDER BY c.id LIMIT 17",
+                runtime_queries::CONTROLLER_READY
+            )
+        } else if kind == "workflow_instance" {
+            format!(
+                "SELECT c.id FROM governance_records c INDEXED BY idx_runtime_work_seek WHERE c.type=?1 AND json_extract(c.data,'$.status')=?2 AND c.id>?3 AND {} ORDER BY c.id LIMIT 17",
+                runtime_queries::WORKFLOW_READY
+            )
+        } else if kind == "workflow_driver" {
+            "SELECT id FROM governance_records WHERE type=?1 AND json_extract(data,'$.mode')=?2 AND id>?3 ORDER BY id LIMIT 17".into()
         } else {
-            "SELECT id FROM governance_records INDEXED BY idx_runtime_work_seek WHERE type=?1 AND json_extract(data,'$.status')=?2 AND id>?3 ORDER BY id LIMIT 17"
+            "SELECT id FROM governance_records INDEXED BY idx_runtime_work_seek WHERE type=?1 AND json_extract(data,'$.status')=?2 AND id>?3 ORDER BY id LIMIT 17".into()
         };
-        let mut q = conn.prepare_cached(sql).map_err(storage)?;
+        let mut q = conn.prepare_cached(&sql).map_err(storage)?;
         let mut ids = q
             .query_map(rusqlite::params![kind, status, after.unwrap_or("")], |r| {
                 r.get::<_, String>(0)

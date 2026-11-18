@@ -254,7 +254,7 @@ def verify_evidence(client, rows, output):
  if 'environment' not in required:assert platform_copy,'Original frozen platform Red execution was changed'
  else:
   diagnostic=red['report'];assert 'ERR_MODULE_NOT_FOUND' not in diagnostic,'Loading failure cannot replace business Red'
-  assert blob(red['candidate'],'src/workflow-v5-'+context['suffix']+'/greeting.mjs')
+  assert blob(red['candidate'],context.get('module_path','src/workflow-v5-'+context['suffix']+'/greeting.mjs'))
  for key in ['documentation','review','candidate_review']:
   current=step(child,key);rendered=task(child,key)
   assert current['inputs']['evidence']==rendered['inputs']['evidence']==evidence
@@ -297,7 +297,7 @@ def verify_evidence(client, rows, output):
   assert candidate['parents']==[candidate['target_revision']] and candidate['diff']
   assert tests['status']=='succeeded' and tests['candidate']==candidate['revision'] and tests['exit_code']==0 and tests['container_id'] and tests['image_digest']==red['image_digest']
   expected_files=set(red_files)
-  if view is root:expected_files.add('tests/workflow-v5-'+context['suffix']+'-feature/behavior.test.mjs')
+  if view is root:expected_files.add(context.get('feature_test','tests/workflow-v5-'+context['suffix']+'-feature/behavior.test.mjs'))
   assert set(tests['recipe']['files'])==expected_files=={f['path'] for f in tests['execution']['files']}
   for f in tests['execution']['files']+last_green['files']:
    assert hashlib.sha256(f['content'].encode()).hexdigest()==f['sha256']

@@ -3,11 +3,19 @@ import { ManagerInteraction } from "./ManagerInteraction";
 import { RuntimeApproval } from "./RuntimeApproval";
 import { DiscussionLink, ReadingLink } from "./reading";
 import { StandardDiff } from "./StandardManager";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { ActionButton } from "./ActionFeedback";
 import { MarkdownPreview, RevisionSelect } from "./configuration-ui";
 import { loadCatalog } from "./configuration-state";
 import { type Request, type Row } from "./rpc-types";
+import { useRuntimeRefresh } from "./useRuntimeRefresh";
+import { runtimeDisplayKey } from "../runtime-state";
 
 type Props = {
   request: Request;
@@ -21,7 +29,18 @@ type Props = {
   embedded?: boolean;
 };
 
-export type WorkflowCollaboration = { data: Row; reload: () => Promise<void> };
+export type WorkflowCollaboration = {
+  data: Row;
+  reload: (fresh?: boolean) => Promise<void>;
+};
+
+type ManagerMessage = {
+  id: string;
+  session_id: string;
+  turn_id: string;
+  content_excerpt: string;
+  truncated: boolean;
+};
 
 export function WorkflowController({
   request,
@@ -54,64 +73,93 @@ export function WorkflowController({
   const [error, setError] = useState("");
   const [readError, setReadError] = useState("");
   const epoch = useRef(0);
+  const displayKey = useRef("");
   const invalidate = useCallback(() => {
     epoch.current += 1;
   }, []);
   const rootId = instance.data.root_instance_id || instance.id;
-  const load: () => Promise<void> = useCallback(async () => {
-    const ticket = ++epoch.current;
-    const [next, driver] = await Promise.all([
-      request("query.orchestration", {
-        ...(workspaceOnly
-          ? { owner_id: projectId, workspace_only: true }
-          : { root_instance_id: rootId }),
-        project_id: projectId,
-      }),
-      workspaceOnly
-        ? Promise.resolve({ driver: null })
-        : request("query.workflow_driver", {
-            id: rootId,
-            project_id: projectId,
-          }),
-    ]);
-    if (ticket === epoch.current) {
-      const value = {
-        ...next,
-        _projectId: projectId,
-        _rootId: rootId,
-        driver: driver.driver,
-        driverWaiting: driver.waiting || [],
-        approvals: driver.approvals || [],
-        runtimeApprovals: driver.runtime_approvals || [],
-      };
-      setData(value);
-      onRead?.({ data: value, reload: load });
-      setReadError("");
-    }
-  }, [request, rootId, projectId, workspaceOnly, onRead]);
-  useEffect(() => {
-    if (nested) return;
-    let active = true;
-    let timer: ReturnType<typeof setTimeout>;
-    setData(undefined);
-    setError("");
-    setReadError("");
-    async function poll() {
+  const [decisionPages, setDecisionPages] = useState<number[]>([]);
+  const decisionBefore = decisionPages.at(-1);
+  const load: (fresh?: boolean) => Promise<void> = useCallback(
+    async (fresh = false) => {
+      const ticket = ++epoch.current;
       try {
-        await load();
-      } catch (e) {
-        if (active) setReadError(String(e));
-      } finally {
-        if (active) timer = setTimeout(() => void poll(), 2500);
+        const [next, driver] = await Promise.all([
+          request(
+            "query.orchestration",
+            {
+              ...(workspaceOnly
+                ? { owner_id: projectId, workspace_only: true }
+                : { root_instance_id: rootId }),
+              project_id: projectId,
+              ...(decisionBefore === undefined
+                ? {}
+                : { decision_before: decisionBefore }),
+            },
+            { fresh },
+          ),
+          workspaceOnly
+            ? Promise.resolve({ driver: null })
+            : request(
+                "query.workflow_driver",
+                {
+                  id: rootId,
+                  project_id: projectId,
+                  view: "summary",
+                },
+                { fresh },
+              ).then((summary) => {
+                const needsDetails =
+                  summary.runtime_approval_pending ||
+                  (summary.driver?.data.mode !== "agent" &&
+                    (summary.workflow_approval_pending ||
+                      ((summary.driver?.data.mode || "manual") === "manual" &&
+                        (summary.waiting || []).some(
+                          (step: Row) => step.status === "awaiting_acceptance",
+                        ))));
+                return needsDetails
+                  ? request(
+                      "query.workflow_driver",
+                      {
+                        id: rootId,
+                        project_id: projectId,
+                      },
+                      { fresh },
+                    )
+                  : summary;
+              }),
+        ]);
+        if (ticket === epoch.current) {
+          const value = {
+            ...next,
+            _projectId: projectId,
+            _rootId: rootId,
+            driver: driver.driver,
+            driverWaiting: driver.waiting || [],
+            approvals: driver.approvals || [],
+            runtimeApprovals: driver.runtime_approvals || [],
+          };
+          const key = runtimeDisplayKey(value);
+          if (displayKey.current !== key) {
+            displayKey.current = key;
+            setData(value);
+            onRead?.({ data: value, reload: load });
+          }
+          setReadError("");
+        }
+      } catch (error) {
+        if (ticket === epoch.current) setReadError(String(error));
+        throw error;
       }
-    }
-    void poll();
-    return () => {
-      active = false;
-      clearTimeout(timer);
-      invalidate();
-    };
-  }, [invalidate, load, nested]);
+    },
+    [request, rootId, projectId, workspaceOnly, onRead, decisionBefore],
+  );
+  useRuntimeRefresh(load, projectId, rootId, {
+    enabled: !nested,
+    root: true,
+    invalidate,
+    onError: (value) => setReadError(String(value)),
+  });
   useEffect(() => {
     if (!workspaceOnly) return;
     let active = true;
@@ -371,6 +419,33 @@ export function WorkflowController({
           }
         />
       ))}
+      {decisionPages.length > 0 || data?.more?.decisions ? (
+        <div className="actions">
+          <ActionButton
+            disabled={decisionPages.length === 0}
+            onClick={() => setDecisionPages((pages) => pages.slice(0, -1))}
+          >
+            上一页待审批
+          </ActionButton>
+          <ActionButton
+            disabled={data?.next_decision_before == null}
+            onClick={() =>
+              setDecisionPages((pages) => [
+                ...pages,
+                data!.next_decision_before,
+              ])
+            }
+          >
+            下一页待审批
+          </ActionButton>
+          <ActionButton
+            disabled={decisionPages.length === 0}
+            onClick={() => setDecisionPages([])}
+          >
+            最新待审批
+          </ActionButton>
+        </div>
+      ) : null}
       {runtimeApprovals.map((interaction: Row) => (
         <RuntimeApproval
           key={interaction.id}
@@ -386,6 +461,7 @@ export function WorkflowController({
       {approvals
         .filter(
           (approval: Row) =>
+            data?.driver?.data.mode !== "agent" &&
             !(data?.decisions || []).some(
               (decision: Row) =>
                 decision.current !== false &&
@@ -670,9 +746,21 @@ export function WorkflowController({
             {data.messages
               .slice()
               .reverse()
-              .map((m: Row) => (
+              .map((m: ManagerMessage) => (
                 <div key={m.id} className="notice">
-                  <MarkdownPreview text={m.content} />
+                  <MarkdownPreview
+                    text={m.content_excerpt + (m.truncated ? "…" : "")}
+                  />
+                  {m.truncated && (
+                    <DiscussionLink
+                      projectId={projectId}
+                      ownerId={controller?.owner_id || instance.data.owner_id}
+                      sessionId={m.session_id}
+                      turnId={m.turn_id}
+                    >
+                      查看完整日志
+                    </DiscussionLink>
+                  )}
                 </div>
               ))}
           </div>
@@ -682,7 +770,9 @@ export function WorkflowController({
   );
 }
 
-export function WorkflowPlanChanges(props: Props) {
+export function WorkflowPlanChanges(
+  props: Props & { children?: ReactNode; readOnly?: boolean },
+) {
   const [activated, setActivated] = useState(false);
   const [exact, setExact] = useState<Row>();
   const [loading, setLoading] = useState(false);
@@ -714,7 +804,7 @@ export function WorkflowPlanChanges(props: Props) {
     <details
       className={props.embedded ? "manager-plan-changes" : "panel"}
       onToggle={(event) => {
-        if (event.currentTarget.open && !activated) {
+        if (event.currentTarget.open && !activated && !props.readOnly) {
           setActivated(true);
           if (props.instance.data.plan?.document) setExact(props.instance);
           else void loadExact();
@@ -722,14 +812,16 @@ export function WorkflowPlanChanges(props: Props) {
       }}
     >
       <summary>调整当前运行计划</summary>
-      {activated && loading && <p role="status">正在读取确切执行计划…</p>}
-      {error && <p role="alert">{error}</p>}
-      {activated && !exact && !loading && (
+      {!props.readOnly && activated && loading && (
+        <p role="status">正在读取确切执行计划…</p>
+      )}
+      {!props.readOnly && error && <p role="alert">{error}</p>}
+      {!props.readOnly && activated && !exact && !loading && (
         <ActionButton onClick={() => void loadExact()}>
           重新读取执行计划
         </ActionButton>
       )}
-      {exact && (
+      {!props.readOnly && exact && (
         <WorkflowPlanChangeEditor
           {...props}
           key={exact.revision}
@@ -740,6 +832,7 @@ export function WorkflowPlanChanges(props: Props) {
           }}
         />
       )}
+      {props.children}
     </details>
   );
 }

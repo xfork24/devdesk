@@ -106,6 +106,14 @@ impl CommandTests {
         self.poll_locked(r, true)
     }
     fn poll_locked(&self, r: &TestRequest, allow_start: bool) -> Result<Option<Value>> {
+        self.poll_observed_locked(r, allow_start, &mut None)
+    }
+    fn poll_observed_locked(
+        &self,
+        r: &TestRequest,
+        allow_start: bool,
+        observation: &mut Option<ports::TestExecutionObservation>,
+    ) -> Result<Option<Value>> {
         let recipe = self.recipe(r)?;
         let (root, job) = self.locations(r, allow_start)?;
         let digest = configuration_digest(&json!(r))?;
@@ -119,6 +127,7 @@ impl CommandTests {
             state
         } else {
             if !allow_start {
+                *observation = Some(ports::TestExecutionObservation::NotStarted);
                 return Ok(None);
             }
             let state = Job {
@@ -149,6 +158,7 @@ impl CommandTests {
         let mut receipt = sandbox.inspect(&r.operation_id)?;
         if !state.start_dispatched {
             if !allow_start {
+                *observation = Some(ports::TestExecutionObservation::NotStarted);
                 return Ok(None);
             }
             let work = job.join("work");
@@ -209,6 +219,7 @@ impl CommandTests {
                 profile_file: Some(reporter),
                 runner_file: None,
                 skill_directory: None,
+                command_output_directory: None,
                 sensitive_output: false,
                 profile_target: Some("/run/devdesk/test-reporter.mjs".into()),
             })?;
@@ -221,6 +232,7 @@ impl CommandTests {
             receipt = Some(sandbox.start(&r.operation_id)?);
         }
         if !allow_start && receipt.is_none() && Self::read(&job.join("cancelled.json"))?.is_some() {
+            *observation = Some(ports::TestExecutionObservation::Stopped);
             return Ok(None);
         }
         let receipt = receipt.ok_or_else(|| {
@@ -238,10 +250,12 @@ impl CommandTests {
         // container must still satisfy the budget using its own Docker clocks.
         let timed_out = receipt.runtime_millis(timestamp())? > recipe.timeout_seconds * 1000;
         if receipt.running && !timed_out {
+            *observation = Some(ports::TestExecutionObservation::Running { timed_out });
             return Ok(None);
         }
         let stopped = if receipt.running {
             if !allow_start {
+                *observation = Some(ports::TestExecutionObservation::Running { timed_out });
                 return Ok(None);
             }
             sandbox.stop(&r.operation_id)?;
@@ -295,30 +309,14 @@ impl CommandTests {
     fn inspect(&self, r: &TestRequest) -> Result<ports::TestExecutionObservation> {
         let cell = self.cell(&r.operation_id)?;
         let _lock = cell.lock().map_err(storage)?;
-        if let Some(result) = self.poll_locked(r, false)? {
+        let mut observation = None;
+        if let Some(result) = self.poll_observed_locked(r, false, &mut observation)? {
             return Ok(ports::TestExecutionObservation::Completed { result });
         }
-        let (root, job) = self.locations(r, false)?;
-        let cancelled = Self::read(&job.join("cancelled.json"))?.is_some();
-        let metadata = Self::read(&job.join("job.json"))?;
-        let Some(metadata) = metadata else {
-            return Ok(ports::TestExecutionObservation::NotStarted);
-        };
-        let state: Job = serde_json::from_value(metadata).map_err(storage)?;
-        require(
-            state.request_digest == configuration_digest(&json!(r))?,
-            "测试只读核对不能替换原请求",
-        )?;
-        let receipt = DockerSandbox::new(&root)?.inspect(&r.operation_id)?;
-        match receipt {
-            Some(receipt) if receipt.running => Ok(ports::TestExecutionObservation::Running {
-                timed_out: receipt.runtime_millis(timestamp())?
-                    > self.recipe(r)?.timeout_seconds * 1000,
-            }),
-            None if cancelled => Ok(ports::TestExecutionObservation::Stopped),
-            _ if !state.start_dispatched => Ok(ports::TestExecutionObservation::NotStarted),
-            _ => Ok(ports::TestExecutionObservation::Unknown),
-        }
+        // Preserve the single physical observation. A second Docker inspect
+        // could see running -> exited and misclassify that valid transition as
+        // Unknown; the next read will export the original stopped result.
+        observation.ok_or_else(|| err("adapter_contract", "测试观察缺少明确状态"))
     }
     fn result(
         r: &TestRequest,

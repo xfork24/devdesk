@@ -50,6 +50,12 @@ impl Engine {
             raw["data"]["fingerprint"] == fingerprint,
             "command_id 被另一份材料请求复用",
         )?;
+        let _attempt = self.effect_in_flight.enter(&key.id)?.ok_or_else(|| {
+            err(
+                "resource_pending",
+                "原材料命令仍在封存或接纳，请保留原命令身份",
+            )
+        })?;
         self.admit_sealed_command(&original).map(Some)
     }
 
@@ -100,6 +106,14 @@ impl Engine {
         )?;
         let seals = files.iter().map(|(seal, _)| seal).collect::<Vec<_>>();
         let key = key(self.store.as_ref(), &planned.command_id);
+        // Register before publishing the prepared intent. A recovery scan must
+        // not inspect a live attempt's files before their observations exist.
+        let _attempt = self.effect_in_flight.enter(&key.id)?.ok_or_else(|| {
+            err(
+                "resource_pending",
+                "原材料命令仍在封存或接纳，请保留原命令身份",
+            )
+        })?;
         let mut intent = record(
             "sealed_command_intent",
             planned.command_id.clone(),
@@ -341,6 +355,9 @@ impl Engine {
 
     pub(crate) fn resume_sealed_commands(&self) -> Result<()> {
         for original in self.pending_runtime_records("sealed_command_intent", "prepared")? {
+            let Some(_attempt) = self.effect_in_flight.enter(&original.resource.id)? else {
+                continue;
+            };
             match self.admit_sealed_command(&original) {
                 Err(error)
                     if matches!(error.code.as_str(), "revision_conflict" | "storage_busy") =>

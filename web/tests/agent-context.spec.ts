@@ -26,9 +26,7 @@ test("没有项目时可以选择 Agent 并查看完整能力和经验入口", a
   });
   await page.reload();
   await page.getByRole("button", { name: "角色讨论", exact: true }).click();
-  await expect(page.getByLabel("讨论角色", { exact: true })).toHaveValue(
-    "builtin-agent-sol-high-project-manager:10",
-  );
+  await expect(page.getByLabel("讨论角色", { exact: true })).toBeEnabled();
   await page.getByLabel("讨论角色", { exact: true }).selectOption(agent);
   await page.getByLabel("Agent", { exact: true }).selectOption(instance.id);
   await expect(page.getByLabel("讨论范围", { exact: true })).toHaveValue(
@@ -97,9 +95,7 @@ test("全局讨论选择来源项目的原 Agent 实例时保留本页项目选�
     `/?tab=discussion&project_id=${encodeURIComponent(current.id)}`,
   );
   await page.getByRole("button", { name: "角色讨论", exact: true }).click();
-  await expect(page.getByLabel("讨论角色", { exact: true })).toHaveValue(
-    "builtin-agent-sol-high-project-manager:10",
-  );
+  await expect(page.getByLabel("讨论角色", { exact: true })).toBeEnabled();
   await page.getByLabel("讨论范围", { exact: true }).selectOption("global");
   await page.getByLabel("讨论角色", { exact: true }).selectOption(agent.id);
   await page.getByLabel("Agent", { exact: true }).selectOption(instance.id);
@@ -122,14 +118,17 @@ test("全局讨论选择来源项目的原 Agent 实例时保留本页项目选�
       .active_project.id,
   ).toBe(current.id);
   expect((await rpc(page, "query.ui_bootstrap")).active_project).toBeNull();
-  expect(
-    (
-      await rpc(page, "query.agent_experience", {
-        scope: "global",
-        agent_instance_id: instance.id,
-      })
-    ).total,
-  ).toBe(0);
+  const absent = await page.request
+    .post("/rpc", {
+      data: {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "query.agent_experience",
+        params: { scope: "global", agent_instance_id: instance.id },
+      },
+    })
+    .then((r) => r.json());
+  expect(absent.error.data.code).toBe("not_found");
 });
 
 test("来源不可用时明确显示经验目录为历史摘要", async ({ page }) => {

@@ -129,6 +129,13 @@ impl Workspace {
             runtime_reads: Default::default(),
             background: Default::default(),
         });
+        workspace
+            .global
+            .subscribe_changes(workspace.background.wake.listener());
+        workspace
+            .adapters
+            .harness
+            .subscribe_wakeup(workspace.background.wake.listener());
         let mut offset = 0;
         loop {
             let (projects, total) = workspace.global.projects(offset, 100)?;
@@ -239,6 +246,7 @@ impl Workspace {
                     inventory: self.global.clone(),
                 }),
         );
+        e.store.subscribe_changes(self.background.wake.listener());
         if !creating {
             require(
                 e.store.project_metadata()?.id == id,
@@ -265,6 +273,10 @@ impl Workspace {
         self.opened.lock().unwrap().insert(id.into(), e.clone());
         Ok(e)
     }
+    #[cfg(test)]
+    pub(super) fn performance_discussion_fixture(&self) -> Result<Arc<Engine>> {
+        self.initialize_global_discussion()
+    }
     fn initialize_global_discussion(&self) -> Result<Arc<Engine>> {
         let cell = self
             .loading
@@ -277,6 +289,7 @@ impl Workspace {
             .get_or_init(|| {
                 let root = SqliteStore::global_discussion_path(Path::new(&self.global.root()))?;
                 let e = engine(Arc::new(SqliteStore::open(&root)?), &self.adapters);
+                e.store.subscribe_changes(self.background.wake.listener());
                 self.sync_configuration(&e)?;
                 e.bootstrap()?;
                 self.opened
@@ -372,6 +385,43 @@ impl Workspace {
     pub fn dispatch(&self, method: &str, params: Value) -> Result<Value> {
         self.dispatch_with_receipt(method, params)
             .map(|outcome| outcome.value)
+    }
+    /// HTTP display snapshots may lag by at most this short cache interval.
+    /// Native tools, exact bodies, editor baselines and action qualification
+    /// continue to read their original authoritative paths.
+    pub fn dispatch_display_read(&self, method: &str, params: Value) -> Result<RpcOutcome> {
+        let eligible = runtime_reads::eligible(method, &params);
+        if !eligible {
+            let project = params["project_id"].as_str().map(str::to_owned);
+            let outcome = self.dispatch_with_receipt(method, params);
+            if outcome.is_ok()
+                && devdesk_core::rpc_contracts::contract(method).is_some_and(|c| {
+                    matches!(
+                        c.access,
+                        devdesk_core::rpc_contracts::Access::Mutation
+                            | devdesk_core::rpc_contracts::Access::PlatformMutation
+                    )
+                })
+            {
+                let _ = self.runtime_reads.invalidate(project.as_deref());
+            }
+            return outcome;
+        }
+        let key = configuration_hash(&("http-display/v1", self.global.root(), method, &params));
+        let key = self
+            .runtime_reads
+            .scoped_key(params["project_id"].as_str().unwrap(), &key)?;
+        let value =
+            self.runtime_reads
+                .read_for(&key, std::time::Duration::from_millis(100), || {
+                    let outcome = self.dispatch_with_receipt(method, params)?;
+                    require(outcome.commit.is_none(), "显示缓存不能保存修改回执")?;
+                    Ok(outcome.value)
+                })?;
+        Ok(RpcOutcome {
+            value,
+            commit: None,
+        })
     }
     pub fn dispatch_with_receipt(&self, method: &str, params: Value) -> Result<RpcOutcome> {
         if method == "credentials.configure" {
@@ -556,6 +606,9 @@ impl Workspace {
                     engine.store.root(),
                     &params,
                 ));
+                let key = self
+                    .runtime_reads
+                    .scoped_key(params["project_id"].as_str().unwrap(), &key)?;
                 return self
                     .runtime_reads
                     .read(&key, || engine.query(method, &params, 0));
@@ -1128,17 +1181,28 @@ impl Workspace {
         self.tick(&should_stop)?;
         self.background.drain(should_stop)
     }
+    pub fn scheduler_notify(&self) -> Arc<tokio::sync::Notify> {
+        self.background.wake.notify.clone()
+    }
+    pub fn scheduler_delay(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(if self.background.runnable.load(Ordering::Acquire) {
+            75
+        } else {
+            1000
+        })
+    }
     pub fn tick(self: &Arc<Self>, should_stop: impl Fn() -> bool) -> Result<()> {
         if should_stop() {
             self.background.stopped.store(true, Ordering::Release);
             return Ok(());
         }
         let completed = self.background.poll();
+        let maintain = self.background.maintenance_due()?;
         let opened: Vec<_> = self.opened.lock().unwrap().values().cloned().collect();
         let mut failure = completed.err();
         // Repair directory summaries independently of pending workflow work.
         // The rotation includes idle projects; frontend queries never publish.
-        if !opened.is_empty() {
+        if maintain && !opened.is_empty() {
             let start = self.directory_next.load(Ordering::Relaxed) % opened.len();
             let started = std::time::Instant::now();
             let mut visited = 0;
@@ -1168,7 +1232,7 @@ impl Workspace {
             }
             self.directory_next.fetch_add(visited, Ordering::Relaxed);
         }
-        if !should_stop() && !opened.is_empty() {
+        if maintain && !should_stop() && !opened.is_empty() {
             let selected =
                 self.background.catalog_next.fetch_add(1, Ordering::Relaxed) % opened.len();
             let engine = opened[selected].clone();
@@ -1204,12 +1268,46 @@ impl Workspace {
             total += hints.running_conversations;
             running.insert(project.clone(), hints.running_conversations);
             if hints.pending && hints.live {
-                engines.push((project, engine, hints.stages));
+                let mut stages = vec![];
+                let cursor = if hints.stages.iter().any(|stage| {
+                    matches!(
+                        stage,
+                        devdesk_core::SchedulingStage::Drivers
+                            | devdesk_core::SchedulingStage::Segments
+                    )
+                }) {
+                    Some(engine.store.event_cursor()?)
+                } else {
+                    None
+                };
+                for stage in hints.stages {
+                    let phase = devdesk_core::SchedulingStage::ALL
+                        .iter()
+                        .position(|item| *item == stage)
+                        .unwrap();
+                    if !matches!(
+                        stage,
+                        devdesk_core::SchedulingStage::Drivers
+                            | devdesk_core::SchedulingStage::Segments
+                    ) || self
+                        .background
+                        .stage_due(&format!("{project}:stage:{phase}"), cursor.unwrap())?
+                    {
+                        stages.push(stage);
+                    }
+                }
+                if !stages.is_empty() {
+                    engines.push((project, engine, stages));
+                }
             }
         }
         // Configuration callbacks share the worker bound, independently of any
         // project's potentially slow Git, Docker or runtime setup operation.
-        if !should_stop() {
+        let global_tools = self.configuration.store.has_pending_tool_calls()?;
+        self.background
+            .runnable
+            .store(!engines.is_empty() || global_tools, Ordering::Release);
+        if !should_stop() && global_tools {
             let engine = self.configuration.clone();
             let stopping = self.background.stopped.clone();
             self.background
@@ -1279,6 +1377,13 @@ impl Workspace {
                     allowance = actual + new;
                     reservation = Some(allowance);
                 }
+                let stage_key = key.clone();
+                let observed_idle = phase < stages.len()
+                    && matches!(
+                        stages[phase],
+                        devdesk_core::SchedulingStage::Drivers
+                            | devdesk_core::SchedulingStage::Segments
+                    );
                 let started =
                     self.background
                         .spawn(key, project.clone(), reservation, move || {
@@ -1286,13 +1391,30 @@ impl Workspace {
                             if stop() {
                                 return Ok(());
                             }
-                            if phase == stages.len() {
+                            // Only pure control stages use this technical idle
+                            // hint. External polling, stop and native replies
+                            // remain runnable without a database event.
+                            let before = if observed_idle {
+                                Some(engine.store.event_cursor()?)
+                            } else {
+                                None
+                            };
+                            let result = if phase == stages.len() {
                                 workspace.sync_configuration(&engine)
                             } else if phase == stages.len() + 1 {
                                 workspace.tick_workflow_engine(&engine, &stop)
                             } else {
                                 engine.run_scheduling_stage(stages[phase], allowance, &stop)
+                            };
+                            if result.is_ok()
+                                && let Some(before) = before
+                            {
+                                let after = engine.store.event_cursor()?;
+                                workspace
+                                    .background
+                                    .stage_finished(stage_key, before, after)?;
                             }
+                            result
                         })?;
                 if started && let Some(allowance) = reservation {
                     reserved += allowance.saturating_sub(*running.get(project).unwrap_or(&0));
@@ -1781,22 +1903,30 @@ mod tests {
             .filter(|v| v.resource.id == "global_concurrency")
             .collect();
         w.dispatch("settings.update", json!({"command_id":"set-limit","preconditions":versions,"payload":{"global_concurrency":3}})).unwrap();
-        for _ in 0..4 {
+        // Catalog propagation is eventual and maintenance is time bounded.
+        // Wait for its observable result rather than assuming four busy ticks.
+        let began = std::time::Instant::now();
+        let a_state = loop {
             w.tick_fixture(|| false).unwrap();
-        }
-        read_project(&w, &a);
-        let a_state = w
-            .project_engine(Some(&a))
-            .unwrap()
-            .store
-            .snapshot()
-            .unwrap();
-        assert!(
-            a_state
+            let state = w
+                .project_engine(Some(&a))
+                .unwrap()
+                .store
+                .snapshot()
+                .unwrap();
+            if state
                 .definitions
                 .iter()
                 .any(|d| d.id == new["id"].as_str().unwrap())
-        );
+            {
+                break state;
+            }
+            assert!(
+                began.elapsed() < std::time::Duration::from_secs(5),
+                "global catalog publication did not reach project A"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        };
         assert_eq!(
             a_state
                 .definitions

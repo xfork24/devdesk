@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 // Controlled UI responses; actual execution and publication are verified separately.
-async function fixture(page: Page, failure?: "catalog" | "defaults") {
+async function fixture(
+  page: Page,
+  failure?: "catalog" | "defaults",
+  metadataOnly = false,
+) {
   await page.goto("/");
   if (
     (await page.request.get("/capabilities").then((r) => r.json()))
@@ -79,7 +83,24 @@ async function fixture(page: Page, failure?: "catalog" | "defaults") {
           configuration_ready: true,
           features: [feature],
           total_features: 1,
-          configurations: [instance],
+          configurations: [
+            metadataOnly
+              ? {
+                  ...instance,
+                  work_root: true,
+                  metadata_only: true,
+                  data: {
+                    owner_id: feature.id,
+                    root_instance_id: instance.id,
+                    parent_execution_id: null,
+                    active_plan_revision_id: "plan-current",
+                    workflow_ref: "workflow-current:1",
+                    status: "running",
+                    plan: { standard_ref: "standard-current:1" },
+                  },
+                }
+              : instance,
+          ],
           detail: {
             feature,
             tasks: [],
@@ -217,6 +238,117 @@ test("a manager material link keeps its Feature scope before workspace loading f
   } finally {
     release();
   }
+});
+
+test("continuous runtime events refresh the manager without starving or busy polling", async ({
+  page,
+}) => {
+  const url = await fixture(page);
+  // Controlled transport, real page/hook/cache: notifications keep arriving
+  // faster than the refresh interval, just like an active multi-step root.
+  await page.addInitScript(() => {
+    class RuntimeEvents {
+      onopen: (() => void) | null = null;
+      onmessage: ((event: { data: string }) => void) | null = null;
+      onerror = null;
+      timer: ReturnType<typeof setInterval>;
+      constructor() {
+        setTimeout(() => this.onopen?.(), 0);
+        this.timer = setInterval(
+          () =>
+            this.onmessage?.({
+              data: JSON.stringify({
+                kind: "workflow.runtime",
+                detail: JSON.stringify({
+                  instance_id: "read-instance",
+                  root_instance_id: "read-instance",
+                }),
+              }),
+            }),
+          30,
+        );
+      }
+      close() {
+        clearInterval(this.timer);
+      }
+    }
+    Object.defineProperty(window, "EventSource", { value: RuntimeEvents });
+  });
+  let reads = 0;
+  await page.route("**/rpc", async (route) => {
+    if (route.request().postDataJSON().method === "query.workflow_progress")
+      reads++;
+    await route.fallback();
+  });
+  await page.goto(url);
+  await expect(
+    page.getByRole("button", { name: "刷新管理状态", exact: true }),
+  ).toBeVisible();
+  const initial = reads;
+  await expect
+    .poll(() => reads, { timeout: 2000 })
+    .toBeGreaterThan(initial + 2);
+  expect(reads - initial).toBeLessThan(12);
+});
+
+test("another root's events do not reread the current Feature context workspace", async ({
+  page,
+}) => {
+  const url = await fixture(page);
+  await page.addInitScript(() => {
+    class ForeignEvents {
+      onopen: (() => void) | null = null;
+      onmessage: ((event: { data: string }) => void) | null = null;
+      onerror = null;
+      timer: ReturnType<typeof setInterval>;
+      constructor() {
+        Reflect.set(window, "runtimeEventCount", 0);
+        setTimeout(() => this.onopen?.(), 0);
+        this.timer = setInterval(() => {
+          Reflect.set(
+            window,
+            "runtimeEventCount",
+            Reflect.get(window, "runtimeEventCount") + 1,
+          );
+          this.onmessage?.({
+            data: JSON.stringify({
+              kind: "workflow.runtime",
+              detail: JSON.stringify({
+                instance_id: "another-root",
+                root_instance_id: "another-root",
+              }),
+            }),
+          });
+        }, 30);
+      }
+      close() {
+        clearInterval(this.timer);
+      }
+    }
+    Object.defineProperty(window, "EventSource", { value: ForeignEvents });
+  });
+  let reads = 0;
+  await page.route("**/rpc", async (route) => {
+    if (
+      ["query.workspace", "query.execution_workspace"].includes(
+        route.request().postDataJSON().method,
+      )
+    )
+      reads++;
+    await route.fallback();
+  });
+  await page.goto(url.replace("detail=manager", "detail=context"));
+  await expect(page.getByLabel("当前 Feature", { exact: true })).toHaveValue(
+    "read-feature",
+  );
+  await page.waitForFunction(
+    () => Reflect.get(window, "runtimeEventCount") >= 10,
+  );
+  const initial = reads;
+  await page.waitForFunction(
+    () => Reflect.get(window, "runtimeEventCount") >= 30,
+  );
+  expect(reads).toBe(initial);
 });
 
 test("manager prepares exact materials and review evidence for a human decision", async ({
@@ -429,7 +561,24 @@ test("manager collects child confirmations and tool approvals, with errors besid
           },
         },
         decisions: [],
-        messages: [{ id: "manager-message", content: "已同步当前流程进度" }],
+        messages: [
+          {
+            id: "manager-message",
+            session_id: "shared-manager-session",
+            turn_id: "manager-turn",
+            sequence: 1,
+            content_excerpt: "已同步当前流程进度",
+            truncated: false,
+          },
+          {
+            id: "manager-message-long",
+            session_id: "shared-manager-session",
+            turn_id: "manager-turn-long",
+            sequence: 2,
+            content_excerpt: "正在核对任务交付与后续执行计划",
+            truncated: true,
+          },
+        ],
       };
     } else if (call.method === "orchestration.resume") {
       commands.push(call);
@@ -539,6 +688,16 @@ test("manager collects child confirmations and tool approvals, with errors besid
   await expect(
     childCollaboration.getByText("已同步当前流程进度", { exact: true }),
   ).toBeVisible();
+  const log = childCollaboration.locator(".manager-log");
+  await expect(log.locator(".notice")).toHaveCount(2);
+  await expect(log.getByText("正在核对任务交付与后续执行计划…")).toBeVisible();
+  const fullLog = log.getByRole("link", { name: "查看完整日志", exact: true });
+  await expect(fullLog).toHaveCount(1);
+  await expect(fullLog).toHaveAttribute(
+    "href",
+    /session_id=shared-manager-session/,
+  );
+  await expect(fullLog).toHaveAttribute("href", /turn_id=manager-turn-long/);
   await childCollaboration
     .getByRole("button", { name: "恢复项目经理", exact: true })
     .click();
@@ -956,8 +1115,10 @@ test("流程经理只保留审批入口和接管操作，状态刷新恢复后�
   await expect(manager).toContainText("协作中");
   await expect(manager).toContainText("在此处理当前流程的待确认事项");
   failRead = true;
+  await page.getByRole("button", { name: "刷新管理状态", exact: true }).click();
   await expect(manager).toContainText("暂时无法刷新经理状态");
   failRead = false;
+  await page.getByRole("button", { name: "刷新管理状态", exact: true }).click();
   await expect(manager).not.toContainText("暂时无法刷新经理状态");
   await expect(manager.getByLabel("回复项目经理", { exact: true })).toHaveCount(
     0,
@@ -1224,7 +1385,9 @@ for (const catalogState of ["pending", "failed"] as const) {
 test("流程、材料、步骤上下文、Agent 讨论和审计定位同一执行与轮次", async ({
   page,
 }, info) => {
-  const url = await fixture(page);
+  const url = await fixture(page, undefined, true);
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
   const execution = {
     id: "11111111-2222-4333-8444-555555555555",
     step: "requirements",
@@ -1347,6 +1510,18 @@ test("流程、材料、步骤上下文、Agent 讨论和审计定位同一执�
               ],
             }
           : { records: [record, pendingRecord] };
+        break;
+      case "query.workflow_progress":
+        result = {
+          record: {
+            id: "read-instance",
+            data: { owner_id: "read-feature", status: "running" },
+          },
+          counts: { total: 2, completed: 1, running: 0, waiting: 1, failed: 0 },
+          stages: [],
+          next_stage_offset: null,
+          observed_only: true,
+        };
         break;
       case "query.workflow_instance": {
         const runtime = {
@@ -1513,6 +1688,7 @@ test("流程、材料、步骤上下文、Agent 讨论和审计定位同一执�
   const log = page.getByRole("log", { name: "讨论记录" });
   await expect(log).toContainText("需求分析师的本轮回答");
   await expect(log).not.toContainText("另一个轮次的回答");
+  expect(pageErrors).toEqual([]);
   await page
     .getByRole("region", { name: "会话与流程关联" })
     .getByRole("link", { name: "查看流程步骤", exact: true })
@@ -1533,6 +1709,25 @@ test("流程、材料、步骤上下文、Agent 讨论和审计定位同一执�
   await expect(
     step.getByRole("link", { name: "材料 · report", exact: true }),
   ).toBeVisible();
+  for (const entrance of [
+    step.getByRole("link", { name: "查看此轮会话", exact: true }),
+    step.getByRole("button", { name: "打开 Agent 讨论", exact: true }),
+  ]) {
+    await entrance.click();
+    await expect(page.getByLabel("讨论会话", { exact: true })).toHaveValue(
+      execution.session_id,
+    );
+    await expect(page.getByLabel("讨论轮次", { exact: true })).toHaveValue(
+      execution.turn_id,
+    );
+    await expect(log).toContainText("需求分析师的本轮回答");
+    expect(pageErrors).toEqual([]);
+    await page
+      .getByRole("region", { name: "会话与流程关联" })
+      .getByRole("link", { name: "查看流程步骤", exact: true })
+      .click();
+    await expect(step).toBeVisible();
+  }
   await step.getByRole("link", { name: "查看执行记录", exact: true }).click();
   await expect(
     page.getByRole("article", { name: "选中执行记录" }),
@@ -1556,6 +1751,146 @@ test("流程、材料、步骤上下文、Agent 讨论和审计定位同一执�
   ).toBe(true);
   await page.screenshot({
     path: info.outputPath("execution-perspectives.png"),
+    fullPage: true,
+  });
+});
+
+test("上下文切换保留完整目录，经理编排轮次不读取步骤执行", async ({
+  page,
+}, info) => {
+  const url = (await fixture(page)).replace("detail=manager", "detail=context");
+  const common = {
+    instance_id: "read-instance",
+    instance_name: "当前开发流程",
+    owner_id: "read-feature",
+    owner_title: "当前 Feature",
+    status: "completed",
+    historical: false,
+    round: 1,
+  };
+  const controller = {
+    ...common,
+    kind: "controller",
+    instance_name: "编排控制",
+    execution_id: "controller-record",
+    step_name: "编排控制",
+    session_id: "manager-session",
+    turn_id: "manager-turn",
+    task_available: false,
+  };
+  const requirements = {
+    ...common,
+    kind: "step",
+    execution_id: "requirements-execution",
+    step_name: "澄清需求",
+    session_id: "requirements-session",
+    turn_id: "requirements-turn",
+    task_available: true,
+  };
+  const entries = [
+    controller,
+    { ...controller, turn_id: "manager-previous-turn", historical: true },
+    requirements,
+    {
+      ...requirements,
+      turn_id: "requirements-previous-turn",
+      historical: true,
+    },
+    {
+      ...requirements,
+      execution_id: "design-execution",
+      step_name: "确认设计",
+      session_id: "design-session",
+      turn_id: "design-turn",
+    },
+  ];
+  const executionReads: string[] = [];
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    let result;
+    if (call.method === "query.workflow_contexts") {
+      const selected = entries.filter(
+        (entry) =>
+          (!call.params.execution_id ||
+            entry.execution_id === call.params.execution_id) &&
+          (!call.params.turn_id || entry.turn_id === call.params.turn_id),
+      );
+      result = {
+        agents: [
+          { id: "contexts", actor: { name: "执行者" }, entries: selected },
+        ],
+      };
+    } else if (call.method === "query.execution_task") {
+      result = {
+        task: { task_instructions: `冻结输入 · ${call.params.turn_id}` },
+      };
+    } else if (
+      call.method === "query.workflow_executions" &&
+      call.params.execution_id
+    ) {
+      executionReads.push(call.params.execution_id);
+      return route.fulfill({
+        json: {
+          jsonrpc: "2.0",
+          id: call.id,
+          error: {
+            code: -32000,
+            message: "执行不属于当前工作范围",
+            data: { code: "not_found" },
+          },
+        },
+      });
+    } else return route.fallback();
+    await route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
+  });
+  await page.goto(url);
+  const directory = page.getByRole("navigation", {
+    name: "流程步骤上下文目录",
+  });
+  const detail = page.getByRole("article", { name: "选中步骤上下文" });
+  await expect(directory.getByRole("button")).toHaveCount(3);
+  await expect(detail).toContainText("项目经理编排轮次的请求与响应见关联会话");
+  await expect(detail.getByRole("alert")).toHaveCount(0);
+  await expect(
+    detail.getByRole("link", { name: "查看流程步骤", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    detail.getByRole("link", { name: "查看执行记录", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    detail.getByRole("link", { name: "查看此轮会话", exact: true }),
+  ).toBeVisible();
+  for (const name of ["澄清需求", "确认设计", "编排控制"]) {
+    const selectedRead = page.waitForResponse((response) => {
+      if (!response.url().endsWith("/rpc")) return false;
+      const call = response.request().postDataJSON();
+      return call.method === "query.workflow_contexts" && !!call.params.turn_id;
+    });
+    await directory.getByRole("button", { name: new RegExp(name) }).click();
+    await selectedRead;
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
+    await expect(
+      detail.getByRole("heading", { name, exact: true }),
+    ).toBeVisible();
+    await expect(directory.getByRole("button")).toHaveCount(3);
+    await expect(detail.getByRole("alert")).toHaveCount(0);
+  }
+  await expect(
+    page.getByLabel("上下文任务与轮次").locator("option"),
+  ).toHaveCount(2);
+  await page
+    .getByLabel("上下文任务与轮次")
+    .selectOption("manager-previous-turn");
+  await expect(directory.getByRole("button")).toHaveCount(3);
+  await expect(detail).toContainText("项目经理编排轮次的请求与响应见关联会话");
+  expect(executionReads).toEqual([]);
+  await page.screenshot({
+    path: info.outputPath("context-directory.png"),
     fullPage: true,
   });
 });
@@ -1639,14 +1974,10 @@ test("workflow approval keeps its original draft versions and command identity a
     });
   });
   await page.goto(url);
-  await page
-    .getByRole("button", { name: "展开步骤与操作", exact: true })
-    .click();
   const runtime = page.getByRole("region", { name: "当前工作流", exact: true });
   await expect(
     runtime.getByRole("heading", { name: "流程状态 5" }),
   ).toBeVisible();
-  await runtime.locator(".workflow-stage-toggle").click();
   await runtime.locator(".workflow-step-toggle").click();
   const reason = runtime.getByLabel("手动批准理由（必填）");
   await reason.fill("基于最初产物的决定");
@@ -1746,14 +2077,10 @@ test("parallel supplemental inputs retain separate drafts and original control v
     });
   });
   await page.goto(url);
-  await page
-    .getByRole("button", { name: "展开步骤与操作", exact: true })
-    .click();
   const runtime = page.getByRole("region", { name: "当前工作流", exact: true });
   await expect(
     runtime.getByRole("heading", { name: "输入状态 5" }),
   ).toBeVisible();
-  await runtime.locator(".workflow-stage-toggle").click();
   const first = runtime.getByRole("article", { name: "步骤 · first" });
   const second = runtime.getByRole("article", { name: "步骤 · second" });
   await first.locator(".workflow-step-toggle").click();
@@ -2012,7 +2339,7 @@ test("folded work configuration is lazy and Standard apply keeps its original re
   ).toBeVisible();
   expect(workReads).toBe(0);
   expect(fullReads).toBe(0);
-  const standard = manager.locator(":scope > .work-standard");
+  const standard = manager.locator(".work-standard").first();
   await standard.locator(":scope > summary").click();
   await expect.poll(() => workReads).toBe(1);
   await expect(
@@ -2050,40 +2377,221 @@ test("folded work configuration is lazy and Standard apply keeps its original re
   ).toHaveValue("keep original baseline");
 });
 
-test("workflow overview polls bounded progress before opening exact step actions", async ({
-  page,
-}) => {
+test("阶段卡片跨页加载并展开对应步骤后滚动定位", async ({ page }) => {
   const url = (await fixture(page)).replace(
     "detail=manager",
     "detail=overview",
   );
-  // Stop the setup document before measuring the target document's requests.
-  // Its background refresh may otherwise arrive while navigation is starting.
-  await page.goto("about:blank");
-  const calls: string[] = [];
+  const stages = [
+    { key: "first", name: "前置阶段" },
+    { key: "last", name: "交付阶段" },
+  ];
+  const definitions = Array.from({ length: 21 }, (_, index) => ({
+    key: `step-${index}`,
+    name: index === 20 ? "交付验收步骤" : `准备步骤 ${index + 1}`,
+    stage: index === 20 ? "last" : "first",
+    executor: { type: "control" },
+  }));
+  const statusReads: any[] = [];
   await page.route("**/rpc", async (route) => {
-    calls.push(route.request().postDataJSON().method);
+    const call = route.request().postDataJSON();
+    let result;
+    if (call.method === "query.workflow_executions") {
+      result = { records: [] };
+    } else if (call.method === "query.workflow_progress") {
+      const counts = (total: number) => ({
+        total,
+        completed: 0,
+        running: 0,
+        waiting: 0,
+        failed: 0,
+      });
+      result = {
+        project_id: "read-project",
+        record: { id: "read-instance" },
+        counts: counts(21),
+        next_stage_offset: null,
+        stages: stages.map((stage, index) => ({
+          ...stage,
+          counts: counts(index ? 1 : 20),
+        })),
+      };
+    } else if (call.method === "query.workflow_instance") {
+      statusReads.push(call.params);
+      const offset = call.params.step_offset || 0;
+      const steps = definitions.slice(offset, offset + 20);
+      const plan = { stages, steps };
+      const runtime = {
+        owner_id: "read-feature",
+        status: "running",
+        plan: { document: plan },
+        steps: steps.map((step) => ({
+          id: `execution-${step.key}`,
+          step: step.key,
+          round: 1,
+          status: "queued",
+          outputs: {},
+        })),
+      };
+      result = {
+        record: {
+          id: "read-instance",
+          name: "分页流程",
+          revision: 1,
+          data: runtime,
+        },
+        runtime,
+        plan,
+        children: [],
+        step_total: 21,
+        step_offset: offset,
+        next_step_offset: offset === 0 ? 20 : null,
+      };
+    } else return route.fallback();
+    await route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
+  });
+  await page.goto(url);
+  const runtime = page.getByRole("region", { name: "当前工作流", exact: true });
+  const progress = runtime.getByRole("list", { name: "执行阶段进度" });
+  const lastStage = runtime
+    .locator(".workflow-stage-toggle")
+    .filter({ hasText: "交付阶段" });
+  await lastStage.click();
+  await expect(lastStage).toHaveAttribute("aria-expanded", "false");
+  await progress
+    .getByRole("button", { name: "跳转到阶段：交付阶段", exact: true })
+    .click();
+  const delivery = runtime.getByRole("article", {
+    name: "步骤 · 交付验收步骤",
+    exact: true,
+  });
+  await expect(delivery).toBeInViewport();
+  await expect(lastStage).toHaveAttribute("aria-expanded", "true");
+  await expect(lastStage).toBeFocused();
+  expect(statusReads.some((read) => read.step_offset === 20)).toBe(true);
+  expect(statusReads.every((read) => read.view === "status")).toBe(true);
+  await progress
+    .getByRole("button", { name: "跳转到阶段：前置阶段", exact: true })
+    .click();
+  const firstStage = runtime
+    .locator(".workflow-stage-toggle")
+    .filter({ hasText: "前置阶段" });
+  await expect(firstStage).toBeFocused();
+  await expect(firstStage).toBeInViewport();
+  await expect(
+    runtime.getByRole("article", { name: "步骤 · 准备步骤 1", exact: true }),
+  ).toBeInViewport();
+  await expect(delivery).toHaveCount(0);
+});
+
+test("workflow overview opens stage progress and bounded step actions together", async ({
+  page,
+}, info) => {
+  const url = (await fixture(page)).replace(
+    "detail=manager",
+    "detail=overview",
+  );
+  await page.goto("about:blank");
+  const calls: { method: string; params: any }[] = [];
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    calls.push(call);
+    if (call.method === "query.workflow_executions") {
+      return route.fulfill({
+        json: { jsonrpc: "2.0", id: call.id, result: { records: [] } },
+      });
+    }
+    if (call.method === "query.workflow_progress") {
+      const counts = (total: number, completed: number) => ({
+        total,
+        completed,
+        running: 0,
+        waiting: 0,
+        failed: 0,
+      });
+      return route.fulfill({
+        json: {
+          jsonrpc: "2.0",
+          id: call.id,
+          result: {
+            project_id: "read-project",
+            record: { id: "read-instance" },
+            counts: counts(22, 8),
+            next_stage_offset: null,
+            stages: [
+              ["需求", 2, 2],
+              ["设计", 4, 4],
+              ["任务规划", 3, 2],
+              ["实施", 1, 0],
+              ["整体验证", 4, 0],
+              ["交付整理", 2, 0],
+              ["接纳发布", 6, 0],
+            ].map(([name, total, completed], index) => ({
+              key: `stage-${index}`,
+              name,
+              counts: counts(Number(total), Number(completed)),
+            })),
+          },
+        },
+      });
+    }
     await route.fallback();
   });
   await page.goto(url);
-  const progress = page.getByRole("region", { name: "工作流进度摘要" });
-  await expect(
-    progress.getByText("当前阶段摘要", { exact: true }),
-  ).toBeVisible();
-  await expect
-    .poll(
-      () =>
-        calls.filter((method) => method === "query.workflow_progress").length,
-    )
-    .toBeGreaterThanOrEqual(2);
-  expect(calls).toContain("query.execution_workspace");
-  expect(calls).not.toContain("query.workspace");
-  expect(calls).not.toContain("query.workflow_instance");
-  await progress
-    .getByRole("button", { name: "展开步骤与操作", exact: true })
-    .click();
   await expect(
     page.getByRole("region", { name: "当前工作流", exact: true }),
   ).toBeVisible();
-  expect(calls).toContain("query.workflow_instance");
+  await expect(
+    page.getByRole("region", { name: "工作流进度摘要" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("region", { name: "阶段进度", exact: true }),
+  ).toContainText("2 / 2 已完成");
+  await expect(
+    page.getByRole("button", { name: /(?:展开|收起)步骤与操作/ }),
+  ).toHaveCount(0);
+  const methods = calls.map((call) => call.method);
+  expect(methods).toContain("query.execution_workspace");
+  expect(methods).not.toContain("query.workspace");
+  expect(methods).toContain("query.workflow_progress");
+  const statusReads = calls.filter(
+    (call) => call.method === "query.workflow_instance",
+  );
+  expect(statusReads.length).toBeGreaterThan(0);
+  for (const call of statusReads) {
+    expect(call.params).toMatchObject({
+      view: "status",
+      child_offset: 0,
+      step_offset: 0,
+    });
+  }
+  const progress = page.getByRole("list", { name: "执行阶段进度" });
+  await expect(progress.getByRole("listitem")).toHaveCount(7);
+  await expect(progress.locator(".workflow-stage-arrow")).toHaveCount(6);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  const tops = await progress
+    .getByRole("listitem")
+    .evaluateAll((items) =>
+      items.map((item) => item.getBoundingClientRect().top),
+    );
+  expect(new Set(tops).size).toBe(1);
+  await page.screenshot({
+    path: info.outputPath("stage-progress-desktop.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  expect(
+    await progress.evaluate(
+      (element) => element.scrollWidth > element.clientWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: info.outputPath("stage-progress-mobile.png"),
+    fullPage: true,
+  });
 });

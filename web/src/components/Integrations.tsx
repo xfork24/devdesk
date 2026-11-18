@@ -2698,6 +2698,76 @@ type HistoryEntry =
   | { type: "event"; time: number; event: Row }
   | { type: "tool_call"; time: number; call: Row };
 
+function HistoryEvent({
+  event,
+  position,
+  request,
+  projectId,
+  scope,
+}: {
+  event: Row;
+  position: number;
+  request: Request;
+  projectId?: string;
+  scope?: string;
+}) {
+  const [detail, setDetail] = useState<Row>();
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const current = detail || event;
+  return (
+    <div className="history-row">
+      <span className="event-id" title={displayText(`事件 #${event.id}`)}>
+        #{position}
+      </span>
+      <div>
+        <strong>{displayText(event.kind)}</strong>
+        <p>持久化事件 · {displayText(current.detail)}</p>
+        <code>{displayText(event.target)}</code>
+        {event.metadata_only && (
+          <ActionButton
+            disabled={loading}
+            onClick={async () => {
+              if (detail) {
+                setDetail(undefined);
+                return;
+              }
+              setLoading(true);
+              setError("");
+              try {
+                const value = await request("query.history", {
+                  scope,
+                  local: !!projectId,
+                  project_id: projectId,
+                  event_id: event.id,
+                  limit: 1,
+                });
+                const selected = value.events.find(
+                  (row: Row) => row.id === event.id,
+                );
+                if (!selected) throw new Error("原事件不可用");
+                setDetail(selected);
+              } catch (value) {
+                setError(String(value));
+              } finally {
+                setLoading(false);
+              }
+            }}
+          >
+            {detail ? "收起事件" : "展开事件"}
+          </ActionButton>
+        )}
+        {error && <p role="alert">{displayText(error)}</p>}
+      </div>
+      <time dateTime={new Date(event.time).toISOString()}>
+        {displayText(
+          new Date(event.time).toLocaleString("zh-CN", { hour12: false }),
+        )}
+      </time>
+    </div>
+  );
+}
+
 export function CallHistory({
   request,
   project,
@@ -2769,6 +2839,7 @@ export function CallHistory({
       project_id: project?.id,
       offset,
       limit: 50,
+      view: "summary",
     };
     if (historyScope) {
       query.scope = historyScope;
@@ -2792,7 +2863,11 @@ export function CallHistory({
       const entry = entries.find(
         (entry) => entry.type === "tool_call" && entry.call.id === old?.id,
       );
-      return entry?.type === "tool_call" ? entry.call : undefined;
+      return entry?.type === "tool_call"
+        ? entry.call.metadata_only && old && !old.metadata_only
+          ? old
+          : entry.call
+        : undefined;
     });
     setLoaded(true);
   }, [request, project?.id, offset, historyScope]);
@@ -2801,7 +2876,7 @@ export function CallHistory({
     let timer: ReturnType<typeof setTimeout>;
     const run = async () => {
       try {
-        await load();
+        if (document.visibilityState !== "hidden") await load();
       } catch (e) {
         if (active) {
           setLoaded(true);
@@ -2901,26 +2976,14 @@ export function CallHistory({
             if (entry.type === "event") {
               const e = entry.event;
               return (
-                <div className="history-row" key={`event:${e.id}`}>
-                  <span
-                    className="event-id"
-                    title={displayText(`事件 #${e.id}`)}
-                  >
-                    #{offset + index + 1}
-                  </span>
-                  <div>
-                    <strong>{displayText(e.kind)}</strong>
-                    <p>持久化事件 · {displayText(e.detail)}</p>
-                    <code>{displayText(e.target)}</code>
-                  </div>
-                  <time dateTime={new Date(e.time).toISOString()}>
-                    {displayText(
-                      new Date(e.time).toLocaleString("zh-CN", {
-                        hour12: false,
-                      }),
-                    )}
-                  </time>
-                </div>
+                <HistoryEvent
+                  key={`${historyScope}:${project?.id || "global"}:${e.id}`}
+                  event={e}
+                  position={offset + index + 1}
+                  request={request}
+                  projectId={project?.id}
+                  scope={historyScope}
+                />
               );
             }
             const r = entry.call;
@@ -2933,11 +2996,26 @@ export function CallHistory({
                       className="history-action"
                       aria-expanded={selected?.id === r.id}
                       aria-controls={`tool-call-detail-${r.id}`}
-                      onClick={() => {
+                      onClick={async () => {
                         captureFeedback();
-                        setSelected((current) =>
-                          current?.id === r.id ? undefined : r,
-                        );
+                        if (selected?.id === r.id) {
+                          setSelected(undefined);
+                          return;
+                        }
+                        const scope = actionScopeVersion.current;
+                        const exact = r.metadata_only
+                          ? (
+                              await request("query.tool_calls", {
+                                project_id: project?.id,
+                                local: !!project?.id,
+                                id: r.id,
+                                include_history: true,
+                                limit: 1,
+                              })
+                            ).records[0]
+                          : r;
+                        if (scope === actionScopeVersion.current)
+                          setSelected(exact);
                       }}
                     >
                       <strong>{displayText(r.name)}</strong>

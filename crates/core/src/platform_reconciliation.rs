@@ -20,6 +20,7 @@ impl Engine {
             "核对需要原不可变执行意图",
         )?;
         match action {
+            PlatformAction::ReusedPublication { receipt, .. } => Ok(Some(receipt.clone())),
             PlatformAction::Value(value) => Ok(Some(value.clone())),
             PlatformAction::WorkspaceCurrent { context, workspace } => Ok(Some(
                 json!({"workspace_id":workspace.id,"revision":self.git.workspace_revision(context)?,"owner_id":workspace.owner_id}),

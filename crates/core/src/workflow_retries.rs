@@ -77,6 +77,18 @@ impl Engine {
         } else {
             execution.rework_workspace.clone()
         };
+        // Refuse a new attempt before archiving executions or consuming retries.
+        // A genuine sealed checkpoint is the next writer's effective base.
+        if let Some(name) = &definition.access.workspace_input
+            && let Some(workspace) = checkpoint
+                .as_ref()
+                .map(|c| &c.workspace)
+                .or_else(|| execution.inputs.get(name))
+        {
+            let mut effective = execution.clone();
+            effective.inputs.insert(name.clone(), workspace.clone());
+            commit.require_writer_workspace(resources, definition, &effective)?;
+        }
         let mut result = None;
         for previous in root
             .instance

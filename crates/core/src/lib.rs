@@ -24,6 +24,7 @@ mod conversation_observations;
 mod conversation_start;
 mod conversation_submission;
 mod conversation_workers;
+mod in_flight;
 mod interaction_delivery;
 mod manager_publication;
 mod material_commands;
@@ -97,6 +98,7 @@ mod platform_replies;
 mod platform_runtime;
 mod platform_tools;
 mod project_standards;
+mod publication_retry;
 mod standards;
 mod workflow_driver;
 mod workflow_driving;
@@ -138,7 +140,6 @@ pub use templates::{
 };
 mod conversation_runtime;
 mod conversations;
-mod history;
 mod integrations;
 pub use integrations::{
     freeze_discussion_integrations, freeze_integrations, integration_deletion_targets,
@@ -164,6 +165,7 @@ mod workflow_authorization;
 mod workflow_budget;
 mod workflow_children;
 mod workflow_commits;
+mod workflow_control_reads;
 mod workflow_controls;
 mod workflow_detail;
 mod workflow_dispatch;
@@ -230,6 +232,7 @@ impl SchedulingStage {
     ];
 }
 pub struct Engine {
+    pub(crate) effect_in_flight: Arc<in_flight::InFlight>,
     pub(crate) runtime_callback_cursors: std::sync::Mutex<std::collections::BTreeMap<String, Id>>,
     pub(crate) experience_cursor: std::sync::Mutex<Option<Id>>,
     pub(crate) workflow_intent_cursor: std::sync::Mutex<Option<Id>>,
@@ -294,6 +297,7 @@ impl Engine {
     ) -> Self {
         Self {
             runtime_callback_cursors: std::sync::Mutex::new(Default::default()),
+            effect_in_flight: Default::default(),
             experience_cursor: std::sync::Mutex::new(None),
             workflow_intent_cursor: std::sync::Mutex::new(None),
             provider_tool_cursor: std::sync::Mutex::new(None),
@@ -534,6 +538,16 @@ impl Engine {
         Ok(())
     }
     pub fn query(&self, method: &str, p: &Value, global_limit: usize) -> Result<Value> {
+        if [
+            "query.repository",
+            "query.runtimes",
+            "query.history",
+            "query.tool_calls",
+        ]
+        .contains(&method)
+        {
+            return self.store.operational_read(method, p);
+        }
         if method == "query.artifact" {
             let id = text(p, "id")?;
             if self.store.namespace() == concurrency::StoreNamespace::Configuration {
@@ -588,6 +602,9 @@ impl Engine {
             return self.manager_knowledge("project.overview", &project, p);
         }
         if method == "query.workflow_driver" {
+            if p["view"] == "summary" {
+                return Ok(json!(self.store.workflow_driver_summary(&text(p, "id")?)?));
+            }
             return self.workflow_driver_query(p);
         }
         if method == "query.orchestration" {
@@ -617,30 +634,6 @@ impl Engine {
         if let Some(result) = self.conversation_query(method, p) {
             return result;
         }
-        let s = self.store.snapshot()?;
-        let offset = p.get("offset").and_then(Value::as_u64).unwrap_or(0) as usize;
-        let limit = p
-            .get("limit")
-            .and_then(Value::as_u64)
-            .unwrap_or(50)
-            .clamp(1, 100) as usize;
-        match method {
-            "query.repository" => Ok(
-                json!({"project":s.projects.first(),"operations":s.repository_operations.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_operations":s.repository_operations.len(),"worktrees":s.repository_worktrees.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_worktrees":s.repository_worktrees.len()}),
-            ),
-            "query.runtimes" => Ok(json!({"harnesses":s.harnesses,"sandboxes":s.sandboxes})),
-            "query.history" => Ok(history::query(&s, p, offset, limit)),
-            "query.events" => {
-                let cursor = p.get("cursor").and_then(Value::as_u64).unwrap_or(0);
-                Ok(json!(
-                    s.events
-                        .iter()
-                        .filter(|e| e.id > cursor)
-                        .take(limit)
-                        .collect::<Vec<_>>()
-                ))
-            }
-            _ => Err(err("method_not_found", "未知查询")),
-        }
+        Err(err("method_not_found", "未知查询"))
     }
 }

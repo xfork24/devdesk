@@ -242,12 +242,12 @@ fn current_databases_exclude_retired_permission_storage_and_conversion_indexes()
     let project = id();
     let _project = SqliteStore::open_project(dir.path(), &project).unwrap();
     for (path, version) in [
-        (dir.path().join("global.sqlite3"), 23),
+        (dir.path().join("global.sqlite3"), 24),
         (
             SqliteStore::project_path(dir.path(), &project)
                 .unwrap()
                 .join("engineering.sqlite3"),
-            58,
+            59,
         ),
     ] {
         let db = rusqlite::Connection::open(path).unwrap();

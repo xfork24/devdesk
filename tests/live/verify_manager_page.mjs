@@ -84,14 +84,15 @@ try {
         if (!response.url().endsWith("/rpc")) return false;
         const call = response.request().postDataJSON();
         return call?.method === method && call.params?.owner_id === linkedOwner &&
-          (detail === "context" ? !call.params?.part : call.params?.execution_id === evidence.execution_id);
+          call.params?.execution_id === evidence.execution_id;
       });
       await openLink(link);
-      const response = await (await observed).json();
+      const observedResponse = await observed;
+      const response = await observedResponse.json();
       assert(!response.error, JSON.stringify(response.error));
       if (detail === "context") {
         assert(response.result.agents.some((agent) => agent.entries.some((entry) =>
-          entry.execution_id === evidence.execution_id && entry.turn_id === evidence.turn_id)));
+          entry.execution_id === evidence.execution_id && entry.turn_id === evidence.turn_id)), JSON.stringify({evidence, call: observedResponse.request().postDataJSON(), response}).slice(0, 6000));
       } else {
         assert.equal(response.result.record.id, evidence.execution_id);
       }
@@ -111,6 +112,25 @@ try {
     summary: await card.innerText(),
   }, null, 2) + "\n");
   console.log("PASS real manager page", request.id, verified.length, "exact links");
+  if (process.argv.includes("--approve")) {
+    const reasonIndex = process.argv.indexOf("--reason");
+    assert(reasonIndex >= 0 && process.argv[reasonIndex + 1]?.trim(), "Approval requires an actual review opinion");
+    const controls = [];
+    page.on("request", (request) => {
+      if (!request.url().endsWith("/rpc")) return;
+      const call = request.postDataJSON();
+      if (call && !call.method.startsWith("query.") && call.method !== "runtime.preparation_status") controls.push(call);
+    });
+    await page.setViewportSize({ width: 1440, height: 1100 });
+    await card.getByLabel("意见或修改要求").fill(process.argv[reasonIndex + 1]);
+    const reply = page.waitForResponse((r) => r.url().endsWith("/rpc") && r.request().postDataJSON()?.method === "workflow.decision.resolve");
+    await card.getByRole("button", { name: "确认：" + interaction.title, exact: true }).click();
+    const response = await (await reply).json();
+    assert.equal(response.error, undefined, JSON.stringify(response.error));
+    assert.deepEqual(controls.map((c) => c.method), ["workflow.decision.resolve"], "The operator may only sign the human decision");
+    writeFileSync(prefix + "-human-signature.json", JSON.stringify({ request_id: request.id, opinion: process.argv[reasonIndex + 1], controls, response }, null, 2) + "\n");
+    console.log("SIGNED Human decision only", request.id);
+  }
 } finally {
   await browser.close();
 }

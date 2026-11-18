@@ -99,6 +99,12 @@ impl PlatformCall {
         if self.row.data["status"] != "prepared" {
             return Ok(());
         }
+        let Some(_attempt) = engine.effect_in_flight.enter(&self.row.id)? else {
+            return Ok(());
+        };
+        let _prepare = engine
+            .store
+            .observe_native_call(&self.row.id, "native.platform.prepare");
         let (active, suspended, live) = self.active(engine)?;
         if suspended {
             return Ok(());
@@ -121,7 +127,15 @@ impl PlatformCall {
             {
                 return Err(error);
             }
-            Err(error) => {
+            Err(mut error) => {
+                // No external effect has been granted or dispatched yet.
+                // Preserve this trusted boundary in the workflow failure;
+                // callers must not invent an unknown Docker/Git outcome for
+                // a rejected input or scope check, nor automatically retry it.
+                error.execution_failure = Some(ExecutionFailureDisposition {
+                    kind: ExecutionFailureKind::Business,
+                    effect: ExecutionFailureEffect::NotApplied,
+                });
                 let mut data = self.row.data.clone();
                 data["status"] = json!("failed");
                 data["error"] = json!(error);
@@ -140,14 +154,21 @@ impl PlatformCall {
                     revision: 0,
                 }])?;
         let mut changes = vec![];
-        // The grant itself changes the call and workspace occupancy. Retain
-        // all other original witnesses, then witness our exact new fence.
+        // The exact step version authorizes the grant. The durable receipt
+        // instead keeps the original semantic authority: attaching the queued
+        // tool_call_id is bookkeeping, not revocation of the running contract.
+        // The header, upstream steps and business/source witnesses stay exact.
+        let own_step = ResourceKey::new(
+            "workflow_step",
+            json!([self.request.instance_id, self.request.step_execution_id()]).to_string(),
+        );
         plan.basis = ReadSet::new(
             plan.basis
                 .versions()
                 .iter()
                 .filter(|v| {
                     v.resource != self.guard.resource
+                        && v.resource != own_step
                         && !(plan.fence.is_some() && v.resource.kind == "conversation_writers")
                 })
                 .cloned()
@@ -218,7 +239,12 @@ impl PlatformCall {
             match &plan.action {
                 PlatformAction::Publish { .. } => {}
                 _ => {
-                    let result = engine.perform_platform_action(&plan.action, true);
+                    let result = {
+                        let _external = engine
+                            .store
+                            .observe_native_call(&self.row.id, "native.platform.external");
+                        engine.perform_platform_action(&plan.action, true)
+                    };
                     let phase = if matches!(&plan.action, PlatformAction::Test(_))
                         && matches!(&result, Ok(None))
                     {
@@ -246,6 +272,9 @@ impl PlatformCall {
         if matches!(result, Ok(None)) {
             return Ok(());
         }
+        let _admission = engine
+            .store
+            .observe_native_call(&self.row.id, "native.platform.admission");
         let expected: ResourceVersion = serde_json::from_value(effect.data["call_version"].clone())
             .map_err(|e| err("storage", e.to_string()))?;
         require(
@@ -306,7 +335,9 @@ impl PlatformCall {
             Err(error) => {
                 let physical_unknown = !matches!(
                     &plan.action,
-                    PlatformAction::Value(_) | PlatformAction::WorkspaceCurrent { .. }
+                    PlatformAction::Value(_)
+                        | PlatformAction::WorkspaceCurrent { .. }
+                        | PlatformAction::ReusedPublication { .. }
                 ) && !error
                     .execution_failure
                     .as_ref()
@@ -323,7 +354,9 @@ impl PlatformCall {
                 data["error"] = json!(error);
                 data["remote_effect"] = json!(if matches!(
                     &plan.action,
-                    PlatformAction::Value(_) | PlatformAction::WorkspaceCurrent { .. }
+                    PlatformAction::Value(_)
+                        | PlatformAction::WorkspaceCurrent { .. }
+                        | PlatformAction::ReusedPublication { .. }
                 ) {
                     "not_applied"
                 } else {
@@ -432,6 +465,9 @@ impl PlatformCall {
     }
     fn recover(&self, engine: &Engine) -> Result<()> {
         if self.row.data["status"] != "running" {
+            return Ok(());
+        }
+        if engine.effect_in_flight.contains(&self.row.id)? {
             return Ok(());
         }
         let selected = one(
@@ -582,6 +618,11 @@ impl Engine {
         fresh: bool,
     ) -> Result<Option<Value>> {
         match action {
+            PlatformAction::ReusedPublication { receipt, .. } => {
+                // This grant contains a verified original immutable observation.
+                // Replaying its fact never dispatches another Git/GitHub effect.
+                Ok(Some(receipt.clone()))
+            }
             PlatformAction::Value(value) => {
                 if fresh {
                     Ok(Some(value.clone()))

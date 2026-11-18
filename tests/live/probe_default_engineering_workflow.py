@@ -7,6 +7,9 @@ from client import Client
 from engineering_evidence import verify_evidence
 from summarize_engineering_scene import summarize
 from export_evidence import export as export_project_evidence
+from workflow_observer import manager_activity, read_workflow_tree
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'performance'))
+from feature_frontend_load import FeatureFrontendLoad
 
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--binary',type=Path,required=True)
@@ -20,6 +23,9 @@ parser.add_argument('--unattended',action='store_true',help='Fresh Agent run: fa
 parser.add_argument('--guidance',default='')
 parser.add_argument('--timeout-seconds',type=int,default=10800)
 parser.add_argument('--manager-profile-source',type=Path,help='Explicit immutable Harness Profile source to adopt during stopped-controller recovery')
+parser.add_argument('--requirement-file',type=Path,help='Initial business requirement; $IMAGE and $SUFFIX are replaced before the single start')
+parser.add_argument('--module-path',help='Existing module changed by the requirement, for exact candidate evidence')
+parser.add_argument('--frontends',type=int,choices=[0,100],default=0,help='Attach independent HTTP/SSE traffic; never controls the manager')
 args=parser.parse_args()
 assert args.manager_profile_source is None or args.resume, 'manager context adoption is a resume operation'
 assert args.timeout_seconds>0
@@ -40,8 +46,9 @@ else:
  binary_archive.parent.mkdir(parents=True)
  shutil.copy2(private_binary,binary_archive)
 attempt=OUT/'attempts'/str(time.time_ns());attempt.mkdir(parents=True)
-for name in [Path(__file__).name,'client.py','engineering_evidence.py','autonomous_orchestration.py','export_evidence.py','summarize_engineering_scene.py']:shutil.copy2(Path(__file__).parent/name,attempt/name)
-(attempt/'ATTEMPT.json').write_text(json.dumps({'resume':args.resume,'unattended':args.unattended,'timeout_seconds':args.timeout_seconds,'binary_sha256':binary_digest,'binary_archive':str(binary_archive.relative_to(OUT)),'guidance':args.guidance,'driver':args.driver},ensure_ascii=False,indent=2))
+for name in [Path(__file__).name,'client.py','engineering_evidence.py','autonomous_orchestration.py','export_evidence.py','summarize_engineering_scene.py','workflow_observer.py']:shutil.copy2(Path(__file__).parent/name,attempt/name)
+for name in ['native_frontend_load.py','feature_frontend_load.py']:shutil.copy2(Path(__file__).resolve().parents[1]/'performance'/name,attempt/name)
+(attempt/'ATTEMPT.json').write_text(json.dumps({'resume':args.resume,'unattended':args.unattended,'timeout_seconds':args.timeout_seconds,'binary_sha256':binary_digest,'binary_archive':str(binary_archive.relative_to(OUT)),'guidance':args.guidance,'driver':args.driver,'frontends':args.frontends},ensure_ascii=False,indent=2))
 def verify_rust_actor(project):
  import sqlite3
  with sqlite3.connect(OUT/'data/projects'/project/'engineering.sqlite3') as db:
@@ -53,6 +60,7 @@ def verify_rust_actor(project):
 
 if (OUT/'host.log').exists():(OUT/'host.log').rename(OUT/('host-before-launch-'+str(time.time_ns())+'.log'))
 child=subprocess.Popen([str(private_binary),'--data',str(OUT/'data'),'--port','0'],stdout=(OUT/'host.log').open('w'),stderr=subprocess.STDOUT)
+frontend_load=None
 try:
  startup_started=time.monotonic()
  for _ in range(1200):
@@ -128,22 +136,29 @@ try:
   runtime=c.rpc('runtime.prepare',{'provider':'codex'});image=runtime['artifact']['image_id']
   defaults=c.rpc('query.configuration_defaults');workflow=c.rpc('query.workflow',{'id':defaults['workflow_ref']})['data'];suffix=uuid.uuid4().hex[:8];module=f'src/workflow-v5-{suffix}/greeting.mjs';task_test=f'tests/workflow-v5-{suffix}-task/behavior.test.mjs';feature_test=f'tests/workflow-v5-{suffix}-feature/behavior.test.mjs';increment_test=f'test/workflow-v5-{suffix}-increments.test.mjs'
   goal=f'''在已有仓库新增无外部依赖的 ESM 模块 {module}，export greeting(name)。去掉字符串首尾空白，返回 Hello, <trimmed>!；空白字符串或非字符串参数抛出 TypeError。一个 Task 即可完成，稳定 key greeting，依赖为空。验收 AC-GREET：正常及带首尾空白输入返回问候；AC-INVALID：空白与非字符串输入抛出 TypeError。允许新增 {module}、Task 独立测试 {task_test}、Feature 独立测试 {feature_test} 及开发职责自有的增量测试 {increment_test}；可调整 README，禁止修改既有无关文件或增加辅助仓库文档。使用 node:test、node:assert/strict，不安装依赖、不联网。测试 import 为 ../../{module}。按两个功能增量交付：问候与 trim，以及无效输入拒绝；分别保留真实 TDD Red/Green 证据和测试源码快照。Task 配方运行 {task_test}；Feature 及最终候选配方运行 {task_test} 和 {feature_test}。固定 Node TestRecipe runner=node_test，image={image}，timeout_seconds=60。README 修改可选，不属于必填交付物。'''
+  if args.requirement_file:goal=args.requirement_file.read_text().replace('$IMAGE',image).replace('$SUFFIX',suffix)
+  if args.module_path:module=args.module_path
   assert {step['key'] for step in workflow['steps'] if step.get('confirmation')=='human'}=={'requirements_review','design_review','plan_review'}
   published={'id':defaults['workflow_ref']};p=c.rpc('query.workspace')['active_project']
   configuration=c.command('project.configuration.update',project,p['revision'],{'workflow_ref':published['id'],'role_agent_bindings':defaults['role_agent_bindings'],'orchestrator_role_ref':defaults['orchestrator_role_ref'],'harness_permission_ref':defaults['harness_permission_ref'],'orchestration':{'mode':args.driver}})
   feature=c.command('feature.create',payload={'project_id':project,'title':'Core greeting '+suffix,'initial_requirement':goal,'start_workflow':False,'configuration_revision_id':configuration['id']})['id']
-  (OUT/'context.json').write_text(json.dumps({'url':urls[0],'project':project,'feature':feature,'workflow':published['id'],'suffix':suffix,'goal':goal,'default_automatic_confirmations':False,'expected_human_checkpoints':['requirements_review','design_review','plan_review'],'required_increment_pairs':2,'unattended':args.unattended,'autonomous':args.driver=='agent','driver':args.driver},ensure_ascii=False,indent=2));print('Feature:',feature,flush=True)
+  (OUT/'context.json').write_text(json.dumps({'url':urls[0],'project':project,'feature':feature,'workflow':published['id'],'suffix':suffix,'module_path':module,'feature_test':feature_test,'goal':goal,'default_automatic_confirmations':False,'expected_human_checkpoints':['requirements_review','design_review','plan_review'],'required_increment_pairs':2,'unattended':args.unattended,'autonomous':args.driver=='agent','driver':args.driver},ensure_ascii=False,indent=2));print('Feature:',feature,flush=True)
   c.command('workflow.start',feature,c.feature(feature)['feature']['revision'])
   initial=c.rpc('query.workflow_instance',{'owner_id':feature});root_id=initial['record']['id']
   manager=c.rpc('query.orchestration',{'root_instance_id':root_id})['record']['id'] if args.driver=='agent' else None
+ if args.frontends:
+  frontend_load=FeatureFrontendLoad(Client,urls[0],OUT/'frontend-load',args.frontends)
+  frontend_load.attach(project,root_id)
+  (OUT/'frontend-load/attachment.json').write_text(json.dumps({'started_at_ms':time.time()*1000,'native_project':project,'feature':feature,'root':root_id,'native_controls':0,'scope':'Independent Draft/Context owners; only read queries and foreign context.update. Finish and committed readbacks precede private Host shutdown.'},indent=2))
+  frontend_load.begin(project)
  last=None;confirmed=set();shown_requests=set();inputs=set();deadline=time.monotonic()+args.timeout_seconds;manager_progress=None;last_manager_progress=time.monotonic()
  while time.monotonic()<deadline:
-  view=c.rpc('query.workspace',{'feature_id':feature});rows=[r for r in view['configurations'] if r['type']=='workflow_instance' and r['data']['root_instance_id']==root_id];root=next(r for r in rows if r['data']['parent_execution_id'] is None)
+  tree=read_workflow_tree(c,root_id);rows=[v['record'] for v in tree.values()];root=tree[root_id]['record']
   status=[(r['id'],s['path'],s['status'],s['reason']) for r in rows for s in r['data']['steps'] if s['status'] not in ['completed','queued','skipped']]
   if status!=last:print(status,flush=True);last=status
   if manager:
    manager_view=c.rpc('query.orchestration',{'id':manager});(OUT/'latest-manager.json').write_text(json.dumps(manager_view,ensure_ascii=False,indent=2))
-   progress=[(r['id'],r['data'].get('status')) for r in manager_view['calls']]
+   progress=manager_activity(manager_view)
    if progress!=manager_progress:manager_progress=progress;last_manager_progress=time.monotonic()
    if manager_view['record']['data']['status'] in ['failed','needs_reconciliation','budget_exhausted'] or manager_view['record']['data'].get('run_state')=='needs_attention':raise RuntimeError(manager_view['record']['data'])
    if args.unattended:
@@ -151,19 +166,22 @@ try:
     assert not any(r['type']=='workflow_pending_decision' and r['data']['status']=='pending' for r in manager_view['decisions']), 'Unattended workflow requested a Human decision'
   else:
    (OUT/'latest-driver.json').write_text(json.dumps(c.rpc('query.workflow_driver',{'id':root_id}),ensure_ascii=False,indent=2))
-  (OUT/'latest.json').write_text(json.dumps(view,ensure_ascii=False,indent=2))
+  (OUT/'latest.json').write_text(json.dumps({'configurations':rows},ensure_ascii=False,indent=2))
   for row in rows:
    for step in row['data']['steps']:
     if step['status'] in ['failed','needs_reconciliation','cancelled']:
-     if step['status']=='failed':
-      # Observe the actual configured manager's recovery within its budget. The
-      # probe never retries, changes a result, or relaxes a completion condition.
-      first=failure_observed.setdefault(step['id'],time.monotonic())
-      if manager and time.monotonic()-max(first,last_manager_progress)<600:continue
+     # Unknown/cancelled child executions also require the actual manager to
+     # stop/reconcile before retrying. Do not interrupt it at that intermediate
+     # state. The existing manager failure, inactivity and overall deadlines
+     # still apply; the observer never issues any recovery business command.
+     if step['id'] not in failure_observed:
+      with (OUT/'observed-step-failures.jsonl').open('a') as stream:stream.write(json.dumps({'observed_at_ms':time.time()*1000,'instance_id':row['id'],'execution_id':step['id'],'status':step['status'],'failure':step.get('failure'),'reason':step.get('reason')},ensure_ascii=False)+'\n')
+     first=failure_observed.setdefault(step['id'],time.monotonic())
+     if manager and time.monotonic()-max(first,last_manager_progress)<600:continue
      detail=c.rpc('query.workflow_instance',{'id':row['id']});(OUT/'failed-instance.json').write_text(json.dumps(detail,ensure_ascii=False,indent=2));raise RuntimeError((step['path'],step['status'],step['reason']))
     if step['status']=='waiting_input':
      if args.unattended:raise RuntimeError('Workflow needs an actual human answer: '+step['path'])
-     pending=c.rpc('query.workflow_instance',{'id':row['id']});(OUT/'pending-input.json').write_text(json.dumps(pending,ensure_ascii=False,indent=2))
+     pending=tree[row['id']];(OUT/'pending-input.json').write_text(json.dumps(pending,ensure_ascii=False,indent=2))
      if manager:
       # The manager prepares the question and its materials; a real answer is
       # submitted through the manager page. This observer never speaks for it.
@@ -173,11 +191,8 @@ try:
      manager_record=c.rpc('query.orchestration',{'id':manager})['record']
      c.command('orchestration.input',manager,manager_record['revision'],{'epoch':manager_record['data']['epoch'],'input':answer});inputs.add((step['id'],step['sequence']));break
     if step['status']=='waiting_confirmation' and step['id'] not in confirmed:
-     pending=c.rpc('query.workflow_instance',{'id':row['id']});(OUT/'pending-confirmation.json').write_text(json.dumps(pending,ensure_ascii=False,indent=2))
+     pending=tree[row['id']];(OUT/'pending-confirmation.json').write_text(json.dumps(pending,ensure_ascii=False,indent=2))
      if args.unattended or json.loads((OUT/'context.json').read_text()).get('default_automatic_confirmations'):raise RuntimeError('Workflow requires actual Human confirmation: '+step['path'])
-     definition=next(definition for definition in pending['plan']['steps'] if definition['key']==step['step'])
-     rejected=[name for name,port in definition.get('outputs',{}).items() if port.get('content_checks') and pending['outputs'][step['outputs'][name]]['value']['approve'] is False]
-     if rejected:raise RuntimeError('Content review rejected '+step['path']+': '+step['reason'])
      manager_view=c.rpc('query.orchestration',{'id':manager}) if manager else {'decisions':[]}
      requests=[r for r in manager_view['decisions'] if r['definition_id']==row['id'] and r['data']['status']=='pending' and r['data']['plan_revision_id']==pending['runtime']['active_plan_revision_id'] and r['data']['request'].get('operation') in ('workflow.step.accept','workflow.step.confirm') and r['data']['request'].get('arguments',{}).get('execution_id')==step['id']]
      if manager and not requests:continue
@@ -195,6 +210,7 @@ try:
       c.command('workflow.step.confirm',row['id'],pending['record']['revision'],{'plan_revision_id':pending['runtime']['active_plan_revision_id'],'step':step['step'],'execution_id':step['id'],'input_digest':step['input_digest'],'outputs':step['outputs'],'reason':'真实人类确认当前版本'})
      confirmed.add(step['id']);print('Confirmed:',step['path'],flush=True);break
   if root['data']['status']=='completed':
+   view=c.rpc('query.execution_workspace',{'feature_id':feature})
    assert view['detail']['feature']['status']=='completed';assert len(view['detail']['tasks'])==1 and view['detail']['tasks'][0]['status']=='completed'
    # The controller may still be finishing the native tool call that completed
    # the root. Let that turn settle before SIGINT can mark it unknown.
@@ -213,6 +229,15 @@ except BaseException as error:
 finally:
  active_error=sys.exc_info()[1]
  prior_error=active_error is not None and not (isinstance(active_error,SystemExit) and active_error.code in (None,0))
+ frontend_error=None
+ if frontend_load:
+  try:
+   load_summary=frontend_load.finish()
+   if load_summary['errors'] or load_summary['failures']:raise RuntimeError('Actual Feature frontend load failed; retained all original RPCs/readbacks')
+  except BaseException as error:frontend_error=error;(OUT/'frontend-load/failure.txt').write_text(str(error))
+  attachment=OUT/'frontend-load/attachment.json'
+  if attachment.exists():
+   metadata=json.loads(attachment.read_text());metadata.update(stopped_at_ms=time.time()*1000,stop_reason='workflow_failed' if prior_error else 'workflow_completed');attachment.write_text(json.dumps(metadata,indent=2))
  if child.poll() is None:child.send_signal(signal.SIGINT);child.wait(timeout=30)
  shutil.rmtree(OUT/'data/credentials',ignore_errors=True)
  for private_auth in (OUT/'data').rglob('auth.json'):private_auth.unlink(missing_ok=True)
@@ -228,3 +253,4 @@ finally:
   except Exception as archive_error:
    (OUT/'archive-failure.txt').write_text(str(archive_error)+'\n')
    if not prior_error:raise
+ if frontend_error and not prior_error:raise frontend_error

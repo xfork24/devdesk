@@ -43,13 +43,48 @@ def verify(connection, root_id):
         assert call["turn_id"] in turns and call["epoch"] == 1, "Native call lacks its manager turn"
     decisions = 0
     initial_starts = 0
+    start_commands = 0
     for identity, (kind, data) in records.items():
         if kind == "command_context":
-            actor = data["context"]["actor"]
             method = connection.execute(
                 "SELECT name FROM governance_records WHERE id=?", (identity,)).fetchone()[0]
+            if "context" in data:
+                actor = data["context"]["actor"]
+            else:
+                # Formal session/input commits retain their durable coordinator
+                # origin directly, rather than an InvocationContext envelope.
+                assert method in ("session.open", "conversation.send"), "Unknown audit envelope"
+                origin = data["origin"]
+                assert origin["kind"] == "runtime_coordinator"
+                intent_kind, intent = records[origin["workflow_intent_id"]]
+                assert intent_kind == "workflow_intent" and intent["method"] == method
+                if "controller_id" in origin:
+                    assert origin["controller_id"] == controller_id and origin["epoch"] == 1
+                actor = origin.get("actor", {"kind": "coordinator"})
+            if actor["kind"] == "controller":
+                assert actor["controller_id"] == controller_id and actor["epoch"] == 1
             if actor["kind"] == "human" and method.startswith(("workflow.", "orchestration.")):
                 assert method in ("workflow.start", "workflow.decision.resolve"), "Human or script performed manager work: " + method
+                if method == "workflow.start":
+                    root = records[root_id][1]
+                    request = json.loads(data["request_digest"])
+                    assert data["target"] == root["owner_id"] and request[1] == root["owner_id"]
+                    if request[3].get("workflow_ref") is not None:
+                        assert request[3]["workflow_ref"] == root["workflow_ref"]
+                    else:
+                        # Default engineering starts freeze the selected Workflow
+                        # inside the original atomic command result, not in an
+                        # optional explicit request override.
+                        command = connection.execute(
+                            "SELECT definition_id FROM governance_records WHERE id=?", (identity,)).fetchone()[0]
+                        saved = connection.execute(
+                            "SELECT fingerprint,result FROM operations WHERE id=?", (command,)).fetchone()
+                        assert saved and saved[0] == data["request_digest"], "Default start lacks its exact durable command receipt"
+                        receipt = json.loads(saved[1])
+                        assert (receipt["id"] == root_id and receipt["type"] == "workflow_instance"
+                                and receipt["data"]["owner_id"] == root["owner_id"]
+                                and receipt["data"]["workflow_ref"] == root["workflow_ref"]), "Default start selected a different root or Workflow"
+                    start_commands += 1
         if kind == "workflow_decision":
             actor = data["actor"]
             if actor["kind"] == "human" and data.get("operation") == "start":
@@ -74,10 +109,11 @@ def verify(connection, root_id):
             assert data.get('interaction') and data['turn_id'] in turns, "Human notice lacks its manager turn"
             assert any(call['method'] == 'workflow.controller.notify'
                        and call.get('receipt', {}).get('id') == identity for _, call in calls), "Human notice lacks its actual native manager call"
-    assert initial_starts == 1, "Expected exactly one initial Human start"
+    assert start_commands == 1 and initial_starts in (0, 1), "Expected exactly one initial Human start"
     assert decisions, "No manager business decisions"
     return {"passed": True, "controller_id": controller_id, "manager_turns": len(turns),
             "bootstrap_count": bootstraps, "external_steering_count": 0,
+            "initial_human_start_commands": start_commands,
             "delivered_events": len(delivered_events), "maximum_event_batch_bytes": maximum_event_batch_bytes,
             "human_feedback_packets": sum(kind == 'controller_interaction' for kind, _ in records.values()),
             "business_decisions": decisions, "native_calls": len(calls)}

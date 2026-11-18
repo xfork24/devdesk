@@ -324,7 +324,7 @@ async fn rpc(
         devdesk_adapters::performance::record("worker.queue_wait", submitted.elapsed().as_secs_f64()*1000.0);
         let result = {
             let _span = devdesk_adapters::performance::Span::new("rpc.dispatch");
-            if read && cancelled.load(Ordering::Relaxed) { Err(devdesk_domain::err("cancelled", "读取已取消")) } else { app.workspace().and_then(|w| w.dispatch_with_receipt(&method, params)) }
+            if read && cancelled.load(Ordering::Relaxed) { Err(devdesk_domain::err("cancelled", "读取已取消")) } else { app.workspace().and_then(|w| w.dispatch_display_read(&method, params)) }
         };
         let success = result.is_ok();
         let response = match result {
@@ -651,6 +651,49 @@ fn termination_signal() -> std::io::Result<impl std::future::Future<Output = &'s
         "SIGINT"
     })
 }
+async fn scheduler_loop(scheduler: Arc<App>) {
+    loop {
+        let workspace = scheduler.workspace().ok();
+        let delay = workspace
+            .as_ref()
+            .map(|w| w.scheduler_delay())
+            .unwrap_or(std::time::Duration::from_millis(75));
+        let wakeup = workspace.map(|w| w.scheduler_notify());
+        tokio::select! {
+            _ = tokio::time::sleep(delay) => {},
+            _ = scheduler.shutdown.notified() => {},
+            _ = async {
+                if let Some(wakeup) = wakeup { wakeup.notified().await; }
+                else { std::future::pending::<()>().await; }
+            } => {},
+        }
+        // Coalesce bursts without accumulating missed periodic ticks. This
+        // bounds scheduling work while keeping native handoffs responsive.
+        tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+        if scheduler.stopping.load(Ordering::Relaxed) {
+            break;
+        }
+        let a = scheduler.clone();
+        let result = tokio::task::spawn_blocking(move || {
+                if a.stopping.load(Ordering::Relaxed) {
+                    return Ok(());
+                }
+                let trace = performance_logging().then(devdesk_adapters::performance::Trace::start);
+                let result = if let Ok(w) = a.workspace() {
+                    w.tick(|| a.stopping.load(Ordering::Relaxed))
+                } else { Ok(()) };
+                if let Some(trace) = trace {
+                    eprintln!("{}", json!({"type":"performance","context":"workflow_tick","success":result.is_ok(),"measurement":trace.finish()}));
+                }
+                result
+            })
+            .await;
+        if let Ok(Err(e)) = result {
+            eprintln!("scheduler: {e}");
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     if let Err(e) = run().await {
@@ -745,35 +788,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         shutdown: tokio::sync::Notify::new(),
     });
     let router = router(app.clone());
-    let scheduler = app.clone();
-    let task = tokio::spawn(async move {
-        let mut timer = tokio::time::interval(std::time::Duration::from_millis(75));
-        timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        loop {
-            timer.tick().await;
-            if scheduler.stopping.load(Ordering::Relaxed) {
-                break;
-            }
-            let a = scheduler.clone();
-            let result = tokio::task::spawn_blocking(move || {
-                if a.stopping.load(Ordering::Relaxed) {
-                    return Ok(());
-                }
-                let trace = performance_logging().then(devdesk_adapters::performance::Trace::start);
-                let result = if let Ok(w) = a.workspace() {
-                    w.tick(|| a.stopping.load(Ordering::Relaxed))
-                } else { Ok(()) };
-                if let Some(trace) = trace {
-                    eprintln!("{}", json!({"type":"performance","context":"workflow_tick","success":result.is_ok(),"measurement":trace.finish()}));
-                }
-                result
-            })
-            .await;
-            if let Ok(Err(e)) = result {
-                eprintln!("scheduler: {e}");
-            }
-        }
-    });
+    let task = tokio::spawn(scheduler_loop(app.clone()));
     let signal = termination_signal()?;
     println!(
         "DevDesk · engineering kernel\n{origin}\nRuntime: {} / {}",

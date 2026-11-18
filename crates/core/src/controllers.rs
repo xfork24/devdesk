@@ -38,7 +38,22 @@ pub(crate) fn control_query(method: &str) -> bool {
     )
 }
 
-pub(crate) fn native_reply_value(method: &str, call_id: &str, value: Value) -> Value {
+pub(crate) fn native_reply_value(method: &str, call_id: &str, mut value: Value) -> Value {
+    if method.starts_with("workflow.step.")
+        && let Some(execution) = value.get_mut("execution").and_then(Value::as_object_mut)
+    {
+        let inputs = execution.remove("inputs").is_some();
+        let context = execution.remove("runtime_context").is_some();
+        if inputs {
+            execution.insert("inputs_omitted".into(), json!(true));
+        }
+        if context {
+            execution.insert("runtime_context_omitted".into(), json!(true));
+        }
+        if inputs || context {
+            value["receipt_ref"] = json!(call_id);
+        }
+    }
     if !control_query(method) && value.to_string().len() > 128 * 1024 {
         json!({"id":value["id"],"status":value["status"],"receipt_ref":call_id,"result_digest":configuration_hash(&value),"accepted":true,"next":"Use workflow.inspect to read the current bounded projection."})
     } else {
@@ -154,6 +169,36 @@ mod reply_tests {
         assert_eq!(controller_platform_wait_ms(&state, "turn", 20, 100), 70);
         assert_eq!(controller_platform_wait_ms(&state, "turn", 50, 60), 10);
         assert_eq!(controller_platform_wait_ms(&state, "another", 20, 100), 0);
+    }
+
+    #[test]
+    fn step_receipts_keep_control_identity_without_repeating_frozen_inputs() {
+        let original = json!({"id":"root","revision":4,"plan_revision_id":"plan","control_version":7,"step_revision":3,"execution":{"id":"execution","step":"implementation","status":"running","input_digest":"exact-input","outputs":{"result":"exact-output"},"round":2,"inputs":{"task":"x".repeat(400_000)},"runtime_context":{"instructions":"y".repeat(400_000)}}});
+        let projected =
+            native_reply_value("workflow.step.dispatch", "original-call", original.clone());
+        assert!(serde_json::to_vec(&projected).unwrap().len() < 4096);
+        for field in [
+            "id",
+            "revision",
+            "plan_revision_id",
+            "control_version",
+            "step_revision",
+        ] {
+            assert_eq!(projected[field], original[field]);
+        }
+        for field in ["id", "step", "status", "input_digest", "outputs", "round"] {
+            assert_eq!(projected["execution"][field], original["execution"][field]);
+        }
+        assert!(projected["execution"].get("inputs").is_none());
+        assert_eq!(projected["execution"]["inputs_omitted"], true);
+        assert_eq!(projected["receipt_ref"], "original-call");
+        assert_eq!(
+            original["execution"]["inputs"]["task"]
+                .as_str()
+                .unwrap()
+                .len(),
+            400_000
+        );
     }
 
     #[test]

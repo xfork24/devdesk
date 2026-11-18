@@ -219,6 +219,12 @@ fn value(conn: &Connection, key: &ResourceKey) -> Result<Option<Value>> {
             let selected=format!("id=(SELECT id FROM {table} WHERE {predicate} ORDER BY rowid DESC LIMIT 1)");
             Ok(load_table_filtered_params::<Value>(conn,table,&selected,&[&kind,&key.id])?.into_iter().next())
         }
+        "repository_owner_eligible"=> {
+            let (project,owner,kind,parent):(String,String,String,Option<String>)=serde_json::from_str(&key.id).map_err(storage)?;
+            require(matches!(kind.as_str(),"feature"|"task"),"无效工作副本归属类型")?;
+            let eligible:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM features WHERE ?3='feature' AND id=?2 AND project_id=?1 AND status!='completed') OR EXISTS(SELECT 1 FROM tasks t JOIN features f ON f.id=t.feature_id WHERE ?3='task' AND t.id=?2 AND t.feature_id=?4 AND f.project_id=?1 AND t.status!='completed' AND f.status!='completed' AND t.worktree='')",rusqlite::params![project,owner,kind,parent],|r|r.get(0)).map_err(storage)?;
+            Ok(Some(json!({"eligible":eligible})))
+        }
         "project_live"=>conn.query_row("SELECT EXISTS(SELECT 1 FROM projects WHERE id=?1 AND execution_mode='live')",[&key.id],|r|r.get::<_,bool>(0)).map(|live|Some(json!({"live":live}))).map_err(storage),
         "document_ownership"=>conn.query_row("SELECT json_object('project_id',project_id,'feature_id',feature_id,'task_id',task_id) FROM documents WHERE id=?1",[&key.id],|r|r.get::<_,String>(0)).optional().map_err(storage)?.map(|s|serde_json::from_str(&s).map_err(storage)).transpose(),
         "workflow_output_scope"=>conn.query_row("SELECT scope FROM governance_records WHERE id=?1 AND type='workflow_output' AND immutable=1",[&key.id],|r|r.get::<_,String>(0)).optional().map_err(storage)?.map(|s|serde_json::from_str::<Value>(&s).map(|scope|json!({"scope":scope})).map_err(storage)).transpose(),
@@ -353,17 +359,65 @@ fn value(conn: &Connection, key: &ResourceKey) -> Result<Option<Value>> {
     }
 }
 
+// Selected-record predicates carry their source row epoch. Derive it from
+// the payload already read in this same snapshot; commit-time validation uses
+// the identical projection against a fresh authoritative read.
+fn revision_projection(kind: &str) -> Option<fn(Option<&Value>) -> u64> {
+    match kind {
+        "repository_worktree_operation"
+        | "controller_latest_intent"
+        | "workflow_history_source"
+        | "workflow_completion_source"
+        | "workflow_change_for_plan"
+        | "workflow_active_wait"
+        | "workflow_last_outputs"
+        | "workflow_snapshot_checkpoint"
+        | "workflow_reconciliation_active"
+        | "workflow_stop_source"
+        | "feature_request_source"
+        | "controller_owner_source"
+        | "workflow_driver_root"
+        | "workflow_children_source"
+        | "workflow_change_pending"
+        | "workflow_active_pause"
+        | "controller_turn_input"
+        | "platform_workspace_grant"
+        | "platform_receipt"
+        | "workflow_waiver"
+        | "work_configuration_source"
+        | "platform_observation_head"
+        | "configured_session_source"
+        | "controller_session_source"
+        | "workflow_command_intent"
+        | "session_latest_turn"
+        | "workflow_dispatch_source"
+        | "permission_transition"
+        | "conversation_open_seed"
+        | "context_observation_head" => {
+            Some(|value| value.and_then(|v| v["revision"].as_u64()).unwrap_or(0))
+        }
+        _ => None,
+    }
+}
+
 fn snapshot(conn: &Connection, key: &ResourceKey) -> Result<ResourceSnapshot> {
     let value = value(conn, key)?;
     Ok(ResourceSnapshot {
         resource: key.clone(),
-        revision: current_revision(conn, key)?,
+        revision: if let Some(project) = revision_projection(&key.kind) {
+            project(value.as_ref())
+        } else {
+            current_revision(conn, key)?
+        },
         value,
     })
 }
 
 fn current_revision(conn: &Connection, key: &ResourceKey) -> Result<u64> {
     key.validate()?;
+    if let Some(project) = revision_projection(&key.kind) {
+        return Ok(project(value(conn, key)?.as_ref()));
+    }
     if key.kind == "selected_record" {
         let (kind, id, selected): (String, String, String) =
             serde_json::from_str(&key.id).map_err(storage)?;
@@ -385,22 +439,14 @@ fn current_revision(conn: &Connection, key: &ResourceKey) -> Result<u64> {
     ) {
         return Ok(0);
     }
-    if key.kind == "repository_worktree_operation" {
-        return Ok(value(conn, key)?
-            .and_then(|v| v["revision"].as_u64())
-            .unwrap_or(0));
-    }
+
     if key.kind == "repository_project_state" {
         return current_revision(conn, &repository_collection(&key.id));
     }
     if key.kind == "project_features_empty" {
         return current_revision(conn, &feature_collection(&key.id));
     }
-    if key.kind == "controller_latest_intent" {
-        return Ok(value(conn, key)?
-            .and_then(|v| v["revision"].as_u64())
-            .unwrap_or(0));
-    }
+
     if key.kind == "controller_pending_inputs" {
         return current_revision(
             conn,
@@ -455,14 +501,7 @@ fn current_revision(conn: &Connection, key: &ResourceKey) -> Result<u64> {
             &ResourceKey::new("collection", format!("workflow-tree-waits:{root}")),
         );
     }
-    if matches!(
-        key.kind.as_str(),
-        "workflow_history_source" | "workflow_completion_source" | "workflow_change_for_plan"
-    ) {
-        return Ok(value(conn, key)?
-            .and_then(|v| v["revision"].as_u64())
-            .unwrap_or(0));
-    }
+
     if matches!(
         key.kind.as_str(),
         "workflow_turn_observation" | "turn_status_reason"
@@ -495,22 +534,7 @@ fn current_revision(conn: &Connection, key: &ResourceKey) -> Result<u64> {
             .and_then(|v| v["count"].as_u64())
             .unwrap_or(0));
     }
-    if matches!(
-        key.kind.as_str(),
-        "workflow_active_wait"
-            | "workflow_last_outputs"
-            | "workflow_snapshot_checkpoint"
-            | "workflow_reconciliation_active"
-    ) {
-        return Ok(value(conn, key)?
-            .and_then(|v| v["revision"].as_u64())
-            .unwrap_or(0));
-    }
-    if key.kind == "workflow_stop_source" {
-        return Ok(value(conn, key)?
-            .and_then(|v| v["revision"].as_u64())
-            .unwrap_or(0));
-    }
+
     if key.kind == "session_active_turns" {
         return current_revision(conn, &ResourceKey::new("session_input_state", &key.id));
     }
@@ -521,14 +545,7 @@ fn current_revision(conn: &Connection, key: &ResourceKey) -> Result<u64> {
             &ResourceKey::new("collection", format!("workflow-capacity:{root}")),
         );
     }
-    if matches!(
-        key.kind.as_str(),
-        "feature_request_source" | "controller_owner_source"
-    ) {
-        return Ok(value(conn, key)?
-            .and_then(|v| v["revision"].as_u64())
-            .unwrap_or(0));
-    }
+
     if key.kind == "step_platform_calls" {
         return current_revision(
             conn,
@@ -556,30 +573,7 @@ fn current_revision(conn: &Connection, key: &ResourceKey) -> Result<u64> {
             value(conn, key)?.is_some_and(|v| v["active"] == true),
         ));
     }
-    if matches!(
-        key.kind.as_str(),
-        "workflow_driver_root"
-            | "workflow_children_source"
-            | "workflow_change_pending"
-            | "workflow_active_pause"
-            | "controller_turn_input"
-    ) {
-        return Ok(value(conn, key)?
-            .and_then(|v| v["revision"].as_u64())
-            .unwrap_or(0));
-    }
-    if matches!(
-        key.kind.as_str(),
-        "platform_workspace_grant"
-            | "platform_receipt"
-            | "workflow_waiver"
-            | "work_configuration_source"
-            | "platform_observation_head"
-    ) {
-        return Ok(value(conn, key)?
-            .and_then(|v| v["revision"].as_u64())
-            .unwrap_or(0));
-    }
+
     if key.kind == "workflow_execution_owner" {
         return Ok(u64::from(value(conn, key)?.is_some()));
     }
@@ -589,18 +583,11 @@ fn current_revision(conn: &Connection, key: &ResourceKey) -> Result<u64> {
     if key.kind == "workflow_confirmations" {
         return conn.query_row("SELECT count(*) FROM governance_records WHERE type='workflow_confirmation' AND definition_id=?1",[&key.id],|r|r.get(0)).map_err(storage);
     }
-    if matches!(
-        key.kind.as_str(),
-        "configured_session_source"
-            | "controller_session_source"
-            | "workflow_command_intent"
-            | "session_latest_turn"
-            | "workflow_dispatch_source"
-            | "permission_transition"
-    ) {
-        return Ok(value(conn, key)?
-            .and_then(|v| v["revision"].as_u64())
-            .unwrap_or(0));
+
+    if key.kind == "repository_owner_eligible" {
+        return Ok(u64::from(
+            value(conn, key)?.is_some_and(|v| v["eligible"] == true),
+        ));
     }
     if key.kind == "project_live" {
         return Ok(u64::from(
@@ -706,16 +693,7 @@ fn current_revision(conn: &Connection, key: &ResourceKey) -> Result<u64> {
             value(conn, key)?.is_some_and(|v| v["active"] == true),
         ));
     }
-    if key.kind == "conversation_open_seed" {
-        return Ok(value(conn, key)?
-            .and_then(|v| v["revision"].as_u64())
-            .unwrap_or(0));
-    }
-    if key.kind == "context_observation_head" {
-        return Ok(value(conn, key)?
-            .and_then(|v| v["revision"].as_u64())
-            .unwrap_or(0));
-    }
+
     if key.kind == "agent_scope" {
         return Ok(u64::from(value(conn, key)?.is_some()));
     }

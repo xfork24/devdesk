@@ -293,3 +293,36 @@ fn actual_node_red_green_environment_failure_and_stopped_receipts() {
     assert!(tests.poll_test(&r).is_err());
     tests.cleanup(&r).unwrap();
 }
+
+#[test]
+#[ignore = "requires the pinned Linux Node image and actual Docker daemon"]
+fn actual_read_only_observation_preserves_fast_test_completion() {
+    let root = tempfile::tempdir().unwrap();
+    let tests = CommandTests::new(root.path()).unwrap();
+    for _ in 0..16 {
+        let request = fixture(
+            root.path(),
+            "import {test} from 'node:test';test('fast exit',async()=>await new Promise(r=>setTimeout(r,20)));",
+            "green",
+        );
+        let mut result = tests.poll_test(&request).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while result.is_none() {
+            match tests.inspect_test(&request).unwrap() {
+                devdesk_core::ports::TestExecutionObservation::Running { timed_out: false } => {}
+                devdesk_core::ports::TestExecutionObservation::Completed { result: observed } => {
+                    result = Some(observed)
+                }
+                other => panic!("An already granted fast test lost its physical result: {other:?}"),
+            }
+            assert!(Instant::now() < deadline);
+        }
+        let result = result.unwrap();
+        assert_eq!(result["operation_id"], request.operation_id);
+        assert_eq!(result["candidate"], request.candidate);
+        assert_eq!(result["status"], "succeeded");
+        assert_eq!(result["counts"]["passed"], 1);
+        tests.cleanup(&request).unwrap();
+        assert!(tests.inspect_test_cleanup(&request).unwrap());
+    }
+}

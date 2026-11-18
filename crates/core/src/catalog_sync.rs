@@ -9,6 +9,11 @@ fn publish(
 ) -> Result<()> {
     let candidate =
         ConfigurationCatalogSnapshot::new(next, before.revision, before.repository_ready)?;
+    // This operation only copies immutable source identities. A stale no-op
+    // needs no publication and must not reject an unrelated business command.
+    if candidate.fingerprint == before.fingerprint {
+        return Ok(());
+    }
     let publication = prepare_configuration_publication(store, before, &candidate)?;
     if publication.changes.is_empty() {
         return Ok(());
@@ -37,6 +42,17 @@ fn publish(
 }
 impl Engine {
     pub fn sync_shared_configuration(&self, global: &dyn EngineeringStore) -> Result<()> {
+        // Rebuild only this derived copy after a concurrent catalog publication.
+        // The caller's original business command/versions are never retried.
+        for attempt in 0..3 {
+            match self.sync_shared_configuration_once(global) {
+                Err(error) if error.code == "revision_conflict" && attempt < 2 => continue,
+                result => return result,
+            }
+        }
+        unreachable!()
+    }
+    fn sync_shared_configuration_once(&self, global: &dyn EngineeringStore) -> Result<()> {
         let existing = self.store.configuration_snapshot()?;
         let known = global.configuration_snapshot()?;
         let mut directory = known.state.as_ref().clone();

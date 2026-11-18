@@ -96,9 +96,9 @@ fn pending_startups_reserve_slots_and_cancel_without_sending_input() {
         .as_str()
         .unwrap()
         .to_owned();
-    let (_, first_turn) = runtime::queue_conversation(&e, &project);
-    let (_, cancelled) = runtime::queue_conversation(&e, &project);
-    let (_, third) = runtime::queue_conversation(&e, &project);
+    for _ in 0..3 {
+        runtime::queue_conversation(&e, &project);
+    }
     for _ in 0..3 {
         e.tick_conversations(2).unwrap();
     }
@@ -106,6 +106,23 @@ fn pending_startups_reserve_slots_and_cancel_without_sending_input() {
     assert!(harness.sent.lock().unwrap().is_empty());
     assert_eq!(e.conversation_running().unwrap(), 2);
     let before = e.store.snapshot().unwrap();
+    // Admission is bounded and ordered by durable IDs, not fixture creation
+    // order. Cancel an actually reserved startup and inspect the queued peer.
+    let reserved = before
+        .turns
+        .iter()
+        .filter(|t| t.status == TurnStatus::Dispatching)
+        .collect::<Vec<_>>();
+    assert_eq!(reserved.len(), 2);
+    let cancelled = reserved[0].id.clone();
+    let first_turn = reserved[1].id.clone();
+    let third = before
+        .turns
+        .iter()
+        .find(|t| t.status == TurnStatus::Queued)
+        .unwrap()
+        .id
+        .clone();
     let turn = before.turns.iter().find(|t| t.id == cancelled).unwrap();
     e.execute(
         "conversation.cancel",
@@ -140,6 +157,11 @@ fn pending_startups_reserve_slots_and_cancel_without_sending_input() {
         after.turns.iter().find(|t| t.id == third).unwrap().status,
         TurnStatus::Dispatching
     );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while harness.starts.lock().unwrap().len() < 3 && std::time::Instant::now() < deadline {
+        e.tick_conversations(2).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
     assert_eq!(harness.starts.lock().unwrap().len(), 3);
     harness.ready.store(true, Ordering::Release);
     for _ in 0..3 {

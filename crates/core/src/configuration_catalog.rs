@@ -295,6 +295,7 @@ impl Engine {
     /// Reuse one pinned configuration view across existing pure query implementations.
     pub fn at_configuration(&self, catalog: Arc<ConfigurationCatalogSnapshot>) -> Self {
         Self {
+            effect_in_flight: self.effect_in_flight.clone(),
             runtime_callback_cursors: std::sync::Mutex::new(Default::default()),
             experience_cursor: std::sync::Mutex::new(None),
             workflow_intent_cursor: std::sync::Mutex::new(None),

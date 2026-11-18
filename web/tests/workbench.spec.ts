@@ -200,8 +200,11 @@ async function githubFixture(page: Page) {
       operation.status = "needs_reconciliation";
       operation.reason = "GitHub 账号没有仓库写权限";
     },
-    preparing: (status: string, message: string) => {
+    preparing: async (status: string, message: string) => {
       preparations = [{ provider: "dsh", status, message }];
+      await page.evaluate(() =>
+        window.dispatchEvent(new Event("devdesk.runtime-preparation")),
+      );
     },
   };
 }
@@ -344,7 +347,7 @@ test("完整 Agent 无需手工登记安装，显示准备及失败原因", asyn
   await expect(
     page.getByRole("button", { name: "开始 / 续用讨论", exact: true }),
   ).toBeEnabled();
-  fixture.preparing("preparing", "正在构建所选 Harness 的共享运行时");
+  await fixture.preparing("preparing", "正在构建所选 Harness 的共享运行时");
   await expect(
     page.getByRole("status").filter({ hasText: "正在构建" }),
   ).toBeVisible();
@@ -359,7 +362,7 @@ test("完整 Agent 无需手工登记安装，显示准备及失败原因", asyn
   expect(command.params.payload).not.toHaveProperty("model");
   expect(command.params.payload).not.toHaveProperty("provider");
   expect(command.params.payload).not.toHaveProperty("scenario");
-  fixture.preparing("failed", "Docker 连接失败，请启动 Docker 后重试");
+  await fixture.preparing("failed", "Docker 连接失败，请启动 Docker 后重试");
   await expect(
     page.getByRole("status").filter({ hasText: "Docker 连接失败" }),
   ).toBeVisible();

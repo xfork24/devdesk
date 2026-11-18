@@ -25,6 +25,8 @@ pub struct WorkflowDetailQuery {
     pub view: WorkflowDetailView,
     pub history_before: Option<u64>,
     pub child_offset: u64,
+    pub step_offset: u64,
+    pub step_limit: u64,
 }
 impl WorkflowDetailQuery {
     pub fn parse(params: &Value) -> Result<Self> {
@@ -37,6 +39,8 @@ impl WorkflowDetailQuery {
                 "view",
                 "history_before",
                 "child_offset",
+                "step_offset",
+                "step_limit",
             ],
         )?;
         let id = params
@@ -80,6 +84,24 @@ impl WorkflowDetailQuery {
             view,
             history_before,
             child_offset,
+            step_offset: params
+                .get("step_offset")
+                .map(|v| {
+                    v.as_u64()
+                        .filter(|n| *n <= 1_000_000)
+                        .ok_or_else(|| err("invalid_params", "无效的步骤偏移"))
+                })
+                .transpose()?
+                .unwrap_or(0),
+            step_limit: params
+                .get("step_limit")
+                .map(|v| {
+                    v.as_u64()
+                        .filter(|n| (1..=100).contains(n))
+                        .ok_or_else(|| err("invalid_params", "无效的步骤分页大小"))
+                })
+                .transpose()?
+                .unwrap_or(20),
         })
     }
 }
@@ -101,6 +123,8 @@ pub struct WorkflowDetailFacts {
     pub children: Vec<Value>,
     pub children_more: bool,
     pub next_child_offset: Option<u64>,
+    pub step_total: u64,
+    pub next_step_offset: Option<u64>,
     pub history: Vec<Value>,
     pub next_history_before: Option<u64>,
 }
@@ -282,6 +306,8 @@ pub struct WorkflowDriverSummary {
     pub driver: Option<RuntimeSummary<DriverState>>,
     pub waiting: Vec<WaitingStep>,
     pub waiting_more: bool,
+    pub runtime_approval_pending: bool,
+    pub workflow_approval_pending: bool,
     pub observed_only: bool,
 }
 #[derive(Debug, Serialize)]
@@ -292,6 +318,20 @@ pub struct DecisionRequest {
     pub request_json: String,
 }
 pub type DecisionDetail = RuntimeSummary<DecisionRequest>;
+
+#[derive(Debug, Deserialize)]
+pub struct DecisionExecutionState {
+    pub status: devdesk_domain::StepExecutionStatus,
+    pub input_digest: String,
+    pub outputs: std::collections::BTreeMap<String, String>,
+}
+/// Display qualification from one committed snapshot. It is never a write witness.
+#[derive(Debug)]
+pub struct DecisionContext {
+    pub active_plan_revision_id: String,
+    pub execution: Option<DecisionExecutionState>,
+    pub ancestor_instance_ids: Vec<String>,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PlanSelectionSummary {

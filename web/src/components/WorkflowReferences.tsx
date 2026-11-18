@@ -15,9 +15,10 @@ export function WorkflowReferences({
   current?: string;
   compact?: boolean;
 }) {
+  const stepExecution = source.kind !== "controller" && source.execution_id;
   const target = {
     instance_id: source.instance_id,
-    execution_id: source.execution_id,
+    execution_id: stepExecution || undefined,
     session_id: source.session_id,
     turn_id: source.turn_id,
   };
@@ -27,7 +28,7 @@ export function WorkflowReferences({
   return (
     <div className="workflow-references">
       <nav className="reading-links" aria-label="关联视图">
-        {source.execution_id && current !== "overview" && (
+        {stepExecution && current !== "overview" && (
           <ReadingLink
             detail="overview"
             {...{ projectId, ownerId }}
@@ -36,7 +37,7 @@ export function WorkflowReferences({
             查看流程步骤
           </ReadingLink>
         )}
-        {source.execution_id &&
+        {stepExecution &&
           current !== "context" &&
           (source.context_available ?? source.status !== "queued") && (
             <ReadingLink
@@ -59,7 +60,7 @@ export function WorkflowReferences({
             </ReadingLink>
           ))}
         {!compact &&
-          source.execution_id &&
+          stepExecution &&
           current !== "records" &&
           (source.execution_available ?? source.status !== "queued") && (
             <ReadingLink

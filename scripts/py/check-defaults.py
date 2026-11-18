@@ -38,6 +38,7 @@ def main() -> None:
     manifest = json.loads((ROOT / "manifest.json").read_text())
 
     published: dict[tuple[str, str, int], dict] = {}  # exact immutable revisions
+    identities: dict[tuple[str, str], str] = {}
     sources: dict[str, dict] = {}  # rel -> parsed source
     md_bodies: set[Path] = set()
     for kind, paths in sorted(manifest.get("types", {}).items()):
@@ -57,6 +58,13 @@ def main() -> None:
             if source["scope"] != "global":
                 fail(f"{rel}: factory sources must use the global scope")
             key = (kind, source["identity"], source["revision"])
+            identity = (kind, source["identity"])
+            if identity in identities:
+                fail(
+                    f"local configuration must contain only the latest revision of "
+                    f"{source['identity']!r}: {identities[identity]} and {rel}"
+                )
+            identities[identity] = rel
             if key in published:
                 fail(
                     f"identity {source['identity']!r} published twice: "

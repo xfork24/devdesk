@@ -115,33 +115,41 @@ pub(super) fn orchestration(
             .collect::<rusqlite::Result<_>>()
             .map_err(storage)?;
         result.more.calls = trim_page(&mut result.calls, 5);
-        if let Some(root) = &record.data.root_instance_id {
-            let mut query=conn.prepare_cached("SELECT d.id,substr(d.name,1,128),d.revision,json_extract(d.data,'$.status'),coalesce(json_extract(d.data,'$.plan_revision_id'),''),coalesce(substr(json_extract(d.data,'$.request.operation'),1,128),''),d.rowid FROM governance_records d WHERE d.type='workflow_pending_decision' AND (?3 IS NULL OR d.rowid<?3) AND json_extract(d.data,'$.status')='pending' AND d.owner_project=?1 AND d.definition_id IN (SELECT i.id FROM governance_records i WHERE i.type='workflow_instance' AND i.owner_project=?1 AND json_extract(i.data,'$.root_instance_id')=?2) ORDER BY d.rowid DESC LIMIT 11").map_err(storage)?;
-            let mut rows = query
-                .query_map(params![project, root, request.decision_before], |row| {
-                    Ok((
-                        row.get::<_, u64>(6)?,
-                        RuntimeSummary {
-                            id: row.get(0)?,
-                            name: row.get(1)?,
-                            revision: row.get(2)?,
-                            data: DecisionState {
-                                status: row.get(3)?,
-                                plan_revision_id: row.get(4)?,
-                                operation: row.get(5)?,
-                            },
+    }
+    let root = result
+        .record
+        .as_ref()
+        .and_then(|r| r.data.root_instance_id.as_deref())
+        .or(match &request.selector {
+            ControllerSelector::Root(id) => Some(id.as_str()),
+            _ => None,
+        });
+    if let Some(root) = root {
+        let mut query=conn.prepare_cached("SELECT d.id,substr(d.name,1,128),d.revision,json_extract(d.data,'$.status'),coalesce(json_extract(d.data,'$.plan_revision_id'),''),coalesce(substr(json_extract(d.data,'$.request.operation'),1,128),''),d.rowid FROM governance_records d WHERE d.type='workflow_pending_decision' AND (?3 IS NULL OR d.rowid<?3) AND json_extract(d.data,'$.status')='pending' AND d.owner_project=?1 AND d.definition_id IN (SELECT i.id FROM governance_records i WHERE i.type='workflow_instance' AND i.owner_project=?1 AND json_extract(i.data,'$.root_instance_id')=?2) ORDER BY d.rowid DESC LIMIT 11").map_err(storage)?;
+        let mut rows = query
+            .query_map(params![project, root, request.decision_before], |row| {
+                Ok((
+                    row.get::<_, u64>(6)?,
+                    RuntimeSummary {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        revision: row.get(2)?,
+                        data: DecisionState {
+                            status: row.get(3)?,
+                            plan_revision_id: row.get(4)?,
+                            operation: row.get(5)?,
                         },
-                    ))
-                })
-                .map_err(storage)?
-                .collect::<rusqlite::Result<Vec<_>>>()
-                .map_err(storage)?;
-            result.more.decisions = trim_page(&mut rows, 10);
-            if result.more.decisions {
-                result.next_decision_before = rows.last().map(|row| row.0);
-            }
-            result.decisions = rows.into_iter().map(|row| row.1).collect();
+                    },
+                ))
+            })
+            .map_err(storage)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(storage)?;
+        result.more.decisions = trim_page(&mut rows, 10);
+        if result.more.decisions {
+            result.next_decision_before = rows.last().map(|row| row.0);
         }
+        result.decisions = rows.into_iter().map(|row| row.1).collect();
     }
     conn.execute_batch("COMMIT;").map_err(storage)?;
     Ok(result)
@@ -158,7 +166,7 @@ pub(super) fn driver(
     let (revision,root):(u64,String)=conn.query_row("SELECT revision,coalesce(json_extract(data,'$.root_instance_id'),id) FROM governance_records WHERE id=?1 AND type='workflow_instance' AND owner_project=?2",params![id,project],|row|Ok((row.get(0)?,row.get(1)?))).optional().map_err(storage)?.ok_or_else(||err("not_found","工作流不属于本次请求的项目"))?;
     let mut driver=conn.query_row("SELECT id,substr(name,1,128),revision,json_extract(data,'$.mode'),json_extract(data,'$.epoch'),substr(coalesce(json_extract(data,'$.reason.message'),json_extract(data,'$.reason'),''),1,256),length(coalesce(json_extract(data,'$.reason.message'),json_extract(data,'$.reason'),''))>256 FROM governance_records WHERE type='workflow_driver' AND definition_id=?1 AND owner_project=?2 ORDER BY rowid DESC LIMIT 1",params![root,project],|row|Ok(RuntimeSummary {id:row.get(0)?,name:row.get(1)?,revision:row.get(2)?,data:DriverState {mode:row.get(3)?,epoch:row.get(4)?,reason:row.get(5)?,reason_truncated:row.get(6)?}})).optional().map_err(storage)?;
     let mut waiting = {
-        let mut query=conn.prepare_cached("SELECT i.id,json_extract(i.data,'$.owner_id'),json_extract(s.value,'$.id'),substr(json_extract(s.value,'$.step'),1,128),substr(coalesce(json_extract(s.value,'$.path'),''),1,256),json_extract(s.value,'$.status'),substr(coalesce(json_extract(s.value,'$.reason'),''),1,256),length(coalesce(json_extract(s.value,'$.reason'),''))>256 FROM governance_records i,json_each(i.data,'$.steps') s WHERE i.type='workflow_instance' AND coalesce(json_extract(i.data,'$.status'),'') NOT IN ('completed','cancelled') AND i.owner_project=?1 AND json_extract(i.data,'$.root_instance_id')=?2 AND json_extract(s.value,'$.status') IN ('waiting_input','waiting_confirmation','awaiting_acceptance','failed','needs_reconciliation') ORDER BY i.rowid,CAST(s.key AS INTEGER) LIMIT 21").map_err(storage)?;
+        let mut query=conn.prepare_cached("SELECT h.instance_id,json_extract(h.record,'$.data.owner_id'),s.execution_id,substr(json_extract(s.data,'$.step'),1,128),substr(coalesce(json_extract(s.data,'$.path'),''),1,256),json_extract(s.data,'$.status'),substr(coalesce(json_extract(s.data,'$.reason'),''),1,256),(coalesce(json_extract(s.data,'$.reason_truncated'),0) OR length(coalesce(json_extract(s.data,'$.reason'),''))>256) FROM workflow_display_headers h JOIN workflow_display_steps s ON s.instance_id=h.instance_id WHERE json_extract(h.record,'$.data.project_id')=?1 AND json_extract(h.record,'$.data.root_instance_id')=?2 AND coalesce(json_extract(h.record,'$.data.status'),'') NOT IN ('completed','cancelled') AND json_extract(s.data,'$.status') IN ('waiting_input','waiting_confirmation','awaiting_acceptance','failed','needs_reconciliation') ORDER BY h.instance_id,json_extract(s.data,'$.path'),s.execution_id LIMIT 21").map_err(storage)?;
         query
             .query_map(params![project, root], |row| {
                 Ok(WaitingStep {
@@ -182,6 +190,8 @@ pub(super) fn driver(
     for row in &mut waiting {
         hide_encoded_reason(&mut row.reason, &mut row.reason_truncated);
     }
+    let workflow_approval_pending: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM workflow_display_steps s JOIN workflow_display_headers h ON h.instance_id=s.instance_id WHERE json_extract(h.record,'$.data.root_instance_id')=?1 AND (json_extract(s.data,'$.status')='waiting_confirmation' OR (json_extract(s.data,'$.status')='awaiting_acceptance' AND EXISTS(SELECT 1 FROM governance_records r WHERE r.type='workflow_rule_hint' AND r.definition_id=s.execution_id AND json_extract(r.data,'$.satisfied')=0))))",[&root],|r|r.get(0)).map_err(storage)?;
+    let runtime_approval_pending: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM interactions a WHERE a.kind='tool_approval' AND a.status='pending' AND a.turn_id IN (SELECT json_extract(s.data,'$.turn_id') FROM workflow_display_steps s JOIN workflow_display_headers h ON h.instance_id=s.instance_id WHERE json_extract(h.record,'$.data.root_instance_id')=?1))",[&root],|r|r.get(0)).map_err(storage)?;
     let waiting_more = trim_page(&mut waiting, 20);
     let cursor = cursor(&conn)?;
     conn.execute_batch("COMMIT;").map_err(storage)?;
@@ -193,6 +203,8 @@ pub(super) fn driver(
         driver,
         waiting,
         waiting_more,
+        runtime_approval_pending,
+        workflow_approval_pending,
         observed_only: true,
     })
 }
@@ -210,6 +222,73 @@ pub(super) fn decision(pool: &ConnectionPool, project: &str, id: &str) -> Result
             },
         }),
     ).optional().map_err(storage)?.ok_or_else(||err("not_found","待决定请求不属于本次项目"))
+}
+
+pub(super) fn decision_context(
+    pool: &ConnectionPool,
+    project: &str,
+    instance: &str,
+    execution: Option<&str>,
+) -> Result<DecisionContext> {
+    let _span = performance::Span::new("read_model.decision_context");
+    let conn = pool.read()?;
+    conn.execute_batch("BEGIN;").map_err(storage)?;
+    let header = |id: &str| -> Result<(String, Option<String>, String)> {
+        conn.query_row(
+            "SELECT json_extract(data,'$.active_plan_revision_id'),json_extract(data,'$.parent_execution_id'),coalesce(json_extract(data,'$.root_instance_id'),id) FROM governance_records WHERE id=?1 AND type='workflow_instance' AND owner_project=?2 AND coalesce(json_extract(data,'$.project_id'),?2)=?2",
+            params![id, project],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(storage)?
+        .ok_or_else(|| err("not_found", "审批流程不属于当前项目"))
+    };
+    let (active_plan_revision_id, mut parent, root) = header(instance)?;
+    let execution = execution
+        .map(|id| {
+            conn.query_row(
+                "SELECT json_object('status',json_extract(data,'$.status'),'input_digest',json_extract(data,'$.input_digest'),'outputs',json(coalesce(data->'$.outputs','{}'))) FROM workflow_display_steps WHERE instance_id=?1 AND execution_id=?2",
+                params![instance, id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(storage)?
+            .map(|value| serde_json::from_str(&value).map_err(storage))
+            .transpose()
+        })
+        .transpose()?
+        .flatten();
+    let mut ancestor_instance_ids = Vec::new();
+    let mut finished = false;
+    for _ in 0..WORKFLOW_DEPTH_LIMIT {
+        let Some(execution) = parent else {
+            finished = true;
+            break;
+        };
+        let mut query = conn.prepare_cached("SELECT json_extract(v.resource_id,'$[0]') FROM resource_versions v JOIN governance_records i ON i.id=json_extract(v.resource_id,'$[0]') AND i.type='workflow_instance' AND i.owner_project=?2 WHERE v.kind='workflow_step_authority' AND json_extract(v.resource_id,'$[1]')=?1 LIMIT 2").map_err(storage)?;
+        let ids = query
+            .query_map(params![execution, project], |row| row.get::<_, String>(0))
+            .map_err(storage)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(storage)?;
+        require(ids.len() == 1, "审批祖先执行缺失或存在歧义")?;
+        let id = &ids[0];
+        require(
+            id != instance && !ancestor_instance_ids.contains(id),
+            "审批流程祖先循环",
+        )?;
+        let (_, next, actual_root) = header(id)?;
+        require(actual_root == root, "审批流程祖先不属于同一根")?;
+        ancestor_instance_ids.push(id.clone());
+        parent = next;
+    }
+    require(finished, "审批流程祖先超过预算")?;
+    conn.execute_batch("COMMIT;").map_err(storage)?;
+    Ok(DecisionContext {
+        active_plan_revision_id,
+        execution,
+        ancestor_instance_ids,
+    })
 }
 
 pub(super) fn management(
@@ -284,7 +363,7 @@ pub(super) fn progress(
         params![id,project],|row|Ok(RuntimeSummary {id:row.get(0)?,name:row.get(1)?,revision:row.get(2)?,data:WorkflowProgressState {owner_id:row.get(3)?,root_instance_id:row.get(4)?,status:row.get(5)?,paused:row.get(6)?,cancel_requested:row.get(7)?}})
     ).optional().map_err(storage)?.ok_or_else(||err("not_found","工作流不属于本次请求的项目"))?;
     let counts=conn.query_row(
-        "SELECT count(*),coalesce(sum(json_extract(s.value,'$.status') IN ('completed','skipped')),0),coalesce(sum(json_extract(s.value,'$.status')='running'),0),coalesce(sum(json_extract(s.value,'$.status') IN ('waiting_input','waiting_confirmation','awaiting_acceptance')),0),coalesce(sum(json_extract(s.value,'$.status') IN ('failed','needs_reconciliation')),0) FROM governance_records i,json_each(i.data,'$.steps') s WHERE i.id=?1 AND i.type='workflow_instance' AND i.owner_project=?2",params![id,project],|row|step_counts(row,0)
+        "SELECT count(*),coalesce(sum(json_extract(s.data,'$.status') IN ('completed','skipped')),0),coalesce(sum(json_extract(s.data,'$.status')='running'),0),coalesce(sum(json_extract(s.data,'$.status') IN ('waiting_input','waiting_confirmation','awaiting_acceptance')),0),coalesce(sum(json_extract(s.data,'$.status') IN ('failed','needs_reconciliation')),0) FROM workflow_display_steps s WHERE s.instance_id=?1 AND EXISTS(SELECT 1 FROM workflow_display_headers h WHERE h.instance_id=s.instance_id AND json_extract(h.record,'$.data.project_id')=?2)",params![id,project],|row|step_counts(row,0)
     ).map_err(storage)?;
     // The packed plan names its exact immutable workflow source. Never compile
     // it, follow today's head/default, or reconstruct unrelated engineering rows.
@@ -297,7 +376,7 @@ pub(super) fn progress(
     )?;
     let mut stages = {
         let mut statement=conn.prepare_cached(
-            "WITH instance AS MATERIALIZED (SELECT i.data,coalesce(json_extract(i.data,'$.plan.document'),w.data) AS document FROM governance_records i LEFT JOIN source_definitions w ON w.type='workflow' AND w.reference=coalesce(json_extract(i.data,'$.plan.workflow_ref'),json_extract(i.data,'$.workflow_ref')) WHERE i.id=?1 AND i.type='workflow_instance' AND i.owner_project=?2), definitions AS MATERIALIZED (SELECT json_extract(d.value,'$.key') AS step,json_extract(d.value,'$.stage') AS stage FROM instance,json_each(instance.document,'$.steps') d), labels AS MATERIALIZED (SELECT s.key AS position,json_extract(s.value,'$.key') AS stage,substr(json_extract(s.value,'$.name'),1,128) AS name FROM instance,json_each(instance.document,'$.stages') s), progress AS MATERIALIZED (SELECT d.stage,count(*) AS total,sum(json_extract(e.value,'$.status') IN ('completed','skipped')) AS completed,sum(json_extract(e.value,'$.status')='running') AS running,sum(json_extract(e.value,'$.status') IN ('waiting_input','waiting_confirmation','awaiting_acceptance')) AS waiting,sum(json_extract(e.value,'$.status') IN ('failed','needs_reconciliation')) AS failed FROM instance,json_each(instance.data,'$.steps') e JOIN definitions d ON d.step=json_extract(e.value,'$.step') GROUP BY d.stage) SELECT l.stage,l.name,coalesce(p.total,0),coalesce(p.completed,0),coalesce(p.running,0),coalesce(p.waiting,0),coalesce(p.failed,0) FROM labels l LEFT JOIN progress p ON p.stage=l.stage ORDER BY l.position LIMIT 21 OFFSET ?3"
+            "WITH instance AS MATERIALIZED (SELECT h.instance_id,coalesce(json_extract(h.record,'$.data.plan.document'),w.data) AS document FROM workflow_display_headers h LEFT JOIN source_definitions w ON w.type='workflow' AND w.reference=coalesce(json_extract(h.record,'$.data.plan.workflow_ref'),json_extract(h.record,'$.data.workflow_ref')) WHERE h.instance_id=?1 AND json_extract(h.record,'$.data.project_id')=?2), definitions AS MATERIALIZED (SELECT json_extract(d.value,'$.key') AS step,json_extract(d.value,'$.stage') AS stage FROM instance,json_each(instance.document,'$.steps') d), labels AS MATERIALIZED (SELECT s.key AS position,json_extract(s.value,'$.key') AS stage,substr(json_extract(s.value,'$.name'),1,128) AS name FROM instance,json_each(instance.document,'$.stages') s), progress AS MATERIALIZED (SELECT d.stage,count(*) AS total,sum(json_extract(e.data,'$.status') IN ('completed','skipped')) AS completed,sum(json_extract(e.data,'$.status')='running') AS running,sum(json_extract(e.data,'$.status') IN ('waiting_input','waiting_confirmation','awaiting_acceptance')) AS waiting,sum(json_extract(e.data,'$.status') IN ('failed','needs_reconciliation')) AS failed FROM instance JOIN workflow_display_steps e ON e.instance_id=instance.instance_id JOIN definitions d ON d.step=json_extract(e.data,'$.step') GROUP BY d.stage) SELECT l.stage,l.name,coalesce(p.total,0),coalesce(p.completed,0),coalesce(p.running,0),coalesce(p.waiting,0),coalesce(p.failed,0) FROM labels l LEFT JOIN progress p ON p.stage=l.stage ORDER BY l.position LIMIT 21 OFFSET ?3"
         ).map_err(storage)?;
         statement
             .query_map(params![id, project, stage_offset], |row| {

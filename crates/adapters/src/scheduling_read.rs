@@ -14,15 +14,15 @@ fn stages(conn: &Connection) -> Result<Vec<devdesk_core::SchedulingStage>> {
     let work = &[
         (
             S::Conversations,
-            "EXISTS(SELECT 1 FROM turns WHERE status NOT IN ('completed','failed','cancelled')) OR EXISTS(SELECT 1 FROM governance_records WHERE (type IN ('provider_poll_pending','provider_tool_intent','conversation_capture_intent','captured_experience_intent') AND json_extract(data,'$.status') IN ('prepared','capturing','captured')) OR (type='worker_cleanup_work' AND json_extract(data,'$.status')='pending') OR (type='worker_cleanup_intent' AND json_extract(data,'$.status')='prepared'))",
+            "EXISTS(SELECT 1 FROM turns WHERE status NOT IN ('completed','failed','cancelled')) OR EXISTS(SELECT 1 FROM governance_records WHERE (type IN ('provider_poll_pending','provider_tool_intent','conversation_capture_intent','captured_experience_intent','sealed_command_intent') AND json_extract(data,'$.status') IN ('prepared','capturing','captured')) OR (type='worker_cleanup_work' AND json_extract(data,'$.status')='pending') OR (type='worker_cleanup_intent' AND json_extract(data,'$.status')='prepared'))",
         ),
         (
             S::Workflows,
-            "EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_instance' AND json_extract(data,'$.status') NOT IN ('completed','cancelled') AND (json_extract(data,'$.status') NOT IN ('failed','needs_reconciliation') OR json_extract(data,'$.cancel_requested')=1)) OR EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_intent' AND json_extract(data,'$.status')='prepared') OR EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_reconciliation' AND json_extract(data,'$.status') IN ('prepared','inspecting'))",
+            "EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_intent' AND json_extract(data,'$.status')='prepared') OR EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_reconciliation' AND json_extract(data,'$.status') IN ('prepared','inspecting'))",
         ),
         (
             S::Controllers,
-            "EXISTS(SELECT 1 FROM governance_records WHERE (type='workflow_controller' AND json_extract(data,'$.status')='active') OR (type='controller_tool_call' AND json_extract(data,'$.status')='prepared') OR (type='controller_reply_work' AND json_extract(data,'$.status')='pending'))",
+            "EXISTS(SELECT 1 FROM governance_records WHERE type='controller_reply_work' AND json_extract(data,'$.status')='pending')",
         ),
         (
             S::Tools,
@@ -56,17 +56,28 @@ fn stages(conn: &Connection) -> Result<Vec<devdesk_core::SchedulingStage>> {
             .collect::<Vec<_>>()
             .join(",")
     );
-    conn.query_row(&sql, [], |row| {
-        work.iter()
-            .enumerate()
-            .filter_map(|(n, (stage, _))| match row.get::<_, bool>(n) {
-                Ok(true) => Some(Ok(*stage)),
-                Ok(false) => None,
-                Err(e) => Some(Err(e)),
-            })
-            .collect::<rusqlite::Result<Vec<_>>>()
-    })
-    .map_err(storage)
+    let mut ready = conn
+        .query_row(&sql, [], |row| {
+            work.iter()
+                .enumerate()
+                .filter_map(|(n, (stage, _))| match row.get::<_, bool>(n) {
+                    Ok(true) => Some(Ok(*stage)),
+                    Ok(false) => None,
+                    Err(e) => Some(Err(e)),
+                })
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(storage)?;
+    if !ready.contains(&S::Workflows) && runtime_queries::workflow_observations(conn)? {
+        ready.push(S::Workflows);
+    }
+    if !ready.contains(&S::Controllers)
+        && (runtime_queries::controllers(conn)?
+            || runtime_queries::pending(conn, ports::WorkflowRuntimeWork::ControllerCalls)?)
+    {
+        ready.push(S::Controllers);
+    }
+    Ok(ready)
 }
 pub(super) fn hints(conn: &Connection) -> Result<SchedulingHints> {
     let _span = performance::Span::new("read_model.scheduling_hints");

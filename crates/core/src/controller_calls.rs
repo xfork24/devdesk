@@ -17,6 +17,32 @@ impl Engine {
         method: &str,
         args: &Value,
     ) -> Result<Value> {
+        // Wait registration is a technical compare-and-set against an event
+        // head, not a business advancement. Re-read that head and the original
+        // actor/delivery when a concurrent result wins; never reuse old guards.
+        // Other operations retain their literal business request semantics.
+        let attempts = if method == "workflow.controller.wait" {
+            3
+        } else {
+            1
+        };
+        for attempt in 0..attempts {
+            let _attempt = (method == "workflow.controller.wait")
+                .then(|| self.store.observe_query("controller.wait.attempt"));
+            match self.execute_controller_notice_once(selected, call, method, args) {
+                Err(error) if error.code == "revision_conflict" && attempt + 1 < attempts => {}
+                result => return result,
+            }
+        }
+        unreachable!("the final bounded attempt always returns")
+    }
+    fn execute_controller_notice_once(
+        &self,
+        selected: &ResourceSnapshot,
+        call: &ConfigurationRecord,
+        method: &str,
+        args: &Value,
+    ) -> Result<Value> {
         let fingerprint = configuration_hash(&(
             "controller-notice/v1",
             &call.id,
@@ -89,19 +115,42 @@ impl Engine {
                 .map_err(|e| err("invalid_params", e.to_string()))?;
         require(waiting.len() <= 32, "等待对象过多")?;
         for id in &waiting {
-            let selected = one(self.store.as_ref(), "governance", id)?;
-            let object = restored(self, &selected)?;
-            let id = if object.r#type == "workflow_instance" {
-                object.id.as_str()
+            // A platform step intentionally shares its ID with its platform_call
+            // row. Resolve actual execution ownership first; that unrelated row
+            // must neither reject the wait nor become its authorization source.
+            let owner = one(self.store.as_ref(), "workflow_execution_owner", id)?;
+            let instance_id = if let Some(instance) = &owner.value {
+                commit.witness([version(&owner)])?;
+                text(instance, "instance_id")?
             } else {
-                object.definition_id.as_str()
+                let selected = one(self.store.as_ref(), "governance", id)?;
+                if selected.value.is_none() {
+                    return Err(err(
+                        "invalid_params",
+                        "等待对象必须是本根的流程、步骤执行或待决定记录",
+                    ));
+                }
+                let object = restored(self, &selected)?;
+                require(
+                    matches!(
+                        object.r#type.as_str(),
+                        "workflow_instance" | "workflow_pending_decision"
+                    ),
+                    "等待对象必须是本根的流程、步骤执行或待决定记录",
+                )?;
+                commit.witness([version(&selected)])?;
+                if object.r#type == "workflow_instance" {
+                    object.id
+                } else {
+                    object.definition_id
+                }
             };
-            let instance = WorkflowHeaderFacts::read(self, id)?;
+            let instance = WorkflowHeaderFacts::read(self, &instance_id)?;
             require(
                 instance.instance.root_instance_id == root,
                 "等待对象不属于当前根实例",
             )?;
-            commit.witness([version(&selected), version(&instance.header)])?;
+            commit.witness([version(&instance.header)])?;
         }
         let seconds = args["timeout_seconds"].as_u64();
         require(
@@ -213,6 +262,9 @@ impl Engine {
                 "governance",
                 format!("controller-action-observation:{}", call.id),
             );
+            let _admission = self
+                .store
+                .observe_native_call(&call.id, "native.manager.result");
             let mut observed = record(
                 "controller_action_observation",
                 call.id.clone(),
@@ -287,6 +339,9 @@ impl Engine {
         call: &ConfigurationRecord,
     ) -> Result<Value> {
         let action = format!("{}:action", call.id);
+        let _action = self
+            .store
+            .observe_native_call(&call.id, "native.manager.action");
         let method = text(&call.data, "method")?;
         let args = &call.data["arguments"];
         if matches!(
@@ -370,9 +425,15 @@ impl Engine {
                 );
             }
             let target = target.ok_or_else(|| err("not_found", "尚未启动流程"))?;
-            let source = WorkflowHeaderFacts::read(self, target)?;
+            let source = one(self.store.as_ref(), "workflow_run_authority", target)?;
             require(
-                Some(source.instance.root_instance_id.as_str()) == root,
+                source.value.as_ref().is_some_and(|v| {
+                    v["project_id"] == controller.project_id
+                        && serde_json::from_value::<Scope>(v["scope"].clone()).is_ok_and(|scope| {
+                            scope.project_id() == Some(controller.project_id.as_str())
+                        })
+                        && v["root_instance_id"].as_str() == root
+                }),
                 "原查询跨流程根",
             )?;
             let mut params = args.clone();
@@ -509,6 +570,9 @@ impl Engine {
             if !matches!(call.data["status"].as_str(), Some("succeeded" | "failed")) {
                 continue;
             }
+            let _delivery = self
+                .store
+                .observe_native_call(&call.id, "native.manager.delivery");
             let sid = text(&call.data, "session_id")?;
             let session = one(self.store.as_ref(), "session", &sid)?;
             let actual: Session = serde_json::from_value(

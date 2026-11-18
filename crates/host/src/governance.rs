@@ -102,7 +102,9 @@ impl Workspace {
             if should_stop() {
                 return Ok(());
             }
-            if let Some(id) = ready {
+            if let Some(id) = ready
+                && e.store.native_platform_tool_prepared(&id)?
+            {
                 e.drive_ready_native_platform_tool(&id)?;
             }
         }

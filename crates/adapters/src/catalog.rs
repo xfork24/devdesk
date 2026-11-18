@@ -295,6 +295,15 @@ fn check_engineering_baseline(path: &Path) -> Result<()> {
 }
 
 impl EngineeringStore for GlobalStore {
+    fn operational_read(&self, method: &str, params: &Value) -> Result<Value> {
+        operational_reads::read(
+            &self.connection,
+            self.configuration_snapshot()?.as_ref(),
+            None,
+            method,
+            params,
+        )
+    }
     fn replay_commit(
         &self,
         command_id: &str,

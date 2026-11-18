@@ -88,12 +88,11 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
   const defaults = await rpc(page, "query.configuration_defaults");
   expect(Object.keys(defaults.role_agent_bindings)).toHaveLength(6);
   expect(defaults.capability_ref).toBe("builtin-capability-sol-high-codex:4");
-  const tools = await rpc(page, "query.configurations", {
-    kind: "tool",
-    include_history: true,
+  const completeTools = await rpc(page, "query.configuration_records", {
+    refs: ["builtin-tool-codex-native:1", "builtin-tool-dsh-native:1"],
   });
   expect(
-    tools.records.filter(
+    completeTools.records.filter(
       (row: any) => row.data.implementation === "harness.native",
     ),
   ).toHaveLength(2);
@@ -332,7 +331,6 @@ test("Workflow 通用步骤保存发布并恢复草稿，执行确认绑定确�
     name: "当前工作流",
     exact: true,
   });
-  await executionView.locator(".workflow-stage-toggle").first().click();
   await executionView.locator(".workflow-step-toggle").first().click();
   await expect(
     page.getByRole("button", { name: /确认范围 · 本地草稿/ }).first(),
@@ -342,11 +340,12 @@ test("Workflow 通用步骤保存发布并恢复草稿，执行确认绑定确�
     .click();
   await expect
     .poll(async () => {
-      const result = await rpc(page, "query.workspace", {
+      const result = await rpc(page, "query.workflow_instance", {
         project_id: project.id,
+        id: instance.id,
+        view: "status",
       });
-      return result.configurations.find((r: any) => r.id === instance.id)?.data
-        .steps[0].status;
+      return result.runtime.steps[0].status;
     })
     .toBe("waiting_confirmation");
   const { record: row, runtime } = await rpc(page, "query.workflow_instance", {
@@ -569,20 +568,23 @@ test("项目默认绑定保存时生成不可变 Standard", async ({ page }) => 
     project_id: p.id,
     feature_id: f.id,
   });
-  const lock = state.configurations.find(
-    (r: any) => r.type === "work_configuration" && r.definition_id === f.id,
-  );
+  const lock = (
+    await rpc(page, "query.work_configuration", {
+      project_id: p.id,
+      owner_id: f.id,
+    })
+  ).configuration;
   expect(lock.data.schema_version).toBe(1);
   expect(lock.data.role_agent_bindings).toEqual(defaults.role_agent_bindings);
   const instance = state.configurations.find(
     (r: any) => r.type === "workflow_instance" && r.data.owner_id === f.id,
   );
-  expect(instance.data.schema_version).toBe(6);
-  expect(
-    instance.data.plan.document.steps.every(
-      (s: any) => s.executor && !s.action,
-    ),
-  ).toBe(true);
+  const full = await rpc(page, "query.workflow_instance", {
+    project_id: p.id,
+    id: instance.id,
+  });
+  expect(full.record.data.schema_version).toBe(6);
+  expect(full.plan.steps.every((s: any) => s.executor && !s.action)).toBe(true);
   await page.route("**/rpc", async (route) => {
     if (
       !["query.workspace", "query.ui_bootstrap"].includes(

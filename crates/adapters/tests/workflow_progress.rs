@@ -6,6 +6,17 @@ use rusqlite::{Connection, params};
 use serde_json::json;
 use std::sync::{Arc, Barrier};
 const PROJECT: &str = "8e869077-8e14-4f67-acad-90152375190f";
+fn display(conn: &Connection) {
+    // This fixture bypasses resource commits intentionally. Keep its display
+    // projection in the same transaction, as production commits do.
+    conn.execute("INSERT INTO workflow_display_headers(instance_id,record) SELECT id,json_object('id',id,'revision',revision,'name',name,'data',json_remove(data,'$.steps')) FROM governance_records WHERE id='root' ON CONFLICT(instance_id) DO UPDATE SET record=excluded.record",[]).unwrap();
+    conn.execute(
+        "DELETE FROM workflow_display_steps WHERE instance_id='root'",
+        [],
+    )
+    .unwrap();
+    conn.execute("INSERT INTO workflow_display_steps(instance_id,execution_id,data,step_revision) SELECT 'root',json_extract(value,'$.id'),value,1 FROM json_each((SELECT data FROM governance_records WHERE id='root'),'$.steps')",[]).unwrap();
+}
 fn fixture(root: &std::path::Path) -> (Arc<SqliteStore>, Connection) {
     let store = Arc::new(SqliteStore::open_project(root, PROJECT).unwrap());
     let conn =
@@ -36,6 +47,7 @@ fn fixture(root: &std::path::Path) -> (Arc<SqliteStore>, Connection) {
     conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('root','workflow_instance',?1,?2,'Root',1,?3,'{}',?4,0,7,1)",params![PROJECT,serde_json::to_string(&Scope::project(PROJECT)).unwrap(),content_digest(&References::new(),&data),data.to_string()]).unwrap();
     let bad = json!({"root_instance_id":"unrestorable-root","plan":{"$source":"missing-historical-source"},"history":"x".repeat(1_000_000)});
     conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('unreadable-history','workflow_instance',?1,?2,'History',1,'fixture','{}',?3,0,1,1)",params![PROJECT,serde_json::to_string(&Scope::project(PROJECT)).unwrap(),bad.to_string()]).unwrap();
+    display(&conn);
     (store, conn)
 }
 #[test]
@@ -79,7 +91,9 @@ fn stage_pages_use_exact_frozen_source_and_never_restore_or_compile_engineering_
     ] {
         assert!(report["spans"][stage].is_null(), "{report}");
     }
-    conn.execute("UPDATE governance_records SET data=json_set(data,'$.steps[0].status','running'),revision=8 WHERE id='root'",[]).unwrap();
+    conn.execute_batch("BEGIN; UPDATE governance_records SET data=json_set(data,'$.steps[0].status','running'),revision=8 WHERE id='root';").unwrap();
+    display(&conn);
+    conn.execute_batch("COMMIT;").unwrap();
     let next = store.workflow_progress("root", 0).unwrap();
     assert_eq!(next.record.revision, 8);
     assert_eq!(next.counts.completed, 249);
@@ -93,6 +107,7 @@ fn one_hundred_reads_see_committed_progress_while_sql_writer_holds_uncommitted_u
         .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .unwrap();
     transaction.execute("UPDATE governance_records SET data=json_set(data,'$.status','cancelled'),revision=8 WHERE id='root'",[]).unwrap();
+    display(&transaction);
     let barrier = Arc::new(Barrier::new(100));
     let threads = (0..100)
         .map(|_| {
@@ -129,6 +144,7 @@ fn unknown_scope_and_missing_exact_source_do_not_fall_back_to_newer_defaults() {
     );
     assert!(store.workflow_progress("root", 1_000_001).is_err());
     conn.execute("UPDATE governance_records SET data=json_set(data,'$.plan.workflow_ref','frozen-workflow:3') WHERE id='root'",[]).unwrap();
+    display(&conn);
     assert!(store.workflow_progress("root", 0).is_err());
     conn.execute(
         "UPDATE governance_records SET scope='\"project:other\"' WHERE id='root'",

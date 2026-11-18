@@ -2,9 +2,57 @@ import { displayText } from "../display-text";
 import { type Request, type Row } from "./rpc-types";
 import { AgentTaskView } from "./WorkflowTaskPreview";
 import { RawJsonLink, ReadState, ReadableValue } from "./reading";
-import { useReading, navigateReading, executionUrl } from "./reading-state";
+import {
+  useReading,
+  navigateReading,
+  executionUrl,
+  readingKeys,
+} from "./reading-state";
 import { useState } from "react";
 import { WorkflowReferences } from "./WorkflowReferences";
+
+function ManualContext({
+  context,
+  projectId,
+  ownerId,
+  request,
+  onEdit,
+}: {
+  context: Row;
+  projectId: string;
+  ownerId: string;
+  request: Request;
+  onEdit?: (context: Row) => void;
+}) {
+  const state = useReading(
+    request,
+    "query.workflow_contexts",
+    { project_id: projectId, owner_id: ownerId, context_id: context.id },
+    Boolean(context.metadata_only),
+  );
+  const current = context.metadata_only ? state.value?.context : context;
+  return (
+    <section>
+      <ReadState {...state} />
+      {current && (
+        <>
+          <ReadableValue value={current.content} />
+          <RawJsonLink
+            source="context"
+            params={{
+              project_id: projectId,
+              owner_id: ownerId,
+              context_id: current.id,
+            }}
+          />
+          {onEdit && (
+            <button onClick={() => onEdit(current)}>编辑上下文</button>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
 
 function FrozenContext({
   entry,
@@ -17,6 +65,7 @@ function FrozenContext({
   ownerId: string;
   request: Request;
 }) {
+  const stepExecution = entry.kind !== "controller" && entry.execution_id;
   const state = useReading(
     request,
     "query.execution_task",
@@ -32,7 +81,7 @@ function FrozenContext({
       instance_id: entry.instance_id,
       execution_id: entry.execution_id,
     },
-    Boolean(entry.execution_id && !entry.task_available),
+    Boolean(stepExecution && !entry.task_available),
   );
   return (
     <>
@@ -61,7 +110,7 @@ function FrozenContext({
               />
             </>
           ) : (
-            !entry.execution_id && (
+            !stepExecution && (
               <p className="muted">
                 项目经理编排轮次的请求与响应见关联会话；它没有步骤冻结任务。
               </p>
@@ -120,6 +169,7 @@ export function WorkflowContexts({
   onEditContext?: (context: Row) => void;
 }) {
   const [offset, setOffset] = useState(0);
+  const [manualOpen, setManualOpen] = useState(false);
   const hasTarget = Boolean(
     target.execution_id ||
     target.turn_id ||
@@ -135,20 +185,34 @@ export function WorkflowContexts({
   const exactState = useReading(
     request,
     "query.workflow_contexts",
-    { project_id: projectId, owner_id: ownerId, ...target },
+    {
+      project_id: projectId,
+      owner_id: ownerId,
+      ...Object.fromEntries(
+        readingKeys
+          .filter((key) => target[key])
+          .map((key) => [key, target[key]]),
+      ),
+    },
     hasTarget,
   );
   const [showHistory, setShowHistory] = useState(false);
-  const turns: Row[] = (
-    exactState.value?.agents ||
-    state.value?.agents ||
-    []
-  ).flatMap((agent: Row) =>
-    agent.entries.map((entry: Row) => ({
-      ...entry,
-      actor: entry.actor || agent.actor,
-    })),
-  );
+  const turns: Row[] = [
+    ...new Map<string, Row>(
+      [
+        ...(state.value?.agents || []),
+        ...(exactState.value?.agents || []),
+      ].flatMap((agent: Row) =>
+        agent.entries.map(
+          (entry: Row) =>
+            [
+              `${entry.session_id}:${entry.turn_id}`,
+              { ...entry, actor: entry.actor || agent.actor },
+            ] as const,
+        ),
+      ),
+    ).values(),
+  ];
   const executions: Row[] = (state.value?.executions || []).filter(
     (execution: Row) =>
       execution.context_available ?? execution.status !== "queued",
@@ -358,26 +422,19 @@ export function WorkflowContexts({
         </div>
       )}
       {contexts.length > 0 && (
-        <details>
+        <details onToggle={(event) => setManualOpen(event.currentTarget.open)}>
           <summary>共享工作背景 · 手工维护（不代表当轮已发送）</summary>
-          {contexts.map((context) => (
-            <section key={context.id}>
-              <ReadableValue value={context.content} />
-              <RawJsonLink
-                source="context"
-                params={{
-                  project_id: projectId,
-                  owner_id: ownerId,
-                  context_id: context.id,
-                }}
+          {manualOpen &&
+            contexts.map((context) => (
+              <ManualContext
+                key={`${context.id}:${context.revision}`}
+                context={context}
+                projectId={projectId}
+                ownerId={ownerId}
+                request={request}
+                onEdit={onEditContext}
               />
-              {onEditContext && (
-                <button onClick={() => onEditContext(context)}>
-                  编辑上下文
-                </button>
-              )}
-            </section>
-          ))}
+            ))}
         </details>
       )}
     </section>

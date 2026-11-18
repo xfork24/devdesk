@@ -2,6 +2,8 @@
 
 此目录使用扁平源定义协议，只发布源数据。每个 JSON 包含 `type`、`identity`、`revision`、`name`、`scope`、根级引用字段及 `data`；引用统一为 `identity:revision`（Delivery 的 `producer.tools` 例外，按工具 `qualified_name` 声明行为约束而非内容引用）。修订不可变，使用方显式采用新引用。`manifest.json` 只声明发布资源与默认选择，不指定数据库表，也不重复维护引用图。文件名统一为 `<identity>-v<revision>.json`，目录内修订以文件内部的 `revision` 字段为准。
 
+本地目录中每个配置身份只保留最新修订。发布后继时同步移除旧 JSON 及不再引用的正文文件，并更新清单、默认选择和依赖引用。数据集中的历史源修订及运行快照按原引用保留，供已有执行追溯。
+
 ## 职责与引用
 
 | 类型 | 内容及直接依赖 |

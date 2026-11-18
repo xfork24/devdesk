@@ -1,11 +1,11 @@
 {
-  "workflow_ref": "builtin-workflow-feature-sol-high:8",
-  "task_workflow_ref": "builtin-workflow-task-sol-high:7",
+  "workflow_ref": "builtin-workflow-feature-sol-high:9",
+  "task_workflow_ref": "builtin-workflow-task-sol-high:8",
   "model_ref": "builtin-model-gpt-6-1-sol-high:1",
   "harness_ref": "builtin-harness-codex-managed:1",
   "sandbox_ref": "builtin-sandbox-docker:1",
   "capability_ref": "builtin-capability-sol-high-codex:4",
-  "standard_ref": "builtin-standard-engineering:6",
+  "standard_ref": "builtin-standard-engineering:7",
   "role_agent_bindings": {
     "builtin-role-analyst:1": "builtin-agent-sol-high-analyst:6",
     "builtin-role-architect:1": "builtin-agent-sol-high-architect:6",

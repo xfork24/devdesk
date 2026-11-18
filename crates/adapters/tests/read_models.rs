@@ -27,10 +27,27 @@ fn record_in_scope(
     id: &str,
     kind: &str,
     definition: &str,
-    data: Value,
+    mut data: Value,
 ) {
+    if kind == "workflow_instance"
+        && let Some(project) = scope.split(':').nth(1)
+    {
+        data["project_id"] = json!(project);
+    }
     conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,supersedes,content_hash,refs,data,immutable,revision,created_at) VALUES(?1,?2,?3,?4,?1,1,NULL,?5,'{}',?6,0,7,1)",
         params![id,kind,definition,json!(scope).to_string(),content_digest(&References::new(),&data),data.to_string()]).unwrap();
+    if kind == "workflow_instance" {
+        // Direct SQL fault fixtures must seed the transactional display rows
+        // too; production resource commits maintain them atomically.
+        conn.execute(
+            "INSERT INTO workflow_display_headers(instance_id,record) VALUES(?1,?2)",
+            params![id, json!({"id":id,"revision":7,"data":data}).to_string()],
+        )
+        .unwrap();
+        for step in data["steps"].as_array().into_iter().flatten() {
+            conn.execute("INSERT INTO workflow_display_steps(instance_id,execution_id,data,step_revision) VALUES(?1,?2,?3,1)",params![id,step["id"].as_str().unwrap(),step.to_string()]).unwrap();
+        }
+    }
 }
 fn fixture(
     root: &std::path::Path,
@@ -191,6 +208,149 @@ fn summaries_are_bounded_and_never_restore_unreadable_history_or_authorize_actio
         original
     );
     assert_eq!(detail.revision, controller.decisions[0].revision);
+}
+
+#[test]
+fn manager_cards_use_exact_display_facts_without_rebuilding_historical_plans() {
+    let directory = tempfile::tempdir().unwrap();
+    let (store, conn, _) = fixture(directory.path(), PROJECT, "经理摘要");
+    let update = |id: &str, data: Value| {
+        conn.execute(
+            "UPDATE governance_records SET data=?2,content_hash=?3 WHERE id=?1",
+            params![
+                id,
+                data.to_string(),
+                content_digest(&References::new(), &data)
+            ],
+        )
+        .unwrap();
+        if data["steps"].is_array() {
+            conn.execute(
+                "UPDATE workflow_display_headers SET record=json_set(record,'$.data',json(?2)) WHERE instance_id=?1",
+                params![id, data.to_string()],
+            )
+            .unwrap();
+            for step in data["steps"].as_array().unwrap() {
+                conn.execute(
+                    "UPDATE workflow_display_steps SET data=?3 WHERE instance_id=?1 AND execution_id=?2",
+                    params![id, step["id"].as_str().unwrap(), step.to_string()],
+                )
+                .unwrap();
+            }
+        }
+    };
+    let mut root: Value = conn
+        .query_row(
+            "SELECT data FROM governance_records WHERE id='root'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .map(|text| serde_json::from_str(&text).unwrap())
+        .unwrap();
+    root["active_plan_revision_id"] = json!("plan:1");
+    root["steps"][0]["status"] = json!("waiting_confirmation");
+    root["steps"][0]["input_digest"] = json!("original-input");
+    root["steps"][0]["outputs"] = json!({"result":"original-output"});
+    update("root", root.clone());
+    let request = json!({"operation":"workflow.step.confirm","arguments":{"execution_id":"execution-0","input_digest":"original-input","outputs":{"result":"original-output"}},"interaction":{"title":"真实人类请求"}});
+    for n in 0..15 {
+        update(
+            &format!("decision-{n}"),
+            json!({"status":"pending","plan_revision_id":"plan:1","request":request}),
+        );
+    }
+    update(
+        "child-0",
+        json!({"project_id":PROJECT,"owner_id":PROJECT,"root_instance_id":"root","parent_execution_id":"execution-0","active_plan_revision_id":"child-plan:1","status":"running"}),
+    );
+    record(
+        &conn,
+        PROJECT,
+        "signed-child-decision",
+        "workflow_pending_decision",
+        "child-0",
+        json!({"status":"approved","plan_revision_id":"child-plan:1","request":{"operation":"inspect","arguments":{}},"decision_ref":"exact-human-decision","reason":"人类原始意见"}),
+    );
+    let engine = Engine::new(
+        store.clone(),
+        Arc::new(FileArtifacts::new(std::path::PathBuf::from(store.root()))),
+        runtime::adapters(),
+    );
+    // Measure the ordinary refresh path separately from the initial immutable
+    // catalog load; the unreadable historical plan must never be expanded.
+    engine.store.configuration_snapshot().unwrap();
+    let trace = performance::Trace::start();
+    let view = engine
+        .query(
+            "query.orchestration",
+            &json!({"root_instance_id":"root"}),
+            1,
+        )
+        .unwrap();
+    let measurement = trace.finish();
+    for stage in [
+        "project.full_snapshot",
+        "source.restore_reference",
+        "source.restore_records",
+    ] {
+        assert!(measurement["spans"][stage].is_null(), "{measurement}");
+    }
+    let cards = view["decisions"].as_array().unwrap();
+    assert_eq!(cards.len(), 11);
+    assert!(cards.iter().all(|card| card["current"] == true));
+    let signed = cards
+        .iter()
+        .find(|card| card["id"] == "signed-child-decision")
+        .unwrap();
+    assert_eq!(signed["ancestor_instance_ids"], json!(["root"]));
+    assert_eq!(signed["data"]["decision_ref"], "exact-human-decision");
+    assert_eq!(signed["data"]["reason"], "人类原始意见");
+    assert!(serde_json::to_vec(&view).unwrap().len() < 32 * 1024);
+    root["steps"][0]["outputs"] = json!({"result":"different-output"});
+    update("root", root.clone());
+    let changed = engine
+        .query(
+            "query.orchestration",
+            &json!({"root_instance_id":"root"}),
+            1,
+        )
+        .unwrap();
+    assert!(
+        changed["decisions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|card| card["definition_id"] == "root")
+            .all(|card| card["current"] == false)
+    );
+    root["steps"][0]["outputs"] = json!({"result":"original-output"});
+    root["steps"][0]["status"] = json!("completed");
+    update("root", root.clone());
+    let context = store
+        .workflow_decision_context("root", Some("execution-0"))
+        .unwrap();
+    assert_eq!(
+        context.execution.unwrap().status,
+        devdesk_domain::StepExecutionStatus::Completed
+    );
+    assert!(
+        store
+            .workflow_decision_context("root", Some("not-current-execution"))
+            .unwrap()
+            .execution
+            .is_none()
+    );
+    let other = SqliteStore::open_project(directory.path(), OTHER).unwrap();
+    assert!(other.workflow_decision_context("root", None).is_err());
+    root["parent_execution_id"] = json!("execution-0");
+    update("root", root);
+    assert!(
+        store
+            .workflow_decision_context("root", None)
+            .unwrap_err()
+            .message
+            .contains("循环")
+    );
 }
 
 #[test]
@@ -590,4 +750,284 @@ fn event_tails_mark_large_events_for_reset_without_copying_their_bodies() {
     let exact = store.events_after(cursor, 100).unwrap();
     assert_eq!(exact[0].detail.len(), 1_000_000);
     assert_eq!(exact[1].id, hints[1].event.id);
+}
+
+#[test]
+fn operational_tool_filter_recognizes_compacted_bound_tool_references() {
+    let root = tempfile::tempdir().unwrap();
+    let (store, conn, _) = fixture(root.path(), PROJECT, "excerpt");
+    let data = json!({"status":"succeeded","remote_effect":"applied","invocation":{"tool":{"$source":"bound_tool","tool_ref":"original-tool:1","binding_ref":"original-binding:1"}}});
+    conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('compacted-call','tool_call','compacted-call',?1,'Compacted external call',1,'fixture','{}',?2,0,1,1)",params![json!(format!("project:{PROJECT}")).to_string(),data.to_string()]).unwrap();
+    store.configuration_snapshot().unwrap();
+    let trace = performance::Trace::start();
+    let value = store
+        .operational_read(
+            "query.tool_calls",
+            &json!({"tool_ref":"original-tool:1","view":"summary"}),
+        )
+        .unwrap();
+    assert_eq!(value["total"], 1);
+    assert_eq!(value["records"][0]["id"], "compacted-call");
+    assert_eq!(value["records"][0]["data"]["status"], "succeeded");
+    assert_eq!(value["records"][0]["metadata_only"], true);
+    assert_eq!(
+        store
+            .operational_read(
+                "query.tool_calls",
+                &json!({"tool_ref":"different-tool:1","view":"summary"})
+            )
+            .unwrap()["total"],
+        0
+    );
+    let measured = trace.finish();
+    for stage in [
+        "project.full_snapshot",
+        "project.transaction",
+        "source.restore_records",
+        "workflow.compile",
+    ] {
+        assert!(measured["spans"][stage].is_null(), "{measured}");
+    }
+}
+
+#[test]
+fn exact_control_reads_do_not_restore_an_unrelated_plan_and_expose_original_pr_creation() {
+    let directory = tempfile::tempdir().unwrap();
+    let (store, conn, _) = fixture(directory.path(), PROJECT, "Control");
+    let engine = Engine::new(
+        store.clone(),
+        Arc::new(FileArtifacts::new(store.root().into())),
+        runtime::adapters(),
+    );
+    let execution = json!({"id":"publish-execution","workflow_instance_id":"root","workflow_revision_id":"missing:1","plan_revision_id":"missing-plan","node_id":"node","contract_digest":"digest","path":"/publish","step":"publish","round":1,"sequence":1,"status":"running","input_digest":"inputs","inputs":{"document":"exact input"},"outputs":{},"agent_revision_id":null,"session_id":null,"turn_id":null,"tool_call_id":"publish-execution","started":1,"finished":null,"reason":""});
+    conn.execute(
+        "UPDATE governance_records SET data=json_set(data,'$.steps',json(?1)) WHERE id='root'",
+        [json!([execution]).to_string()],
+    )
+    .unwrap();
+    record(
+        &conn,
+        PROJECT,
+        "material",
+        "typed_material",
+        "material",
+        json!({"root_instance_id":"root","value":{"body":"exact output"}}),
+    );
+    record(
+        &conn,
+        PROJECT,
+        "publish-execution",
+        "platform_call",
+        "publish-execution",
+        json!({"handler":"git.publish","issuer":"kernel_platform","root_instance_id":"root","status":"dispatched","effect_id":"effect","request":{"execution_id":"publish-execution","instance_id":"root","project_id":PROJECT,"arguments":{"candidate":{"revision":"candidate"}}}}),
+    );
+    let request = devdesk_domain::PullRequestRequest {
+        repository: "fixture/repo".into(),
+        project: PROJECT.into(),
+        merge: "physical".into(),
+        head_branch: "candidate-branch".into(),
+        base_branch: "main".into(),
+        candidate: "candidate".into(),
+        expected_target: "parent".into(),
+        number: None,
+    };
+    let stage = "platform-publish-stage:effect:pull_request";
+    record(
+        &conn,
+        PROJECT,
+        stage,
+        "platform_publish_stage",
+        "effect",
+        json!({"issuer":"kernel_platform","action":{"PullRequest":request}}),
+    );
+    let receipt = json!({"repository":"fixture/repo","number":7,"url":"https://example.test/7","head":"candidate","base":"parent","head_branch":"candidate-branch","base_branch":"main","merged":false,"merge_commit":null,"marker":request.marker()});
+    record(
+        &conn,
+        PROJECT,
+        "pr-observation",
+        "platform_effect_observation",
+        stage,
+        json!({"issuer":"kernel_platform","effect_id":stage,"phase":"result","result":{"Ok":receipt}}),
+    );
+    conn.execute(
+        "UPDATE governance_records SET immutable=1 WHERE id IN ('material',?1,'pr-observation')",
+        [stage],
+    )
+    .unwrap();
+    store.configuration_snapshot().unwrap();
+    let trace = performance::Trace::start();
+    let input = engine
+        .query(
+            "workflow.execution.inspect",
+            &json!({"id":"root","execution_id":"publish-execution","part":"inputs"}),
+            4,
+        )
+        .unwrap();
+    assert_eq!(input["value_chunk"], "{\"document\":\"exact input\"}");
+    let outputs = engine
+        .query(
+            "workflow.outputs.read",
+            &json!({"id":"root","ids":["material"]}),
+            4,
+        )
+        .unwrap();
+    assert_eq!(
+        outputs["outputs"][0]["data"]["value"]["body"],
+        "exact output"
+    );
+    let observed = engine
+        .query(
+            "workflow.execution.inspect",
+            &json!({"id":"root","execution_id":"publish-execution"}),
+            4,
+        )
+        .unwrap();
+    assert_eq!(observed["publication"]["creation_receipt"], receipt);
+    assert_eq!(observed["publication"]["advisory"], true);
+    assert_eq!(observed["publication"]["observation_id"], "pr-observation");
+    let mut feature_step = execution.clone();
+    feature_step["workflow_instance_id"] = json!("feature-read");
+    feature_step["tool_call_id"] = Value::Null;
+    record_in_scope(
+        &conn,
+        &format!("feature:{PROJECT}:fixture-feature"),
+        "feature-read",
+        "workflow_instance",
+        "fixture-feature",
+        json!({"project_id":PROJECT,"root_instance_id":"feature-read","plan":{"$source":"unreadable"},"steps":[feature_step]}),
+    );
+    let feature_input = engine
+        .query(
+            "workflow.execution.inspect",
+            &json!({"id":"feature-read","execution_id":"publish-execution","part":"inputs"}),
+            4,
+        )
+        .unwrap();
+    assert_eq!(feature_input["value_chunk"], input["value_chunk"]);
+    let trace = trace.finish();
+    for span in [
+        "project.full_snapshot",
+        "source.restore_reference",
+        "project.transaction",
+    ] {
+        assert!(trace["spans"][span].is_null(), "{trace}");
+    }
+    assert!(
+        engine
+            .query(
+                "workflow.execution.inspect",
+                &json!({"id":"root","project_id":OTHER,"execution_id":"publish-execution"}),
+                4
+            )
+            .is_err()
+    );
+    record(
+        &conn,
+        PROJECT,
+        "foreign-material",
+        "typed_material",
+        "foreign-material",
+        json!({"root_instance_id":"foreign","value":"foreign"}),
+    );
+    conn.execute(
+        "UPDATE governance_records SET immutable=1 WHERE id='foreign-material'",
+        [],
+    )
+    .unwrap();
+    assert!(
+        engine
+            .query(
+                "workflow.outputs.read",
+                &json!({"id":"root","ids":["foreign-material"]}),
+                4
+            )
+            .is_err()
+    );
+    conn.execute("UPDATE governance_records SET data=json_set(data,'$.root_instance_id','foreign') WHERE id='publish-execution'", []).unwrap();
+    assert!(
+        engine
+            .query(
+                "workflow.execution.inspect",
+                &json!({"id":"root","execution_id":"publish-execution"}),
+                4
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn selected_predicate_reads_reuse_the_payload_but_commit_checks_a_fresh_epoch() {
+    use devdesk_core::concurrency::*;
+    let directory = tempfile::tempdir().unwrap();
+    let (store, conn, _) = fixture(directory.path(), PROJECT, "Epoch");
+    record(
+        &conn,
+        PROJECT,
+        "waiver",
+        "workflow_waiver",
+        "plan",
+        json!({"plan_revision_id":"plan","node_id":"node","requirement":"confirmation"}),
+    );
+    let key = ResourceKey::new(
+        "workflow_waiver",
+        json!(["plan", "node", "confirmation"]).to_string(),
+    );
+    let trace = performance::Trace::start();
+    let original = store
+        .read_resources(std::slice::from_ref(&key))
+        .unwrap()
+        .remove(0);
+    let measured = trace.finish();
+    assert_eq!(original.revision, 7);
+    assert_eq!(
+        measured["spans"]["sqlite.table_read_decode"]["calls"], 1,
+        "{measured}"
+    );
+    conn.execute(
+        "UPDATE governance_records SET revision=8 WHERE id='waiver'",
+        [],
+    )
+    .unwrap();
+    let setting = ResourceKey::new("context", "predicate-fixture");
+    let change = PreparedChangeSet {
+        command_id: "stale-predicate".into(),
+        fingerprint: "predicate-test".into(),
+        read_set: ReadSet::new(vec![
+            ResourceVersion {
+                resource: key.clone(),
+                revision: original.revision,
+            },
+            ResourceVersion {
+                resource: setting.clone(),
+                revision: 0,
+            },
+        ])
+        .unwrap(),
+        changes: vec![ResourceChange {
+            resource: setting.clone(),
+            value: json!({"id":"predicate-fixture","owner_id":PROJECT,"content":"accepted with a fresh predicate","revision":1}),
+        }],
+        result: Value::Null,
+        time: 1,
+    };
+    assert_eq!(
+        store.commit_changes(&change).unwrap_err().code,
+        "revision_conflict"
+    );
+    let fresh = store.read_resources(&[key]).unwrap().remove(0);
+    assert_eq!(fresh.revision, 8);
+    let mut change = change;
+    change.command_id = "fresh-predicate".into();
+    change.read_set = ReadSet::new(vec![
+        ResourceVersion {
+            resource: fresh.resource,
+            revision: fresh.revision,
+        },
+        ResourceVersion {
+            resource: setting,
+            revision: 0,
+        },
+    ])
+    .unwrap();
+    store.commit_changes(&change).unwrap();
 }

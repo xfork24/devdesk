@@ -9,21 +9,53 @@ export function RuntimePreparationStatus({
   const [preparations, setPreparations] = useState<Preparation[]>([]);
   useEffect(() => {
     let active = true;
+    let running = false;
+    let dirty = false;
+    let pending = 0;
     let timer: ReturnType<typeof setTimeout>;
     async function poll() {
+      if (!active) return;
+      if (running) {
+        dirty = true;
+        return;
+      }
+      if (document.visibilityState === "hidden") return;
+      running = true;
+      dirty = false;
+      let delay = 30000;
       try {
         const value = await request("runtime.preparation_status");
         if (active) setPreparations(value.preparations);
+        if (
+          pending > 0 ||
+          value.preparations.some(
+            (p) => !["ready", "failed"].includes(p.status),
+          )
+        )
+          delay = 1500;
       } catch {
-        /* Connection failures are shown by the workspace connection indicator. */
+        // Connection status is reported by the workspace indicator.
       } finally {
-        if (active) timer = setTimeout(poll, 1500);
+        running = false;
+        if (active) timer = setTimeout(poll, dirty ? 100 : delay);
       }
     }
+    const changed = (event: Event) => {
+      const change = (event as CustomEvent<{ pending?: boolean }>).detail
+        ?.pending;
+      if (change !== undefined)
+        pending = Math.max(0, pending + (change ? 1 : -1));
+      clearTimeout(timer);
+      void poll();
+    };
+    document.addEventListener("visibilitychange", changed);
+    window.addEventListener("devdesk.runtime-preparation", changed);
     void poll();
     return () => {
       active = false;
       clearTimeout(timer);
+      document.removeEventListener("visibilitychange", changed);
+      window.removeEventListener("devdesk.runtime-preparation", changed);
     };
   }, [request]);
   return (

@@ -3,10 +3,11 @@
 import argparse,json,os,shutil,subprocess,tempfile,time,uuid,sys,signal
 from pathlib import Path
 from client import Client
-parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--binary',type=Path,required=True);parser.add_argument('--codex-auth-source',type=Path,required=True);parser.add_argument('--report-directory',type=Path);args=parser.parse_args()
+parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--binary',type=Path,required=True);parser.add_argument('--codex-auth-source',type=Path,required=True);parser.add_argument('--report-directory',type=Path);parser.add_argument('--frontends',type=int,choices=[0,100],default=0);parser.add_argument('--prepare-frontend-fixture',action='store_true');args=parser.parse_args()
 OUT=args.report_directory or Path(tempfile.mkdtemp(prefix='devdesk-native-v5-'));OUT.mkdir(parents=True,exist_ok=True);OUT=OUT.resolve(); print('Evidence:',OUT,flush=True)
 private_binary=OUT/'devdesk-host';shutil.copy2(args.binary.resolve(),private_binary)
 child=subprocess.Popen([str(private_binary),'--data',str(OUT/'data'),'--port','0'],stdout=(OUT/'host.log').open('w'),stderr=subprocess.STDOUT)
+native_load=None
 try:
  for _ in range(100):
   lines=(OUT/'host.log').read_text().splitlines(); urls=[r for r in lines if r.startswith('http://')]
@@ -37,24 +38,30 @@ try:
  profile_ref=f"{permission['identity']}:{permission['revision']}"
  next(step for step in document['steps'] if step['key']=='investigate')['harness_permission_ref']=profile_ref
  draft=c.command('workflow.create',payload={'name':'自定义数字研究','document':document});workflow=c.command('workflow.publish',draft['id'],draft['revision'])
- p=c.rpc('query.workspace')['active_project'];c.command('project.configuration.update',project,p['revision'],{'workflow_ref':workflow['id'],'role_agent_bindings':{**defaults['role_agent_bindings'],role['id']:agent['id']},'harness_permission_ref':defaults['harness_permission_ref']})
- p=c.rpc('query.workspace')['active_project'];run=c.command('workflow.start',project,p['revision'],{'workflow_ref':workflow['id'],'role_agent_bindings':{role['id']:agent['id']}})
- manager=c.command('orchestration.open',run['id'],payload={'role_ref':defaults['orchestrator_role_ref'],'agent_ref':defaults['role_agent_bindings'][defaults['orchestrator_role_ref']],'harness_permission_ref':defaults['harness_permission_ref']})['id']
- manager_row=c.rpc('query.orchestration',{'id':manager})['record']
- c.command('orchestration.input',manager,manager_row['revision'],{'input':'按当前调查流程派发、核对、接纳每步并完成。必须使用真实业务 Agent 和工具，不更改或绕过计划。'})
+ p=c.rpc('query.execution_workspace')['active_project'];c.command('project.configuration.update',project,p['revision'],{'workflow_ref':workflow['id'],'role_agent_bindings':{**defaults['role_agent_bindings'],role['id']:agent['id']},'orchestrator_role_ref':defaults['orchestrator_role_ref'],'harness_permission_ref':defaults['harness_permission_ref'],'orchestration':{'mode':'agent'}})
+ if args.frontends or args.prepare_frontend_fixture:
+  sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'performance'))
+  from native_frontend_load import NativeFrontendLoad
+  native_load=NativeFrontendLoad(Client,urls[0],OUT/'frontend-load',100)
+  if args.frontends:native_load.begin(project)
+ p=c.rpc('query.execution_workspace')['active_project'];run=c.command('workflow.start',project,p['revision'],{'workflow_ref':workflow['id'],'role_agent_bindings':{**defaults['role_agent_bindings'],role['id']:agent['id']},'orchestrator_role_ref':defaults['orchestrator_role_ref'],'harness_permission_ref':defaults['harness_permission_ref'],'orchestration':{'mode':'agent'}})
+ if native_load:native_load.attach(project,run['id'])
+ manager=c.rpc('query.orchestration',{'root_instance_id':run['id']})['record']['id']
  last=None
  for _ in range(900):
-  rows=c.rpc('query.workspace')['configurations'];row=next(r for r in rows if r['id']==run['id']);steps=row['data']['steps'];status=[(r['step'],r['status'],r['reason']) for r in steps]
+  view=c.rpc('query.workflow_instance',{'id':run['id'],'view':'status'});row=view['record'];steps=view['runtime']['steps'];status=[(r['step'],r['status'],r.get('reason','')) for r in steps]
   if status!=last:print(status,flush=True);last=status
   if row['data']['status']=='completed':break
   if any(r['status'] in ['failed','needs_reconciliation','cancelled'] for r in steps):raise RuntimeError(status)
   time.sleep(1)
  else:raise TimeoutError('Free business workflow')
  view=c.rpc('query.workflow_instance',{'id':run['id']});(OUT/'free-workflow.json').write_text(json.dumps(view,ensure_ascii=False,indent=2))
- output=view['outputs'][steps[0]['outputs']['result']]['value'];assert output=={'ordered':[3,3,2,1],'sum':9},output
- assert steps[1]['inputs']['analysis']==output
- task=c.rpc('query.execution_task',{'turn_id':steps[0]['turn_id']});(OUT/'free-task.json').write_text(json.dumps(task,ensure_ascii=False,indent=2));assert task['configured'] and task['task']['renderer_version']=='agent-task/v6'
- calls=c.rpc('query.tool_calls',{'turn_id':steps[0]['turn_id']})['records'];actual=next(call for call in calls if call['type']=='platform_call' and call['data']['status']=='succeeded');assert actual['data']['platform_receipt']['inputs']==output
+ investigate=next(step for step in view['runtime']['steps'] if step['step']=='investigate')
+ consume=next(step for step in view['runtime']['steps'] if step['step']=='consume')
+ output=view['outputs'][investigate['outputs']['result']]['value'];assert output=={'ordered':[3,3,2,1],'sum':9},output
+ assert consume['inputs']['analysis']==output
+ task=c.rpc('query.execution_task',{'turn_id':investigate['turn_id']});(OUT/'free-task.json').write_text(json.dumps(task,ensure_ascii=False,indent=2));assert task['configured'] and task['task']['renderer_version']=='agent-task/v6'
+ calls=c.rpc('query.tool_calls',{'turn_id':investigate['turn_id']})['records'];actual=next(call for call in calls if call['type']=='platform_call' and call['data']['status']=='succeeded');assert actual['data']['platform_receipt']['inputs']==output
  (OUT/'native-platform-call.json').write_text(json.dumps(actual,ensure_ascii=False,indent=2))
  # Workflow completion can precede the manager receiving its last native reply.
  # Let that real Turn finish and the Host revoke its writer before stopping it.
@@ -72,7 +79,12 @@ try:
 except BaseException as error:
  (OUT/'failure.txt').write_text(str(error));raise
 finally:
+ if native_load:
+  load_summary=native_load.finish()
+  print('Frontend load:',json.dumps(load_summary),flush=True)
  if child.poll() is None:child.send_signal(signal.SIGINT);child.wait(timeout=60)
  shutil.rmtree(OUT/'data/credentials',ignore_errors=True)
  for private_auth in (OUT/'data').rglob('auth.json'):private_auth.unlink(missing_ok=True)
  print('Evidence:',OUT,flush=True)
+
+if native_load and (load_summary['errors'] or load_summary['failures']):raise RuntimeError('Native workflow HTTP load failed; all samples retained')

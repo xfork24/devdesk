@@ -1,7 +1,7 @@
 import { chromium } from "../../web/node_modules/playwright-core/index.mjs";
 import fs from "node:fs";
 
-const [origin, output, count, , selectedProject] = process.argv.slice(2);
+const [origin, output, count, , selectedProject, selectedFeature] = process.argv.slice(2);
 const browser = await chromium.launch({ channel: "chromium", headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 const trace = [], navigation = [], errors = [], consoleErrors = [];
@@ -62,6 +62,7 @@ try {
     if (value.error) throw Error(JSON.stringify(value.error));
     return { project, feature: value.result.features?.[0]?.id };
   }, selectedProject);
+  if (selectedFeature) bootstrap.feature = selectedFeature;
   if (!bootstrap.project || !bootstrap.feature) throw Error("execution baseline needs a project and Feature");
   await page.goto(`${origin}/?tab=overview&detail=manager&project_id=${encodeURIComponent(bootstrap.project)}&feature_id=${encodeURIComponent(bootstrap.feature)}`);
   const execution = page.getByRole("button", { name: "执行与交付", exact: true });

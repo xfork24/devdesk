@@ -151,9 +151,9 @@ fn actual_git_docker_workflow_handoffs() {
         let trace = performance::Trace::start();
         let result = w.tick(|| false);
         let measurement = trace.finish();
-        assert_eq!(
-            measurement["spans"]["runtime.evaluate_workflows"]["calls"], 1,
-            "single evaluation owner per project tick"
+        assert!(
+            measurement["spans"]["runtime.evaluate_workflows"].is_null(),
+            "workflow evaluation runs in the bounded background worker, never the scheduler polling thread"
         );
         ticks.push(json!({"elapsed_ms":started.elapsed().as_secs_f64()*1000.0,"result":result.as_ref().err(),"measurement":measurement}));
         std::fs::write(

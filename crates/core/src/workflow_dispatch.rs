@@ -1,5 +1,6 @@
 //! Dispatch prepares one actual execution and its durable runtime commands.
-//! Source compilation is configuration-only; no external operation occurs here.
+//! Source compilation is configuration-only. Writer preflight only reads Git;
+//! external mutations remain in durable runtime commands.
 use crate::{
     concurrency::*,
     governance::record,
@@ -191,6 +192,7 @@ impl WorkflowCommit<'_> {
                 crate::configured_runtime::checkpoint_workspace(&next, &value),
             );
         }
+        self.require_writer_workspace(resources, step, &next)?;
         next.input_digest = configuration_hash(&next.inputs);
         next.started = Some(now());
         next.status = StepExecutionStatus::Running;
@@ -252,6 +254,28 @@ impl WorkflowCommit<'_> {
             self.header(root, &header)?;
         }
         Ok(next)
+    }
+    pub(crate) fn require_writer_workspace(
+        &mut self,
+        resources: &WorkflowResources,
+        step: &StepDefinition,
+        execution: &StepExecution,
+    ) -> Result<()> {
+        if step.access.writable_paths.is_empty()
+            || !matches!(step.executor, StepExecutor::Agent { .. })
+        {
+            return Ok(());
+        }
+        let (view, reads) =
+            self.engine
+                .formal_input_code_view(&resources.instance, execution, step)?;
+        self.witness(reads.versions().iter().cloned())?;
+        if let Some(view) = view {
+            self.engine
+                .git
+                .validate_workspace(&view.context, &view.revision)?;
+        }
+        Ok(())
     }
     pub fn require_dispatch(
         &mut self,

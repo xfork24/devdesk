@@ -87,6 +87,8 @@ pub struct ContainerSpec {
     pub profile_target: Option<String>,
     #[serde(default)]
     pub skill_directory: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command_output_directory: Option<PathBuf>,
     #[serde(default)]
     pub sensitive_output: bool,
 }
@@ -718,6 +720,21 @@ impl DockerSandbox {
         }
         if spec.sensitive_output {
             args.extend(["--log-driver".into(), "none".into()]);
+        }
+        if let Some(path) = &spec.command_output_directory {
+            reject_symlink(path)?;
+            let path = fs::canonicalize(path).map_err(storage)?;
+            require(
+                path.starts_with(&self.root) && path.is_dir(),
+                "命令输出必须属于当前执行根",
+            )?;
+            args.extend([
+                "--mount".into(),
+                format!(
+                    "type=bind,source={},target=/run/devdesk/command-output,readonly",
+                    path.display()
+                ),
+            ]);
         }
         if let Some(path) = &spec.skill_directory {
             reject_symlink(path)?;

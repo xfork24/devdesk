@@ -37,6 +37,7 @@ def main():
     parser.add_argument("--dataset", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--project", help="Explicit project fixture ID; defaults to the backup selection or first project")
+    parser.add_argument("--feature", help="Exact Feature for the execution-page cohort")
     parser.add_argument("--samples", type=int, default=30)
     parser.add_argument("--browser", action="store_true")
     parser.add_argument("--cold-browser", action="store_true", help="Reload JavaScript/configuration cache on every navigation")
@@ -49,6 +50,11 @@ def main():
     if (args.browser or args.cold_browser or args.model_conditions) and args.assert_configuration_isolation:
         parser.error("configuration isolation assertions apply to the RPC cohort")
     args.output.mkdir(parents=True, exist_ok=False)
+    tooling = {}
+    for name in ["configuration_loading.py", "configuration-loading.mjs", "execution-loading.mjs", "model-loading.mjs"]:
+        source = Path(__file__).with_name(name)
+        tooling[name] = hashlib.sha256(source.read_bytes()).hexdigest()
+        shutil.copy2(source, args.output / name)
     binary = args.output / "host-tests"
     shutil.copy2(args.test_binary, binary)
     binary.chmod(0o700)
@@ -65,6 +71,9 @@ def main():
         env["DEVDESK_PERF_PROJECT"] = project
     env.pop("DEVDESK_ACCESS_TOKEN", None)
     metadata = {"binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(), "source_dataset": str(args.dataset.resolve()), "samples": args.samples, "project_id": project, "offline": True, "scheduler": False, "node": subprocess.check_output(["node", "--version"], text=True).strip()}
+    metadata["tooling_sha256"] = tooling
+    metadata["copied_input_databases"] = {str(path.relative_to(dataset)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(dataset.rglob("*.sqlite3"))}
+    metadata["feature_id"] = args.feature
     (args.output / "identity.json").write_text(json.dumps(metadata, indent=2))
     if not (args.browser or args.cold_browser or args.model_conditions):
         subprocess.run([str(binary.resolve()), "loading_performance::configuration_load_profile", "--ignored", "--exact", "--nocapture"], env=env, check=True)
@@ -101,7 +110,7 @@ def main():
             if not origin:
                 raise RuntimeError("benchmark server failed to start")
             script = "model-loading.mjs" if args.model_conditions else "execution-loading.mjs" if args.browser_page == "execution" else "configuration-loading.mjs"
-            extras = [project or ""] if args.browser_page == "execution" and not args.model_conditions else ["cold" if args.cold_browser else "warm", project or ""]
+            extras = [project or "", args.feature or ""] if args.browser_page == "execution" and not args.model_conditions else ["cold" if args.cold_browser else "warm", project or ""]
             subprocess.run(["node", str(Path(__file__).with_name(script)), origin, str(args.output.resolve()), str(args.samples), str(server.pid), *extras], check=True)
         finally:
             server.send_signal(__import__("signal").SIGINT)

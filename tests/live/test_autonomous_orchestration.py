@@ -19,6 +19,11 @@ class AutonomyTests(unittest.TestCase):
         self.record("start", "workflow_decision", {"actor": {"kind": "human"}, "operation": "start", "instance_id": "root", "root_instance_id": "root"})
         self.record("dispatch", "workflow_decision",
                     {"actor": {"kind": "controller", "controller_id": "manager", "epoch": 1}})
+        self.record("root", "workflow_instance", {"owner_id":"feature", "workflow_ref":"workflow:1"})
+        self.record("start-command", "command_context", {
+            "context":{"actor":{"kind":"human"}}, "target":"feature",
+            "request_digest":json.dumps(["workflow.start","feature",1,{"workflow_ref":"workflow:1"}])
+        }, "workflow.start")
 
     def tearDown(self):
         self.db.close()
@@ -29,6 +34,33 @@ class AutonomyTests(unittest.TestCase):
 
     def test_one_goal_and_native_manager_decision_pass(self):
         self.assertEqual(verify(self.db, "root")["external_steering_count"], 0)
+
+    def test_native_layout_start_without_legacy_start_decision_passes(self):
+        self.db.execute("DELETE FROM governance_records WHERE id='start'")
+        self.assertEqual(verify(self.db,"root")["initial_human_start_commands"],1)
+
+    def test_default_start_is_bound_to_its_original_command_result(self):
+        self.db.execute("ALTER TABLE governance_records ADD COLUMN definition_id TEXT")
+        self.db.execute("CREATE TABLE operations(id TEXT,fingerprint TEXT,result TEXT)")
+        request = json.dumps(["workflow.start", "feature", 1, {}])
+        self.db.execute("UPDATE governance_records SET definition_id='command',data=? WHERE id='start-command'", (json.dumps({"context":{"actor":{"kind":"human"}},"target":"feature","request_digest":request}),))
+        result = {"id":"root","type":"workflow_instance","data":{"owner_id":"feature","workflow_ref":"workflow:1"}}
+        self.db.execute("INSERT INTO operations VALUES (?,?,?)", ("command",request,json.dumps(result)))
+        self.assertTrue(verify(self.db,"root")["passed"])
+        result["data"]["workflow_ref"] = "foreign:1"
+        self.db.execute("UPDATE operations SET result=?", (json.dumps(result),))
+        with self.assertRaisesRegex(AssertionError, "different root or Workflow"):
+            verify(self.db,"root")
+
+    def test_missing_actual_start_command_is_rejected(self):
+        self.db.execute("DELETE FROM governance_records WHERE id='start-command'")
+        with self.assertRaisesRegex(AssertionError,"exactly one initial Human start"):
+            verify(self.db,"root")
+
+    def test_start_for_another_owner_is_rejected(self):
+        self.db.execute("UPDATE governance_records SET data=json_set(data,'$.target','foreign') WHERE id='start-command'")
+        with self.assertRaises(AssertionError):
+            verify(self.db,"root")
 
     def test_extra_human_guidance_is_rejected(self):
         self.record("input", "controller_input", {"input": "现在派发设计步骤"})

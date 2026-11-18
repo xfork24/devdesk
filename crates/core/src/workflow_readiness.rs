@@ -169,9 +169,18 @@ impl Engine {
             accept,
             retry,
         };
-        Ok(
-            json!({"step":step.key,"node_id":step.node_id,"execution":e,"step_revision":resources.step.revision,"dispatchable":actions.dispatch.allowed,"actions":actions,"retry_count":retry_count,"input_gap":input_gap,"completion_satisfied":completion,"completion_overridden":overridden,"human_satisfied":human,"confirmation_status":disposition,"confirmation_ref":confirmation,"confirmation_waiver_ref":if waived{waiver.value.as_ref().map(|r|&r["id"])}else{None}}),
-        )
+        let mut result = json!({"step":step.key,"node_id":step.node_id,"execution":e,"step_revision":resources.step.revision,"dispatchable":actions.dispatch.allowed,"actions":actions,"retry_count":retry_count,"input_gap":input_gap,"completion_satisfied":completion,"completion_overridden":overridden,"human_satisfied":human,"confirmation_status":disposition,"confirmation_ref":confirmation,"confirmation_waiver_ref":if waived{waiver.value.as_ref().map(|r|&r["id"])}else{None}});
+        if matches!(
+            e.status,
+            StepExecutionStatus::Running | StepExecutionStatus::NeedsReconciliation
+        ) && let Some(progress) = self.publication_read_progress(
+            &root.instance.project_id,
+            &root.instance.root_instance_id,
+            e,
+        )? {
+            result["publication"] = progress;
+        }
+        Ok(result)
     }
     pub(crate) fn native_completion_ready(&self, root: &WorkflowHeaderFacts) -> Result<bool> {
         if root.instance.cancel_requested
@@ -237,6 +246,9 @@ impl Engine {
             .all(|s| facts.facts.value(s).is_some()))
     }
     pub(crate) fn native_workflow_control_query(&self, method: &str, p: &Value) -> Result<Value> {
+        if let Some(result) = self.finite_workflow_control_read(method, p) {
+            return result;
+        }
         let root = WorkflowHeaderFacts::read(
             self,
             p["id"]
@@ -248,7 +260,11 @@ impl Engine {
             require(project == root.instance.project_id, "项目不匹配")?;
         }
         if method == "workflow.outputs.read" {
-            return self.native_root_outputs(&root, p);
+            return self.native_root_outputs(
+                &root.instance.project_id,
+                &root.instance.root_instance_id,
+                p,
+            );
         }
         if method == "workflow.events.read" {
             let cursor = p["cursor"].as_u64().unwrap_or(0);
@@ -290,10 +306,59 @@ impl Engine {
                 owner.instance.root_instance_id == root.instance.root_instance_id,
                 "决定不属于当前流程根",
             )?;
-            let mut out = crate::orchestration::read_chunk(&decision.data["request"], p)?;
+            let human = if decision.r#type == "workflow_human_decision" {
+                Some(decision.clone())
+            } else if let Some(reference) = pending.data["decision_ref"].as_str() {
+                Some(restored(
+                    self,
+                    &one(self.store.as_ref(), "governance", reference)?,
+                )?)
+            } else {
+                None
+            };
+            if let Some(human) = &human {
+                require(
+                    human.r#type == "workflow_human_decision"
+                        && human.immutable
+                        && human.definition_id == pending.id
+                        && human.scope == pending.scope
+                        && human.data["actor"]["kind"] == "human",
+                    "人类决定与原申请不符",
+                )?;
+            }
+            // A Human record contains the actual signed reason, not a request
+            // field. Both reference forms expose the signature and preserve
+            // chunked access to its complete immutable text.
+            let body = if decision.r#type == "workflow_human_decision" {
+                let mut signed = decision.data.clone();
+                // Preserve the legacy request fields while exposing the actual
+                // signature. Its reason/actor always win over request prose.
+                for (key, value) in pending.data["request"].as_object().into_iter().flatten() {
+                    signed
+                        .as_object_mut()
+                        .unwrap()
+                        .entry(key.clone())
+                        .or_insert_with(|| value.clone());
+                }
+                signed
+            } else {
+                pending.data["request"].clone()
+            };
+            let mut out = crate::orchestration::read_chunk(&body, p)?;
             out["decision_ref"] = json!(decision.id);
+            out["request_ref"] = json!(pending.id);
             out["status"] = pending.data["status"].clone();
-            out["approved"] = decision.data["approved"].clone();
+            out["human_decision_ref"] = json!(human.as_ref().map(|r| &r.id));
+            out["approved"] = human
+                .as_ref()
+                .map(|r| r.data["approved"].clone())
+                .unwrap_or(Value::Null);
+            if let Some(human) = human {
+                let reason = human.data["reason"].as_str().unwrap_or("");
+                out["reason"] = json!(reason.chars().take(1024).collect::<String>());
+                out["reason_truncated"] = json!(reason.chars().count() > 1024);
+                out["actor"] = human.data["actor"].clone();
+            }
             return Ok(out);
         }
         if method == "workflow.execution.inspect" {
@@ -371,9 +436,29 @@ impl Engine {
                 allowed.push("complete");
             }
         }
-        let mut runtime = json!(root.instance.as_ref());
-        runtime["plan"] = json!({"workflow_revision_id":root.instance.plan.workflow_revision_id,"standard_ref":root.instance.plan.standard_ref,"work_configuration_ref":root.instance.plan.work_configuration_ref,"harness_permission_ref":root.instance.plan.harness_permission_ref,"document":root.instance.plan.document,"roles":root.instance.plan.roles});
-        runtime["plan"]["document"]["steps"] = json!(
+        // Select display fields before serialization. Serializing the complete
+        // compiled plan merely to replace it copies every frozen definition
+        // and off-page execution on each lightweight native inspection.
+        let mut runtime = Value::Object(
+            root.record
+                .data
+                .as_object()
+                .ok_or_else(|| err("storage", "流程头不是对象"))?
+                .iter()
+                .filter(|(key, _)| !matches!(key.as_str(), "plan" | "steps"))
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect(),
+        );
+        let mut document = Value::Object(
+            root.record.data["plan"]["document"]
+                .as_object()
+                .ok_or_else(|| err("storage", "冻结计划正文缺失"))?
+                .iter()
+                .filter(|(key, _)| key.as_str() != "steps")
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect(),
+        );
+        document["steps"] = json!(
             root.instance
                 .plan
                 .document
@@ -383,6 +468,7 @@ impl Engine {
                 .take(limit)
                 .collect::<Vec<_>>()
         );
+        runtime["plan"] = json!({"workflow_revision_id":root.instance.plan.workflow_revision_id,"standard_ref":root.instance.plan.standard_ref,"work_configuration_ref":root.instance.plan.work_configuration_ref,"harness_permission_ref":root.instance.plan.harness_permission_ref,"document":document,"roles":root.instance.plan.roles});
         runtime["steps"] = json!(
             root.instance
                 .steps
@@ -401,67 +487,5 @@ impl Engine {
         Ok(
             json!({"human_gates":self.controller_human_gates(&root.instance.root_instance_id)?,"record":{"id":root.record.id,"revision":root.record.revision},"page":{"offset":offset,"limit":limit,"total":total,"next_offset":if offset+limit<total{Some(offset+limit)}else{None},"document_complete":offset==0&&limit>=total},"runtime":runtime,"steps":steps,"allowed_actions":allowed,"children_page":{"offset":offset,"more":detail.children_more,"next_offset":detail.next_child_offset},"delivery_types":root.instance.plan.definitions.values().filter(|r|r.r#type=="delivery_type").collect::<Vec<_>>(),"children":detail.children}),
         )
-    }
-    fn native_root_outputs(&self, root: &WorkflowHeaderFacts, p: &Value) -> Result<Value> {
-        let ids: Vec<Id> = serde_json::from_value(p.get("ids").cloned().unwrap_or(json!([])))
-            .map_err(|e| err("invalid_params", e.to_string()))?;
-        require(ids.len() <= 100, "最多读取 100 项产物")?;
-        let mut out = vec![];
-        let budget =
-            p["max_bytes"].as_u64().unwrap_or(16384).clamp(1024, 65536) / ids.len().max(1) as u64;
-        for id in ids {
-            let row = restored(self, &one(self.store.as_ref(), "governance", &id)?)?;
-            require(
-                row.immutable
-                    && row.scope.project_id() == Some(root.instance.project_id.as_str())
-                    && matches!(row.r#type.as_str(), "workflow_output" | "typed_material"),
-                "原产物不属于当前项目",
-            )?;
-            if row.r#type == "typed_material" {
-                require(
-                    row.data["root_instance_id"] == root.instance.root_instance_id,
-                    "材料跨流程根",
-                )?;
-            } else {
-                let e = text(&row.data, "execution_id")?;
-                let owner = one(self.store.as_ref(), "workflow_execution_owner", &e)?;
-                let id = if let Some(raw) = &owner.value {
-                    text(raw, "instance_id")?
-                } else {
-                    let history = restored(
-                        self,
-                        &one(self.store.as_ref(), "workflow_history_source", &e)?,
-                    )?;
-                    text(&history.data, "workflow_instance_id")?
-                };
-                let source = one(self.store.as_ref(), "workflow_run_authority", &id)?;
-                require(
-                    source
-                        .value
-                        .as_ref()
-                        .is_some_and(|v| v["root_instance_id"] == root.instance.root_instance_id),
-                    "产物跨流程根",
-                )?;
-            }
-            let value = row.data["value"]
-                .pointer(p["pointer"].as_str().unwrap_or(""))
-                .ok_or_else(|| err("invalid_params", "产物字段不存在"))?;
-            let mut request = p.clone();
-            request["max_bytes"] = json!(budget.max(1));
-            let chunk = crate::orchestration::read_chunk(value, &request)?;
-            if chunk["next_offset"].is_null() && chunk["offset"] == 0 {
-                let mut raw = json!(row);
-                raw["data"]["value"] = value.clone();
-                out.push(raw);
-            } else {
-                let mut data = row.data.clone();
-                data.as_object_mut().unwrap().remove("value");
-                let mut raw = chunk;
-                raw["id"] = json!(row.id);
-                raw["data"] = data;
-                out.push(raw);
-            }
-        }
-        Ok(json!({"outputs":out}))
     }
 }

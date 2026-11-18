@@ -497,6 +497,19 @@ impl Engine {
         )?;
         commit.new_record(record("workflow_confirmation",execution.id.clone(),resources.record.scope.clone(),"人工确认".into(),1,None,json!({"execution_id":execution.id,"actor":commit.context.actor(),"input_digest":execution.input_digest,"outputs":execution.outputs,"reason":payload["reason"],"override_completion":!valid,"manual_approval":manual}),true),"workflow-confirmation")?;
         if payload["accept_result"] == true {
+            let driver = one(
+                self.store.as_ref(),
+                "workflow_driver_root",
+                &resources.instance.root_instance_id,
+            )?;
+            commit.witness([version(&driver)])?;
+            require(
+                driver
+                    .value
+                    .as_ref()
+                    .is_none_or(|row| row["data"]["mode"] != "agent"),
+                "Agent 流程的人工决定只能确认；结果必须由项目经理接纳",
+            )?;
             require(
                 !commit.execution_active(resources)?,
                 "执行者或未核对副作用尚未停止",
@@ -619,7 +632,21 @@ impl Engine {
                     commit.witness(facts.reads.versions().iter().cloned())?;
                     let mut payload = args.clone();
                     payload["reason"] = json!(reason);
-                    payload["accept_result"] = json!(true);
+                    let driver = one(
+                        self.store.as_ref(),
+                        "workflow_driver_root",
+                        &root.instance.root_instance_id,
+                    )?;
+                    commit.witness([version(&driver)])?;
+                    // A manager's request grants permission to sign these exact
+                    // outputs. It never delegates business acceptance to Human.
+                    payload["accept_result"] = json!(
+                        pending.data["actor"]["kind"] == "human"
+                            && driver
+                                .value
+                                .as_ref()
+                                .is_none_or(|row| row["data"]["mode"] != "agent")
+                    );
                     self.prepare_native_confirmation(
                         commit,
                         &resources,

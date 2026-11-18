@@ -38,6 +38,11 @@ import {
   readConfiguration,
   subscribeConfigurationSession,
 } from "./configuration-client";
+import {
+  observeRuntimeCommand,
+  observeRuntimeEvent,
+  readRuntime,
+} from "./runtime-state";
 import React, {
   useState,
   useEffect,
@@ -157,46 +162,66 @@ async function rpc(
     params = { ...params, expected_catalog_generation: getCatalogGeneration() };
   }
 
+  const preparingRuntime = [
+    "runtime.prepare",
+    "runtime.prepare_harness",
+    "runtime.prepare_sandbox",
+    "session.open",
+    "experience.restore",
+  ].includes(method);
+  if (preparingRuntime)
+    window.dispatchEvent(
+      new CustomEvent("devdesk.runtime-preparation", {
+        detail: { pending: true },
+      }),
+    );
   if (!options.prefetch) foregroundRequest(true);
   try {
-    const result = await readConfiguration(
+    const result = await readRuntime(
       method,
       params,
-      async (signal) => {
-        const res = await fetch("/rpc", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            id: ++sequence,
-            method,
-            params,
-          }),
-          signal: AbortSignal.any([
-            signal,
-            AbortSignal.timeout(
-              ["session.open", "runtime.prepare"].includes(method)
-                ? 25 * 60 * 1000
-                : method === "codex.auth.start"
-                  ? 5 * 60 * 1000
-                  : 30000,
-            ),
-          ]),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status} · 内核连接失败`);
-        const data = await res.json();
-        if (data.error)
-          throw new Error(
-            `${data.error.data?.code || ""} · ${data.error.message}`,
-          );
-        if (
-          method.startsWith("query.") &&
-          configurationResponseOutdated(data.result, params)
-        )
-          throw new DOMException("Configuration changed", "AbortError");
-        return data.result;
-      },
+      (runtimeSignal) =>
+        readConfiguration(
+          method,
+          params,
+          async (signal) => {
+            const res = await fetch("/rpc", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                jsonrpc: "2.0",
+                id: ++sequence,
+                method,
+                params,
+              }),
+              signal: AbortSignal.any([
+                signal,
+                AbortSignal.timeout(
+                  ["session.open", "runtime.prepare"].includes(method)
+                    ? 25 * 60 * 1000
+                    : method === "codex.auth.start"
+                      ? 5 * 60 * 1000
+                      : 30000,
+                ),
+              ]),
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status} · 内核连接失败`);
+            const data = await res.json();
+            if (data.error)
+              throw new Error(
+                `${data.error.data?.code || ""} · ${data.error.message}`,
+              );
+            if (
+              method.startsWith("query.") &&
+              configurationResponseOutdated(data.result, params)
+            )
+              throw new DOMException("Configuration changed", "AbortError");
+            return data.result;
+          },
+          { ...options, signal: runtimeSignal },
+        ),
       options,
+      getConfigurationSession(),
     );
     const reset = observeConfigurationResponse(result, params);
     observeCatalogGeneration(
@@ -208,10 +233,17 @@ async function rpc(
           : undefined),
       reset,
     );
+    observeRuntimeCommand(method, params);
     if (configurationMutation(method)) invalidateConfigurationQueries();
     if (modelMutation(method)) invalidateModelCatalogs();
     return result;
   } finally {
+    if (preparingRuntime)
+      window.dispatchEvent(
+        new CustomEvent("devdesk.runtime-preparation", {
+          detail: { pending: false },
+        }),
+      );
     if (!options.prefetch) foregroundRequest(false);
   }
 }
@@ -264,8 +296,20 @@ const executionTabs = [
 function App() {
   const catalogGeneration = useCatalogGeneration();
   const requestGeneration = useRef(0);
-  const activePage = useRef({ tab: routeTab, featureId: "", taskFilter: "" });
+  const activePage = useRef({
+    tab: routeTab,
+    featureId: "",
+    taskFilter: "",
+    executionTab: "",
+  });
   const configurationVersion = useRef("");
+  const runtimeView = useRef<
+    | {
+        roots: Set<string>;
+        contexts: Set<string>;
+      }
+    | undefined
+  >(undefined);
   const workspaceLoads = useRef(0);
   const workspaceRefreshQueued = useRef(false);
   const refreshWorkspace = useRef<() => void>(() => {});
@@ -358,7 +402,6 @@ function App() {
       : undefined,
   );
   const [taskFilter, setTaskFilter] = useState(route.get("task_id") || "");
-  activePage.current = { tab, featureId, taskFilter };
   const [readingTarget, setReadingTarget] = useState<Row>(() => ({
     ...Object.fromEntries(
       readingKeys.map((key) => [key, route.get(key) || ""]),
@@ -370,6 +413,7 @@ function App() {
     route.get("detail") ||
       (route.get("tab") === "documents" ? "documents" : defaultExecutionTab),
   );
+  activePage.current = { tab, featureId, taskFilter, executionTab };
   const summaryPage =
     tab === "execution" &&
     ["manager", "overview"].includes(executionTab) &&
@@ -380,6 +424,28 @@ function App() {
     loadedData?.kind === "execution_workspace" && !summaryPage
       ? undefined
       : loadedData;
+  if (data && (!featureId || data.detail?.feature?.id === featureId)) {
+    const owners = new Set([
+      featureId,
+      ...(data.detail?.tasks || []).map((task: Row) => task.id),
+    ]);
+    runtimeView.current = Array.isArray(data.configurations)
+      ? {
+          roots: new Set(
+            data.configurations
+              .filter(
+                (record: Row) =>
+                  record.type === "workflow_instance" &&
+                  (!featureId || owners.has(record.data?.owner_id)),
+              )
+              .map((record: Row) => record.data?.root_instance_id || record.id),
+          ),
+          contexts: new Set(
+            (data.detail?.contexts || []).map((context: Row) => context.id),
+          ),
+        }
+      : undefined;
+  } else runtimeView.current = undefined;
   const activeReadingTarget =
     readingTarget._project === projectId && readingTarget._feature === featureId
       ? readingTarget
@@ -625,9 +691,43 @@ function App() {
       try {
         const value: Row = JSON.parse(message.data);
         observeConfigurationVersion(value.configuration_version, projectId);
+        observeRuntimeEvent(projectId, value);
         let resourceShellChanged = false;
+        let executionContentChanged = false;
+        if (value.kind === "workflow.runtime") {
+          const source = JSON.parse(value.detail);
+          executionContentChanged =
+            !runtimeView.current ||
+            runtimeView.current.roots.has(
+              source.root_instance_id || source.instance_id,
+            );
+        }
+        let executionShellChanged =
+          ["stream.ready", "stream.reset", "workflow.start"].includes(
+            value.kind,
+          ) ||
+          /^(project|repository|workspace|settings)\./.test(value.kind || "");
         if (value.kind === "resource.changed") {
           const versions: Row[] = JSON.parse(value.detail);
+          executionContentChanged ||= versions.some(
+            ({ resource }) =>
+              resource?.kind === "interaction" ||
+              (resource?.kind === "context" &&
+                (!runtimeView.current ||
+                  runtimeView.current.contexts.has(resource.id))),
+          );
+          executionShellChanged ||= versions.some(({ resource }) =>
+            [
+              "feature",
+              "task",
+              "project",
+              "repository_operation",
+              "repository_worktree",
+              "head",
+              "source_definition",
+              "source_head",
+            ].includes(resource?.kind),
+          );
           resourceShellChanged = versions.some(
             ({ resource }) =>
               resource?.kind === "runtime_installation" ||
@@ -662,6 +762,14 @@ function App() {
         )
           invalidateModelCatalogs();
         const page = activePage.current;
+        if (document.visibilityState === "hidden") return;
+        if (
+          page.tab === "execution" &&
+          !executionShellChanged &&
+          (["manager", "overview"].includes(page.executionTab) ||
+            !executionContentChanged)
+        )
+          return;
         if (
           ["projects", "workflows", "actors", "components"].includes(
             page.tab,
@@ -694,8 +802,13 @@ function App() {
     stream.onerror = () => {
       if (!kernelStopped.current) setConnection("连接中断 · 自动重连");
     };
+    const visible = () => {
+      if (document.visibilityState !== "hidden") refreshWorkspace.current();
+    };
+    document.addEventListener("visibilitychange", visible);
     return () => {
       stream.close();
+      document.removeEventListener("visibilitychange", visible);
       if (timer) clearTimeout(timer);
     };
   }, [projectId, caps?.setup_required]);
@@ -763,7 +876,7 @@ function App() {
   const show = (spec: DialogSpec) =>
     setDialog({
       ...spec,
-      revision: getRevision(spec.target),
+      revision: spec.revision ?? getRevision(spec.target),
       hostVersion: caps?.lifecycle,
       commandId: crypto.randomUUID(),
       preconditions:
@@ -1583,6 +1696,7 @@ function App() {
                         title: "更新上下文",
                         method: "context.update",
                         target: context.id,
+                        revision: context.revision,
                         fields: [
                           {
                             key: "content",

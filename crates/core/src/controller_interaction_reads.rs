@@ -13,19 +13,30 @@ impl Engine {
             self.store
                 .orchestration_summary(&crate::read_models::ControllerQuery::parse(p)?)?
         );
-        let root = p["root_instance_id"]
-            .as_str()
-            .or_else(|| value["record"]["data"]["root_instance_id"].as_str());
-        let decisions = if let Some(root) = root {
-            one(self.store.as_ref(), "workflow_root_decisions", root)?
-                .value
-                .and_then(|v| v.as_array().cloned())
-                .unwrap_or_default()
-        } else {
-            value["decisions"].as_array().cloned().unwrap_or_default()
-        };
+        // The indexed summary selects pending decisions across the whole root
+        // before pagination. Do not replace it with a tail of resolved history.
+        let mut decisions = value["decisions"].as_array().cloned().unwrap_or_default();
+        if p.get("decision_before").is_none() {
+            let root = p["root_instance_id"]
+                .as_str()
+                .or_else(|| value["record"]["data"]["root_instance_id"].as_str());
+            if let Some(root) = root {
+                let recent = one(self.store.as_ref(), "workflow_root_decisions", root)?;
+                decisions.extend(
+                    recent
+                        .value
+                        .as_ref()
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .filter(|r| r["status"] != "pending")
+                        .take(10)
+                        .cloned(),
+                );
+            }
+        }
         let mut full = Vec::new();
-        for decision in decisions.into_iter().take(20) {
+        for decision in decisions {
             let selected = one(self.store.as_ref(), "governance", &text(&decision, "id")?)?;
             let row = restored(self, &selected)?;
             full.push(self.controller_decision_view(&row)?);
@@ -58,6 +69,14 @@ impl Engine {
             if value["current"] == true {
                 result.push(value);
             }
+        }
+        let driver = one(self.store.as_ref(), "workflow_driver_root", root)?;
+        if driver
+            .value
+            .as_ref()
+            .is_some_and(|v| v["data"]["mode"] == "agent")
+        {
+            return Ok(result);
         }
         for approval in self
             .controller_step_approvals(root)?
@@ -97,26 +116,25 @@ impl Engine {
         Err(err("storage", "流程祖先超过预算"))
     }
     pub(crate) fn controller_decision_view(&self, row: &ConfigurationRecord) -> Result<Value> {
-        let instance = WorkflowHeaderFacts::read(self, &row.definition_id)?;
         let request = &row.data["request"];
-        let current = instance.instance.active_plan_revision_id == row.data["plan_revision_id"]
-            && request["arguments"]["execution_id"]
-                .as_str()
-                .is_none_or(|id| {
-                    instance.instance.steps.iter().any(|e| {
-                        e.id == id
-                            && json!(e.input_digest) == request["arguments"]["input_digest"]
-                            && json!(e.outputs) == request["arguments"]["outputs"]
-                            && matches!(
-                                e.status,
-                                StepExecutionStatus::WaitingConfirmation
-                                    | StepExecutionStatus::AwaitingAcceptance
-                            )
-                    })
-                });
+        let execution = request["arguments"]["execution_id"].as_str();
+        let context = self
+            .store
+            .workflow_decision_context(&row.definition_id, execution)?;
+        let current = context.active_plan_revision_id == row.data["plan_revision_id"]
+            && (execution.is_none()
+                || context.execution.as_ref().is_some_and(|e| {
+                    json!(e.input_digest) == request["arguments"]["input_digest"]
+                        && json!(e.outputs) == request["arguments"]["outputs"]
+                        && matches!(
+                            e.status,
+                            StepExecutionStatus::WaitingConfirmation
+                                | StepExecutionStatus::AwaitingAcceptance
+                        )
+                }));
         let mut value = json!(row);
         value["current"] = json!(current);
-        value["ancestor_instance_ids"] = json!(self.controller_ancestors(&row.definition_id)?);
+        value["ancestor_instance_ids"] = json!(context.ancestor_instance_ids);
         Ok(value)
     }
     pub(crate) fn controller_step_approvals(&self, root: &str) -> Result<Vec<Value>> {

@@ -516,6 +516,39 @@ fn delivery_catalog_has_content_standards_and_real_diff_ports() {
         let plan = e
             .compile_configured_workflow(&state, workflow, &Scope::global(), None)
             .unwrap();
+        let positions = plan
+            .document
+            .stages
+            .iter()
+            .enumerate()
+            .map(|(index, stage)| (stage.key.as_str(), index))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        // Stage arrows must agree with every scheduling edge. In particular,
+        // candidate preparation must precede the review that consumes it.
+        for step in &plan.document.steps {
+            for dependency in &step.dependencies {
+                let source = plan
+                    .document
+                    .steps
+                    .iter()
+                    .find(|s| &s.key == dependency)
+                    .unwrap();
+                assert!(
+                    positions[source.stage.as_str()] <= positions[step.stage.as_str()],
+                    "{kind}: {} -> {} crosses stages backwards",
+                    source.key,
+                    step.key
+                );
+            }
+        }
+        assert_eq!(
+            plan.document
+                .steps
+                .iter()
+                .filter(|s| s.stage == "candidate_preparation")
+                .count(),
+            3
+        );
         for step in &plan.document.steps {
             for port in step.outputs.values() {
                 assert_ne!(port.delivery_ref, "builtin-delivery-object:1");
@@ -545,7 +578,7 @@ fn delivery_catalog_has_content_standards_and_real_diff_ports() {
         }
     }
     let mut forged = state
-        .configuration("builtin-workflow-task-sol-high:7")
+        .configuration("builtin-workflow-task-sol-high:8")
         .unwrap()
         .data
         .clone();
@@ -602,7 +635,7 @@ fn dsh_stacks_publish_recommended_models_and_native_only_capabilities() {
             let composition = state
                 .resolve_agent(&format!(
                     "builtin-agent-{vendor}-{role}:{}",
-                    if role == "project-manager" { 3 } else { 2 }
+                    if role == "project-manager" { 4 } else { 2 }
                 ))
                 .unwrap();
             assert_eq!(
@@ -646,7 +679,7 @@ fn dsh_stacks_publish_recommended_models_and_native_only_capabilities() {
         .unwrap();
     assert!(
         pm.skills
-            .contains(&"builtin-skill-workflow-orchestration:3".to_string())
+            .contains(&"builtin-skill-workflow-orchestration:4".to_string())
     );
 }
 
@@ -812,7 +845,7 @@ fn dsh_agents_cannot_be_bound_as_the_orchestrator() {
     let defaults = e.configuration_defaults(Some(project_id)).unwrap();
     // Binding the PM role to a dsh agent while designating it the orchestrator is rejected.
     let mut bindings = defaults["role_agent_bindings"].clone();
-    bindings["builtin-role-project-manager:1"] = json!("builtin-agent-minimax-project-manager:3");
+    bindings["builtin-role-project-manager:1"] = json!("builtin-agent-minimax-project-manager:4");
     let error = command(
         &e,
         "project.configuration.update",

@@ -41,6 +41,9 @@ impl Engine {
             let Some(caller) = &request.caller else {
                 continue;
             };
+            let _delivery = self
+                .store
+                .observe_native_call(&call.id, "native.platform.delivery");
             let done = one(
                 self.store.as_ref(),
                 "governance",
@@ -68,9 +71,11 @@ impl Engine {
             let receipt = ToolReceipt {
                 invocation_id: call.id.clone(),
                 success,
-                content: vec![
-                    json!({"type":"text","text":if success{call.data["receipt"].to_string()}else{call.data["error"].to_string()}}),
-                ],
+                content: if success {
+                    vec![]
+                } else {
+                    vec![json!({"type":"text","text":call.data["error"].to_string()})]
+                },
                 structured_content: success.then(|| call.data["receipt"].clone()),
                 remote_effect: call.data["remote_effect"]
                     .as_str()
@@ -96,11 +101,17 @@ impl Engine {
             let mut observations = vec![];
             if previous.value.is_some() {
                 intent = restored(self, &previous)?;
+                let mut legacy_receipt = receipt.clone();
+                if success {
+                    legacy_receipt.content =
+                        vec![json!({"type":"text","text":call.data["receipt"].to_string()})];
+                }
                 require(
                     intent.r#type == "platform_reply_intent"
                         && intent.definition_id == call.id
                         && intent.data["request_id"] == caller.request_id
-                        && intent.data["receipt"] == json!(receipt),
+                        && (intent.data["receipt"] == json!(receipt)
+                            || intent.data["receipt"] == json!(legacy_receipt)),
                     "平台回复不能更换原请求或回执",
                 )?;
                 if let Some((observed, result)) = self.platform_observed(&intent, "reply")? {

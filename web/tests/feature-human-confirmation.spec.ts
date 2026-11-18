@@ -455,6 +455,7 @@ test("Spec 验收后展示待确认产物，人工确认绑定当前执行和输
       case "query.orchestration_summary":
         result = { record: null, decisions: [], calls: [] };
         break;
+      case "query.workflow_driver":
       case "query.workflow_driver_summary":
         result = { driver: null };
         break;
@@ -475,7 +476,6 @@ test("Spec 验收后展示待确认产物，人工确认绑定当前执行和输
   await page.goto(
     `/?tab=execution&detail=overview&project_id=${project.id}&feature_id=${feature.id}`,
   );
-  await page.getByRole("button", { name: /^需求 1 \/ 2/ }).click();
   const review = page.getByRole("article", {
     name: "步骤 · PRD 验收与人工确认",
   });

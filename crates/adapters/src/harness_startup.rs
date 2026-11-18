@@ -72,6 +72,7 @@ impl RuntimeWorkers {
             let result=worker.open_guarded(&owned,Some(&flag));
             if let Some(trace)=trace {eprintln!("{}",json!({"type":"native_startup","operation_id":owned.execution.operation_id,"success":result.is_ok(),"measurement":trace.finish()}));}
             let _=tx.send(result);
+            worker.wakeups.notify();
         }).map_err(|_|err("provider_unavailable","无法创建启动线程，未发送输入").technical_not_applied())?;
         starts.insert(
             request.session.id.clone(),

@@ -1,6 +1,44 @@
 //! Workflow scheduling reads through the shared pool, without restoring history.
 use super::*;
 
+// Shared by admission hints and cursor pages. An active authorization alone
+// must not restore a waiting controller on every scheduler pass.
+pub(super) const CONTROLLER_READY: &str = "(
+ coalesce(json_extract(c.data,'$.run_state'),'') IN ('','runnable','running')
+ OR EXISTS(SELECT 1 FROM turns t WHERE t.session_id=json_extract(c.data,'$.session_id')
+   AND t.status IN ('queued','dispatching','running','waiting_interaction','needs_reconciliation','failed','cancelled'))
+ OR (coalesce(json_extract(c.data,'$.workspace_only'),0)=0
+   AND json_extract(c.data,'$.bootstrap_epoch')!=json_extract(c.data,'$.epoch'))
+ OR json_extract(c.data,'$.wait_deadline')<=CAST(strftime('%s','now') AS INTEGER)*1000
+ OR EXISTS(SELECT 1 FROM governance_records u WHERE u.type='controller_input' AND u.definition_id=c.id AND json_extract(u.data,'$.consumed')=0)
+ OR EXISTS(SELECT 1 FROM events e WHERE e.kind='workflow.runtime' AND e.id>coalesce(json_extract(c.data,'$.source_cursor'),0)
+   AND json_extract(CASE WHEN e.kind='workflow.runtime' THEN e.detail ELSE '{}' END,'$.root_instance_id')=json_extract(c.data,'$.root_instance_id'))
+)";
+
+// The display rows are transactional hints, never dispatch authority. Include
+// status repairs and cancellation as well as actual running receipts.
+pub(super) const WORKFLOW_READY: &str = "(
+ json_extract(c.data,'$.status') NOT IN ('completed','cancelled') AND (
+ coalesce(json_extract(c.data,'$.cancel_requested'),0)=1
+ OR EXISTS(SELECT 1 FROM workflow_display_steps s WHERE s.instance_id=c.id AND (
+   json_extract(s.data,'$.status')='running'
+   OR (json_extract(s.data,'$.status')='needs_reconciliation' AND
+      (json_extract(c.data,'$.status')!='needs_reconciliation' OR EXISTS(SELECT 1 FROM governance_records x WHERE x.type='workflow_stop' AND x.definition_id=s.execution_id)))
+   OR (json_extract(s.data,'$.status')='failed' AND json_extract(c.data,'$.status') NOT IN ('failed','needs_reconciliation'))
+   OR (json_extract(c.data,'$.status')='queued' AND json_extract(s.data,'$.started') IS NOT NULL)))
+ OR EXISTS(SELECT 1 FROM governance_records a WHERE a.type='workflow_instance'
+   AND json_extract(a.data,'$.root_instance_id')=json_extract(c.data,'$.root_instance_id')
+   AND json_extract(a.data,'$.status') NOT IN ('completed','cancelled')
+   AND coalesce(json_extract(a.data,'$.cancel_requested'),0)=1)
+))";
+
+pub(super) fn controllers(conn: &Connection) -> Result<bool> {
+    conn.query_row(&format!("SELECT EXISTS(SELECT 1 FROM governance_records c WHERE c.type='workflow_controller' AND json_extract(c.data,'$.status')='active' AND {CONTROLLER_READY})"), [], |r|r.get(0)).map_err(storage)
+}
+pub(super) fn workflow_observations(conn: &Connection) -> Result<bool> {
+    conn.query_row(&format!("SELECT EXISTS(SELECT 1 FROM governance_records c WHERE c.type='workflow_instance' AND json_extract(c.data,'$.status') IN ('queued','running','failed','needs_reconciliation') AND {WORKFLOW_READY})"), [], |r|r.get(0)).map_err(storage)
+}
+
 pub(super) fn running(conn: &Connection) -> Result<usize> {
     let _span = performance::Span::new("runtime.running_count");
     conn.query_row("SELECT count(*) FROM turns t
@@ -22,17 +60,7 @@ pub(super) fn pending(conn: &Connection, kind: ports::WorkflowRuntimeWork) -> Re
               OR EXISTS(SELECT 1 FROM executions e WHERE e.session_id=t.session_id AND e.writer_revoked=0))))",
         ports::WorkflowRuntimeWork::QueuedConversations => "SELECT EXISTS(SELECT 1 FROM turns WHERE status='queued')",
         ports::WorkflowRuntimeWork::WorkflowIntents => "SELECT EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_intent' AND json_extract(data,'$.status')='prepared')",
-        ports::WorkflowRuntimeWork::Controllers => "SELECT EXISTS(SELECT 1 FROM governance_records c
-            WHERE c.type='workflow_controller' AND json_extract(c.data,'$.status')='active' AND (
-              coalesce(json_extract(c.data,'$.run_state'),'') IN ('','runnable','running')
-              OR EXISTS(SELECT 1 FROM turns t WHERE t.session_id=json_extract(c.data,'$.session_id')
-                AND t.status IN ('queued','dispatching','running','waiting_interaction','needs_reconciliation','failed','cancelled'))
-              OR (coalesce(json_extract(c.data,'$.workspace_only'),0)=0
-                AND json_extract(c.data,'$.bootstrap_epoch')!=json_extract(c.data,'$.epoch'))
-              OR json_extract(c.data,'$.wait_deadline')<=CAST(strftime('%s','now') AS INTEGER)*1000
-              OR EXISTS(SELECT 1 FROM governance_records u WHERE u.type='controller_input' AND u.definition_id=c.id AND json_extract(u.data,'$.consumed')=0)
-              OR EXISTS(SELECT 1 FROM events e WHERE e.kind='workflow.runtime' AND e.id>coalesce(json_extract(c.data,'$.source_cursor'),0)
-                AND json_extract(CASE WHEN e.kind='workflow.runtime' THEN e.detail ELSE '{}' END,'$.root_instance_id')=json_extract(c.data,'$.root_instance_id'))))",
+        ports::WorkflowRuntimeWork::Controllers => return controllers(conn),
         ports::WorkflowRuntimeWork::ControllerCalls => "SELECT EXISTS(SELECT 1 FROM governance_records c
             WHERE c.type='controller_tool_call' AND (json_extract(c.data,'$.status')='prepared'
               OR (json_extract(c.data,'$.status') IN ('succeeded','failed')

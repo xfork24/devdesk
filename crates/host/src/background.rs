@@ -10,6 +10,25 @@ use std::{
     thread::JoinHandle,
 };
 const WORKERS: usize = 8;
+pub(super) struct Wake {
+    pub notify: Arc<tokio::sync::Notify>,
+    listener: Arc<dyn Fn() + Send + Sync>,
+}
+impl Default for Wake {
+    fn default() -> Self {
+        let notify = Arc::new(tokio::sync::Notify::new());
+        let signal = notify.clone();
+        Self {
+            notify,
+            listener: Arc::new(move || signal.notify_one()),
+        }
+    }
+}
+impl Wake {
+    pub fn listener(&self) -> std::sync::Weak<dyn Fn() + Send + Sync> {
+        Arc::downgrade(&self.listener)
+    }
+}
 struct Job {
     project: String,
     reserved_conversations: Option<usize>,
@@ -21,8 +40,52 @@ pub(super) struct Background {
     pub stopped: Arc<AtomicBool>,
     pub stage_next: AtomicUsize,
     pub catalog_next: AtomicUsize,
+    pub wake: Wake,
+    pub runnable: AtomicBool,
+    maintenance: Mutex<Option<std::time::Instant>>,
+    idle_stages: Mutex<BTreeMap<String, (u64, std::time::Instant)>>,
 }
 impl Background {
+    pub fn stage_due(&self, key: &str, cursor: u64) -> Result<bool> {
+        let idle = self
+            .idle_stages
+            .lock()
+            .map_err(|e| err("scheduler", e.to_string()))?;
+        Ok(idle.get(key).is_none_or(|(observed, since)| {
+            *observed != cursor || since.elapsed() >= std::time::Duration::from_secs(1)
+        }))
+    }
+    pub fn stage_finished(&self, key: String, before: u64, after: u64) -> Result<()> {
+        let mut idle = self
+            .idle_stages
+            .lock()
+            .map_err(|e| err("scheduler", e.to_string()))?;
+        if before == after {
+            if idle.len() >= 128 && !idle.contains_key(&key) {
+                let oldest = idle
+                    .iter()
+                    .min_by_key(|(_, (_, since))| *since)
+                    .map(|(key, _)| key.clone())
+                    .unwrap();
+                idle.remove(&oldest);
+            }
+            idle.insert(key, (after, std::time::Instant::now()));
+        } else {
+            idle.remove(&key);
+        }
+        Ok(())
+    }
+    pub fn maintenance_due(&self) -> Result<bool> {
+        let mut last = self
+            .maintenance
+            .lock()
+            .map_err(|e| err("scheduler", e.to_string()))?;
+        if last.is_some_and(|last| last.elapsed() < std::time::Duration::from_secs(1)) {
+            return Ok(false);
+        }
+        *last = Some(std::time::Instant::now());
+        Ok(true)
+    }
     pub fn poll(&self) -> Result<()> {
         let finished = {
             let mut jobs = self
@@ -151,5 +214,40 @@ impl Background {
             }
         }
         failure.map_or(Ok(()), Err)
+    }
+}
+
+#[cfg(test)]
+mod idle_tests {
+    use super::*;
+    #[test]
+    fn unchanged_stage_waits_for_a_commit_or_bounded_fallback_without_hiding_new_work() {
+        let background = Background::default();
+        assert!(background.stage_due("project:stage:driver", 3).unwrap());
+        background
+            .stage_finished("project:stage:driver".into(), 3, 3)
+            .unwrap();
+        assert!(!background.stage_due("project:stage:driver", 3).unwrap());
+        assert!(background.stage_due("project:stage:driver", 4).unwrap());
+        assert!(background.stage_due("other:stage:driver", 3).unwrap());
+        background
+            .idle_stages
+            .lock()
+            .unwrap()
+            .get_mut("project:stage:driver")
+            .unwrap()
+            .1 -= std::time::Duration::from_secs(2);
+        assert!(background.stage_due("project:stage:driver", 3).unwrap());
+        background
+            .stage_finished("project:stage:driver".into(), 3, 4)
+            .unwrap();
+        assert!(background.stage_due("project:stage:driver", 4).unwrap());
+        for n in 0..130 {
+            background
+                .stage_finished(format!("other-{n}"), 4, 4)
+                .unwrap();
+        }
+        assert_eq!(background.idle_stages.lock().unwrap().len(), 128);
+        assert!(background.stage_due("project:stage:driver", 4).unwrap());
     }
 }

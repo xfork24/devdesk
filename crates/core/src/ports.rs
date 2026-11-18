@@ -31,6 +31,9 @@ pub trait CredentialCandidates: Send + Sync {
 /// Base contract for an agent runtime: configuration, polling, cancellation acknowledgement and recovery.
 /// Implementations return provider facts; the engine decides whether to accept them.
 pub trait Harness: Send + Sync {
+    /// Notification is only a hint to poll durable/actual facts. It grants no
+    /// execution authority and may be coalesced or lost across a restart.
+    fn subscribe_wakeup(&self, _listener: std::sync::Weak<dyn Fn() + Send + Sync>) {}
     fn answer_tool_call(
         &self,
         _session: &devdesk_domain::Session,
@@ -288,6 +291,11 @@ pub trait Git: Send + Sync {
             "Git 适配器缺少工作空间版本查询",
         ))
     }
+    /// Read-only preflight for a writer: exact revision and no unsealed changes.
+    /// The runtime must repeat this check before mounting the writable worktree.
+    fn validate_workspace(&self, _context: &GitContext, _revision: &str) -> Result<()> {
+        Err(err("unsupported", "Git 适配器缺少写入工作空间校验"))
+    }
     fn repository_operation(
         &self,
         _operation: &devdesk_domain::RepositoryOperation,
@@ -496,6 +504,13 @@ pub trait EngineeringStore: Send + Sync {
     fn workflow_decision(&self, _id: &str) -> Result<crate::read_models::DecisionDetail> {
         Err(err("unsupported", "存储未实现确切决定读取"))
     }
+    fn workflow_decision_context(
+        &self,
+        _instance: &str,
+        _execution: Option<&str>,
+    ) -> Result<crate::read_models::DecisionContext> {
+        Err(err("unsupported", "存储未实现有界审批展示依据"))
+    }
     fn workflow_management_summary(
         &self,
         _id: &str,
@@ -521,6 +536,11 @@ pub trait EngineeringStore: Send + Sync {
     }
     fn project_records(&self, _method: &str, _params: &Value) -> Result<Value> {
         Err(err("unsupported", "存储未实现有限项目资料读取"))
+    }
+    /// Operational pages are filtered before decoding exact records, without
+    /// restoring an aggregate engineering snapshot.
+    fn operational_read(&self, _method: &str, _params: &Value) -> Result<Value> {
+        Err(err("unsupported", "存储未实现运行记录分页"))
     }
     fn conversation_query(&self, _method: &str, _params: &Value) -> Result<Value> {
         Err(err("unsupported", "存储未实现有限会话读取"))

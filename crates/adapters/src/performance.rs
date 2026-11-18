@@ -50,6 +50,7 @@ struct NativePhase {
     stage: &'static str,
     started: Instant,
     aggregate: Span,
+    started_at_ms: u64,
 }
 impl devdesk_core::ports::QueryObservation for NativePhase {}
 pub(crate) fn observe_native(
@@ -62,6 +63,7 @@ pub(crate) fn observe_native(
             stage,
             started: Instant::now(),
             aggregate: Span::new(stage),
+            started_at_ms: NativeProtocolTiming::observed().1,
         })
     } else {
         Box::new(())
@@ -72,7 +74,7 @@ impl Drop for NativePhase {
         let _ = &self.aggregate;
         eprintln!(
             "{}",
-            json!({"type":"native_phase","call_id":self.call_id,"phase":self.stage,"elapsed_ms":self.started.elapsed().as_secs_f64()*1000.0})
+            json!({"type":"native_phase","call_id":self.call_id,"phase":self.stage,"elapsed_ms":self.started.elapsed().as_secs_f64()*1000.0,"started_at_ms":self.started_at_ms,"finished_at_ms":NativeProtocolTiming::observed().1})
         );
     }
 }

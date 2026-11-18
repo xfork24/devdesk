@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 import shutil
+import signal
 import sys
 import tempfile
 import time
@@ -113,11 +114,14 @@ sys.exit(3)
 ''')
     fixture.chmod(0o755)
     env = {**os.environ, 'PATH': str(root) + os.pathsep + os.environ['PATH'], 'DEVDESK_DOCKER_FIXTURE': str(root), 'DEVDESK_REAL_GIT': real_git, 'DEVDESK_GIT_SOURCE': str(source), 'DEVDESK_GIT_HEAD': head}
-    child = subprocess.Popen([str(BINARY), '--data', str(root / 'data'), '--port', '0'], cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    try:
+    def launch(dataset):
+        child = subprocess.Popen([str(BINARY), '--data', str(root / dataset), '--port', '0'], cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         child.stdout.readline()
         url = child.stdout.readline().strip()
         assert url.startswith('http://127.0.0.1:'), url
+        return child, url
+    child, url = launch('data-interrupted')
+    try:
         def client():
             opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
             opener.open(url + '/').close()
@@ -136,7 +140,7 @@ sys.exit(3)
         opened = rpc('project.open_github', {'command_id':'github-open-fixture', 'payload':{'repository':'https://github.com/fixture/repository.git'}})
         assert 'result' in opened, opened
         github_id = opened['result']['id']
-        assert rpc('query.workspace')['result']['repository_ready'] is False
+        assert rpc('query.workspace', {'project_id':github_id})['result']['repository_ready'] is False
         deadline = time.monotonic() + 12
         while time.monotonic() < deadline:
             state = rpc('query.repository', {'project_id':github_id})['result']
@@ -154,29 +158,58 @@ sys.exit(3)
             op = state['operations'][0]
             if op['status'] == 'completed' or (op['status'] == 'needs_reconciliation' and op['reason'] != 'reconcile_requested'): break
             time.sleep(.1)
+        # Inspection cannot authorize another clone/fetch. This partial clone
+        # has no saved physical completion receipt and must remain unknown.
+        assert op['status'] == 'needs_reconciliation', state
+        assert op['reason'] != 'reconcile_requested', state
+        assert (root/'clones').read_text().splitlines() == ['clone']
+        assert not (root/'fetches').exists()
+        preserved = root/'data-interrupted'/'projects'/github_id/'repository'/'preserve-fixture'
+        assert preserved.read_text() == 'must survive reconciliation'
+        child.send_signal(signal.SIGTERM)
+        child.communicate(timeout=20)
+        assert child.returncode == 0
+
+        # Verify successful onboarding independently, on a fresh dataset. The
+        # interrupted dataset is retained; no business status is patched.
+        child, url = launch('data')
+        opened = rpc('project.open_github', {'command_id':'github-open-ready', 'payload':{'repository':'https://github.com/fixture/repository.git'}})
+        assert 'result' in opened, opened
+        github_id = opened['result']['id']
+        deadline = time.monotonic() + 12
+        while time.monotonic() < deadline:
+            state = rpc('query.repository', {'project_id':github_id})['result']
+            if state['operations'][0]['status'] in ['completed','needs_reconciliation']: break
+            time.sleep(.1)
         assert state['operations'][0]['status'] == 'completed', state
-        assert rpc('query.workspace')['result']['repository_ready'] is True
-        assert (root/'fetches').read_text().splitlines() == ['fetch']
-        assert (root/'data'/'projects'/github_id/'repository'/'preserve-fixture').read_text() == 'must survive reconciliation'
+        assert rpc('query.workspace', {'project_id':github_id})['result']['repository_ready'] is True
+        assert not (root/'fetches').exists()
+        assert preserved.read_text() == 'must survive reconciliation'
 
         assert state['project']['execution_mode'] == 'live'
         configuration = rpc('query.project_configuration', {'project_id':github_id})['result']['configuration']
         assert configuration is None, 'repository connection must leave configuration reviewable'
-        assert rpc('query.workspace')['result']['configuration_ready'] is False
+        assert rpc('query.workspace', {'project_id':github_id})['result']['configuration_ready'] is False
         assert len(state['worktrees']) == 1 and state['worktrees'][0]['base'] == head
         assert rpc('project.open_github', {'command_id':'github-reopen-fixture','target':github_id,'payload':{}})['result']['id'] == github_id
-        assert (root/'clones').read_text().splitlines() == ['clone']
+        assert (root/'clones').read_text().splitlines() == ['clone','clone']
         assert not (root / 'calls').exists(), 'opening a GitHub project must not prepare a Harness'
         assert rpc('query.workspace', {'github_only':True})['result']['total_projects'] == 1
 
         # A backend-only fixture selects Codex for a discussion. It must prepare that
         # Harness before reporting missing credentials, without sending any model input.
         pid = rpc('project.create', {'command_id':'preparation-fixture', 'payload':{'title':'Runtime preparation fixture'}})['result']['id']
-        revision = rpc('query.workspace')['result']['active_project']['revision']
+        revision = rpc('query.workspace', {'project_id':pid})['result']['active_project']['revision']
         agent = defaults['role_agent_bindings']['builtin-role-analyst:1']
+        # Pin a shared instance first. This scene measures concurrent runtime
+        # preparation, not simultaneous independent catalog publications.
+        selected = rpc('agent.instance.create', {'project_id':pid,'command_id':'preparation-agent',
+            'payload':{'name':'Runtime preparation analyst','agent_revision_id':agent,'scope':'project:'+pid}})
+        assert 'result' in selected, selected
+        instance = selected['result']['id']
         def open_session(n):
             return rpc('session.open', {'project_id':pid,'command_id':'open-'+str(n),'target':pid,'expected_revision':revision,
-                'payload':{'agent':agent}})
+                'payload':{'agent':agent,'agent_instance_id':instance}})
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
             results = list(pool.map(open_session, range(4)))
         assert all(r.get('error',{}).get('data',{}).get('code') == 'authentication_required' for r in results), results
@@ -222,8 +255,13 @@ sys.exit(3)
         assert 'error' in rpc('runtime.prepare', {'provider':'codex'})
         assert len(rpc('query.runtime_installations')['result']['installations']) == 2
         assert 'error' in rpc('runtime.prepare', {'provider':'unknown'})
-        print('PASS: interrupted clone reconciliation/resume/worktree/reopen, lazy per-Harness preparation, concurrent reuse, failure/retry, daemon failure, standalone embedded recipes')
+        print('PASS: interrupted clone remains unknown without refetch; fresh clone/worktree/reopen, lazy per-Harness preparation, concurrent reuse, failure/retry, daemon failure, standalone embedded recipes')
     finally:
         child.terminate()
         try: child.wait(timeout=10)
         except subprocess.TimeoutExpired: child.kill(); child.wait()
+        if sys.exc_info()[0] is not None:
+            (root/'host-failure.log').write_text(child.stderr.read())
+            retained = Path(tempfile.mkdtemp(prefix='devdesk-preparation-failure-'))
+            shutil.copytree(root, retained, dirs_exist_ok=True)
+            print('Retained failure:', retained, file=sys.stderr)

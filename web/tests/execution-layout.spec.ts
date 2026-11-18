@@ -112,26 +112,38 @@ test("通用工作流按阶段排列，真实子流程内联展开且折叠可�
   await expect(
     page.getByRole("tablist", { name: "执行详情" }).getByRole("tab"),
   ).toHaveText(["项目经理", "工作流程", "材料", "上下文", "执行记录"]);
-  await page
-    .getByRole("button", { name: "展开步骤与操作", exact: true })
-    .click();
   const runtime = page.getByRole("region", { name: "当前工作流", exact: true });
+  const progress = runtime.getByRole("list", { name: "执行阶段进度" });
+  await expect(progress.getByRole("listitem")).toHaveCount(2);
+  await expect(progress.locator(".workflow-stage-arrow")).toHaveCount(1);
+  const stageTops = await progress
+    .getByRole("listitem")
+    .evaluateAll((items) =>
+      items.map((item) => item.getBoundingClientRect().top),
+    );
+  expect(new Set(stageTops).size).toBe(1);
+  await expect(
+    page.getByRole("button", { name: /(?:展开|收起)步骤与操作/ }),
+  ).toHaveCount(0);
   await expect(runtime.locator(".work-standard")).toHaveCount(0);
   await expect(page.getByRole("region", { name: "项目经理协作" })).toHaveCount(
     0,
   );
-  // 阶段与子流程默认折叠，仅分层头部可见。
-  const stageOne = runtime.getByRole("button", { name: /业务阶段一/ });
-  const stageTwo = runtime.getByRole("button", { name: /业务阶段二/ });
+  // 执行阶段默认展开，步骤详情与子流程按需展开。
+  const stageOne = runtime
+    .locator(".workflow-stage-toggle")
+    .filter({ hasText: "业务阶段一" });
+  const stageTwo = runtime
+    .locator(".workflow-stage-toggle")
+    .filter({ hasText: "业务阶段二" });
   await expect(stageOne).toBeVisible();
   await expect(stageTwo).toBeVisible();
-  await expect(stageOne).toHaveAttribute("aria-expanded", "false");
+  await expect(stageOne).toHaveAttribute("aria-expanded", "true");
   const stages = await runtime
     .locator(":scope > .workflow-stage-row")
     .first()
     .boundingBox();
   expect(stages).toBeTruthy();
-  await stageOne.click();
   const nested = runtime.getByRole("article", {
     name: "步骤 · 处理子流程",
     exact: true,
@@ -145,8 +157,10 @@ test("通用工作流按阶段排列，真实子流程内联展开且折叠可�
     exact: true,
   });
   await expect(childRegion).toBeVisible();
-  // 子流程实例内的阶段同样默认折叠。
-  await childRegion.locator(".workflow-stage-toggle").first().click();
+  // 子流程实例内的执行阶段同样默认展开。
+  await expect(
+    childRegion.locator(".workflow-stage-toggle").first(),
+  ).toHaveAttribute("aria-expanded", "true");
   await expect(
     page.getByRole("button", { name: /检查原始材料/ }),
   ).toBeVisible();
@@ -169,9 +183,6 @@ test("通用工作流按阶段排列，真实子流程内联展开且折叠可�
     childManager.getByRole("region", { name: "项目经理协作", exact: true }),
   ).toBeVisible();
   await page.getByRole("tab", { name: "工作流程", exact: true }).click();
-  await page
-    .getByRole("button", { name: "展开步骤与操作", exact: true })
-    .click();
   await expect(
     page.getByRole("button", { name: /检查原始材料/ }),
   ).toBeVisible();
@@ -180,14 +191,24 @@ test("通用工作流按阶段排列，真实子流程内联展开且折叠可�
     0,
   );
   await page.reload();
-  await page
-    .getByRole("button", { name: "展开步骤与操作", exact: true })
-    .click();
   await expect(stageOne).toHaveAttribute("aria-expanded", "false");
-  await stageOne.click();
+  await progress
+    .getByRole("button", { name: "跳转到阶段：业务阶段一", exact: true })
+    .click();
+  await expect(stageOne).toHaveAttribute("aria-expanded", "true");
+  await expect(stageOne).toBeFocused();
+  await expect(stageOne).toBeInViewport();
   await expect(
     page.getByRole("button", { name: /检查原始材料/ }),
   ).toBeVisible();
+  const secondStageCard = progress.getByRole("button", {
+    name: "跳转到阶段：业务阶段二",
+    exact: true,
+  });
+  await secondStageCard.focus();
+  await secondStageCard.press("Enter");
+  await expect(stageTwo).toBeFocused();
+  await expect(stageTwo).toBeInViewport();
   await page.screenshot({
     path: info.outputPath("workflow-stages.png"),
     fullPage: true,
@@ -263,10 +284,6 @@ test("直接调整运行计划、复用成果、绕过与移动端刷新", async
     manager.getByRole("region", { name: "项目经理协作" }),
   ).toBeVisible();
   await page.getByRole("tab", { name: "工作流程", exact: true }).click();
-  await page
-    .getByRole("button", { name: "展开步骤与操作", exact: true })
-    .click();
-  await runtime.getByRole("button", { name: /材料处理/ }).click();
   const collect = runtime.getByRole("article", {
     name: "步骤 · 整理材料",
     exact: true,
@@ -293,7 +310,7 @@ test("直接调整运行计划、复用成果、绕过与移动端刷新", async
   const editor = manager
     .locator("details")
     .filter({ has: page.getByText("调整当前运行计划", { exact: true }) });
-  await editor.locator("summary").click();
+  await editor.locator(":scope > summary").click();
   await editor.getByLabel("计划调整方式").selectOption("bypass");
   await editor.getByLabel("计划调整对象").selectOption("optional");
   await editor
@@ -308,13 +325,9 @@ test("直接调整运行计划、复用成果、绕过与移动端刷新", async
     editor.getByRole("button", { name: "应用此计划调整", exact: true }),
   ).toHaveCount(0);
   await page.getByRole("tab", { name: "工作流程", exact: true }).click();
-  await page
-    .getByRole("button", { name: "展开步骤与操作", exact: true })
-    .click();
-  await runtime.getByRole("button", { name: /可选复核/ }).click();
   await expect(runtime.getByRole("button", { name: /可选检查/ })).toBeVisible();
   await page.getByRole("tab", { name: "项目经理", exact: true }).click();
-  await editor.locator("summary").click();
+  await editor.locator(":scope > summary").click();
   await editor.getByLabel("计划调整方式").selectOption("add");
   await editor.getByLabel("计划调整对象").selectOption("collect");
   await editor.getByLabel("新增步骤名称").fill("补充交接");
@@ -327,9 +340,6 @@ test("直接调整运行计划、复用成果、绕过与移动端刷新", async
     editor.getByRole("button", { name: "应用此计划调整", exact: true }),
   ).toHaveCount(0);
   await page.getByRole("tab", { name: "工作流程", exact: true }).click();
-  await page
-    .getByRole("button", { name: "展开步骤与操作", exact: true })
-    .click();
   const added = runtime.getByRole("article", {
     name: "步骤 · 补充交接",
     exact: true,
@@ -377,9 +387,10 @@ test("直接调整运行计划、复用成果、绕过与移动端刷新", async
     id: started.id,
   });
   expect(reloaded.history).toEqual(after.history);
-  const history = manager.locator("details").filter({
-    has: page.getByText(/^计划与执行历史(?: · \d+ 条)?$/),
-  });
+  await editor.locator(":scope > summary").click();
+  await expect(editor.getByLabel("计划调整方式")).toHaveCount(0);
+  const history = editor.locator(":scope > .manager-history");
+  await expect(history).not.toHaveClass(/panel/);
   await history.locator("summary").click();
   for (const entry of reloaded.history) {
     await expect(

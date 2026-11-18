@@ -21,12 +21,6 @@ for (const nested of [false, true]) {
         command_id: crypto.randomUUID(),
         payload: { title: "审批链路验收" },
       });
-      await rpc(page, "project.open", {
-        project_id: project.id,
-        command_id: crypto.randomUUID(),
-        target: project.id,
-        payload: {},
-      });
       const draft = await rpc(page, "workflow.create", {
         command_id: crypto.randomUUID(),
         payload: {
@@ -226,7 +220,6 @@ for (const nested of [false, true]) {
         await page.goto(
           `/?tab=execution&detail=overview&project_id=${project.id}&instance_id=${root.id}`,
         );
-        await page.getByRole("button", { name: /^确认阶段/ }).click();
         const design = page.getByRole("article", {
           name: "步骤 · 设计",
           exact: true,

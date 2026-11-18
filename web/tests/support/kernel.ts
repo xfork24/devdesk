@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 export const test = base.extend<{ kernelOrigin: string }>({
   // An empty destructuring pattern is Playwright's way to ignore fixture args.
   // eslint-disable-next-line no-empty-pattern
-  kernelOrigin: async ({}, use) => {
+  kernelOrigin: async ({}, use, info) => {
     const directory = mkdtempSync(join(tmpdir(), "devdesk-browser-kernel-"));
     const kernelEnv = { ...process.env };
     delete kernelEnv.DEVDESK_ACCESS_TOKEN;
@@ -63,7 +63,12 @@ export const test = base.extend<{ kernelOrigin: string }>({
           });
           child.kill("SIGINT");
         });
-      rmSync(directory, { recursive: true, force: true });
+      if (info.status !== info.expectedStatus) {
+        await info.attach("isolated-kernel-failure", {
+          body: `${directory}\n${diagnostics}`,
+          contentType: "text/plain",
+        });
+      } else rmSync(directory, { recursive: true, force: true });
     }
   },
   baseURL: async ({ kernelOrigin }, use) => use(kernelOrigin),

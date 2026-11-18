@@ -342,6 +342,8 @@ pub(super) fn detail(
     }
     Ok(Some(WorkflowDetailFacts {
         cursor,
+        step_total: row.data["steps"].as_array().map_or(0, |s| s.len()) as u64,
+        next_step_offset: None,
         record: row,
         plan_document,
         step_revisions,
@@ -384,9 +386,18 @@ fn status(
                 .is_none_or(|owner| row.data["owner_id"] == owner),
         "流程状态跨归属",
     )?;
-    let mut q=conn.prepare_cached("SELECT data,step_revision FROM workflow_display_steps WHERE instance_id=?1 ORDER BY execution_id").map_err(storage)?;
+    let step_total: u64 = conn
+        .query_row(
+            "SELECT count(*) FROM workflow_display_steps WHERE instance_id=?1",
+            [id],
+            |r| r.get(0),
+        )
+        .map_err(storage)?;
+    let mut q=conn.prepare_cached("SELECT data,step_revision FROM workflow_display_steps WHERE instance_id=?1 ORDER BY execution_id LIMIT ?2 OFFSET ?3").map_err(storage)?;
     let raw = q
-        .query_map([id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u64>(1)?)))
+        .query_map(params![id, query.step_limit, query.step_offset], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, u64>(1)?))
+        })
         .map_err(storage)?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(storage)?;
@@ -411,6 +422,9 @@ fn status(
         .ok_or_else(|| err("storage", "流程显示缺少确切源引用"))?;
     let mut document: WorkflowDefinition = catalog.state.configuration(reference)?.decode()?;
     document.assign_node_ids(reference);
+    document
+        .steps
+        .retain(|s| steps.iter().any(|e| e["node_id"] == s.node_id));
     let plan_document = json!(document);
     row.data["plan"] = json!({"document":plan_document});
     row.data["steps"] = json!(steps);
@@ -468,9 +482,9 @@ fn status(
         .map(|a| (a.session_id.clone(), a))
         .collect();
     let root = row.data["root_instance_id"].as_str().unwrap_or(id);
-    let mut q=conn.prepare_cached("SELECT json_object('id',instance_id,'name',substr(json_extract(record,'$.name'),1,256),'revision',json_extract(record,'$.revision'),'metadata_only',json('true'),'data',json_object('parent_execution_id',json_extract(record,'$.data.parent_execution_id'),'status',json_extract(record,'$.data.status'),'owner_id',json_extract(record,'$.data.owner_id'))) FROM workflow_display_headers WHERE json_extract(record,'$.data.root_instance_id')=?1 AND json_extract(record,'$.data.parent_execution_id') IN (SELECT value FROM json_each(?2)) ORDER BY instance_id LIMIT 101 OFFSET ?3").map_err(storage)?;
+    let mut q=conn.prepare_cached("SELECT json_object('id',instance_id,'name',substr(json_extract(record,'$.name'),1,256),'revision',json_extract(record,'$.revision'),'metadata_only',json('true'),'data',json_object('parent_execution_id',json_extract(record,'$.data.parent_execution_id'),'status',json_extract(record,'$.data.status'),'owner_id',json_extract(record,'$.data.owner_id'))) FROM workflow_display_headers WHERE json_extract(record,'$.data.root_instance_id')=?1 AND json_extract(record,'$.data.parent_execution_id') IN (SELECT execution_id FROM workflow_display_steps WHERE instance_id=?2) ORDER BY instance_id LIMIT 101 OFFSET ?3").map_err(storage)?;
     let mut children = q
-        .query_map(params![root, ids, query.child_offset], |r| {
+        .query_map(params![root, id, query.child_offset], |r| {
             r.get::<_, String>(0)
         })
         .map_err(storage)?
@@ -487,6 +501,9 @@ fn status(
         })
         .map_err(storage)?;
     Ok(WorkflowDetailFacts {
+        step_total,
+        next_step_offset: (query.step_offset + query.step_limit < step_total)
+            .then_some(query.step_offset + query.step_limit),
         cursor,
         record: row,
         plan_document,

@@ -641,6 +641,14 @@ impl Engine {
         let mut budget_updates = BTreeSet::new();
         for step in &old.plan.document.steps {
             let next = document.steps.iter().find(|s| s.node_id == step.node_id);
+            // Tool arguments/permissions/receipts do not depend on their display
+            // stage. Regrouping an otherwise identical tool must not rerun it.
+            // Agent stage context and inherited Roles remain business changes.
+            let regroups_tool = next.is_some_and(|next| {
+                let mut business = next.clone();
+                business.stage = step.stage.clone();
+                matches!(step.executor, StepExecutor::Tool { .. }) && business == *step
+            });
             let extends_invocation_budget = next.is_some_and(|next| {
                 let mut business = next.clone();
                 business.budget.timeout_seconds = step.budget.timeout_seconds;
@@ -659,7 +667,7 @@ impl Engine {
             if extends_invocation_budget {
                 budget_updates.insert(step.key.clone());
             }
-            if (next != Some(step) && !extends_invocation_budget)
+            if (next != Some(step) && !extends_invocation_budget && !regroups_tool)
                 || bindings != old.role_agent_bindings
                 || inputs != old.inputs
                 || !task_changes.is_empty()
@@ -772,8 +780,41 @@ impl Engine {
         });
         let mut selected = crate::standards::selection_state(&facts.catalog.state, &context);
         crate::frozen_views::pin_permission_defaults(&mut selected, &old.plan.permission_locks)?;
-        let mut plan =
-            self.compile_configured_workflow(&selected, &candidate, &row.scope, Some(&bindings))?;
+        let mut business_document = document.clone();
+        business_document.stages = old.plan.document.stages.clone();
+        for step in &mut business_document.steps {
+            if matches!(step.executor, StepExecutor::Tool { .. })
+                && let Some(previous) = old
+                    .plan
+                    .document
+                    .steps
+                    .iter()
+                    .find(|s| s.node_id == step.node_id)
+            {
+                step.stage = previous.stage.clone();
+            }
+        }
+        let layout_only = changes.operations.iter().all(|operation| {
+            matches!(
+                operation,
+                WorkflowChangeOperation::ReplacePlan { .. }
+                    | WorkflowChangeOperation::UpsertStep { .. }
+                    | WorkflowChangeOperation::UpsertStage { .. }
+            )
+        }) && business_document == old.plan.document
+            && old.plan.document.stages.iter().all(|stage| {
+                document.stages.iter().find(|next| next.key == stage.key) == Some(stage)
+            });
+        let mut plan = if layout_only {
+            // Display regrouping must not resolve today's project configuration
+            // into yesterday's execution. Keep all original frozen assets.
+            let mut plan = old.plan.clone();
+            plan.document = document.clone();
+            plan.workflow_revision_id = candidate.id.clone();
+            plan
+        } else {
+            self.compile_configured_workflow(&selected, &candidate, &row.scope, Some(&bindings))?
+        };
         plan.standard_ref = adopted
             .as_ref()
             .map(|(s, _)| s.clone())

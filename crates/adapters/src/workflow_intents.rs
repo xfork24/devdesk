@@ -93,7 +93,7 @@ pub(super) struct TaskFacts {
     history: Option<StepExecution>,
     delivered: Option<(String, String)>,
 }
-fn task_facts(
+pub(super) fn task_facts(
     conn: &Connection,
     row: &ConfigurationRecord,
     descriptor: Value,

@@ -1,4 +1,5 @@
-import { test, expect, Page } from "@playwright/test";
+import { expect, Page } from "@playwright/test";
+import { test } from "./support/kernel";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -106,7 +107,6 @@ for (const allowOverride of [false, true])
       name: "当前工作流",
       exact: true,
     });
-    await runtime.locator(".workflow-stage-toggle").first().click();
     await runtime.locator(".workflow-step-toggle").first().click();
     await runtime
       .getByRole("button", { name: "执行步骤", exact: true })
@@ -129,9 +129,6 @@ for (const allowOverride of [false, true])
     await runtime.getByLabel("手动批准理由（必填）").fill(reason);
     await expect(approve).toBeEnabled();
     await approve.click();
-    await runtime
-      .getByRole("button", { name: "接纳结果", exact: true })
-      .click();
     await runtime
       .getByRole("button", { name: "完成流程", exact: true })
       .click();
@@ -228,7 +225,6 @@ test("并行等待审批的步骤分别保存理由", async ({ page }) => {
   });
   await page.goto(`/?tab=execution&detail=overview&project_id=${project.id}`);
   const runtime = page.getByRole("region", { name: "当前工作流", exact: true });
-  await runtime.locator(".workflow-stage-toggle").first().click();
   const first = page.getByRole("article", {
     name: "步骤 · first",
     exact: true,
@@ -258,8 +254,6 @@ test("并行等待审批的步骤分别保存理由", async ({ page }) => {
     "第二步的人工决定",
   );
   await second.getByRole("button", { name: "手动 Approve 此版本" }).click();
-  await first.getByRole("button", { name: "接纳结果", exact: true }).click();
-  await second.getByRole("button", { name: "接纳结果", exact: true }).click();
   await runtime.getByRole("button", { name: "完成流程", exact: true }).click();
   await expect
     .poll(

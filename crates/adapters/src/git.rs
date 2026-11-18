@@ -544,15 +544,28 @@ impl CliGit {
         let repo = self.context(c)?;
         let path = Path::new(&c.source.worktree);
         self.verify_worktree(&repo, path, &c.source.branch)?;
-        require(
-            self.oid(path, "HEAD")? == revision,
-            "执行 worktree 偏离冻结版本",
-        )?;
-        require(
-            self.output(path, &["status", "--porcelain", "--untracked-files=normal"])?
-                .is_empty(),
-            "执行 worktree 存在未封存修改，需核对来源",
-        )
+        let recovery = |message| {
+            let mut error = err("workspace_recovery_required", message);
+            error.execution_failure = Some(ExecutionFailureDisposition {
+                kind: ExecutionFailureKind::Business,
+                effect: ExecutionFailureEffect::NotApplied,
+            });
+            error
+        };
+        if self.oid(path, "HEAD")? != revision {
+            return Err(recovery(
+                "执行 worktree 偏离冻结版本，需保留现场并核对代码来源后再派发",
+            ));
+        }
+        if !self
+            .output(path, &["status", "--porcelain", "--untracked-files=normal"])?
+            .is_empty()
+        {
+            return Err(recovery(
+                "执行 worktree 存在未封存修改，需保留现场并核对来源、封存或恢复后再派发",
+            ));
+        }
+        Ok(())
     }
     /// Export exact blobs without invoking archive filters or extracting an untrusted host tar stream.
     pub fn export_revision(
@@ -1407,6 +1420,9 @@ impl ports::Git for CliGit {
     fn workspace_revision(&self, c: &GitContext) -> Result<String> {
         let repo = self.context(c)?;
         self.oid(&repo, &format!("refs/heads/{}", c.source.branch))
+    }
+    fn validate_workspace(&self, c: &GitContext, revision: &str) -> Result<()> {
+        self.validate_view(c, revision)
     }
     fn candidate(
         &self,

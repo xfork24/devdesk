@@ -388,6 +388,7 @@ impl NativeTools {
             profile_file: None,
             runner_file: None,
             skill_directory: None,
+            command_output_directory: None,
             sensitive_output: action == "oauth",
             profile_target: None,
         };

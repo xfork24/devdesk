@@ -348,6 +348,7 @@ fn child_closure_rejects_wrong_type_and_recursive_calls_before_publish() {
 
 #[derive(Default)]
 struct RecordingAgent {
+    starts: Mutex<Vec<ports::SessionStart>>,
     hold: std::sync::atomic::AtomicBool,
     responses: Mutex<Vec<Value>>,
     calls: Mutex<Vec<ports::TurnDispatch>>,
@@ -360,6 +361,7 @@ impl ports::Harness for RecordingAgent {
         "fixture:configured-agent".into()
     }
     fn open_session(&self, request: &ports::SessionStart) -> Result<ports::SessionReceipt> {
+        self.starts.lock().unwrap().push(request.clone());
         let task = request
             .configured_task
             .as_ref()
@@ -660,8 +662,12 @@ fn drive(engine: &Engine, rounds: usize) {
             let mut c: Command = serde_json::from_value(row.data["command"].clone()).unwrap();
             let original_fingerprint = devdesk_core::command_fingerprint(method, &c);
             let result = if method == "workflow.tool.execute" {
-                let request = engine.configured_platform_request(&c).unwrap().unwrap();
-                engine.enqueue_platform_tool(&c, &request)
+                let prepared = engine.prepare_configured_platform(&c).unwrap().unwrap();
+                let mut request = prepared.request().clone();
+                if let Some(source) = &request.definition.runtime {
+                    request.runtime = Some(serde_json::from_value(json!({"id":prepared.runtime_operation_id(),"operation_id":prepared.runtime_operation_id(),"harness":{"id":source.harness_ref,"provider":"fixture","version":"fixture","capabilities":[],"origin":"external"},"sandbox":{"id":source.sandbox_ref,"provider":"fixture","version":"fixture","platform":"linux","image":format!("sha256:{}","a".repeat(64)),"network":false,"origin":"external"},"status":"prepared"})).unwrap());
+                }
+                engine.enqueue_prepared_platform_tool(&c, &request, &prepared)
             } else {
                 if method == "session.open" {
                     c.payload["binding"] = json!(fixture_binding());
@@ -1230,7 +1236,15 @@ fn dynamic_spec_rejection_cannot_be_confirmed_and_rework_keeps_the_original_repo
     let contexts = engine
         .query("query.workflow_contexts", &scope, 100)
         .unwrap();
-    assert_eq!(contexts["executions"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        engine
+            .query("query.workflow_executions", &scope, 100)
+            .unwrap()["records"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
     let entries: Vec<_> = contexts["agents"]
         .as_array()
         .unwrap()
@@ -1242,7 +1256,7 @@ fn dynamic_spec_rejection_cannot_be_confirmed_and_rework_keeps_the_original_repo
         .find(|entry| entry["turn_id"] == original["turn_id"])
         .unwrap();
     assert_eq!(frozen["execution_id"], original["execution_id"]);
-    assert_eq!(frozen["outputs"][0]["id"], output);
+    assert_eq!(engine.query("query.workflow_executions", &json!({"project_id":before["project_id"],"owner_id":before["owner_id"],"execution_id":frozen["execution_id"]}),100).unwrap()["record"]["outputs"][0]["id"], output);
     assert!(entries.iter().all(|entry| {
         let source = engine
             .query(
@@ -1916,7 +1930,14 @@ fn waiting_for_a_managed_workspace_does_not_rewrite_the_platform_call() {
         .iter()
         .find(|r| r.r#type == "platform_call")
         .unwrap();
-    assert_eq!(call.data["status"], "running");
+    assert_eq!(call.data["status"], "prepared");
+    assert!(
+        !before
+            .governance
+            .iter()
+            .any(|r| r.r#type == "platform_effect_intent"),
+        "an unavailable workspace cannot grant an external effect"
+    );
     for _ in 0..3 {
         engine.drive_platform_tools().unwrap();
     }
@@ -1970,6 +1991,267 @@ fn platform_step_runs_without_a_placeholder_agent_session_and_seals_real_receipt
                 Ok(Value::Null)
             })
             .is_err()
+    );
+}
+
+// Interleave exactly where a physical result has arrived but admission has not
+// committed. This reproduces Host attaching the original tool-call identifier
+// after the platform grant, without retrying or rebasing any external effect.
+struct ReceiptRace {
+    inner: NativeTools,
+    store: Arc<dyn ports::EngineeringStore>,
+    change: &'static str,
+    calls: std::sync::atomic::AtomicUsize,
+}
+impl ToolExecutor for ReceiptRace {
+    fn validate_schema(&self, schema: &Value) -> Result<()> {
+        self.inner.validate_schema(schema)
+    }
+    fn validate_arguments(&self, schema: &Value, value: &Value) -> Result<()> {
+        self.inner.validate_arguments(schema, value)?;
+        if value.get("captured_at").is_none()
+            || self
+                .calls
+                .compare_exchange(
+                    0,
+                    1,
+                    std::sync::atomic::Ordering::SeqCst,
+                    std::sync::atomic::Ordering::SeqCst,
+                )
+                .is_err()
+        {
+            return Ok(());
+        }
+        use devdesk_core::concurrency::*;
+        let state = self.store.snapshot()?;
+        let run = state
+            .governance
+            .iter()
+            .find(|r| r.r#type == "workflow_instance")
+            .unwrap();
+        let execution = run.data["steps"][0]["id"].as_str().unwrap();
+        let key = if self.change == "control" {
+            ResourceKey::new("workflow_header", &run.id)
+        } else {
+            ResourceKey::new("workflow_step", json!([run.id, execution]).to_string())
+        };
+        let row = self
+            .store
+            .read_resources(std::slice::from_ref(&key))?
+            .remove(0);
+        let mut next = row.value.unwrap();
+        match self.change {
+            "bookkeeping" => next["tool_call_id"] = json!(execution),
+            "contract" => next["contract_digest"] = json!("changed-contract"),
+            "cancel" => next["status"] = json!("cancelled"),
+            "control" => {
+                next["control_version"] = json!(next["control_version"].as_u64().unwrap() + 1)
+            }
+            _ => unreachable!(),
+        }
+        self.store.commit_changes(&PreparedChangeSet {
+            command_id: "receipt-race".into(),
+            fingerprint: configuration_hash(&next),
+            read_set: ReadSet::new(vec![ResourceVersion {
+                resource: key.clone(),
+                revision: row.revision,
+            }])?,
+            changes: vec![ResourceChange {
+                resource: key,
+                value: next,
+            }],
+            result: Value::Null,
+            time: 2,
+        })?;
+        Ok(())
+    }
+    fn start(&self, i: &ToolInvocation) -> Result<()> {
+        self.inner.start(i)
+    }
+    fn poll(&self, i: &ToolInvocation) -> Result<Option<ToolReceipt>> {
+        self.inner.poll(i)
+    }
+    fn cancel(&self, i: &ToolInvocation) -> Result<()> {
+        self.inner.cancel(i)
+    }
+    fn discover(
+        &self,
+        s: &IntegrationDefinition,
+        b: &IntegrationBinding,
+        image: &str,
+        p: &ExecutionPermissions,
+    ) -> Result<Value> {
+        self.inner.discover(s, b, image, p)
+    }
+}
+fn platform_receipt_race(change: &'static str) {
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = engine(dir.path());
+    let validator = Arc::new(ReceiptRace {
+        inner: NativeTools::new(dir.path()).unwrap(),
+        store: e.store.clone(),
+        change,
+        calls: Default::default(),
+    });
+    e.tool_executor = Some(validator.clone());
+    let workflow = publish(
+        &e,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"Capture"}],"steps":[{"key":"capture","name":"Capture","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-materials-capture:1","arguments":{"material":{"type":"constant","value":{"source":"immutable input"}}}},"outputs":{"receipt":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
+    );
+    let project = command(&e, "project.create", None, json!({"title":"Receipt race"})).unwrap();
+    command(
+        &e,
+        "workflow.start",
+        project["id"].as_str(),
+        json!({"workflow_ref":workflow["id"],"role_agent_bindings":{}}),
+    )
+    .unwrap();
+    drive(&e, 6);
+    let state = e.store.snapshot().unwrap();
+    let call = state
+        .governance
+        .iter()
+        .find(|r| r.r#type == "platform_call")
+        .unwrap();
+    assert_eq!(
+        validator.calls.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "one physical result admission attempt"
+    );
+    assert_eq!(
+        state
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "platform_effect_intent")
+            .count(),
+        1
+    );
+    assert_eq!(
+        state
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "platform_effect_observation")
+            .count(),
+        1
+    );
+    if change == "bookkeeping" {
+        assert_eq!(call.data["status"], "succeeded", "{call:?}");
+        assert!(
+            !state
+                .governance
+                .iter()
+                .any(|r| r.r#type == "platform_receipt_rejection")
+        );
+    } else {
+        assert_eq!(call.data["status"], "needs_reconciliation", "{call:?}");
+        assert!(
+            state
+                .governance
+                .iter()
+                .any(|r| r.r#type == "platform_receipt_rejection")
+        );
+    }
+}
+#[test]
+fn platform_receipt_survives_original_tool_call_bookkeeping() {
+    platform_receipt_race("bookkeeping");
+}
+#[test]
+fn platform_receipt_retains_original_contract_witness() {
+    platform_receipt_race("contract");
+}
+#[test]
+fn platform_receipt_retains_original_cancellation_witness() {
+    platform_receipt_race("cancel");
+}
+#[test]
+fn platform_receipt_retains_original_header_control_witness() {
+    platform_receipt_race("control");
+}
+
+#[test]
+fn a_concurrent_sweep_does_not_recover_an_in_flight_granted_attempt() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let dir = tempfile::tempdir().unwrap();
+    let e = Arc::new(engine(dir.path()));
+    let workflow = publish(
+        &e,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"Capture"}],"steps":[{"key":"capture","name":"Capture","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-materials-capture:1","arguments":{"material":{"type":"constant","value":{"source":"one frozen attempt"}}}},"outputs":{"receipt":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
+    );
+    let project = command(
+        &e,
+        "project.create",
+        None,
+        json!({"title":"Concurrent sweep"}),
+    )
+    .unwrap();
+    command(
+        &e,
+        "workflow.start",
+        project["id"].as_str(),
+        json!({"workflow_ref":workflow["id"],"role_agent_bindings":{}}),
+    )
+    .unwrap();
+    let fired = Arc::new(AtomicBool::new(false));
+    let entered = fired.clone();
+    let weak = Arc::downgrade(&e);
+    let listener: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+        if entered.load(Ordering::Acquire) {
+            return;
+        }
+        let e = weak.upgrade().unwrap();
+        let state = e.store.snapshot().unwrap();
+        let Some(call) = state
+            .governance
+            .iter()
+            .find(|r| r.r#type == "platform_call" && r.data["status"] == "running")
+        else {
+            return;
+        };
+        if entered.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        // Original grant is committed, but its physical execution/observation
+        // has not run. Force a second real sweep into exactly that window.
+        let other = e.clone();
+        std::thread::spawn(move || other.drive_platform_tools().unwrap())
+            .join()
+            .unwrap();
+        assert_eq!(
+            e.store
+                .snapshot()
+                .unwrap()
+                .configuration(&call.id)
+                .unwrap()
+                .data["status"],
+            "running",
+            "a live attempt must not be diagnosed as an interrupted one"
+        );
+    });
+    e.store.subscribe_changes(Arc::downgrade(&listener));
+    drive(&e, 8);
+    assert!(fired.load(Ordering::Acquire));
+    let state = e.store.snapshot().unwrap();
+    let calls = state
+        .governance
+        .iter()
+        .filter(|r| r.r#type == "platform_call")
+        .collect::<Vec<_>>();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].data["status"], "succeeded");
+    assert_eq!(
+        state
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "platform_effect_intent")
+            .count(),
+        1
+    );
+    assert!(
+        !state
+            .governance
+            .iter()
+            .any(|r| r.r#type == "platform_receipt_rejection")
     );
 }
 
@@ -2126,25 +2408,56 @@ fn cancelling_one_child_does_not_cancel_its_sibling_and_rework_replaces_the_old_
 
 #[test]
 fn configured_workspace_snapshot_and_candidate_use_actual_git_and_reject_forged_requests() {
-    actual_git_candidate(false, false, false);
+    actual_git_candidate(false, false, false, false);
 }
 
 #[test]
 fn explicit_waivers_allow_actual_git_without_inventing_test_or_human_receipts() {
-    actual_git_candidate(true, false, false);
+    actual_git_candidate(true, false, false, false);
 }
 
 #[test]
 fn actual_task_reads_its_feature_merge_target_before_building_git_candidate() {
-    actual_git_candidate(false, true, false);
+    actual_git_candidate(false, true, false, false);
 }
 
 #[test]
 fn actual_git_writer_rework_uses_sealed_checkpoint_and_preserves_history() {
-    actual_git_candidate(false, true, true);
+    actual_git_candidate(false, true, true, false);
 }
 
-fn actual_git_candidate(waived_advance: bool, task_owner: bool, rework_writer: bool) {
+#[test]
+fn actual_git_candidate_is_a_test_grant_only_in_its_original_root() {
+    actual_git_candidate(false, true, false, true);
+}
+
+#[derive(Default)]
+struct CandidateTests(Mutex<Vec<ports::TestRequest>>);
+impl ports::Tests for CandidateTests {
+    fn poll_test(&self, request: &ports::TestRequest) -> Result<Option<Value>> {
+        self.0.lock().unwrap().push(request.clone());
+        Ok(Some(json!(TestResult {
+            operation_id: request.operation_id.clone(),
+            status: TestOutcome::Succeeded,
+            candidate: request.candidate.clone(),
+            environment: request.environment.clone(),
+            origin: Origin::External,
+            assertion_failed: false,
+            expected_failure: false,
+            failure_type: None,
+        })))
+    }
+    fn cleanup_test(&self, _: &ports::TestRequest) -> Result<()> {
+        Ok(())
+    }
+}
+
+fn actual_git_candidate(
+    waived_advance: bool,
+    task_owner: bool,
+    rework_writer: bool,
+    verify_candidate: bool,
+) {
     fn git(path: &std::path::Path, args: &[&str]) -> String {
         let output = std::process::Command::new("git")
             .args([
@@ -2173,6 +2486,10 @@ fn actual_git_candidate(waived_advance: bool, task_owner: bool, rework_writer: b
     let mut engine = engine(dir.path());
     let recorder = Arc::new(RecordingAgent::default());
     engine.harness = recorder.clone();
+    let candidate_tests = Arc::new(CandidateTests::default());
+    if verify_candidate {
+        engine.tests = candidate_tests.clone();
+    }
     let (role, agent) = research_agent(&engine);
     let project = command(&engine, "project.create", None, json!({"title":"实际 Git"})).unwrap();
     let project = project["id"].as_str().unwrap().to_owned();
@@ -2318,6 +2635,9 @@ fn actual_git_candidate(waived_advance: bool, task_owner: bool, rework_writer: b
             .push(json!("target"));
         document["steps"][2]["executor"]["arguments"]["target_revision"] = json!({"type":"source","source":{"step":"target","port":"workspace","pointer":"/revision"}});
     }
+    if verify_candidate {
+        document["steps"].as_array_mut().unwrap().push(json!({"key":"candidate_tests","name":"验证真实合成候选","stage":"work","dependencies":["candidate"],"executor":{"type":"tool","tool_ref":"builtin-tool-tests-run:1","arguments":{"workspace":{"type":"source","source":{"step":"candidate","port":"candidate"}},"recipe":{"type":"constant","value":{"runner":"node_test","files":["probe.test.mjs"],"timeout_seconds":30}}}},"outputs":{"report":{"delivery_ref":"fixture-delivery-object:1"}}}));
+    }
     if waived_advance {
         document["action_requirements"] = json!({"git.advance":["tests","confirmation"]});
         document["steps"].as_array_mut().unwrap().push(json!({"key":"advance","name":"带明确例外接纳","stage":"work","dependencies":["candidate"],"executor":{"type":"tool","tool_ref":"builtin-tool-git-advance:1","arguments":{"workspace":{"type":"source","source":{"step":"current","port":"workspace"}},"candidate":{"type":"source","source":{"step":"candidate","port":"candidate"}}}},"outputs":{"accepted":{"delivery_ref":"fixture-delivery-object:1"}}}));
@@ -2383,6 +2703,52 @@ fn actual_git_candidate(waived_advance: bool, task_owner: bool, rework_writer: b
             .enqueue_platform_tool(&platform_command, &forged)
             .is_err()
     );
+    if rework_writer {
+        recorder
+            .hold
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        for _ in 0..30 {
+            drive(&engine, 1);
+            if !recorder.calls.lock().unwrap().is_empty() {
+                break;
+            }
+        }
+        let mut request = recorder.starts.lock().unwrap().last().unwrap().clone();
+        request.project_root = dir
+            .path()
+            .join("projects")
+            .join(&project)
+            .to_string_lossy()
+            .into();
+        request
+            .session
+            .runtime_binding
+            .as_mut()
+            .unwrap()
+            .adapter_version =
+            devdesk_adapters::harness::managed_adapter_identity(HarnessProvider::Codex);
+        let native = devdesk_adapters::CodexHarness::new(
+            devdesk_adapters::RuntimeWorkers::new(dir.path()).unwrap(),
+        );
+        let error = ports::Harness::open_session(&native, &request).unwrap_err();
+        assert!(error.message.contains("未封存修改"), "{error}");
+        assert_eq!(error.code, "workspace_recovery_required");
+        assert!(
+            !WorkflowFailure::from_error(
+                &error,
+                "startup-preflight".into(),
+                ExecutionFailureKind::Technical,
+            )
+            .automatic_retry_safe()
+        );
+        assert_eq!(
+            error.execution_failure.unwrap().effect,
+            ExecutionFailureEffect::NotApplied
+        );
+        recorder
+            .hold
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+    }
     drive(&engine, 12);
     let runtime = instance(&engine, &run["id"]);
     if rework_writer {
@@ -2409,6 +2775,49 @@ fn actual_git_candidate(waived_advance: bool, task_owner: bool, rework_writer: b
             .unwrap()
             .clone();
         let instance_id = run["id"].as_str().unwrap();
+        let addition = std::path::Path::new(&work.path).join("addition.txt");
+        let loose = std::path::Path::new(&work.path).join("unsealed.txt");
+        let sealed_content = std::fs::read(&addition).unwrap();
+        let histories = state
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "workflow_execution_history")
+            .count();
+        let starts = recorder.starts.lock().unwrap().len();
+        // Leftovers must be preserved and rejected before creating new rounds.
+        std::fs::write(&addition, "unsealed tracked change\n").unwrap();
+        std::fs::write(&loose, "unsealed new file\n").unwrap();
+        let error = command(
+            &engine,
+            "workflow.step.rework",
+            Some(instance_id),
+            json!({"step":"writer"}),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "workspace_recovery_required");
+        assert_eq!(instance(&engine, &run["id"]), before);
+        assert_eq!(recorder.starts.lock().unwrap().len(), starts);
+        assert_eq!(
+            std::fs::read_to_string(&addition).unwrap(),
+            "unsealed tracked change\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&loose).unwrap(),
+            "unsealed new file\n"
+        );
+        assert_eq!(
+            engine
+                .store
+                .snapshot()
+                .unwrap()
+                .governance
+                .iter()
+                .filter(|r| r.r#type == "workflow_execution_history")
+                .count(),
+            histories
+        );
+        std::fs::write(&addition, sealed_content).unwrap();
+        std::fs::remove_file(&loose).unwrap();
         // A moved code head with no genuine snapshot cannot become a checkpoint.
         engine
             .store
@@ -2459,6 +2868,24 @@ fn actual_git_candidate(waived_advance: bool, task_owner: bool, rework_writer: b
             queued["active_plan_revision_id"],
             before["active_plan_revision_id"]
         );
+        // An external change after rework must also be caught at dispatch,
+        // before any session starts, without turning it into a failed attempt.
+        std::fs::write(&loose, "external change after rework\n").unwrap();
+        let error = command(
+            &engine,
+            "workflow.step.dispatch",
+            Some(instance_id),
+            json!({"step":"writer"}),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "workspace_recovery_required");
+        assert_eq!(instance(&engine, &run["id"]), queued);
+        assert_eq!(recorder.starts.lock().unwrap().len(), starts);
+        assert_eq!(
+            std::fs::read_to_string(&loose).unwrap(),
+            "external change after rework\n"
+        );
+        std::fs::remove_file(&loose).unwrap();
         recorder.writes.lock().unwrap().push((
             std::path::Path::new(&work.path).join("addition.txt"),
             "reworked change\n".into(),
@@ -2726,6 +3153,28 @@ fn actual_git_candidate(waived_advance: bool, task_owner: bool, rework_writer: b
         calls[0].configured_task.as_ref().unwrap().task["inputs"]["changes"],
         *changes
     );
+    if verify_candidate {
+        let observed = candidate_tests.0.lock().unwrap();
+        assert_eq!(observed.len(), 1);
+        assert_eq!(observed[0].candidate, candidate);
+        drop(observed);
+        let grant = output.data["value"].clone();
+        drop(calls);
+        drop(state);
+        // The commit may exist in this repository, but another root has no
+        // authority to use the first root's platform receipt as its grant.
+        let foreign = publish(
+            &engine,
+            json!({"schema_version":6,"stages":[{"key":"work","name":"来源边界"}],"steps":[{"key":"foreign","name":"拒绝其他根候选","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-tests-run:1","arguments":{"workspace":{"type":"constant","value":grant},"recipe":{"type":"constant","value":{"runner":"node_test","files":["probe.test.mjs"],"timeout_seconds":30}}}},"outputs":{"report":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
+        );
+        let run = command(&engine,"workflow.start",Some(&task),json!({"workflow_ref":foreign["id"],"role_agent_bindings":{role["id"].as_str().unwrap():agent["id"]}})).unwrap();
+        drive(&engine, 4);
+        let denied = instance(&engine, &run["id"]);
+        assert_eq!(denied["steps"][0]["status"], "failed", "{denied}");
+        assert_eq!(denied["steps"][0]["failure"]["code"], "scope_violation");
+        assert_eq!(denied["steps"][0]["failure"]["effect"], "not_applied");
+        assert_eq!(candidate_tests.0.lock().unwrap().len(), 1);
+    }
 }
 
 #[test]
@@ -3504,13 +3953,8 @@ fn task_agent_steps_own_distinct_sessions_even_while_the_same_agent_has_an_activ
     let pending_contexts = engine
         .query("query.workflow_contexts", &scope, 100)
         .unwrap();
-    assert!(
-        pending_contexts["executions"]
-            .as_array()
-            .unwrap()
-            .is_empty()
-    );
     assert!(pending_contexts["agents"].as_array().unwrap().is_empty());
+    assert_eq!(pending_contexts["more"], false);
     let planned = engine
         .query("query.workflow_executions", &scope, 100)
         .unwrap();
@@ -3584,7 +4028,12 @@ fn task_agent_steps_own_distinct_sessions_even_while_the_same_agent_has_an_activ
     let contexts = engine
         .query("query.workflow_contexts", &scope, 100)
         .unwrap();
-    assert_eq!(contexts["executions"].as_array().unwrap().len(), 3);
+    assert!(!contexts["agents"].as_array().unwrap().is_empty());
+    let with_empty_filters=engine.query("query.workflow_contexts",&json!({"project_id":project["id"],"owner_id":project["id"],"agent_instance_id":"","output_id":"","session_id":"","turn_id":""}),100).unwrap();
+    assert_eq!(
+        contexts, with_empty_filters,
+        "empty navigation selectors must not filter out real contexts"
+    );
     assert!(
         engine
             .query(

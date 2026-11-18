@@ -1,5 +1,7 @@
 import { displayText } from "../display-text";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRuntimeRefresh } from "./useRuntimeRefresh";
+import { runtimeDisplayKey } from "../runtime-state";
 import { ActionButton } from "./ActionFeedback";
 import { WorkStandard } from "./WorkStandard";
 import {
@@ -39,6 +41,7 @@ export function WorkflowProjectManager({
       ? loadedData
       : undefined;
   const [error, setError] = useState("");
+  const [manualRefresh, setManualRefresh] = useState(0);
   const [collaboration, setCollaboration] = useState<WorkflowCollaboration>();
   const shared = inherited || collaboration;
   const updateCollaboration = onCollaboration || setCollaboration;
@@ -123,30 +126,47 @@ export function WorkflowProjectManager({
   };
 
   const epoch = useRef(0);
-  const load = useCallback(async () => {
-    const ticket = ++epoch.current;
-    const [result, progress] = await Promise.all([
-      request("query.workflow_management_summary", {
-        id: record.id,
-        project_id: projectId,
-        child_offset: childOffset,
-      }),
-      request("query.workflow_progress", {
-        id: record.id,
-        project_id: projectId,
-      }),
-    ]);
-    if (ticket === epoch.current) {
-      setData({ ...result, progress, _projectId: projectId });
-      setError("");
-    }
-  }, [request, record.id, projectId, childOffset]);
-  useEffect(() => {
-    void load().catch((error) => setError(String(error)));
-    return () => {
-      epoch.current += 1;
-    };
-  }, [record.revision, load]);
+  const load = useCallback(
+    async (fresh = false) => {
+      const ticket = ++epoch.current;
+      const [result, progress] = await Promise.all([
+        request(
+          "query.workflow_management_summary",
+          {
+            id: record.id,
+            project_id: projectId,
+            child_offset: childOffset,
+          },
+          { fresh },
+        ),
+        request(
+          "query.workflow_progress",
+          {
+            id: record.id,
+            project_id: projectId,
+          },
+          { fresh },
+        ),
+      ]);
+      if (ticket === epoch.current) {
+        const next = { ...result, progress, _projectId: projectId };
+        setData((previous) =>
+          runtimeDisplayKey(previous) === runtimeDisplayKey(next)
+            ? previous
+            : next,
+        );
+        setError("");
+      }
+    },
+    [request, record.id, projectId, childOffset],
+  );
+  const invalidate = useCallback(() => {
+    epoch.current += 1;
+  }, []);
+  useRuntimeRefresh(load, projectId, record.id, {
+    invalidate,
+    onError: (value) => setError(String(value)),
+  });
   const refreshManagement = async () => {
     await load();
     await refresh();
@@ -210,7 +230,11 @@ export function WorkflowProjectManager({
         </h3>
         <ActionButton
           type="button"
-          onClick={() => void load().catch((error) => setError(String(error)))}
+          onClick={() =>
+            void Promise.all([load(true), shared?.reload(true)])
+              .then(() => setManualRefresh((value) => value + 1))
+              .catch((error) => setError(String(error)))
+          }
         >
           刷新管理状态
         </ActionButton>
@@ -337,63 +361,65 @@ export function WorkflowProjectManager({
           </div>
         </details>
       )}
-      {!runtime.cancel_requested &&
-        !["completed", "cancelled"].includes(runtime.status) && (
-          <WorkflowPlanChanges
-            embedded
-            request={request}
-            instance={current}
-            projectId={projectId}
-            refresh={refreshManagement}
-          />
-        )}
-      <details
-        className="panel"
-        onToggle={(event) => {
-          if (event.currentTarget.open && !history && !historyLoading) {
-            void loadHistory();
-          }
-        }}
+      <WorkflowPlanChanges
+        embedded
+        readOnly={
+          runtime.cancel_requested ||
+          ["completed", "cancelled"].includes(runtime.status)
+        }
+        request={request}
+        instance={current}
+        projectId={projectId}
+        refresh={refreshManagement}
       >
-        <summary>
-          计划与执行历史{history ? ` · ${history.length} 条` : ""}
-        </summary>
-        {historyError && <p role="alert">{historyError}</p>}
-        {historyLoading && <p role="status">正在读取计划与执行历史…</p>}
-        {(history || []).map((r: Row) => (
-          <p key={r.id}>
-            {r.name} ·{" "}
-            {r.type === "workflow_execution_history" ? (
-              <ReadingLink
-                detail="records"
-                projectId={projectId}
-                ownerId={runtime.owner_id}
-                target={{ instance_id: current.id, execution_id: r.data.id }}
-              >
-                查看历史执行
-              </ReadingLink>
-            ) : (
-              <RawJsonLink
-                source="record"
-                params={{
-                  project_id: projectId,
-                  owner_id: runtime.owner_id,
-                  record_id: r.id,
-                }}
-                title="查看计划/变更原始记录"
-              />
-            )}
-          </p>
-        ))}
-        {historyBefore !== undefined ? (
-          <ActionButton
-            disabled={historyLoading}
-            onClick={() => void loadHistory(historyBefore)}
-          >
-            继续读取历史
-          </ActionButton>
-        ) : null}
-      </details>
+        <details
+          className="manager-history"
+          onToggle={(event) => {
+            if (event.currentTarget.open && !history && !historyLoading) {
+              void loadHistory();
+            }
+          }}
+        >
+          <summary>
+            计划与执行历史{history ? ` · ${history.length} 条` : ""}
+          </summary>
+          {historyError && <p role="alert">{historyError}</p>}
+          {historyLoading && <p role="status">正在读取计划与执行历史…</p>}
+          {(history || []).map((r: Row) => (
+            <p key={r.id}>
+              {r.name} ·{" "}
+              {r.type === "workflow_execution_history" ? (
+                <ReadingLink
+                  detail="records"
+                  projectId={projectId}
+                  ownerId={runtime.owner_id}
+                  target={{ instance_id: current.id, execution_id: r.data.id }}
+                >
+                  查看历史执行
+                </ReadingLink>
+              ) : (
+                <RawJsonLink
+                  source="record"
+                  params={{
+                    project_id: projectId,
+                    owner_id: runtime.owner_id,
+                    record_id: r.id,
+                  }}
+                  title="查看计划/变更原始记录"
+                />
+              )}
+            </p>
+          ))}
+          {historyBefore !== undefined ? (
+            <ActionButton
+              disabled={historyLoading}
+              onClick={() => void loadHistory(historyBefore)}
+            >
+              继续读取历史
+            </ActionButton>
+          ) : null}
+        </details>
+      </WorkflowPlanChanges>
 
       <WorkflowController
         embedded
@@ -412,6 +438,7 @@ export function WorkflowProjectManager({
       <section
         className={cardClass}
         data-instance-id={current.id}
+        data-manual-refresh={manualRefresh}
         aria-label={displayText(nested ? title : "项目经理")}
       >
         {content}

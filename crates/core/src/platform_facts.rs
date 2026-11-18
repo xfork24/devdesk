@@ -42,6 +42,14 @@ pub(crate) enum PlatformAction {
         operation: Id,
         operations: Value,
     },
+    ReusedPublication {
+        context: GitContext,
+        expected: String,
+        candidate: String,
+        receipt: Value,
+        source_call_id: Id,
+        source_observation_id: Id,
+    },
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct PlatformPlan {
@@ -214,7 +222,13 @@ impl Engine {
             "原工作空间身份或归属不符",
         )?;
         let mut accepted = None;
-        for handler in ["workspace.current", "workspace.snapshot"] {
+        for handler in ["workspace.current", "workspace.snapshot"]
+            .into_iter()
+            // A synthetic Git candidate is a real immutable revision issued
+            // by this root. It authorizes testing that exact commit, without
+            // granting it as a writable snapshot/head for other operations.
+            .chain((request.definition.qualified_name == "tests.run").then_some("git.candidate"))
+        {
             // Workspace grants may include optional diff metadata. The exact
             // issued receipt is immutable; the projection predicate below
             // selects by workspace/revision rather than inventing a receipt.
@@ -228,7 +242,11 @@ impl Engine {
             let row = one(self.store.as_ref(), "platform_workspace_grant", &key)?;
             if let Some(raw) = &row.value {
                 require(
-                    raw["data"]["receipt"]["workspace_id"] == id
+                    raw["type"] == "platform_call"
+                        && raw["data"]["status"] == "succeeded"
+                        && raw["data"]["root_instance_id"] == resources.instance.root_instance_id
+                        && raw["data"]["handler"] == handler
+                        && raw["data"]["receipt"]["workspace_id"] == id
                         && raw["data"]["receipt"]["revision"] == grant["revision"],
                     "工作空间真实回执不符",
                 )?;
@@ -619,13 +637,25 @@ impl Engine {
                         let operations =
                             one(self.store.as_ref(), "governance", &request.execution_id)?;
                         plan.basis = plan.basis.merge([version(&operations)])?;
-                        PlatformAction::Publish {
-                            context,
-                            expected: text(candidate, "target_revision")?,
-                            candidate: text(candidate, "revision")?,
-                            operation: request.execution_id.clone(),
-                            operations: operations.value.as_ref().unwrap()["data"]["operations"]
-                                .clone(),
+                        if let Some(reused) = crate::publication_retry::completed_publication(
+                            self.store.as_ref(),
+                            request,
+                            &resources.execution,
+                            &resources.instance.root_instance_id,
+                            &context,
+                        )? {
+                            plan.basis =
+                                plan.basis.merge(reused.reads.versions().iter().cloned())?;
+                            reused.action
+                        } else {
+                            PlatformAction::Publish {
+                                context,
+                                expected: text(candidate, "target_revision")?,
+                                candidate: text(candidate, "revision")?,
+                                operation: request.execution_id.clone(),
+                                operations:
+                                    operations.value.as_ref().unwrap()["data"]["operations"].clone(),
+                            }
                         }
                     }
                 }

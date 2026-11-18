@@ -462,7 +462,36 @@ impl Engine {
                             ),
                         "原工作副本归属不符",
                     )?;
-                    basis = basis.merge(owner.read_set.versions().iter().cloned())?;
+                    // Full owner versions authorize the external attempt. Its
+                    // receipt depends on identity/scope/editability, not a
+                    // concurrent status transition such as draft -> running.
+                    qualifiers.extend(owner.read_set.versions().iter().cloned());
+                    let eligibility = one(
+                        self.store.as_ref(),
+                        "repository_owner_eligible",
+                        &json!([
+                            op.project_id,
+                            owner.owner.resource.id,
+                            owner.owner.resource.kind,
+                            owner.parent.as_ref().map(|p| &p.resource.id)
+                        ])
+                        .to_string(),
+                    )?;
+                    require(
+                        eligibility
+                            .value
+                            .as_ref()
+                            .is_some_and(|v| v["eligible"] == true),
+                        "工作副本原归属已冻结或变化",
+                    )?;
+                    basis = basis.merge([version(&eligibility)])?.merge(
+                        owner
+                            .read_set
+                            .versions()
+                            .iter()
+                            .filter(|v| v.resource.kind == "project_live")
+                            .cloned(),
+                    )?;
                     let workspace = one(
                         self.store.as_ref(),
                         "repository_worktree",
@@ -871,10 +900,15 @@ impl Engine {
                 if *worktree_kind == WorktreeKind::Task {
                     let key = ResourceKey::new("task", owner);
                     let selected = one(self.store.as_ref(), &key.kind, &key.id)?;
+                    let current = selected
+                        .value
+                        .as_ref()
+                        .ok_or_else(|| err("not_found", "Task 缺失"))?;
                     require(
-                        reads.require(&key)? == selected.revision,
-                        "Task 原接纳版本已变化",
+                        current["worktree"] == "" && current["status"] != "completed",
+                        "Task 工作副本已改变或冻结",
                     )?;
+                    *reads = reads.merge([version(&selected)])?;
                     let mut next = selected
                         .value
                         .ok_or_else(|| err("not_found", "Task 缺失"))?;

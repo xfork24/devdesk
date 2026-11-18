@@ -1,11 +1,13 @@
 import { displayText, truncateText } from "../display-text";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRuntimeRefresh } from "./useRuntimeRefresh";
 import { ChevronRight } from "lucide-react";
 import { ActionButton } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
 import { type Request, type Row } from "./rpc-types";
 import { ReadingLink, ReadState } from "./reading";
 import { WorkflowReferences } from "./WorkflowReferences";
+import { WorkflowStageProgress } from "./WorkflowStageProgress";
 import { useReading } from "./reading-state";
 
 type Props = {
@@ -26,6 +28,12 @@ type ActionBaseline = {
   stepRevision?: number;
   execution?: Row;
 };
+type StageNavigation = {
+  key: string;
+  hasSteps: boolean;
+  visitedPages: number[];
+};
+const stepPageSize = 20;
 const stateLabels: Record<string, string> = {
   queued: "等待前置",
   running: "执行中",
@@ -78,6 +86,9 @@ export function WorkflowInstanceView({
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [childOffset, setChildOffset] = useState(0);
+  const [stepOffset, setStepOffset] = useState(0);
+  const [stageNavigation, setStageNavigation] = useState<StageNavigation>();
+  const stageElements = useRef(new Map<string, HTMLElement>());
   const drafts = useRef(new Map<string, ActionBaseline>());
   const attempts = useRef(
     new Map<string, { fingerprint: string; id: string }>(),
@@ -90,49 +101,69 @@ export function WorkflowInstanceView({
       return {};
     }
   });
+  const opened = useRef(open);
+  opened.current = open;
   const epoch = useRef(0);
   const focusedTarget = useRef("");
   const invalidate = useCallback(() => {
     epoch.current += 1;
   }, []);
-  const load = useCallback(async () => {
-    const current = ++epoch.current;
-    const result = await request("query.workflow_instance", {
-      id: record.id,
-      project_id: projectId,
-      view: "status",
-      child_offset: childOffset,
-    });
-    if (epoch.current === current)
-      setData({ ...result, _projectId: projectId });
-  }, [request, record.id, projectId, childOffset]);
-  useEffect(() => {
-    let active = true;
-    let timer: ReturnType<typeof setTimeout>;
-    async function poll() {
-      try {
-        await load();
-      } catch (error) {
-        if (active) setError(String(error));
-      } finally {
-        if (active) timer = setTimeout(() => void poll(), 2500);
-      }
-    }
-    void poll();
-    return () => {
-      active = false;
-      clearTimeout(timer);
-      invalidate();
-    };
-  }, [
-    record.id,
-    record.revision,
-    projectId,
-    request,
-    load,
-    setError,
+  const load = useCallback(
+    async (fresh = false) => {
+      const current = ++epoch.current;
+      const result = await request(
+        "query.workflow_instance",
+        {
+          id: record.id,
+          project_id: projectId,
+          view: "status",
+          child_offset: childOffset,
+          step_offset: stepOffset,
+        },
+        { fresh },
+      );
+      const completionStatus = { ...result.completion_status };
+      await Promise.all(
+        (result.runtime?.steps || [])
+          .filter(
+            (step: Row) =>
+              opened.current["step:" + step.id] &&
+              ["waiting_confirmation", "awaiting_acceptance"].includes(
+                step.status,
+              ),
+          )
+          .map(async (step: Row) => {
+            const qualified = await request("query.workflow_instance", {
+              id: record.id,
+              project_id: projectId,
+              execution_id: step.id,
+              view: "qualification",
+            });
+            if (qualified.completion_status?.[step.id])
+              completionStatus[step.id] = qualified.completion_status[step.id];
+          }),
+      );
+      if (epoch.current === current)
+        setData({
+          ...result,
+          completion_status: completionStatus,
+          _projectId: projectId,
+        });
+    },
+    [request, record.id, projectId, childOffset, stepOffset],
+  );
+  useRuntimeRefresh(load, projectId, record.id, {
     invalidate,
-  ]);
+    onError: (value) => setError(String(value)),
+  });
+  const openedSteps = JSON.stringify(
+    Object.keys(open).filter((key) => key.startsWith("step:") && open[key]),
+  );
+  useEffect(() => {
+    if (openedSteps !== "[]")
+      void load().catch((value) => setError(String(value)));
+  }, [openedSteps, load, setError]);
+
   useEffect(() => {
     try {
       localStorage.setItem(storageKey, JSON.stringify(open));
@@ -145,6 +176,50 @@ export function WorkflowInstanceView({
   const runtime = activeData?.runtime || record.data,
     current = activeData?.record || record,
     plan = activeData?.plan || runtime.plan?.document;
+  useEffect(() => {
+    if (
+      !stageNavigation ||
+      !activeData ||
+      (activeData.step_offset ?? 0) !== stepOffset
+    )
+      return;
+    const hasLoadedSteps = activeData.plan?.steps?.some(
+      (step: Row) => step.stage === stageNavigation.key,
+    );
+    if (stageNavigation.hasSteps && !hasLoadedSteps) {
+      const visited = new Set([...stageNavigation.visitedPages, stepOffset]);
+      for (
+        let offset = 0;
+        offset < activeData.step_total;
+        offset += stepPageSize
+      ) {
+        if (!visited.has(offset)) {
+          setStageNavigation({
+            ...stageNavigation,
+            visitedPages: [...visited],
+          });
+          setStepOffset(offset);
+          return;
+        }
+      }
+    }
+    const element = stageElements.current.get(stageNavigation.key);
+    if (!element || open[`stage:${stageNavigation.key}`] === false) return;
+    element.scrollIntoView({
+      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+      block: "start",
+    });
+    element
+      .querySelector<HTMLButtonElement>(".workflow-stage-toggle")
+      ?.focus({ preventScroll: true });
+    setStageNavigation(undefined);
+  }, [stageNavigation, activeData, stepOffset, open]);
+  function selectStage(key: string, stepCount: number) {
+    setOpen((previous) => ({ ...previous, [`stage:${key}`]: true }));
+    setStageNavigation({ key, hasSteps: stepCount > 0, visitedPages: [] });
+  }
   const draftKey = (executionId: string) =>
     `${projectId}:${record.id}:${executionId}`;
   function baseline(execution?: Row): ActionBaseline {
@@ -283,8 +358,11 @@ export function WorkflowInstanceView({
       endFeedback();
     }
   }
-  const toggle = (key: string) =>
-    setOpen((previous) => ({ ...previous, [key]: !previous[key] }));
+  const toggle = (key: string, defaultOpen = false) =>
+    setOpen((previous) => ({
+      ...previous,
+      [key]: !(previous[key] ?? defaultOpen),
+    }));
   if (!activeData)
     return (
       <section className="panel" aria-label="当前工作流">
@@ -310,7 +388,7 @@ export function WorkflowInstanceView({
             type="button"
             disabled={busy}
             onClick={() =>
-              void load().catch((error) => setError(String(error)))
+              void load(true).catch((error) => setError(String(error)))
             }
           >
             刷新进度
@@ -355,6 +433,14 @@ export function WorkflowInstanceView({
           ) : null}
         </div>
       </div>
+      {!nested && (
+        <WorkflowStageProgress
+          request={request}
+          record={current}
+          projectId={projectId}
+          onStageSelect={selectStage}
+        />
+      )}
       {historical.loading && <ReadState {...historical} />}
       {historical.error && <ReadState {...historical} />}
       {historical.value?.record && (
@@ -401,9 +487,14 @@ export function WorkflowInstanceView({
         ).length;
         const status = stageStatus(executions);
         const stageKey = `stage:${stage.key}`;
-        const stageOpen = !!open[stageKey];
+        const stageOpen = open[stageKey] ?? true;
         return (
           <section
+            id={`workflow-stage-${record.id}-${stage.key}`}
+            ref={(element) => {
+              if (element) stageElements.current.set(stage.key, element);
+              else stageElements.current.delete(stage.key);
+            }}
             className={`workflow-stage-row status-${status.key}`}
             key={stage.key}
           >
@@ -411,7 +502,7 @@ export function WorkflowInstanceView({
               type="button"
               className="workflow-stage-toggle"
               aria-expanded={stageOpen}
-              onClick={() => toggle(stageKey)}
+              onClick={() => toggle(stageKey, true)}
             >
               <ChevronRight aria-hidden="true" />
               <strong>{displayText(stage.name)}</strong>
@@ -723,7 +814,8 @@ export function WorkflowInstanceView({
                                         execution_id: execution.id,
                                         input_digest: execution.input_digest,
                                         outputs: execution.outputs,
-                                        accept_result: true,
+                                        accept_result:
+                                          completion?.human_can_accept === true,
                                         reason: reasons[execution.id] || "",
                                       },
                                     )
@@ -807,6 +899,29 @@ export function WorkflowInstanceView({
           </section>
         );
       })}
+      {stepOffset > 0 || activeData.next_step_offset != null ? (
+        <div className="actions">
+          <span>
+            步骤 {stepOffset + 1}–
+            {Math.min(stepOffset + stepPageSize, activeData.step_total)} /{" "}
+            {activeData.step_total}
+          </span>
+          <ActionButton
+            disabled={stepOffset === 0}
+            onClick={() =>
+              setStepOffset(Math.max(0, stepOffset - stepPageSize))
+            }
+          >
+            上一页步骤
+          </ActionButton>
+          <ActionButton
+            disabled={activeData.next_step_offset == null}
+            onClick={() => setStepOffset(activeData.next_step_offset)}
+          >
+            下一页步骤
+          </ActionButton>
+        </div>
+      ) : null}
       {childOffset > 0 || activeData.children_more ? (
         <div className="actions">
           {childOffset > 0 ? (

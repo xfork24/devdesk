@@ -1,4 +1,5 @@
-import { test, expect } from "@playwright/test";
+import { expect } from "@playwright/test";
+import { test } from "./support/kernel";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -33,6 +34,9 @@ test("frequent workflow events cannot starve a slower workspace response", async
       mainline: "main",
     },
   };
+  // Measure only the subject document. Requests already begun by the setup
+  // page must not be counted as overlapping reads from this page.
+  await page.goto("about:blank");
   let active = 0;
   let maximum = 0;
   await page.route("**/capabilities", (route) =>
