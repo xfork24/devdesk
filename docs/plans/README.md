@@ -6,7 +6,7 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
-| [评审拒绝后的经理决策、有限返工与人工批准](review-rejection-and-approval/PLAN.md) | 实施后补充 | 待实施；已只读核实 4318 现场。覆盖经理研判、Workflow 返工额度、真实人工 Approve、根经理页子审批和阻塞点定位 |
+| [评审拒绝后的经理决策、有限返工与人工批准](review-rejection-and-approval/PLAN.md) | [实施与验证](review-rejection-and-approval/EXECUTION.md)、[合入验证](review-rejection-and-approval/MERGE.md) | 已合入本地 main；三种返工与共享额度、人工例外、根经理页子审批及流程定位；Rust/Chromium 回归通过，真实模型及 4318 显式采用未执行 |
 | [main 三项改动联合验收与性能改进](integrated-workflow-performance-acceptance/PLAN.md) | [阶段验收](integrated-workflow-performance-acceptance/ACCEPTANCE.md)、[性能基准](integrated-workflow-performance-acceptance/PERFORMANCE.md)、[后续修复计划](integrated-workflow-performance-acceptance/FOLLOW-UP-PLAN.md)、[实施记录](integrated-workflow-performance-acceptance/EXECUTION.md) | 已按用户要求暂停测试并交付阶段结果；最新后台回归/子流程审批通过，完整 Feature 和正式100浏览器容量未通过；未解决问题另列计划，未继续执行 |
 | [项目经理通过事件自主推进工作流](event-driven-project-manager/PLAN.md) | [实施与验证](event-driven-project-manager/EXECUTION.md)、[main 合入验收](event-driven-project-manager/MERGE.md) | 已完整合入本地 main；Rust 392、debug/release 各 85、证据回归 33 项通过；真实 Feature 42 步已复核，feature worktree 和分支已清理 |
 | main 剩余改动整理 | [内容与定向验证](main-uncommitted-review/EXECUTION.md) | 运行诊断、权限恢复与执行页改动已复核；定向回归通过，未运行完整 workflow/Feature 交付回归 |
