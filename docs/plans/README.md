@@ -7,6 +7,7 @@
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
 | [默认 Feature / Task 开发流程精简](default-workflow-simplification/PLAN.md) | 实施后补充 | 待实施。发布精简版流程及 Standard 为实际默认，保留详细版供选择。同步适配 Skill、Delivery 和 Spec，按 DAG 并发执行，验收后另行清理详细版资源 |
+| [工作流性能与可靠性修复](workflow-performance-remediation/PLAN.md) | 实施后补充；依据[联合验收问题清单](integrated-workflow-performance-acceptance/OPEN-ISSUES.md)和[原后续安排](integrated-workflow-performance-acceptance/FOLLOW-UP-PLAN.md) | 待实施；覆盖审批观察器、剩余读取/衔接、实际页面及经理策略、预算和存储设计；已修待证与正式容量分别跟踪，当前测试继续暂停 |
 | [评审拒绝后的经理决策、有限返工与人工批准](review-rejection-and-approval/PLAN.md) | [实施与验证](review-rejection-and-approval/EXECUTION.md)、[合入验证](review-rejection-and-approval/MERGE.md) | 已合入本地 main；三种返工与共享额度、人工例外、根经理页子审批及流程定位；Rust/Chromium 回归通过，真实模型及 4318 显式采用未执行 |
 | [main 三项改动联合验收与性能改进](integrated-workflow-performance-acceptance/PLAN.md) | [阶段验收](integrated-workflow-performance-acceptance/ACCEPTANCE.md)、[性能基准](integrated-workflow-performance-acceptance/PERFORMANCE.md)、[后续修复计划](integrated-workflow-performance-acceptance/FOLLOW-UP-PLAN.md)、[实施记录](integrated-workflow-performance-acceptance/EXECUTION.md) | 已按用户要求暂停测试并交付阶段结果；最新后台回归/子流程审批通过，完整 Feature 和正式100浏览器容量未通过；未解决问题另列计划，未继续执行 |
 | [项目经理通过事件自主推进工作流](event-driven-project-manager/PLAN.md) | [实施与验证](event-driven-project-manager/EXECUTION.md)、[main 合入验收](event-driven-project-manager/MERGE.md) | 已完整合入本地 main；Rust 392、debug/release 各 85、证据回归 33 项通过；真实 Feature 42 步已复核，feature worktree 和分支已清理 |
