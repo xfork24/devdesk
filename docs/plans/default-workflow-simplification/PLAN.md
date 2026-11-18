@@ -251,7 +251,7 @@ PR 创建、远端合入、本地同步分别保存意图与观察。网络中�
 
 依据包括 [规划 Skill](../../../resources/configuration/skills/project-planning.md)、[规划 Delivery](../../../resources/configuration/deliveries/builtin-delivery-task-plan-v3.json)、[编排 Skill](../../../resources/configuration/skills/workflow-orchestration-v5.md)、[测试配方 Delivery](../../../resources/configuration/deliveries/builtin-delivery-test-recipe-v2.json)、[测试设计 Spec](../../../resources/configuration/specs/test-design-v2.md)、[TDD Skill](../../../resources/configuration/skills/tdd-implementation.md)、[实现 Spec](../../../resources/configuration/specs/implementation.md)、[执行证据 Delivery](../../../resources/configuration/deliveries/builtin-delivery-execution-evidence-v2.json)、[独立评审 Skill](../../../resources/configuration/skills/independent-review.md)、[发布 Spec](../../../resources/configuration/specs/release.md)、[发布回执 Delivery](../../../resources/configuration/deliveries/builtin-delivery-publication-report-v1.json)、[Task 交接 Spec](../../../resources/configuration/specs/task-delivery-report.md)和[Task 完成 Delivery](../../../resources/configuration/deliveries/builtin-delivery-task-completion-report-v1.json)。
 
-新建及改造后专供精简版的 Workflow、Standard、Skill、Delivery、Spec、Agent、Capability、Tool 和 Profile，其源 JSON 文件名和可见 `name` 均统一以 `精简版` 开头。配套 Markdown 正文文件名也加相同前缀，并同步更新 manifest、`body_file` 或 `instructions_file`。为专用资源分配带此前缀的独立 identity，继续使用 `<identity>-v<revision>.json`，例如 `精简版-skill-project-planning-v1.json`。通用且合同未变的资源可由两套复用，在资源清单标注为共享。若精简版仍从 Agent Capability、Spec、工具或 Profile 间接引用详细版专用文件，随本阶段解除依赖。
+新建及改造后专供精简版的 Workflow、Standard、Skill、Delivery、Spec、Agent、Capability、Tool 和 Profile，其源 JSON、配套 Markdown 文件名及独立 identity 统一使用 `simplified-` 前缀，可见 `name` 保留中文“精简版”前缀。同步更新 manifest、`body_file` 或 `instructions_file` 及配置引用，继续使用 `<identity>-v<revision>.json`，例如 `simplified-skill-project-planning-v1.json`。通用且合同未变的资源可由两套复用，在资源清单标注为共享。若精简版仍从 Agent Capability、Spec、工具或 Profile 间接引用详细版专用文件，随本阶段解除依赖。
 
 ### 9.2 代码与资源入口
 
@@ -314,7 +314,7 @@ P1/P2 中无依赖的实现部分可在 P0 后并行。各阶段实施及验收�
 | A23 冻结历史 | 新默认不重写旧执行或决定，兼容合同下历史按原引用恢复，旧发布语义不被新工具替换 |
 | A24 命名与实际默认 | 六个名称与第 12.1 节一致，`workflow_ref`、`task_workflow_ref`、`standard_ref` 均指向精简版。新目录及已启用新版出厂默认的兼容目录均通过正常项目预填、采用及启动路径，Feature 派发精简版 Task |
 | A25 详细版兼容 | 项目可显式选择详细版 Standard 并启动其 Feature 和 Task。与改动前比较，详细版节点、顺序、策略、权限及行为一致。已保存项目、旧实例、旧决定和自定义配置均可按原引用恢复 |
-| A26 配套合同 | 精简版专用 JSON、正文及显示名使用统一前缀。编译实际默认 Agent 绑定和端口，确认任务正文、所加载 Skill、Spec、测试配方、权限及平台回执匹配各步时点。无详细版专用依赖 |
+| A26 配套合同 | 精简版专用 JSON、正文文件名及 identity 使用 `simplified-` 前缀，显示名保留中文“精简版”。编译实际默认 Agent 绑定和端口，确认任务正文、所加载 Skill、Spec、测试配方、权限及平台回执匹配各步时点。无详细版专用依赖 |
 | A27 退役就绪 | 生成两套资源正向闭包和旧资源反向引用清单。在隔离副本移除仅详细版使用的出厂资源，验证精简版仍可完整发布、编译与运行，并记录历史或自定义引用的处理方式 |
 
 ### 11.2 验证层次

@@ -1,0 +1,23 @@
+{
+  "type": "capability",
+  "identity": "simplified-capability-tester",
+  "revision": 3,
+  "name": "精简版tester能力",
+  "scope": "global",
+  "harness_ref": "builtin-harness-codex-managed:1",
+  "model_ref": "builtin-model-gpt-6-1-sol-high:1",
+  "skills": [
+    "simplified-skill-context:2",
+    "simplified-skill-test-design:1",
+    "simplified-skill-delivery-self-check:2"
+  ],
+  "tools": [
+    "builtin-tool-codex-native:1",
+    "builtin-tool-workflow-outputs-read:2",
+    "builtin-tool-spec-lint:1"
+  ],
+  "spec_refs": [
+    "simplified-spec-tests:1"
+  ],
+  "data": {}
+}

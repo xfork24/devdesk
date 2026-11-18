@@ -135,7 +135,7 @@ Workflow 调用仅修改输出合同，且原调用尚无封存输出、未被�
 
 ## 默认流程概览
 
-实际默认为 `精简版-workflow-feature:2`、`精简版-workflow-task:1` 和 `精简版-standard-engineering:2`。Feature 为 5 阶段、14 个业务步骤、19 个实际节点；Task 为 5 阶段、10 个业务步骤、14 个实际节点。内部节点用于工作空间、快照、登记及目标读取，不增加模型交接。默认精简版 Agent/Capability 采用第 3 修订，以紧凑文档和精简版交付自检减少重复成文；结构检查仍由平台执行，独立评审与真实测试门禁不变。经理按实例将 automatic 节点一次交给有界 segment，包括 Agent、Tool 与子流程调用；Human 节点排除在委托之外，异常回到经理处理。
+实际默认为 `simplified-workflow-feature:2`、`simplified-workflow-task:1` 和 `simplified-standard-engineering:2`。Feature 为 5 阶段、14 个业务步骤、19 个实际节点；Task 为 5 阶段、10 个业务步骤、14 个实际节点。内部节点用于工作空间、快照、登记及目标读取，不增加模型交接。默认精简版 Agent/Capability 采用第 3 修订，以紧凑文档和精简版交付自检减少重复成文；结构检查仍由平台执行，独立评审与真实测试门禁不变。经理按实例将 automatic 节点一次交给有界 segment，包括 Agent、Tool 与子流程调用；Human 节点排除在委托之外，异常回到经理处理。
 
 运行事件与业务事实同事务保存。仅同一 running 执行挂接会话/轮次标识、且状态、产物、输入摘要及原因不变的通知标记为 `metadata_only`；经理消费时合并此类通知并以版本守卫推进游标，SSE 和审计保留原事件。结果、失败、停止、Human、计划和控制变化继续处理；旧的无标记通知不被忽略。
 

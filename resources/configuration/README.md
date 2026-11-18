@@ -56,6 +56,6 @@ Codex 的六类业务 Agent Capability 包含 spec.lint 与“交付草稿自检
 
 ## 两套流程与默认升级
 
-实际默认引用为 `精简版-workflow-feature:2`、`精简版-workflow-task:1`、`精简版-standard-engineering:2`，六个业务角色绑定精简版 Agent，Sandbox 使用 `精简版-sandbox-project-tests:1`。精简版专用 JSON、正文文件及显示名称统一以前缀“精简版”标识；通用 Role、协议与未改变的 Spec/Delivery 共享。详细版入口为 `builtin-workflow-feature-sol-high:11`、`builtin-workflow-task-sol-high:10`、`builtin-standard-engineering:9`，显式采用并保留原 Agent/环境绑定。
+实际默认引用为 `simplified-workflow-feature:2`、`simplified-workflow-task:1`、`simplified-standard-engineering:2`，六个业务角色绑定精简版 Agent，Sandbox 使用 `simplified-sandbox-project-tests:1`。精简版专用 JSON、正文文件名及配置 identity 统一使用 `simplified-` 前缀，中文显示名称保留“精简版”；通用 Role、协议与未改变的 Spec/Delivery 共享。详细版入口为 `builtin-workflow-feature-sol-high:11`、`builtin-workflow-task-sol-high:10`、`builtin-standard-engineering:9`，显式采用并保留原 Agent/环境绑定。
 
 已有兼容数据集可在设置中“更新出厂默认并保留自定义”，使用 `configuration.templates.reset` 的 `preserve_custom:true` 及原目录预览前置条件。该动作追加缺少的不可变源和目录代次，选择新版出厂默认，保留自定义成员、项目选择和历史。相同源修订内容冲突时拒绝覆盖。新默认仅影响后续选择；已有项目须显式保存配置，已有工作继续按冻结引用运行。

@@ -82,7 +82,7 @@ test("Spec 正文之前展示确切 Delivery 与 Capability，Delivery 展示生
     specLink.locator(
       "xpath=ancestor::span[contains(@class, 'configuration-field-title')]",
     ),
-  ).toContainText("Specs");
+  ).toContainText("Spec 精确版本");
   for (const header of await page
     .locator(".configuration-field-title:has(a)")
     .all()) {

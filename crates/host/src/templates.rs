@@ -192,7 +192,10 @@ mod tests {
         let custom = write(&w, "role.revise", Some(&default_role_id("analyst")),
             json!({"name":"Custom analyst","data":{"instructions":"Keep custom responsibility","visibility":{"kind":"global"}}}), None).unwrap();
         let before = w.global.snapshot().unwrap();
-        for sandbox in ["builtin-sandbox-docker:1", "精简版-sandbox-project-tests:1"] {
+        for sandbox in [
+            "builtin-sandbox-docker:1",
+            "simplified-sandbox-project-tests:1",
+        ] {
             let target =
                 permission_target(&before, PermissionTargetKind::Sandbox, sandbox).unwrap();
             assert!(active_permission_binding(&before, &target).is_some());
@@ -212,7 +215,7 @@ mod tests {
         assert_eq!(receipt["changed"], true);
         assert_eq!(
             current_template_defaults(&legacy).unwrap()["workflow_ref"],
-            "精简版-workflow-feature:2"
+            "simplified-workflow-feature:2"
         );
         for source in before.governance.iter().filter(|r| r.immutable) {
             assert_eq!(legacy.configuration(&source.id).unwrap(), source);

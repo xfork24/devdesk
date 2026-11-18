@@ -1,0 +1,121 @@
+{
+  "type": "delivery_type",
+  "identity": "simplified-delivery-task-plan",
+  "revision": 1,
+  "name": "精简版Tasks DAG",
+  "scope": "global",
+  "spec_refs": [
+    "simplified-spec-planning:1"
+  ],
+  "data": {
+    "format": "json",
+    "producer": {
+      "kind": "agent"
+    },
+    "content_schema": {
+      "type": "object",
+      "required": [
+        "tasks"
+      ],
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "key",
+              "title",
+              "instructions",
+              "dependencies",
+              "scope",
+              "dependency_reasons",
+              "acceptance"
+            ],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "instructions": {
+                "type": "string"
+              },
+              "dependencies": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "uniqueItems": true
+              },
+              "scope": {
+                "type": "string",
+                "minLength": 1
+              },
+              "dependency_reasons": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "dependency",
+                    "artifact",
+                    "reason"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "dependency": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "artifact": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "reason": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              },
+              "acceptance": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "independent_test",
+                    "regression",
+                    "condition"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "independent_test": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "regression": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "condition": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+  }
+}

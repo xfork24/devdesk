@@ -1,0 +1,1190 @@
+{
+  "type": "workflow",
+  "identity": "simplified-workflow-feature",
+  "revision": 2,
+  "name": "精简版Feature开发流程",
+  "scope": "global",
+  "data": {
+    "schema_version": 6,
+    "stages": [
+      {
+        "key": "requirements",
+        "name": "需求",
+        "description": "按冻结依赖及真实回执推进本阶段；内部平台节点可在有界委托中连续执行。"
+      },
+      {
+        "key": "design",
+        "name": "设计",
+        "description": "按冻结依赖及真实回执推进本阶段；内部平台节点可在有界委托中连续执行。"
+      },
+      {
+        "key": "planning",
+        "name": "任务规划",
+        "description": "按冻结依赖及真实回执推进本阶段；内部平台节点可在有界委托中连续执行。"
+      },
+      {
+        "key": "implementation",
+        "name": "实施",
+        "description": "按冻结依赖及真实回执推进本阶段；内部平台节点可在有界委托中连续执行。"
+      },
+      {
+        "key": "delivery",
+        "name": "Feature 交付",
+        "description": "按冻结依赖及真实回执推进本阶段；内部平台节点可在有界委托中连续执行。"
+      }
+    ],
+    "inputs": {
+      "test_configuration": {
+        "delivery_ref": "simplified-delivery-project-tests:1"
+      }
+    },
+    "steps": [
+      {
+        "key": "requirements",
+        "name": "澄清需求与 PRD",
+        "stage": "requirements",
+        "dependencies": [],
+        "inputs": {},
+        "outputs": {
+          "result": {
+            "delivery_ref": "builtin-delivery-prd:3"
+          }
+        },
+        "budget": {
+          "max_turns": 30,
+          "timeout_seconds": 1800,
+          "retry_limit": 3
+        },
+        "executor": {
+          "type": "agent",
+          "role_ref": "builtin-role-analyst:1"
+        },
+        "task_instructions": "基于 user_request 中用户以自然语言提供的初始需求，使用 PRD Skill 与所要求的 Spec 澄清本次 Feature 的目标、范围和验收。自行依据 Spec 判断是否缺少必要信息；需要澄清时返回 needs_input，在 summary 中提出明确问题并等待用户实际回答。信息充分时提交需求文档，不为提问而提问。不得自行编造用户需求或代替用户确认；独立 Spec 验收通过后仍须等待用户确认。",
+        "required_skill_refs": [
+          "builtin-skill-prd:2"
+        ],
+        "spec_refs": [
+          "builtin-spec-stage-prd:2"
+        ],
+        "tags": [
+          "requirements"
+        ],
+        "harness_permission_ref": "simplified-permission-read:1"
+      },
+      {
+        "key": "requirements_review",
+        "name": "PRD 验收与人工确认",
+        "stage": "requirements",
+        "dependencies": [
+          "requirements"
+        ],
+        "inputs": {
+          "work": {
+            "type": "source",
+            "source": {
+              "step": "requirements",
+              "port": "result",
+              "pointer": ""
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "builtin-delivery-review:2",
+            "content_checks": true
+          }
+        },
+        "budget": {
+          "max_turns": 30,
+          "timeout_seconds": 1800,
+          "retry_limit": 3
+        },
+        "executor": {
+          "type": "agent",
+          "role_ref": "builtin-role-reviewer:1"
+        },
+        "task_instructions": "依据输入产物和引用的 Spec 完成内容判断。核对确切输入版本，逐项提交检查结论与材料依据。发现问题时 approve=false，不代替作者修改产物。",
+        "required_skill_refs": [
+          "builtin-skill-independent-review:2"
+        ],
+        "spec_refs": [
+          "builtin-spec-stage-prd:2"
+        ],
+        "tags": [
+          "requirements_review"
+        ],
+        "completion": {
+          "op": "all",
+          "rules": [
+            {
+              "op": "equals",
+              "source": {
+                "step": "requirements_review",
+                "port": "result",
+                "pointer": "/approve"
+              },
+              "value": true
+            },
+            {
+              "op": "independent",
+              "author": "requirements",
+              "reviewer": "requirements_review"
+            }
+          ]
+        },
+        "confirmation": "human",
+        "harness_permission_ref": "simplified-permission-read:1"
+      },
+      {
+        "key": "source_workspace",
+        "name": "自动提供代码基线",
+        "stage": "design",
+        "dependencies": [
+          "requirements_review"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "builtin-tool-workspace-current:1",
+          "arguments": {}
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "builtin-delivery-workspace-snapshot:1"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7500,
+          "retry_limit": 3
+        }
+      },
+      {
+        "key": "design",
+        "name": "F03 架构与接口设计",
+        "stage": "design",
+        "dependencies": [
+          "source_workspace"
+        ],
+        "executor": {
+          "type": "agent",
+          "role_ref": "builtin-role-architect:1"
+        },
+        "inputs": {
+          "requirements": {
+            "type": "source",
+            "source": {
+              "step": "requirements",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "workspace": {
+            "type": "source",
+            "source": {
+              "step": "source_workspace",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "test_configuration": {
+            "type": "source",
+            "source": {
+              "step": "$input",
+              "port": "test_configuration",
+              "pointer": ""
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "simplified-delivery-design:1"
+          }
+        },
+        "task_instructions": "读取冻结输入及 runtime_context，不自行执行 Git、替代平台测试回执或代签 Human。原始输出、内容版本与原生 commandExecution 由平台保存，按引用定位；说明只记录有助于下游的结论，不复制源码和日志全文。",
+        "required_skill_refs": [
+          "simplified-skill-context:2"
+        ],
+        "budget": {
+          "max_turns": 30,
+          "timeout_seconds": 1800,
+          "retry_limit": 3
+        },
+        "spec_refs": [
+          "simplified-spec-design:1"
+        ],
+        "harness_permission_ref": "simplified-permission-read:1",
+        "access": {
+          "workspace_input": "workspace"
+        }
+      },
+      {
+        "key": "design_review",
+        "name": "F04 Design 评审与人工确认",
+        "stage": "design",
+        "dependencies": [
+          "design"
+        ],
+        "executor": {
+          "type": "agent",
+          "role_ref": "builtin-role-reviewer:1"
+        },
+        "inputs": {
+          "requirements": {
+            "type": "source",
+            "source": {
+              "step": "requirements",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "design": {
+            "type": "source",
+            "source": {
+              "step": "design",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "test_configuration": {
+            "type": "source",
+            "source": {
+              "step": "$input",
+              "port": "test_configuration",
+              "pointer": ""
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "builtin-delivery-review:2",
+            "content_checks": true
+          }
+        },
+        "task_instructions": "读取冻结输入及 runtime_context，不自行执行 Git、替代平台测试回执或代签 Human。原始输出、内容版本与原生 commandExecution 由平台保存，按引用定位；说明只记录有助于下游的结论，不复制源码和日志全文。",
+        "required_skill_refs": [
+          "simplified-skill-code-review:1"
+        ],
+        "budget": {
+          "max_turns": 30,
+          "timeout_seconds": 1800,
+          "retry_limit": 3
+        },
+        "spec_refs": [
+          "simplified-spec-design:1"
+        ],
+        "confirmation": "human",
+        "completion": {
+          "op": "all",
+          "rules": [
+            {
+              "op": "equals",
+              "source": {
+                "step": "design_review",
+                "port": "result",
+                "pointer": "/approve"
+              },
+              "value": true
+            },
+            {
+              "op": "independent",
+              "author": "design",
+              "reviewer": "design_review"
+            }
+          ]
+        }
+      },
+      {
+        "key": "planning",
+        "name": "F05 规划 Tasks 与依赖 DAG",
+        "stage": "planning",
+        "dependencies": [
+          "design_review"
+        ],
+        "executor": {
+          "type": "agent",
+          "role_ref": "builtin-role-project-manager:1"
+        },
+        "inputs": {
+          "requirements": {
+            "type": "source",
+            "source": {
+              "step": "requirements",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "design": {
+            "type": "source",
+            "source": {
+              "step": "design",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "workspace": {
+            "type": "source",
+            "source": {
+              "step": "source_workspace",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "test_configuration": {
+            "type": "source",
+            "source": {
+              "step": "$input",
+              "port": "test_configuration",
+              "pointer": ""
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "simplified-delivery-task-plan:1"
+          }
+        },
+        "task_instructions": "读取冻结输入及 runtime_context，不自行执行 Git、替代平台测试回执或代签 Human。原始输出、内容版本与原生 commandExecution 由平台保存，按引用定位；说明只记录有助于下游的结论，不复制源码和日志全文。",
+        "required_skill_refs": [
+          "simplified-skill-project-planning:1"
+        ],
+        "budget": {
+          "max_turns": 30,
+          "timeout_seconds": 1800,
+          "retry_limit": 3
+        },
+        "spec_refs": [
+          "simplified-spec-planning:1"
+        ],
+        "access": {
+          "workspace_input": "workspace"
+        },
+        "harness_permission_ref": "simplified-permission-read:1"
+      },
+      {
+        "key": "plan_review",
+        "name": "F06 Tasks 评审与人工确认",
+        "stage": "planning",
+        "dependencies": [
+          "planning"
+        ],
+        "executor": {
+          "type": "agent",
+          "role_ref": "builtin-role-reviewer:1"
+        },
+        "inputs": {
+          "plan": {
+            "type": "source",
+            "source": {
+              "step": "planning",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "requirements": {
+            "type": "source",
+            "source": {
+              "step": "requirements",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "design": {
+            "type": "source",
+            "source": {
+              "step": "design",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "test_configuration": {
+            "type": "source",
+            "source": {
+              "step": "$input",
+              "port": "test_configuration",
+              "pointer": ""
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "builtin-delivery-review:2",
+            "content_checks": true
+          }
+        },
+        "task_instructions": "读取冻结输入及 runtime_context，不自行执行 Git、替代平台测试回执或代签 Human。原始输出、内容版本与原生 commandExecution 由平台保存，按引用定位；说明只记录有助于下游的结论，不复制源码和日志全文。",
+        "required_skill_refs": [
+          "simplified-skill-code-review:1"
+        ],
+        "budget": {
+          "max_turns": 30,
+          "timeout_seconds": 1800,
+          "retry_limit": 3
+        },
+        "spec_refs": [
+          "simplified-spec-planning:1"
+        ],
+        "confirmation": "human",
+        "completion": {
+          "op": "all",
+          "rules": [
+            {
+              "op": "equals",
+              "source": {
+                "step": "plan_review",
+                "port": "result",
+                "pointer": "/approve"
+              },
+              "value": true
+            },
+            {
+              "op": "independent",
+              "author": "planning",
+              "reviewer": "plan_review"
+            }
+          ]
+        }
+      },
+      {
+        "key": "tasks",
+        "name": "自动登记已确认 Task 图",
+        "stage": "planning",
+        "dependencies": [
+          "plan_review"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "builtin-tool-tasks-create:1",
+          "arguments": {
+            "tasks": {
+              "type": "source",
+              "source": {
+                "step": "planning",
+                "port": "result",
+                "pointer": "/tasks"
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "builtin-delivery-task-creation-report:1"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7500,
+          "retry_limit": 3
+        }
+      },
+      {
+        "key": "implementation",
+        "name": "F07 按 DAG 并发开发 Tasks",
+        "stage": "implementation",
+        "dependencies": [
+          "tasks"
+        ],
+        "executor": {
+          "type": "workflow",
+          "workflow_ref": "simplified-workflow-task:1",
+          "foreach": {
+            "source": {
+              "step": "tasks",
+              "port": "result",
+              "pointer": "/tasks"
+            },
+            "item_input": "item",
+            "max_concurrency": 4,
+            "min_items": 1
+          },
+          "work_binding": {
+            "input": "item",
+            "pointer": "/work_ref"
+          }
+        },
+        "inputs": {
+          "design": {
+            "type": "source",
+            "source": {
+              "step": "design",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "test_configuration": {
+            "type": "source",
+            "source": {
+              "step": "$input",
+              "port": "test_configuration",
+              "pointer": ""
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "simplified-delivery-task-reports:1"
+          }
+        },
+        "budget": {
+          "max_turns": 30,
+          "timeout_seconds": 21600,
+          "retry_limit": 3
+        }
+      },
+      {
+        "key": "workspace_current",
+        "name": "自动读取已汇合 Feature",
+        "stage": "delivery",
+        "dependencies": [
+          "implementation"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "builtin-tool-workspace-current:1",
+          "arguments": {}
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "builtin-delivery-workspace-snapshot:1"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7500,
+          "retry_limit": 3
+        }
+      },
+      {
+        "key": "workspace",
+        "name": "自动固定 Feature 完整差异",
+        "stage": "delivery",
+        "dependencies": [
+          "workspace_current"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "simplified-tool-checkpoint:1",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "workspace_current",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "allowed_paths": {
+              "type": "constant",
+              "value": [
+                "."
+              ]
+            },
+            "include_diff": {
+              "type": "constant",
+              "value": true
+            },
+            "diff_base": {
+              "type": "source",
+              "source": {
+                "step": "source_workspace",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          },
+          "output_mapping": {
+            "result": "",
+            "diff": "/changes/diff",
+            "scope_diff": "/scope_changes/diff"
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "simplified-delivery-checkpoint:1"
+          },
+          "diff": {
+            "delivery_ref": "simplified-delivery-diff:1"
+          },
+          "scope_diff": {
+            "delivery_ref": "simplified-delivery-diff:1"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7500,
+          "retry_limit": 3
+        }
+      },
+      {
+        "key": "review",
+        "name": "F08 Feature Code Review",
+        "stage": "delivery",
+        "dependencies": [
+          "workspace"
+        ],
+        "executor": {
+          "type": "agent",
+          "role_ref": "builtin-role-reviewer:1"
+        },
+        "inputs": {
+          "requirements": {
+            "type": "source",
+            "source": {
+              "step": "requirements",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "design": {
+            "type": "source",
+            "source": {
+              "step": "design",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "tasks": {
+            "type": "source",
+            "source": {
+              "step": "implementation",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "workspace": {
+            "type": "source",
+            "source": {
+              "step": "workspace",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "baseline": {
+            "type": "source",
+            "source": {
+              "step": "source_workspace",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "diff": {
+            "type": "source",
+            "source": {
+              "step": "workspace",
+              "port": "scope_diff",
+              "pointer": ""
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "builtin-delivery-review:2",
+            "content_checks": true
+          }
+        },
+        "task_instructions": "读取冻结输入及 runtime_context，不自行执行 Git、替代平台测试回执或代签 Human。原始输出、内容版本与原生 commandExecution 由平台保存，按引用定位；说明只记录有助于下游的结论，不复制源码和日志全文。",
+        "required_skill_refs": [
+          "simplified-skill-code-review:1"
+        ],
+        "budget": {
+          "max_turns": 30,
+          "timeout_seconds": 1800,
+          "retry_limit": 3
+        },
+        "spec_refs": [
+          "simplified-spec-feature-code-review:1"
+        ],
+        "completion": {
+          "op": "all",
+          "rules": [
+            {
+              "op": "equals",
+              "source": {
+                "step": "review",
+                "port": "result",
+                "pointer": "/approve"
+              },
+              "value": true
+            },
+            {
+              "op": "independent",
+              "author": "design",
+              "reviewer": "review"
+            }
+          ]
+        },
+        "harness_permission_ref": "simplified-permission-read:1",
+        "access": {
+          "workspace_input": "workspace"
+        }
+      },
+      {
+        "key": "regression",
+        "name": "F09 Feature 源分支项目回归",
+        "stage": "delivery",
+        "dependencies": [
+          "review"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "simplified-tool-project-tests:1",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "workspace",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "simplified-delivery-regression:1"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7200,
+          "retry_limit": 3
+        },
+        "completion": {
+          "op": "all",
+          "rules": [
+            {
+              "op": "equals",
+              "source": {
+                "step": "regression",
+                "port": "result",
+                "pointer": "/status"
+              },
+              "value": "succeeded"
+            },
+            {
+              "op": "equals",
+              "source": {
+                "step": "regression",
+                "port": "result",
+                "pointer": "/expected_failure"
+              },
+              "value": false
+            }
+          ]
+        }
+      },
+      {
+        "key": "source_publish",
+        "name": "F10 提交并推送 Feature",
+        "stage": "delivery",
+        "dependencies": [
+          "regression"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "simplified-tool-source-publish:1",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "workspace",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "simplified-delivery-source-publication:1"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7500,
+          "retry_limit": 3
+        }
+      },
+      {
+        "key": "target",
+        "name": "读取最新主分支",
+        "stage": "delivery",
+        "dependencies": [
+          "source_publish"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "simplified-tool-target:1",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "workspace",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "simplified-delivery-target:1"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7500,
+          "retry_limit": 3
+        }
+      },
+      {
+        "key": "publication",
+        "name": "F11 创建 Feature → 主分支 PR",
+        "stage": "delivery",
+        "dependencies": [
+          "target"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "simplified-tool-delivery-open:1",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "workspace",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "target": {
+              "type": "source",
+              "source": {
+                "step": "target",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "simplified-delivery-pull-request:1"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7500,
+          "retry_limit": 3
+        }
+      },
+      {
+        "key": "merge_regression",
+        "name": "F12 隔离合并结果项目回归",
+        "stage": "delivery",
+        "dependencies": [
+          "publication"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "simplified-tool-project-tests:1",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "publication",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "simplified-delivery-regression:1"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7200,
+          "retry_limit": 3
+        },
+        "completion": {
+          "op": "all",
+          "rules": [
+            {
+              "op": "equals",
+              "source": {
+                "step": "merge_regression",
+                "port": "result",
+                "pointer": "/status"
+              },
+              "value": "succeeded"
+            },
+            {
+              "op": "equals",
+              "source": {
+                "step": "merge_regression",
+                "port": "result",
+                "pointer": "/expected_failure"
+              },
+              "value": false
+            }
+          ]
+        }
+      },
+      {
+        "key": "approval",
+        "name": "F13 主分支正式人工审核",
+        "stage": "delivery",
+        "dependencies": [
+          "merge_regression"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "builtin-tool-materials-capture:1",
+          "arguments": {
+            "publication": {
+              "type": "source",
+              "source": {
+                "step": "publication",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "review": {
+              "type": "source",
+              "source": {
+                "step": "review",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "source_regression": {
+              "type": "source",
+              "source": {
+                "step": "regression",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "merge_regression": {
+              "type": "source",
+              "source": {
+                "step": "merge_regression",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "simplified-delivery-human-packet:1"
+          }
+        },
+        "confirmation": "human",
+        "inputs": {
+          "publication": {
+            "type": "source",
+            "source": {
+              "step": "publication",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "review": {
+            "type": "source",
+            "source": {
+              "step": "review",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "source_regression": {
+            "type": "source",
+            "source": {
+              "step": "regression",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "merge_regression": {
+            "type": "source",
+            "source": {
+              "step": "merge_regression",
+              "port": "result",
+              "pointer": ""
+            }
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7500,
+          "retry_limit": 3
+        }
+      },
+      {
+        "key": "merge",
+        "name": "F14 合入主分支并同步",
+        "stage": "delivery",
+        "dependencies": [
+          "approval"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "simplified-tool-delivery-merge:1",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "workspace",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "publication": {
+              "type": "source",
+              "source": {
+                "step": "publication",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "simplified-delivery-merge-sync:1"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7500,
+          "retry_limit": 3
+        }
+      }
+    ],
+    "outputs": {
+      "result": {
+        "step": "merge",
+        "port": "result",
+        "pointer": ""
+      }
+    },
+    "completion": {
+      "op": "always"
+    },
+    "scheduling": {
+      "max_concurrency": 4,
+      "max_actions_per_tick": 16,
+      "lease_seconds": 60,
+      "max_retries": 0,
+      "retry_error_codes": [],
+      "agent": {
+        "max_turns_per_wakeup": 8,
+        "max_tool_calls_per_turn": 64,
+        "timeout_seconds": 600
+      }
+    },
+    "delivery_policy": {
+      "source_regression_step": "regression",
+      "code_review_step": "review",
+      "merge_regression_step": "merge_regression",
+      "human_confirmation_step": "approval",
+      "children_step": "implementation",
+      "source_publication_step": "source_publish"
+    },
+    "rework_policies": {
+      "feature_requirements": {
+        "entry_step": "requirements",
+        "allowed_targets": [
+          "producer_step",
+          "after_confirmed_checkpoint"
+        ],
+        "max_reworks": 3
+      },
+      "feature_design": {
+        "entry_step": "design",
+        "allowed_targets": [
+          "producer_step",
+          "after_confirmed_checkpoint"
+        ],
+        "max_reworks": 3
+      },
+      "feature_planning": {
+        "entry_step": "planning",
+        "allowed_targets": [
+          "producer_step",
+          "after_confirmed_checkpoint"
+        ],
+        "max_reworks": 3
+      },
+      "feature_delivery": {
+        "entry_step": "workspace",
+        "allowed_targets": [
+          "producer_step",
+          "after_confirmed_checkpoint",
+          "child_workflow"
+        ],
+        "max_reworks": 3
+      }
+    },
+    "review_policies": {
+      "requirements_review": {
+        "review_step": "requirements_review",
+        "rejected_when": {
+          "op": "equals",
+          "source": {
+            "step": "requirements_review",
+            "port": "result",
+            "pointer": "/approve"
+          },
+          "value": false
+        },
+        "rework_policy": "feature_requirements",
+        "allow_human_approval": true
+      },
+      "design_review": {
+        "review_step": "design_review",
+        "rejected_when": {
+          "op": "equals",
+          "source": {
+            "step": "design_review",
+            "port": "result",
+            "pointer": "/approve"
+          },
+          "value": false
+        },
+        "rework_policy": "feature_design",
+        "allow_human_approval": true
+      },
+      "plan_review": {
+        "review_step": "plan_review",
+        "rejected_when": {
+          "op": "equals",
+          "source": {
+            "step": "plan_review",
+            "port": "result",
+            "pointer": "/approve"
+          },
+          "value": false
+        },
+        "rework_policy": "feature_planning",
+        "allow_human_approval": true
+      },
+      "review": {
+        "review_step": "review",
+        "rejected_when": {
+          "op": "equals",
+          "source": {
+            "step": "review",
+            "port": "result",
+            "pointer": "/approve"
+          },
+          "value": false
+        },
+        "rework_policy": "feature_delivery",
+        "allow_human_approval": true
+      }
+    }
+  }
+}

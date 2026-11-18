@@ -87,7 +87,7 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
   ).toBeVisible();
   const defaults = await rpc(page, "query.configuration_defaults");
   expect(Object.keys(defaults.role_agent_bindings)).toHaveLength(6);
-  expect(defaults.capability_ref).toBe("精简版-capability-developer:3");
+  expect(defaults.capability_ref).toBe("simplified-capability-developer:3");
   const completeTools = await rpc(page, "query.configuration_records", {
     refs: ["builtin-tool-codex-native:1", "builtin-tool-dsh-native:1"],
   });

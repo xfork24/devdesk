@@ -5,7 +5,7 @@ pub const DEFAULT_MODEL_ID: &str = "builtin-model-gpt-6-1-sol-high:1";
 
 pub const DEFAULT_HARNESS_ID: &str = "builtin-harness-codex-managed:1";
 
-pub const DEFAULT_SANDBOX_ID: &str = "精简版-sandbox-project-tests:1";
+pub const DEFAULT_SANDBOX_ID: &str = "simplified-sandbox-project-tests:1";
 
 pub const DEFAULT_STANDARD_ID: &str = "builtin-standard-engineering:9";
 
@@ -34,7 +34,7 @@ pub fn default_configured_agent_id(role: &str) -> String {
     )
 }
 
-pub const DEFAULT_PERMISSION_SANDBOX: &str = "精简版-sandbox-project-tests:1";
+pub const DEFAULT_PERMISSION_SANDBOX: &str = "simplified-sandbox-project-tests:1";
 pub fn default_permission_selection() -> ExecutionPermissionSelection {
     ExecutionPermissionSelection {
         sandbox_ref: DEFAULT_PERMISSION_SANDBOX.into(),

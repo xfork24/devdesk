@@ -1,0 +1,15 @@
+{
+  "type": "standard",
+  "identity": "simplified-standard-engineering",
+  "revision": 2,
+  "name": "精简版工程规范快照",
+  "scope": "global",
+  "root_workflow_refs": [
+    "simplified-workflow-feature:2",
+    "simplified-workflow-task:1"
+  ],
+  "default_workflow_ref": "simplified-workflow-feature:2",
+  "data": {
+    "schema_version": 4
+  }
+}

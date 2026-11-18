@@ -2666,9 +2666,10 @@ fn actual_git_candidate(
         document["steps"].as_array_mut().unwrap().push(json!({"key":"writer","name":"写入实现","stage":"work","dependencies":["current"],"executor":{"type":"agent","role_ref":role["id"]},"task_instructions":"按冻结工作区修改 addition.txt。","inputs":{"workspace":{"type":"source","source":{"step":"current","port":"workspace"}}},"access":{"workspace_input":"workspace","writable_paths":["addition.txt"],"tool_refs":[DEFAULT_NATIVE_TOOL_ID]},"outputs":{"risks":{"delivery_ref":"fixture-delivery-object:1"}}}));
     }
     if streamlined_checkpoint {
-        document["steps"][1]["executor"]["tool_ref"] = json!("精简版-tool-checkpoint:1");
+        document["steps"][1]["executor"]["tool_ref"] = json!("simplified-tool-checkpoint:1");
         for port in ["diff", "scope_diff"] {
-            document["steps"][1]["outputs"][port]["delivery_ref"] = json!("精简版-delivery-diff:1");
+            document["steps"][1]["outputs"][port]["delivery_ref"] =
+                json!("simplified-delivery-diff:1");
         }
     }
     let workflow = publish(&engine, document);
@@ -5329,9 +5330,12 @@ fn actual_defaults_compile_the_streamlined_suite_and_freeze_project_tests() {
     let dir = tempfile::tempdir().unwrap();
     let e = engine(dir.path());
     let defaults = e.configuration_defaults(None).unwrap();
-    assert_eq!(defaults["workflow_ref"], "精简版-workflow-feature:2");
-    assert_eq!(defaults["task_workflow_ref"], "精简版-workflow-task:1");
-    assert_eq!(defaults["standard_ref"], "精简版-standard-engineering:2");
+    assert_eq!(defaults["workflow_ref"], "simplified-workflow-feature:2");
+    assert_eq!(defaults["task_workflow_ref"], "simplified-workflow-task:1");
+    assert_eq!(
+        defaults["standard_ref"],
+        "simplified-standard-engineering:2"
+    );
     let state = e.store.snapshot().unwrap();
     let bindings = serde_json::from_value(defaults["role_agent_bindings"].clone()).unwrap();
     for (reference, count) in [
@@ -5362,14 +5366,15 @@ fn actual_defaults_compile_the_streamlined_suite_and_freeze_project_tests() {
         for step in &plan.document.steps {
             for skill in &step.required_skill_refs {
                 assert!(
-                    skill.starts_with("精简版")
+                    skill.starts_with("simplified-")
                         || ["builtin-skill-prd:2", "builtin-skill-independent-review:2"]
                             .contains(&skill.as_str())
                 );
             }
             for specification in &step.spec_refs {
                 assert!(
-                    specification.starts_with("精简版") || step.key.starts_with("requirements")
+                    specification.starts_with("simplified-")
+                        || step.key.starts_with("requirements")
                 );
             }
         }
@@ -5418,17 +5423,17 @@ fn actual_defaults_compile_the_streamlined_suite_and_freeze_project_tests() {
         .unwrap();
     assert!(
         matches!(&tasks.executor,StepExecutor::Workflow{workflow_ref,foreach:Some(collection),..}
-        if workflow_ref=="精简版-workflow-task:1" && collection.max_concurrency==4)
+        if workflow_ref=="simplified-workflow-task:1" && collection.max_concurrency==4)
     );
     assert!(
         tasks.budget.timeout_seconds >= 7200,
         "汇合预算必须覆盖真实 Task 开发与回归，不能继承 300 秒工具默认值"
     );
-    for step in graph.steps.iter().filter(|s| matches!(&s.executor, StepExecutor::Tool {tool_ref,..} if tool_ref == "精简版-tool-project-tests:1")) {
+    for step in graph.steps.iter().filter(|s| matches!(&s.executor, StepExecutor::Tool {tool_ref,..} if tool_ref == "simplified-tool-project-tests:1")) {
         assert!(step.budget.timeout_seconds >= 7200, "项目配方可配置至 7200 秒，工具预算不能提前截断");
     }
     let collection_ref = &tasks.outputs["result"].delivery_ref;
-    assert_eq!(collection_ref, "精简版-delivery-task-reports:1");
+    assert_eq!(collection_ref, "simplified-delivery-task-reports:1");
     let completed = json!({"operation_id":"merge-operation","publication":{},
         "pull_request":{"merged":true,"merge_commit":"merged-sha"},"revision":"merged-sha",
         "sync":{"revision":"merged-sha","synchronized":true},"synchronized":true});
