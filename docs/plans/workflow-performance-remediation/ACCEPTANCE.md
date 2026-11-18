@@ -1,6 +1,6 @@
 # 修复阶段验收
 
-状态：2026-11-18，首批及[第二批](CONTINUATION.md)的局部修复和专项已验证，整体计划未完成。实施见 [EXECUTION.md](EXECUTION.md)，数据见 [PERFORMANCE.md](PERFORMANCE.md)，完整版预算设计见 [BUDGET-DESIGN.md](BUDGET-DESIGN.md)。当前 project 60，旧 59 库拒绝且未迁移。待修复和待验证项见 [FOLLOW-UP.md](FOLLOW-UP.md)。
+状态：2026-11-18，首批及[第二批](CONTINUATION.md)的局部修复和专项已验证，整体计划未完成。实施见 [EXECUTION.md](EXECUTION.md)，数据见 [PERFORMANCE.md](PERFORMANCE.md)，完整版预算设计见 [BUDGET-DESIGN.md](BUDGET-DESIGN.md)。当前 project 60，旧 59 库拒绝且未迁移。待修复和待验证项见 [FOLLOW-UP.md](FOLLOW-UP.md)，本地 main 的候选及合入检查见 [MERGE.md](MERGE.md)。
 
 | 问题 | 实现 | 本批专项/证据 | 结论 |
 |---|---|---|---|
