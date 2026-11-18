@@ -1,9 +1,9 @@
 import { displayText } from "../display-text";
 import { useReadRequest, ignoreCancelledRefresh } from "./use-read-request";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ActionButton } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
-import { latest, loadCatalog } from "./configuration-state";
+import { latest, loadCatalogWithStandardHistory } from "./configuration-state";
 import { MarkdownPreview, RevisionSelect } from "./configuration-ui";
 import { type Request, type Row } from "./rpc-types";
 
@@ -59,7 +59,15 @@ export function StandardDiff({ diff }: { diff: Row }) {
   );
 }
 
-export function StandardDetail({ snapshot }: { snapshot: Row }) {
+type StandardDetailProps = {
+  snapshot: Row;
+  renderOverride?: (node: Row) => ReactNode;
+};
+
+export function StandardDetail({
+  snapshot,
+  renderOverride,
+}: StandardDetailProps) {
   const sourceName = (reference: string) => {
     const node = snapshot.nodes.find(
       (node: Row) => node.reference === reference,
@@ -94,149 +102,324 @@ export function StandardDetail({ snapshot }: { snapshot: Row }) {
         ))}
       </ul>
       {snapshot.nodes.map((node: Row) => (
-        <details key={node.reference}>
-          <summary>
-            {displayText(
-              node.kind === "delivery_type"
-                ? "Delivery"
-                : node.kind === "workflow"
-                  ? "Workflow"
-                  : "Spec",
-            )}{" "}
-            · {displayText(sourceName(node.reference))}
-          </summary>
-          <p className="muted">
-            <code>{displayText(node.reference)}</code>
-          </p>
-          {node.kind === "spec" ? (
-            <>
-              <MarkdownPreview text={node.content.body} />
-              {(node.content.checks || []).map((check: Row) => (
-                <div key={check.key}>
-                  <strong>{displayText(check.name)}</strong>
-                  <MarkdownPreview text={check.instructions} />
-                </div>
-              ))}
-            </>
-          ) : node.kind === "workflow" ? (
-            <>
-              {Object.keys(node.content.inputs || {}).length ? (
-                <>
-                  <strong>流程输入</strong>
-                  {ports(node.content.inputs)}
-                </>
-              ) : null}
-              {(node.content.stages || []).map((stage: Row) => (
-                <section key={stage.key}>
-                  <h4>{displayText(stage.name)}</h4>
-                  {stage.description ? (
-                    <MarkdownPreview text={stage.description} />
-                  ) : null}
-                  {node.content.steps
-                    .filter((step: Row) => step.stage === stage.key)
-                    .map((step: Row) => (
-                      <details key={step.node_id || step.key}>
-                        <summary>
-                          {displayText(step.name)} ·{" "}
-                          {displayText(
-                            (
-                              {
-                                agent: "Agent",
-                                tool: "工具",
-                                workflow: "子流程",
-                                control: "控制",
-                              } as Row
-                            )[step.executor.type],
-                          )}
-                        </summary>
-                        {step.task_instructions ? (
-                          <MarkdownPreview text={step.task_instructions} />
-                        ) : null}
-                        {step.dependencies?.length ? (
-                          <p>
-                            前置步骤：
-                            {displayText(step.dependencies.join("、"))}
-                          </p>
-                        ) : null}
-                        {step.executor.workflow_ref ? (
-                          <p>
-                            调用：
+        <section
+          className="standard-source"
+          key={node.reference}
+          aria-label={`${node.name} · ${node.reference}`}
+        >
+          <details>
+            <summary>
+              {displayText(
+                node.kind === "delivery_type"
+                  ? "Delivery"
+                  : node.kind === "workflow"
+                    ? "Workflow"
+                    : "Spec",
+              )}{" "}
+              · {displayText(sourceName(node.reference))}
+            </summary>
+            <p className="muted">
+              <code>{displayText(node.reference)}</code>
+            </p>
+            {node.kind === "spec" ? (
+              <>
+                <MarkdownPreview text={node.content.body} />
+                {(node.content.checks || []).map((check: Row) => (
+                  <div key={check.key}>
+                    <strong>{displayText(check.name)}</strong>
+                    <MarkdownPreview text={check.instructions} />
+                  </div>
+                ))}
+              </>
+            ) : node.kind === "workflow" ? (
+              <>
+                {Object.keys(node.content.inputs || {}).length ? (
+                  <>
+                    <strong>流程输入</strong>
+                    {ports(node.content.inputs)}
+                  </>
+                ) : null}
+                {(node.content.stages || []).map((stage: Row) => (
+                  <section key={stage.key}>
+                    <h4>{displayText(stage.name)}</h4>
+                    {stage.description ? (
+                      <MarkdownPreview text={stage.description} />
+                    ) : null}
+                    {node.content.steps
+                      .filter((step: Row) => step.stage === stage.key)
+                      .map((step: Row) => (
+                        <details key={step.node_id || step.key}>
+                          <summary>
+                            {displayText(step.name)} ·{" "}
                             {displayText(
-                              sourceName(step.executor.workflow_ref),
-                            )}
-                            {displayText(
-                              step.executor.work_binding
-                                ? " · 按工作已采用的规范选择"
-                                : "",
-                            )}
-                          </p>
-                        ) : null}
-                        {step.spec_refs?.length ? (
-                          <p>
-                            检查规范：
-                            {displayText(
-                              step.spec_refs.map(sourceName).join("、"),
-                            )}
-                          </p>
-                        ) : null}
-                        {ports(step.outputs)}
-                        <details>
-                          <summary>推进与确认条件</summary>
-                          <pre>
-                            {displayText(
-                              JSON.stringify(
+                              (
                                 {
-                                  condition: step.condition,
-                                  completion: step.completion,
-                                  confirmation: step.confirmation,
-                                  budget: step.budget,
-                                },
-                                null,
-                                2,
-                              ),
+                                  agent: "Agent",
+                                  tool: "工具",
+                                  workflow: "子流程",
+                                  control: "控制",
+                                } as Row
+                              )[step.executor.type],
                             )}
-                          </pre>
+                          </summary>
+                          {step.task_instructions ? (
+                            <MarkdownPreview text={step.task_instructions} />
+                          ) : null}
+                          {step.dependencies?.length ? (
+                            <p>
+                              前置步骤：
+                              {displayText(step.dependencies.join("、"))}
+                            </p>
+                          ) : null}
+                          {step.executor.workflow_ref ? (
+                            <p>
+                              调用：
+                              {displayText(
+                                sourceName(step.executor.workflow_ref),
+                              )}
+                              {displayText(
+                                step.executor.work_binding
+                                  ? " · 按工作已采用的规范选择"
+                                  : "",
+                              )}
+                            </p>
+                          ) : null}
+                          {step.spec_refs?.length ? (
+                            <p>
+                              检查规范：
+                              {displayText(
+                                step.spec_refs.map(sourceName).join("、"),
+                              )}
+                            </p>
+                          ) : null}
+                          {ports(step.outputs)}
+                          <details>
+                            <summary>推进与确认条件</summary>
+                            <pre>
+                              {displayText(
+                                JSON.stringify(
+                                  {
+                                    condition: step.condition,
+                                    completion: step.completion,
+                                    confirmation: step.confirmation,
+                                    budget: step.budget,
+                                  },
+                                  null,
+                                  2,
+                                ),
+                              )}
+                            </pre>
+                          </details>
                         </details>
-                      </details>
-                    ))}
-                </section>
-              ))}
-            </>
-          ) : (
-            <>
-              <p>格式：{displayText(node.content.format)}</p>
-              <p>
-                内容规范：
-                {displayText(
-                  node.content.spec_refs?.map(sourceName).join("、") ||
-                    "未关联",
-                )}
-              </p>
-              {node.content.content_schema ? (
-                <details>
-                  <summary>结构合同</summary>
-                  <pre>
-                    {displayText(
-                      JSON.stringify(node.content.content_schema, null, 2),
-                    )}
-                  </pre>
-                </details>
-              ) : null}
-            </>
-          )}
-          <ul>
-            {snapshot.edges
-              .filter((edge: Row) => edge.from === node.reference)
-              .map((edge: Row) => (
-                <li key={`${edge.path}:${edge.to}`}>
-                  {displayText(edge.path)} → {displayText(edge.to)} ·{" "}
-                  {displayText(edge.relation)}
-                </li>
-              ))}
-          </ul>
-        </details>
+                      ))}
+                  </section>
+                ))}
+              </>
+            ) : (
+              <>
+                <p>格式：{displayText(node.content.format)}</p>
+                <p>
+                  内容规范：
+                  {displayText(
+                    node.content.spec_refs?.map(sourceName).join("、") ||
+                      "未关联",
+                  )}
+                </p>
+                {node.content.content_schema ? (
+                  <details>
+                    <summary>结构合同</summary>
+                    <pre>
+                      {displayText(
+                        JSON.stringify(node.content.content_schema, null, 2),
+                      )}
+                    </pre>
+                  </details>
+                ) : null}
+              </>
+            )}
+            <ul>
+              {snapshot.edges
+                .filter((edge: Row) => edge.from === node.reference)
+                .map((edge: Row) => (
+                  <li key={`${edge.path}:${edge.to}`}>
+                    {displayText(edge.path)} → {displayText(edge.to)} ·{" "}
+                    {displayText(edge.relation)}
+                  </li>
+                ))}
+            </ul>
+            {renderOverride?.(node)}
+          </details>
+        </section>
       ))}
     </div>
+  );
+}
+
+type StandardRevisionEditorProps = {
+  snapshot: Row;
+  records: Row[];
+  request: Request;
+  projectId?: string;
+  onCreated: (record: Row) => Promise<void>;
+};
+
+function StandardRevisionEditor({
+  snapshot,
+  records,
+  request: parentRequest,
+  projectId,
+  onCreated,
+}: StandardRevisionEditorProps) {
+  const request = useReadRequest(parentRequest);
+  const [name, setName] = useState(snapshot.record.name as string);
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
+  const [candidate, setCandidate] = useState<Row>();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const generation = useRef(0);
+  const scope = projectId ? `project:${projectId}` : "global";
+  const head = latest(records.filter((row) => row.type === "standard")).find(
+    (row) => row.definition_id === snapshot.record.definition_id,
+  );
+  const revising =
+    snapshot.record.scope === scope &&
+    !snapshot.archived &&
+    head?.id === snapshot.record.id;
+  const substitutions = Object.entries(overrides).map(
+    ([source_ref, replacement_ref]) => ({
+      source_ref,
+      replacement_ref,
+    }),
+  );
+  async function preview() {
+    const ticket = ++generation.current;
+    setBusy(true);
+    setError("");
+    try {
+      const value = await request("standard.capture.preview", {
+        project_id: projectId,
+        base_standard_ref: snapshot.record.id,
+        standard_overrides: substitutions,
+      });
+      if (ticket === generation.current) setCandidate(value);
+    } catch (e) {
+      if (ticket === generation.current) setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function save() {
+    if (!candidate) return;
+    setBusy(true);
+    setError("");
+    try {
+      const row = await request("standard.capture", {
+        project_id: projectId,
+        command_id: crypto.randomUUID(),
+        target: revising ? snapshot.record.id : undefined,
+        expected_revision: revising ? snapshot.record.revision : undefined,
+        payload: {
+          name: name.trim(),
+          base_standard_ref: snapshot.record.id,
+          standard_overrides: substitutions,
+          preview_digest: candidate.snapshot_digest,
+          scope,
+        },
+      });
+      await onCreated(row);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <fieldset className="standard-revision-editor" disabled={busy}>
+      <legend>替换配置并生成新版本</legend>
+      <p className="muted">
+        在配置项旁选择要替换的已发布修订，同一项在快照中的所有引用同步替换。
+      </p>
+      <StandardDetail
+        snapshot={snapshot}
+        renderOverride={(node) => (
+          <div className="standard-source-override">
+            <RevisionSelect
+              label="替换为"
+              records={records.filter(
+                (row) =>
+                  row.type === node.kind &&
+                  row.id !== node.reference &&
+                  !row.archived &&
+                  !row.template_archived,
+              )}
+              value={overrides[node.reference] || ""}
+              onChange={(replacement) => {
+                generation.current++;
+                setCandidate(undefined);
+                setError("");
+                setOverrides((current) => {
+                  const next = { ...current };
+                  if (replacement) next[node.reference] = replacement;
+                  else delete next[node.reference];
+                  return next;
+                });
+              }}
+            />
+          </div>
+        )}
+      />
+      <section
+        className="standard-revision-save"
+        aria-label="生成 Standard 新版本"
+      >
+        <h4>生成新版本</h4>
+        <label>
+          快照名称
+          <input
+            required
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </label>
+        <p>
+          已替换 {substitutions.length} 项 ·{" "}
+          {revising
+            ? `保存为当前 Standard 的 v${snapshot.record.version + 1}`
+            : projectId
+              ? "保存为新的项目 Standard · v1"
+              : "保存为新的 Standard · v1"}
+        </p>
+        {error ? (
+          <p role="alert" className="error">
+            {displayText(error)}
+          </p>
+        ) : null}
+        <div className="actions">
+          <ActionButton
+            disabled={!substitutions.length}
+            onClick={() => void preview()}
+          >
+            预览替换
+          </ActionButton>
+          <ActionButton
+            className="primary"
+            disabled={!candidate || !name.trim()}
+            onClick={() => void save()}
+          >
+            生成新版本
+          </ActionButton>
+        </div>
+        {candidate ? (
+          <>
+            <StandardDiff diff={candidate.provenance.diff} />
+            <details>
+              <summary>查看新版本快照</summary>
+              <StandardDetail snapshot={candidate} />
+            </details>
+          </>
+        ) : null}
+      </section>
+    </fieldset>
   );
 }
 
@@ -249,30 +432,35 @@ export function StandardManager({
 }) {
   const request = useReadRequest(parentRequest);
   const [records, setRecords] = useState<Row[]>([]);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
   const initialized = useRef(false);
   const [selected, setSelected] = useState(
     () => new URLSearchParams(location.search).get("standard_id") || "",
   );
   const [snapshot, setSnapshot] = useState<Row>();
   const [usage, setUsage] = useState<Row>();
-  const [name, setName] = useState("");
-  const [roots, setRoots] = useState<string[]>([]);
-  const [defaultEntry, setDefaultEntry] = useState("");
-  const [candidate, setCandidate] = useState<Row>();
-  const [base, setBase] = useState("");
+  const [showHistory, setShowHistory] = useState(
+    () =>
+      new URLSearchParams(location.search).get("standard_history") === "true",
+  );
   const [compare, setCompare] = useState("");
   const [diff, setDiff] = useState<Row>();
   const [busy, setBusy] = useState(false);
   const { error, setError, message, setMessage } = useActionFeedback();
 
   async function load() {
-    setRecords(await loadCatalog(request, project?.id, true));
+    setRecords(
+      await loadCatalogWithStandardHistory(request, project?.id, true),
+    );
   }
   useEffect(() => {
     let active = true;
-    void loadCatalog(request, project?.id, true)
+    void loadCatalogWithStandardHistory(request, project?.id, true)
       .then((rows) => {
-        if (active) setRecords(rows);
+        if (active) {
+          setRecords(rows);
+          setCatalogLoaded(true);
+        }
       })
       .catch((e) => {
         if (active) setError(String(e));
@@ -282,27 +470,46 @@ export function StandardManager({
     };
   }, [request, project?.id, setError]);
   useEffect(() => {
-    if (initialized.current || !records.length) return;
+    if (initialized.current || !catalogLoaded) return;
     initialized.current = true;
-    if (!selected) {
-      const first = latest(records.filter((row) => row.type === "standard"))[0];
-      if (first) setSelected(first.id);
+    if (
+      !records.some((row) => row.type === "standard" && row.id === selected)
+    ) {
+      const first = latest(
+        records.filter(
+          (row) =>
+            row.type === "standard" && !row.template_archived && !row.archived,
+        ),
+      )[0];
+      setSelected(first?.id || "");
+    } else if (
+      records.some(
+        (row) => row.id === selected && (row.template_archived || row.archived),
+      )
+    ) {
+      setShowHistory(true);
     }
-  }, [records, selected]);
+  }, [records, selected, catalogLoaded]);
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     if (selected) params.set("standard_id", selected);
     else params.delete("standard_id");
+    if (showHistory) params.set("standard_history", "true");
+    else params.delete("standard_history");
     history.replaceState(null, "", `?${params}`);
-  }, [selected]);
+  }, [selected, showHistory]);
   useEffect(() => {
     setSnapshot(undefined);
     setUsage(undefined);
     setDiff(undefined);
-  }, [selected, project?.id]);
+    setError("");
+  }, [selected, project?.id, setError]);
+  const selectedAvailable = records.some(
+    (row) => row.type === "standard" && row.id === selected,
+  );
   useEffect(() => {
     let active = true;
-    if (!selected) return;
+    if (!selectedAvailable) return;
     const controller = new AbortController();
     void request(
       "query.standard",
@@ -330,7 +537,7 @@ export function StandardManager({
       active = false;
       controller.abort();
     };
-  }, [selected, project?.id, request, setError]);
+  }, [selected, selectedAvailable, project?.id, request, setError]);
   async function act(action: () => Promise<void>) {
     setBusy(true);
     setError("");
@@ -342,7 +549,16 @@ export function StandardManager({
       setBusy(false);
     }
   }
-  const standards = records.filter((r) => r.type === "standard");
+  const allStandards = records.filter((r) => r.type === "standard");
+  const currentStandards = latest(
+    allStandards.filter((r) => !r.template_archived && !r.archived),
+  );
+  const standards = showHistory ? allStandards : currentStandards;
+  const selectedRecord = allStandards.find((row) => row.id === selected);
+  const choices =
+    selectedRecord && !standards.some((row) => row.id === selected)
+      ? [...standards, selectedRecord]
+      : standards;
   return (
     <section className="panel standard-manager" aria-label="Standard 规范快照">
       <h3>Standard 规范快照</h3>
@@ -358,7 +574,7 @@ export function StandardManager({
       {message ? <p role="status">{displayText(message)}</p> : null}
       <RevisionSelect
         label="查看 Standard"
-        records={standards}
+        records={choices}
         value={selected}
         onChange={(value) => {
           setSelected(value);
@@ -368,143 +584,38 @@ export function StandardManager({
           history.replaceState(null, "", `?${params}`);
         }}
       />
-      <details>
-        <summary>从 Workflow 生成快照</summary>
-        <label>
-          快照名称
-          <input value={name} onChange={(e) => setName(e.target.value)} />
-        </label>
-        <RevisionSelect
-          label="入口 Workflow"
-          multiple
-          records={records.filter((r) => r.type === "workflow")}
-          value={roots}
-          onChange={(value) => {
-            setRoots(value);
-            setDefaultEntry(
-              value.includes(defaultEntry)
-                ? defaultEntry
-                : value.length === 1
-                  ? value[0]
-                  : "",
-            );
-            setCandidate(undefined);
+      <label className="standard-history-toggle">
+        <input
+          type="checkbox"
+          checked={showHistory}
+          onChange={(event) => {
+            const show = event.target.checked;
+            setShowHistory(show);
+            if (!show && !currentStandards.some((row) => row.id === selected))
+              setSelected(currentStandards[0]?.id || "");
           }}
         />
-        <p className="muted">
-          只选择已发布入口；Delivery、Spec 和子流程由系统解析。
-        </p>
-        <RevisionSelect
-          label="默认启动 Workflow"
-          records={records.filter(
-            (r) => r.type === "workflow" && roots.includes(r.id),
-          )}
-          value={defaultEntry}
-          required
-          onChange={(value) => {
-            setDefaultEntry(value);
-            setCandidate(undefined);
-          }}
-        />
-        <ActionButton
-          disabled={busy || !roots.length || !defaultEntry}
-          onClick={() =>
-            void act(async () => {
-              setCandidate(
-                await request("standard.capture.preview", {
-                  root_workflow_refs: roots,
-                  default_workflow_ref: defaultEntry,
-                  project_id: project?.id,
-                }),
-              );
-            })
-          }
-        >
-          预览规范快照
-        </ActionButton>
-        {candidate ? (
-          <>
-            <StandardDetail snapshot={candidate} />
-            <ActionButton
-              disabled={busy || !name.trim()}
-              onClick={() =>
-                void act(async () => {
-                  const previous = records.find((r) => r.id === base);
-                  const row = await request("standard.capture", {
-                    project_id: project?.id,
-                    command_id: crypto.randomUUID(),
-                    target: base || undefined,
-                    expected_revision: previous?.revision,
-                    payload: {
-                      name,
-                      root_workflow_refs: roots,
-                      default_workflow_ref: defaultEntry,
-                      preview_digest: candidate.snapshot_digest,
-                      scope: project ? `project:${project.id}` : "global",
-                    },
-                  });
-                  await load().catch(ignoreCancelledRefresh);
-                  setSelected(row.id);
-                  setCandidate(undefined);
-                  setBase("");
-                  setMessage("不可变规范快照已生成");
-                })
-              }
-            >
-              生成快照
-            </ActionButton>
-          </>
-        ) : null}
-      </details>
+        显示历史与归档快照
+      </label>
       {snapshot ? (
         <>
-          <h3>
-            {displayText(snapshot.record.name)} · v
-            {displayText(snapshot.record.version)}
-            {displayText(snapshot.archived ? " · 已归档" : "")}
-          </h3>
-          <ActionButton
-            disabled={
-              busy ||
-              (project
-                ? snapshot.record.scope !== `project:${project.id}`
-                : snapshot.record.scope !== "global")
-            }
-            onClick={() =>
-              void act(async () => {
-                await request("standard.archive", {
-                  project_id: project?.id,
-                  command_id: crypto.randomUUID(),
-                  target: selected,
-                  expected_revision: snapshot.record.revision,
-                  payload: { archived: !snapshot.archived },
-                });
-                setSnapshot({ ...snapshot, archived: !snapshot.archived });
-                await load().catch(ignoreCancelledRefresh);
-              })
-            }
-          >
-            {displayText(snapshot.archived ? "恢复快照选择" : "归档快照")}
-          </ActionButton>
-          <StandardDetail snapshot={snapshot} />
-          <ActionButton
-            disabled={
-              busy ||
-              (project
-                ? snapshot.record.scope !== `project:${project.id}`
-                : snapshot.record.scope !== "global")
-            }
-            onClick={() => {
-              setRoots(snapshot.root_workflow_refs);
-              setDefaultEntry(snapshot.default_workflow_ref || "");
-              setName(snapshot.record.name);
-              setBase(selected);
-              setCandidate(undefined);
-              setMessage("已准备入口选择，请展开生成快照并预览新修订。");
+          {snapshot.archived ? (
+            <p className="notice">
+              此快照已归档，可查看历史内容或基于它生成新快照。
+            </p>
+          ) : null}
+          <StandardRevisionEditor
+            key={snapshot.record.id}
+            snapshot={snapshot}
+            records={records}
+            request={request}
+            projectId={project?.id}
+            onCreated={async (row) => {
+              await load().catch(ignoreCancelledRefresh);
+              setSelected(row.id);
+              setMessage("Standard 新版本已生成");
             }}
-          >
-            基于这些入口生成新修订
-          </ActionButton>
+          />
           <section className="standard-compare" aria-label="Standard 比较">
             <div className="standard-compare-controls">
               <RevisionSelect

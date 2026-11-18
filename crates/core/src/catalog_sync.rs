@@ -55,6 +55,29 @@ impl Engine {
     fn sync_shared_configuration_once(&self, global: &dyn EngineeringStore) -> Result<()> {
         let existing = self.store.configuration_snapshot()?;
         let known = global.configuration_snapshot()?;
+        if template_hard_reset_generation(&known.state)
+            > template_hard_reset_generation(&existing.state)
+        {
+            let publication = self
+                .store
+                .prepare_configuration_reset(&known.state.governance, existing.revision)?;
+            let transfer = configuration_transfer_witness(self.store.as_ref())?;
+            let digest = configuration_hash(&(
+                "factory-reset-sync",
+                self.store.namespace(),
+                known.revision,
+                existing.revision,
+            ));
+            self.store.commit_changes(&PreparedChangeSet {
+                command_id: format!("factory-reset-sync:{digest}"),
+                fingerprint: digest,
+                read_set: publication.read_set.merge([transfer])?,
+                changes: publication.changes,
+                result: json!({"ok":true}),
+                time: now() as i64,
+            })?;
+            return Ok(());
+        }
         let mut directory = known.state.as_ref().clone();
         for role in existing
             .state

@@ -73,6 +73,18 @@ export async function loadCatalog(
   }
   return result;
 }
+export async function loadCatalogWithStandardHistory(
+  request: Request,
+  projectId?: string,
+  includeArchived = false,
+) {
+  // Standards may pin an older revision even when the catalog lists newer heads.
+  const [records, standards] = await Promise.all([
+    loadCatalog(request, projectId, includeArchived),
+    loadCatalog(request, projectId, true, "standard", true),
+  ]);
+  return mergeConfigurationRecords(records, standards);
+}
 export function decodeConfigurationIndex(row: Row): Row {
   if (!row.hash) return row; // Structural RPC fixtures and existing complete records retain their wire shape.
   return {

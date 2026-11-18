@@ -660,9 +660,9 @@ export function ResourceEditor({
                   false,
                   true,
                 )}
-                {select("Tools", "tool", "tools", true, true)}
-                {select("Skills", "skill", "skills", true)}
-                {select("Specs", "spec", "spec_refs", true)}
+                {select("Tool 精确版本", "tool", "tools", true, true)}
+                {select("Skill 精确版本", "skill", "skills", true)}
+                {select("Spec 精确版本", "spec", "spec_refs", true)}
                 {(data.skills || []).map((id: string) => {
                   const pkg = integrations.find(
                     (r) => r.type === "skill_package" && r.definition_id === id,

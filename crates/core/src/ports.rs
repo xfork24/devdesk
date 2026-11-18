@@ -664,6 +664,15 @@ pub trait EngineeringStore: Send + Sync {
     fn observe_query(&self, _stage: &'static str) -> Box<dyn QueryObservation> {
         Box::new(())
     }
+    /// Prepare the explicit factory reset, materializing execution evidence before
+    /// removing its configuration sources. Ordinary publications remain immutable.
+    fn prepare_configuration_reset(
+        &self,
+        _records: &[devdesk_domain::ConfigurationRecord],
+        _catalog_revision: u64,
+    ) -> Result<crate::configuration_publication::ConfigurationPublication> {
+        Err(err("unsupported", "存储未实现完全重置配置"))
+    }
     /// Reuse bounded resource reads only during one synchronous advisory query.
     /// A command must acquire its own authoritative facts after this scope ends.
     fn advisory_read_scope(&self) -> Box<dyn QueryObservation> {

@@ -112,13 +112,44 @@ test("UI 编辑保存数据库副本，确认重置恢复默认并隔离旧草�
   });
   const edited = original.records.find((r: any) => r.name === "自定义需求角色");
   expect(edited).toBeTruthy();
+  const defaults = await rpc(page, appUrl, "query.configuration_defaults");
+  const customStandard = await rpc(page, appUrl, "standard.capture", {
+    command_id: crypto.randomUUID(),
+    payload: {
+      name: "需被完全删除的自建 Standard",
+      root_workflow_refs: [defaults.workflow_ref],
+    },
+  });
   await page.getByRole("button", { name: "新建 Role", exact: true }).click();
   await page.getByLabel("Role 名称", { exact: true }).fill("未保存草稿");
   await page.getByRole("button", { name: "设置", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "启用新版出厂默认", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "恢复默认配置", exact: true }),
+  ).toHaveCount(0);
   await page.getByRole("button", { name: "重置模板定义", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "确认重置模板定义" });
+  await dialog
+    .getByRole("button", { name: "恢复默认配置", exact: true })
+    .click();
+  await expect(dialog).not.toBeVisible();
+  expect(
+    (
+      await rpc(page, appUrl, "query.roles", {
+        include_history: true,
+        limit: 100,
+      })
+    ).records.some((r: any) => r.id === edited.id),
+  ).toBe(true);
+  expect(
+    (await rpc(page, appUrl, "query.standard", { id: customStandard.id }))
+      .record.name,
+  ).toBe("需被完全删除的自建 Standard");
+  await page.getByRole("button", { name: "重置模板定义", exact: true }).click();
   await expect(dialog).toContainText(
-    "已有项目绑定、执行历史、会话、经验和登录凭据保留原值",
+    "项目、仓库、执行记录、会话、经验和登录凭据保留",
   );
   await page.screenshot({
     path: info.outputPath("reset-preview.png"),
@@ -131,7 +162,7 @@ test("UI 编辑保存数据库副本，确认重置恢复默认并隔离旧草�
     ),
   ).toBe(true);
   await page.getByRole("button", { name: "重置模板定义", exact: true }).click();
-  await dialog.getByRole("button", { name: "确认重置", exact: true }).click();
+  await dialog.getByRole("button", { name: "重置配置", exact: true }).click();
   await expect(
     page.getByRole("status").filter({ hasText: "模板定义已恢复默认" }),
   ).toBeVisible();
@@ -148,7 +179,15 @@ test("UI 编辑保存数据库副本，确认重置恢复默认并隔离旧草�
     include_history: true,
     limit: 100,
   });
-  expect(historical.records.some((r: any) => r.id === edited.id)).toBe(true);
+  expect(historical.records.some((r: any) => r.id === edited.id)).toBe(false);
+  const standards = await rpc(page, appUrl, "query.configuration_index", {
+    kind: "standard",
+    include_archived: true,
+    include_history: true,
+  });
+  expect(standards.records.some((r: any) => r.id === customStandard.id)).toBe(
+    false,
+  );
   await page.getByRole("button", { name: "角色与代理", exact: true }).click();
   await expect(page.getByLabel("Role 名称", { exact: true })).toHaveValue("");
   await expect(
@@ -162,12 +201,18 @@ test("UI 编辑保存数据库副本，确认重置恢复默认并隔离旧草�
   });
 });
 
-test("重置失败可重试，确认前并发修改要求重新预览", async ({ page, appUrl }) => {
+test("操作后关闭弹窗，失败可重新打开并读取最新预览", async ({
+  page,
+  appUrl,
+}) => {
   await page.goto(`${appUrl}/?tab=settings`);
   await page.getByRole("button", { name: "重置模板定义", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "确认重置模板定义" });
   await expect(
-    dialog.getByRole("button", { name: "确认重置", exact: true }),
+    dialog.getByRole("button", { name: "重新预览", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    dialog.getByRole("button", { name: "重置配置", exact: true }),
   ).toBeEnabled();
   await rpc(page, appUrl, "delivery_type.create", {
     command_id: crypto.randomUUID(),
@@ -177,12 +222,17 @@ test("重置失败可重试，确认前并发修改要求重新预览", async ({
       data: { format: "markdown", body: "concurrent" },
     },
   });
-  await dialog.getByRole("button", { name: "确认重置", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toContainText("请重新预览");
+  await dialog.getByRole("button", { name: "重置配置", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "模板与额度设置", exact: true })
+      .getByRole("alert"),
+  ).toContainText("请重新打开重置窗口");
   expect((await rpc(page, appUrl, "query.template_catalog")).generation).toBe(
     1,
   );
-  await dialog.getByRole("button", { name: "重新预览", exact: true }).click();
+  await page.getByRole("button", { name: "重置模板定义", exact: true }).click();
   let failed = false;
   await page.route("**/rpc", async (route) => {
     const call = route.request().postDataJSON();
@@ -198,20 +248,57 @@ test("重置失败可重试，确认前并发修改要求重新预览", async ({
     }
     return route.fallback();
   });
-  await dialog.getByRole("button", { name: "确认重置", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toContainText(
-    "Fixture storage failure",
-  );
-  await dialog.getByRole("button", { name: "确认重置", exact: true }).click();
+  await dialog.getByRole("button", { name: "重置配置", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "模板与额度设置", exact: true })
+      .getByRole("alert"),
+  ).toContainText("Fixture storage failure");
+  await page.getByRole("button", { name: "重置模板定义", exact: true }).click();
+  await dialog.getByRole("button", { name: "重置配置", exact: true }).click();
   await expect(
     page.getByRole("status").filter({ hasText: "模板定义已恢复默认" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "重置模板定义", exact: true }).click();
-  await dialog.getByRole("button", { name: "确认重置", exact: true }).click();
+  await dialog.getByRole("button", { name: "重置配置", exact: true }).click();
   await expect(
     page.getByRole("status").filter({ hasText: "模板定义已是当前默认版本" }),
   ).toBeVisible();
   expect((await rpc(page, appUrl, "query.template_catalog")).generation).toBe(
     2,
   );
+});
+
+test("恢复默认配置失败时也关闭弹窗并在设置页显示错误", async ({
+  page,
+  appUrl,
+}) => {
+  await page.goto(`${appUrl}/?tab=settings`);
+  await page.getByRole("button", { name: "重置模板定义", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "确认重置模板定义" });
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    if (
+      call.method === "configuration.templates.reset" &&
+      call.params.payload.preserve_custom
+    )
+      return route.fulfill({
+        json: {
+          jsonrpc: "2.0",
+          id: call.id,
+          error: { code: -32000, message: "恢复失败测试" },
+        },
+      });
+    return route.fallback();
+  });
+  await dialog
+    .getByRole("button", { name: "恢复默认配置", exact: true })
+    .click();
+  await expect(dialog).not.toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "模板与额度设置", exact: true })
+      .getByRole("alert"),
+  ).toContainText("恢复失败测试");
 });

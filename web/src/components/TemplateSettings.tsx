@@ -68,6 +68,8 @@ export function TemplateSettings({
   }
   async function updateFactory() {
     if (busy) return;
+    dialog.current?.close();
+    setPreview(undefined);
     setBusy(true);
     setError("");
     setMessage("");
@@ -83,10 +85,13 @@ export function TemplateSettings({
         },
       });
       observeCatalogGeneration(result.generation);
+      dialog.current?.close();
+      setPreview(undefined);
+      command.current = undefined;
       setMessage(
         result.changed
-          ? "新版出厂默认已启用；自定义定义和已保存项目选择保留。"
-          : "已启用当前出厂默认。",
+          ? "默认配置已恢复；自定义定义和已保存项目选择保留。"
+          : "已是当前默认配置；自定义定义保留。",
       );
       setCatalog(await request("query.template_catalog"));
       await refresh();
@@ -108,11 +113,17 @@ export function TemplateSettings({
         bundle_hash: preview.bundle_hash,
       },
     };
+    dialog.current?.close();
+    setPreview(undefined);
     try {
       const result = await request(
         "configuration.templates.reset",
         command.current,
       );
+      const params = new URLSearchParams(location.search);
+      params.delete("standard_id");
+      params.delete("standard_history");
+      history.replaceState(null, "", `?${params}`);
       observeCatalogGeneration(result.generation);
       dialog.current?.close();
       setPreview(undefined);
@@ -142,6 +153,9 @@ export function TemplateSettings({
           默认版本 {displayText(catalog?.bundle_version ?? "读取中…")}
           。编辑内容保存在数据库副本中，可恢复应用发布的完整默认定义。
         </p>
+        <p className="muted">
+          可在弹窗中选择保留自定义定义并恢复默认配置，或完全重置配置。
+        </p>
         {message && <p role="status">{displayText(message)}</p>}
         {error && !preview && (
           <p role="alert" className="error">
@@ -149,9 +163,6 @@ export function TemplateSettings({
           </p>
         )}
       </div>
-      <ActionButton disabled={busy} onClick={updateFactory}>
-        启用新版出厂默认
-      </ActionButton>
       <ActionButton disabled={busy} onClick={openPreview}>
         重置模板定义
       </ActionButton>
@@ -171,13 +182,18 @@ export function TemplateSettings({
         <p>
           将当前数据集的全局与项目模板定义恢复为默认版本{" "}
           {displayText(preview?.bundle_version)}
-          。自建定义、自定义修订和流程草稿将从当前目录归档。
+          。自建定义、自定义修订、流程草稿和配置历史将被删除，失效的项目配置绑定将清除。
         </p>
-        <p>已有项目绑定、执行历史、会话、经验和登录凭据保留原值。</p>
+        <p>
+          项目、仓库、执行记录、会话、经验和登录凭据保留；受影响的项目需要重新配置。
+        </p>
+        <p>
+          “恢复默认配置”更新默认配置并保留自定义定义；“重置配置”完全恢复为预定义配置。
+        </p>
         <p>
           自建或已修改定义 {displayText(preview?.custom_count ?? 0)}{" "}
           项；未发布流程草稿 {displayText(preview?.draft_count ?? 0)}{" "}
-          项；保留固定绑定的项目{" "}
+          项；已有配置的项目{" "}
           {displayText(preview?.pinned_projects?.length ?? 0)} 个。
         </p>
         <ul>
@@ -213,13 +229,10 @@ export function TemplateSettings({
             取消
           </ActionButton>
           <ActionButton disabled={busy} onClick={updateFactory}>
-            启用新版出厂默认
-          </ActionButton>
-          <ActionButton disabled={busy} onClick={openPreview}>
-            重新预览
+            恢复默认配置
           </ActionButton>
           <ActionButton className="primary" disabled={busy} onClick={reset}>
-            {displayText(busy ? "正在重置…" : "确认重置")}
+            {displayText(busy ? "正在重置…" : "重置配置")}
           </ActionButton>
         </div>
       </dialog>

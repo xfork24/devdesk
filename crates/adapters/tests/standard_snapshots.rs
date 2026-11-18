@@ -643,3 +643,156 @@ fn project_execution_selections_rebuild_in_their_own_access_context() {
         );
     }
 }
+
+#[test]
+fn standard_overrides_publish_new_revisions_with_frozen_sources_and_read_only_previews() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let workflow = child(&e, "Original");
+    let base = capture(&e, vec![workflow.clone()]);
+    let source = row(&e, &workflow);
+    let spec = source.data["steps"][0]["spec_refs"][0].as_str().unwrap();
+    let replacement = command(&e, "spec.create", None, json!({"name":"Revised requirements","data":{"schema_version":3,"body":"检查新的验收要求","checks":[]}})).unwrap();
+    let overrides = json!([{"source_ref":spec,"replacement_ref":replacement["id"]}]);
+    let before = e.store.snapshot().unwrap();
+    let preview = e
+        .query(
+            "standard.capture.preview",
+            &json!({"base_standard_ref":base,"standard_overrides":overrides}),
+            1,
+        )
+        .unwrap();
+    assert_eq!(e.store.snapshot().unwrap().governance, before.governance);
+    assert_ne!(preview["root_workflow_refs"][0], workflow);
+    assert_eq!(
+        preview["default_workflow_ref"],
+        preview["root_workflow_refs"][0]
+    );
+    assert_eq!(preview["provenance"]["diff"]["equal"], false);
+    let payload = json!({"name":"Named next standard","base_standard_ref":base,"standard_overrides":overrides,"preview_digest":preview["snapshot_digest"]});
+    let next = command(&e, "standard.capture", Some(&base), payload.clone()).unwrap();
+    assert_eq!(next["version"], 2);
+    assert_eq!(next["supersedes"], base);
+    assert_eq!(next["name"], "Named next standard");
+    assert_eq!(row(&e, &base), before.configuration(&base).unwrap().clone());
+    assert_eq!(row(&e, &workflow), source);
+    let snapshot = e
+        .query("query.standard", &json!({"id":next["id"]}), 1)
+        .unwrap();
+    assert_eq!(snapshot["snapshot_digest"], preview["snapshot_digest"]);
+    assert_eq!(snapshot["provenance"]["base_standard_ref"], base);
+    assert_eq!(snapshot["provenance"]["overrides"], overrides);
+    assert!(
+        snapshot["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|node| node["reference"] == replacement["id"])
+    );
+    assert!(
+        !snapshot["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|node| node["reference"] == spec)
+    );
+    let published = e.store.snapshot().unwrap();
+    assert!(command(&e, "standard.capture", Some(&base), payload).is_err());
+    assert_eq!(e.store.snapshot().unwrap().governance, published.governance);
+    drop(e);
+    let e = engine(dir.path());
+    assert_eq!(
+        e.query("query.standard", &json!({"id":next["id"]}), 1)
+            .unwrap()["snapshot_digest"],
+        preview["snapshot_digest"]
+    );
+}
+
+#[test]
+fn standard_overrides_reject_invalid_or_stale_substitutions_atomically() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let a = child(&e, "A");
+    let b = child(&e, "B");
+    let base = capture(&e, vec![a.clone()]);
+    let before = e.store.snapshot().unwrap();
+    for overrides in [
+        json!([{"source_ref":"missing:1","replacement_ref":b}]),
+        json!([{"source_ref":a,"replacement_ref":"fixture-spec:1"}]),
+        json!([{"source_ref":a,"replacement_ref":b},{"source_ref":a,"replacement_ref":b}]),
+    ] {
+        assert!(
+            e.query(
+                "standard.capture.preview",
+                &json!({"base_standard_ref":base,"standard_overrides":overrides}),
+                1
+            )
+            .is_err()
+        );
+        assert!(
+            command(
+                &e,
+                "standard.capture",
+                Some(&base),
+                json!({"name":"Invalid","base_standard_ref":base,"standard_overrides":overrides})
+            )
+            .is_err()
+        );
+        assert_eq!(e.store.snapshot().unwrap().governance, before.governance);
+    }
+    assert!(command(&e, "standard.capture", Some(&base), json!({"name":"Stale preview","base_standard_ref":base,"standard_overrides":[{"source_ref":a,"replacement_ref":b}],"preview_digest":"stale"})).is_err());
+    assert_eq!(e.store.snapshot().unwrap().governance, before.governance);
+}
+
+#[test]
+fn destructive_configuration_reset_rolls_back_and_restores_immutability_guards() {
+    use devdesk_core::concurrency::*;
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let custom = command(&e, "spec.create", None, json!({"name":"Keep on failure","data":{"schema_version":3,"body":"A real configuration","checks":[]}})).unwrap();
+    let before = e.store.configuration_snapshot().unwrap();
+    let mut publication = e
+        .store
+        .prepare_configuration_reset(&before.state.governance, before.revision)
+        .unwrap();
+    let records = publication.changes[0].value["records"]
+        .as_array_mut()
+        .unwrap();
+    let duplicate = records
+        .iter()
+        .find(|row| row["id"] == custom["id"])
+        .unwrap()
+        .clone();
+    records.push(duplicate);
+    assert!(
+        e.store
+            .commit_changes(&PreparedChangeSet {
+                command_id: id(),
+                fingerprint: "reset-rollback".into(),
+                read_set: publication.read_set,
+                changes: publication.changes,
+                result: Value::Null,
+                time: 0,
+            })
+            .is_err()
+    );
+    assert_eq!(
+        e.store.configuration_snapshot().unwrap().fingerprint,
+        before.fingerprint
+    );
+    let conn = rusqlite::Connection::open(dir.path().join("engineering.sqlite3")).unwrap();
+    assert!(
+        conn.execute(
+            "DELETE FROM source_definitions WHERE reference=?1",
+            [custom["id"].as_str().unwrap()]
+        )
+        .is_err()
+    );
+    assert!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .configuration(custom["id"].as_str().unwrap())
+            .is_ok()
+    );
+}

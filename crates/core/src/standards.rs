@@ -310,17 +310,6 @@ impl Engine {
             return Ok(None);
         }
         let p = &c.payload;
-        let mut roots: Vec<Id> = serde_json::from_value(p["root_workflow_refs"].clone())
-            .map_err(|e| err("invalid_params", e.to_string()))?;
-        roots.sort();
-        roots.dedup();
-        let entry = p["default_workflow_ref"]
-            .as_str()
-            .map(str::to_owned)
-            .or_else(|| (roots.len() == 1).then(|| roots[0].clone()));
-        if let Some(entry) = &entry {
-            require(roots.contains(entry), "默认启动入口必须属于所选根 Workflow")?;
-        }
         let scope: Scope = serde_json::from_value(p.get("scope").cloned().unwrap_or_else(|| {
             self.store
                 .project_id()
@@ -332,6 +321,42 @@ impl Engine {
             !scope.is_feature() && scope.project_id() == self.store.project_id().as_deref(),
             "Standard 源可见范围与当前入口不一致",
         )?;
+        let replacement = p["base_standard_ref"]
+            .as_str()
+            .map(|base| {
+                require(
+                    c.target.as_deref().is_none_or(|id| id == base),
+                    "修订目标必须是基础 Standard",
+                )?;
+                crate::project_standards::replace_standard_sources(
+                    state,
+                    base,
+                    &scope,
+                    p.get("standard_overrides").unwrap_or(&json!([])),
+                )
+            })
+            .transpose()?;
+        let mut roots: Vec<Id> = if let Some(result) = &replacement {
+            result.roots.clone()
+        } else {
+            serde_json::from_value(p["root_workflow_refs"].clone())
+                .map_err(|e| err("invalid_params", e.to_string()))?
+        };
+        roots.sort();
+        roots.dedup();
+        let entry = if let Some(result) = &replacement {
+            standard_default_workflow(state, p["base_standard_ref"].as_str().unwrap(), &scope)
+                .ok()
+                .map(|entry| result.rewrites.get(&entry).cloned().unwrap_or(entry))
+        } else {
+            p["default_workflow_ref"]
+                .as_str()
+                .map(str::to_owned)
+                .or_else(|| (roots.len() == 1).then(|| roots[0].clone()))
+        };
+        if let Some(entry) = &entry {
+            require(roots.contains(entry), "默认启动入口必须属于所选根 Workflow")?;
+        }
         let definition = ConfiguredStandard { schema_version: 4 };
         let snapshot = resolve_standard_sources(state, &roots, &scope)?;
         if let Some(expected) = p["preview_digest"].as_str() {
@@ -374,6 +399,24 @@ impl Engine {
             );
             state.governance.push(row.clone());
             row
+        } else if replacement.is_some() {
+            let mut refs = References::from([("root_workflow_refs".into(), json!(roots))]);
+            if let Some(entry) = &entry {
+                refs.insert("default_workflow_ref".into(), json!(entry));
+            }
+            let row = record_with_refs(
+                "standard",
+                format!("standard.{}", configuration_hash(&(&scope, &c.command_id))),
+                scope.clone(),
+                name,
+                1,
+                None,
+                refs,
+                json!(definition),
+                true,
+            );
+            state.governance.push(row.clone());
+            row
         } else {
             if let Some(entry) = &entry {
                 let refs = References::from([
@@ -407,6 +450,19 @@ impl Engine {
                 capture_standard(state, roots, &scope, &name)?
             }
         };
+        if let Some(mut result) = replacement {
+            result.provenance["kind"] = json!("standard_revision");
+            state.governance.push(record(
+                "standard_derivation",
+                row.id.clone(),
+                row.scope.clone(),
+                "规范快照来源与差异".into(),
+                1,
+                None,
+                result.provenance,
+                true,
+            ));
+        }
         Ok(Some(json!(row)))
     }
 
@@ -482,6 +538,23 @@ impl Engine {
                 );
             }
             if method == "standard.capture.preview" {
+                if let Some(base) = p["base_standard_ref"].as_str() {
+                    let mut candidate = state.clone();
+                    let replacement = crate::project_standards::replace_standard_sources(
+                        &mut candidate,
+                        base,
+                        &scope,
+                        p.get("standard_overrides").unwrap_or(&json!([])),
+                    )?;
+                    let mut result = json!(replacement.snapshot);
+                    result["provenance"] = replacement.provenance;
+                    result["default_workflow_ref"] =
+                        standard_default_workflow(&state, base, &scope)
+                            .ok()
+                            .map(|entry| replacement.rewrites.get(&entry).cloned().unwrap_or(entry))
+                            .map_or(Value::Null, |entry| json!(entry));
+                    return Ok(result);
+                }
                 let roots: Vec<Id> = serde_json::from_value(p["root_workflow_refs"].clone())
                     .map_err(|e| err("invalid_params", e.to_string()))?;
                 return Ok(json!(resolve_standard_sources(&state, &roots, &scope)?));

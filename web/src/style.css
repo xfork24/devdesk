@@ -2549,6 +2549,50 @@ pre {
   gap: 7px;
   margin: 12px 0;
 }
+.standard-manager .standard-history-toggle {
+  flex-direction: row;
+  align-items: center;
+}
+.standard-revision-editor {
+  border: 0;
+  padding: 0;
+  margin: 20px 0 0;
+  min-width: 0;
+}
+.standard-revision-editor > legend {
+  font-weight: 600;
+  padding: 0;
+}
+.standard-source {
+  padding: 12px 0;
+}
+.standard-source > details,
+.standard-source-override {
+  min-width: 0;
+}
+:root .standard-manager .standard-source-override > label:has(> select) {
+  display: flex;
+  margin: 12px 0;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: nowrap;
+  width: min(100%, 640px);
+}
+.standard-source-override .configuration-field-title {
+  flex: 0 0 auto;
+}
+.standard-source-override select {
+  flex: 1;
+  max-width: 560px;
+  min-width: 0;
+  width: auto;
+}
+.standard-revision-save {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #edf0f5;
+}
 .standard-compare {
   margin-top: 20px;
   padding-top: 16px;

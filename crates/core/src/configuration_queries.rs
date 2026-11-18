@@ -261,7 +261,7 @@ pub fn project_configuration_context(
         .max_by_key(|r| r.version);
     let pinned = crate::templates::pinned_template_records(s, configuration.map(|r| &r.data));
     let standard=configuration.and_then(|c|c.data["standard_ref"].as_str()).and_then(|id|catalog.record(id)).map(|r| {
-        let provenance=s.governance.iter().find(|d|d.r#type=="standard_derivation" && d.definition_id==r.id).map(|d|json!({"base_standard_ref":d.data["base_standard_ref"],"overrides":d.data["overrides"]}));
+        let provenance=s.governance.iter().find(|d|d.r#type=="standard_derivation" && d.definition_id==r.id && d.data["kind"]!="standard_revision").map(|d|json!({"base_standard_ref":d.data["base_standard_ref"],"overrides":d.data["overrides"]}));
         json!({"record":{"id":r.id,"name":r.name,"version":r.version},"provenance":provenance,"default_workflow_ref":configuration.map(|c|&c.data["workflow_ref"])})
     });
     Ok(

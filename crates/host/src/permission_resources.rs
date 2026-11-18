@@ -554,10 +554,13 @@ mod tests {
         )
         .unwrap();
         w.dispatch("permission.bindings.apply", json!({"command_id":id(),"payload":{"bindings":[{"target":target,"permission_revision_id":profile_ref,"expected_revision":0}]}})).unwrap();
-        let preview = w
-            .dispatch("query.template_reset_preview", json!({}))
+        // Exercise historical readers against an archived catalog. The explicit
+        // factory-reset command now deletes these definitions instead.
+        w.global
+            .seed_fixture_state(None, &mut |state| {
+                restore_template_catalog(state, "permission-history-fixture")
+            })
             .unwrap();
-        w.dispatch("configuration.templates.reset", json!({"command_id":id(),"payload":{"expected_catalog_generation":preview["generation"],"catalog_fingerprint":preview["catalog_fingerprint"],"bundle_hash":preview["bundle_hash"]}})).unwrap();
         let current = w.dispatch("query.permission_resources", json!({})).unwrap();
         assert!(
             !current["targets"]

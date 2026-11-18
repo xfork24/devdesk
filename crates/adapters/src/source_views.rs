@@ -4,6 +4,35 @@ use std::collections::BTreeMap;
 const SOURCE_TEXT: &str = "\u{1e}devdesk-source-text:";
 const SNAPSHOT_PERMISSIONS: &str = "snapshot-permissions:";
 
+/// Preserve literal protocol data without introducing references to removed sources.
+pub(super) fn seal_reset_evidence(value: &Value) -> Value {
+    if let Some(text) = value.as_str().filter(|text| text.starts_with(SOURCE_TEXT)) {
+        return json!(format!("{SOURCE_TEXT}{}", json!({"literal":text})));
+    }
+    if value.get("$source").is_some() {
+        return json!({"$source":"literal","value":value});
+    }
+    match value {
+        Value::Object(items) => Value::Object(
+            items
+                .iter()
+                .map(|(key, item)| {
+                    (
+                        key.clone(),
+                        if factual_field(key) {
+                            item.clone()
+                        } else {
+                            seal_reset_evidence(item)
+                        },
+                    )
+                })
+                .collect(),
+        ),
+        Value::Array(items) => Value::Array(items.iter().map(seal_reset_evidence).collect()),
+        _ => value.clone(),
+    }
+}
+
 pub(super) fn begin_snapshot(memo: &mut BTreeMap<String, Value>) {
     // Permission compilation checks the current backend assets as well as the
     // pinned sources. Reuse duplicate selections only within one store load.

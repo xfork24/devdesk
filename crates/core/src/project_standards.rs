@@ -20,20 +20,26 @@ pub(crate) struct ProjectStandard {
 
 fn derived_source(
     state: &mut EngineeringState,
-    project: &str,
+    scope: &Scope,
     original: &ConfigurationRecord,
     refs: References,
     data: Value,
 ) -> Result<ConfigurationRecord> {
+    let project = scope.project_id().unwrap_or("global");
+    let prefix = if scope.project_id().is_some() {
+        "project-source"
+    } else {
+        "standard-source"
+    };
     let identity = format!(
-        "project-source.{}",
+        "{prefix}.{}",
         configuration_hash(&(project, &original.id, &refs, &data))
     );
     let id = source_reference(&identity, 1)?;
     if let Ok(existing) = state.configuration(&id) {
         require(
             existing.r#type == original.r#type
-                && existing.scope == Scope::project(project)
+                && existing.scope == *scope
                 && existing.refs == refs
                 && existing.data == data
                 && existing.immutable,
@@ -44,8 +50,16 @@ fn derived_source(
     let source = record_with_refs(
         &original.r#type,
         identity,
-        Scope::project(project),
-        format!("{} · 项目定制", original.name),
+        scope.clone(),
+        format!(
+            "{} · {}定制",
+            original.name,
+            if scope.project_id().is_some() {
+                "项目"
+            } else {
+                "规范"
+            }
+        ),
         1,
         None,
         refs,
@@ -59,7 +73,7 @@ fn derived_source(
 
 fn rewrite_source(
     state: &mut EngineeringState,
-    project: &str,
+    scope: &Scope,
     original: &str,
     overrides: &BTreeMap<Id, Id>,
     active: &mut BTreeSet<Id>,
@@ -91,7 +105,7 @@ fn rewrite_source(
         .into_iter()
         .filter(|e| ["workflow", "delivery_type", "spec"].contains(&e.expected_type.as_str()))
     {
-        let replacement = rewrite_source(state, project, &edge.to, overrides, active, resolved)?;
+        let replacement = rewrite_source(state, scope, &edge.to, overrides, active, resolved)?;
         if replacement != edge.to {
             *wire
                 .pointer_mut(&edge.path)
@@ -106,13 +120,101 @@ fn rewrite_source(
             .keys()
             .map(|key| (key.clone(), wire[key].clone()))
             .collect();
-        derived_source(state, project, &source, refs, wire["data"].clone())?.id
+        derived_source(state, scope, &source, refs, wire["data"].clone())?.id
     } else {
         source.id
     };
     active.remove(original);
     resolved.insert(original.into(), result.clone());
     Ok(result)
+}
+
+pub(crate) struct StandardReplacement {
+    pub roots: Vec<Id>,
+    pub snapshot: StandardSnapshot,
+    pub provenance: Value,
+    pub rewrites: BTreeMap<Id, Id>,
+}
+
+/// Apply substitutions once across the entire immutable normative graph.
+pub(crate) fn replace_standard_sources(
+    state: &mut EngineeringState,
+    base: &str,
+    scope: &Scope,
+    raw_overrides: &Value,
+) -> Result<StandardReplacement> {
+    reference(state, base, "standard", scope)?;
+    let before = standard_snapshot(state, base, scope)?;
+    let mut overrides: Vec<StandardOverride> = serde_json::from_value(raw_overrides.clone())
+        .map_err(|e| err("invalid_params", e.to_string()))?;
+    require(overrides.len() <= 1000, "覆盖项超过上限")?;
+    overrides.sort_by(|a, b| a.source_ref.cmp(&b.source_ref));
+    let mut substitutions = BTreeMap::new();
+    for item in &overrides {
+        let old = before
+            .nodes
+            .iter()
+            .find(|n| n.reference == item.source_ref)
+            .ok_or_else(|| err("invalid_override", "覆盖项不属于基础 Standard"))?;
+        let replacement = reference(state, &item.replacement_ref, &old.kind, scope)?;
+        require(
+            replacement.immutable && item.source_ref != item.replacement_ref,
+            "请选择不同的已发布修订",
+        )?;
+        require(
+            substitutions
+                .insert(item.source_ref.clone(), item.replacement_ref.clone())
+                .is_none(),
+            "同一规范项不能重复覆盖",
+        )?;
+    }
+    let mut resolved = BTreeMap::new();
+    let mut roots = Vec::new();
+    for root in &before.root_workflow_refs {
+        roots.push(rewrite_source(
+            state,
+            scope,
+            root,
+            &substitutions,
+            &mut BTreeSet::new(),
+            &mut resolved,
+        )?);
+    }
+    roots.sort();
+    roots.dedup();
+    let after = resolve_standard_sources(state, &roots, scope)?;
+    // An ancestor override must not silently discard another requested override.
+    for item in &overrides {
+        let applied = resolved.get(&item.source_ref).ok_or_else(|| {
+            err(
+                "invalid_override",
+                "某个覆盖项被其他覆盖移除，请调整覆盖范围",
+            )
+        })?;
+        require(
+            after.nodes.iter().any(|n| &n.reference == applied),
+            "某个覆盖项被其他覆盖移除，请调整覆盖范围",
+        )?;
+    }
+    let rewrites: BTreeMap<_, _> = resolved
+        .into_iter()
+        .filter(|(old, new)| old != new)
+        .collect();
+    let diff = diff_standard_snapshots(&before, &after);
+    let override_sources = overrides
+        .iter()
+        .map(|item| {
+            let source = state.configuration(&item.replacement_ref)?;
+            Ok(json!({"kind":source.r#type,"reference":source.id}))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let provenance = json!({"base_standard_ref":base,"overrides":overrides,"override_sources":override_sources,"source_rewrites":rewrites,"diff":diff,"base_digest":before.snapshot_digest,"snapshot_digest":after.snapshot_digest});
+    Ok(StandardReplacement {
+        roots,
+        snapshot: after,
+        provenance,
+        rewrites,
+    })
 }
 
 pub(crate) fn materialize_project_standard(
@@ -148,71 +250,19 @@ pub(crate) fn materialize_project_standard(
             .filter(|id| before.root_workflow_refs.contains(id))
             .ok_or(error)
     })?;
-    let mut overrides: Vec<StandardOverride> = serde_json::from_value(raw_overrides.clone())
-        .map_err(|e| err("invalid_params", e.to_string()))?;
-    require(overrides.len() <= 1000, "覆盖项超过上限")?;
-    overrides.sort_by(|a, b| a.source_ref.cmp(&b.source_ref));
-    if overrides.is_empty() {
-        let provenance = json!({"base_standard_ref":base,"overrides":[],"override_sources":[],"source_rewrites":{},"diff":diff_standard_snapshots(&before, &before),"base_digest":before.snapshot_digest,"snapshot_digest":before.snapshot_digest});
+    let result = replace_standard_sources(state, base, &scope, raw_overrides)?;
+    let entry = result.rewrites.get(&default).cloned().unwrap_or(default);
+    let overrides = &result.provenance["overrides"];
+    if overrides.as_array().is_some_and(Vec::is_empty) {
         return Ok(ProjectStandard {
             standard: source,
-            entry: default,
-            snapshot: before,
-            provenance,
-            rewrites: BTreeMap::new(),
+            entry,
+            snapshot: result.snapshot,
+            provenance: result.provenance,
+            rewrites: result.rewrites,
         });
     }
-    let mut substitutions = BTreeMap::new();
-    for item in &overrides {
-        let old = before
-            .nodes
-            .iter()
-            .find(|n| n.reference == item.source_ref)
-            .ok_or_else(|| err("invalid_override", "覆盖项不属于基础 Standard"))?;
-        let replacement = reference(state, &item.replacement_ref, &old.kind, &scope)?;
-        require(
-            replacement.immutable && item.source_ref != item.replacement_ref,
-            "请选择不同的已发布修订",
-        )?;
-        require(
-            substitutions
-                .insert(item.source_ref.clone(), item.replacement_ref.clone())
-                .is_none(),
-            "同一规范项不能重复覆盖",
-        )?;
-    }
-    let mut resolved = BTreeMap::new();
-    let mut roots = Vec::new();
-    for root in &before.root_workflow_refs {
-        roots.push(rewrite_source(
-            state,
-            project,
-            root,
-            &substitutions,
-            &mut BTreeSet::new(),
-            &mut resolved,
-        )?);
-    }
-    let entry = resolved
-        .get(&default)
-        .cloned()
-        .ok_or_else(|| err("invalid_standard", "默认入口未解析"))?;
-    roots.sort();
-    roots.dedup();
-    let after = resolve_standard_sources(state, &roots, &scope)?;
-    // An ancestor override must not silently discard another requested override.
-    for item in &overrides {
-        let applied = resolved.get(&item.source_ref).ok_or_else(|| {
-            err(
-                "invalid_override",
-                "某个覆盖项被其他覆盖移除，请调整覆盖范围",
-            )
-        })?;
-        require(
-            after.nodes.iter().any(|n| &n.reference == applied),
-            "某个覆盖项被其他覆盖移除，请调整覆盖范围",
-        )?;
-    }
+    let roots = &result.roots;
     let refs = References::from([
         ("root_workflow_refs".into(), json!(roots)),
         ("default_workflow_ref".into(), json!(entry)),
@@ -256,19 +306,7 @@ pub(crate) fn materialize_project_standard(
         state.governance.push(standard.clone());
         standard
     };
-    let rewrites: BTreeMap<_, _> = resolved
-        .into_iter()
-        .filter(|(old, new)| old != new)
-        .collect();
-    let diff = diff_standard_snapshots(&before, &after);
-    let override_sources = overrides
-        .iter()
-        .map(|item| {
-            let source = state.configuration(&item.replacement_ref)?;
-            Ok(json!({"kind":source.r#type,"reference":source.id}))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let provenance = json!({"base_standard_ref":base,"overrides":overrides,"override_sources":override_sources,"source_rewrites":rewrites,"diff":diff,"base_digest":before.snapshot_digest,"snapshot_digest":after.snapshot_digest});
+    let provenance = result.provenance;
     if !state
         .governance
         .iter()
@@ -288,9 +326,9 @@ pub(crate) fn materialize_project_standard(
     Ok(ProjectStandard {
         standard,
         entry,
-        snapshot: after,
+        snapshot: result.snapshot,
         provenance,
-        rewrites,
+        rewrites: result.rewrites,
     })
 }
 

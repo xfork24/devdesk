@@ -158,11 +158,11 @@ Web 连接其他内核时，先以无凭据请求探测 `/connection`，确认�
 |---|---|
 | query.template_catalog | 当前 generation、内嵌默认 bundle_version/bundle_hash、当前来源版本和数量 |
 | query.template_reset_preview | 全局和全部项目的定义/草稿数量、恢复后的准确逻辑定义数量、固定旧绑定的项目摘要及 catalog_fingerprint |
-| configuration.templates.reset | Command payload 为 expected_catalog_generation、catalog_fingerprint、bundle_hash；返回 generation、changed、各类型 counts 和提交回执 |
+| configuration.templates.reset | Command payload 为 expected_catalog_generation、catalog_fingerprint、bundle_hash；preserve_custom:true 恢复默认配置并保留自定义，否则完全重置；返回 generation、changed、各类型 counts 和提交回执 |
 
-重置在一个全局事务中构建完整默认及精确依赖，并切换目录代次。自建定义、自定义修订和流程草稿退出当前目录；旧项目绑定、Feature 锁、运行、会话、经验、凭据、安装和偏好保留。已提交的相同 command_id 重放原结果；目录已与同一默认一致时返回 changed:false。提交前定义或默认资源发生变化时返回 catalog_changed，需要重新预览。
+设置页只提供“重置模板定义”入口。弹窗内“恢复默认配置”更新出厂配置并保留自定义定义；“重置配置”删除自建定义、自定义修订、流程草稿及配置历史，恢复完整预定义配置。项目、仓库、会话和执行记录保留，失效的项目及工作配置绑定清除。删除前将执行记录依赖的配置展开为记录自身的证据，引用已删除配置的未结束流程暂停，不再依赖已删除源继续执行。每个数据库在核对配置时钟和运行事实集合版本后原子提交；全局提交的重置代次驱动全部项目同步，重放或重新打开项目会继续完成尚未同步的重置。已提交的相同 command_id 重放原结果；目录及历史已与同一默认一致时返回 changed:false。提交前定义或默认资源发生变化时返回 catalog_changed，需要重新预览。
 
-定义写入 RPC 在 Command 顶层携带 expected_catalog_generation。首次重置后必须提供该字段，旧页面不能重新发布旧代次定义。相关目录查询返回 catalog_generation 与 template_sources；分页结果的代次变化时重新加载。include_history 只查询当前代次的修订，include_archived 显式包含旧代次。精确 ID 的工程和历史查询继续读取旧记录。
+定义写入 RPC 在 Command 顶层携带 expected_catalog_generation。首次重置后必须提供该字段，旧页面不能重新发布旧代次定义。相关目录查询返回 catalog_generation 与 template_sources；分页结果的代次变化时重新加载。include_history 只查询当前代次的修订，include_archived 包含尚存在的归档源；完全重置删除的源不再由这两个选项或精确 ID 查询返回。
 
 query.project_configuration 附带 pinned_records 与 uses_archived_templates，供项目页显示其固定的旧定义。归档不等于原有的禁用或撤销。具体存储与兼容合同见 [模板目录合同](plans/configuration-template-reset/CONTRACT.md)。
 
@@ -257,6 +257,8 @@ interaction 包含 title、background、requested_action、completed_work、revi
 ## Standard 快照接口
 
 `standard.capture.preview` 只读解析确切 `root_workflow_refs`，`standard.capture` 核对候选并发布或复用不可变快照。`standard.archive` 只改变选择列表，不删除历史。`query.standard_catalog/standard/standard_diff/standard_usage` 返回按需视图及真实采用关系。规范差异与项目覆盖预览仅比较 Workflow、Delivery、Spec 定义及关联；默认启动入口元数据的缺省或不同不构成规范变化。
+
+Standard 页展开 Workflow、Delivery、Spec 配置项后，在“替换为”下拉框选择替换修订。`standard.capture.preview` 与 `standard.capture.payload` 可使用 `base_standard_ref` 和 `standard_overrides:[{source_ref,replacement_ref}]`；替换覆盖整个规范图中的确切引用，并自动派生引用发生变化的上层源。预览只读，发布核对 `preview_digest`；同范围的最新 Standard 通过 target/expected_revision 生成下一修订，从共享或历史快照建立新定义时省略 target。发布保存来源、替换项及差异，已有源保持原值。
 
 `work.configuration.update` 为尚未启动的工作选择 `standard_ref`、`workflow_ref`、执行者和权限；启动后使用 `WorkflowChangeOperation::AdoptStandard`，并沿既有 preview/apply、CAS、授权与静止等待路径切换。`query.work_configuration` 返回来源及计划历史，`query.work_standard_diff` 区分自身规范、入口投影及子工作采用。历史计划中的子调用清单以冻结的首次调用依据标记，当前调用树另行展示。
 `query.work_standard_choices` 分页返回可访问工作及其采用依据；工作比较可跨项目，不切换活动项目。未运行工作以已选配置为依据，已运行工作以冻结计划为依据。Standard 对比同样可跨可访问目录，解析双方各自的源修订。

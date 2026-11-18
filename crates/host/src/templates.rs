@@ -3,6 +3,21 @@ use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 
 impl Workspace {
+    fn finish_template_reset(&self) -> Result<()> {
+        let mut offset = 0;
+        loop {
+            let (projects, total) = self.global.projects(offset, 100)?;
+            for project in &projects {
+                let engine = self.project_engine(Some(&project.id))?;
+                self.sync_configuration(&engine)?;
+            }
+            offset += projects.len();
+            if offset >= total || projects.is_empty() {
+                break;
+            }
+        }
+        Ok(())
+    }
     fn template_snapshot_summary(&self) -> Result<Value> {
         let global = self.global.snapshot()?;
         let mut fingerprints = Vec::new();
@@ -47,7 +62,8 @@ impl Workspace {
             };
         inspect("global", &global);
         let mut projects = Vec::new();
-        let mut pristine = template_catalog_pristine(&global);
+        let mut pristine =
+            template_catalog_pristine(&global) && !template_catalog_has_custom_history(&global)?;
         let mut offset = 0;
         loop {
             let (page, total) = self.global.projects(offset, 100)?;
@@ -63,7 +79,8 @@ impl Workspace {
                 {
                     projects.push(json!({"id":p.id,"title":p.title}));
                 }
-                pristine &= template_catalog_pristine(&s);
+                pristine &=
+                    template_catalog_pristine(&s) && !template_catalog_has_custom_history(&s)?;
             }
             offset += page.len();
             if offset >= total || page.is_empty() {
@@ -101,6 +118,9 @@ impl Workspace {
             require(!c.command_id.is_empty(), "command_id 不能为空")?;
             let fingerprint = command_fingerprint(method, &c);
             if let Some(saved) = self.global.replay(&c.command_id, &fingerprint)? {
+                if c.payload["preserve_custom"] != true {
+                    self.finish_template_reset()?;
+                }
                 return Ok(saved);
             }
             let preview = self.template_snapshot_summary()?;
@@ -111,15 +131,19 @@ impl Workspace {
             {
                 return Err(err(
                     "catalog_changed",
-                    "定义或默认版本已变化，请重新预览后再确认重置",
+                    "定义或默认版本已变化，请重新打开重置窗口后再操作",
                 ));
             }
-            self.configuration.reset_factory_catalog(
+            let result = self.configuration.reset_factory_catalog(
                 &c,
                 &fingerprint,
                 &preview,
                 &permission_profiles::permission_contract,
-            )
+            )?;
+            if payload["preserve_custom"] != true {
+                self.finish_template_reset()?;
+            }
+            Ok(result)
         })())
     }
 }
@@ -263,7 +287,7 @@ mod tests {
         );
     }
     #[test]
-    fn reset_archives_global_and_project_definitions_preserves_bindings_and_replays() {
+    fn reset_deletes_custom_definitions_clears_invalid_bindings_and_preserves_execution_records() {
         let dir = tempfile::tempdir().unwrap();
         let w = workspace(dir.path());
         let a = create(&w, "Project A");
@@ -294,7 +318,7 @@ mod tests {
             .unwrap()
             .frozen_test_plan(feature["id"].as_str().unwrap())
             .unwrap();
-        let before = w.global.snapshot().unwrap();
+        assert!(!saved.is_null());
         let before_project = engine.store.snapshot().unwrap();
         let command = reset_command(&w);
         let result = w
@@ -307,9 +331,7 @@ mod tests {
             result
         );
         let global = w.global.snapshot().unwrap();
-        for old in before.governance.iter().filter(|r| r.immutable) {
-            assert_eq!(global.configuration(&old.id).unwrap(), old);
-        }
+        assert!(global.configuration(role["id"].as_str().unwrap()).is_err());
         let roles = w
             .dispatch("query.roles", json!({"limit":100,"include_history":true}))
             .unwrap();
@@ -340,19 +362,16 @@ mod tests {
         let pinned = w
             .dispatch("query.project_configuration", json!({"project_id":a}))
             .unwrap();
-        assert_eq!(pinned["configuration"], saved);
-        assert_eq!(pinned["uses_archived_templates"], true);
-        for old in before_project.governance.iter().filter(|r| r.immutable) {
-            assert_eq!(
-                engine
-                    .store
-                    .snapshot()
-                    .unwrap()
-                    .configuration(&old.id)
-                    .unwrap(),
-                old
-            );
-        }
+        assert!(pinned["configuration"].is_null());
+        assert_eq!(pinned["uses_archived_templates"], false);
+        assert!(
+            engine
+                .store
+                .snapshot()
+                .unwrap()
+                .configuration(local["id"].as_str().unwrap())
+                .is_err()
+        );
         let after = engine.store.snapshot().unwrap();
         assert_eq!(
             json!(
@@ -362,26 +381,21 @@ mod tests {
             ),
             json!(frozen)
         );
-        let continued = engine
-            .execute(
-                "feature.create",
-                Command {
-                    command_id: id(),
-                    target: None,
-                    expected_revision: None,
-                    payload: json!({"project_id":a,"title":"Old project after reset"}),
-                },
-            )
-            .unwrap();
-        assert_eq!(
+        assert_eq!(json!(after.features), json!(before_project.features));
+        assert_eq!(json!(after.sessions), json!(before_project.sessions));
+        assert_eq!(after.executions, before_project.executions);
+        assert!(
             engine
-                .store
-                .snapshot()
-                .unwrap()
-                .frozen_test_plan(continued["id"].as_str().unwrap())
-                .unwrap()
-                .workflow_revision_id,
-            frozen.workflow_revision_id
+                .execute(
+                    "feature.create",
+                    Command {
+                        command_id: id(),
+                        target: None,
+                        expected_revision: None,
+                        payload: json!({"project_id":a,"title":"Requires configuration"}),
+                    }
+                )
+                .is_err()
         );
         let new_defaults = w
             .dispatch("query.configuration_defaults", json!({}))
@@ -428,8 +442,17 @@ mod tests {
         assert_eq!(
             w.dispatch("query.project_configuration", json!({"project_id":a}))
                 .unwrap()["configuration"],
-            saved
+            Value::Null
         );
+        let engine = w.project_engine(Some(&a)).unwrap();
+        let project = engine.store.project_metadata().unwrap();
+        let defaults = w
+            .dispatch("query.configuration_defaults", json!({"project_id":a}))
+            .unwrap();
+        let saved = w.dispatch("project.configuration.update", json!({"project_id":a,"target":a,"command_id":id(),"expected_revision":project.revision,"expected_catalog_generation":2,"payload":{"standard_ref":defaults["standard_ref"],"role_agent_bindings":defaults["role_agent_bindings"],"harness_permission_ref":defaults["harness_permission_ref"],"test_configuration":crate::test_runtime::fixture_test_configuration()}})).unwrap();
+        assert_eq!(saved["data"]["standard_ref"], defaults["standard_ref"]);
+        let revised = write(&w, "role.revise", Some(&default_role_id("analyst")), json!({"name":"Can edit after reset","data":{"instructions":"新的职责","visibility":{"kind":"global"}}}), None).unwrap();
+        assert_eq!(revised["id"], role["id"]);
     }
     #[test]
     fn stale_preview_and_stale_pages_cannot_publish_and_failed_transaction_rolls_back() {

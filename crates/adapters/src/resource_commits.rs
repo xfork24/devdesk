@@ -63,7 +63,7 @@ fn value(conn: &Connection, key: &ResourceKey) -> Result<Option<Value>> {
         // Collection tokens have no entity payload. Their version is maintained
         // by fact-table triggers and is read atomically with the selected facts.
         "collection" => Ok(None),
-        "catalog_clock" => Ok(None),
+        "catalog_clock" | "configuration_reset" => Ok(None),
         "event_entry"=>Ok(None),
         "workflow_step"|"workflow_step_replace"|"workflow_step_restore"|"workflow_step_delete"|"workflow_step_create"=>{
             let (instance,execution):(String,String)=serde_json::from_str(&key.id).map_err(storage)?;
@@ -866,7 +866,7 @@ fn current_revision(conn: &Connection, key: &ResourceKey) -> Result<u64> {
         return Ok(revision);
     }
     let revision = match key.kind.as_str() {
-        "collection" | "event_entry" => return Ok(0),
+        "collection" | "event_entry" | "configuration_reset" => return Ok(0),
         "setting" => conn.query_row("SELECT 1 FROM settings WHERE key=?1",[&key.id],|r|r.get::<_,u64>(0)).optional(),
         "source_head" => conn.query_row("SELECT revision FROM source_definitions WHERE identity=?1 ORDER BY revision DESC LIMIT 1",[&key.id],|r|r.get::<_,u64>(0)).optional(),
         "source" => conn.query_row("SELECT 1 FROM source_definitions WHERE reference=?1",[&key.id],|r|r.get::<_,u64>(0)).optional(),
@@ -1048,7 +1048,7 @@ struct SqlWrite {
 
 type ColumnSpecs = std::collections::BTreeMap<&'static str, Vec<(String, String)>>;
 
-fn encode_column(value: &Value, kind: &str) -> Result<SqlValue> {
+pub(super) fn encode_column(value: &Value, kind: &str) -> Result<SqlValue> {
     if value.is_null() {
         return Ok(SqlValue::Null);
     }
@@ -1067,6 +1067,9 @@ fn encode_column(value: &Value, kind: &str) -> Result<SqlValue> {
 }
 
 fn prepare_write(change: &ResourceChange, specs: &ColumnSpecs) -> Result<Option<SqlWrite>> {
+    if change.resource.kind == "configuration_reset" {
+        return Ok(None);
+    }
     if matches!(
         change.resource.kind.as_str(),
         "workflow_step"
@@ -1211,6 +1214,11 @@ fn prepare_writes(
         .map(|change| &change.resource)
         .collect();
     for change in &prepared.changes {
+        if change.resource.kind == "configuration_reset" {
+            prepared
+                .read_set
+                .require(&ResourceKey::new("catalog_clock", "configuration"))?;
+        }
         if matches!(
             change.resource.kind.as_str(),
             "workflow_step"
@@ -1345,6 +1353,7 @@ fn prepare_writes(
             if !matches!(
                 change.resource.kind.as_str(),
                 "setting"
+                    | "configuration_reset"
                     | "source"
                     | "source_head"
                     | "event_entry"
@@ -1460,6 +1469,9 @@ fn commit_once(
                     .map_err(sqlite_error)?
                     .execute(rusqlite::params_from_iter(&write.values))
                     .map_err(sqlite_error)?;
+            }
+            if change.resource.kind == "configuration_reset" {
+                crate::configuration_reset::apply(&transaction, &change.value)?;
             }
             if matches!(
                 change.resource.kind.as_str(),

@@ -257,10 +257,10 @@ test("Standard 内容相同时，默认启动入口未声明或不同均显示�
   expect(
     Math.abs(titleCenter - selectorBox.y - selectorBox.height / 2),
   ).toBeLessThan(2);
-  const revise = (await panel
-    .getByRole("button", { name: "基于这些入口生成新修订", exact: true })
+  const editor = (await panel
+    .getByRole("region", { name: "生成 Standard 新版本", exact: true })
     .boundingBox())!;
-  expect(selectorBox.y).toBeGreaterThan(revise.y + revise.height);
+  expect(selectorBox.y).toBeGreaterThan(editor.y + editor.height);
   const usage = panel
     .locator("summary")
     .filter({ hasText: "使用位置 · 当前 Standard：" });
@@ -279,67 +279,111 @@ test("Standard 内容相同时，默认启动入口未声明或不同均显示�
   );
 });
 
-test("Standard 只读生成比较与归档保留规范源", async ({ page }, info) => {
+test("Standard 在配置项上替换版本并生成新修订，历史快照仍可查看", async ({
+  page,
+}, info) => {
   await setup(page);
   const { material } = await fixtures(page);
-  const a = await child(page, "规范 A", material),
-    b = await child(page, "规范 B", material);
-  await page.getByRole("button", { name: "流程与规范", exact: true }).click();
-  await page.getByRole("tab", { name: "Standard", exact: true }).click();
-  const panel = page.getByRole("region", { name: "Standard 规范快照" });
-  await panel.getByText("从 Workflow 生成快照", { exact: true }).click();
-  const ids: string[] = [];
-  for (const [workflow, suffix] of [
-    [a, "A"],
-    [b, "B"],
-  ] as const) {
-    const name =
-      "Web 不可变规范 " + suffix + " " + crypto.randomUUID().slice(0, 6);
-    await panel.getByLabel("快照名称", { exact: true }).fill(name);
-    await panel
-      .getByLabel("入口 Workflow", { exact: true })
-      .selectOption(workflow.id);
-    await panel
-      .getByRole("button", { name: "预览规范快照", exact: true })
-      .click();
-    await expect(
-      panel.getByRole("button", { name: "生成快照", exact: true }),
-    ).toBeVisible();
-    await panel.getByRole("button", { name: "生成快照", exact: true }).click();
-    await expect(
-      panel.getByRole("heading", { name: new RegExp(name) }),
-    ).toBeVisible();
-    ids.push(
-      await panel.getByLabel("查看 Standard", { exact: true }).inputValue(),
-    );
-  }
-  await expect(panel.getByRole("button", { name: "添加覆盖规则" })).toHaveCount(
-    0,
+  const a = await child(page, "规范 A", material);
+  const b = await child(page, "规范 B", material);
+  const original = await command(
+    page,
+    "standard.capture",
+    undefined,
+    undefined,
+    undefined,
+    {
+      name: "可替换的规范",
+      root_workflow_refs: [a.id],
+    },
   );
+  await page.goto(
+    `/?tab=workflows&config_tab=standard&standard_id=${encodeURIComponent(original.id)}`,
+  );
+  const panel = page.getByRole("region", { name: "Standard 规范快照" });
   await expect(
-    panel.getByRole("textbox", { name: "正文", exact: true }),
+    panel.getByText("从 Workflow 生成快照", { exact: true }),
   ).toHaveCount(0);
-  await panel
-    .getByLabel("与另一个 Standard 比较", { exact: true })
-    .selectOption(ids[0]);
-  await panel.getByRole("button", { name: "比较规范", exact: true }).click();
-  await expect(panel.locator(".standard-diff")).toContainText("规范变化");
-  await panel.getByLabel("查看 Standard", { exact: true }).selectOption(ids[1]);
-  await panel.getByRole("button", { name: "归档快照", exact: true }).click();
   await expect(
-    panel.getByRole("button", { name: "恢复快照选择", exact: true }),
-  ).toBeVisible();
-  await page.reload();
+    panel.getByRole("button", { name: "归档快照", exact: true }),
+  ).toHaveCount(0);
+  const baseline = await rpc(page, "query.standard", {
+    id: original.id,
+    limit: 1000,
+  });
+  const root = baseline.nodes.find((node: any) => node.reference === a.id);
+  const source = panel.getByRole("region", {
+    name: `${root.name} · ${a.id}`,
+    exact: true,
+  });
+  await source.locator(":scope > details > summary").click();
+  const rowAlignment = await source
+    .locator(".standard-source-override > label")
+    .evaluate((label) => {
+      const title = label
+        .querySelector(".configuration-field-title")!
+        .getBoundingClientRect();
+      const control = label.querySelector("select")!.getBoundingClientRect();
+      return Math.abs(
+        title.y + title.height / 2 - control.y - control.height / 2,
+      );
+    });
+  expect(rowAlignment).toBeLessThan(2);
+  await source.getByRole("combobox").selectOption(b.id);
+  await panel.getByLabel("快照名称", { exact: true }).fill("替换后的规范");
+  const save = panel.getByRole("button", { name: "生成新版本", exact: true });
+  await expect(save).toBeDisabled();
+  await panel.getByRole("button", { name: "预览替换", exact: true }).click();
+  await expect(save).toBeEnabled();
   await expect(
-    page.getByRole("button", { name: "恢复快照选择", exact: true }),
-  ).toBeVisible();
+    panel.locator(".standard-revision-save .standard-diff"),
+  ).toContainText("规范变化");
   await page.screenshot({
-    path: info.outputPath("standard-readonly-archived.png"),
+    path: info.outputPath("standard-override-preview.png"),
     fullPage: true,
   });
-  const catalog = await rpc(page, "query.standard", { id: ids[1] });
-  expect(Object.keys(catalog.record.data).sort()).toEqual(["schema_version"]);
-  expect(catalog.record.root_workflow_refs).toEqual([b.id]);
+  await save.click();
+  const selected = panel.getByLabel("查看 Standard", { exact: true });
+  await expect(selected).not.toHaveValue(original.id);
+  const next = await rpc(page, "query.standard", {
+    id: await selected.inputValue(),
+    limit: 1000,
+  });
+  expect(next.record.version).toBe(2);
+  expect(next.record.supersedes).toBe(original.id);
+  expect(next.record.name).toBe("替换后的规范");
+  expect(next.root_workflow_refs).toEqual([b.id]);
+  expect(
+    (await rpc(page, "query.standard", { id: original.id })).root_workflow_refs,
+  ).toEqual([a.id]);
+  await panel.getByLabel("与另一个 Standard 比较", { exact: true }).focus();
+  await panel
+    .getByLabel("与另一个 Standard 比较", { exact: true })
+    .selectOption(original.id);
+  await panel.getByRole("button", { name: "比较规范", exact: true }).click();
+  await expect(panel.locator(".standard-compare .standard-diff")).toContainText(
+    "规范变化",
+  );
+  await command(
+    page,
+    "standard.archive",
+    undefined,
+    next.record.id,
+    next.record.revision,
+    { archived: true },
+  );
+  await page.goto("/?tab=workflows&config_tab=standard");
+  await expect(
+    selected.locator(`option[value="${next.record.id}"]`),
+  ).toHaveCount(0);
+  await panel.getByLabel("显示历史与归档快照", { exact: true }).check();
+  await expect(
+    selected.locator(`option[value="${next.record.id}"]`),
+  ).toHaveCount(1);
+  await selected.selectOption(next.record.id);
+  await expect(
+    panel.getByText("此快照已归档，可查看历史内容或基于它生成新快照。"),
+  ).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect
     .poll(() =>
@@ -351,7 +395,7 @@ test("Standard 只读生成比较与归档保留规范源", async ({ page }, inf
     )
     .toBe(true);
   await page.screenshot({
-    path: info.outputPath("standard-readonly-mobile.png"),
+    path: info.outputPath("standard-override-mobile.png"),
     fullPage: true,
   });
 });

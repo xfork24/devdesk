@@ -6,7 +6,7 @@ import { ProjectIntegrationBindings } from "./ProjectIntegrationBindings";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   decodeConfigurationIndex,
-  loadCatalog,
+  loadCatalogWithStandardHistory,
   useDraft,
 } from "./configuration-state";
 import { RevisionSelect } from "./configuration-ui";
@@ -45,6 +45,7 @@ export function ProjectManager({
   const orchestrationEdited = useRef(false);
   const [preview, setPreview] = useState<Row>();
   const [previewError, setPreviewError] = useState("");
+  const [selectionReady, setSelectionReady] = useState(false);
   const [baseline, setBaseline] = useState<Row>();
   const health = bootstrap;
   const [overrideKind, setOverrideKind] = useState("");
@@ -77,7 +78,7 @@ export function ProjectManager({
     const ticket = ++loadGeneration.current;
     const [workspace, records, configuration, preset] = await Promise.all([
       request("query.project_directory", { limit: 100, project_offset: 0 }),
-      loadCatalog(request, project?.id),
+      loadCatalogWithStandardHistory(request, project?.id),
       project?.id
         ? request("query.project_configuration", {
             project_id: project?.id,
@@ -103,12 +104,13 @@ export function ProjectManager({
       preset?.harness_permission_ref ||
       "";
     const ids = new Set(records.map((row: Row) => row.id));
-    setRecords([
+    const availableRecords = [
       ...records,
       ...(configuration.pinned_records ?? [])
         .filter((row: Row) => !ids.has(row.id))
         .map((row: Row) => decodeConfigurationIndex(row)),
-    ]);
+    ];
+    setRecords(availableRecords);
     setConfiguration(
       configuration.configuration
         ? {
@@ -118,61 +120,57 @@ export function ProjectManager({
         : undefined,
     );
     setDefaults(preset);
-    if (configuration.configuration?.data.workflow_ref)
-      setDraft((current) =>
-        current.workflow_ref
-          ? {
-              ...current,
-              harness_permission_ref:
-                current.harness_permission_ref || harnessProfile,
-            }
-          : {
-              sandbox_ref: configuration.configuration.data.sandbox_ref || "",
-              sandbox_permission_ref:
-                configuration.configuration.data.sandbox_permission_ref || "",
-              orchestrator_role_ref:
-                configuration.configuration.data.orchestrator_role_ref || "",
-              harness_permission_ref: harnessProfile,
-              workflow_ref: configuration.configuration.data.workflow_ref,
-              standard_ref:
-                saved?.provenance?.base_standard_ref ||
-                configuration.configuration.data.standard_ref ||
-                "",
-              standard_overrides: saved?.provenance?.overrides || [],
-              role_agent_bindings:
-                configuration.configuration.data.role_agent_bindings || {},
-              source_configuration_id: configuration.configuration.id,
-              test_configuration: configuration.configuration.data
-                .test_configuration
-                ? JSON.stringify(
-                    configuration.configuration.data.test_configuration,
-                    null,
-                    2,
-                  )
-                : "",
-            },
-      );
-    else if (preset && !configuration.configuration)
-      setDraft((current) =>
-        current.workflow_ref
-          ? {
-              ...current,
-              harness_permission_ref:
-                current.harness_permission_ref || harnessProfile,
-            }
-          : {
-              sandbox_ref: preset.sandbox_ref || "",
-              sandbox_permission_ref: preset.sandbox_permission_ref || "",
-              orchestrator_role_ref: preset.orchestrator_role_ref,
-              harness_permission_ref: harnessProfile,
-              workflow_ref: preset.workflow_ref,
-              standard_ref: preset.standard_ref,
-              standard_overrides: [],
-              role_agent_bindings: preset.role_agent_bindings,
-              source_configuration_id: "",
-              test_configuration: "",
-            },
-      );
+    const data = configuration.configuration?.data || preset;
+    const selection = {
+      sandbox_ref: data?.sandbox_ref || "",
+      sandbox_permission_ref: data?.sandbox_permission_ref || "",
+      orchestrator_role_ref: data?.orchestrator_role_ref || "",
+      harness_permission_ref: harnessProfile,
+      workflow_ref: data?.workflow_ref || "",
+      standard_ref:
+        saved?.provenance?.base_standard_ref || data?.standard_ref || "",
+      standard_overrides: saved?.provenance?.overrides || [],
+      role_agent_bindings: data?.role_agent_bindings || {},
+      source_configuration_id: configuration.configuration?.id || "",
+      test_configuration: configuration.configuration?.data.test_configuration
+        ? JSON.stringify(
+            configuration.configuration.data.test_configuration,
+            null,
+            2,
+          )
+        : "",
+    };
+    const standards = new Set(
+      availableRecords
+        .filter((row) => row.type === "standard")
+        .map((row) => row.id),
+    );
+    if (selection.standard_ref && !standards.has(selection.standard_ref)) {
+      selection.standard_ref = "";
+      selection.workflow_ref = "";
+      selection.standard_overrides = [];
+    }
+    setDraft((current) => {
+      if (current.standard_ref && !standards.has(current.standard_ref))
+        return {
+          ...current,
+          standard_ref: selection.standard_ref,
+          workflow_ref: selection.workflow_ref,
+          standard_overrides: selection.standard_overrides,
+          role_agent_bindings: selection.role_agent_bindings,
+          harness_permission_ref:
+            current.harness_permission_ref || harnessProfile,
+          source_configuration_id: selection.source_configuration_id,
+        };
+      return current.workflow_ref
+        ? {
+            ...current,
+            harness_permission_ref:
+              current.harness_permission_ref || harnessProfile,
+          }
+        : selection;
+    });
+    setSelectionReady(true);
   }, [request, project?.id, setDraft]);
   useEffect(() => {
     let active = true;
@@ -199,7 +197,7 @@ export function ProjectManager({
       setBaseline(undefined);
     }
     setPreviewError("");
-    if (!project?.id || !draft.standard_ref) return;
+    if (!selectionReady || !project?.id || !draft.standard_ref) return;
     void request("query.project_standard_preview", {
       project_id: project.id,
       standard_ref: draft.standard_ref,
@@ -222,6 +220,7 @@ export function ProjectManager({
     };
   }, [
     request,
+    selectionReady,
     project?.id,
     draft.standard_ref,
     draft.standard_overrides,

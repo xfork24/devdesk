@@ -130,14 +130,18 @@ impl Engine {
         } else if preview["pristine"] == true {
             json!({"generation":preview["generation"],"changed":false,"counts":preview["current_counts"],"bundle_version":preview["bundle_version"]})
         } else {
-            let result = restore_template_catalog(&mut next, &c.command_id)?;
+            let result = reset_template_catalog(&mut next, &c.command_id)?;
             template_permission_defaults(&mut next, contract)?;
             result
         };
         let candidate =
             ConfigurationCatalogSnapshot::new(next, before.revision, before.repository_ready)?;
-        let publication =
-            prepare_configuration_publication(self.store.as_ref(), &before, &candidate)?;
+        let publication = if !update && result["changed"] == true {
+            self.store
+                .prepare_configuration_reset(&candidate.state.governance, before.revision)?
+        } else {
+            prepare_configuration_publication(self.store.as_ref(), &before, &candidate)?
+        };
         let ctx = InvocationContext::human(self.store.project_id())
             .prepare_record("configuration.templates.reset", c);
         let mut guards = publication.read_set.versions().to_vec();

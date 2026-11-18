@@ -1,6 +1,7 @@
 mod catalog;
 mod configuration_backend;
 mod configuration_cache;
+mod configuration_reset;
 mod connection_pool;
 mod execution_read;
 mod experience_directory;
@@ -1415,6 +1416,13 @@ impl EngineeringStore for SqliteStore {
     }
     fn catalog_revision(&self) -> Result<u64> {
         configuration_cache::revision(&*self.connection.read()?)
+    }
+    fn prepare_configuration_reset(
+        &self,
+        records: &[ConfigurationRecord],
+        revision: u64,
+    ) -> Result<ConfigurationPublication> {
+        configuration_reset::prepare(self, records, revision)
     }
     fn configuration_snapshot(&self) -> Result<std::sync::Arc<ConfigurationCatalogSnapshot>> {
         self.catalog_cache.read(&*self.connection.read()?, true)

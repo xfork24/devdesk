@@ -296,11 +296,11 @@ test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保
     .getByLabel("Harness 精确版本", { exact: true })
     .selectOption("builtin-harness-codex-managed:1");
   await page
-    .getByLabel("Tools", { exact: true })
+    .getByLabel("Tool 精确版本", { exact: true })
     .selectOption("builtin-tool-codex-native:1");
   const capName = "Browser capability " + crypto.randomUUID().slice(0, 5);
   await page
-    .getByLabel("Specs", { exact: true })
+    .getByLabel("Spec 精确版本", { exact: true })
     .selectOption("builtin-spec-stage-prd:2");
   await page.getByLabel("名称", { exact: true }).fill(capName);
   await page
@@ -949,7 +949,7 @@ test("配置选择器可主动采用未选过的历史中间修订", async ({ pa
   }
   await page.getByRole("button", { name: "角色与代理", exact: true }).click();
   await page.getByRole("tab", { name: "Capability", exact: true }).click();
-  const skills = page.getByLabel("Skills", { exact: true });
+  const skills = page.getByLabel("Skill 精确版本", { exact: true });
   await skills.focus();
   await expect(skills.locator(`option[value^="${identity}:"]`)).toHaveCount(3);
   await skills.selectOption(`${identity}:2`);

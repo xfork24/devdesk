@@ -130,7 +130,7 @@ pub fn prepare_configuration_publication(
             )
         {
             let key = ResourceKey::new("source", &row.id);
-            require(snapshots[&key].revision == 0, "新源修订已经存在")?;
+            require(snapshots[&key].value.is_none(), "新源修订已经存在")?;
             changes.push(ResourceChange {
                 resource: key,
                 value: json!(row.source()),

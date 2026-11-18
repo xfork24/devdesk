@@ -178,7 +178,11 @@ fn register_existing_members(s: &mut EngineeringState) {
 
 fn set_state(s: &mut EngineeringState, generation: u64, defaults: Value) -> Result<()> {
     let b = bundle()?;
-    let data = json!({"generation":generation,"initial_generation":TEMPLATE_INITIAL_GENERATION,"bundle_version":b.bundle_version,"bundle_hash":b.hash,"defaults":defaults});
+    let reset = template_hard_reset_generation(s);
+    let mut data = json!({"generation":generation,"initial_generation":TEMPLATE_INITIAL_GENERATION,"bundle_version":b.bundle_version,"bundle_hash":b.hash,"defaults":defaults});
+    if reset > 0 {
+        data["hard_reset_generation"] = json!(reset);
+    }
     if let Some(state) = s
         .governance
         .iter_mut()
@@ -390,6 +394,68 @@ pub fn restore_template_catalog(s: &mut EngineeringState, command_id: &str) -> R
     receipt.id = format!("template-reset:{command_id}");
     s.governance.push(receipt);
     Ok(result)
+}
+
+/// A destructive factory selection has no custom source or catalog history.
+pub fn reset_template_catalog(s: &mut EngineeringState, command_id: &str) -> Result<Value> {
+    let generation = template_catalog_generation(s)
+        .checked_add(1)
+        .ok_or_else(|| err("invalid_configuration", "目录代次溢出"))?;
+    let projects = s.projects.clone();
+    let (mut fresh, defaults, origins) = materialize(None)?;
+    fresh.projects = projects;
+    for (id, key) in origins {
+        let row = fresh.configuration(&id)?.clone();
+        add_member(
+            &mut fresh,
+            &row,
+            generation,
+            Some((&key, &template_source_hash(&row))),
+        );
+    }
+    set_state(&mut fresh, generation, defaults)?;
+    let state = fresh
+        .governance
+        .iter_mut()
+        .find(|r| r.id == TEMPLATE_CATALOG_STATE)
+        .unwrap();
+    let mut data = state.data.clone();
+    data["hard_reset_generation"] = json!(generation);
+    update_record(state, data);
+    *s = fresh;
+    let info = template_bundle_info()?;
+    Ok(
+        json!({"generation":generation,"changed":true,"counts":template_catalog_counts(s),"bundle_version":info["bundle_version"],"receipt_id":format!("template-reset:{command_id}")}),
+    )
+}
+
+pub fn template_hard_reset_generation(s: &EngineeringState) -> u64 {
+    template_catalog_state(s)
+        .and_then(|r| r.data["hard_reset_generation"].as_u64())
+        .unwrap_or(0)
+}
+
+pub fn template_catalog_has_custom_history(s: &EngineeringState) -> Result<bool> {
+    let factory = bundle()?;
+    Ok(s.governance.iter().any(|row| {
+        (template_definition_kind(&row.r#type)
+            && !factory
+                .entries
+                .iter()
+                .any(|source| source.source() == row.source()))
+            || matches!(
+                row.r#type.as_str(),
+                "standard_archive" | "standard_derivation" | "workflow_draft"
+            )
+            || (row.r#type == "permission_binding"
+                && (row.version > 1
+                    || row.data["permission_revision_id"]
+                        != factory.defaults[if row.data["target"]["kind"] == "harness" {
+                            "harness_permission_ref"
+                        } else {
+                            "sandbox_permission_ref"
+                        }]))
+    }))
 }
 pub fn template_catalog_counts(s: &EngineeringState) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
