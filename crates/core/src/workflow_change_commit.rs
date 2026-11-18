@@ -39,6 +39,22 @@ impl Engine {
         )?;
         let mut commit = WorkflowCommit::new(self, "workflow.change.apply", c, context)?;
         commit.authorize(&root)?;
+        for key in root.instance.plan.document.rework_policies.keys() {
+            require(
+                preview.plan.document.rework_policies.contains_key(key),
+                "计划后继必须保留返工预算身份；调整额度不能删除或重命名策略",
+            )?;
+        }
+        if (root.instance.plan.document.rework_policies != preview.plan.document.rework_policies
+            || root.instance.plan.document.review_policies != preview.plan.document.review_policies
+            || changes
+                .operations
+                .iter()
+                .any(|op| matches!(op, WorkflowChangeOperation::AdoptReworkBaseline { .. })))
+            && !matches!(context.actor(), WorkflowActor::Human)
+        {
+            commit.require_signed_change(&root)?;
+        }
         commit.require_no_change(&root.record.id)?;
         commit.witness(facts.reads.versions().iter().cloned())?;
         if let WorkflowActor::Controller { controller_id, .. } = context.actor() {
@@ -378,6 +394,36 @@ impl Engine {
         {
             if catalog.configuration(&source.id).is_err() {
                 catalog.governance.push(source.clone());
+            }
+        }
+        self.consume_native_rework_budgets(&mut commit, &root, &preview.affected)?;
+        for op in &changes.operations {
+            if let WorkflowChangeOperation::AdoptReworkBaseline {
+                policy,
+                used,
+                evidence,
+            } = op
+            {
+                require(
+                    preview.affected.is_empty(),
+                    "采用历史额度基准须保留原执行；后续返工使用独立预演",
+                )?;
+                let id = crate::workflow_rework::budget_id(&root.instance, policy);
+                let selected = one(self.store.as_ref(), "governance", &id)?;
+                require(selected.value.is_none(), "已有业务返工计数不能重新起算")?;
+                let mut row = record(
+                    "workflow_rework_budget",
+                    root.instance.owner_id.clone(),
+                    root.record.scope.clone(),
+                    policy.clone(),
+                    1,
+                    None,
+                    json!({"used":used,"history_baseline_known":true,"evidence":evidence,"actor":actor,"adopted_from_plan":root.instance.active_plan_revision_id}),
+                    false,
+                );
+                row.id = id.clone();
+                commit.insert_record(&row)?;
+                commit.new_record(record("workflow_rework_baseline",id.clone(),root.record.scope.clone(),policy.clone(),1,None,json!({"used":used,"evidence":evidence,"actor":actor,"change_id":change.id}),true),&format!("rework-baseline:{id}"))?;
             }
         }
         let mut next = root.instance.as_ref().clone();

@@ -1,7 +1,7 @@
 {
   "type": "tool",
   "identity": "builtin-tool-workflow-change-preview",
-  "revision": 2,
+  "revision": 3,
   "name": "预演运行计划变更",
   "scope": "global",
   "data": {
@@ -459,6 +459,55 @@
                       "type",
                       "standard_ref",
                       "workflow_ref"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "const": "adopt_rework_baseline"
+                      },
+                      "policy": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "used": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100000
+                      },
+                      "evidence": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 8192
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "policy",
+                      "used",
+                      "evidence"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "const": "set_review_policies"
+                      },
+                      "rework_policies": {
+                        "type": "object"
+                      },
+                      "review_policies": {
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "rework_policies",
+                      "review_policies"
                     ],
                     "additionalProperties": false
                   }

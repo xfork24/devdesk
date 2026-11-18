@@ -334,20 +334,21 @@ export function WorkflowController({
   }
   const controller = data?.record?.data;
   const inScope = (id: string | undefined) =>
-    id ? id === instance.id : instance.id === rootId;
-  const decisions: Row[] = (data?.decisions || []).filter((decision: Row) =>
-    inScope(
-      decision.definition_id || decision.data.request.arguments.instance_id,
-    ),
+    instance.id === rootId || id === instance.id;
+  const decisions: Row[] = (nested ? [] : data?.decisions || []).filter(
+    (decision: Row) =>
+      inScope(
+        decision.definition_id || decision.data.request.arguments.instance_id,
+      ),
   );
-  const approvals: Row[] = (data?.approvals || []).filter((approval: Row) =>
-    inScope(approval.instance_id),
+  const approvals: Row[] = (nested ? [] : data?.approvals || []).filter(
+    (approval: Row) => inScope(approval.instance_id),
   );
-  const runtimeApprovals: Row[] = (data?.runtimeApprovals || []).filter(
-    (item: Row) => inScope(item.instance_id),
-  );
-  const notices: Row[] = (data?.interactions || []).filter((notice: Row) =>
-    inScope(notice.data.instance_id),
+  const runtimeApprovals: Row[] = (
+    nested ? [] : data?.runtimeApprovals || []
+  ).filter((item: Row) => inScope(item.instance_id));
+  const notices: Row[] = (nested ? [] : data?.interactions || []).filter(
+    (notice: Row) => inScope(notice.data.instance_id),
   );
   const inputRequests = ((data?.driverWaiting || []) as Row[]).filter(
     (item) => item.status === "waiting_input" && inScope(item.instance_id),
@@ -405,6 +406,10 @@ export function WorkflowController({
                 decision.data.request.arguments.execution_id,
             )?.interaction || {}),
             ...(decision.data.request.interaction || {}),
+            rework_budgets: decision.rework_budgets,
+            signed_reason: decision.signed_reason,
+            exception:
+              decision.data.request.operation === "workflow.step.approve",
           }}
           projectId={projectId}
           ownerId={controller?.owner_id || projectId}
@@ -414,6 +419,9 @@ export function WorkflowController({
               : decision.data.status
           }
           busy={busy}
+          requireReason={
+            decision.data.request.operation === "workflow.step.approve"
+          }
           onDecide={(approved, opinion) =>
             resolveDecision(decision, approved, opinion)
           }
@@ -559,7 +567,17 @@ export function WorkflowController({
                           )}{" "}
                           ·{" "}
                           {displayText(
-                            waitingLabels[item.status] || item.status,
+                            item.status === "awaiting_acceptance" &&
+                              data?.driver?.data.mode === "agent" &&
+                              !decisions.some(
+                                (d: Row) =>
+                                  d.current !== false &&
+                                  d.data.status === "pending" &&
+                                  d.data.request.arguments.execution_id ===
+                                    item.execution_id,
+                              )
+                              ? "待经理研判"
+                              : waitingLabels[item.status] || item.status,
                           )}
                         </strong>
                       </summary>
@@ -572,7 +590,7 @@ export function WorkflowController({
                           )}
                         </p>
                         <ReadingLink
-                          detail="records"
+                          detail="overview"
                           projectId={projectId}
                           ownerId={
                             item.owner_id || instance.data.owner_id || projectId
@@ -580,9 +598,11 @@ export function WorkflowController({
                           target={{
                             instance_id: item.instance_id,
                             execution_id: item.execution_id,
+                            feature_id: item.feature_id,
+                            task_id: item.task_id,
                           }}
                         >
-                          查看执行详情
+                          查看流程阻塞点
                         </ReadingLink>
                       </div>
                     </details>

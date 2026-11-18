@@ -34,9 +34,13 @@ export function ManagerInteraction({
     decide: Props["onDecide"];
     basis?: string;
   }>();
-  const interaction = original?.interaction || latestInteraction;
+  const settled = latestStatus === "approved" || latestStatus === "rejected";
+  const interaction = settled
+    ? latestInteraction
+    : original?.interaction || latestInteraction;
   const onDecide = original?.decide || latestDecide;
-  const status = original && original.basis !== basis ? "stale" : latestStatus;
+  const status =
+    !settled && original && original.basis !== basis ? "stale" : latestStatus;
   const capture = () => {
     if (!original)
       setOriginal({
@@ -67,7 +71,7 @@ export function ManagerInteraction({
       className="manager-interaction"
       aria-label={displayText(interaction.title || "待决定的操作")}
     >
-      {original && original.basis !== basis && (
+      {!settled && original && original.basis !== basis && (
         <p role="status">
           事项已变化，原意见和依据已保留。
           <button onClick={() => setOriginal(undefined)}>
@@ -89,8 +93,12 @@ export function ManagerInteraction({
                 ? "待补充信息"
                 : (
                     {
-                      pending: "待确认",
-                      approved: "已确认",
+                      pending: interaction.exception
+                        ? "待用户 Approve"
+                        : "待确认",
+                      approved: interaction.exception
+                        ? "评审未通过，用户已例外批准"
+                        : "已确认",
                       rejected: "已退回",
                       stale: "已过期",
                     } as Record<string, string>
@@ -105,6 +113,18 @@ export function ManagerInteraction({
             </p>
           )}
           <MarkdownPreview text={interaction.background || ""} />
+          {interaction.signed_reason ? (
+            <>
+              <h5>用户签署意见</h5>
+              <MarkdownPreview text={interaction.signed_reason} />
+            </>
+          ) : null}
+          {(interaction.rework_budgets || []).map((budget: Row) => (
+            <p key={budget.id}>
+              业务返工：{budget.used} / {budget.limit}，剩余 {budget.remaining}{" "}
+              次{budget.remaining === 0 ? " · 额度耗尽" : ""}
+            </p>
+          ))}
           <h5>需要你做什么</h5>
           <MarkdownPreview
             text={

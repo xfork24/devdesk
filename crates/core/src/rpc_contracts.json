@@ -1721,15 +1721,6 @@
       ]
     },
     {
-      "method": "query.workflow_progress",
-      "access": "read",
-      "scope": "explicit",
-      "precondition": "none",
-      "sites": [
-        "crates/host/src/workspace.rs"
-      ]
-    },
-    {
       "method": "query.workflow_management_summary",
       "access": "read",
       "scope": "explicit",
@@ -1756,6 +1747,15 @@
         "crates/core/src/configured_workflows.rs",
         "crates/core/src/governance.rs",
         "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.workflow_progress",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/workspace.rs"
       ]
     },
     {
@@ -2500,6 +2500,17 @@
       "precondition": "resource_read_set",
       "sites": [
         "crates/core/src/workflow_controls.rs"
+      ]
+    },
+    {
+      "method": "workflow.rework.preview",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/controllers.rs",
+        "crates/core/src/orchestration.rs",
+        "crates/core/src/workflow_rework.rs"
       ]
     },
     {

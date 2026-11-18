@@ -301,7 +301,10 @@ impl Engine {
                 text(&c.payload, "reason")?;
                 require(
                     crate::controllers::CONTROL_TOOLS.contains(&operation.as_str())
-                        || operation == "workflow.step.confirm",
+                        || matches!(
+                            operation.as_str(),
+                            "workflow.step.confirm" | "workflow.step.approve"
+                        ),
                     "不是可请求的人类决定",
                 )?;
                 let arguments = &c.payload["arguments"];
@@ -318,7 +321,7 @@ impl Engine {
                 }
                 if matches!(
                     operation.as_str(),
-                    "workflow.step.confirm" | "workflow.step.accept"
+                    "workflow.step.confirm" | "workflow.step.accept" | "workflow.step.approve"
                 ) {
                     let resources = root.step(self, &text(arguments, "execution_id")?)?;
                     commit.witness(resources.reads.versions().iter().cloned())?;
@@ -333,6 +336,31 @@ impl Engine {
                     )?;
                 }
                 let mut request = c.payload.clone();
+                if operation == "workflow.step.approve" {
+                    let resources = root.step(self, &text(arguments, "execution_id")?)?;
+                    request["approval_basis"] =
+                        self.native_approval_basis(&mut commit, &resources)?;
+                    for field in ["issues", "recommendation"] {
+                        text(&request["interaction"], field)?;
+                    }
+                    // One request per exact result, including requests a human
+                    // rejected. A new command ID cannot recreate the same plea.
+                    let mut guard = record(
+                        "workflow_approval_request",
+                        root.record.id.clone(),
+                        root.record.scope.clone(),
+                        reason.into(),
+                        1,
+                        None,
+                        json!({"basis":request["approval_basis"]}),
+                        true,
+                    );
+                    guard.id = format!(
+                        "workflow-approval:{}",
+                        configuration_hash(&request["approval_basis"])
+                    );
+                    commit.insert_record(&guard)?;
+                }
                 if matches!(context.actor(), WorkflowActor::Controller { .. })
                     || !request["interaction"].is_null()
                 {
@@ -495,7 +523,7 @@ impl Engine {
                 }),
             "该确切执行与产物已有确认",
         )?;
-        commit.new_record(record("workflow_confirmation",execution.id.clone(),resources.record.scope.clone(),"人工确认".into(),1,None,json!({"execution_id":execution.id,"actor":commit.context.actor(),"input_digest":execution.input_digest,"outputs":execution.outputs,"reason":payload["reason"],"override_completion":!valid,"manual_approval":manual}),true),"workflow-confirmation")?;
+        commit.new_record(record("workflow_confirmation",execution.id.clone(),resources.record.scope.clone(),"人工确认".into(),1,None,json!({"execution_id":execution.id,"actor":commit.context.actor(),"input_digest":execution.input_digest,"outputs":execution.outputs,"reason":payload["reason"],"override_completion":!valid,"manual_approval":manual,"approval_basis":payload["approval_basis"],"exception_scope":payload["exception_scope"],"request_id":payload["request_id"]}),true),"workflow-confirmation")?;
         if payload["accept_result"] == true {
             let driver = one(
                 self.store.as_ref(),
@@ -586,6 +614,7 @@ impl Engine {
             "决定需要实际 Human 来源",
         )?;
         let root = WorkflowHeaderFacts::read(self, &pending.definition_id)?;
+        root.active()?;
         require(
             pending.r#type == "workflow_pending_decision"
                 && pending.data["status"] == "pending"
@@ -601,7 +630,7 @@ impl Engine {
         let args = &arguments;
         if matches!(
             operation.as_str(),
-            "workflow.step.confirm" | "workflow.step.accept"
+            "workflow.step.confirm" | "workflow.step.accept" | "workflow.step.approve"
         ) {
             let resources = root.step(self, &text(args, "execution_id")?)?;
             require(
@@ -614,6 +643,13 @@ impl Engine {
                 "待决定的执行与产物已变化",
             )?;
             commit.witness(resources.reads.versions().iter().cloned())?;
+            if operation == "workflow.step.approve" {
+                require(
+                    pending.data["request"]["approval_basis"]
+                        == self.native_approval_basis(commit, &resources)?,
+                    "人工例外的评审、候选或输入已经变化",
+                )?;
+            }
             if approved {
                 let definition = resources
                     .instance
@@ -623,8 +659,10 @@ impl Engine {
                     .iter()
                     .find(|s| s.key == resources.execution.step)
                     .ok_or_else(|| err("storage", "原决定步骤缺失"))?;
-                if operation == "workflow.step.confirm"
-                    || definition.confirmation == ConfirmationPolicy::Human
+                if matches!(
+                    operation.as_str(),
+                    "workflow.step.confirm" | "workflow.step.approve"
+                ) || definition.confirmation == ConfirmationPolicy::Human
                 {
                     let mut selection = FactSelection::default();
                     selection.rule(&definition.completion);
@@ -632,6 +670,10 @@ impl Engine {
                     commit.witness(facts.reads.versions().iter().cloned())?;
                     let mut payload = args.clone();
                     payload["reason"] = json!(reason);
+                    payload["request_id"] = json!(pending.id);
+                    payload["approval_basis"] = pending.data["request"]["approval_basis"].clone();
+                    payload["exception_scope"] =
+                        pending.data["request"]["interaction"]["issues"].clone();
                     let driver = one(
                         self.store.as_ref(),
                         "workflow_driver_root",
@@ -641,7 +683,8 @@ impl Engine {
                     // A manager's request grants permission to sign these exact
                     // outputs. It never delegates business acceptance to Human.
                     payload["accept_result"] = json!(
-                        pending.data["actor"]["kind"] == "human"
+                        operation != "workflow.step.approve"
+                            && pending.data["actor"]["kind"] == "human"
                             && driver
                                 .value
                                 .as_ref()
@@ -651,7 +694,7 @@ impl Engine {
                         commit,
                         &resources,
                         &payload,
-                        false,
+                        operation == "workflow.step.approve",
                         &facts.facts,
                     )?;
                 }
@@ -667,7 +710,7 @@ impl Engine {
         if approved
             && matches!(
                 operation.as_str(),
-                "workflow.step.confirm" | "workflow.step.accept"
+                "workflow.step.confirm" | "workflow.step.accept" | "workflow.step.approve"
             )
         {
             let resources = root.step(self, &text(args, "execution_id")?)?;

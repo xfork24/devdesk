@@ -12,6 +12,7 @@ pub const CONTROL_TOOLS: &[&str] = &[
     "workflow.step.input",
     "workflow.step.retry",
     "workflow.step.rework",
+    "workflow.rework.preview",
     "workflow.execution.stop",
     "workflow.pause",
     "workflow.resume",
@@ -35,6 +36,7 @@ pub(crate) fn control_query(method: &str) -> bool {
             | "workflow.outputs.read"
             | "workflow.execution.inspect"
             | "workflow.change.preview"
+            | "workflow.rework.preview"
     )
 }
 

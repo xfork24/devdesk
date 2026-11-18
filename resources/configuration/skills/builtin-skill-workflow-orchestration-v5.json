@@ -1,11 +1,11 @@
 {
   "type": "skill",
   "identity": "builtin-skill-workflow-orchestration",
-  "revision": 4,
+  "revision": 5,
   "name": "工作流编排",
   "scope": "global",
   "data": {
     "rules": [],
-    "body_file": "workflow-orchestration-v4.md"
+    "body_file": "workflow-orchestration-v5.md"
   }
 }

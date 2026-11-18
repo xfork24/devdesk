@@ -105,12 +105,18 @@ export function WorkflowInstanceView({
   opened.current = open;
   const epoch = useRef(0);
   const focusedTarget = useRef("");
+  const locatedTarget = useRef("");
   const invalidate = useCallback(() => {
     epoch.current += 1;
   }, []);
   const load = useCallback(
     async (fresh = false) => {
       const current = ++epoch.current;
+      const focusKey = `${target.instance_id || ""}:${target.execution_id || ""}`;
+      const locate =
+        target.instance_id &&
+        target.execution_id &&
+        locatedTarget.current !== focusKey;
       const result = await request(
         "query.workflow_instance",
         {
@@ -119,6 +125,12 @@ export function WorkflowInstanceView({
           view: "status",
           child_offset: childOffset,
           step_offset: stepOffset,
+          ...(locate
+            ? {
+                focus_instance_id: target.instance_id,
+                focus_execution_id: target.execution_id,
+              }
+            : {}),
         },
         { fresh },
       );
@@ -143,14 +155,28 @@ export function WorkflowInstanceView({
               completionStatus[step.id] = qualified.completion_status[step.id];
           }),
       );
-      if (epoch.current === current)
+      if (epoch.current === current) {
+        if (locate) {
+          locatedTarget.current = focusKey;
+          setStepOffset(result.step_offset || 0);
+          setChildOffset(result.child_offset || 0);
+        }
         setData({
           ...result,
           completion_status: completionStatus,
           _projectId: projectId,
         });
+      }
     },
-    [request, record.id, projectId, childOffset, stepOffset],
+    [
+      request,
+      record.id,
+      projectId,
+      childOffset,
+      stepOffset,
+      target.instance_id,
+      target.execution_id,
+    ],
   );
   useRuntimeRefresh(load, projectId, record.id, {
     invalidate,
@@ -280,9 +306,11 @@ export function WorkflowInstanceView({
       if (definition) next[`stage:${definition.stage}`] = true;
       next[`step:${selected.id}`] = true;
     } else if (target.instance_id && target.instance_id !== record.id) {
-      for (const child of activeData.children || []) {
+      for (const child of (activeData.children || []).filter(
+        (child: Row) => child.id === activeData.focus?.child_id,
+      )) {
         const parent = activeData.runtime.steps.find(
-          (step: Row) => step.id === child.activeData.parent_execution_id,
+          (step: Row) => step.id === child.data.parent_execution_id,
         );
         const definition = activeData.plan?.steps?.find(
           (step: Row) => step.key === parent?.step,
@@ -300,6 +328,17 @@ export function WorkflowInstanceView({
         : current,
     );
   }, [target.execution_id, target.instance_id, record.id, activeData]);
+  useEffect(() => {
+    if (!target.execution_id || !open[`step:${target.execution_id}`]) return;
+    const element = document.getElementById(
+      `workflow-execution-${target.execution_id}`,
+    );
+    if (!element) return;
+    element.scrollIntoView({ block: "center" });
+    element
+      .querySelector<HTMLButtonElement>(".workflow-step-toggle")
+      ?.focus({ preventScroll: true });
+  }, [target.execution_id, open]);
   async function act(method: string, payload: Row = {}, execution?: Row) {
     capture();
     beginFeedback();
@@ -836,7 +875,9 @@ export function WorkflowInstanceView({
                             <p role="status">
                               {displayText(
                                 confirmation.override_completion
-                                  ? "已手动批准，原完成条件未满足"
+                                  ? confirmation.approval_basis
+                                    ? "评审未通过，用户已例外批准"
+                                    : "已手动批准，原完成条件未满足"
                                   : "已人工确认",
                               )}
                               {displayText(

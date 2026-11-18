@@ -7,7 +7,7 @@ pub const DEFAULT_HARNESS_ID: &str = "builtin-harness-codex-managed:1";
 
 pub const DEFAULT_SANDBOX_ID: &str = "builtin-sandbox-docker:1";
 
-pub const DEFAULT_STANDARD_ID: &str = "builtin-standard-engineering:7";
+pub const DEFAULT_STANDARD_ID: &str = "builtin-standard-engineering:8";
 
 pub const DEFAULT_DSH_NATIVE_TOOL_ID: &str = "builtin-tool-dsh-native:1";
 
@@ -30,7 +30,7 @@ pub const DEFAULT_CAPABILITY_ID: &str = "builtin-capability-sol-high-codex:4";
 pub fn default_configured_agent_id(role: &str) -> String {
     format!(
         "builtin-agent-sol-high-{role}:{}",
-        if role == "project-manager" { 12 } else { 6 }
+        if role == "project-manager" { 13 } else { 6 }
     )
 }
 

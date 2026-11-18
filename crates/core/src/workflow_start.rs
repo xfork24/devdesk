@@ -281,6 +281,7 @@ impl Engine {
                 value: next,
             })?;
         }
+        commit.initialize_rework_budgets(&instance, &row.scope)?;
         self.prepare_initial_native_driver(
             &mut commit,
             &row,

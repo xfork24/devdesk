@@ -1,7 +1,7 @@
 {
   "type": "capability",
   "identity": "builtin-capability-project-manager-codex",
-  "revision": 11,
+  "revision": 12,
   "name": "项目经理能力 · Sol High / Codex",
   "scope": "global",
   "harness_ref": "builtin-harness-codex-managed:1",
@@ -9,7 +9,7 @@
   "skills": [
     "builtin-skill-engineering-context:3",
     "builtin-skill-project-planning:2",
-    "builtin-skill-workflow-orchestration:4",
+    "builtin-skill-workflow-orchestration:5",
     "builtin-skill-project-workbench:1",
     "builtin-skill-delivery-self-check:1"
   ],
@@ -24,15 +24,15 @@
     "builtin-tool-workflow-step-accept:2",
     "builtin-tool-workflow-step-input:2",
     "builtin-tool-workflow-step-retry:2",
-    "builtin-tool-workflow-step-rework:2",
+    "builtin-tool-workflow-step-rework:3",
     "builtin-tool-workflow-execution-stop:2",
     "builtin-tool-workflow-pause:2",
     "builtin-tool-workflow-resume:2",
     "builtin-tool-workflow-cancel:2",
-    "builtin-tool-workflow-change-preview:2",
-    "builtin-tool-workflow-change-apply:3",
+    "builtin-tool-workflow-change-preview:3",
+    "builtin-tool-workflow-change-apply:4",
     "builtin-tool-workflow-materials-import:2",
-    "builtin-tool-workflow-decision-request:3",
+    "builtin-tool-workflow-decision-request:4",
     "builtin-tool-workflow-execution-reconcile:2",
     "builtin-tool-workflow-complete:2",
     "builtin-tool-workflow-segment-dispatch:2",
@@ -52,7 +52,8 @@
     "builtin-tool-configuration-transfer-status:1",
     "builtin-tool-spec-lint:1",
     "builtin-tool-workflow-controller-wait:1",
-    "builtin-tool-workflow-controller-notify:1"
+    "builtin-tool-workflow-controller-notify:1",
+    "builtin-tool-workflow-rework-preview:1"
   ],
   "data": {},
   "spec_refs": [

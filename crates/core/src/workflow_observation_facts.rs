@@ -118,9 +118,46 @@ impl Engine {
                 }
             }
         }
-        Ok(
-            json!({"binding":binding,"inputs":inputs,"instructions":"binding is the kernel-frozen runtime selection for this Session, not a claim about arbitrary nested or remote commands. inputs contains kernel-observed outer harness execution facts bound to exact producer Turns and stop proofs. Use these image identities alongside the actual command logs and code snapshots; model-reported Node versions alone do not identify an image. Do not invent missing facts."}),
-        )
+        let mut exceptions = Vec::new();
+        let step = resources
+            .instance
+            .plan
+            .document
+            .steps
+            .iter()
+            .find(|s| s.key == resources.execution.step)
+            .ok_or_else(|| err("storage", "步骤合同缺失"))?;
+        let ancestors = resources.instance.plan.document.ancestors(step);
+        for e in resources
+            .instance
+            .steps
+            .iter()
+            .filter(|e| ancestors.contains(e.step.as_str()))
+        {
+            let selected = one(self.store.as_ref(), "workflow_confirmations", &e.id)?;
+            commit.witness([version(&selected)])?;
+            for row in selected
+                .value
+                .as_ref()
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                if row["data"]["manual_approval"] == true
+                    && row["data"]["input_digest"] == e.input_digest
+                    && row["data"]["outputs"] == json!(e.outputs)
+                {
+                    exceptions.push(json!({"confirmation_ref":row["id"],"execution_id":e.id,"outputs":e.outputs,"reason":row["data"]["reason"],"scope":row["data"]["exception_scope"],"basis":row["data"]["approval_basis"]}));
+                }
+            }
+        }
+        let mut context = json!({"human_exceptions":exceptions});
+        let runtime = json!({"binding":binding,"inputs":inputs,"instructions":"binding is the kernel-frozen runtime selection for this Session, not a claim about arbitrary nested or remote commands. inputs contains kernel-observed outer harness execution facts bound to exact producer Turns and stop proofs. Use these image identities alongside the actual command logs and code snapshots; model-reported Node versions alone do not identify an image. Do not invent missing facts."});
+        context
+            .as_object_mut()
+            .unwrap()
+            .extend(runtime.as_object().unwrap().clone());
+        Ok(context)
     }
     pub(crate) fn native_retry_supplement(
         &self,

@@ -27,6 +27,7 @@ pub(crate) const PLATFORM_HANDLERS: &[&str] = &[
     "workflow.step.input",
     "workflow.step.retry",
     "workflow.step.rework",
+    "workflow.rework.preview",
     "workflow.execution.stop",
     "workflow.pause",
     "workflow.resume",

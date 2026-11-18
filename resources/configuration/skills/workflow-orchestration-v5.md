@@ -12,7 +12,7 @@
 
 修改工作流先 change.preview，检查影响、替代输入、规则引用、待停止项及授权，再使用同一 changeset、preview_hash 和活动 plan_revision_id 调用 change.apply。阶段跳过使用 bypass_stage；必需材料通过 materials.import 封存并显式重绑。waive 与原报告分开，不篡改实际测试或评审。
 
-发现原执行未知先 stop 并 reconcile。执行状态为 failed/cancelled 的技术失败用 retry；工具已交付失败业务回执、执行停在 awaiting_acceptance 且完成条件不满足时，用 rework 建立新执行身份并重做，不接纳失败或伪造成功。改任务合同用 ChangeSet。并发、预算和调用身份来自当前策略及工具反馈。
+发现原执行未知先 stop 并 reconcile。执行状态为 failed/cancelled 的技术失败用 retry；工具已交付失败业务回执、执行停在 awaiting_acceptance 且完成条件不满足时，读取真实失败材料；评审拒绝按下述策略自行研判有限返工或申请人工例外，其他失败在权限与额度内修复。不伪造成功。改任务合同用 ChangeSet。并发、预算和调用身份来自当前策略及工具反馈。
 
 工具返回登记引用后继续检查可并发任务；当只有执行者或人类可以推进时结束本 Turn 并等待事件。不要通过循环 inspect 空转。每次回复说明已经执行的动作、当前等待项和例外，不声称尚未接纳的工作已经完成。
 
@@ -44,8 +44,22 @@ interaction 包含 title、background、requested_action、completed_work、revi
 
 materials 每项提供 label、purpose、instance_id、execution_id、output_id；覆盖本次审批 arguments.outputs 的全部产物和必要上游材料（例如 PRD、Design Doc、Task Plan 及其独立评审报告）。evidence 每项提供 label、purpose、instance_id、execution_id，可提供 output_id，用于上下文和执行记录。引用从 inspect、outputs.read 和 execution.inspect 的真实结果取得，不编造 URL 或身份。平台会校验并补充确切上下文链接。
 
-初审必须实际由独立审核 Agent 完成，先读取报告和对应材料再说明结论；失败时组织返工，不把未通过的常规评审直接提交人类批准。尚未形成的材料或未执行的审核如实说明原因，缺少业务信息时可以先澄清。你不能把模型审核意见当作平台测试回执，也不能替人类签署。人类拒绝后读取实际意见并组织处理，不为相同产物重复催请批准。
+初审必须实际由独立审核 Agent 完成，先读取报告和对应材料再说明结论。评审拒绝后由你研判根因、影响与最小合法修复范围，自行决定有限返工或建议用户对确切结果作例外批准。尚未形成的材料或未执行的审核如实说明原因，缺少业务信息时可以先澄清。你不能把模型审核意见当作平台测试回执，也不能替人类签署。人类拒绝后读取实际意见并组织处理，不为相同产物重复催请批准。
 
 ## 并发提交
 
 所有写工具携带最初读取的对象/步骤版本、计划和控制代次。轮询不得替换草稿基线；冲突保留原命令与参数，读取变化后由实际授权者重新决定。回调保留原请求与观察，不用当前版本覆盖旧结果。
+
+## 评审拒绝、有限返工与人工例外
+
+读取 Workflow 的 review_policies、rework_policies 和 inspect.rework_budgets。max_reworks 是额外业务返工总次数，不包含首次执行；同一工作切换三种方式、评审节点、子实例或计划后继不重置额度。技术故障用 retry/reconcile，不额外扣业务额度。额度耗尽后停止自动重做，说明 used/limit/remaining 及未解决项；不得自动提高上限或自动批准。
+
+实际读取失败报告及相关材料，记录 A 自身是否错误、其输入是否有效、哪些后继失效，以及为什么选定范围足够。三种方式由你按根因自主选择，不机械升级：producer_step 绑定产出 A 的 producer_output_id；after_confirmed_checkpoint 绑定依赖链上仍有效的真实 Human checkpoint_ref，保留锚点和无关分支；child_workflow 只重建对应子实例，绑定真实封存且匹配受保护代码头的 baseline_output_id，保留 Task/调用血缘与已用额度，不重建其他 Task。含 Red→Green 的子流程必须先建立合法执行基线，不在 Green 代码上破坏行为制造 Red；未知未封存修改先核对。
+
+先调用 workflow.rework.preview(instance_id, plan_revision_id, rework)。rework 包含 policy、target、review_instance_id、review_execution_id、report_output_id、所选来源/锚点、assessment 和 acceptance_requirements。核对 invalidated、retained、must_stop、budgets；先停止并核对实际执行者，再重新预演。以相同 rework、preview_hash、原计划和原步骤版本调用 workflow.step.rework。失败报告、问题归因、范围和验收要求随新任务冻结。仅重跑评审不能补齐证据，不能代替实施或实际浏览器观察。
+
+若你判断应接受当前版本的具体缺口，必须用 workflow.decision.request(operation=workflow.step.approve) 请求用户签署；arguments 绑定当前实例、计划、execution_id、input_digest 和完整 outputs。interaction 必须列明 issues、recommendation、已验证内容、风险、批准影响和拒绝后处理，并引用完整报告与材料。候选和证据由内核核对，不手写 SHA 代替实际身份。用户批准只确认当前结果，你再 step.accept；原 approve=false 保留，后续评审核对 runtime_context.human_exceptions 中实际签署范围。用户拒绝后读取意见，按余量决定返工或停止，不重复请求同一结果，不把拒绝按钮当成重跑评审。真实测试失败、来源/候选不符、身份不独立和未知副作用不能被人工例外伪造。
+
+已有冻结流程采用新策略时，通过 change.preview/apply 的 adopt_rework_baseline 操作明确 policy、used 与 evidence（历史覆盖范围和起算依据）；此操作需真实 Human 决定，不能重置已存在计数。采用只挂接后续处置规则并保留原执行/报告，不重跑评审；旧经理会话通过显式后继采用新 Skill。
+
+运行中的流程使用 ChangeSet `set_review_policies{rework_policies,review_policies}` 只调整后续拒绝处置规则，保留原步骤合同、执行和报告；首次采用时同批提交 adopt_rework_baseline 明确历史额度。

@@ -249,6 +249,9 @@ impl<'a> WorkflowCommit<'a> {
     pub fn has_changes(&self) -> bool {
         !self.changes.is_empty()
     }
+    pub(crate) fn contains_change(&self, key: &ResourceKey) -> bool {
+        self.changes.contains_key(key)
+    }
     pub fn clear_changes(&mut self) {
         self.order.clear();
         self.changes.clear();

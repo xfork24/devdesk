@@ -1,7 +1,7 @@
 {
   "type": "workflow",
   "identity": "builtin-workflow-task-sol-high",
-  "revision": 8,
+  "revision": 9,
   "name": "默认 Task 开发流程",
   "scope": "global",
   "data": {
@@ -1042,7 +1042,7 @@
           "type": "agent",
           "role_ref": "builtin-role-reviewer:1"
         },
-        "task_instructions": "按独立评审 Skill 与当前 Spec 核对确切候选、真实候选测试回执和交付报告。提交逐项内容判断；发现问题时拒绝通过。仅当当前完成条件和独立检查全部通过时，由编排项目经理通过 Harness 显式接纳确切输入及候选，无需人工确认；证据缺失、评审拒绝或测试失败必须阻塞，不请求人工放行，不修改原结论。 使用 inputs.evidence 中已持久化的原始执行记录核对测试与源码快照、同一测试的业务 Red→Green 顺序及最终候选内容；不访问其他步骤的临时目录，不把当前 Green 代替历史 Red。 逐条核对 environment 与 termination 的必填字段，以及退出码、信号、执行错误、超时和取消状态的一致性；未知或中断记录不能作为 Green。 显式读取提供的 Diff 端口及平台标识的比较端点，核对完整差异与实际测试版本；不得以变更说明替代真实 patch。",
+        "task_instructions": "按独立评审 Skill 与当前 Spec 核对确切候选、真实候选测试回执和交付报告。提交逐项内容判断；发现问题时拒绝通过。仅当当前完成条件和独立检查全部通过时，由编排项目经理通过 Harness 显式接纳确切输入及候选，无需人工确认；证据缺失、评审拒绝或测试失败如实报告并保留原结论。经理读取报告后自主决定有限返工，或针对业务评审缺口请求用户例外批准；不得伪造测试成功或自行签署批准。核对 runtime_context.human_exceptions 的真实决定及覆盖范围，同一确切材料的已批准缺口按其范围处理，新候选、新问题不沿用旧例外。 使用 inputs.evidence 中已持久化的原始执行记录核对测试与源码快照、同一测试的业务 Red→Green 顺序及最终候选内容；不访问其他步骤的临时目录，不把当前 Green 代替历史 Red。 逐条核对 environment 与 termination 的必填字段，以及退出码、信号、执行错误、超时和取消状态的一致性；未知或中断记录不能作为 Green。 显式读取提供的 Diff 端口及平台标识的比较端点，核对完整差异与实际测试版本；不得以变更说明替代真实 patch。",
         "required_skill_refs": [
           "builtin-skill-independent-review:2"
         ],
@@ -1474,6 +1474,47 @@
         "max_turns_per_wakeup": 8,
         "max_tool_calls_per_turn": 64,
         "timeout_seconds": 600
+      }
+    },
+    "rework_policies": {
+      "task_implementation": {
+        "entry_step": "implementation",
+        "allowed_targets": [
+          "producer_step",
+          "after_confirmed_checkpoint",
+          "child_workflow"
+        ],
+        "max_reworks": 3
+      }
+    },
+    "review_policies": {
+      "review": {
+        "review_step": "review",
+        "rejected_when": {
+          "op": "equals",
+          "source": {
+            "step": "review",
+            "port": "result",
+            "pointer": "/approve"
+          },
+          "value": false
+        },
+        "rework_policy": "task_implementation",
+        "allow_human_approval": true
+      },
+      "candidate_review": {
+        "review_step": "candidate_review",
+        "rejected_when": {
+          "op": "equals",
+          "source": {
+            "step": "candidate_review",
+            "port": "result",
+            "pointer": "/approve"
+          },
+          "value": false
+        },
+        "rework_policy": "task_implementation",
+        "allow_human_approval": true
       }
     }
   }

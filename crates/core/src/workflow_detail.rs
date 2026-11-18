@@ -196,7 +196,7 @@ impl Engine {
         Ok(
             json!({"cursor":selected.cursor,"record":visible_record,"runtime":display.data,"plan":if query.view==WorkflowDetailView::Status {status_plan(&selected.plan_document)} else {selected.plan_document},
             "outputs":outputs,"children":selected.children,"children_more":selected.children_more,"next_child_offset":selected.next_child_offset,
-            "step_total":selected.step_total,"next_step_offset":selected.next_step_offset,"step_offset":query.step_offset,"step_revisions":selected.step_revisions,"completion_status":completion_status,"actors":actors,"history":selected.history,
+            "step_total":selected.step_total,"next_step_offset":selected.next_step_offset,"step_offset":selected.step_offset,"child_offset":selected.child_offset,"focus":selected.focus,"step_revisions":selected.step_revisions,"completion_status":completion_status,"actors":actors,"history":selected.history,
             "history_more":selected.next_history_before.is_some(),"next_history_before":selected.next_history_before,
             "representation":if query.view==WorkflowDetailView::Status {"workflow_status"} else {"workflow_detail"}}),
         )

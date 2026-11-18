@@ -484,8 +484,16 @@ impl Engine {
             )?)?
             .ok_or_else(|| err("not_found", "流程摘要缺失"))?;
         let total = root.instance.steps.len();
+        let budgets = root
+            .instance
+            .plan
+            .document
+            .rework_policies
+            .keys()
+            .map(|key| self.rework_budget_view(&root, key).map(|(_, value)| value))
+            .collect::<Result<Vec<_>>>()?;
         Ok(
-            json!({"human_gates":self.controller_human_gates(&root.instance.root_instance_id)?,"record":{"id":root.record.id,"revision":root.record.revision},"page":{"offset":offset,"limit":limit,"total":total,"next_offset":if offset+limit<total{Some(offset+limit)}else{None},"document_complete":offset==0&&limit>=total},"runtime":runtime,"steps":steps,"allowed_actions":allowed,"children_page":{"offset":offset,"more":detail.children_more,"next_offset":detail.next_child_offset},"delivery_types":root.instance.plan.definitions.values().filter(|r|r.r#type=="delivery_type").collect::<Vec<_>>(),"children":detail.children}),
+            json!({"rework_budgets":budgets,"human_gates":self.controller_human_gates(&root.instance.root_instance_id)?,"record":{"id":root.record.id,"revision":root.record.revision},"page":{"offset":offset,"limit":limit,"total":total,"next_offset":if offset+limit<total{Some(offset+limit)}else{None},"document_complete":offset==0&&limit>=total},"runtime":runtime,"steps":steps,"allowed_actions":allowed,"children_page":{"offset":offset,"more":detail.children_more,"next_offset":detail.next_child_offset},"delivery_types":root.instance.plan.definitions.values().filter(|r|r.r#type=="delivery_type").collect::<Vec<_>>(),"children":detail.children}),
         )
     }
 }

@@ -110,6 +110,8 @@ pub use standards::{compare_work_standards, work_standard_choices, work_standard
 pub use workflow_eligibility::{WorkflowActionEligibility, WorkflowStepActions};
 mod workflow_change_commit;
 mod workflow_change_preview;
+mod workflow_review;
+mod workflow_rework;
 pub use configured_runtime::task_input as render_source_task;
 pub use configured_runtime::{
     ConfiguredAgentRequest, ConfiguredToolRequest, ConfiguredWorkflowInstance,

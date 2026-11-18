@@ -143,6 +143,13 @@ impl Engine {
         }
         for op in &change.operations {
             match op {
+                WorkflowChangeOperation::AdoptReworkBaseline { policy, .. } => {
+                    let id = crate::workflow_rework::budget_id(&root.instance, policy);
+                    require(
+                        facts.row(self, "governance", &id)?.is_none(),
+                        "已有业务返工计数不能重新起算",
+                    )?;
+                }
                 WorkflowChangeOperation::RevertChange { change_id } => {
                     let prior = facts
                         .row(self, "governance", change_id)?
@@ -418,6 +425,19 @@ impl Engine {
         let mut execution_selection = old.plan.execution_selection.clone();
         for op in &changes.operations {
             match op {
+                WorkflowChangeOperation::SetReviewPolicies {
+                    rework_policies,
+                    review_policies,
+                } => {
+                    document.rework_policies = rework_policies.clone();
+                    document.review_policies = review_policies.clone();
+                }
+                WorkflowChangeOperation::AdoptReworkBaseline { used, evidence, .. } => {
+                    require(
+                        *used <= 100_000 && !evidence.trim().is_empty() && evidence.len() <= 8192,
+                        "采用历史返工基准需要明确次数及有界依据说明",
+                    )?;
+                }
                 WorkflowChangeOperation::AdoptStandard {
                     standard_ref,
                     workflow_ref,
@@ -637,6 +657,14 @@ impl Engine {
         }
         document.assign_node_ids(&old.workflow_ref);
         document.validate()?;
+        for op in &changes.operations {
+            if let WorkflowChangeOperation::AdoptReworkBaseline { policy, .. } = op {
+                require(
+                    document.rework_policies.contains_key(policy),
+                    "历史额度基准必须绑定已采用的返工策略",
+                )?;
+            }
+        }
         let mut seeds = BTreeSet::new();
         let mut budget_updates = BTreeSet::new();
         for step in &old.plan.document.steps {
@@ -805,7 +833,21 @@ impl Engine {
             && old.plan.document.stages.iter().all(|stage| {
                 document.stages.iter().find(|next| next.key == stage.key) == Some(stage)
             });
-        let mut plan = if layout_only {
+        let mut contracts_only = document.clone();
+        contracts_only.rework_policies = old.plan.document.rework_policies.clone();
+        contracts_only.review_policies = old.plan.document.review_policies.clone();
+        let policy_only = changes.operations.iter().all(|op| {
+            matches!(
+                op,
+                WorkflowChangeOperation::SetReviewPolicies { .. }
+                    | WorkflowChangeOperation::AdoptReworkBaseline { .. }
+                    | WorkflowChangeOperation::ReplacePlan { .. }
+            )
+        }) && contracts_only == old.plan.document
+            && adopted.is_none()
+            && bindings == old.role_agent_bindings
+            && inputs == old.inputs;
+        let mut plan = if layout_only || policy_only {
             // Display regrouping must not resolve today's project configuration
             // into yesterday's execution. Keep all original frozen assets.
             let mut plan = old.plan.clone();

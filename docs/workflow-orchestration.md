@@ -68,6 +68,17 @@ StepExecution 有 10 种状态（queued → running → waiting_input / waiting_
 
 技术重试（retry）保留输入并创建新执行；业务返工（rework）沿依赖闭包重置后继步骤。模型自述永远不能替代真实测试与 Git 回执。
 
+Workflow 的 `review_policies` 声明评审步骤、规则原语 `rejected_when`、共享 `rework_policy` 和 `allow_human_approval`；`rework_policies` 声明默认 `entry_step`、`allowed_targets` 与 `max_reworks`。出厂默认上限为 3 次额外业务返工，0 禁止自动返工；Task 的实现与候选评审共享同一策略，Feature 的需求、设计、规划和交付各有实际作者入口。旧冻结流程未声明策略时保留原行为。
+
+经理读取真实拒绝报告与输入后，自行选择覆盖根因的最小合法范围：`producer_step` 按具体文档 output 定位责任步骤；`after_confirmed_checkpoint` 保留仍有效的 Human 确认锚点，只重做其依赖后继；`child_workflow` 保留工作身份与调用血缘，使用明确封存代码基线创建对应子实例的后继。后者只替换实际调用集合中的该成员，撤回父调用旧结果及受影响后继，其他 Task 保留。真实基线必须有平台快照及原回执，与当前受保护代码头一致；写者仍经过 Git 预检，未知修改和未知副作用先核对。
+
+三种方式均先 `workflow.rework.preview`，再以相同 `rework`、`preview_hash` 和原始版本提交 `workflow.step.rework`。预演列出失效与保留执行/产物、需停止项、祖先结果撤回和预算；新任务冻结经理研判、失败报告引用及验收要求。仅重跑评审不能充当修复。预算记录使用根、工作身份和策略 key，随子实例及计划后继继承；成功业务提交、计数 CAS 和不可变消费记录在同一事务内，重放不重复扣费。技术 retry 不消费业务额度。计划变更的上游重置同样检查受影响工作，纯工具阶段分组不扣费；已采用的策略 key 不得通过删除或重命名重置计数。
+
+`workflow.inspect.rework_budgets` 返回 used/limit/remaining 及历史基准状态。耗尽返回 `rework_budget_exhausted`，不自动提高额度或转为批准。调整策略须实际 Human 决定；已有流程首次挂接策略使用 ChangeSet 的 `adopt_rework_baseline{policy,used,evidence}` 明确历史覆盖范围和次数，不用 review round 推算。采用保持原执行和报告，不允许重置已有计数；返工另行预演。
+
+经理建议例外接受时，通过 `workflow.decision.request(operation=workflow.step.approve)` 申请真实签署，列明失败项、建议、风险和后续处理。内核从本轮完整输入与报告建立 `approval_basis`，用户理由必填；`workflow.decision.resolve` 只保存当前确切结果的 manual_approval/override_completion，随后仍由经理 `step.accept`。原报告保留 `approve=false`，后继任务的 `runtime_context.human_exceptions` 携带仍有效的上游签署和范围；新执行、新候选和新问题不沿用旧批准。身份独立、执行顺序、版本一致性和真实执行结果仍校验。同一结果被拒绝后不可换命令 ID 反复申请。
+
+
 带正式代码输入的 Agent 写者，在派发及 retry/rework 创建后继执行前，只读核对实际 worktree 的冻结版本和未封存修改；返工使用已验证的平台快照作为有效基线。未封存修改或版本偏移返回 `workspace_recovery_required`，保留现场、当前执行和历史，不启动新会话或消耗重试次数。运行时挂载前再次核对，防止预检后的外部改动；此类失败记为 `business/not_applied`，不可自动技术重试。须先备份并核对修改来源，再通过真实快照封存或恢复至已核对基线，不能自动丢弃或把未知修改当作成功实现。只读 Agent 仍读取冻结提交的独立副本，不受实时 worktree 修改影响。
 
 ## 完成规则与四层批准语义
@@ -120,7 +131,7 @@ ChangeSet 当前提供 13 类类型化操作：adopt_standard、revert_change、
 
 ## 默认流程概览
 
-默认入口为 `builtin-workflow-feature-sol-high:9`（8 阶段 22 步）与 `builtin-workflow-task-sol-high:8`（8 阶段 20 步），由 `builtin-standard-engineering:7` 引用。本地配置目录仅发布最新修订，数据集中的既有执行按原冻结修订追溯：
+默认入口为 `builtin-workflow-feature-sol-high:10`（8 阶段 22 步）与 `builtin-workflow-task-sol-high:9`（8 阶段 20 步），由 `builtin-standard-engineering:8` 引用。本地配置目录仅发布最新修订，数据集中的既有执行按原冻结修订追溯：
 
 - **Feature 流程**：requirements（PRD + 独立评审）→ design（基线快照、工程约束、Design Doc + 评审）→ planning（Task Plan + 评审 + tasks.create）→ implementation（foreach 对每个 Task 运行 Task 子流程）→ verification（回归测试配方、版本冻结、真实执行）→ candidate_preparation（目标工作空间、候选、候选测试）→ delivery（Feature 报告 + 评审）→ integration（候选评审、接纳、发布）。
 - **Task 流程**：tests（读取工作空间、编写独立测试）→ red（测试快照、最小可调用基线、Red 快照、真实 Red）→ implementation（实现、实现快照、Green）→ documentation（只读交付说明、复验）→ candidate_preparation（目标工作空间、候选、候选测试）→ review（独立实现评审）→ integration（候选评审、接纳、发布）→ handoff（证据封存、完成）。Red 必须是预期失败的真实断言，模块加载或环境错误不能包装为 Red。规则强制 Red 先于实现，测试/实现/评审身份独立，并核对确切代码版本。
@@ -145,7 +156,7 @@ Agent 的实际任务包含冻结的 `runtime_context`：`runtime_context.bindin
 
 完成规则为 false 的 `awaiting_acceptance` 步骤同样出现在驱动等待事项中，标明 `completion` 或 `human_confirmation` 门禁及父子实例路径。诊断不会批准报告、改写完成规则或自动补入缺失证据。
 
-实现依据：[领域原语](../crates/domain/src/workflow.rs)、[变更操作](../crates/domain/src/workflow_change.rs)、[Rust 驱动](../crates/core/src/workflow_driver.rs)、[控制工具](../crates/core/src/controllers.rs)、[公开运行事实](../crates/core/src/workflow_runtime_facts.rs)、[出厂流程](../resources/configuration/workflows/)。
+实现依据：[业务返工与共享预算](../crates/core/src/workflow_rework.rs)、[确切人工例外](../crates/core/src/workflow_review.rs)、[领域原语](../crates/domain/src/workflow.rs)、[变更操作](../crates/domain/src/workflow_change.rs)、[Rust 驱动](../crates/core/src/workflow_driver.rs)、[控制工具](../crates/core/src/controllers.rs)、[公开运行事实](../crates/core/src/workflow_runtime_facts.rs)、[出厂流程](../resources/configuration/workflows/)。
 
 ## 共同动作资格
 
@@ -196,3 +207,5 @@ Codex 恢复已有原生线程时使用 `thread/resume` 的 `excludeTurns: true`
 Web 命令成功后使相应项目的显示缓存失效；显式刷新绕过标签页短缓存并更新经理进度及协作状态。自动事件刷新仍按根范围合并、串行读取并有背压，不以每次 token/tool 日志追加刷新整个执行页。显示没有变化时保留原组件和编辑草稿，自动刷新不替换用户编辑时的版本。
 
 Rust 驱动与已授权委托的纯控制阶段若一轮未产生提交，Host 用该项目已提交事件游标暂记空闲；游标变化立即使提示过期，另以一秒补扫核对租约及遗漏。记录最多 128 项，不保存或授予业务资格；外部轮询、取消停止及原生回执交付不受此提示限制。实际命令仍重新读取权威状态并验证原资源读集合。
+
+运行中的流程使用 ChangeSet `set_review_policies{rework_policies,review_policies}` 只调整后续拒绝处置规则，保留原步骤合同、执行和报告；首次采用时同批提交 adopt_rework_baseline 明确历史额度。

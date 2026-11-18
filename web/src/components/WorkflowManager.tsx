@@ -43,6 +43,8 @@ const emptyDocument = () => ({
     { key: "work", name: "工作", description: "", default_role_ref: null },
   ],
   steps: [] as Row[],
+  rework_policies: {},
+  review_policies: {},
   inputs: {},
   outputs: {},
   completion: { op: "always" },
@@ -757,6 +759,122 @@ export function WorkflowManager({
                         </ActionSelect>
                       </label>
                     ) : null}
+                    <details>
+                      <summary>评审拒绝与返工策略</summary>
+                      <p>
+                        项目经理在允许的方式内自主决策。最大返工次数不包含首次执行；0
+                        表示禁止自动返工。共享策略的评审和三种方式共用额度。
+                      </p>
+                      {Object.entries(document.rework_policies || {}).map(
+                        ([key, raw]) => {
+                          const policy = raw as Row;
+                          return (
+                            <fieldset key={key}>
+                              <legend>{key}</legend>
+                              <label>
+                                最大返工次数
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  value={policy.max_reworks}
+                                  onChange={(event) =>
+                                    update({
+                                      rework_policies: {
+                                        ...document.rework_policies,
+                                        [key]: {
+                                          ...policy,
+                                          max_reworks: Number(
+                                            event.target.value,
+                                          ),
+                                        },
+                                      },
+                                    })
+                                  }
+                                />
+                              </label>
+                              {(
+                                [
+                                  ["producer_step", "责任步骤"],
+                                  ["after_confirmed_checkpoint", "确认点之后"],
+                                  ["child_workflow", "整个子流程"],
+                                ] as const
+                              ).map(([target, label]) => (
+                                <label key={target}>
+                                  <input
+                                    type="checkbox"
+                                    checked={(
+                                      policy.allowed_targets || []
+                                    ).includes(target)}
+                                    onChange={(event) =>
+                                      update({
+                                        rework_policies: {
+                                          ...document.rework_policies,
+                                          [key]: {
+                                            ...policy,
+                                            allowed_targets: event.target
+                                              .checked
+                                              ? [
+                                                  ...policy.allowed_targets,
+                                                  target,
+                                                ]
+                                              : policy.allowed_targets.filter(
+                                                  (item: string) =>
+                                                    item !== target,
+                                                ),
+                                          },
+                                        },
+                                      })
+                                    }
+                                  />
+                                  {label}
+                                </label>
+                              ))}
+                            </fieldset>
+                          );
+                        },
+                      )}
+                      {Object.entries(document.review_policies || {}).map(
+                        ([key, raw]) => {
+                          const policy = raw as Row;
+                          return (
+                            <label key={key}>
+                              <input
+                                type="checkbox"
+                                checked={policy.allow_human_approval}
+                                onChange={(event) =>
+                                  update({
+                                    review_policies: {
+                                      ...document.review_policies,
+                                      [key]: {
+                                        ...policy,
+                                        allow_human_approval:
+                                          event.target.checked,
+                                      },
+                                    },
+                                  })
+                                }
+                              />
+                              {key}：允许经理申请人工例外批准
+                            </label>
+                          );
+                        },
+                      )}
+                      <JsonField
+                        label="返工策略定义"
+                        value={document.rework_policies || {}}
+                        onChange={(rework_policies) =>
+                          update({ rework_policies })
+                        }
+                      />
+                      <JsonField
+                        label="评审处理策略"
+                        value={document.review_policies || {}}
+                        onChange={(review_policies) =>
+                          update({ review_policies })
+                        }
+                      />
+                    </details>
                     <details>
                       <summary>流程输入输出与完成要求</summary>
                       <JsonField
