@@ -609,6 +609,7 @@ impl Engine {
                 }
                 let step = step.clone();
                 let execution = StepExecution {
+                    time_budget: None,
                     plan_revision_id: String::new(),
                     node_id: step.node_id.clone(),
                     contract_digest: configuration_hash(&step),

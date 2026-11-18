@@ -47,8 +47,9 @@ export function useReading(
   method: string,
   params: Row,
   enabled = true,
+  revision?: number,
 ) {
-  const key = JSON.stringify(params);
+  const key = JSON.stringify([method, params, revision]);
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<{
     key: string;
@@ -59,8 +60,9 @@ export function useReading(
   useEffect(() => {
     if (!enabled) return;
     let active = true;
+    const controller = new AbortController();
     setState({ key, loading: true });
-    void request(method, JSON.parse(key))
+    void request(method, JSON.parse(key)[1], { signal: controller.signal })
       .then((value) => {
         if (active) setState({ key, value, loading: false });
       })
@@ -69,6 +71,7 @@ export function useReading(
       });
     return () => {
       active = false;
+      controller.abort();
     };
   }, [request, method, key, enabled, attempt]);
   const current =

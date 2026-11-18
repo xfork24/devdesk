@@ -6,7 +6,7 @@ import {promisify} from 'node:util';
 const [fixtureFile, output, countText, secondsText]=process.argv.slice(2);
 const fixture=JSON.parse(fs.readFileSync(fixtureFile,'utf8'));
 const count=Number(countText), seconds=Number(secondsText);
-fs.writeFileSync(output+'/browser-offered.json',JSON.stringify({clients:count,seconds,read_rps:count,write_rps:count/10,navigate_rps:count/20,planned_actions_if_all_roles_exist:Math.ceil(seconds*count)+Math.ceil(seconds*count/10)+Math.ceil(seconds*count/20),scope:'Initial setup and partial runs remain failures; planned work is never counted as completed'},null,2));
+fs.writeFileSync(output+'/browser-offered.json',JSON.stringify({clients:count,seconds,read_rps:count,write_rps:count/10,navigate_rps:count/20,planned_actions:Math.ceil(seconds*count)+Math.ceil(seconds*count/10)+Math.ceil(seconds*count/20),scope:'Initial setup and partial runs remain failures; planned work is never counted as completed'},null,2));
 const browser=await chromium.launch({headless:true,channel:'chromium'});
 const execAsync=promisify(execFile);
 let monitoring=false,tearingDown=false,rpcSequence=0,rpcPhase='initialization';
@@ -16,6 +16,7 @@ const resourceTimer=setInterval(async()=>{
  try{const {stdout}=await execAsync('ps',['-axo','pid=,ppid=,%cpu=,rss=,time=']);const processes=stdout.trim().split('\n').map(line=>line.trim().split(/\s+/));const descendants=new Set([process.pid]);let previous=0;while(previous!==descendants.size){previous=descendants.size;for(const row of processes)if(descendants.has(Number(row[1])))descendants.add(Number(row[0]));}const selected=processes.filter(row=>descendants.has(Number(row[0])));const rssMiB=selected.reduce((sum,row)=>sum+Number(row[3]),0)/1024;fs.appendFileSync(output+'/browser-resources.jsonl',JSON.stringify({time:Date.now(),processes:selected,rss_mib:rssMiB,rss_limit_mib:rssLimitMiB})+'\n');if(rssMiB>rssLimitMiB){recordAction({kind:'resource_abort',error:'Local browser generator exceeded its fixed RSS sum budget',rss_mib:rssMiB,rss_limit_mib:rssLimitMiB,done:Date.now()});process.kill(process.pid,'SIGTERM');}}catch(error){errors.push({monitor_error:String(error)});}finally{monitoring=false;}
 },2000);
 const actions=[],rpc=[],errors=[],pages=[],contexts=[],pendingResponses=[];
+const goto=async(page,url)=>{page.jointNavigationCounter=(page.jointNavigationCounter||0)+1;page.jointNavigating=true;return page.goto(url);};
 const recordAction=row=>{actions.push(row);fs.appendFileSync(output+'/browser-actions.jsonl',JSON.stringify(row)+'\n');};
 for(const signal of ['SIGINT','SIGTERM'])process.once(signal,()=>{tearingDown=true;fs.writeFileSync(output+'/browser-partial.json',JSON.stringify({signal,actions,rpc,errors},null,2));clearInterval(resourceTimer);void browser.close().finally(()=>{fs.writeFileSync(output+'/browser-rpc.jsonl',rpc.map(r=>JSON.stringify(r)+'\n').join(''));process.exit(1);});});
 const pct=(v,p)=>v.length?[...v].sort((a,b)=>a-b)[Math.max(0,Math.ceil(v.length*p)-1)]:null;
@@ -32,24 +33,24 @@ try {
   await context.addInitScript(()=>{window.__jointLongTasks=[];new PerformanceObserver(list=>{for(const e of list.getEntries())if(window.__jointLongTasks.length<1000)window.__jointLongTasks.push({start:e.startTime,ms:e.duration});}).observe({type:'longtask',buffered:true});});
   const page=await context.newPage();pages[index]=page;page.setDefaultTimeout(10000);
   page.on('pageerror',error=>errors.push({client:index,error:String(error)}));
-  page.on('request',request=>{if(!request.url().endsWith('/rpc'))return;const call=request.postDataJSON();const row={request_id:++rpcSequence,phase:rpcPhase,client:index,method:call.method,start:Date.now()};rpc.push(row);request.jointRow=row;fs.appendFileSync(output+'/browser-rpc-events.jsonl',JSON.stringify({event:'sent',...row})+'\n');});
-  page.on('requestfinished',request=>{if(!request.jointRow)return;pendingResponses.push((async()=>{const row=request.jointRow;row.ms=Date.now()-row.start;try{const response=await request.response();const body=await response.body();row.bytes=body.length;const value=JSON.parse(body);row.error=value.error;}catch(error){row.error=String(error);if(tearingDown&&row.method.startsWith('query.')&&/Target.*closed|Execution context was destroyed/.test(row.error))row.cancelled_by_client='teardown';}finally{fs.appendFileSync(output+'/browser-rpc-events.jsonl',JSON.stringify({event:'finished',...row})+'\n');fs.appendFileSync(output+'/browser-rpc.jsonl',JSON.stringify(row)+'\n');}})());});
+  page.on('request',request=>{if(!request.url().endsWith('/rpc'))return;const call=request.postDataJSON();const row={request_id:++rpcSequence,phase:rpcPhase,client:index,method:call.method,project_id:call.params?.project_id,context_id:call.params?.context_id,owner_id:call.params?.owner_id,view:call.params?.view,navigation:page.jointNavigationCounter||0,start:Date.now()};rpc.push(row);request.jointRow=row;fs.appendFileSync(output+'/browser-rpc-events.jsonl',JSON.stringify({event:'sent',...row})+'\n');});
+  page.on('requestfinished',request=>{if(!request.jointRow)return;pendingResponses.push((async()=>{const row=request.jointRow;row.ms=Date.now()-row.start;try{const response=await request.response();const body=await response.body();row.bytes=body.length;const value=JSON.parse(body);row.error=value.error;}catch(error){row.error=String(error);if(row.method.startsWith('query.')&&((tearingDown&&/Target.*closed|Execution context was destroyed/.test(row.error))||(row.navigation<(page.jointNavigationCounter||0)&&/No resource with given identifier found|Response body is not available/.test(row.error))))row.cancelled_by_client=tearingDown?'teardown':'ui_navigation';}finally{fs.appendFileSync(output+'/browser-rpc-events.jsonl',JSON.stringify({event:'finished',...row})+'\n');fs.appendFileSync(output+'/browser-rpc.jsonl',JSON.stringify(row)+'\n');}})());});
   page.on('requestfailed',request=>{if(request.jointRow){const row=request.jointRow;row.ms=Date.now()-row.start;row.error=request.failure();if(row.method.startsWith('query.')&&row.error?.errorText==='net::ERR_ABORTED'&&(tearingDown||page.jointNavigating))row.cancelled_by_client=tearingDown?'teardown':'ui_navigation';fs.appendFileSync(output+'/browser-rpc-events.jsonl',JSON.stringify({event:'failed',...row})+'\n');fs.appendFileSync(output+'/browser-rpc.jsonl',JSON.stringify(row)+'\n');}});
-  const start=Date.now();const role=index<Math.ceil(count*.5)?'read':index<Math.ceil(count*.8)?'write':'navigate';page.jointRole=role;page.jointRoot=root;page.jointSlot=index%roots.length;
-  await page.goto(url(root,role==='write'?'context':'manager'));
-  if(role==='write') {
+  const start=Date.now();const role=count<3?'mixed':index<Math.ceil(count*.5)?'read':index<Math.ceil(count*.8)?'write':'navigate';page.jointRole=role;page.jointRoot=root;page.jointSlot=index%roots.length;
+  await goto(page,url(root,role==='write'||role==='mixed'?'context':'manager'));
+  if(role==='write'||role==='mixed') {
    // The factory emits 25 explicit contexts per logical root. Bind a stable
    // resource identity; editing must not follow an ordinal that can move.
    page.jointContext=fixture.contexts[(index%roots.length)*25+Math.floor(index/roots.length)];
    if(!page.jointContext || page.jointContext.project_id!==root.project_id)throw Error('Missing independent browser write target');
-   await page.getByText('共享工作背景 · 手工维护（不代表当轮已发送）',{exact:true}).click({noWaitAfter:true});
+   await page.getByText('共享工作背景 · 手工维护（不代表当轮已发送）',{exact:true}).click({noWaitAfter:true});await page.locator(`[data-context-id="${page.jointContext.id}"] summary`).click({noWaitAfter:true});
    await page.locator('section').filter({has:page.locator(`a.raw-json-link[href*="context_id=${page.jointContext.id}"]`)}).last().getByRole('button',{name:'编辑上下文',exact:true}).waitFor();
   }
   else await page.getByRole('button',{name:'刷新管理状态',exact:true}).first().waitFor();
   recordAction({client:index,kind:'initial',ms:Date.now()-start,done:Date.now()});fs.appendFileSync(output+'/browser-progress.jsonl',JSON.stringify({phase:'initial',client:index,ms:Date.now()-start,time:Date.now()})+'\n');
  }));
  const chains=Array.from({length:count},()=>Promise.resolve());
- const group=role=>pages.map((page,index)=>page.jointRole===role?index:-1).filter(n=>n>=0);
+ const group=role=>pages.map((page,index)=>page.jointRole===role||page.jointRole==='mixed'?index:-1).filter(n=>n>=0);
  const groups={read:group('read'),write:group('write'),navigate:group('navigate')};
  if(new Set(groups.write.map(index=>pages[index].jointContext.id)).size!==groups.write.length)throw Error('Browser writers share a target unexpectedly');
  const rates={read:count,write:count/10,navigate:count/20};
@@ -60,22 +61,24 @@ try {
   const work=chains[client].then(async()=>{const sent=Date.now();const row={client,kind:task.kind,sequence:task.n,scheduled:began+task.at*1000,sent,generator_queue_ms:sent-began-task.at*1000};try{
    if(row.generator_queue_ms>30000){row.sent=null;throw Error('Unsent: local browser generator queue exceeded 30 seconds');}
    if(task.kind==='navigate')page.jointNavigating=true;
-   if(page.jointRole!=='write'){
+   if(page.jointRole!=='write'&&page.jointRole!=='mixed'){
     const current=JSON.parse(fs.readFileSync(fixtureFile,'utf8')).roots[page.jointSlot];
-    if(current.id!==page.jointRoot.id){page.jointNavigating=true;await page.goto(url(current,'manager'));page.jointRoot=current;row.renewed_root=current.id;}
+    if(current.id!==page.jointRoot.id){page.jointNavigating=true;await goto(page,url(current,'manager'));page.jointRoot=current;row.renewed_root=current.id;}
    }
+   if(page.jointRole==='mixed' && task.kind!=='write' && new URL(page.url()).searchParams.get('detail')!=='manager') await goto(page,url(page.jointRoot,'manager'));
    if(task.kind==='read'){
     const section=page.locator(`[data-instance-id="${page.jointRoot.id}"][data-manual-refresh]`).first();const previous=await section.getAttribute('data-manual-refresh');
     await section.getByRole('button',{name:'刷新管理状态',exact:true}).first().click({timeout:10000,noWaitAfter:true});
     await page.locator(`[data-instance-id="${page.jointRoot.id}"][data-manual-refresh]:not([data-manual-refresh="${previous}"])`).first().waitFor({timeout:10000});
    }
    else if(task.kind==='write'){
+    if(page.jointRole==='mixed' && new URL(page.url()).searchParams.get('detail')!=='context'){await goto(page,url(page.jointRoot,'context'));await page.getByText('共享工作背景 · 手工维护（不代表当轮已发送）',{exact:true}).click({noWaitAfter:true});await page.locator(`[data-context-id="${page.jointContext.id}"] summary`).click({noWaitAfter:true});}
     row.target=page.jointContext.id;
     await page.locator('section').filter({has:page.locator(`a.raw-json-link[href*="context_id=${row.target}"]`)}).last().getByRole('button',{name:'编辑上下文',exact:true}).click({timeout:10000,noWaitAfter:true});
     const dialog=page.getByRole('dialog',{name:'更新上下文',exact:true});await dialog.getByRole('button',{name:'内容',exact:true}).click({noWaitAfter:true});await dialog.getByRole('textbox',{name:'内容',exact:true}).fill(`Browser client ${client} durable change ${task.n}`);
     const reply=page.waitForResponse(r=>r.url().endsWith('/rpc')&&r.request().postDataJSON()?.method==='context.update',{timeout:10000});void reply.catch(()=>{});
     await dialog.getByRole('button',{name:'确认',exact:true}).click({timeout:10000,noWaitAfter:true});const value=await(await reply).json();if(value.error)throw Error(JSON.stringify(value.error));await dialog.waitFor({state:'hidden',timeout:10000});
-   }else{if(Math.floor(task.n/groups.navigate.length)%3===2){page.jointSlot=(page.jointSlot+2)%roots.length;const next=JSON.parse(fs.readFileSync(fixtureFile,'utf8')).roots[page.jointSlot];const picker=page.getByLabel('当前项目',{exact:true});if(await picker.locator(`option[value="${next.project_id}"]`).count()){await picker.selectOption(next.project_id);row.project_route='selector';}else{row.project_route='explicit_url';}await page.goto(url(next,'manager'));page.jointRoot=next;row.project_switch=next.project_id;}const detail=Math.floor(task.n/groups.navigate.length)%2?'项目经理':'工作流程';await page.getByRole('tab',{name:detail,exact:true}).click({timeout:10000,noWaitAfter:true});if(detail==='项目经理')await page.getByRole('button',{name:'刷新管理状态',exact:true}).first().waitFor({timeout:10000});else await page.getByRole('button',{name:'刷新进度',exact:true}).first().waitFor({timeout:10000});}
+   }else{if(page.jointRole!=='mixed'&&Math.floor(task.n/groups.navigate.length)%3===2){page.jointSlot=(page.jointSlot+2)%roots.length;const next=JSON.parse(fs.readFileSync(fixtureFile,'utf8')).roots[page.jointSlot];const picker=page.getByLabel('当前项目',{exact:true});if(await picker.locator(`option[value="${next.project_id}"]`).count()){await picker.selectOption(next.project_id);row.project_route='selector';}else{row.project_route='explicit_url';}await goto(page,url(next,'manager'));page.jointRoot=next;row.project_switch=next.project_id;}const detail=Math.floor(task.n/groups.navigate.length)%2?'项目经理':'工作流程';await page.getByRole('tab',{name:detail,exact:true}).click({timeout:10000,noWaitAfter:true});if(detail==='项目经理')await page.getByRole('button',{name:'刷新管理状态',exact:true}).first().waitFor({timeout:10000});else await page.getByRole('button',{name:'刷新进度',exact:true}).first().waitFor({timeout:10000});}
   }catch(error){row.error=String(error);}finally{page.jointNavigating=false;row.done=Date.now();row.ms=row.done-sent;row.scheduled_ms=row.done-row.scheduled;recordAction(row);if(actions.length%100===0)fs.appendFileSync(output+'/browser-progress.jsonl',JSON.stringify({phase:'actions',completed:actions.length,failures:actions.filter(a=>a.error).length,time:Date.now()})+'\n');}});chains[client]=work.catch(()=>{});futures.push(work);
  }
  await Promise.all(futures);

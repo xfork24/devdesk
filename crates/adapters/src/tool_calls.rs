@@ -12,7 +12,32 @@ pub(super) fn encode(
 pub(super) fn restore(catalog: &ConfigurationCatalogSnapshot, value: &Value) -> Result<Value> {
     let mut row = ConfigurationRecord::from_storage(value.clone())?;
     require(!source_store::is_source(&row), "运行恢复不能替换配置源")?;
+    // A frozen plan is a pure projection of its exact descriptor and this
+    // immutable catalog snapshot. Do not compile it again for every status
+    // read. Runtime facts and permission-backend enforcement are never cached.
+    let plan = if matches!(
+        row.r#type.as_str(),
+        "workflow_instance" | "workflow_plan_revision"
+    ) && row.data["plan"]["$source"] == "workflow_plan"
+    {
+        let descriptor = row.data.as_object_mut().unwrap().remove("plan").unwrap();
+        Some(
+            catalog.cached_query(format!("frozen-plan:{descriptor}"), || {
+                let _span = performance::Span::new("source.restore_plan.compile");
+                devdesk_core::frozen_views::restore_plan(
+                    &catalog.state,
+                    &descriptor,
+                    &mut Default::default(),
+                )
+            })?,
+        )
+    } else {
+        None
+    };
     row.data = source_views::restore_with(&catalog.state, &row.data, &mut Default::default())?;
+    if let Some(plan) = plan {
+        row.data["plan"] = plan;
+    }
     row.content_hash = content_digest(&row.refs, &row.data);
     Ok(json!(row))
 }

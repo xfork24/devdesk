@@ -247,7 +247,7 @@ fn current_databases_exclude_retired_permission_storage_and_conversion_indexes()
             SqliteStore::project_path(dir.path(), &project)
                 .unwrap()
                 .join("engineering.sqlite3"),
-            59,
+            60,
         ),
     ] {
         let db = rusqlite::Connection::open(path).unwrap();

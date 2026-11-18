@@ -858,5 +858,6 @@ CREATE INDEX idx_workflow_display_owner ON workflow_display_headers(json_extract
 CREATE TABLE dataset_layout(id INTEGER PRIMARY KEY CHECK(id=1),contract TEXT NOT NULL);
 INSERT INTO dataset_layout VALUES(1,'single-host-resource-v2');
 
-PRAGMA user_version=59;
+CREATE INDEX idx_workflow_timed_wait ON workflow_display_steps(instance_id,json_extract(data,'$.time_budget.next_deadline_at')) WHERE json_extract(data,'$.time_budget.next_deadline_at') IS NOT NULL;
+PRAGMA user_version=60;
 COMMIT;

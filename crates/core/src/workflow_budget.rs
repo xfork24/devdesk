@@ -8,6 +8,97 @@ use crate::{
     *,
 };
 impl Engine {
+    pub(crate) fn require_execution_time(&self, resources: &WorkflowResources) -> Result<()> {
+        let definition = resources
+            .instance
+            .plan
+            .document
+            .steps
+            .iter()
+            .find(|s| s.node_id == resources.execution.node_id)
+            .ok_or_else(|| err("storage", "原计时步骤合同缺失"))?;
+        if let (Some(limits), Some(budget)) = (
+            &definition.budget.time_limits,
+            &resources.execution.time_budget,
+        ) {
+            budget.check(limits, &crate::environment::execution_clock())?;
+        }
+        Ok(())
+    }
+    pub(crate) fn refresh_execution_time(
+        &self,
+        resources: &WorkflowResources,
+        next: &mut StepExecution,
+    ) -> Result<()> {
+        let definition = resources
+            .instance
+            .plan
+            .document
+            .steps
+            .iter()
+            .find(|s| s.node_id == next.node_id)
+            .ok_or_else(|| err("storage", "原计时步骤合同缺失"))?;
+        let Some(limits) = &definition.budget.time_limits else {
+            return Ok(());
+        };
+        let clock = crate::environment::execution_clock();
+        if next.time_budget.is_none() {
+            let Some(started) = next.started else {
+                return Ok(());
+            };
+            require(clock.wall_ms >= started, "执行起点晚于实际时钟")?;
+            let mut budget = ExecutionTimeBudget::new(&next.id, clock.clone());
+            budget.started_at = started;
+            next.time_budget = Some(budget);
+        }
+        let budget = next.time_budget.as_mut().unwrap();
+        let closed = matches!(
+            next.status,
+            StepExecutionStatus::Completed
+                | StepExecutionStatus::Cancelled
+                | StepExecutionStatus::Skipped
+                | StepExecutionStatus::Failed
+                | StepExecutionStatus::NeedsReconciliation
+        );
+        let effective = match budget.clock.effective_now(&clock) {
+            Ok(now) => now,
+            Err(_) if closed => {
+                budget.next_deadline_at = None;
+                return Ok(());
+            }
+            Err(error) => return Err(error),
+        };
+        let human = matches!(
+            next.status,
+            StepExecutionStatus::WaitingInput | StepExecutionStatus::WaitingConfirmation
+        );
+        let changed = budget.clock.process_epoch != clock.process_epoch
+            || resources.execution.status != next.status
+            || resources.execution.sequence != next.sequence
+            || resources.execution.session_id != next.session_id
+            || resources.execution.turn_id != next.turn_id
+            || resources.execution.tool_call_id != next.tool_call_id
+            || resources.execution.outputs != next.outputs
+            || resources.execution.time_budget.as_ref().is_some_and(|old| {
+                old.human_wait_closed != budget.human_wait_closed
+                    || old.human_wait_started_at != budget.human_wait_started_at
+            });
+        if human && !budget.human_wait_closed && budget.human_wait_started_at.is_none() {
+            budget.human_wait_started_at = Some(effective);
+        }
+        if !human && !closed {
+            budget.human_wait_started_at = None;
+            budget.human_wait_closed = false;
+        }
+        if changed {
+            budget.clock = ExecutionClockAnchor {
+                wall_ms: effective,
+                ..clock
+            };
+        }
+        budget.next_deadline_at = (!closed).then(|| budget.deadline(limits));
+        Ok(())
+    }
     pub(crate) fn update_native_workflow_budget(
         &self,
         commit: &mut WorkflowCommit<'_>,

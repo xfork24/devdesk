@@ -669,6 +669,13 @@ impl Engine {
         let mut budget_updates = BTreeSet::new();
         for step in &old.plan.document.steps {
             let next = document.steps.iter().find(|s| s.node_id == step.node_id);
+            require(
+                !old.steps
+                    .iter()
+                    .any(|e| e.node_id == step.node_id && e.time_budget.is_some())
+                    || next.is_none_or(|next| next.budget.time_limits == step.budget.time_limits),
+                "已开始的逻辑执行不能替换或移除原时间政策；请保留原期限或明确启动后继工作",
+            )?;
             // Tool arguments/permissions/receipts do not depend on their display
             // stage. Regrouping an otherwise identical tool must not rerun it.
             // Agent stage context and inherited Roles remain business changes.

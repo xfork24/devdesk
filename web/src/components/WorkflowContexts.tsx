@@ -24,32 +24,40 @@ function ManualContext({
   request: Request;
   onEdit?: (context: Row) => void;
 }) {
+  const [open, setOpen] = useState(!context.metadata_only);
   const state = useReading(
     request,
     "query.workflow_contexts",
     { project_id: projectId, owner_id: ownerId, context_id: context.id },
-    Boolean(context.metadata_only),
+    Boolean(context.metadata_only && open),
+    context.revision,
   );
   const current = context.metadata_only ? state.value?.context : context;
   return (
-    <section>
-      <ReadState {...state} />
-      {current && (
-        <>
-          <ReadableValue value={current.content} />
-          <RawJsonLink
-            source="context"
-            params={{
-              project_id: projectId,
-              owner_id: ownerId,
-              context_id: current.id,
-            }}
-          />
-          {onEdit && (
-            <button onClick={() => onEdit(current)}>编辑上下文</button>
-          )}
-        </>
-      )}
+    <section data-context-id={context.id}>
+      <details
+        open={open}
+        onToggle={(event) => setOpen(event.currentTarget.open)}
+      >
+        <summary>工作背景 · 版本 {context.revision}</summary>
+        <ReadState {...state} />
+        {current && (
+          <>
+            <ReadableValue value={current.content} />
+            <RawJsonLink
+              source="context"
+              params={{
+                project_id: projectId,
+                owner_id: ownerId,
+                context_id: current.id,
+              }}
+            />
+            {onEdit && (
+              <button onClick={() => onEdit(current)}>编辑上下文</button>
+            )}
+          </>
+        )}
+      </details>
     </section>
   );
 }
@@ -427,7 +435,7 @@ export function WorkflowContexts({
           {manualOpen &&
             contexts.map((context) => (
               <ManualContext
-                key={`${context.id}:${context.revision}`}
+                key={context.id}
                 context={context}
                 projectId={projectId}
                 ownerId={ownerId}

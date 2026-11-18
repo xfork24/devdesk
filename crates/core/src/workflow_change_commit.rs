@@ -496,9 +496,20 @@ impl Engine {
                 .iter()
                 .find(|e| e.node_id == step.node_id)
                 .map_or(1, |e| e.round + 1);
+            e.time_budget = root
+                .instance
+                .steps
+                .iter()
+                .find(|old| old.node_id == step.node_id)
+                .and_then(|old| old.time_budget.as_ref())
+                .zip(step.budget.time_limits.as_ref())
+                .map(|(budget, limits)| budget.for_successor(limits));
             if preview.bypassed.contains(&step.key) {
                 e.status = StepExecutionStatus::Skipped;
                 e.reason = changes.reason.clone();
+                if let Some(budget) = e.time_budget.as_mut() {
+                    budget.next_deadline_at = None;
+                }
             }
             steps.push(e);
         }

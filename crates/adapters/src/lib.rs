@@ -10,6 +10,7 @@ pub mod performance;
 mod read_models;
 mod repository_contexts;
 mod resource_commits;
+mod resource_read_scope;
 mod runtime_queries;
 mod scheduling_read;
 mod store_changes;
@@ -63,7 +64,7 @@ pub use catalog::GlobalStore;
 use devdesk_core::*;
 use devdesk_domain::*;
 pub use runtime_registry::configuration_digest;
-const PROJECT_SCHEMA_VERSION: u32 = 59;
+const PROJECT_SCHEMA_VERSION: u32 = 60;
 use rusqlite::{
     Connection,
     types::{Value as SqlValue, ValueRef},
@@ -1074,6 +1075,9 @@ impl EngineeringStore for SqliteStore {
     fn observe_query(&self, stage: &'static str) -> Box<dyn ports::QueryObservation> {
         performance::observe(stage)
     }
+    fn advisory_read_scope(&self) -> Box<dyn ports::QueryObservation> {
+        resource_read_scope::enter(&self.connection)
+    }
     fn observe_native_call(
         &self,
         call_id: &str,
@@ -1262,16 +1266,14 @@ impl EngineeringStore for SqliteStore {
         status: &str,
         after: Option<&str>,
     ) -> Result<devdesk_core::tool_calls::ToolCallPage> {
+        if kind == "workflow_instance" {
+            return self.runtime_record_page_at(kind, status, after, &runtime_queries::utc_clock());
+        }
         let conn = self.connection.read()?;
         let sql = if kind == "workflow_controller" {
             format!(
                 "SELECT c.id FROM governance_records c INDEXED BY idx_runtime_work_seek WHERE c.type=?1 AND json_extract(c.data,'$.status')=?2 AND c.id>?3 AND {} ORDER BY c.id LIMIT 17",
                 runtime_queries::CONTROLLER_READY
-            )
-        } else if kind == "workflow_instance" {
-            format!(
-                "SELECT c.id FROM governance_records c INDEXED BY idx_runtime_work_seek WHERE c.type=?1 AND json_extract(c.data,'$.status')=?2 AND c.id>?3 AND {} ORDER BY c.id LIMIT 17",
-                runtime_queries::WORKFLOW_READY
             )
         } else if kind == "workflow_driver" {
             "SELECT id FROM governance_records WHERE type=?1 AND json_extract(data,'$.mode')=?2 AND id>?3 ORDER BY id LIMIT 17".into()
@@ -1283,6 +1285,45 @@ impl EngineeringStore for SqliteStore {
             .query_map(rusqlite::params![kind, status, after.unwrap_or("")], |r| {
                 r.get::<_, String>(0)
             })
+            .map_err(storage)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(storage)?;
+        let more = ids.len() > 16;
+        ids.truncate(16);
+        Ok(devdesk_core::tool_calls::ToolCallPage {
+            next_after: more.then(|| ids.last().unwrap().clone()),
+            ids,
+        })
+    }
+    fn runtime_record_page_at(
+        &self,
+        kind: &str,
+        status: &str,
+        after: Option<&str>,
+        clock: &ExecutionClockAnchor,
+    ) -> Result<devdesk_core::tool_calls::ToolCallPage> {
+        if kind != "workflow_instance" {
+            return self.runtime_record_page(kind, status, after);
+        }
+        let conn = self.connection.read()?;
+        let sql = format!(
+            "SELECT c.id FROM governance_records c INDEXED BY idx_runtime_work_seek WHERE c.type=?4 AND json_extract(c.data,'$.status')=?5 AND c.id>?6 AND ({} OR {}) ORDER BY c.id LIMIT 17",
+            runtime_queries::WORKFLOW_READY,
+            runtime_queries::WORKFLOW_TIME_READY
+        );
+        let mut query = conn.prepare_cached(&sql).map_err(storage)?;
+        let mut ids = query
+            .query_map(
+                rusqlite::params![
+                    clock.wall_ms,
+                    clock.process_epoch,
+                    clock.monotonic_ms,
+                    kind,
+                    status,
+                    after.unwrap_or("")
+                ],
+                |r| r.get::<_, String>(0),
+            )
             .map_err(storage)?
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(storage)?;
@@ -1394,6 +1435,12 @@ impl EngineeringStore for SqliteStore {
     }
     fn scheduling_hints(&self) -> Result<devdesk_core::read_models::SchedulingHints> {
         scheduling_read::hints(&*self.connection.read()?)
+    }
+    fn scheduling_hints_at(
+        &self,
+        clock: &ExecutionClockAnchor,
+    ) -> Result<devdesk_core::read_models::SchedulingHints> {
+        scheduling_read::hints_at(&*self.connection.read()?, clock)
     }
     fn project_id(&self) -> Option<String> {
         self.project_id.clone()

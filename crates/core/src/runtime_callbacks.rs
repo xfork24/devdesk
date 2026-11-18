@@ -3,6 +3,10 @@
 use crate::{concurrency::*, *};
 
 impl Engine {
+    pub fn scheduling_hints(&self) -> Result<crate::read_models::SchedulingHints> {
+        self.store
+            .scheduling_hints_at(&crate::environment::execution_clock())
+    }
     pub(crate) fn pending_runtime_records(
         &self,
         kind: &str,
@@ -15,11 +19,14 @@ impl Engine {
             .map_err(|e| err("storage", e.to_string()))?
             .get(&cursor_key)
             .cloned();
+        let clock = crate::environment::execution_clock();
         let mut page = self
             .store
-            .runtime_record_page(kind, status, after.as_deref())?;
+            .runtime_record_page_at(kind, status, after.as_deref(), &clock)?;
         if page.ids.is_empty() && after.is_some() {
-            page = self.store.runtime_record_page(kind, status, None)?;
+            page = self
+                .store
+                .runtime_record_page_at(kind, status, None, &clock)?;
         }
         if matches!(kind, "sealed_command_intent" | "configuration_transfer") {
             page.ids.truncate(4);

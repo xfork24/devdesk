@@ -49,6 +49,8 @@ impl Engine {
             Some(Eligibility::blocked("terminal", "流程已结束或取消"))
         } else if pending.value.is_some() {
             Some(Eligibility::blocked("change_pending", "运行计划正在变更"))
+        } else if let Err(error) = self.require_execution_time(resources) {
+            Some(Eligibility::blocked(&error.code, error.message))
         } else {
             None
         };
@@ -249,6 +251,7 @@ impl Engine {
         if let Some(result) = self.finite_workflow_control_read(method, p) {
             return result;
         }
+        let _scope = self.store.advisory_read_scope();
         let root = WorkflowHeaderFacts::read(
             self,
             p["id"]
@@ -402,6 +405,23 @@ impl Engine {
         let offset = p["offset"].as_u64().unwrap_or(0) as usize;
         let limit = p["limit"].as_u64().unwrap_or(32).clamp(1, 64) as usize;
         let mut steps = vec![];
+        // Select this page's native executions in one committed read. The
+        // advisory scope may reuse these rows during rule/action projection;
+        // command admission never uses this scope or its disposable values.
+        let keys = root
+            .instance
+            .steps
+            .iter()
+            .skip(offset)
+            .take(limit)
+            .map(|e| {
+                crate::concurrency::ResourceKey::new(
+                    "workflow_step",
+                    json!([root.record.id, e.id]).to_string(),
+                )
+            })
+            .collect::<Vec<_>>();
+        self.store.read_resources(&keys)?;
         for e in root.instance.steps.iter().skip(offset).take(limit) {
             steps.push(self.native_step_readiness(&root, &root.step(self, &e.id)?)?);
         }

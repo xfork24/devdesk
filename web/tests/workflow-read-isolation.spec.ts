@@ -8,6 +8,7 @@ async function fixture(
   page: Page,
   failure?: "catalog" | "defaults",
   metadataOnly = false,
+  contexts: any[] = [],
 ) {
   await page.goto("/");
   if (
@@ -106,7 +107,7 @@ async function fixture(
             tasks: [],
             documents: [],
             snapshots: [],
-            contexts: [],
+            contexts,
             totals: {},
           },
         };
@@ -410,6 +411,7 @@ test("manager prepares exact materials and review evidence for a human decision"
                         {
                           ...reference,
                           label: "独立初审",
+                          output_id: "frozen-review",
                           execution_id: "review-original",
                           session_id: "review-session",
                           turn_id: "review-turn",
@@ -457,6 +459,9 @@ test("manager prepares exact materials and review evidence for a human decision"
   await expect(
     card.getByRole("link", { name: "查看上下文", exact: true }),
   ).toHaveAttribute("href", /session_id=review-session/);
+  await expect(
+    card.getByRole("link", { name: "查看依据原件", exact: true }),
+  ).toHaveAttribute("href", /output_id=frozen-review/);
   await expect(
     card.getByRole("link", { name: "查看执行记录", exact: true }),
   ).toHaveAttribute("href", /execution_id=review-original/);
@@ -2594,4 +2599,53 @@ test("workflow overview opens stage progress and bounded step actions together",
     path: info.outputPath("stage-progress-mobile.png"),
     fullPage: true,
   });
+});
+
+test("manual background bodies load only for the selected disclosure", async ({
+  page,
+}) => {
+  const contexts = Array.from({ length: 25 }, (_, index) => ({
+    id: `background-${index}`,
+    owner_id: "read-feature",
+    revision: 1,
+    metadata_only: true,
+  }));
+  const url = await fixture(page, undefined, false, contexts);
+  const bodies: string[] = [];
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    if (call.method !== "query.workflow_contexts") return route.fallback();
+    if (call.params.context_id) bodies.push(call.params.context_id);
+    await route.fulfill({
+      json: {
+        jsonrpc: "2.0",
+        id: call.id,
+        result: call.params.context_id
+          ? {
+              context: {
+                ...contexts[3],
+                content: "Only the selected original background",
+              },
+            }
+          : { agents: [], executions: [] },
+      },
+    });
+  });
+  await page.goto(url.replace("detail=manager", "detail=context"));
+  await page
+    .getByText("共享工作背景 · 手工维护（不代表当轮已发送）", { exact: true })
+    .click();
+  await expect(page.locator("[data-context-id]")).toHaveCount(25);
+  expect(bodies).toEqual([]);
+  const selected = page.locator('[data-context-id="background-3"]');
+  await selected.locator("summary").click();
+  await expect(selected).toContainText("Only the selected original background");
+  expect(bodies).toEqual(["background-3"]);
+  await expect(
+    selected.getByRole("button", { name: "编辑上下文", exact: true }),
+  ).toBeVisible();
+  await expect(selected.locator("a.raw-json-link")).toHaveAttribute(
+    "href",
+    /context_id=background-3/,
+  );
 });

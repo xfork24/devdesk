@@ -878,6 +878,37 @@ fn current_revision(conn: &Connection, key: &ResourceKey) -> Result<u64> {
 
 pub(super) fn read(pool: &ConnectionPool, keys: &[ResourceKey]) -> Result<Vec<ResourceSnapshot>> {
     require(keys.len() <= 4096, "一次读取的资源过多")?;
+    if !resource_read_scope::active(pool) {
+        return read_uncached(pool, keys);
+    }
+    for key in keys {
+        key.validate()?;
+    }
+    let mut cached = keys
+        .iter()
+        .map(|key| resource_read_scope::get(pool, key))
+        .collect::<Vec<_>>();
+    let missing = keys
+        .iter()
+        .zip(&cached)
+        .filter(|(_, v)| v.is_none())
+        .map(|(k, _)| k.clone())
+        .collect::<Vec<_>>();
+    if missing.is_empty() {
+        return Ok(cached.into_iter().map(Option::unwrap).collect());
+    }
+    let values = read_uncached(pool, &missing)?;
+    resource_read_scope::insert(pool, &values);
+    let mut values = values.into_iter();
+    for value in &mut cached {
+        if value.is_none() {
+            *value = values.next();
+        }
+    }
+    Ok(cached.into_iter().map(Option::unwrap).collect())
+}
+
+fn read_uncached(pool: &ConnectionPool, keys: &[ResourceKey]) -> Result<Vec<ResourceSnapshot>> {
     let _span = performance::Span::new("resource.read");
     let conn = pool.read()?;
     conn.execute_batch("BEGIN;").map_err(storage)?;
@@ -1357,155 +1388,164 @@ fn commit_once(
     conn: &mut Connection,
     prepared: &PreparedChangeSet,
     writes: &[Option<SqlWrite>],
+    mut timing: Option<&mut performance::TransactionTiming>,
 ) -> Result<(CommitReceipt, bool)> {
     if let Some(receipt) = replay_on(conn, &prepared.command_id, &prepared.fingerprint)? {
         return Ok((receipt, false));
     }
+    if let Some(timing) = timing.as_mut() {
+        timing.beginning();
+    }
     let transaction = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(sqlite_error)?;
-    let _span = performance::Span::new("resource.sql_transaction");
-    if let Some(receipt) = replay_on(&transaction, &prepared.command_id, &prepared.fingerprint)? {
-        return Ok((receipt, false));
+    if let Some(timing) = timing.as_mut() {
+        timing.began();
     }
-    verify_read_set(&transaction, &prepared.read_set)?;
-    let runtime_events = workflow_events::capture(&transaction, prepared)?;
-    let mut versions = Vec::with_capacity(prepared.changes.len());
-    for (change, write) in prepared.changes.iter().zip(writes) {
-        let expected = prepared.read_set.require(&change.resource)?;
-        // Execution epochs also cover transitional writers. Their table
-        // triggers advance exactly once for either kind of write.
-        if !matches!(
-            change.resource.kind.as_str(),
-            "execution"
-                | "head"
-                | "repository_worktree"
-                | "orchestration_lease"
-                | "orchestration_wakeup"
-                | "workflow_step"
-                | "workflow_step_replace"
-                | "workflow_step_restore"
-                | "workflow_step_delete"
-                | "workflow_step_create"
-                | "workflow_header"
-        ) {
+    let _span = performance::Span::new("resource.sql_transaction");
+    let result = (|| -> Result<(CommitReceipt, bool)> {
+        if let Some(receipt) = replay_on(&transaction, &prepared.command_id, &prepared.fingerprint)?
+        {
+            return Ok((receipt, false));
+        }
+        verify_read_set(&transaction, &prepared.read_set)?;
+        let runtime_events = workflow_events::capture(&transaction, prepared)?;
+        let mut versions = Vec::with_capacity(prepared.changes.len());
+        for (change, write) in prepared.changes.iter().zip(writes) {
+            let expected = prepared.read_set.require(&change.resource)?;
+            // Execution epochs also cover transitional writers. Their table
+            // triggers advance exactly once for either kind of write.
+            if !matches!(
+                change.resource.kind.as_str(),
+                "execution"
+                    | "head"
+                    | "repository_worktree"
+                    | "orchestration_lease"
+                    | "orchestration_wakeup"
+                    | "workflow_step"
+                    | "workflow_step_replace"
+                    | "workflow_step_restore"
+                    | "workflow_step_delete"
+                    | "workflow_step_create"
+                    | "workflow_header"
+            ) {
+                if matches!(
+                    change.resource.kind.as_str(),
+                    "session"
+                        | "turn"
+                        | "interaction"
+                        | "governance"
+                        | "project"
+                        | "feature"
+                        | "task"
+                        | "context"
+                        | "proposal"
+                        | "repository_operation"
+                ) {
+                    // Mixed-writer metadata is aligned only after the authoritative
+                    // native epoch has been verified in this same SQL transaction.
+                    transaction.execute("INSERT INTO resource_versions(kind,resource_id,revision) VALUES(?1,?2,?3) ON CONFLICT(kind,resource_id) DO UPDATE SET revision=excluded.revision",rusqlite::params![change.resource.kind,change.resource.id,expected]).map_err(sqlite_error)?;
+                }
+                transaction.execute("INSERT OR IGNORE INTO resource_versions(kind,resource_id,revision) VALUES(?1,?2,?3)",rusqlite::params![change.resource.kind,change.resource.id,expected]).map_err(sqlite_error)?;
+                let updated = transaction.execute("UPDATE resource_versions SET revision=revision+1 WHERE kind=?1 AND resource_id=?2 AND revision=?3",rusqlite::params![change.resource.kind,change.resource.id,expected]).map_err(sqlite_error)?;
+                if updated != 1 {
+                    return Err(err("revision_conflict", "提交时资源版本已变化"));
+                }
+            }
+            if let Some(write) = write {
+                transaction
+                    .prepare_cached(&write.sql)
+                    .map_err(sqlite_error)?
+                    .execute(rusqlite::params_from_iter(&write.values))
+                    .map_err(sqlite_error)?;
+            }
             if matches!(
                 change.resource.kind.as_str(),
-                "session"
-                    | "turn"
-                    | "interaction"
-                    | "governance"
-                    | "project"
-                    | "feature"
-                    | "task"
-                    | "context"
-                    | "proposal"
-                    | "repository_operation"
+                "workflow_step"
+                    | "workflow_step_replace"
+                    | "workflow_step_restore"
+                    | "workflow_step_delete"
+                    | "workflow_step_create"
+                    | "workflow_header"
             ) {
-                // Mixed-writer metadata is aligned only after the authoritative
-                // native epoch has been verified in this same SQL transaction.
-                transaction.execute("INSERT INTO resource_versions(kind,resource_id,revision) VALUES(?1,?2,?3) ON CONFLICT(kind,resource_id) DO UPDATE SET revision=excluded.revision",rusqlite::params![change.resource.kind,change.resource.id,expected]).map_err(sqlite_error)?;
+                let parent = if change.resource.kind == "workflow_header" {
+                    change.resource.id.clone()
+                } else {
+                    serde_json::from_str::<(String, String)>(&change.resource.id)
+                        .map_err(storage)?
+                        .0
+                };
+                // Hash only this selected native record, after applying its field
+                // patch inside the short SQL commit. No source compilation, whole
+                // project comparison, or replacement of concurrent sibling steps.
+                let (refs, data): (String, String) = transaction
+                    .query_row(
+                        "SELECT refs,data FROM governance_records WHERE id=?1",
+                        [&parent],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )
+                    .map_err(sqlite_error)?;
+                let refs: References = serde_json::from_str(&refs).map_err(storage)?;
+                let data: Value = serde_json::from_str(&data).map_err(storage)?;
+                transaction
+                    .execute(
+                        "UPDATE governance_records SET content_hash=?2 WHERE id=?1",
+                        rusqlite::params![parent, content_digest(&refs, &data)],
+                    )
+                    .map_err(sqlite_error)?;
             }
-            transaction.execute("INSERT OR IGNORE INTO resource_versions(kind,resource_id,revision) VALUES(?1,?2,?3)",rusqlite::params![change.resource.kind,change.resource.id,expected]).map_err(sqlite_error)?;
-            let updated = transaction.execute("UPDATE resource_versions SET revision=revision+1 WHERE kind=?1 AND resource_id=?2 AND revision=?3",rusqlite::params![change.resource.kind,change.resource.id,expected]).map_err(sqlite_error)?;
-            if updated != 1 {
-                return Err(err("revision_conflict", "提交时资源版本已变化"));
+            if matches!(
+                change.resource.kind.as_str(),
+                "execution"
+                    | "head"
+                    | "repository_worktree"
+                    | "orchestration_lease"
+                    | "orchestration_wakeup"
+                    | "workflow_step"
+                    | "workflow_step_replace"
+                    | "workflow_step_restore"
+                    | "workflow_step_delete"
+                    | "workflow_step_create"
+                    | "workflow_header"
+            ) && current_revision(&transaction, &change.resource)? != expected + 1
+            {
+                return Err(err("revision_conflict", "运行或代码事实未按原版本推进"));
+            }
+            versions.push(ResourceVersion {
+                resource: change.resource.clone(),
+                revision: if change.resource.kind == "source_head" {
+                    current_revision(&transaction, &change.resource)?
+                } else {
+                    expected + 1
+                },
+            });
+        }
+        workflow_projection::commit(&transaction, prepared)?;
+        workflow_events::append(&transaction, prepared, runtime_events)?;
+        let encoded_versions = serde_json::to_string(&versions).map_err(storage)?;
+        for change in &prepared.changes {
+            if change.resource.kind == "source_head" {
+                let actual = value(&transaction, &change.resource)?;
+                require(
+                    actual
+                        .as_ref()
+                        .is_some_and(|actual| actual["reference"] == change.value["reference"]),
+                    "源 head 与实际修订不一致",
+                )?;
             }
         }
-        if let Some(write) = write {
-            transaction
-                .prepare_cached(&write.sql)
-                .map_err(sqlite_error)?
-                .execute(rusqlite::params_from_iter(&write.values))
-                .map_err(sqlite_error)?;
-        }
-        if matches!(
-            change.resource.kind.as_str(),
-            "workflow_step"
-                | "workflow_step_replace"
-                | "workflow_step_restore"
-                | "workflow_step_delete"
-                | "workflow_step_create"
-                | "workflow_header"
-        ) {
-            let parent = if change.resource.kind == "workflow_header" {
-                change.resource.id.clone()
-            } else {
-                serde_json::from_str::<(String, String)>(&change.resource.id)
-                    .map_err(storage)?
-                    .0
-            };
-            // Hash only this selected native record, after applying its field
-            // patch inside the short SQL commit. No source compilation, whole
-            // project comparison, or replacement of concurrent sibling steps.
-            let (refs, data): (String, String) = transaction
-                .query_row(
-                    "SELECT refs,data FROM governance_records WHERE id=?1",
-                    [&parent],
-                    |r| Ok((r.get(0)?, r.get(1)?)),
-                )
-                .map_err(sqlite_error)?;
-            let refs: References = serde_json::from_str(&refs).map_err(storage)?;
-            let data: Value = serde_json::from_str(&data).map_err(storage)?;
-            transaction
-                .execute(
-                    "UPDATE governance_records SET content_hash=?2 WHERE id=?1",
-                    rusqlite::params![parent, content_digest(&refs, &data)],
-                )
-                .map_err(sqlite_error)?;
-        }
-        if matches!(
-            change.resource.kind.as_str(),
-            "execution"
-                | "head"
-                | "repository_worktree"
-                | "orchestration_lease"
-                | "orchestration_wakeup"
-                | "workflow_step"
-                | "workflow_step_replace"
-                | "workflow_step_restore"
-                | "workflow_step_delete"
-                | "workflow_step_create"
-                | "workflow_header"
-        ) && current_revision(&transaction, &change.resource)? != expected + 1
-        {
-            return Err(err("revision_conflict", "运行或代码事实未按原版本推进"));
-        }
-        versions.push(ResourceVersion {
-            resource: change.resource.clone(),
-            revision: if change.resource.kind == "source_head" {
-                current_revision(&transaction, &change.resource)?
-            } else {
-                expected + 1
-            },
-        });
-    }
-    workflow_projection::commit(&transaction, prepared)?;
-    workflow_events::append(&transaction, prepared, runtime_events)?;
-    let encoded_versions = serde_json::to_string(&versions).map_err(storage)?;
-    for change in &prepared.changes {
-        if change.resource.kind == "source_head" {
-            let actual = value(&transaction, &change.resource)?;
-            require(
-                actual
-                    .as_ref()
-                    .is_some_and(|actual| actual["reference"] == change.value["reference"]),
-                "源 head 与实际修订不一致",
-            )?;
-        }
-    }
-    transaction
-        .execute(
-            "INSERT INTO events(target,kind,detail,time) VALUES(?1,'resource.changed',?2,?3)",
-            rusqlite::params![
-                prepared.changes[0].resource.id,
-                encoded_versions,
-                prepared.time
-            ],
-        )
-        .map_err(sqlite_error)?;
-    let cursor = transaction.last_insert_rowid() as u64;
-    transaction
+        transaction
+            .execute(
+                "INSERT INTO events(target,kind,detail,time) VALUES(?1,'resource.changed',?2,?3)",
+                rusqlite::params![
+                    prepared.changes[0].resource.id,
+                    encoded_versions,
+                    prepared.time
+                ],
+            )
+            .map_err(sqlite_error)?;
+        let cursor = transaction.last_insert_rowid() as u64;
+        transaction
         .execute(
             "INSERT INTO operations(id,fingerprint,result,versions,cursor) VALUES(?1,?2,?3,?4,?5)",
             rusqlite::params![
@@ -1517,21 +1557,47 @@ fn commit_once(
             ],
         )
         .map_err(sqlite_error)?;
-    transaction.commit().map_err(sqlite_error)?;
-    Ok((
-        CommitReceipt {
-            result: prepared.result.clone(),
-            versions,
-            cursor,
-        },
-        true,
-    ))
+        Ok((
+            CommitReceipt {
+                result: prepared.result.clone(),
+                versions,
+                cursor,
+            },
+            true,
+        ))
+    })();
+    match result {
+        Ok((receipt, true)) => {
+            if let Some(timing) = timing.as_mut() {
+                timing.committing();
+            }
+            let committed = transaction.commit().map_err(sqlite_error);
+            if let Some(timing) = timing.as_mut() {
+                timing.commit_returned(committed.is_ok());
+            }
+            committed.map(|()| (receipt, true))
+        }
+        result => {
+            // Observe the explicit rollback result without replacing the original
+            // error or receipt. A failed rollback still returns through the pool's
+            // existing autocommit/reuse checks, and is not reported as successful.
+            if let Some(timing) = timing.as_mut() {
+                timing.rolling_back();
+            }
+            let rolled_back = transaction.rollback();
+            if let Some(timing) = timing.as_mut() {
+                timing.rollback_returned(rolled_back.is_ok());
+            }
+            result
+        }
+    }
 }
 
 pub(super) fn commit(
     pool: &ConnectionPool,
     prepared: &PreparedChangeSet,
 ) -> Result<(CommitReceipt, bool)> {
+    resource_read_scope::invalidate(pool);
     prepared.validate()?;
     require(prepared.changes.len() <= 4096, "一次提交的资源过多")?;
     let _span = performance::Span::new("resource.commit");
@@ -1543,11 +1609,25 @@ pub(super) fn commit(
         // not occupy one of the bounded handles while other independent
         // commits wait for it; every attempt retains the original read set.
         let result = {
+            let mut timing =
+                performance::TransactionTiming::new(pool.observation_id(), prepared, attempt);
             let waiting = performance::Span::new("resource.submit_pool_wait");
-            let mut conn = pool.lock_until(checkout_deadline)?;
+            let connection = pool.lock_until(checkout_deadline);
+            if let Err(error) = &connection
+                && let Some(timing) = timing.as_mut()
+            {
+                timing.finished(&Err(error.clone()));
+            }
+            let mut conn = connection?;
             drop(waiting);
+            if let Some(timing) = timing.as_mut() {
+                timing.pool_acquired();
+            }
             let started = Instant::now();
-            let result = commit_once(&mut conn, prepared, &writes);
+            let result = commit_once(&mut conn, prepared, &writes, timing.as_mut());
+            if let Some(timing) = timing.as_mut() {
+                timing.finished(&result);
+            }
             technical_spent += started.elapsed();
             result
         };

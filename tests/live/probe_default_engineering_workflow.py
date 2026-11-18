@@ -7,7 +7,7 @@ from client import Client
 from engineering_evidence import verify_evidence
 from summarize_engineering_scene import summarize
 from export_evidence import export as export_project_evidence
-from workflow_observer import manager_activity, read_workflow_tree
+from workflow_observer import manager_activity, read_workflow_tree, preserve_human_request, check_human_request
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'performance'))
 from feature_frontend_load import FeatureFrontendLoad
 
@@ -197,12 +197,12 @@ try:
      requests=[r for r in manager_view['decisions'] if r['definition_id']==row['id'] and r['data']['status']=='pending' and r['data']['plan_revision_id']==pending['runtime']['active_plan_revision_id'] and r['data']['request'].get('operation') in ('workflow.step.accept','workflow.step.confirm') and r['data']['request'].get('arguments',{}).get('execution_id')==step['id']]
      if manager and not requests:continue
      for request in requests:
-      packet=request['data']['request']['interaction'];assert packet['materials'] and packet['evidence']
+      packet=request['data']['request']['interaction']
       if request['id'] not in shown_requests:
        print('MANAGER HUMAN REQUEST '+request['id']+'\n'+json.dumps(packet,ensure_ascii=False,indent=2),flush=True)
        manager_url=urls[0]+'/?tab=execution&detail=manager&project_id='+project+'&feature_id='+feature
        print('Human reviews and decides in the manager page: '+manager_url,flush=True)
-       (OUT/('human-request-'+request['id']+'.json')).write_text(json.dumps({'request':request,'manager_url':manager_url},ensure_ascii=False,indent=2))
+       preserve_human_request(OUT,request,manager_url,lambda saved:check_human_request(c,tree,saved))
        shown_requests.add(request['id'])
      if manager and not pending['completion_status'][step['id']]['confirmation']:continue
      if not manager:

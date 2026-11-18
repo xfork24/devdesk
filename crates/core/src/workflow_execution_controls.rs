@@ -135,7 +135,7 @@ impl WorkflowCommit<'_> {
         {
             next.status = StepExecutionStatus::Cancelled;
             next.finished = Some(now());
-            self.step(resources, &next)?;
+            self.step(resources, &mut next)?;
         } else {
             self.witness(resources.reads.versions().iter().cloned())?;
         }
@@ -173,6 +173,9 @@ impl Engine {
             .ok_or_else(|| err("invalid_params", "缺少原执行"))?;
         let resources = root.step(self, key)?;
         root.guard_request(c, Some(&resources.step))?;
+        if method == "workflow.step.input" {
+            self.require_execution_time(&resources)?;
+        }
         let mut commit = WorkflowCommit::new(self, method, c, context)?;
         commit.authorize(&root)?;
         if ![
@@ -234,7 +237,7 @@ impl Engine {
                 )?;
                 commit.witness([version(&session)])?;
                 commit.runtime_intent(&resources,&next,"conversation.send",next.session_id.as_deref().unwrap(),Some(session.revision),json!({"client_message_id":format!("{}:{}",next.id,next.sequence),"input":rendered}))?;
-                commit.step(&resources, &next)?;
+                commit.step(&resources, &mut next)?;
                 next
             }
             "workflow.step.rework" if !c.payload["rework"].is_null() => {

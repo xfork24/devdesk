@@ -164,6 +164,7 @@ impl Engine {
                     .ok_or_else(|| err("invalid_params", "缺少原执行"))?;
                 let resources = root.step(self, key)?;
                 root.guard_request(c, Some(&resources.step))?;
+                self.require_execution_time(&resources)?;
                 commit.witness(resources.reads.versions().iter().cloned())?;
                 let definition = resources
                     .instance
@@ -194,7 +195,7 @@ impl Engine {
                     }
                     let mut next = resources.execution.clone();
                     next.status = StepExecutionStatus::Completed;
-                    commit.step(&resources, &next)?;
+                    commit.step(&resources, &mut next)?;
                     let decision =
                         commit.decision(&root, Some(&resources.execution), "accept", reason)?;
                     commit.finish(fingerprint,json!({"id":root.record.id,"execution":next,"decision_id":decision,"plan_revision_id":root.instance.active_plan_revision_id,"control_version":root.instance.control_version})).map(Some)
@@ -319,11 +320,12 @@ impl Engine {
                 {
                     require(target == root.record.id, "决定目标与流程不一致")?;
                 }
-                if matches!(
+                let time_resources = if matches!(
                     operation.as_str(),
                     "workflow.step.confirm" | "workflow.step.accept" | "workflow.step.approve"
                 ) {
                     let resources = root.step(self, &text(arguments, "execution_id")?)?;
+                    self.require_execution_time(&resources)?;
                     commit.witness(resources.reads.versions().iter().cloned())?;
                     require(
                         matches!(
@@ -334,7 +336,10 @@ impl Engine {
                             && arguments["outputs"] == json!(resources.execution.outputs),
                         "决定必须绑定当前可接纳的原产物",
                     )?;
-                }
+                    Some(resources)
+                } else {
+                    None
+                };
                 let mut request = c.payload.clone();
                 if operation == "workflow.step.approve" {
                     let resources = root.step(self, &text(arguments, "execution_id")?)?;
@@ -370,6 +375,37 @@ impl Engine {
                         &request["interaction"],
                         arguments,
                     )?;
+                }
+                if let Some(resources) = time_resources
+                    && resources
+                        .execution
+                        .time_budget
+                        .as_ref()
+                        .is_some_and(|b| b.human_wait_closed)
+                {
+                    let approvals = one(
+                        self.store.as_ref(),
+                        "workflow_confirmations",
+                        &resources.execution.id,
+                    )?;
+                    commit.witness([version(&approvals)])?;
+                    let signed = approvals
+                        .value
+                        .as_ref()
+                        .and_then(Value::as_array)
+                        .is_some_and(|rows| {
+                            rows.iter().any(|row| {
+                                row["data"]["input_digest"] == resources.execution.input_digest
+                                    && row["data"]["outputs"] == json!(resources.execution.outputs)
+                            })
+                        });
+                    if !signed {
+                        let mut next = resources.execution.clone();
+                        let budget = next.time_budget.as_mut().unwrap();
+                        budget.human_wait_closed = false;
+                        budget.human_wait_started_at = None;
+                        commit.step(&resources, &mut next)?;
+                    }
                 }
                 let id=commit.new_record(record("workflow_pending_decision",root.record.id.clone(),root.record.scope.clone(),reason.into(),1,None,json!({"status":"pending","plan_revision_id":root.instance.active_plan_revision_id,"request":request,"actor":context.actor()}),false),"workflow-pending-decision")?;
                 commit
@@ -549,7 +585,7 @@ impl Engine {
             }
             let mut next = execution.clone();
             next.status = StepExecutionStatus::Completed;
-            commit.step(resources, &next)?;
+            commit.step(resources, &mut next)?;
             let root = WorkflowHeaderFacts {
                 record: resources.record.clone(),
                 instance: resources.instance.clone(),
@@ -563,6 +599,8 @@ impl Engine {
                     .as_str()
                     .unwrap_or("实际人类确认并接纳当前结果"),
             )?;
+        } else if execution.time_budget.is_some() {
+            self.close_execution_human_wait(commit, resources)?;
         }
 
         Ok(())
@@ -601,6 +639,19 @@ impl Engine {
             self.prepare_controller_decision(&mut commit, &selected, pending, approved, &reason)?;
         commit.finish(fingerprint, result)
     }
+    fn close_execution_human_wait(
+        &self,
+        commit: &mut WorkflowCommit<'_>,
+        resources: &WorkflowResources,
+    ) -> Result<()> {
+        let mut next = resources.execution.clone();
+        if let Some(budget) = next.time_budget.as_mut() {
+            budget.human_wait_started_at = None;
+            budget.human_wait_closed = true;
+            commit.step(resources, &mut next)?;
+        }
+        Ok(())
+    }
     pub(crate) fn prepare_controller_decision(
         &self,
         commit: &mut WorkflowCommit<'_>,
@@ -633,6 +684,7 @@ impl Engine {
             "workflow.step.confirm" | "workflow.step.accept" | "workflow.step.approve"
         ) {
             let resources = root.step(self, &text(args, "execution_id")?)?;
+            self.require_execution_time(&resources)?;
             require(
                 matches!(
                     resources.execution.status,
@@ -698,6 +750,8 @@ impl Engine {
                         &facts.facts,
                     )?;
                 }
+            } else if resources.execution.time_budget.is_some() {
+                self.close_execution_human_wait(commit, &resources)?;
             }
         }
         let id=commit.new_record(record("workflow_human_decision",pending.id.clone(),pending.scope.clone(),reason.into(),1,None,json!({"approved":approved,"actor":commit.context.actor(),"plan_revision_id":pending.data["plan_revision_id"],"request":pending.data["request"],"reason":reason}),true),"workflow-human-decision")?;

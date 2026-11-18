@@ -31,6 +31,21 @@ pub(crate) fn now() -> u64 {
                 .as_millis() as u64
         })
 }
+pub(crate) fn execution_clock() -> devdesk_domain::ExecutionClockAnchor {
+    let custom = SOURCE.with(|slot| slot.borrow().as_ref().map(|s| s.monotonic_clock()));
+    let reading = custom.unwrap_or_else(|| {
+        static PROCESS: std::sync::OnceLock<(String, std::time::Instant)> =
+            std::sync::OnceLock::new();
+        let (epoch, start) =
+            PROCESS.get_or_init(|| (uuid::Uuid::new_v4().to_string(), std::time::Instant::now()));
+        Some((epoch.clone(), start.elapsed().as_millis() as u64))
+    });
+    devdesk_domain::ExecutionClockAnchor {
+        wall_ms: now(),
+        process_epoch: reading.as_ref().map(|r| r.0.clone()),
+        monotonic_ms: reading.map(|r| r.1),
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

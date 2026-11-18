@@ -200,6 +200,8 @@ pub struct StepAccess {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionBudget {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_limits: Option<ExecutionTimeLimits>,
     pub max_turns: u64,
     pub timeout_seconds: u64,
     pub retry_limit: u64,
@@ -207,6 +209,7 @@ pub struct ExecutionBudget {
 impl Default for ExecutionBudget {
     fn default() -> Self {
         Self {
+            time_limits: None,
             max_turns: 8,
             timeout_seconds: 300,
             retry_limit: 3,
@@ -750,6 +753,9 @@ impl WorkflowDefinition {
                     && step.budget.retry_limit <= 10,
                 "执行预算超出平台限制",
             )?;
+            if let Some(limits) = &step.budget.time_limits {
+                limits.validate()?;
+            }
             for (name, input) in &step.inputs {
                 valid_key(name)?;
                 if let InputBinding::Source { source } = input {
@@ -861,6 +867,8 @@ pub struct ReworkWorkspaceCheckpoint {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StepExecution {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_budget: Option<ExecutionTimeBudget>,
     #[serde(default)]
     pub plan_revision_id: Id,
     #[serde(default)]

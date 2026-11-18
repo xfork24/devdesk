@@ -126,6 +126,12 @@ macro_rules! delegated_native_store {
         fn scheduling_hints(&self) -> Result<devdesk_core::read_models::SchedulingHints> {
             self.inner.scheduling_hints()
         }
+        fn scheduling_hints_at(
+            &self,
+            clock: &devdesk_domain::ExecutionClockAnchor,
+        ) -> Result<devdesk_core::read_models::SchedulingHints> {
+            self.inner.scheduling_hints_at(clock)
+        }
         fn has_pending_work(&self) -> Result<bool> {
             self.inner.has_pending_work()
         }
@@ -264,6 +270,16 @@ macro_rules! delegated_native_store {
             _after: Option<&str>,
         ) -> Result<devdesk_core::tool_calls::ToolCallPage> {
             self.inner.runtime_record_page(_kind, _status, _after)
+        }
+        fn runtime_record_page_at(
+            &self,
+            kind: &str,
+            status: &str,
+            after: Option<&str>,
+            clock: &devdesk_domain::ExecutionClockAnchor,
+        ) -> Result<devdesk_core::tool_calls::ToolCallPage> {
+            self.inner
+                .runtime_record_page_at(kind, status, after, clock)
         }
         fn restore_runtime_record(&self, _value: &Value) -> Result<Value> {
             self.inner.restore_runtime_record(_value)

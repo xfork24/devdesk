@@ -30,7 +30,7 @@ python3 -m pip install -r scripts/check/requirements.txt
 工作流专项：
 
 ```bash
-cargo test -p devdesk-adapters --test configured_workflows --test conversations --test schema_contracts --locked
+cargo test -p devdesk-adapters --features test-fixtures --test configured_workflows --test conversations --test schema_contracts --locked
 DEVDESK_E2E_PORT=4329 npm --prefix web run test:e2e
 ```
 
@@ -124,3 +124,16 @@ Workflow 执行性能的显式组件入口为 `crates/adapters/tests/workflow_pe
 默认工程探针以 start_workflow=false 保存草稿，再通过一次 workflow.start 启动 agent 根驱动。新场景不注入 business_facts、不发送编排指导。人类审批必须由经理先发起并准备材料，操作者在项目经理页面作出决定；探针只观察。严格 unattended 仍单独表示不能出现任何人类决定，不能通过删除默认确认点获得该成绩。
 
 完成后 engineering_evidence 调用 autonomous_orchestration，审计原生 Turn 输入、Controller/Segment 来源、零补充指导、原始人类决定、计划和全部工程证据。其负向回归为 python3 -m unittest discover -s tests/live -p 'test_autonomous_orchestration.py'。真实页面的只读验证入口为 node tests/live/verify_manager_page.mjs /证据目录/human-request-ID.json，检查本轮材料、上下文、执行记录的真实导航及桌面/窄屏截图；不提交人类决定。
+
+
+## 工作流读取与审批观察专项
+
+`python3 -m unittest discover -s tests/live -p test_workflow_observer.py` 覆盖审批请求先保存后检查、两类材料联合覆盖、确切版本及只读观察。生产命令合同另由 `configured_workflows` 中的 `human_interaction_uses_production_union_and_exact_execution_context` 验证；单独运行适配器测试时加 `--features test-fixtures`。这些入口不调用模型或推进真实 Feature。
+
+`tests/performance/workflow_reads.py --test-binary <release测试入口> --dataset <专用兼容备份> --output <新证据目录> --samples 200` 通过关闭调度的实际 HTTP 服务测 control、状态页及执行详情，保留逐请求错误、bytes、内容摘要和 trace 关联。结果只用于本机定位，不等于原生往返或正式容量。`joint_frontends.py --browser` 的 1/2 页面诊断支持混合读、写和导航，较高并发仍分别记录动作数和真实 RPC；导航取消只对已观测到的只读请求单列，修改失败不豁免。
+
+`DEVDESK_STORAGE_PROFILE_OUTPUT=/tmp/全新目录 cargo test --release --locked -p devdesk-adapters --features test-fixtures --test workflow_storage_scaling workflow_storage_growth_profile -- --ignored --exact --nocapture` 创建四个隔离数据集，分别测冷实例数、当前 DAG 及真实历史尝试的十倍增长；每项预热另存、30 个组件样本，保存版本回读、WAL/checkpoint、进程 I/O 及完整性结果。只测空正文 Control 和可信单步骤存储 patch，没有模型、外部 writer 或业务并发，不代表业务延迟、真实执行或容量通过。使用归档二进制时把构建与采样分开。
+
+预算专项在 `configured_workflows` 中用可控 UTC/单调时钟、真实 SQLite 验证显式 time_limits v1 的 Human 截止、签署/补充输入、技术重试/重启、时钟倒退及计划采用；缺省旧预算的序列化由 schema_contracts 验证。新项目基线为 60；旧 59 数据集拒绝测试核对原文件字节未改写。
+
+`DEVDESK_TRANSACTION_PROFILE_OUTPUT=/tmp/全新文件 cargo test --release --locked -p devdesk-adapters --test resource_commits transaction_observation_profile -- --ignored --exact --nocapture` 在新全局库交错执行启用/关闭 Trace 的同尺寸提交，预热另存，分别保存千样本。计时不含报告文件/日志输出，结果只定位内存观测开销；逐事务记录的上限、冲突/回滚、重放及内容排除另有默认回归。

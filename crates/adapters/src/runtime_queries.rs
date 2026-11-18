@@ -23,9 +23,11 @@ pub(super) const WORKFLOW_READY: &str = "(
  OR EXISTS(SELECT 1 FROM workflow_display_steps s WHERE s.instance_id=c.id AND (
    json_extract(s.data,'$.status')='running'
    OR (json_extract(s.data,'$.status')='needs_reconciliation' AND
-      (json_extract(c.data,'$.status')!='needs_reconciliation' OR EXISTS(SELECT 1 FROM governance_records x WHERE x.type='workflow_stop' AND x.definition_id=s.execution_id)))
+      json_extract(c.data,'$.status')!='needs_reconciliation')
    OR (json_extract(s.data,'$.status')='failed' AND json_extract(c.data,'$.status') NOT IN ('failed','needs_reconciliation'))
    OR (json_extract(c.data,'$.status')='queued' AND json_extract(s.data,'$.started') IS NOT NULL)))
+ OR EXISTS(SELECT 1 FROM governance_records stop WHERE stop.type='workflow_stop'
+   AND stop.definition_id=json_extract(c.data,'$.parent_execution_id'))
  OR EXISTS(SELECT 1 FROM governance_records a WHERE a.type='workflow_instance'
    AND json_extract(a.data,'$.root_instance_id')=json_extract(c.data,'$.root_instance_id')
    AND json_extract(a.data,'$.status') NOT IN ('completed','cancelled')
@@ -35,8 +37,31 @@ pub(super) const WORKFLOW_READY: &str = "(
 pub(super) fn controllers(conn: &Connection) -> Result<bool> {
     conn.query_row(&format!("SELECT EXISTS(SELECT 1 FROM governance_records c WHERE c.type='workflow_controller' AND json_extract(c.data,'$.status')='active' AND {CONTROLLER_READY})"), [], |r|r.get(0)).map_err(storage)
 }
-pub(super) fn workflow_observations(conn: &Connection) -> Result<bool> {
-    conn.query_row(&format!("SELECT EXISTS(SELECT 1 FROM governance_records c WHERE c.type='workflow_instance' AND json_extract(c.data,'$.status') IN ('queued','running','failed','needs_reconciliation') AND {WORKFLOW_READY})"), [], |r|r.get(0)).map_err(storage)
+// Values are supplied by the application clock. This hint neither authorizes
+// expiry nor compares monotonic counters from different process epochs.
+pub(super) const WORKFLOW_TIME_READY:&str="EXISTS(SELECT 1 FROM workflow_display_steps s WHERE s.instance_id=c.id
+ AND json_extract(s.data,'$.time_budget.next_deadline_at') IS NOT NULL
+ AND json_extract(s.data,'$.status') IN ('queued','waiting_input','waiting_confirmation','awaiting_acceptance')
+ AND (CASE WHEN ?2 IS NOT NULL AND json_extract(s.data,'$.time_budget.clock.process_epoch')=?2 THEN
+   (?3 IS NULL OR json_extract(s.data,'$.time_budget.clock.monotonic_ms') IS NULL
+    OR ?3<json_extract(s.data,'$.time_budget.clock.monotonic_ms')
+    OR json_extract(s.data,'$.time_budget.clock.wall_ms')+?3-json_extract(s.data,'$.time_budget.clock.monotonic_ms')>=json_extract(s.data,'$.time_budget.next_deadline_at'))
+ ELSE (?1<json_extract(s.data,'$.time_budget.clock.wall_ms') OR ?1>=json_extract(s.data,'$.time_budget.next_deadline_at')) END))";
+pub(super) fn utc_clock() -> ExecutionClockAnchor {
+    ExecutionClockAnchor {
+        wall_ms: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64,
+        process_epoch: None,
+        monotonic_ms: None,
+    }
+}
+pub(super) fn workflow_observations(
+    conn: &Connection,
+    clock: &ExecutionClockAnchor,
+) -> Result<bool> {
+    conn.query_row(&format!("SELECT EXISTS(SELECT 1 FROM governance_records c WHERE c.type='workflow_instance' AND json_extract(c.data,'$.status') IN ('queued','running','failed','needs_reconciliation') AND ({WORKFLOW_READY} OR {WORKFLOW_TIME_READY}))"), rusqlite::params![clock.wall_ms,clock.process_epoch,clock.monotonic_ms], |r|r.get(0)).map_err(storage)
 }
 
 pub(super) fn running(conn: &Connection) -> Result<usize> {

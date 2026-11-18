@@ -1263,7 +1263,7 @@ impl Workspace {
                 self.background.stopped.store(true, Ordering::Release);
                 break;
             }
-            let hints = engine.store.scheduling_hints()?;
+            let hints = engine.scheduling_hints()?;
             let project = engine.store.project_id().unwrap_or_else(|| "global".into());
             total += hints.running_conversations;
             running.insert(project.clone(), hints.running_conversations);
@@ -1274,6 +1274,7 @@ impl Workspace {
                         stage,
                         devdesk_core::SchedulingStage::Drivers
                             | devdesk_core::SchedulingStage::Segments
+                            | devdesk_core::SchedulingStage::Workflows
                     )
                 }) {
                     Some(engine.store.event_cursor()?)
@@ -1289,6 +1290,7 @@ impl Workspace {
                         stage,
                         devdesk_core::SchedulingStage::Drivers
                             | devdesk_core::SchedulingStage::Segments
+                            | devdesk_core::SchedulingStage::Workflows
                     ) || self
                         .background
                         .stage_due(&format!("{project}:stage:{phase}"), cursor.unwrap())?
@@ -1383,6 +1385,7 @@ impl Workspace {
                         stages[phase],
                         devdesk_core::SchedulingStage::Drivers
                             | devdesk_core::SchedulingStage::Segments
+                            | devdesk_core::SchedulingStage::Workflows
                     );
                 let started =
                     self.background

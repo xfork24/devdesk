@@ -20,6 +20,7 @@ pub(crate) fn queued_execution(
     path: String,
 ) -> StepExecution {
     StepExecution {
+        time_budget: None,
         plan_revision_id: String::new(),
         node_id: step.node_id.clone(),
         contract_digest: configuration_hash(step),

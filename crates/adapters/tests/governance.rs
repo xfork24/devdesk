@@ -485,7 +485,30 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
             Ok(Value::Null)
         })
         .unwrap();
-    source_engine.publish_experience_index(&*global).unwrap();
+    // Publication is a bounded, eventually consistent cursor pass. A slow
+    // first row can consume the 5 ms budget before this target is visited.
+    let key = devdesk_core::experience_directory::resource_key(
+        &source_engine.store.namespace(),
+        &current.id,
+    );
+    let sources = source_engine
+        .store
+        .snapshot()
+        .unwrap()
+        .governance
+        .iter()
+        .filter(|r| r.r#type == "experience")
+        .count();
+    for _ in 0..=sources {
+        source_engine.publish_experience_index(&*global).unwrap();
+        if global.read_resources(std::slice::from_ref(&key)).unwrap()[0]
+            .value
+            .as_ref()
+            .is_some_and(|row| row["data"]["source_revision"] == 2)
+        {
+            break;
+        }
+    }
     assert_eq!(
         global
             .snapshot()

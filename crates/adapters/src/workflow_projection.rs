@@ -4,6 +4,7 @@ use crate::*;
 use devdesk_core::concurrency::*;
 use std::collections::BTreeSet;
 const STEP_FIELDS: &[&str] = &[
+    "time_budget",
     "id",
     "node_id",
     "plan_revision_id",

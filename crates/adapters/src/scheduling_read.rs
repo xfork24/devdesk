@@ -7,9 +7,12 @@ pub(super) fn running(conn: &Connection) -> Result<usize> {
         .map_err(storage)
 }
 pub(super) fn pending(conn: &Connection) -> Result<bool> {
-    stages(conn).map(|stages| !stages.is_empty())
+    stages(conn, &runtime_queries::utc_clock()).map(|stages| !stages.is_empty())
 }
-fn stages(conn: &Connection) -> Result<Vec<devdesk_core::SchedulingStage>> {
+fn stages(
+    conn: &Connection,
+    clock: &ExecutionClockAnchor,
+) -> Result<Vec<devdesk_core::SchedulingStage>> {
     use devdesk_core::SchedulingStage as S;
     let work = &[
         (
@@ -68,7 +71,7 @@ fn stages(conn: &Connection) -> Result<Vec<devdesk_core::SchedulingStage>> {
                 .collect::<rusqlite::Result<Vec<_>>>()
         })
         .map_err(storage)?;
-    if !ready.contains(&S::Workflows) && runtime_queries::workflow_observations(conn)? {
+    if !ready.contains(&S::Workflows) && runtime_queries::workflow_observations(conn, clock)? {
         ready.push(S::Workflows);
     }
     if !ready.contains(&S::Controllers)
@@ -80,6 +83,9 @@ fn stages(conn: &Connection) -> Result<Vec<devdesk_core::SchedulingStage>> {
     Ok(ready)
 }
 pub(super) fn hints(conn: &Connection) -> Result<SchedulingHints> {
+    hints_at(conn, &runtime_queries::utc_clock())
+}
+pub(super) fn hints_at(conn: &Connection, clock: &ExecutionClockAnchor) -> Result<SchedulingHints> {
     let _span = performance::Span::new("read_model.scheduling_hints");
     let tx = conn.unchecked_transaction().map_err(storage)?;
     let live = tx
@@ -90,7 +96,7 @@ pub(super) fn hints(conn: &Connection) -> Result<SchedulingHints> {
         )
         .map_err(storage)?;
     let running_conversations = running(&tx)?;
-    let stages = stages(&tx)?;
+    let stages = stages(&tx, clock)?;
     tx.commit().map_err(storage)?;
     let pending = !stages.is_empty();
     Ok(SchedulingHints {

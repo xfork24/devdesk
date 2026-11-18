@@ -4918,6 +4918,12 @@ fn rejection_plan_with_policies(
         document.as_object_mut().unwrap().remove("rework_policies");
         document.as_object_mut().unwrap().remove("review_policies");
     }
+    if nested {
+        document["steps"][1]["budget"] = json!({
+            "max_turns": 8, "timeout_seconds": 300, "retry_limit": 3,
+            "time_limits": {"version": 1, "wall_seconds": 3600, "human_wait_seconds": 600}
+        });
+    }
     let workflow = publish(engine, document);
     let workflow = if nested {
         publish(
@@ -5168,6 +5174,19 @@ fn child_rework_keeps_work_budget_and_replaces_only_the_selected_invocation_memb
         current["root_instance_id"]
     );
     assert_eq!(successor.data["plan"], current["plan"]);
+    let previous = &current["steps"][1];
+    let replacement = &successor.data["steps"][1];
+    let started_at = previous["time_budget"]["started_at"].as_u64().unwrap();
+    assert_ne!(replacement["id"], previous["id"]);
+    assert_eq!(
+        replacement["time_budget"]["origin_execution_id"],
+        previous["id"]
+    );
+    assert_eq!(replacement["time_budget"]["started_at"], started_at);
+    assert_eq!(
+        replacement["time_budget"]["next_deadline_at"],
+        started_at + 3_600_000
+    );
     let view = engine
         .query("workflow.inspect", &json!({"id":successor.id}), 4)
         .unwrap();
@@ -5285,4 +5304,772 @@ fn two_managers_cannot_consume_the_last_rework_twice() {
             .unwrap()["rework_budgets"][0]["used"],
         1
     );
+}
+
+#[test]
+fn human_interaction_uses_production_union_and_exact_execution_context() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let workflow = publish(
+        &e,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"Capture"}],"steps":[{"key":"capture","name":"Capture","stage":"work","confirmation":"human","executor":{"type":"tool","tool_ref":"builtin-tool-materials-capture:1","arguments":{"material":{"type":"constant","value":{"source":"review input"}}}},"outputs":{"receipt":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
+    );
+    let project = command(
+        &e,
+        "project.create",
+        None,
+        json!({"title":"Review contract"}),
+    )
+    .unwrap();
+    let run = command(
+        &e,
+        "workflow.start",
+        project["id"].as_str(),
+        json!({"workflow_ref":workflow["id"],"role_agent_bindings":{}}),
+    )
+    .unwrap();
+    let root = run["id"].as_str().unwrap();
+    command(
+        &e,
+        "workflow.step.dispatch",
+        Some(root),
+        json!({"step":"capture"}),
+    )
+    .unwrap();
+    drive(&e, 6);
+    let view = e.query("workflow.inspect", &json!({"id":root}), 1).unwrap();
+    let execution = &view["runtime"]["steps"][0];
+    assert_eq!(execution["status"], "waiting_confirmation");
+    let reference = json!({"label":"Receipt","purpose":"Review current result","instance_id":root,"execution_id":execution["id"],"output_id":execution["outputs"]["receipt"]});
+    let request = json!({"operation":"workflow.step.confirm","reason":"Review frozen result","arguments":{"instance_id":root,"plan_revision_id":view["runtime"]["active_plan_revision_id"],"execution_id":execution["id"],"step":"capture","input_digest":execution["input_digest"],"outputs":execution["outputs"]},"interaction":{"title":"Review","background":"Actual tool finished","requested_action":"Confirm","completed_work":"Capture","review_summary":"Inspect receipt","materials":[reference],"evidence":[]}});
+    for field in ["materials", "evidence"] {
+        let mut input = request.clone();
+        input["interaction"]["materials"] = json!([]);
+        input["interaction"][field] = json!([reference]);
+        let pending = command(&e, "workflow.decision.request", Some(root), input).unwrap();
+        let state = e.store.snapshot().unwrap();
+        let saved = &state
+            .configuration(pending["id"].as_str().unwrap())
+            .unwrap()
+            .data["request"]["interaction"][field][0];
+        assert_eq!(saved["owner_id"], project["id"]);
+        assert_eq!(saved["session_id"], execution["session_id"]);
+        assert_eq!(saved["turn_id"], execution["turn_id"]);
+    }
+    for (key, value) in [
+        ("instance_id", json!("other-root")),
+        ("execution_id", json!("old-execution")),
+        ("output_id", json!("missing")),
+        ("session_id", json!("foreign")),
+        ("turn_id", json!("foreign")),
+        ("owner_id", json!("foreign")),
+    ] {
+        let mut input = request.clone();
+        input["interaction"]["materials"][0][key] = value;
+        assert!(
+            command(&e, "workflow.decision.request", Some(root), input).is_err(),
+            "{key}"
+        );
+    }
+    let mut absent = request.clone();
+    absent["interaction"]["materials"] = json!([]);
+    assert!(command(&e, "workflow.decision.request", Some(root), absent).is_err());
+    for key in ["plan_revision_id", "input_digest", "outputs"] {
+        let mut stale = request.clone();
+        stale["arguments"][key] = json!("old");
+        assert!(
+            command(&e, "workflow.decision.request", Some(root), stale).is_err(),
+            "{key}"
+        );
+    }
+    command(&e, "workflow.pause", Some(root), json!({})).unwrap();
+    assert_eq!(
+        e.query("workflow.inspect", &json!({"id":root}), 1).unwrap()["runtime"]["paused"],
+        true
+    );
+}
+
+#[test]
+fn frozen_plan_memo_keeps_live_execution_facts_and_exact_source_selection() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let workflow = publish(
+        &e,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"Work"}],"steps":[{"key":"one","name":"Original step","stage":"work","executor":{"type":"control"}}]}),
+    );
+    let project = command(&e, "project.create", None, json!({"title":"Plan memo"})).unwrap();
+    let run = command(
+        &e,
+        "workflow.start",
+        project["id"].as_str(),
+        json!({"workflow_ref":workflow["id"],"role_agent_bindings":{}}),
+    )
+    .unwrap();
+    let params = json!({"id":run["id"]});
+    let before = e.query("query.workflow_control", &params, 1).unwrap();
+    let trace = devdesk_adapters::performance::Trace::start();
+    assert_eq!(
+        e.query("query.workflow_control", &params, 1).unwrap(),
+        before
+    );
+    let measurement = trace.finish();
+    assert!(
+        measurement["spans"]["source.restore_plan.compile"].is_null(),
+        "{measurement}"
+    );
+    command(
+        &e,
+        "workflow.step.dispatch",
+        run["id"].as_str(),
+        json!({"step":"one"}),
+    )
+    .unwrap();
+    let after = e.query("query.workflow_control", &params, 1).unwrap();
+    assert_eq!(before["runtime"]["steps"][0]["status"], "queued");
+    assert_eq!(
+        after["runtime"]["steps"][0]["status"],
+        "awaiting_acceptance"
+    );
+    assert_eq!(before["runtime"]["plan"], after["runtime"]["plan"]);
+    let other = publish(
+        &e,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"Changed"}],"steps":[{"key":"one","name":"New source selection","stage":"work","executor":{"type":"control"}}]}),
+    );
+    runtime::configure_project(&e, project["id"].as_str().unwrap());
+    let feature = command(&e, "feature.create", None, json!({"project_id":project["id"],"title":"Independent plan selection","start_workflow":false})).unwrap();
+    let next = command(
+        &e,
+        "workflow.start",
+        feature["id"].as_str(),
+        json!({"workflow_ref":other["id"],"role_agent_bindings":{}}),
+    )
+    .unwrap();
+    let changed = e
+        .query("query.workflow_control", &json!({"id":next["id"]}), 1)
+        .unwrap();
+    assert_eq!(
+        changed["runtime"]["plan"]["document"]["steps"][0]["name"],
+        "New source selection"
+    );
+    assert_eq!(
+        e.query("query.workflow_control", &params, 1).unwrap()["runtime"]["plan"],
+        before["runtime"]["plan"]
+    );
+    let wrong = e.query(
+        "query.workflow_control",
+        &json!({"id":run["id"],"project_id":"foreign"}),
+        1,
+    );
+    assert!(wrong.is_err());
+}
+
+#[test]
+fn control_page_batches_advisory_reads_but_subsequent_commands_and_pages_are_fresh() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let steps:Vec<_>=(0..64).map(|n|json!({"key":format!("control{n}"),"name":"Control","stage":"work","executor":{"type":"control"}})).collect();
+    let workflow = publish(
+        &e,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"Work"}],"steps":steps}),
+    );
+    let project = command(
+        &e,
+        "project.create",
+        None,
+        json!({"title":"Advisory reads"}),
+    )
+    .unwrap();
+    let run = command(
+        &e,
+        "workflow.start",
+        project["id"].as_str(),
+        json!({"workflow_ref":workflow["id"],"role_agent_bindings":{}}),
+    )
+    .unwrap();
+    let params = json!({"id":run["id"],"limit":32});
+    let trace = devdesk_adapters::performance::Trace::start();
+    let before = e.query("query.workflow_control", &params, 1).unwrap();
+    let metrics = trace.finish();
+    assert_eq!(before["steps"].as_array().unwrap().len(), 32);
+    assert!(
+        metrics["spans"]["resource.advisory_hit"]["calls"]
+            .as_u64()
+            .unwrap()
+            >= 32,
+        "{metrics}"
+    );
+    assert!(metrics["spans"]["resource.commit"].is_null(), "{metrics}");
+    command(
+        &e,
+        "workflow.step.dispatch",
+        run["id"].as_str(),
+        json!({"step":"control0"}),
+    )
+    .unwrap();
+    // The old displayed execution/row version cannot authorize a second dispatch.
+    let stale = e.execute(
+        "workflow.step.dispatch",
+        Command {
+            command_id: id(),
+            target: run["id"].as_str().map(str::to_owned),
+            expected_revision: before["record"]["revision"].as_u64(),
+            payload: json!({"step":"control0"}),
+        },
+    );
+    assert_eq!(stale.unwrap_err().code, "revision_conflict");
+    let after = e.query("query.workflow_control", &params, 1).unwrap();
+    assert_eq!(
+        after["steps"][0]["execution"]["status"],
+        "awaiting_acceptance"
+    );
+    assert_eq!(after["steps"][0]["dispatchable"], false);
+    assert_eq!(after["steps"][0]["actions"]["accept"]["allowed"], true);
+    assert_ne!(before["record"]["revision"], after["record"]["revision"]);
+    assert!(
+        e.query(
+            "query.workflow_control",
+            &json!({"id":run["id"],"project_id":"foreign"}),
+            1
+        )
+        .is_err()
+    );
+    let page = e
+        .query(
+            "query.workflow_control",
+            &json!({"id":run["id"],"offset":32,"limit":32}),
+            1,
+        )
+        .unwrap();
+    assert_eq!(page["steps"][0]["step"], "control32");
+    assert_eq!(page["steps"].as_array().unwrap().len(), 32);
+}
+
+struct BudgetClock {
+    wall: std::sync::atomic::AtomicU64,
+    mono: std::sync::atomic::AtomicU64,
+    epoch: String,
+}
+impl BudgetClock {
+    fn new(epoch: &str, wall: u64) -> Self {
+        Self {
+            wall: wall.into(),
+            mono: 0.into(),
+            epoch: epoch.into(),
+        }
+    }
+    fn advance(&self, ms: u64) {
+        self.wall.fetch_add(ms, std::sync::atomic::Ordering::SeqCst);
+        self.mono.fetch_add(ms, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+impl ports::ApplicationEnvironment for BudgetClock {
+    fn allocate_id(&self) -> String {
+        uuid::Uuid::new_v4().to_string()
+    }
+    fn unix_millis(&self) -> u64 {
+        self.wall.load(std::sync::atomic::Ordering::SeqCst)
+    }
+    fn monotonic_clock(&self) -> Option<(String, u64)> {
+        Some((
+            self.epoch.clone(),
+            self.mono.load(std::sync::atomic::Ordering::SeqCst),
+        ))
+    }
+}
+fn timed_control(e: &Engine, limits: Value) -> String {
+    let workflow = publish(
+        e,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"Work"}],"steps":[{"key":"gate","name":"Human gate","stage":"work","confirmation":"human","executor":{"type":"control"},"budget":{"max_turns":8,"timeout_seconds":1,"retry_limit":3,"time_limits":limits}}]}),
+    );
+    let p = command(e, "project.create", None, json!({"title":"Time limits"})).unwrap();
+    command(
+        e,
+        "workflow.start",
+        p["id"].as_str(),
+        json!({"workflow_ref":workflow["id"],"role_agent_bindings":{}}),
+    )
+    .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .into()
+}
+
+#[test]
+fn explicit_human_deadline_expires_without_heartbeat_writes_or_late_signature() {
+    let clock = Arc::new(BudgetClock::new("a", 1_000_000));
+    with_application_environment(clock.clone(), || {
+        let dir = tempfile::tempdir().unwrap();
+        let e = engine(dir.path());
+        let root = timed_control(
+            &e,
+            json!({"version":1,"wall_seconds":10,"human_wait_seconds":3}),
+        );
+        command(
+            &e,
+            "workflow.step.dispatch",
+            Some(&root),
+            json!({"step":"gate"}),
+        )
+        .unwrap();
+        e.evaluate_workflows().unwrap();
+        let before = instance(&e, &json!(root));
+        let cursor = e.store.event_cursor().unwrap();
+        for _ in 0..12 {
+            e.evaluate_workflows().unwrap();
+        }
+        assert_eq!(
+            e.store.event_cursor().unwrap(),
+            cursor,
+            "waiting must not write clock heartbeats"
+        );
+        let execution = before["steps"][0].clone();
+        schemas::SCHEMAS.assert_valid("rpc.schema.json#/$defs/StepExecution", &execution);
+        clock.advance(2999);
+        e.evaluate_workflows().unwrap();
+        assert!(
+            !e.scheduling_hints()
+                .unwrap()
+                .stages
+                .contains(&SchedulingStage::Workflows)
+        );
+        assert_eq!(
+            instance(&e, &json!(root))["steps"][0]["status"],
+            "waiting_confirmation"
+        );
+        clock.advance(1);
+        assert!(
+            e.scheduling_hints()
+                .unwrap()
+                .stages
+                .contains(&SchedulingStage::Workflows)
+        );
+        let error=command(&e,"workflow.step.confirm",Some(&root),json!({"step":"gate","execution_id":execution["id"],"input_digest":execution["input_digest"],"outputs":execution["outputs"],"reason":"too late"})).unwrap_err();
+        assert_eq!(error.code, "human_wait_timeout");
+        e.evaluate_workflows().unwrap();
+        let after = instance(&e, &json!(root));
+        assert_eq!(after["steps"][0]["status"], "needs_reconciliation");
+        assert_eq!(after["steps"][0]["failure"]["code"], "human_wait_timeout");
+        assert_eq!(
+            after["steps"][0]["time_budget"]["origin_execution_id"],
+            execution["id"]
+        );
+        let state = e.store.snapshot().unwrap();
+        assert_eq!(
+            state
+                .governance
+                .iter()
+                .filter(|r| r.r#type == "workflow_stop")
+                .count(),
+            1
+        );
+        assert!(
+            !state
+                .governance
+                .iter()
+                .any(|r| r.r#type == "workflow_confirmation")
+        );
+        // The stop/reconciliation projection may still need finite follow-up
+        // commits. Once those settle, observation must remain read-only.
+        for _ in 0..8 {
+            e.evaluate_workflows().unwrap();
+        }
+        let cursor = e.store.event_cursor().unwrap();
+        for _ in 0..4 {
+            e.evaluate_workflows().unwrap();
+        }
+        assert_eq!(e.store.event_cursor().unwrap(), cursor);
+    });
+}
+
+#[test]
+fn timely_human_signature_closes_only_human_wait_and_wall_time_still_bounds_acceptance() {
+    let clock = Arc::new(BudgetClock::new("a", 1_000_000));
+    with_application_environment(clock.clone(), || {
+        let dir = tempfile::tempdir().unwrap();
+        let e = engine(dir.path());
+        let root = timed_control(
+            &e,
+            json!({"version":1,"wall_seconds":10,"human_wait_seconds":3}),
+        );
+        command(
+            &e,
+            "workflow.step.dispatch",
+            Some(&root),
+            json!({"step":"gate"}),
+        )
+        .unwrap();
+        let execution = instance(&e, &json!(root))["steps"][0].clone();
+        clock.advance(2000);
+        command(&e,"workflow.step.confirm",Some(&root),json!({"step":"gate","execution_id":execution["id"],"input_digest":execution["input_digest"],"outputs":execution["outputs"],"reason":"exact Human signature","accept_result":false})).unwrap();
+        clock.advance(2000);
+        e.evaluate_workflows().unwrap();
+        let current = instance(&e, &json!(root))["steps"][0].clone();
+        assert_eq!(current["status"], "waiting_confirmation");
+        assert_eq!(current["time_budget"]["human_wait_closed"], true);
+        assert!(current["time_budget"]["human_wait_started_at"].is_null());
+        assert_eq!(current["time_budget"]["next_deadline_at"], 1_010_000);
+        let view = e.query("workflow.inspect", &json!({"id":root}), 1).unwrap();
+        command(&e,"workflow.decision.request",Some(&root),json!({"plan_revision_id":view["runtime"]["active_plan_revision_id"],"operation":"workflow.step.confirm","reason":"Duplicate request cannot reopen a signed gate","arguments":{"instance_id":root,"plan_revision_id":view["runtime"]["active_plan_revision_id"],"execution_id":current["id"],"input_digest":current["input_digest"],"outputs":current["outputs"]}})).unwrap();
+        assert_eq!(
+            instance(&e, &json!(root))["steps"][0]["time_budget"],
+            current["time_budget"]
+        );
+        clock.advance(2000);
+        e.evaluate_workflows().unwrap();
+        assert_eq!(
+            instance(&e, &json!(root))["steps"][0]["status"],
+            "waiting_confirmation"
+        );
+        command(
+            &e,
+            "workflow.step.accept",
+            Some(&root),
+            json!({"step":"gate","execution_id":current["id"],"input_digest":current["input_digest"],"outputs":current["outputs"]}),
+        )
+        .unwrap();
+        assert_eq!(
+            instance(&e, &json!(root))["steps"][0]["status"],
+            "completed"
+        );
+        assert!(
+            instance(&e, &json!(root))["steps"][0]["time_budget"]["next_deadline_at"].is_null()
+        );
+    });
+}
+
+#[test]
+fn logical_wall_budget_survives_technical_retry_and_host_restart() {
+    let clock = Arc::new(BudgetClock::new("first-process", 1_000_000));
+    let dir = tempfile::tempdir().unwrap();
+    let (root, original) = with_application_environment(clock.clone(), || {
+        let e = engine(dir.path());
+        let root = timed_control(
+            &e,
+            json!({"version":1,"wall_seconds":10,"human_wait_seconds":9}),
+        );
+        command(
+            &e,
+            "workflow.step.dispatch",
+            Some(&root),
+            json!({"step":"gate"}),
+        )
+        .unwrap();
+        let original = instance(&e, &json!(root))["steps"][0]["id"].clone();
+        clock.advance(2000);
+        command(
+            &e,
+            "workflow.execution.stop",
+            Some(&root),
+            json!({"execution_id":original}),
+        )
+        .unwrap();
+        command(
+            &e,
+            "workflow.step.retry",
+            Some(&root),
+            json!({"execution_id":original}),
+        )
+        .unwrap();
+        assert_eq!(
+            instance(&e, &json!(root))["steps"][0]["time_budget"]["started_at"],
+            1_000_000
+        );
+        (root, original)
+    });
+    let restarted = Arc::new(BudgetClock::new("second-process", 1_006_000));
+    with_application_environment(restarted.clone(), || {
+        let e = engine(dir.path());
+        command(
+            &e,
+            "workflow.step.dispatch",
+            Some(&root),
+            json!({"step":"gate"}),
+        )
+        .unwrap();
+        let current = instance(&e, &json!(root))["steps"][0].clone();
+        assert_ne!(current["id"], original);
+        assert_eq!(current["time_budget"]["origin_execution_id"], original);
+        assert_eq!(current["time_budget"]["started_at"], 1_000_000);
+        assert_eq!(current["time_budget"]["next_deadline_at"], 1_010_000);
+        // A backwards wall jump in this process cannot extend the deadline.
+        restarted.wall.store(5, std::sync::atomic::Ordering::SeqCst);
+        restarted
+            .mono
+            .store(4000, std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(command(&e,"workflow.step.confirm",Some(&root),json!({"step":"gate","execution_id":current["id"],"input_digest":current["input_digest"],"outputs":current["outputs"]})).unwrap_err().code,"execution_wall_timeout");
+        e.evaluate_workflows().unwrap();
+        assert_eq!(
+            instance(&e, &json!(root))["steps"][0]["failure"]["code"],
+            "execution_wall_timeout"
+        );
+        assert_eq!(
+            e.store
+                .snapshot()
+                .unwrap()
+                .governance
+                .iter()
+                .filter(|r| r.r#type == "workflow_execution_history")
+                .count(),
+            1
+        );
+    });
+}
+
+#[test]
+fn plan_adoption_cannot_remove_limits_or_reset_a_retained_logical_node() {
+    let clock = Arc::new(BudgetClock::new("a", 1_000_000));
+    with_application_environment(clock.clone(), || {
+        let dir = tempfile::tempdir().unwrap();
+        let e = engine(dir.path());
+        let root = timed_control(
+            &e,
+            json!({"version":1,"wall_seconds":10,"human_wait_seconds":9}),
+        );
+        command(
+            &e,
+            "workflow.step.dispatch",
+            Some(&root),
+            json!({"step":"gate"}),
+        )
+        .unwrap();
+        let before = e.query("workflow.inspect", &json!({"id":root}), 1).unwrap();
+        let original = before["runtime"]["steps"][0].clone();
+        let step = before["runtime"]["plan"]["document"]["steps"][0].clone();
+        for limits in [
+            Value::Null,
+            json!({"version":1,"wall_seconds":20,"human_wait_seconds":9}),
+        ] {
+            let mut changed = step.clone();
+            changed["budget"]["time_limits"] = limits;
+            let changes = json!({"plan_revision_id":before["runtime"]["active_plan_revision_id"],"reason":"try to replace time policy","operations":[{"type":"upsert_step","step":changed}]});
+            assert!(
+                e.query(
+                    "workflow.change.preview",
+                    &json!({"id":root,"changeset":changes}),
+                    1
+                )
+                .unwrap_err()
+                .message
+                .contains("时间政策")
+            );
+        }
+        clock.advance(2000);
+        let mut changed = step;
+        changed["name"] = json!("Explicit renamed contract");
+        let changes = json!({"plan_revision_id":before["runtime"]["active_plan_revision_id"],"reason":"explicit contract change retains logical time","operations":[{"type":"upsert_step","step":changed}]});
+        let preview = e
+            .query(
+                "workflow.change.preview",
+                &json!({"id":root,"changeset":changes}),
+                1,
+            )
+            .unwrap();
+        command(
+            &e,
+            "workflow.change.apply",
+            Some(&root),
+            json!({"changeset":changes,"preview_hash":preview["preview_hash"]}),
+        )
+        .unwrap();
+        for _ in 0..8 {
+            e.drive_workflow_changes().unwrap();
+        }
+        let after = instance(&e, &json!(root))["steps"][0].clone();
+        assert_ne!(after["id"], original["id"]);
+        assert_eq!(after["time_budget"]["origin_execution_id"], original["id"]);
+        assert_eq!(after["time_budget"]["started_at"], 1_000_000);
+        assert_eq!(after["time_budget"]["next_deadline_at"], 1_010_000);
+    });
+}
+
+#[test]
+fn project_59_is_rejected_without_rewriting_the_previous_dataset() {
+    let dir = tempfile::tempdir().unwrap();
+    drop(engine(dir.path()));
+    let database = dir.path().join("engineering.sqlite3");
+    {
+        let connection = rusqlite::Connection::open(&database).unwrap();
+        connection
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE); PRAGMA user_version=59;")
+            .unwrap();
+    }
+    let before = std::fs::read(&database).unwrap();
+    assert!(SqliteStore::open_fixture(dir.path()).is_err());
+    assert_eq!(std::fs::read(&database).unwrap(), before);
+}
+
+#[test]
+fn explicit_input_wait_deadline_rejects_supplement_before_sending_another_turn() {
+    let clock = Arc::new(BudgetClock::new("a", 1_000_000));
+    with_application_environment(clock.clone(), || {
+        let dir = tempfile::tempdir().unwrap();
+        let mut e = engine(dir.path());
+        let recorder = Arc::new(RecordingAgent::default());
+        recorder
+            .responses
+            .lock()
+            .unwrap()
+            .push(json!({"status":"needs_input","summary":"请补充资料","outputs":{}}));
+        e.harness = recorder;
+        let (role, agent) = research_agent(&e);
+        let run = launch(
+            &e,
+            &role,
+            &agent,
+            json!({"budget":{"max_turns":3,"timeout_seconds":10,"retry_limit":1,"time_limits":{"version":1,"wall_seconds":20,"human_wait_seconds":3}},"outputs":{"risks":{"delivery_ref":"fixture-delivery-object:1"}}}),
+        );
+        drive(&e, 8);
+        let current = instance(&e, &run["id"])["steps"][0].clone();
+        assert_eq!(current["status"], "waiting_input");
+        let before = e.store.snapshot().unwrap().turns.len();
+        clock.advance(3000);
+        assert_eq!(
+            command(
+                &e,
+                "workflow.step.input",
+                run["id"].as_str(),
+                json!({"step":"study","input":"late supplement"})
+            )
+            .unwrap_err()
+            .code,
+            "human_wait_timeout"
+        );
+        e.evaluate_workflows().unwrap();
+        assert_eq!(
+            instance(&e, &run["id"])["steps"][0]["failure"]["code"],
+            "human_wait_timeout"
+        );
+        assert_eq!(e.store.snapshot().unwrap().turns.len(), before);
+    });
+}
+
+#[test]
+fn restart_before_the_persisted_clock_requires_reconciliation_instead_of_a_fresh_budget() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(BudgetClock::new("a", 1_000_000));
+    let root = with_application_environment(clock.clone(), || {
+        let e = engine(dir.path());
+        let root = timed_control(
+            &e,
+            json!({"version":1,"wall_seconds":10,"human_wait_seconds":9}),
+        );
+        command(
+            &e,
+            "workflow.step.dispatch",
+            Some(&root),
+            json!({"step":"gate"}),
+        )
+        .unwrap();
+        clock.advance(2000);
+        let execution = instance(&e, &json!(root))["steps"][0]["id"].clone();
+        command(
+            &e,
+            "workflow.execution.stop",
+            Some(&root),
+            json!({"execution_id":execution}),
+        )
+        .unwrap();
+        command(
+            &e,
+            "workflow.step.retry",
+            Some(&root),
+            json!({"execution_id":execution}),
+        )
+        .unwrap();
+        root
+    });
+    with_application_environment(Arc::new(BudgetClock::new("b", 1_001_000)), || {
+        let e = engine(dir.path());
+        assert_eq!(
+            command(
+                &e,
+                "workflow.step.dispatch",
+                Some(&root),
+                json!({"step":"gate"})
+            )
+            .unwrap_err()
+            .code,
+            "execution_clock_uncertain"
+        );
+        e.evaluate_workflows().unwrap();
+        assert_eq!(
+            instance(&e, &json!(root))["steps"][0]["failure"]["code"],
+            "execution_clock_uncertain"
+        );
+        assert_eq!(
+            instance(&e, &json!(root))["steps"][0]["time_budget"]["started_at"],
+            1_000_000
+        );
+    });
+}
+
+#[test]
+fn parent_wall_expiry_stops_a_legacy_human_waiting_child_and_then_becomes_idle() {
+    let clock = Arc::new(BudgetClock::new("a", 1_000_000));
+    with_application_environment(clock.clone(), || {
+        let dir = tempfile::tempdir().unwrap();
+        let e = engine(dir.path());
+        let child = publish(
+            &e,
+            json!({"schema_version":6,"stages":[{"key":"work","name":"Work"}],"steps":[{"key":"human","name":"Human child","stage":"work","executor":{"type":"control"},"confirmation":"human"}]}),
+        );
+        let parent = publish(
+            &e,
+            json!({"schema_version":6,"stages":[{"key":"work","name":"Work"}],"steps":[{"key":"call","name":"Bounded invocation","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]},"budget":{"max_turns":8,"timeout_seconds":10,"retry_limit":1,"time_limits":{"version":1,"wall_seconds":3,"human_wait_seconds":2}}}]}),
+        );
+        let project = command(&e, "project.create", None, json!({"title":"Timed parent"})).unwrap();
+        let root = command(
+            &e,
+            "workflow.start",
+            project["id"].as_str(),
+            json!({"workflow_ref":parent["id"],"role_agent_bindings":{}}),
+        )
+        .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        control_fixture::evaluate(&e).unwrap();
+        let child = e
+            .store
+            .snapshot()
+            .unwrap()
+            .governance
+            .into_iter()
+            .find(|r| r.r#type == "workflow_instance" && r.data["parent_execution_id"].is_string())
+            .unwrap()
+            .id;
+        assert_eq!(
+            instance(&e, &json!(child))["steps"][0]["status"],
+            "waiting_confirmation"
+        );
+        assert!(
+            instance(&e, &json!(child))["steps"][0]
+                .get("time_budget")
+                .is_none()
+        );
+        clock.advance(3000);
+        for _ in 0..12 {
+            e.evaluate_workflows().unwrap();
+        }
+        assert_eq!(
+            instance(&e, &json!(root))["steps"][0]["failure"]["code"],
+            "execution_wall_timeout"
+        );
+        assert_eq!(instance(&e, &json!(child))["status"], "cancelled");
+        assert_eq!(
+            instance(&e, &json!(child))["steps"][0]["status"],
+            "cancelled"
+        );
+        assert!(
+            !e.scheduling_hints()
+                .unwrap()
+                .stages
+                .contains(&SchedulingStage::Workflows)
+        );
+        let cursor = e.store.event_cursor().unwrap();
+        for _ in 0..4 {
+            e.evaluate_workflows().unwrap();
+        }
+        assert_eq!(e.store.event_cursor().unwrap(), cursor);
+    });
 }

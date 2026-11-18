@@ -52,6 +52,27 @@ fn all_published_schemas_and_definitions_resolve_offline() {
 }
 
 #[test]
+fn time_limits_are_opt_in_and_legacy_budget_serialization_stays_exact() {
+    let legacy = json!({"max_turns":8,"timeout_seconds":300,"retry_limit":3});
+    assert_eq!(
+        round_trip::<ExecutionBudget>("ExecutionBudget", legacy.clone()),
+        legacy
+    );
+    let limits = json!({"version":1,"wall_seconds":3600,"human_wait_seconds":600});
+    let mut timed = legacy.clone();
+    timed["time_limits"] = limits.clone();
+    assert_eq!(
+        round_trip::<ExecutionBudget>("ExecutionBudget", timed.clone()),
+        timed
+    );
+    round_trip::<ExecutionTimeLimits>("ExecutionTimeLimits", limits);
+    assert_eq!(
+        serde_json::to_value(ExecutionBudget::default()).unwrap(),
+        legacy
+    );
+}
+
+#[test]
 fn published_configuration_wrappers_accept_current_builtin_revisions() {
     let dir = tempfile::tempdir().unwrap();
     let store = Arc::new(SqliteStore::open_fixture(dir.path()).unwrap());

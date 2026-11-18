@@ -55,7 +55,9 @@ try {
     await expect(card).toBeVisible();
   };
   const verified = [];
-  for (const material of interaction.materials) {
+  for (const material of [...new Map([...interaction.materials, ...interaction.evidence]
+    .filter((reference) => reference.output_id)
+    .map((reference) => [reference.output_id, reference])).values()]) {
     const link = links.find((entry) => {
       const parameters = new URL(entry.href).searchParams;
       return parameters.get("output_id") === material.output_id && parameters.get("detail") === "documents";

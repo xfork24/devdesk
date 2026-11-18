@@ -5,8 +5,66 @@ This is an evidence reader, never a workflow driver or an acceptance authority.
 The original database, artifacts, native journals and Git worktrees remain intact.
 """
 import argparse
+from collections import Counter
+import hashlib
 import json
 from pathlib import Path
+
+
+def scheduling_metrics(records):
+    """Cost attribution only; repeated reads are candidates, never proof of waste.
+
+    Manager Turn wall intervals include platform waits. Their union must not be
+    subtracted from an unrelated RPC percentile or called pure model time.
+    """
+    governance = records['governance_records']
+    controllers = {row['id']: row for row in governance if row['type'] == 'workflow_controller'}
+    calls = [row for row in governance if row['type'] == 'controller_tool_call'
+             and row.get('definition_id') in controllers]
+    sessions = {row['data'].get('session_id') for row in controllers.values()}
+    sessions.update(row['data'].get('session_id') for row in calls)
+    sessions.discard(None)
+    turns = [row for row in records.get('turns', []) if row.get('session_id') in sessions]
+    intervals, unmeasured = [], []
+    for turn in turns:
+        began, ended = turn.get('started'), turn.get('finished')
+        if type(began) is int and type(ended) is int and ended >= began:
+            intervals.append((began, ended))
+        else:
+            unmeasured.append(turn['id'])
+    union = []
+    for began, ended in sorted(intervals):
+        if union and began <= union[-1][1]:
+            union[-1][1] = max(union[-1][1], ended)
+        else:
+            union.append([began, ended])
+    reads = Counter()
+    for row in calls:
+        data = row['data']
+        method = data.get('method', '')
+        if method in ('workflow.inspect', 'workflow.execution.inspect', 'workflow.outputs.read',
+                      'workflow.events.read', 'project.artifact.read', 'configuration.read'):
+            digest = hashlib.sha256(json.dumps(data.get('arguments'), sort_keys=True).encode()).hexdigest()
+            reads[(method, digest)] += 1
+    decisions = [row['data'] for row in governance if row['type'] == 'workflow_decision']
+    return {
+        'scope': 'All exported controllers and decisions; not a per-root critical path',
+        'boundary': 'Offline attribution, not autonomy or SLA acceptance. Turn timestamps are lifecycle fields, not COMMIT boundaries; repeated identical reads may be necessary after events.',
+        'manager_session_ids': sorted(sessions), 'manager_turns': len(turns),
+        'measured_closed_turns': len(intervals), 'unmeasured_turn_ids': unmeasured,
+        'manager_turn_union_ms': sum(ended - began for began, ended in union),
+        'manager_turn_intervals': union,
+        'unattributed_controller_call_ids': [row['id'] for row in governance
+            if row['type'] == 'controller_tool_call' and row.get('definition_id') not in controllers],
+        'native_calls_by_method': dict(Counter(row['data'].get('method', 'unknown') for row in calls)),
+        'native_calls_by_status': dict(Counter(row['data'].get('status', 'unknown') for row in calls)),
+        'repeated_read_candidates': sum(max(0, count - 1) for count in reads.values()),
+        'business_actions_by_actor': dict(Counter(d.get('actor', {}).get('kind', 'unknown')
+            for d in decisions if d.get('operation') in ('dispatch', 'accept', 'complete'))),
+        'segment_grants': sum(row['type'] == 'workflow_segment' for row in governance),
+        'missing_native_turn_ids': sorted({row['data'].get('turn_id') for row in calls
+            if row['data'].get('turn_id')} - {row['id'] for row in turns}),
+    }
 
 
 def summarize(archive, scene):
@@ -73,6 +131,7 @@ def summarize(archive, scene):
               'instances': [{key: row['data'].get(key) for key in ('owner_id', 'workflow_ref', 'status', 'active_plan_revision_id')}
                             | {'id': row['id']} for row in instances],
               'steps': steps, 'all_decisions': decisions,
+              'scheduling_metrics': scheduling_metrics(records),
               'repository_operations': records.get('repository_operations', []),
               'events': records.get('events', [])}
     (scene / 'step-ledger.json').write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n')
@@ -126,6 +185,10 @@ def summarize(archive, scene):
             data = output.get('data', {})
             metadata.update({key: data[key] for key in ('artifact_id', 'delivery_ref', 'value_digest') if key in data})
             lines += [f"- 产出端口 `{port}`：`{json.dumps(metadata, ensure_ascii=False, sort_keys=True)}`。", '']
+    metrics = result['scheduling_metrics']
+    lines += ['', '## 调度成本诊断', '',
+              f"经理 Turn {metrics['manager_turns']} 项，已闭合区间并集 {metrics['manager_turn_union_ms']} ms，缺少完整时间 {len(metrics['unmeasured_turn_ids'])} 项；相同方法/参数重复读取候选 {metrics['repeated_read_candidates']} 项。", '',
+              '这些是离线归因，重复读取可能响应了新事件，不自动判为无效回合；Turn 墙钟包含平台等待，不是纯模型推理时间。原生失败及未知状态、缺失 Turn 均保留在 step-ledger.json 的 scheduling_metrics。']
     lines += ['', '## 核验入口', '',
               '- `attempts/`：实际测试脚本、输入绑定与驱动选择回执；`binaries/`：按 SHA256 保留的实际 Host。',
               '- `data/projects/*/execution/sessions/*/coordinator/*.jsonl`：原生模型请求、工具动作及真实观察。',

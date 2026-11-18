@@ -131,12 +131,20 @@ impl Lane {
 }
 struct PoolInner {
     path: PathBuf,
+    observation_id: String,
     readers: Lane,
     submitters: Lane,
 }
 
+#[derive(Clone)]
 pub(crate) struct ConnectionPool(Arc<PoolInner>);
 impl ConnectionPool {
+    pub fn identity(&self) -> usize {
+        Arc::as_ptr(&self.0) as usize
+    }
+    pub fn observation_id(&self) -> &str {
+        &self.0.observation_id
+    }
     /// Initialization and schema validation finish before the pool is published.
     pub fn new(path: &Path, initial: ManagedConnection) -> Result<Self> {
         Self::with_initial(path, initial, false)
@@ -151,6 +159,10 @@ impl ConnectionPool {
         initial.busy_handler(Some(bounded_busy)).map_err(storage)?;
         let inner = Arc::new(PoolInner {
             path: path.to_owned(),
+            observation_id: {
+                use sha2::{Digest, Sha256};
+                format!("{:x}", Sha256::digest(path.to_string_lossy().as_bytes()))
+            },
             readers: Lane::new(4),
             submitters: Lane::new(if read_only { 0 } else { 2 }),
         });

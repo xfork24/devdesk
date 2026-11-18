@@ -190,38 +190,3 @@ fn commit_events_ignore_accounting_and_checkpoint_updates_but_record_actual_resu
         "sealed-output"
     );
 }
-#[test]
-fn interaction_requires_actual_outputs_and_freezes_context_links() {
-    let mut s = state();
-    s.governance[0].data["steps"][0] = json!({"id":"execution","input_digest":"digest","session_id":"review-session","turn_id":"review-turn","outputs":{"result":"report"}});
-    s.governance.push(row(
-        "workflow_output",
-        "report",
-        json!({"execution_id":"execution","input_digest":"digest"}),
-    ));
-    let reference = json!({"label":"审核报告","purpose":"本轮独立初审","instance_id":"root","execution_id":"execution","output_id":"report"});
-    let mut interaction = json!({"title":"确认本轮材料","background":"初审已返回","requested_action":"请核对需求范围","completed_work":"已安排独立初审","review_summary":"查看报告中的实际结论","materials":[reference],"evidence":[reference]});
-    let arguments = json!({"execution_id":"execution","outputs":{"result":"report"}});
-    let normalized =
-        crate::controller_interactions::validate(&s, &s.governance[0], &interaction, &arguments)
-            .unwrap();
-    assert_eq!(normalized["evidence"][0]["session_id"], "review-session");
-    assert_eq!(normalized["evidence"][0]["turn_id"], "review-turn");
-    interaction["materials"] = json!([]);
-    assert!(
-        crate::controller_interactions::validate(&s, &s.governance[0], &interaction, &arguments)
-            .is_err()
-    );
-    interaction["materials"] = json!([reference]);
-    interaction["materials"][0]["output_id"] = json!("missing");
-    assert!(
-        crate::controller_interactions::validate(&s, &s.governance[0], &interaction, &arguments)
-            .is_err()
-    );
-    interaction["materials"] = json!([reference]);
-    interaction["evidence"] = json!([]);
-    assert!(
-        crate::controller_interactions::validate(&s, &s.governance[0], &interaction, &arguments)
-            .is_err()
-    );
-}

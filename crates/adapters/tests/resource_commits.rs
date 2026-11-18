@@ -26,6 +26,152 @@ fn prepared(command: &str, id: &str, revision: u64, value: Value) -> PreparedCha
 }
 
 #[test]
+fn transaction_observations_bind_actual_commit_replay_conflict_and_rollback_without_content() {
+    use devdesk_adapters::performance::Trace;
+    use sha2::{Digest, Sha256};
+    let dir = tempfile::tempdir().unwrap();
+    let store = GlobalStore::open(dir.path()).unwrap();
+    let initial = prepared(
+        "private-command-canary",
+        "private-key-canary",
+        0,
+        json!("private-value-canary"),
+    );
+    let trace = Trace::start();
+    let receipt = store.commit_changes(&initial).unwrap();
+    assert_eq!(
+        store.commit_changes(&initial).unwrap().cursor,
+        receipt.cursor
+    );
+    let conflict = store
+        .commit_changes(&prepared("stale", "private-key-canary", 0, json!("new")))
+        .unwrap_err();
+    assert_eq!(conflict.code, "revision_conflict");
+    let report = trace.finish();
+    let rows = report["transactions"].as_array().unwrap();
+    assert_eq!(rows.len(), 3, "{report}");
+    assert_eq!(rows[0]["outcome"], "committed");
+    assert_eq!(rows[0]["event_cursor"], receipt.cursor);
+    assert_eq!(rows[0]["commit_succeeded"], true);
+    assert!(
+        rows[0]["commit_returned_at_ms"].as_u64().unwrap()
+            >= rows[0]["begin_returned_at_ms"].as_u64().unwrap()
+    );
+    assert!(rows[0]["transaction_ms"].as_f64().unwrap() >= rows[0]["commit_ms"].as_f64().unwrap());
+    assert!(rows[0]["submit_pool_wait_ms"].is_number() && rows[0]["begin_wait_ms"].is_number());
+    assert_eq!(
+        rows[0]["command_id_sha256"],
+        format!("{:x}", Sha256::digest(initial.command_id.as_bytes()))
+    );
+    assert_eq!(rows[0]["committed_versions"][0]["revision"], 1);
+    assert_eq!(rows[1]["outcome"], "replayed");
+    assert!(rows[1]["commit_returned_at_ms"].is_null());
+    assert_eq!(rows[1]["event_cursor"], receipt.cursor);
+    assert_eq!(rows[2]["outcome"], "rejected");
+    assert_eq!(rows[2]["rollback_succeeded"], true);
+    assert_eq!(rows[2]["error_code"], "revision_conflict");
+    assert!(rows[2]["commit_returned_at_ms"].is_null());
+    for canary in [
+        "private-command-canary",
+        "private-key-canary",
+        "private-value-canary",
+        dir.path().to_str().unwrap(),
+    ] {
+        assert!(!report.to_string().contains(canary));
+    }
+    let connection = rusqlite::Connection::open(dir.path().join("global.sqlite3")).unwrap();
+    connection.execute_batch("CREATE TRIGGER reject_profile_setting BEFORE INSERT ON settings WHEN NEW.key='reject' BEGIN SELECT RAISE(ABORT,'fixture rejection'); END;").unwrap();
+    let mut partial = prepared("partial", "first", 0, json!(1));
+    partial.read_set = ReadSet::new(vec![condition("first", 0), condition("reject", 0)]).unwrap();
+    partial.changes.push(ResourceChange {
+        resource: ResourceKey::new("setting", "reject"),
+        value: json!(2),
+    });
+    let cursor = store.event_cursor().unwrap();
+    let trace = Trace::start();
+    assert!(store.commit_changes(&partial).is_err());
+    let report = trace.finish();
+    assert_eq!(report["transactions"][0]["outcome"], "rejected");
+    assert_eq!(report["transactions"][0]["rollback_succeeded"], true);
+    assert!(
+        store
+            .read_resources(&[ResourceKey::new("setting", "first")])
+            .unwrap()[0]
+            .value
+            .is_none()
+    );
+    assert_eq!(store.event_cursor().unwrap(), cursor);
+    assert!(
+        store
+            .replay_commit(&partial.command_id, &partial.fingerprint)
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn transaction_observation_overflow_keeps_all_outcomes_in_the_denominator() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = GlobalStore::open(dir.path()).unwrap();
+    let trace = devdesk_adapters::performance::Trace::start();
+    for n in 0..70 {
+        store
+            .commit_changes(&prepared(
+                &format!("command{n}"),
+                &format!("key{n}"),
+                0,
+                json!(n),
+            ))
+            .unwrap();
+    }
+    let report = trace.finish();
+    assert_eq!(report["transactions"].as_array().unwrap().len(), 64);
+    assert_eq!(report["transactions_omitted"], 6);
+    assert_eq!(store.event_cursor().unwrap(), 70);
+}
+
+#[test]
+#[ignore = "explicit interleaved tracing overhead profile; set DEVDESK_TRANSACTION_PROFILE_OUTPUT to a new file"]
+fn transaction_observation_profile() {
+    use std::io::Write;
+    let path =
+        std::env::var("DEVDESK_TRANSACTION_PROFILE_OUTPUT").expect("explicit new output file");
+    let mut output = std::fs::File::create_new(path).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let store = GlobalStore::open(dir.path()).unwrap();
+    for n in 0..2020 {
+        // Balanced pairs reverse order between pairs to limit drift/history bias.
+        let enabled = (n % 4 == 0) || (n % 4 == 3);
+        let change = prepared(
+            &format!("profile-{n}"),
+            "profile",
+            n,
+            json!({"value":"x".repeat(1024),"parity":n%2}),
+        );
+        let trace = enabled.then(devdesk_adapters::performance::Trace::start);
+        let start = std::time::Instant::now();
+        let receipt = store.commit_changes(&change).unwrap();
+        let ms = start.elapsed().as_secs_f64() * 1000.0;
+        let measurement = trace.map(|trace| trace.finish());
+        if let Some(value) = &measurement {
+            assert_eq!(value["transactions"][0]["event_cursor"], receipt.cursor);
+            assert_eq!(value["transactions_omitted"], 0);
+        }
+        writeln!(
+            output,
+            "{}",
+            json!({"sample":n,"warmup":n<20,"enabled":enabled,"ms":ms,"measurement":measurement})
+        )
+        .unwrap();
+    }
+    let current = store
+        .read_resources(&[ResourceKey::new("setting", "profile")])
+        .unwrap();
+    assert_eq!(current[0].revision, 2020);
+    assert_eq!(current[0].value.as_ref().unwrap()["parity"], 1);
+}
+
+#[test]
 fn one_hundred_same_version_writes_have_one_winner() {
     let directory = tempfile::tempdir().unwrap();
     let store = Arc::new(GlobalStore::open(directory.path()).unwrap());

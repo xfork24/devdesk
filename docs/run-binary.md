@@ -20,7 +20,7 @@
 
 ## 数据集与恢复
 
-数据集标记为 `devdesk-profile-runtime-v2`，SQLite 基线为 global 24 / project 59。兼容数据集可直接重开；旧协议/旧结构明确拒绝，不自动迁移、删除或重建。验证新代码使用独立空目录，不把清空现有数据当作恢复手段。
+数据集标记为 `devdesk-profile-runtime-v2`，SQLite 基线为 global 24 / project 60。兼容数据集可直接重开；旧协议/旧结构明确拒绝，不自动迁移、删除或重建。验证新代码使用独立空目录，不把清空现有数据当作恢复手段。
 
 初始化先取得 `.devdesk.lock` 独占锁。同一数据集只能有一个可写 Host；非空非 DevDesk 目录不初始化。仅剩 `.devdesk-dataset`、`.devdesk.lock` 和 `.DS_Store` 的无数据目录可初始化当前结构，含数据库、认证或产物的目录不能按空目录处理。
 

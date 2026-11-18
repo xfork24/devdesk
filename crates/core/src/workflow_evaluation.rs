@@ -48,10 +48,20 @@ impl Engine {
         resources: &WorkflowResources,
     ) -> Result<()> {
         let execution = &resources.execution;
+        let timed = execution.time_budget.is_some()
+            && !matches!(
+                execution.status,
+                StepExecutionStatus::Completed
+                    | StepExecutionStatus::Cancelled
+                    | StepExecutionStatus::Skipped
+                    | StepExecutionStatus::Failed
+                    | StepExecutionStatus::NeedsReconciliation
+            );
         if !matches!(
             execution.status,
             StepExecutionStatus::Running | StepExecutionStatus::NeedsReconciliation
         ) && !root.instance.cancel_requested
+            && !timed
         {
             return Ok(());
         }
@@ -98,6 +108,26 @@ impl Engine {
             return Ok(());
         }
         if execution.status == StepExecutionStatus::NeedsReconciliation {
+            return Ok(());
+        }
+        if let Err(error) = self.require_execution_time(resources) {
+            commit.request_execution_stop(resources, "执行计时期限已到或时钟待核对")?;
+            next.status = StepExecutionStatus::NeedsReconciliation;
+            next.reason = error.message.clone();
+            next.failure = Some(WorkflowFailure {
+                code: error.code,
+                message: error.message,
+                source_ref: next.id.clone(),
+                kind: ExecutionFailureKind::Technical,
+                effect: ExecutionFailureEffect::Unknown,
+            });
+            commit.step(resources, &mut next)?;
+            let fingerprint =
+                configuration_hash(&("workflow-time-limit/v1", &command, &commit.reads, &next));
+            commit.finish(&fingerprint, json!({"id":next.id}))?;
+            return Ok(());
+        }
+        if execution.status != StepExecutionStatus::Running {
             return Ok(());
         }
         let step = resources
@@ -431,7 +461,7 @@ impl Engine {
         if json!(next) == json!(execution) && !commit.has_changes() {
             return Ok(());
         }
-        commit.step(resources, &next)?;
+        commit.step(resources, &mut next)?;
         // Target metadata is part of this derived observation's identity. No
         // business command, supplier request or original callback is rebased.
         let fingerprint =
@@ -522,13 +552,25 @@ impl Engine {
                                 e.status,
                                 StepExecutionStatus::Running
                                     | StepExecutionStatus::NeedsReconciliation
-                            ) || (root.instance.cancel_requested
+                            ) || (e
+                                .time_budget
+                                .as_ref()
+                                .is_some_and(|b| b.next_deadline_at.is_some())
                                 && !matches!(
                                     e.status,
                                     StepExecutionStatus::Completed
                                         | StepExecutionStatus::Cancelled
                                         | StepExecutionStatus::Skipped
+                                        | StepExecutionStatus::Failed
+                                        | StepExecutionStatus::NeedsReconciliation
                                 ))
+                                || (root.instance.cancel_requested
+                                    && !matches!(
+                                        e.status,
+                                        StepExecutionStatus::Completed
+                                            | StepExecutionStatus::Cancelled
+                                            | StepExecutionStatus::Skipped
+                                    ))
                         })
                         .map(|e| e.id.clone())
                         .collect::<Vec<_>>();

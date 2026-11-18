@@ -607,6 +607,11 @@ pub trait EngineeringStore: Send + Sync {
     fn observe_query(&self, _stage: &'static str) -> Box<dyn QueryObservation> {
         Box::new(())
     }
+    /// Reuse bounded resource reads only during one synchronous advisory query.
+    /// A command must acquire its own authoritative facts after this scope ends.
+    fn advisory_read_scope(&self) -> Box<dyn QueryObservation> {
+        Box::new(())
+    }
     /// Correlate native scheduling/processing stages without exposing tool arguments.
     fn observe_native_call(
         &self,
@@ -646,6 +651,12 @@ pub trait EngineeringStore: Send + Sync {
                 .all(|project| project.execution_mode == "live"),
             running_conversations: self.active_conversation_count()?,
         })
+    }
+    fn scheduling_hints_at(
+        &self,
+        _clock: &devdesk_domain::ExecutionClockAnchor,
+    ) -> Result<crate::read_models::SchedulingHints> {
+        self.scheduling_hints()
     }
     fn has_pending_work(&self) -> Result<bool> {
         Ok(true)
@@ -820,6 +831,15 @@ pub trait EngineeringStore: Send + Sync {
     ) -> Result<crate::tool_calls::ToolCallPage> {
         Err(err("unsupported", "存储未实现运行记录有界分页"))
     }
+    fn runtime_record_page_at(
+        &self,
+        kind: &str,
+        status: &str,
+        after: Option<&str>,
+        _clock: &devdesk_domain::ExecutionClockAnchor,
+    ) -> Result<crate::tool_calls::ToolCallPage> {
+        self.runtime_record_page(kind, status, after)
+    }
     fn restore_runtime_record(&self, _value: &Value) -> Result<Value> {
         Err(err("unsupported", "存储未实现运行记录源恢复"))
     }
@@ -962,6 +982,10 @@ pub trait SessionResources {
 pub trait ApplicationEnvironment: Send + Sync {
     fn allocate_id(&self) -> String;
     fn unix_millis(&self) -> u64;
+    /// An optional process identity and monotonic counter for deterministic budgets.
+    fn monotonic_clock(&self) -> Option<(Id, u64)> {
+        None
+    }
 }
 
 /// Read-only project inventory and pure backend feasibility; adapters provide environment facts.

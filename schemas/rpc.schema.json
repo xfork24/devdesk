@@ -4337,6 +4337,16 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 10
+        },
+        "time_limits": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExecutionTimeLimits"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -5012,6 +5022,16 @@
           "type": [
             "string",
             "null"
+          ]
+        },
+        "time_budget": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExecutionTimeBudget"
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       },
@@ -6542,6 +6562,116 @@
         "rejected_when",
         "rework_policy",
         "allow_human_approval"
+      ],
+      "additionalProperties": false
+    },
+    "ExecutionTimeLimits": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "wall_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2592000
+        },
+        "human_wait_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2592000
+        }
+      },
+      "required": [
+        "version",
+        "wall_seconds",
+        "human_wait_seconds"
+      ],
+      "additionalProperties": false
+    },
+    "ExecutionClockAnchor": {
+      "type": "object",
+      "properties": {
+        "wall_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "process_epoch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "monotonic_ms": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "wall_ms",
+        "process_epoch",
+        "monotonic_ms"
+      ],
+      "additionalProperties": false
+    },
+    "ExecutionTimeBudget": {
+      "type": "object",
+      "properties": {
+        "origin_execution_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "started_at": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "clock": {
+          "$ref": "#/$defs/ExecutionClockAnchor"
+        },
+        "human_wait_started_at": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "next_deadline_at": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "human_wait_closed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "origin_execution_id",
+        "started_at",
+        "clock",
+        "human_wait_started_at",
+        "next_deadline_at",
+        "human_wait_closed"
       ],
       "additionalProperties": false
     }

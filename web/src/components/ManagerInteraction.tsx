@@ -212,6 +212,20 @@ export function ManagerInteraction({
                   <li key={reference.execution_id + ":" + index}>
                     <strong>{displayText(reference.label)}</strong>
                     <p>{displayText(reference.purpose)}</p>
+                    {reference.output_id && (
+                      <ReadingLink
+                        detail="documents"
+                        projectId={projectId}
+                        ownerId={reference.owner_id || ownerId}
+                        target={{
+                          instance_id: reference.instance_id,
+                          execution_id: reference.execution_id,
+                          output_id: reference.output_id,
+                        }}
+                      >
+                        查看依据原件
+                      </ReadingLink>
+                    )}{" "}
                     {reference.session_id && (
                       <ReadingLink
                         detail="context"

@@ -617,7 +617,7 @@ impl Engine {
                 .map(|f| f.message.clone())
                 .unwrap_or_else(|| "原执行结果已通过显式核对".into());
         }
-        commit.step(resources, &next)?;
+        commit.step(resources, &mut next)?;
         let mut data = request.data.clone();
         data["status"] = json!("completed");
         data["observation_id"] = json!(observed.resource.id);

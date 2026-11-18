@@ -11,6 +11,8 @@ pub use configuration::*;
 mod orchestration;
 mod template_catalog;
 mod workflow;
+mod workflow_time;
+pub use workflow_time::*;
 mod workflow_failure;
 pub use workflow_failure::*;
 mod workflow_change;

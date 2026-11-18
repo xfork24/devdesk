@@ -32,6 +32,7 @@ impl Engine {
             !rework || scope.is_some() || root.instance.plan.document.rework_policies.is_empty(),
             "此 Workflow 的业务返工需要经理选择方式、评审依据及确切预演",
         )?;
+        self.require_execution_time(resources)?;
         let definition = resources
             .instance
             .plan
@@ -261,7 +262,7 @@ impl Engine {
             next.budget_waited_ms = 0;
             next.reason.clear();
             next.runtime_context = Value::Null;
-            commit.replace_step(&selected, &next)?;
+            commit.replace_step(&selected, &mut next)?;
             if current.id == execution.id {
                 result = Some(next);
             }
@@ -467,7 +468,7 @@ impl Engine {
                 next.reason.clear();
                 next.failure = None;
                 next.finished = None;
-                commit.step(&resources, &next)?;
+                commit.step(&resources, &mut next)?;
                 if ancestor.instance.status != StepExecutionStatus::Running {
                     let mut next = ancestor.instance.as_ref().clone();
                     next.status = StepExecutionStatus::Running;
@@ -517,7 +518,7 @@ impl Engine {
             next.runtime_context = json!({});
         }
         next.runtime_context["reconciliation_request_id"] = json!(id);
-        commit.step(resources, &next)?;
+        commit.step(resources, &mut next)?;
         Ok(next)
     }
 }

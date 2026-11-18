@@ -171,9 +171,10 @@ impl WorkflowCommit<'_> {
             "workflow-dispatch",
         )?;
         let mut next = execution.clone();
+        self.engine.require_execution_time(resources)?;
         if !step.condition.evaluate(&selected.facts) {
             next.status = StepExecutionStatus::Skipped;
-            self.step(resources, &next)?;
+            self.step(resources, &mut next)?;
             return Ok(next);
         }
         if next.input_digest.is_empty() {
@@ -247,7 +248,7 @@ impl WorkflowCommit<'_> {
                 )?;
             }
         }
-        self.step(resources, &next)?;
+        self.step(resources, &mut next)?;
         if root.instance.status == StepExecutionStatus::Queued {
             let mut header = root.instance.as_ref().clone();
             header.status = StepExecutionStatus::Running;

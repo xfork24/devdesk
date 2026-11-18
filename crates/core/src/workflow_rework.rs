@@ -691,6 +691,11 @@ impl Engine {
                     old.path.clone(),
                 );
                 e.round = old.round + 1;
+                e.time_budget = old
+                    .time_budget
+                    .as_ref()
+                    .zip(s.budget.time_limits.as_ref())
+                    .map(|(budget, limits)| budget.for_successor(limits));
                 e.rework = Some(StepReworkContext {
                     previous_execution_id: old.id.clone(),
                     reason: commit.command.payload["reason"]
@@ -789,7 +794,7 @@ impl Engine {
         next.finished = None;
         next.failure = None;
         if json!(next) != json!(call) {
-            commit.step(&resources, &next)?;
+            commit.step(&resources, &mut next)?;
         } else {
             commit.witness(resources.reads.versions().iter().cloned())?;
         }

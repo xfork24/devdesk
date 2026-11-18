@@ -1,6 +1,6 @@
 # DevDesk 领域规范
 
-当前 SQLite 基线为 global 24 / project 59。出厂 Workflow、Spec、Standard 的 schema_version 分别记录为 6、3、4，Agent 任务记录 `agent-task/v6`，普通 Proposal 记录 v2；这些记录标签不代替结构与业务校验。只接受当前扁平源结构，不升级旧数据集。完整字段见 [Schema](../schemas/README.md)，编排和运行计划约束见 [工作流与编排](workflow-orchestration.md)。
+当前 SQLite 基线为 global 24 / project 60。出厂 Workflow、Spec、Standard 的 schema_version 分别记录为 6、3、4，Agent 任务记录 `agent-task/v6`，普通 Proposal 记录 v2；这些记录标签不代替结构与业务校验。只接受当前扁平源结构，不升级旧数据集。完整字段见 [Schema](../schemas/README.md)，编排和运行计划约束见 [工作流与编排](workflow-orchestration.md)。
 
 ## 配置概念
 

@@ -11,12 +11,15 @@ struct Measurement {
 thread_local! {
     static CURRENT: RefCell<Option<BTreeMap<&'static str, Measurement>>> = const { RefCell::new(None) };
 }
+mod transactions;
+pub(crate) use transactions::TransactionTiming;
 
 pub struct Trace {
     started: Instant,
 }
 impl Trace {
     pub fn start() -> Self {
+        transactions::reset();
         CURRENT.with(|current| *current.borrow_mut() = Some(BTreeMap::new()));
         Self {
             started: Instant::now(),
@@ -24,12 +27,14 @@ impl Trace {
     }
     pub fn finish(self) -> Value {
         let spans = CURRENT.with(|current| current.borrow_mut().take().unwrap_or_default());
-        json!({"total_ms":self.started.elapsed().as_secs_f64()*1000.0,"spans":spans})
+        let (transactions, omitted) = transactions::take();
+        json!({"total_ms":self.started.elapsed().as_secs_f64()*1000.0,"spans":spans,"transactions":transactions,"transactions_omitted":omitted})
     }
 }
 impl Drop for Trace {
     fn drop(&mut self) {
         CURRENT.with(|current| *current.borrow_mut() = None);
+        transactions::reset();
     }
 }
 

@@ -181,8 +181,9 @@ impl<'a> WorkflowCommit<'a> {
     pub fn replace_step(
         &mut self,
         resources: &WorkflowResources,
-        next: &StepExecution,
+        next: &mut StepExecution,
     ) -> Result<()> {
+        self.engine.refresh_execution_time(resources, next)?;
         require(
             next.workflow_instance_id == resources.record.id
                 && next.id != resources.execution.id
@@ -242,7 +243,8 @@ impl<'a> WorkflowCommit<'a> {
             value,
         })
     }
-    pub fn step(&mut self, resources: &WorkflowResources, next: &StepExecution) -> Result<()> {
+    pub fn step(&mut self, resources: &WorkflowResources, next: &mut StepExecution) -> Result<()> {
+        self.engine.refresh_execution_time(resources, next)?;
         self.witness(resources.reads.versions().iter().cloned())?;
         self.change(resources.changed_step(self.engine.store.as_ref(), next)?)
     }
