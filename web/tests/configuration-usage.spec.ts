@@ -118,13 +118,22 @@ test("Spec 正文之前展示确切 Delivery 与 Capability，Delivery 展示生
   await page.goto(
     "/?tab=workflows&config_tab=delivery_type&config_object=builtin-delivery-prd%3A3",
   );
+  const featureUsage = usage.locator(":scope > ul > li").filter({
+    has: page.getByRole("link", {
+      name: "精简版Feature开发流程",
+      exact: true,
+    }),
+  });
   await expect(
-    usage.getByRole("link", { name: "默认 Feature 开发流程", exact: true }),
+    featureUsage.getByRole("link", {
+      name: "精简版Feature开发流程",
+      exact: true,
+    }),
   ).toBeVisible();
-  await expect(usage).toContainText(
+  await expect(featureUsage).toContainText(
     "阶段：需求 · 步骤：澄清需求与 PRD · 输出：result",
   );
-  await expect(usage).toContainText(
+  await expect(featureUsage).toContainText(
     "阶段：需求 · 步骤：PRD 验收与人工确认 · 输入：work",
   );
   await page.screenshot({
@@ -136,7 +145,7 @@ test("Spec 正文之前展示确切 Delivery 与 Capability，Delivery 展示生
     path: info.outputPath("delivery-reference-positions-mobile.png"),
     fullPage: true,
   });
-  await usage
+  await featureUsage
     .getByRole("link", {
       name: "阶段：需求 · 步骤：澄清需求与 PRD · 输出：result",
       exact: true,
@@ -150,7 +159,7 @@ test("Spec 正文之前展示确切 Delivery 与 Capability，Delivery 展示生
   );
   await page.getByRole("link", { name: "查看 PRD · v3", exact: true }).click();
   await expect(page.getByLabel("名称", { exact: true })).toHaveValue("PRD");
-  await usage
+  await featureUsage
     .getByRole("link", {
       name: "阶段：需求 · 步骤：PRD 验收与人工确认 · 输入：work",
       exact: true,
@@ -189,13 +198,20 @@ test("工具参数和子流程集合的 Delivery 引用可以双向定位", asyn
     "/?tab=workflows&config_tab=delivery_type&config_object=builtin-delivery-task-creation-report%3A1",
   );
   await usage
+    .locator(":scope > ul > li")
+    .filter({
+      has: page.getByRole("link", {
+        name: "精简版Feature开发流程",
+        exact: true,
+      }),
+    })
     .getByRole("link", {
-      name: "阶段：实施 · 步骤：执行各 Task · 遍历来源",
+      name: "阶段：实施 · 步骤：F07 按 DAG 并发开发 Tasks · 遍历来源",
       exact: true,
     })
     .click();
   await expect(page.getByLabel("步骤名称", { exact: true })).toHaveValue(
-    "执行各 Task",
+    "F07 按 DAG 并发开发 Tasks",
   );
   const collection = page.locator('[id="workflow-port:collection"]');
   await expect(collection).toBeInViewport();
