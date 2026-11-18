@@ -5554,7 +5554,11 @@ fn stale_target_refresh_preserves_source_evidence_and_has_a_durable_source_budge
                             .insert("workspace".into(), json!({"revision":source}));
                     }
                     if step.step == "merge" {
-                        step.status = StepExecutionStatus::Failed;
+                        step.status = if round % 2 == 0 {
+                            StepExecutionStatus::Failed
+                        } else {
+                            StepExecutionStatus::Cancelled
+                        };
                         step.failure = Some(WorkflowFailure::from_error(
                             &err("stale_target", "Observed target race").technical_not_applied(),
                             "fixture-observation".into(),

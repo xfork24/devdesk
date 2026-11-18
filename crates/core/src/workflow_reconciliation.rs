@@ -16,6 +16,10 @@ enum ReconciliationFact {
     Platform {
         receipt: Value,
     },
+    PlatformNotApplied {
+        source: Id,
+        error: Error,
+    },
     External {
         receipt: ToolReceipt,
     },
@@ -344,19 +348,35 @@ impl Engine {
             if let Some((_, Ok(Some(receipt)))) = self.platform_observed(&effect, "result")? {
                 return Ok(ReconciliationFact::Platform { receipt });
             }
-            if let PlatformAction::Delivery(action) = &plan.action
-                && let Some(receipt) =
-                    self.recover_reconciled_delivery_sync(root, &effect, action, attempt, basis)?
-            {
-                return Ok(ReconciliationFact::Platform { receipt });
-            }
-            return self
-                .inspect_platform_reconciliation(&effect, &plan.action)
-                .map(|r| {
+            let inspected = (|| {
+                if let PlatformAction::Delivery(action) = &plan.action
+                    && let Some(receipt) = self
+                        .recover_reconciled_delivery_sync(root, &effect, action, attempt, basis)?
+                {
+                    return Ok(Some(receipt));
+                }
+                self.inspect_platform_reconciliation(&effect, &plan.action)
+            })();
+            return match inspected {
+                Err(error)
+                    if matches!(&plan.action, PlatformAction::Delivery(action) if matches!(action.as_ref(),crate::platform_delivery::DeliveryAction::Merge {..}))
+                        && error.code == "stale_target"
+                        && error.execution_failure.as_ref().is_some_and(|f| {
+                            f.kind == ExecutionFailureKind::Technical
+                                && f.effect == ExecutionFailureEffect::NotApplied
+                        }) =>
+                {
+                    Ok(ReconciliationFact::PlatformNotApplied {
+                        source: effect.id,
+                        error,
+                    })
+                }
+                result => result.map(|r| {
                     r.map_or(ReconciliationFact::Pending, |receipt| {
                         ReconciliationFact::Platform { receipt }
                     })
-                });
+                }),
+            };
         }
         require(call.r#type == "tool_call", "未知工具核对协议")?;
         let invocation: ToolInvocation = serde_json::from_value(call.data["invocation"].clone())
@@ -424,6 +444,77 @@ impl Engine {
         let mut next = resources.execution.clone();
         let mut files = vec![];
         match fact {
+            ReconciliationFact::PlatformNotApplied { source, error } => {
+                require(
+                    error.code == "stale_target"
+                        && error.execution_failure.as_ref().is_some_and(|f| {
+                            f.kind == ExecutionFailureKind::Technical
+                                && f.effect == ExecutionFailureEffect::NotApplied
+                        }),
+                    "缺少平台未合入的确切观察",
+                )?;
+                let selected = one(
+                    self.store.as_ref(),
+                    "governance",
+                    attempt.data["call_id"].as_str().unwrap_or(""),
+                )?;
+                let call = restored(self, &selected)?;
+                let original = one(self.store.as_ref(), "governance", &source)?;
+                let effect = restored(self, &original)?;
+                let plan: PlatformPlan = serde_json::from_value(effect.data["plan"].clone())
+                    .map_err(|e| err("storage", e.to_string()))?;
+                require(
+                    effect.r#type == "platform_effect_intent"
+                        && effect.immutable
+                        && effect.definition_id == call.id
+                        && call.r#type == "platform_call"
+                        && call.data["request"]["instance_id"] == resources.record.id
+                        && call.data["request"]["execution_id"] == resources.execution.id
+                        && matches!(&plan.action, PlatformAction::Delivery(action) if matches!(action.as_ref(),crate::platform_delivery::DeliveryAction::Merge {..})),
+                    "未合入观察不属于原合入请求",
+                )?;
+                commit.witness([version(&original)])?;
+                commit.witness(
+                    crate::platform_reconciliation::reconciliation_business_basis(
+                        &plan,
+                        &selected.resource,
+                    )?
+                    .versions()
+                    .iter()
+                    .cloned(),
+                )?;
+                if let Some(fence) = &plan.fence {
+                    let mut closed = fence.clone();
+                    let mut data = closed.data.clone();
+                    data["status"] = json!("closed");
+                    data["reconciliation_id"] = json!(request.id);
+                    data["observation_id"] = json!(observed.resource.id);
+                    update_record(&mut closed, data);
+                    commit.change(ResourceChange {
+                        resource: ResourceKey::new("governance", &closed.id),
+                        value: closed.to_storage(),
+                    })?;
+                }
+                let mut data = call.data.clone();
+                data["status"] = json!("failed");
+                data["remote_effect"] = json!("not_applied");
+                data["error"] = json!(error);
+                data["reconciliation_id"] = json!(request.id);
+                data["reconciliation_observation_id"] = json!(observed.resource.id);
+                commit.replace_record(&selected, call, data)?;
+                next.status = if stopped {
+                    StepExecutionStatus::Cancelled
+                } else {
+                    StepExecutionStatus::Failed
+                };
+                next.failure = Some(WorkflowFailure {
+                    code: error.code,
+                    message: error.message,
+                    source_ref: observed.resource.id.clone(),
+                    kind: ExecutionFailureKind::Technical,
+                    effect: ExecutionFailureEffect::NotApplied,
+                });
+            }
             ReconciliationFact::Platform { receipt } => {
                 let selected = one(
                     self.store.as_ref(),

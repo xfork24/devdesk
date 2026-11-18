@@ -42,10 +42,13 @@ impl Engine {
             .as_ref()
             .ok_or_else(|| err("configuration_required", "目标刷新需要冻结交付政策"))?;
         require(
-            failed.execution.status == StepExecutionStatus::Failed
-                && !commit.execution_active(failed)?,
+            matches!(
+                failed.execution.status,
+                StepExecutionStatus::Failed | StepExecutionStatus::Cancelled
+            ) && !commit.execution_active(failed)?,
             "目标刷新必须先停止并核对原操作",
         )?;
+        self.release_failed_delivery_fence(commit, failed)?;
         let document = &root.instance.plan.document;
         let regression = document
             .steps

@@ -1,6 +1,6 @@
 # 默认工作流精简实施记录
 
-状态：实现已完成，真实验收与最终全量回归进行中；尚未合入本地 main。日期：2026-11-18。
+状态：本轮已收尾，综合验收未通过，未合入本地 main；结果见 [ACCEPTANCE](ACCEPTANCE.md)。日期：2026-11-18。
 
 ## 隔离与范围
 
@@ -26,10 +26,10 @@
 
 C 的独立代码评审未发现实现缺陷，但因 Reviewer 无权读取未声明的 A 证据而拒绝。外层完整读取 A 独立审查、源回归、合并回归及合入同步链后，按用户授权及经理建议签署仅限证据可见性缺口的人工例外。原 approve=false 报告保留；C 两类回归与真实合入仍实际执行。
 
-另在移除详细版专用出厂资源的隔离副本中，运行无人工等待负载的单 Task slugify Feature。Task 已完整完成真实交付；父汇总旧合同失败已保留，修复经正式计划变更生效，未重新运行完成的子 Task。两条场景继续执行 Feature 整体评审、两类回归及最终人审。
+另在移除详细版专用出厂资源的隔离副本中，运行无人工等待负载的单 Task slugify Feature。Task 已完整完成真实交付；父汇总旧合同失败已保留，修复经正式计划变更生效，未重新运行完成的子 Task。这两条格式 59 场景随后完成 Feature 整体评审、两类回归、确切人审及真实交付。集成新 main 后另建格式 60 目录，其最终目标与复用需求不一致，经理建议拒绝，本轮已按用户要求拒绝并取消，没有修改输入重跑。
 
 ## 验证与证据
 
-最终结果待验收收尾后填写。完整回归入口为 `scripts/check/check.sh`；真实 Git/Docker/权限入口已通过。原生流程的 Host、探针、脚本内容身份，原始失败、协议产物、确切审批材料和计时均保存在 `/tmp/devdesk-default-workflow-simplification-20261118`。
+最后一轮完整回归为 Rust 622 通过、debug Chromium 117 通过及 7 失败，release 浏览器门禁未执行；不合并本地 main。详见 [验收与遗留问题](ACCEPTANCE.md)。完整回归入口为 `scripts/check/check.sh`；真实 Git/Docker/权限入口已通过。原生流程的 Host、探针、脚本内容身份，原始失败、协议产物、确切审批材料和计时均保存在 `/tmp/devdesk-default-workflow-simplification-20261118`。
 
 性能分项见 [PERFORMANCE](PERFORMANCE.md)，实际执行合同见 [CONTRACT](CONTRACT.md)，详细版专用资源及反向引用见 [RETIREMENT](RETIREMENT.md)。单 Task 场景在汇总修复前已明显超过五分钟，不能宣称性能目标达成，也不把人为负载和外层维护等待归咎于 Harness。

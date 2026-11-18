@@ -28,7 +28,9 @@ out = args.report_directory.resolve()
 out.mkdir(parents=True, exist_ok=True)
 assert args.resume == (out / 'context.json').exists()
 private = out / 'devdesk-host'
-shutil.copy2(args.binary.resolve(), private)
+replacement = out / ('devdesk-host.' + str(time.time_ns()))
+shutil.copy2(args.binary.resolve(), replacement)
+replacement.replace(private)
 identity = hashlib.sha256(private.read_bytes()).hexdigest()
 (out / ('binary-' + identity + '.json')).write_text(json.dumps({'sha256': identity}))
 archive = out / 'binaries' / identity / 'devdesk-host'

@@ -11,6 +11,68 @@ use crate::{
 };
 
 impl Engine {
+    pub(crate) fn release_failed_delivery_fence(
+        &self,
+        commit: &mut crate::workflow_commits::WorkflowCommit<'_>,
+        resources: &WorkflowResources,
+    ) -> Result<()> {
+        let Some(id) = resources.execution.tool_call_id.as_deref() else {
+            return Ok(());
+        };
+        let selected = one(self.store.as_ref(), "governance", id)?;
+        let call = restored(self, &selected)?;
+        let original = one(
+            self.store.as_ref(),
+            "governance",
+            call.data["effect_id"].as_str().unwrap_or(""),
+        )?;
+        let effect = restored(self, &original)?;
+        let plan: PlatformPlan = serde_json::from_value(effect.data["plan"].clone())
+            .map_err(|e| err("storage", e.to_string()))?;
+        let Some(fence) = &plan.fence else {
+            return Ok(());
+        };
+        let current = one(self.store.as_ref(), "governance", &fence.id)?;
+        let row = restored(self, &current)?;
+        commit.witness([version(&selected), version(&original), version(&current)])?;
+        if row.data["status"] == "closed" {
+            return Ok(());
+        }
+        let request: PlatformToolRequest = serde_json::from_value(call.data["request"].clone())
+            .map_err(|e| err("storage", e.to_string()))?;
+        require(
+            call.r#type == "platform_call"
+                && call.scope == resources.record.scope
+                && call.data["status"] == "failed"
+                && call.data["remote_effect"] == "not_applied"
+                && call.data["error"]["code"] == "stale_target"
+                && request.execution_id == resources.execution.id
+                && request.instance_id == resources.record.id
+                && effect.r#type == "platform_effect_intent"
+                && effect.immutable
+                && effect.definition_id == call.id
+                && effect.data["request_digest"] == configuration_hash(&request)
+                && matches!(&plan.action,PlatformAction::Delivery(action) if matches!(action.as_ref(),DeliveryAction::Merge{..}))
+                && row.r#type == "platform_workspace_fence"
+                && row.revision == fence.revision
+                && row.data == fence.data,
+            "旧合入写入额度缺少确切未应用回执，不能释放或刷新",
+        )?;
+        commit.witness(
+            crate::platform_reconciliation::reconciliation_business_basis(
+                &plan,
+                &selected.resource,
+            )?
+            .versions()
+            .iter()
+            .cloned(),
+        )?;
+        let mut data = row.data.clone();
+        data["status"] = json!("closed");
+        data["release_source"] = json!(resources.execution.failure.as_ref().map(|f| &f.source_ref));
+        commit.replace_record(&current, row, data)
+    }
+
     pub(crate) fn require_completed_delivery_retry(
         &self,
         request: &PlatformToolRequest,

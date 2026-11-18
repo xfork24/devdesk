@@ -4,6 +4,12 @@ use super::*;
 use crate::github::GitHubPullRequests;
 use std::time::Duration;
 const CHECK: &str = "devdesk/merge-regression";
+fn rejected_by_remote_gate(value: &Value) -> bool {
+    let code = value["status"]
+        .as_u64()
+        .or_else(|| value["status"].as_str()?.parse().ok());
+    matches!(code, Some(403 | 405 | 409 | 422))
+}
 fn segment(value: &str) -> String {
     value
         .bytes()
@@ -32,9 +38,7 @@ impl GitHubPullRequests {
         if output.code != 0 || output.truncated {
             let message = "GitHub 精简交付请求未成功；保留原请求及远端事实";
             return Err(
-                if value.as_ref().ok().is_some_and(|v| {
-                    ["405", "409", "422", "403"].contains(&v["status"].as_str().unwrap_or(""))
-                }) {
+                if value.as_ref().ok().is_some_and(rejected_by_remote_gate) {
                     err("remote_gate_blocked", message).technical_not_applied()
                 } else {
                     err("needs_reconciliation", message).technical_unknown()
@@ -121,6 +125,27 @@ impl GitHubPullRequests {
             &format!("repos/{}/pulls/{number}", r.repository),
             None,
         )
+    }
+    fn delivery_target_head(&self, r: &PullRequestRequest) -> Result<String> {
+        // PR.base.sha can remain the creation snapshot while the branch moves.
+        // Read the actual branch; strict server checks still close the GET/PUT race.
+        let branch = self.delivery_api(
+            "GET",
+            &format!(
+                "repos/{}/branches/{}",
+                r.repository,
+                segment(&r.base_branch)
+            ),
+            None,
+        )?;
+        let head = branch["commit"]["sha"]
+            .as_str()
+            .ok_or_else(|| err("adapter_contract", "目标分支缺少实际提交"))?;
+        require(
+            head.len() == 40 && head.bytes().all(|v| v.is_ascii_hexdigit()),
+            "目标分支实际提交无效",
+        )?;
+        Ok(head.into())
     }
     pub(crate) fn protected_target(&self, c: &GitContext, create: bool) -> Result<Value> {
         if let Ok(rule) = self.protected_delivery_branch(&c.workspace.repository, &c.target.branch)
@@ -209,7 +234,7 @@ impl GitHubPullRequests {
         let pr = self.delivery_pr(&r.request)?;
         self.receipt(&r.request, &pr)?;
         if !pr["merged"].as_bool().unwrap_or(false)
-            && pr["base"]["sha"] != r.request.expected_target
+            && self.delivery_target_head(&r.request)? != r.request.expected_target
         {
             return Err(err("stale_target", "目标已变化，旧回归和批准失效").technical_not_applied());
         }
@@ -248,7 +273,7 @@ impl GitHubPullRequests {
         if receipt.merged {
             return Ok(true);
         }
-        if receipt.base != r.request.expected_target {
+        if self.delivery_target_head(&r.request)? != r.request.expected_target {
             return Err(
                 err("stale_target", "目标已推进，必须重新合并回归及审核").technical_not_applied()
             );
@@ -265,11 +290,19 @@ impl GitHubPullRequests {
         let mut row = self.delivery_pr(&r.request)?;
         let mut receipt = self.receipt(&r.request, &row)?;
         if !receipt.merged {
+            let target = self.delivery_target_head(&r.request)?;
+            if target != r.request.expected_target {
+                return Err(err(
+                    "stale_target",
+                    format!(
+                        "PR {} 未合入，候选 {} 的目标已从 {} 变为 {}",
+                        receipt.number, receipt.head, r.request.expected_target, target
+                    ),
+                )
+                .technical_not_applied());
+            }
             if inspect {
                 return Ok(None);
-            }
-            if receipt.base != r.request.expected_target {
-                return Err(err("stale_target", "目标已变化，拒绝陈旧合入").technical_not_applied());
             }
             let reply = self
                 .delivery_api(
@@ -284,8 +317,9 @@ impl GitHubPullRequests {
                     if error.code == "remote_gate_blocked"
                         && let Ok(current) = self.delivery_pr(&r.request)
                         && let Ok(observed) = self.receipt(&r.request, &current)
+                        && let Ok(target) = self.delivery_target_head(&r.request)
                         && !observed.merged
-                        && observed.base != r.request.expected_target
+                        && target != r.request.expected_target
                     {
                         return err("stale_target", "服务端拒绝了目标竞争后的陈旧合入")
                             .technical_not_applied();
@@ -320,5 +354,25 @@ impl GitHubPullRequests {
             "远端合入的父提交/tree 与已验候选不一致，保留原始事实",
         )?;
         Ok(Some(receipt))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn gate_rejection_accepts_numeric_and_string_status_without_hiding_unknowns() {
+        for code in [403, 405, 409, 422] {
+            assert!(rejected_by_remote_gate(&json!({"status":code})));
+            assert!(rejected_by_remote_gate(&json!({"status":code.to_string()})));
+        }
+        for value in [
+            json!({}),
+            json!({"status":500}),
+            json!({"status":"timeout"}),
+            json!({"status":null}),
+        ] {
+            assert!(!rejected_by_remote_gate(&value));
+        }
     }
 }
