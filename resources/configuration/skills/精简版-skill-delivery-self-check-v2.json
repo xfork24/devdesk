@@ -1,0 +1,11 @@
+{
+  "type": "skill",
+  "identity": "精简版-skill-delivery-self-check",
+  "revision": 2,
+  "name": "精简版交付自检",
+  "scope": "global",
+  "data": {
+    "body_file": "精简版-delivery-self-check-v2.md",
+    "rules": []
+  }
+}

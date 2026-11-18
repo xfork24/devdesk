@@ -103,36 +103,42 @@ def profile(scene):
     manager_calls = Counter()
     for row in db.execute("SELECT data FROM governance_records WHERE type='controller_tool_call'"):
         manager_calls[json.loads(row['data'])['method']] += 1
-    report = {'generated_at_ms': now, 'root': context['root'], 'project': context['project'], 'limitations': ['SDK includes model/network/context/tool waiting; no pure inference breakdown.', 'Parallel durations overlap; sums are not end-to-end wall time.', 'Human waits, recovery and intentional test loads require separate annotation.', 'Step finished timestamps describe producer work; instance wall time uses the actual completion decision.'], 'measured_phases': phases, 'manager_call_counts': dict(manager_calls), 'instances': [], 'workers': list(workers.values())}
+    report = {'generated_at_ms': now, 'root': context['root'], 'project': context['project'], 'limitations': ['SDK includes model/network/context/tool waiting; no pure inference breakdown.', 'Parallel durations overlap; sums are not end-to-end wall time.', 'Human waits, recovery and intentional test loads require separate annotation.', 'Other step time includes Human/input waits, not just runtime overhead.', 'Step finished timestamps describe producer work; instance wall time uses the actual completion decision.'], 'measured_phases': phases, 'manager_call_counts': dict(manager_calls), 'instances': [], 'workers': list(workers.values())}
     for row in db.execute("SELECT id,name,data,created_at FROM governance_records WHERE type='workflow_instance' AND (id=? OR json_extract(data,'$.root_instance_id')=?)", (context['root'], context['root'])):
         instance = json.loads(row['data'])
         steps = []
-        for s in instance['steps']:
+        historical = []
+        current_ids = {s['id'] for s in instance['steps']}
+        history = {}
+        for raw in db.execute("SELECT data FROM governance_records WHERE type='workflow_execution_history' AND json_extract(data,'$.workflow_instance_id')=? ORDER BY rowid", (row['id'],)):
+            attempt = json.loads(raw[0])
+            if attempt['id'] not in current_ids:
+                history[attempt['id']] = attempt
+        for s in [*history.values(), *instance['steps']]:
             step = {k: s.get(k) for k in ['id', 'step', 'status', 'round', 'retry_of', 'started', 'finished', 'session_id', 'tool_call_id', 'budget_waited_ms']}
             ws = [w for w in workers.values() if w['session_id'] == s.get('session_id')]
             step['workers'] = [w['id'] for w in ws]
             if s.get('started'):
                 step['elapsed_ms'] = (s.get('finished') or now) - s['started']
-            if len(ws) == 1 and s.get('finished') and ws[0]['sdk_ms']:
-                w = ws[0]
-                harness = (w['startup'] or {}).get('total_ms', 0) + (w['stop_ms'] or 0)
+            if ws and s.get('finished') and all(w['finished'] and w['sdk_ms'] for w in ws):
+                harness = sum((w['startup'] or {}).get('total_ms', 0) + (w['stop_ms'] or 0) for w in ws)
                 step['measured_harness_ms'] = harness
-                step['sdk_ms'] = w['sdk_ms']
-                step['other_step_ms'] = step['elapsed_ms'] - harness - w['sdk_ms']
-            steps.append(step)
-        ordered = sorted((s for s in steps if s.get('started')), key=lambda s: s['started'])
+                step['sdk_ms'] = sum(w['sdk_ms'] for w in ws)
+                step['other_step_ms'] = step['elapsed_ms'] - harness - step['sdk_ms']
+            (steps if s['id'] in current_ids else historical).append(step)
+        ordered = sorted((s for s in [*historical, *steps] if s.get('started')), key=lambda s: s['started'])
         gaps = []
         for before, after in zip(ordered, ordered[1:]):
             start, end = before.get('finished'), after['started']
             if start is None or end <= start:
                 continue
-            manager = [w for w in workers.values() if not any(w['id'] in s['workers'] for s in steps) and w['started'] < end and (w['finished'] or now) > start]
+            manager = [w for w in workers.values() if not any(w['id'] in s['workers'] for s in [*historical, *steps]) and w['started'] < end and (w['finished'] or now) > start]
             tool_intervals = [i for w in manager for i in w['tool_intervals']]
             sdk_intervals = [[t['started_at_ms'], t['started_at_ms'] + t['durationMs']] for w in manager for t in w['sdk_turns'] if t.get('started_at_ms') is not None and t['durationMs'] is not None]
             startup_intervals = [[w['started'], w['started'] + w['startup']['total_ms']] for w in manager if w['startup']]
-            gaps.append({'from': before['step'], 'to': after['step'], 'start': start, 'end': end, 'elapsed_ms': end-start, 'manager_sdk_ms_including_tools': union_ms(sdk_intervals, start, end), 'manager_tool_roundtrip_ms': union_ms(tool_intervals, start, end), 'manager_startup_ms': union_ms(startup_intervals, start, end), 'unattributed_ms': end-start-union_ms(sdk_intervals+tool_intervals+startup_intervals, start, end)})
+            gaps.append({'from': before['step'], 'from_execution': before['id'], 'to': after['step'], 'to_execution': after['id'], 'start': start, 'end': end, 'elapsed_ms': end-start, 'manager_sdk_ms_including_tools': union_ms(sdk_intervals, start, end), 'manager_tool_roundtrip_ms': union_ms(tool_intervals, start, end), 'manager_startup_ms': union_ms(startup_intervals, start, end), 'unattributed_ms': end-start-union_ms(sdk_intervals+tool_intervals+startup_intervals, start, end)})
         completed = db.execute("SELECT max(created_at) FROM governance_records WHERE type='workflow_decision' AND definition_id=? AND json_extract(data,'$.operation')='complete'", (row['id'],)).fetchone()[0]
-        report['instances'].append({'id': row['id'], 'name': row['name'], 'status': instance['status'], 'created_at_ms': row['created_at'], 'completed_at_ms': completed, 'wall_ms': (completed or now) - row['created_at'], 'steps': steps, 'handoffs': gaps})
+        report['instances'].append({'id': row['id'], 'name': row['name'], 'status': instance['status'], 'created_at_ms': row['created_at'], 'completed_at_ms': completed, 'wall_ms': (completed or now) - row['created_at'], 'steps': steps, 'historical_steps': historical, 'handoffs': gaps})
     db.rollback()
     db.close()
     return report

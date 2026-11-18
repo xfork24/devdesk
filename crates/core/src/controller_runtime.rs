@@ -243,11 +243,14 @@ impl Engine {
                     let bootstrap = controller.bootstrap_epoch != controller.epoch;
                     let (events, event_page) =
                         if let Some(root) = controller.root_instance_id.as_deref() {
-                            let (events, page) = crate::controller_events::native_events(
+                            let (events, page, consumed) = crate::controller_events::native_events(
                                 self,
                                 root,
                                 controller.source_cursor,
                             )?;
+                            if !bootstrap {
+                                controller.source_cursor = consumed;
+                            }
                             (if bootstrap { vec![] } else { events }, Some(page))
                         } else {
                             (vec![], None)
@@ -506,7 +509,26 @@ impl Engine {
                     .ok_or_else(|| err("storage", "原步骤合同缺失"))?;
                 shown.push(json!({"step":e.step,"id":e.id,"status":e.status,"outputs":e.outputs,"input_digest":e.input_digest,"reason":e.reason.chars().take(160).collect::<String>(),"name":step.name,"session_id":e.session_id,"turn_id":e.turn_id,"confirmation_policy":step.confirmation,"confirmation_status":readiness["confirmation_status"],"confirmation_ref":readiness["confirmation_ref"],"confirmation_waiver_ref":readiness["confirmation_waiver_ref"],"human_satisfied":readiness["human_satisfied"],"actions":readiness["actions"],"step_revision":readiness["step_revision"]}));
             }
-            instances.push(json!({"id":instance.record.id,"revision":instance.record.revision,"owner_id":instance.instance.owner_id,"standard_ref":instance.instance.plan.standard_ref,"workflow_ref":instance.instance.workflow_ref,"plan":instance.instance.active_plan_revision_id,"status":instance.instance.status,"control_version":instance.instance.control_version,"paused":instance.instance.paused,"steps":shown,"step_total":instance.instance.steps.len(),"step_selection":"attention_then_pending"}));
+            // The attention page is bounded independently from the delegation
+            // candidates. Do not force a manager to load an entire frozen plan
+            // just to authorize its still-pending automatic nodes.
+            let automatic_steps = instance
+                .instance
+                .steps
+                .iter()
+                .filter(|e| {
+                    matches!(
+                        e.status,
+                        StepExecutionStatus::Queued
+                            | StepExecutionStatus::Running
+                            | StepExecutionStatus::AwaitingAcceptance
+                    ) && instance.instance.plan.document.steps.iter().any(|s| {
+                        s.node_id == e.node_id && s.confirmation == ConfirmationPolicy::Automatic
+                    })
+                })
+                .map(|e| json!({"id":e.id,"step":e.step}))
+                .collect::<Vec<_>>();
+            instances.push(json!({"id":instance.record.id,"revision":instance.record.revision,"owner_id":instance.instance.owner_id,"standard_ref":instance.instance.plan.standard_ref,"workflow_ref":instance.instance.workflow_ref,"plan":instance.instance.active_plan_revision_id,"status":instance.instance.status,"control_version":instance.instance.control_version,"paused":instance.instance.paused,"steps":shown,"automatic_steps":automatic_steps,"step_total":instance.instance.steps.len(),"step_selection":"attention_then_pending"}));
         }
         Ok((
             Some(root),

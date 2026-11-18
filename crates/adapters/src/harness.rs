@@ -75,6 +75,39 @@ pub fn provider_turn_text(r: &ports::TurnDispatch) -> Result<String> {
         serde_json::to_string(&r.context_references).map_err(storage)?
     ))
 }
+// Audit bindings remain in the immutable snapshot; active permissions are
+// already supplied separately. A resumed provider thread also owns this
+// session's history, so sending its messages again only duplicates context.
+fn prompt_snapshot(snapshot: &Snapshot, resumed_session: Option<&str>) -> Result<Value> {
+    let mut rendered = serde_json::to_value(snapshot).map_err(storage)?;
+    rendered.as_object_mut().unwrap().remove("runtime_bindings");
+    rendered["runtime_binding_digests"] = json!(
+        snapshot
+            .runtime_bindings
+            .iter()
+            .map(configuration_hash)
+            .collect::<Vec<_>>()
+    );
+    if let Ok(mut content) = serde_json::from_str::<Value>(&snapshot.content) {
+        if resumed_session.is_some_and(|session| content["source_session"] == session)
+            && let Some(fields) = content.as_object_mut()
+        {
+            let mut history = serde_json::Map::new();
+            for key in ["messages", "turns"] {
+                if let Some(value) = fields.remove(key) {
+                    history.insert(
+                        key.into(),
+                        json!({"digest":configuration_hash(&value),"count":value.as_array().map(Vec::len)}),
+                    );
+                }
+            }
+            fields.insert("history_in_provider_thread".into(), json!(history));
+        }
+        rendered["content"] = content;
+    }
+    Ok(rendered)
+}
+
 fn private_dir(path: &Path) -> Result<()> {
     reject_symlink(path)?;
     fs::create_dir_all(path).map_err(storage)?;
@@ -358,7 +391,20 @@ impl RuntimeWorkers {
             .ok_or_else(|| err("permission_unconfigured", "执行必须冻结版本化权限"))?;
         let access_context = json!({"permissions":p,"execution_scope":p.scope});
         // Workflow materials are carried by the canonical per-Turn task.
-        let base_snapshot = r.snapshot.as_ref().filter(|_| r.configured_task.is_none());
+        let base_snapshot = r
+            .snapshot
+            .as_ref()
+            .filter(|_| r.configured_task.is_none())
+            .map(|snapshot| {
+                prompt_snapshot(
+                    snapshot,
+                    (binding.installation.key.provider == HarnessProvider::Codex)
+                        .then_some(r.session.external_session.as_ref())
+                        .flatten()
+                        .map(|_| r.session.id.as_str()),
+                )
+            })
+            .transpose()?;
         let base_documents = if r.configured_task.is_some() {
             &[][..]
         } else {
@@ -1619,6 +1665,61 @@ fn dynamic_tools(binding: &RuntimeBinding) -> Result<Vec<Value>> {
         dynamic.extend(agent_context_tools().into_iter().map(|t|json!({"type":"function","name":t.call_name(),"description":t.input_schema["description"].as_str().unwrap_or(&t.qualified_name),"inputSchema":t.input_schema})));
     }
     Ok(dynamic)
+}
+
+#[cfg(test)]
+#[test]
+fn prompt_snapshot_preserves_handoffs_but_reuses_only_the_same_provider_history() {
+    let mut snapshot = Snapshot {
+        id: "snapshot".into(),
+        project_id: Some("project".into()),
+        feature_id: None,
+        task_id: None,
+        kind: "conversation_input".into(),
+        content: json!({
+            "source_session":"session",
+            "messages":[{"content":"human requirements".repeat(4096)}],
+            "turns":[{"id":"previous-turn"}],
+            "context_references":[{"snapshot_id":"inherited-material"}]
+        })
+        .to_string(),
+        documents: vec!["document".into()],
+        inherited_from: Some("inherited".into()),
+        capture: SnapshotCapture::default(),
+        runtime_bindings: vec![],
+        execution_instances: vec!["execution".into()],
+    };
+    let original = serde_json::to_value(&snapshot).unwrap();
+    for resumed in [None, Some("another-session")] {
+        let prompt = prompt_snapshot(&snapshot, resumed).unwrap();
+        assert!(prompt["content"]["messages"][0]["content"].is_string());
+        assert_eq!(prompt["content"]["turns"][0]["id"], "previous-turn");
+    }
+    let prompt = prompt_snapshot(&snapshot, Some("session")).unwrap();
+    assert!(prompt["content"]["messages"].is_null());
+    assert!(prompt["content"]["turns"].is_null());
+    assert_eq!(
+        prompt["content"]["history_in_provider_thread"]["messages"]["count"],
+        1
+    );
+    assert_eq!(prompt["documents"], original["documents"]);
+    assert_eq!(
+        prompt["execution_instances"],
+        original["execution_instances"]
+    );
+    assert_eq!(prompt["inherited_from"], original["inherited_from"]);
+    assert_eq!(
+        prompt["content"]["context_references"][0]["snapshot_id"],
+        "inherited-material"
+    );
+    assert!(prompt.get("runtime_bindings").is_none());
+    assert!(prompt.to_string().len() < 1024);
+    assert_eq!(serde_json::to_value(&snapshot).unwrap(), original);
+    snapshot.content = "Unstructured inherited requirements".into();
+    assert_eq!(
+        prompt_snapshot(&snapshot, Some("session")).unwrap()["content"],
+        snapshot.content
+    );
 }
 
 #[cfg(test)]

@@ -86,6 +86,42 @@ pub(super) fn capture(conn: &Connection, prepared: &PreparedChangeSet) -> Result
 fn step(value: &Value) -> Value {
     json!({"execution_id":value["id"],"step":value["step"],"status":value["status"],"outputs":value["outputs"],"input_digest":value["input_digest"],"session_id":value["session_id"],"turn_id":value["turn_id"],"reason":value["reason"].as_str().map(|v|v.chars().take(512).collect::<String>())})
 }
+fn metadata_only(previous: &Value, current: &Value) -> bool {
+    if previous["status"] != "running" || current["status"] != "running" {
+        return false;
+    }
+    let mut previous = step(previous);
+    let mut current = step(current);
+    for key in ["session_id", "turn_id"] {
+        previous.as_object_mut().unwrap().remove(key);
+        current.as_object_mut().unwrap().remove(key);
+    }
+    previous == current
+}
+
+#[cfg(test)]
+#[test]
+fn only_running_session_links_are_metadata_not_business_progress() {
+    let before = json!({"id":"execution","step":"work","status":"running","outputs":{},"input_digest":"original","reason":"","session_id":null,"turn_id":null});
+    let mut linked = before.clone();
+    linked["session_id"] = json!("session");
+    linked["turn_id"] = json!("turn");
+    assert!(metadata_only(&before, &linked));
+    for (key, value) in [
+        ("status", json!("waiting_confirmation")),
+        ("status", json!("failed")),
+        ("reason", json!("permission required")),
+        ("outputs", json!({"result":"output"})),
+        ("input_digest", json!("changed")),
+    ] {
+        let mut changed = linked.clone();
+        changed[key] = value;
+        assert!(!metadata_only(&before, &changed), "{key}");
+    }
+    let mut queued = before.clone();
+    queued["status"] = json!("queued");
+    assert!(!metadata_only(&queued, &linked));
+}
 pub(super) fn append(
     conn: &Connection,
     prepared: &PreparedChangeSet,
@@ -139,7 +175,7 @@ pub(super) fn append(
                 let resource = json!([id, execution["id"]]).to_string();
                 let revision:u64=conn.query_row("SELECT revision FROM resource_versions WHERE kind='workflow_step' AND resource_id=?1",[resource],|r|r.get(0)).map_err(storage)?;
                 fact["step_revision"] = json!(revision);
-                facts.push(json!({"kind":"execution","execution":fact}));
+                facts.push(json!({"kind":"execution","execution":fact,"metadata_only":old.get(execution["id"].as_str().unwrap_or("")).is_some_and(|previous|metadata_only(previous,execution))}));
             }
         }
         for batch in facts.chunks(16) {

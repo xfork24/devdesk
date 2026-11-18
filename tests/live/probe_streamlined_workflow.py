@@ -22,6 +22,8 @@ parser.add_argument('--suite', choices=['streamlined', 'detailed'], default='str
 parser.add_argument('--report-directory', type=Path, required=True)
 parser.add_argument('--requirement-file', type=Path, required=True)
 parser.add_argument('--resume', action='store_true')
+parser.add_argument('--url', help='Observe an already running Host using report-directory/data; leave it running on exit')
+parser.add_argument('--timeout-seconds', type=int, default=1800, help='Bound observation of this same workflow instance')
 parser.add_argument('--performance', action='store_true', help='Record native timing spans and observer query latency without changing workflow controls')
 args = parser.parse_args()
 out = args.report_directory.resolve()
@@ -42,11 +44,12 @@ attempt.mkdir(parents=True)
 for filename in ['probe_streamlined_workflow.py', 'client.py', 'workflow_observer.py']:
     shutil.copy2(Path(__file__).parent / filename, attempt / filename)
 (attempt / 'identity.json').write_text(json.dumps({'binary_sha256': identity, 'resume': args.resume, 'performance': args.performance, 'time': time.time()}))
-child = subprocess.Popen([str(private), '--data', str(out / 'data'), '--port', '0'],
+child = None if args.url else subprocess.Popen([str(private), '--data', str(out / 'data'), '--port', '0'],
                          stdout=(out / ('host-' + str(time.time_ns()) + '.log')).open('w'), stderr=subprocess.STDOUT, env={**os.environ, **({'DEVDESK_PERF_LOG': '1'} if args.performance else {})})
 try:
     deadline = time.monotonic() + 180
-    while True:
+    urls = [args.url] if args.url else []
+    while not urls:
         logs = sorted(out.glob('host-*.log'))
         urls = [line for line in logs[-1].read_text().splitlines() if line.startswith('http://')]
         if urls:
@@ -73,9 +76,9 @@ try:
         client.timeout = 180
         image = runtime['artifact']['image_id']
         defaults = client.rpc('query.configuration_defaults')
-        assert defaults['workflow_ref'] == '精简版-workflow-feature:1'
+        assert defaults['workflow_ref'] == '精简版-workflow-feature:2'
         assert defaults['task_workflow_ref'] == '精简版-workflow-task:1'
-        assert defaults['standard_ref'] == '精简版-standard-engineering:1'
+        assert defaults['standard_ref'] == '精简版-standard-engineering:2'
         if args.suite == 'detailed':
             defaults.update({'workflow_ref': 'builtin-workflow-feature-sol-high:11', 'task_workflow_ref': 'builtin-workflow-task-sol-high:10', 'standard_ref': 'builtin-standard-engineering:9', 'role_agent_bindings': {f'builtin-role-{role}:1': f'builtin-agent-sol-high-{role}:{13 if role == "project-manager" else 6}' for role in ['analyst', 'architect', 'project-manager', 'developer', 'tester', 'reviewer']}})
         test_configuration = {'language': 'JavaScript ESM / Node 24', 'independent_runner': 'node_test', 'regression': {
@@ -95,7 +98,9 @@ try:
                    'defaults': defaults, 'test_configuration': test_configuration, 'suite': args.suite, 'mainline': args.mainline, 'human_decisions_by_probe': 0}
     (out / 'context.json').write_text(json.dumps(context, ensure_ascii=False, indent=2))
     seen = set()
+    deadline = time.monotonic() + args.timeout_seconds
     while True:
+        assert time.monotonic() < deadline, 'Observation deadline exceeded; original workflow remains available for inspection/resume'
         query_started = time.perf_counter()
         tree = read_workflow_tree(client, context['root'])
         tree_finished = time.perf_counter()
@@ -111,7 +116,7 @@ try:
                 path.write_text(json.dumps(request, ensure_ascii=False, indent=2))
                 print('Human review pending:', request['id'], str(path), flush=True)
                 seen.add(request['id'])
-        statuses = [(node['record']['id'], step['step'], step['status']) for node in tree.values()
+        statuses = [(node['record']['id'], step['step'], step['status'], step['id'], step.get('round')) for node in tree.values()
                     for step in node['record']['data']['steps'] if step['status'] not in ['completed', 'queued', 'skipped']]
         status_digest = hashlib.sha256(json.dumps(statuses).encode()).hexdigest()
         if status_digest not in seen:
@@ -125,9 +130,10 @@ try:
             break
         time.sleep(3)
 finally:
-    child.send_signal(signal.SIGINT)
-    try:
-        child.wait(timeout=60)
-    except subprocess.TimeoutExpired:
-        child.terminate()
-        child.wait(timeout=15)
+    if child is not None:
+        child.send_signal(signal.SIGINT)
+        try:
+            child.wait(timeout=60)
+        except subprocess.TimeoutExpired:
+            child.terminate()
+            child.wait(timeout=15)

@@ -5329,9 +5329,9 @@ fn actual_defaults_compile_the_streamlined_suite_and_freeze_project_tests() {
     let dir = tempfile::tempdir().unwrap();
     let e = engine(dir.path());
     let defaults = e.configuration_defaults(None).unwrap();
-    assert_eq!(defaults["workflow_ref"], "精简版-workflow-feature:1");
+    assert_eq!(defaults["workflow_ref"], "精简版-workflow-feature:2");
     assert_eq!(defaults["task_workflow_ref"], "精简版-workflow-task:1");
-    assert_eq!(defaults["standard_ref"], "精简版-standard-engineering:1");
+    assert_eq!(defaults["standard_ref"], "精简版-standard-engineering:2");
     let state = e.store.snapshot().unwrap();
     let bindings = serde_json::from_value(defaults["role_agent_bindings"].clone()).unwrap();
     for (reference, count) in [

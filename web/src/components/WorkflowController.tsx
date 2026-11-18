@@ -78,6 +78,11 @@ export function WorkflowController({
     epoch.current += 1;
   }, []);
   const rootId = instance.data.root_instance_id || instance.id;
+  const waiting = ((data?.driverWaiting || []) as Row[]).filter(
+    (item) =>
+      item.instance_id === instance.id ||
+      item.ancestor_instance_ids?.includes(instance.id),
+  );
   const [decisionPages, setDecisionPages] = useState<number[]>([]);
   const decisionBefore = decisionPages.at(-1);
   const load: (fresh?: boolean) => Promise<void> = useCallback(
@@ -532,9 +537,7 @@ export function WorkflowController({
           )}
         </p>
       )}
-      {(data?.driverWaiting || []).some(
-        (item: Row) => item.instance_id === instance.id,
-      ) && (
+      {waiting.length > 0 && (
         <section
           className="manager-blockers"
           aria-label="当前阻塞点"
@@ -545,69 +548,65 @@ export function WorkflowController({
             需要确认的产物或计划在下方处理；需要补充信息时，可通过“与项目经理继续讨论”回复。
           </p>
           <ul aria-label="调度等待条件">
-            {((data?.driverWaiting || []) as Row[])
-              .filter((item) => item.instance_id === instance.id)
-              .map((item) => {
-                const gate = (Object.values(item.actions || {}) as Row[]).find(
-                  (action) => item.waiting_for?.includes(action.code),
-                );
-                return (
-                  <li key={item.execution_id}>
-                    <details
-                      className="manager-disclosure"
-                      open={
-                        item.status === "waiting_input" && !currentInputNotice
-                      }
-                    >
-                      <summary>
-                        <strong>
-                          {displayText(
-                            item.step_name || item.path || item.step,
-                          )}{" "}
-                          ·{" "}
-                          {displayText(
-                            item.status === "awaiting_acceptance" &&
-                              data?.driver?.data.mode === "agent" &&
-                              !decisions.some(
-                                (d: Row) =>
-                                  d.current !== false &&
-                                  d.data.status === "pending" &&
-                                  d.data.request.arguments.execution_id ===
-                                    item.execution_id,
-                              )
-                              ? "待经理研判"
-                              : waitingLabels[item.status] || item.status,
-                          )}
-                        </strong>
-                      </summary>
-                      <div className="manager-disclosure-body">
-                        <p>
-                          {displayText(
-                            gate?.reason ||
-                              item.reason ||
-                              "正在等待执行条件就绪。",
-                          )}
-                        </p>
-                        <ReadingLink
-                          detail="overview"
-                          projectId={projectId}
-                          ownerId={
-                            item.owner_id || instance.data.owner_id || projectId
-                          }
-                          target={{
-                            instance_id: item.instance_id,
-                            execution_id: item.execution_id,
-                            feature_id: item.feature_id,
-                            task_id: item.task_id,
-                          }}
-                        >
-                          查看流程阻塞点
-                        </ReadingLink>
-                      </div>
-                    </details>
-                  </li>
-                );
-              })}
+            {waiting.map((item) => {
+              const gate = (Object.values(item.actions || {}) as Row[]).find(
+                (action) => item.waiting_for?.includes(action.code),
+              );
+              return (
+                <li key={item.execution_id}>
+                  <details
+                    className="manager-disclosure"
+                    open={
+                      item.status === "waiting_input" && !currentInputNotice
+                    }
+                  >
+                    <summary>
+                      <strong>
+                        {displayText(item.step_name || item.path || item.step)}{" "}
+                        ·{" "}
+                        {displayText(
+                          item.status === "awaiting_acceptance" &&
+                            data?.driver?.data.mode === "agent" &&
+                            !decisions.some(
+                              (d: Row) =>
+                                d.current !== false &&
+                                d.data.status === "pending" &&
+                                d.data.request.arguments.execution_id ===
+                                  item.execution_id,
+                            )
+                            ? "待经理研判"
+                            : waitingLabels[item.status] || item.status,
+                        )}
+                      </strong>
+                    </summary>
+                    <div className="manager-disclosure-body">
+                      <p>
+                        {displayText(
+                          gate?.reason ||
+                            item.reason ||
+                            "正在等待执行条件就绪。",
+                        )}
+                      </p>
+                      <ReadingLink
+                        detail="overview"
+                        projectId={projectId}
+                        ownerId={
+                          item.owner_id || instance.data.owner_id || projectId
+                        }
+                        target={{
+                          instance_id: item.instance_id,
+                          execution_id: item.execution_id,
+                          feature_id: item.feature_id,
+                          task_id: item.task_id,
+                        }}
+                      >
+                        查看流程阻塞点
+                      </ReadingLink>
+                    </div>
+                  </details>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}

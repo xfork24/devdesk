@@ -1546,10 +1546,10 @@
         "port": "requirements"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/0/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1564,10 +1564,10 @@
         "port": "result"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/1/inputs/work",
         "kind": "step_input",
@@ -1582,10 +1582,10 @@
         "port": "work"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/11/inputs/requirements",
         "kind": "step_input",
@@ -1600,10 +1600,10 @@
         "port": "requirements"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/3/inputs/requirements",
         "kind": "step_input",
@@ -1618,10 +1618,10 @@
         "port": "requirements"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/4/inputs/requirements",
         "kind": "step_input",
@@ -1636,10 +1636,10 @@
         "port": "requirements"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/5/inputs/requirements",
         "kind": "step_input",
@@ -1654,10 +1654,10 @@
         "port": "requirements"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/6/inputs/requirements",
         "kind": "step_input",
@@ -1938,10 +1938,10 @@
         "port": "review"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/1/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1956,10 +1956,10 @@
         "port": "result"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/11/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1974,10 +1974,10 @@
         "port": "result"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/17/executor/arguments/review",
         "kind": "step_argument",
@@ -1992,10 +1992,10 @@
         "port": "review"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/17/inputs/review",
         "kind": "step_input",
@@ -2010,10 +2010,10 @@
         "port": "review"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/4/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2028,10 +2028,10 @@
         "port": "result"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/6/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2121,10 +2121,10 @@
         }
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/7/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2139,10 +2139,10 @@
         "port": "result"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/8/executor/foreach/source",
         "kind": "step_collection",
@@ -3890,10 +3890,10 @@
         "port": "workspace"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/10/executor/arguments/diff_base",
         "kind": "step_argument",
@@ -3908,10 +3908,10 @@
         "port": "diff_base"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/10/executor/arguments/workspace",
         "kind": "step_argument",
@@ -3926,10 +3926,10 @@
         "port": "workspace"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/11/inputs/baseline",
         "kind": "step_input",
@@ -3944,10 +3944,10 @@
         "port": "baseline"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/2/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -3962,10 +3962,10 @@
         "port": "result"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/3/inputs/workspace",
         "kind": "step_input",
@@ -3980,10 +3980,10 @@
         "port": "workspace"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/5/inputs/workspace",
         "kind": "step_input",
@@ -3998,10 +3998,10 @@
         "port": "workspace"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/9/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -4170,60 +4170,6 @@
         "version": 5,
         "scope": "global",
         "path": "/skills/3",
-        "kind": "reference"
-      },
-      {
-        "reference": "精简版-capability-analyst:1",
-        "name": "精简版analyst能力",
-        "type": "capability",
-        "version": 1,
-        "scope": "global",
-        "path": "/skills/1",
-        "kind": "reference"
-      },
-      {
-        "reference": "精简版-capability-architect:1",
-        "name": "精简版architect能力",
-        "type": "capability",
-        "version": 1,
-        "scope": "global",
-        "path": "/skills/1",
-        "kind": "reference"
-      },
-      {
-        "reference": "精简版-capability-developer:1",
-        "name": "精简版developer能力",
-        "type": "capability",
-        "version": 1,
-        "scope": "global",
-        "path": "/skills/2",
-        "kind": "reference"
-      },
-      {
-        "reference": "精简版-capability-project-manager:1",
-        "name": "精简版project-manager能力",
-        "type": "capability",
-        "version": 1,
-        "scope": "global",
-        "path": "/skills/2",
-        "kind": "reference"
-      },
-      {
-        "reference": "精简版-capability-reviewer:1",
-        "name": "精简版reviewer能力",
-        "type": "capability",
-        "version": 1,
-        "scope": "global",
-        "path": "/skills/2",
-        "kind": "reference"
-      },
-      {
-        "reference": "精简版-capability-tester:1",
-        "name": "精简版tester能力",
-        "type": "capability",
-        "version": 1,
-        "scope": "global",
-        "path": "/skills/2",
         "kind": "reference"
       }
     ],
@@ -4476,10 +4422,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-reviewer:1",
+        "reference": "精简版-capability-reviewer:3",
         "name": "精简版reviewer能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/skills/3",
         "kind": "reference"
@@ -4514,10 +4460,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-analyst:1",
+        "reference": "精简版-capability-analyst:3",
         "name": "精简版analyst能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/skills/2",
         "kind": "reference"
@@ -4563,10 +4509,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/skills/4",
         "kind": "reference"
@@ -5207,55 +5153,55 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-analyst:1",
+        "reference": "精简版-capability-analyst:3",
         "name": "精简版analyst能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/0",
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-architect:1",
+        "reference": "精简版-capability-architect:3",
         "name": "精简版architect能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/0",
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-developer:1",
+        "reference": "精简版-capability-developer:3",
         "name": "精简版developer能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/0",
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/0",
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-reviewer:1",
+        "reference": "精简版-capability-reviewer:3",
         "name": "精简版reviewer能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/0",
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-tester:1",
+        "reference": "精简版-capability-tester:3",
         "name": "精简版tester能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/0",
         "kind": "reference"
@@ -5272,10 +5218,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/27",
         "kind": "reference"
@@ -5292,10 +5238,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/31",
         "kind": "reference"
@@ -5312,10 +5258,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/30",
         "kind": "reference"
@@ -5332,10 +5278,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/28",
         "kind": "reference"
@@ -5352,10 +5298,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/33",
         "kind": "reference"
@@ -5372,10 +5318,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/34",
         "kind": "reference"
@@ -5392,10 +5338,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/32",
         "kind": "reference"
@@ -5412,10 +5358,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/35",
         "kind": "reference"
@@ -5432,10 +5378,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/29",
         "kind": "reference"
@@ -5584,10 +5530,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/25",
         "kind": "reference"
@@ -5604,10 +5550,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/22",
         "kind": "reference"
@@ -5624,10 +5570,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/24",
         "kind": "reference"
@@ -5644,10 +5590,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/23",
         "kind": "reference"
@@ -5664,10 +5610,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/26",
         "kind": "reference"
@@ -5729,55 +5675,55 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-analyst:1",
+        "reference": "精简版-capability-analyst:3",
         "name": "精简版analyst能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/2",
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-architect:1",
+        "reference": "精简版-capability-architect:3",
         "name": "精简版architect能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/2",
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-developer:1",
+        "reference": "精简版-capability-developer:3",
         "name": "精简版developer能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/2",
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/36",
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-reviewer:1",
+        "reference": "精简版-capability-reviewer:3",
         "name": "精简版reviewer能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/2",
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-tester:1",
+        "reference": "精简版-capability-tester:3",
         "name": "精简版tester能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/2",
         "kind": "reference"
@@ -5797,10 +5743,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/14",
         "kind": "reference"
@@ -5817,10 +5763,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/16",
         "kind": "reference"
@@ -5837,10 +5783,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/15",
         "kind": "reference"
@@ -5857,10 +5803,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/20",
         "kind": "reference"
@@ -5877,10 +5823,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/38",
         "kind": "reference"
@@ -5897,10 +5843,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/37",
         "kind": "reference"
@@ -5917,10 +5863,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/18",
         "kind": "reference"
@@ -5937,10 +5883,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/3",
         "kind": "reference"
@@ -5957,10 +5903,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/5",
         "kind": "reference"
@@ -5977,10 +5923,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/19",
         "kind": "reference"
@@ -5997,10 +5943,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/11",
         "kind": "reference"
@@ -6017,10 +5963,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/2",
         "kind": "reference"
@@ -6037,10 +5983,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/17",
         "kind": "reference"
@@ -6111,55 +6057,55 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-analyst:1",
+        "reference": "精简版-capability-analyst:3",
         "name": "精简版analyst能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/1",
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-architect:1",
+        "reference": "精简版-capability-architect:3",
         "name": "精简版architect能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/1",
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-developer:1",
+        "reference": "精简版-capability-developer:3",
         "name": "精简版developer能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/1",
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/4",
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-reviewer:1",
+        "reference": "精简版-capability-reviewer:3",
         "name": "精简版reviewer能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/1",
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-tester:1",
+        "reference": "精简版-capability-tester:3",
         "name": "精简版tester能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/1",
         "kind": "reference"
@@ -6176,10 +6122,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/12",
         "kind": "reference"
@@ -6196,10 +6142,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/13",
         "kind": "reference"
@@ -6216,10 +6162,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/39",
         "kind": "reference"
@@ -6236,10 +6182,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/21",
         "kind": "reference"
@@ -6256,10 +6202,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/1",
         "kind": "reference"
@@ -6276,10 +6222,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/7",
         "kind": "reference"
@@ -6296,10 +6242,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/6",
         "kind": "reference"
@@ -6316,10 +6262,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/8",
         "kind": "reference"
@@ -6336,10 +6282,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/9",
         "kind": "reference"
@@ -6356,10 +6302,10 @@
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/tools/10",
         "kind": "reference"
@@ -6369,10 +6315,10 @@
     "builtin-tool-workspace-snapshot:2": [],
     "精简版-delivery-checkpoint:1": [
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/10/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -6387,10 +6333,10 @@
         "port": "result"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/11/inputs/workspace",
         "kind": "step_input",
@@ -6405,10 +6351,10 @@
         "port": "workspace"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/12/executor/arguments/workspace",
         "kind": "step_argument",
@@ -6423,10 +6369,10 @@
         "port": "workspace"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/13/executor/arguments/workspace",
         "kind": "step_argument",
@@ -6441,10 +6387,10 @@
         "port": "workspace"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/14/executor/arguments/workspace",
         "kind": "step_argument",
@@ -6459,10 +6405,10 @@
         "port": "workspace"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/15/executor/arguments/workspace",
         "kind": "step_argument",
@@ -6477,10 +6423,10 @@
         "port": "workspace"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/18/executor/arguments/workspace",
         "kind": "step_argument",
@@ -6731,10 +6677,10 @@
     ],
     "精简版-delivery-design:1": [
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/11/inputs/design",
         "kind": "step_input",
@@ -6749,10 +6695,10 @@
         "port": "design"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/3/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -6767,10 +6713,10 @@
         "port": "result"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/4/inputs/design",
         "kind": "step_input",
@@ -6785,10 +6731,10 @@
         "port": "design"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/5/inputs/design",
         "kind": "step_input",
@@ -6803,10 +6749,10 @@
         "port": "design"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/6/inputs/design",
         "kind": "step_input",
@@ -6821,10 +6767,10 @@
         "port": "design"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/8/inputs/design",
         "kind": "step_input",
@@ -6887,10 +6833,10 @@
     ],
     "精简版-delivery-diff:1": [
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/10/outputs/diff/delivery_ref",
         "kind": "step_output",
@@ -6905,10 +6851,10 @@
         "port": "diff"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/10/outputs/scope_diff/delivery_ref",
         "kind": "step_output",
@@ -6923,10 +6869,10 @@
         "port": "scope_diff"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/11/inputs/diff",
         "kind": "step_input",
@@ -7015,10 +6961,10 @@
     ],
     "精简版-delivery-human-packet:1": [
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/17/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -7073,20 +7019,20 @@
     ],
     "精简版-delivery-merge-sync:1": [
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/outputs/result",
         "kind": "workflow_output",
         "port": "result"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/18/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -7131,20 +7077,20 @@
     ],
     "精简版-delivery-project-tests:1": [
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/inputs/test_configuration/delivery_ref",
         "kind": "workflow_input",
         "port": "test_configuration"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/3/inputs/test_configuration",
         "kind": "step_input",
@@ -7159,10 +7105,10 @@
         "port": "test_configuration"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/4/inputs/test_configuration",
         "kind": "step_input",
@@ -7177,10 +7123,10 @@
         "port": "test_configuration"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/5/inputs/test_configuration",
         "kind": "step_input",
@@ -7195,10 +7141,10 @@
         "port": "test_configuration"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/6/inputs/test_configuration",
         "kind": "step_input",
@@ -7213,10 +7159,10 @@
         "port": "test_configuration"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/8/inputs/test_configuration",
         "kind": "step_input",
@@ -7279,10 +7225,10 @@
     ],
     "精简版-delivery-pull-request:1": [
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/15/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -7297,10 +7243,10 @@
         "port": "result"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/16/executor/arguments/workspace",
         "kind": "step_argument",
@@ -7315,10 +7261,10 @@
         "port": "workspace"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/17/executor/arguments/publication",
         "kind": "step_argument",
@@ -7333,10 +7279,10 @@
         "port": "publication"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/17/inputs/publication",
         "kind": "step_input",
@@ -7351,10 +7297,10 @@
         "port": "publication"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/18/executor/arguments/publication",
         "kind": "step_argument",
@@ -7425,10 +7371,10 @@
     ],
     "精简版-delivery-regression:1": [
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/12/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -7443,10 +7389,10 @@
         "port": "result"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/16/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -7461,10 +7407,10 @@
         "port": "result"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/17/executor/arguments/merge_regression",
         "kind": "step_argument",
@@ -7479,10 +7425,10 @@
         "port": "merge_regression"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/17/executor/arguments/source_regression",
         "kind": "step_argument",
@@ -7497,10 +7443,10 @@
         "port": "source_regression"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/17/inputs/merge_regression",
         "kind": "step_input",
@@ -7515,10 +7461,10 @@
         "port": "merge_regression"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/17/inputs/source_regression",
         "kind": "step_input",
@@ -7571,10 +7517,10 @@
     ],
     "精简版-delivery-source-publication:1": [
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/13/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -7609,10 +7555,10 @@
     ],
     "精简版-delivery-target:1": [
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/14/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -7627,10 +7573,10 @@
         "port": "result"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/15/executor/arguments/target",
         "kind": "step_argument",
@@ -7683,10 +7629,10 @@
     ],
     "精简版-delivery-task-plan:1": [
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/5/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -7701,10 +7647,10 @@
         "port": "result"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/6/inputs/plan",
         "kind": "step_input",
@@ -7719,10 +7665,10 @@
         "port": "plan"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/7/executor/arguments/tasks",
         "kind": "step_argument",
@@ -7739,10 +7685,10 @@
     ],
     "精简版-delivery-task-reports:1": [
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/11/inputs/tasks",
         "kind": "step_input",
@@ -7757,10 +7703,10 @@
         "port": "tasks"
       },
       {
-        "reference": "精简版-workflow-feature:1",
+        "reference": "精简版-workflow-feature:2",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 1,
+        "version": 2,
         "scope": "global",
         "path": "/data/steps/8/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -7961,77 +7907,133 @@
     ],
     "精简版-skill-code-review:1": [
       {
-        "reference": "精简版-capability-reviewer:1",
+        "reference": "精简版-capability-reviewer:3",
         "name": "精简版reviewer能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/skills/1",
         "kind": "reference"
       }
     ],
-    "精简版-skill-context:1": [
+    "精简版-skill-context:2": [
       {
-        "reference": "精简版-capability-analyst:1",
+        "reference": "精简版-capability-analyst:3",
         "name": "精简版analyst能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/skills/0",
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-architect:1",
+        "reference": "精简版-capability-architect:3",
         "name": "精简版architect能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/skills/0",
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-developer:1",
+        "reference": "精简版-capability-developer:3",
         "name": "精简版developer能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/skills/0",
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/skills/0",
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-reviewer:1",
+        "reference": "精简版-capability-reviewer:3",
         "name": "精简版reviewer能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/skills/0",
         "kind": "reference"
       },
       {
-        "reference": "精简版-capability-tester:1",
+        "reference": "精简版-capability-tester:3",
         "name": "精简版tester能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/skills/0",
         "kind": "reference"
       }
     ],
-    "精简版-skill-implementation:1": [
+    "精简版-skill-delivery-self-check:2": [
       {
-        "reference": "精简版-capability-developer:1",
+        "reference": "精简版-capability-analyst:3",
+        "name": "精简版analyst能力",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-architect:3",
+        "name": "精简版architect能力",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-developer:3",
         "name": "精简版developer能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:3",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-reviewer:3",
+        "name": "精简版reviewer能力",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-tester:3",
+        "name": "精简版tester能力",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      }
+    ],
+    "精简版-skill-implementation:1": [
+      {
+        "reference": "精简版-capability-developer:3",
+        "name": "精简版developer能力",
+        "type": "capability",
+        "version": 3,
         "scope": "global",
         "path": "/skills/1",
         "kind": "reference"
@@ -8039,10 +8041,10 @@
     ],
     "精简版-skill-project-planning:1": [
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/skills/1",
         "kind": "reference"
@@ -8050,21 +8052,21 @@
     ],
     "精简版-skill-test-design:1": [
       {
-        "reference": "精简版-capability-tester:1",
+        "reference": "精简版-capability-tester:3",
         "name": "精简版tester能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/skills/1",
         "kind": "reference"
       }
     ],
-    "精简版-skill-workflow-orchestration:1": [
+    "精简版-skill-workflow-orchestration:3": [
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/skills/3",
         "kind": "reference"
@@ -8072,10 +8074,10 @@
     ],
     "精简版-spec-design:1": [
       {
-        "reference": "精简版-capability-architect:1",
+        "reference": "精简版-capability-architect:3",
         "name": "精简版architect能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/spec_refs/0",
         "kind": "reference"
@@ -8093,10 +8095,10 @@
     "精简版-spec-feature-code-review:1": [],
     "精简版-spec-implementation:1": [
       {
-        "reference": "精简版-capability-developer:1",
+        "reference": "精简版-capability-developer:3",
         "name": "精简版developer能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/spec_refs/0",
         "kind": "reference"
@@ -8113,10 +8115,10 @@
     ],
     "精简版-spec-planning:1": [
       {
-        "reference": "精简版-capability-project-manager:1",
+        "reference": "精简版-capability-project-manager:3",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/spec_refs/0",
         "kind": "reference"
@@ -8217,10 +8219,10 @@
     "精简版-spec-task-code-review:1": [],
     "精简版-spec-tests:1": [
       {
-        "reference": "精简版-capability-tester:1",
+        "reference": "精简版-capability-tester:3",
         "name": "精简版tester能力",
         "type": "capability",
-        "version": 1,
+        "version": 3,
         "scope": "global",
         "path": "/spec_refs/0",
         "kind": "reference"

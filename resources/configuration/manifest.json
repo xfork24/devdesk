@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "bundle_version": "2026.11.18-streamlined-default-workflows-v1",
+  "bundle_version": "2026.11.19-streamlined-runtime-efficiency-v3",
   "usage_index": "reference-usage.json",
   "types": {
     "role": [
@@ -24,12 +24,13 @@
       "skills/builtin-skill-project-workbench-v1.json",
       "skills/builtin-skill-delivery-self-check-v1.json",
       "skills/builtin-skill-workflow-orchestration-v5.json",
-      "skills/精简版-skill-context-v1.json",
+      "skills/精简版-skill-context-v2.json",
       "skills/精简版-skill-project-planning-v1.json",
-      "skills/精简版-skill-workflow-orchestration-v1.json",
+      "skills/精简版-skill-workflow-orchestration-v3.json",
       "skills/精简版-skill-test-design-v1.json",
       "skills/精简版-skill-implementation-v1.json",
-      "skills/精简版-skill-code-review-v1.json"
+      "skills/精简版-skill-code-review-v1.json",
+      "skills/精简版-skill-delivery-self-check-v2.json"
     ],
     "spec": [
       "specs/builtin-spec-stage-prd-v2.json",
@@ -68,13 +69,13 @@
     ],
     "standard": [
       "standards/builtin-standard-engineering-v9.json",
-      "standards/精简版-standard-engineering-v1.json"
+      "standards/精简版-standard-engineering-v2.json"
     ],
     "workflow": [
       "workflows/builtin-workflow-task-sol-high-v10.json",
       "workflows/builtin-workflow-feature-sol-high-v11.json",
       "workflows/精简版-workflow-task-v1.json",
-      "workflows/精简版-workflow-feature-v1.json"
+      "workflows/精简版-workflow-feature-v2.json"
     ],
     "delivery_type": [
       "deliveries/builtin-delivery-prd-v3.json",
@@ -137,12 +138,12 @@
       "capabilities/builtin-capability-project-manager-codex-v12.json",
       "capabilities/builtin-capability-project-manager-glm-dsh-v5.json",
       "capabilities/builtin-capability-project-manager-minimax-dsh-v5.json",
-      "capabilities/精简版-capability-analyst-v1.json",
-      "capabilities/精简版-capability-architect-v1.json",
-      "capabilities/精简版-capability-project-manager-v1.json",
-      "capabilities/精简版-capability-developer-v1.json",
-      "capabilities/精简版-capability-tester-v1.json",
-      "capabilities/精简版-capability-reviewer-v1.json"
+      "capabilities/精简版-capability-analyst-v3.json",
+      "capabilities/精简版-capability-architect-v3.json",
+      "capabilities/精简版-capability-project-manager-v3.json",
+      "capabilities/精简版-capability-developer-v3.json",
+      "capabilities/精简版-capability-tester-v3.json",
+      "capabilities/精简版-capability-reviewer-v3.json"
     ],
     "agent": [
       "agents/builtin-agent-sol-high-analyst-v6.json",
@@ -163,12 +164,12 @@
       "agents/builtin-agent-sol-high-project-manager-v13.json",
       "agents/builtin-agent-glm-project-manager-v5.json",
       "agents/builtin-agent-minimax-project-manager-v5.json",
-      "agents/精简版-agent-analyst-v1.json",
-      "agents/精简版-agent-architect-v1.json",
-      "agents/精简版-agent-project-manager-v1.json",
-      "agents/精简版-agent-developer-v1.json",
-      "agents/精简版-agent-tester-v1.json",
-      "agents/精简版-agent-reviewer-v1.json"
+      "agents/精简版-agent-analyst-v3.json",
+      "agents/精简版-agent-architect-v3.json",
+      "agents/精简版-agent-project-manager-v3.json",
+      "agents/精简版-agent-developer-v3.json",
+      "agents/精简版-agent-tester-v3.json",
+      "agents/精简版-agent-reviewer-v3.json"
     ],
     "model": [
       "models/builtin-model-gpt-6-1-sol-high-v1.json",

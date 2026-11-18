@@ -1,10 +1,10 @@
 {
   "type": "agent",
   "identity": "精简版-agent-tester",
-  "revision": 1,
+  "revision": 3,
   "name": "精简版tester Agent",
   "scope": "global",
   "role_ref": "builtin-role-tester:1",
-  "capability_ref": "精简版-capability-tester:1",
+  "capability_ref": "精简版-capability-tester:3",
   "data": {}
 }

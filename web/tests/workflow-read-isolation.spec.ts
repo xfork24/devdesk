@@ -490,7 +490,7 @@ test("manager prepares exact materials and review evidence for a human decision"
   await expect(card).toContainText("你已确认本轮事项");
 });
 
-test("manager collects child confirmations and tool approvals, with errors beside the relevant card", async ({
+test("manager scopes child confirmations and tool approvals, with errors beside the relevant card", async ({
   page,
 }) => {
   const url = await fixture(page);
@@ -599,6 +599,7 @@ test("manager collects child confirmations and tool approvals, with errors besid
                 instance_id: "child-instance",
                 owner_id: "read-feature",
                 execution_id: "child-execution",
+                ancestor_instance_ids: ["read-instance"],
                 step: "review",
                 step_name: "子流程待确认点",
                 status: "waiting_confirmation",
@@ -610,6 +611,7 @@ test("manager collects child confirmations and tool approvals, with errors besid
               {
                 instance_id: "child-instance",
                 owner_id: "read-feature",
+                ancestor_instance_ids: ["read-instance"],
                 revision: 8,
                 operation: "workflow.step.confirm",
                 arguments: args,
@@ -630,6 +632,7 @@ test("manager collects child confirmations and tool approvals, with errors besid
               {
                 id: "tool-interaction",
                 instance_id: "child-instance",
+                ancestor_instance_ids: ["read-instance"],
                 revision: 3,
                 session_id: "child-session",
                 turn_id: "child-turn",
@@ -718,12 +721,12 @@ test("manager collects child confirmations and tool approvals, with errors besid
     childCollaboration.getByRole("button", { name: "人工接管", exact: true }),
   ).toBeVisible();
   await expect(
-    childCollaboration.getByRole("article", {
+    mainCollaboration.getByRole("article", {
       name: "确认子流程需求",
       exact: true,
     }),
   ).toHaveCount(0);
-  const card = mainCollaboration.getByRole("article", {
+  const card = childCollaboration.getByRole("article", {
     name: "确认子流程需求",
     exact: true,
   });
@@ -744,12 +747,12 @@ test("manager collects child confirmations and tool approvals, with errors besid
     payload: args,
   });
   await expect(
-    childCollaboration.getByRole("article", {
+    mainCollaboration.getByRole("article", {
       name: "运行时工具审批",
       exact: true,
     }),
   ).toHaveCount(0);
-  const tool = mainCollaboration.getByRole("article", {
+  const tool = childCollaboration.getByRole("article", {
     name: "运行时工具审批",
     exact: true,
   });

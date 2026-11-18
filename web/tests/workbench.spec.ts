@@ -492,12 +492,13 @@ test("真实接入设置偏好、密钥表单与浏览器 OAuth 链接", async (
     } else await route.continue();
   });
   await page.getByRole("button", { name: "设置", exact: true }).click();
-  await page.getByLabel("默认 Agent Harness").selectOption("dsh");
-  await expect(page.getByLabel("默认 Agent Harness")).toHaveValue("dsh");
-  await expect(page.getByLabel("默认 Agent Harness")).toBeEnabled();
+  const defaultHarness = page.getByLabel("默认 Agent Harness", { exact: true });
+  await defaultHarness.selectOption("dsh");
+  await expect(defaultHarness).toHaveValue("dsh");
+  await expect(defaultHarness).toBeEnabled();
   await page.reload();
   await page.getByRole("button", { name: "设置", exact: true }).click();
-  await expect(page.getByLabel("默认 Agent Harness")).toHaveValue("dsh");
+  await expect(defaultHarness).toHaveValue("dsh");
   const password = page.getByLabel("配置或更换 API key");
   await expect(password).toHaveAttribute("type", "password");
   // Explicit synthetic fixture, intercepted before the host: this never writes a real Keychain item.
@@ -540,8 +541,8 @@ test("真实接入设置偏好、密钥表单与浏览器 OAuth 链接", async (
     page.getByRole("link", { name: "打开官方授权网页", exact: true }),
   ).toHaveAttribute("href", "https://auth.openai.com/authorize?fixture=true");
   await expect(page.getByText(/浏览器未打开新窗口/)).toBeVisible();
-  await page.getByLabel("默认 Agent Harness").selectOption("codex");
-  await expect(page.getByLabel("默认 Agent Harness")).toBeEnabled();
+  await defaultHarness.selectOption("codex");
+  await expect(defaultHarness).toBeEnabled();
   // SSE can refresh the workspace while the final settings request completes.
   // Drain intercepted requests before Playwright disposes their API responses.
   await page.unrouteAll({ behavior: "wait" });

@@ -157,9 +157,10 @@ impl Engine {
             seconds.is_none_or(|s| s > 0 && s <= controller.policy.timeout_seconds),
             "等待期限超出预算",
         )?;
-        let (events, page) =
+        let (events, page, consumed) =
             crate::controller_events::native_events(self, root, controller.source_cursor)?;
         commit.witness([version(&page)])?;
+        controller.source_cursor = consumed;
         let mut acknowledged = 0;
         for item in &events {
             if item["source"]["origin_turn_id"] != call.data["turn_id"] {
@@ -187,9 +188,10 @@ impl Engine {
         controller.acknowledged_cursor = controller.source_cursor;
         let mut pending = events.len() - acknowledged;
         if pending == 0 && page.revision > controller.source_cursor {
-            let (remaining, head) =
+            let (remaining, head, consumed) =
                 crate::controller_events::native_events(self, root, controller.source_cursor)?;
             commit.witness([version(&head)])?;
+            controller.source_cursor = consumed;
             pending = remaining.len();
         }
         controller.run_state = if pending == 0 { "waiting" } else { "runnable" }.into();

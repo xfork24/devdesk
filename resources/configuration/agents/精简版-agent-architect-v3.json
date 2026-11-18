@@ -1,10 +1,10 @@
 {
   "type": "agent",
   "identity": "精简版-agent-architect",
-  "revision": 1,
+  "revision": 3,
   "name": "精简版architect Agent",
   "scope": "global",
   "role_ref": "builtin-role-architect:1",
-  "capability_ref": "精简版-capability-architect:1",
+  "capability_ref": "精简版-capability-architect:3",
   "data": {}
 }

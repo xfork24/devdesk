@@ -128,6 +128,11 @@ test("反馈位于当前行左侧且无背景框，新建入口位于左侧顶�
   }
   await page.getByRole("button", { name: "基础组件", exact: true }).click();
   await page.getByRole("tab", { name: "Harness原生工具", exact: true }).click();
+  await page
+    .getByRole("region", { name: "原生工具目录", exact: true })
+    .locator(".configuration-list")
+    .getByRole("button", { name: /DSH 原生工具组/ })
+    .click();
   await expect(
     page.getByRole("heading", { name: "DSH 原生工具组", exact: true }),
   ).toBeVisible();

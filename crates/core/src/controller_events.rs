@@ -262,27 +262,53 @@ pub(crate) fn native_events(
     engine: &Engine,
     root: &str,
     cursor: u64,
-) -> Result<(Vec<Value>, crate::concurrency::ResourceSnapshot)> {
+) -> Result<(Vec<Value>, crate::concurrency::ResourceSnapshot, u64)> {
     let selected = crate::platform_facts::one(
         engine.store.as_ref(),
         "controller_runtime_events",
         &json!([root, cursor]).to_string(),
     )?;
-    let mut items = Vec::new();
-    let mut bytes = 2;
-    for event in selected
+    let empty = Vec::new();
+    let events = selected
         .value
         .as_ref()
         .and_then(|v| v["events"].as_array())
-        .into_iter()
-        .flatten()
-    {
+        .unwrap_or(&empty);
+    let (items, consumed) = native_event_items(events, root, cursor)?;
+    Ok((items, selected, consumed))
+}
+
+fn native_event_items(events: &[Value], root: &str, cursor: u64) -> Result<(Vec<Value>, u64)> {
+    let mut items = Vec::new();
+    let mut bytes = 2;
+    let mut consumed = cursor;
+    for event in events {
         let detail = event["detail"]
             .as_str()
             .ok_or_else(|| err("storage", "经理事件缺少原始详情"))?;
         let mut data: Value =
             serde_json::from_str(detail).map_err(|e| err("storage", e.to_string()))?;
         require(data["root_instance_id"] == root, "经理事件跨流程根")?;
+        // Keep every event for SSE/audit. The manager need not run another model
+        // turn solely because an already-running step gained session/turn IDs.
+        // Never advance past a meaningful event the manager has not received.
+        if data["change"]["kind"] == "workflow.changed"
+            && data["change"]["changes"].as_array().is_some_and(|changes| {
+                !changes.is_empty()
+                    && changes.iter().all(|change| {
+                        change["kind"] == "execution"
+                            && change["metadata_only"] == true
+                            && change["execution"]["status"] == "running"
+                    })
+            })
+        {
+            if items.is_empty() {
+                consumed = event["id"]
+                    .as_u64()
+                    .ok_or_else(|| err("storage", "经理事件缺少原始游标"))?;
+            }
+            continue;
+        }
         if detail.len() > 16 * 1024 {
             let has_outputs = data["change"]["changes"]
                 .as_array()
@@ -304,5 +330,52 @@ pub(crate) fn native_events(
         bytes += size;
         items.push(item);
     }
-    Ok((items, selected))
+    Ok((items, consumed))
+}
+
+#[cfg(test)]
+#[test]
+fn manager_metadata_coalescing_keeps_boundaries_and_advances_bounded_pages() {
+    fn event(id: u64, change: Value) -> Value {
+        json!({"id":id,"detail":json!({"root_instance_id":"root","change":change}).to_string()})
+    }
+    let metadata = |id| {
+        event(
+            id,
+            json!({"kind":"workflow.changed","changes":[{"kind":"execution","metadata_only":true,"execution":{"status":"running"}}]}),
+        )
+    };
+    let mut cursor = 0;
+    for page in (1..=70).map(metadata).collect::<Vec<_>>().chunks(32) {
+        let (items, consumed) = native_event_items(page, "root", cursor).unwrap();
+        assert!(items.is_empty());
+        assert!(consumed > cursor);
+        cursor = consumed;
+    }
+    assert_eq!(cursor, 70);
+    let human = event(
+        72,
+        json!({"kind":"human.confirmed","confirmation_ref":"actual"}),
+    );
+    let (items, consumed) =
+        native_event_items(&[metadata(71), human.clone(), metadata(73)], "root", cursor).unwrap();
+    assert_eq!(consumed, 71);
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["id"], 72);
+    assert_eq!(
+        native_event_items(&[metadata(73)], "root", 72).unwrap().1,
+        73
+    );
+    for change in [
+        json!({"kind":"decision.changed","status":"approved"}),
+        json!({"kind":"execution.stopped"}),
+        json!({"kind":"workflow.changed","changes":[{"kind":"execution","metadata_only":true,"execution":{"status":"waiting_confirmation"}}]}),
+        json!({"kind":"workflow.changed","changes":[{"kind":"execution","metadata_only":true,"execution":{"status":"running"}},{"kind":"paused","value":true}]}),
+        json!({"kind":"workflow.changed","changes":[{"kind":"execution","execution":{"status":"running"}}]}),
+    ] {
+        let (items, consumed) = native_event_items(&[event(74, change)], "root", 73).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(consumed, 73);
+    }
+    assert!(native_event_items(&[human], "foreign", 0).is_err());
 }

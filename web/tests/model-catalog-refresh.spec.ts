@@ -41,7 +41,9 @@ test("模型目录刷新在配置版本更新后仍发出真实重试并保留�
     });
   });
   try {
-    await page.goto("/?tab=components&config_tab=model");
+    await page.goto(
+      "/?tab=components&config_tab=model&config_object=builtin-model-gpt-6-1-sol-high%3A1",
+    );
     const panel = page.getByRole("region", { name: "Model 管理" });
     await expect(
       panel
