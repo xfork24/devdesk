@@ -117,7 +117,7 @@ def run():
             def configure(project_id):
                 defaults = rpc('query.configuration_defaults', {})
                 workspace = rpc('query.workspace', {'project_id':project_id})
-                rpc('project.configuration.update', {'project_id':project_id,'command_id':'configure-'+project_id,'target':project_id,'expected_revision':workspace['active_project']['revision'],'payload':{'workflow_ref':defaults['workflow_ref'],'role_agent_bindings':defaults['role_agent_bindings']}})
+                rpc('project.configuration.update', {'project_id':project_id,'command_id':'configure-'+project_id,'target':project_id,'expected_revision':workspace['active_project']['revision'],'payload':{'workflow_ref':defaults['workflow_ref'],'role_agent_bindings':defaults['role_agent_bindings'],'test_configuration':{'language':'JavaScript protocol fixture','independent_runner':'node_test','regression':{'runner':'node_test','files':['tests/fixture.test.mjs'],'image':'sha256:'+'a'*64,'timeout_seconds':30}}}})
             configure(pid)
             feature_a = rpc('feature.create', {'project_id':pid,'command_id':'same-feature-id','payload':{'project_id':pid,'title':'仅属于 A'}})
             deadline = time.monotonic() + 5

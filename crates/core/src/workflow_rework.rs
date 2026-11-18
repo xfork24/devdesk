@@ -436,7 +436,8 @@ impl Engine {
                     output.r#type == "workflow_output"
                         && output.immutable
                         && output.data["provenance"]["kind"] == "platform"
-                        && output.data["provenance"]["tool"] == "workspace.snapshot"
+                        && [json!("workspace.snapshot"), json!("workspace.checkpoint")]
+                            .contains(&output.data["provenance"]["tool"])
                         && workspace["owner_id"] == root.instance.owner_id
                         && head
                             .value

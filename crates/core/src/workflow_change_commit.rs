@@ -435,6 +435,22 @@ impl Engine {
         next.status = StepExecutionStatus::Running;
         let mut steps = vec![];
         for step in &preview.plan.document.steps {
+            if preview.aggregation_updates.contains(&step.key) {
+                let original = root
+                    .instance
+                    .steps
+                    .iter()
+                    .find(|e| e.node_id == step.node_id)
+                    .ok_or_else(|| err("stale_preview", "原汇总执行缺失"))?;
+                let mut continued = original.clone();
+                continued.plan_revision_id.clear();
+                continued.status = StepExecutionStatus::Running;
+                continued.failure = None;
+                continued.finished = None;
+                continued.reason = changes.reason.clone();
+                steps.push(continued);
+                continue;
+            }
             if let Some(restored) = preview
                 .restored_executions
                 .iter()
@@ -552,10 +568,31 @@ impl Engine {
         let mut used = BTreeSet::new();
         for original in &root.instance.steps {
             let resources = root.step(self, &original.id)?;
-            if let Some(replacement) = next.steps.iter().find(|e| e.node_id == original.node_id) {
+            if let Some(replacement) = next
+                .steps
+                .iter_mut()
+                .find(|e| e.node_id == original.node_id)
+            {
                 used.insert(replacement.id.clone());
                 if replacement.id == original.id {
                     commit.witness(resources.reads.versions().iter().cloned())?;
+                    if preview.aggregation_updates.contains(&original.step) {
+                        commit.new_record(
+                            record(
+                                "workflow_execution_history",
+                                original.id.clone(),
+                                root.record.scope.clone(),
+                                original.step.clone(),
+                                1,
+                                None,
+                                json!(original),
+                                true,
+                            ),
+                            &format!("workflow-history:{}", original.id),
+                        )?;
+                        commit.new_record(record("workflow_aggregation_amendment", original.id.clone(), root.record.scope.clone(), changes.reason.clone(), 1, None, json!({"from_plan":original.plan_revision_id,"to_plan":replacement.plan_revision_id,"from_contract":original.contract_digest,"to_contract":replacement.contract_digest,"children_unchanged":true,"change_id":change.id,"actor":actor}), true), &format!("aggregation-amendment:{}", original.id))?;
+                        commit.step(&resources, replacement)?;
+                    }
                 } else {
                     commit.new_record(
                         record(

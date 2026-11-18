@@ -1,0 +1,10 @@
+{
+  "type": "agent",
+  "identity": "精简版-agent-developer",
+  "revision": 1,
+  "name": "精简版developer Agent",
+  "scope": "global",
+  "role_ref": "builtin-role-developer:1",
+  "capability_ref": "精简版-capability-developer:1",
+  "data": {}
+}

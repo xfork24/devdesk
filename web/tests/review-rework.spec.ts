@@ -306,7 +306,7 @@ test("根经理页处理子流程的真实例外申请，理由必填且只批�
     `/?tab=execution&detail=manager&project_id=${project.id}&instance_id=${root.id}`,
   );
   const card = page
-    .locator(".manager-workflow-summary")
+    .locator(".manager-child-flow")
     .getByRole("article", { name: "例外批准当前 Task", exact: true });
   await expect(card).toBeVisible();
   const blocker = page

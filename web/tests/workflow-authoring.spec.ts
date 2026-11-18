@@ -41,8 +41,8 @@ test("内置 Delivery 全部关联内容标准并可查看确切规范", async (
     include_history: true,
     limit: 100,
   });
-  const deliveries = catalog.records.filter((r: any) =>
-    r.definition_id.startsWith("builtin-delivery-"),
+  const deliveries = catalog.records.filter(
+    (r: any) => r.type === "delivery_type",
   );
   const manifest = JSON.parse(
     readFileSync(
@@ -87,7 +87,7 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
   ).toBeVisible();
   const defaults = await rpc(page, "query.configuration_defaults");
   expect(Object.keys(defaults.role_agent_bindings)).toHaveLength(6);
-  expect(defaults.capability_ref).toBe("builtin-capability-sol-high-codex:4");
+  expect(defaults.capability_ref).toBe("精简版-capability-developer:1");
   const completeTools = await rpc(page, "query.configuration_records", {
     refs: ["builtin-tool-codex-native:1", "builtin-tool-dsh-native:1"],
   });
@@ -628,6 +628,16 @@ test("项目默认绑定保存时生成不可变 Standard", async ({ page }) => 
     payload: {
       workflow_ref: defaults.workflow_ref,
       role_agent_bindings: defaults.role_agent_bindings,
+      test_configuration: {
+        language: "JavaScript protocol fixture",
+        independent_runner: "node_test",
+        regression: {
+          runner: "node_test",
+          files: ["tests/fixture.test.mjs"],
+          image: "sha256:" + "a".repeat(64),
+          timeout_seconds: 30,
+        },
+      },
     },
   });
   expect(config.data.schema_version).toBe(4);

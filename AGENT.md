@@ -45,7 +45,7 @@
 - Harness 保存唯一程序版本、安装与本机登录件；Sandbox 保存 Docker 基础环境。二者组合产生内部配方/OCI 身份，不存在独立执行安装源。Workflow 内嵌调度配置并随版本和 Standard 冻结。发行标签不是兼容门槛；核对实际 recipe/image/driver/权限资产与协议报告。Codex 与 DSH 当前提供动态工具及经验访问桥；根编排能力按实际驱动声明校验，配置不能绕过驱动能力。
 - manual/rust/agent 根驱动使用相同派发、接纳和完成规则。经理工作台与根调度授权分别校验；Human 决定不能由 Agent 冒充。默认 automatic 不产生人类确认，仍要求真实测试和独立评审等业务条件。
 - 所有外部副作用遵循“持久化意图 → 事务外执行 → 核对接纳回执”。未知结果先 reconcile，不盲重发；取消取得实际停止/写撤销证明。模型记录、平台回执、人类决定分别保存。
-- Git 核对实际候选、父提交/diff、本地 CAS 和远端精确 lease；平台只创建 PR，不执行远端合入。运行计划修改必须 preview/quiesce/apply，旧执行与原始拒绝保留。
+- Git 核对实际候选、父提交/diff、本地 CAS 和远端精确 lease；详细版平台只创建 PR；精简版通过严格分支保护、确切候选回归及版本门禁调用 PR merge，Feature/main 还须 Human 决定，随后核对父提交/tree 并同步本地。运行计划修改必须 preview/quiesce/apply，旧执行与原始拒绝保留。
 - 当前数据标记 `devdesk-profile-runtime-v2`，SQLite global 24 / project 60。只打开兼容数据集或初始化空目录，不自动迁移、删库或转换旧数据。真实验证使用专用空目录，不清理用户运行数据来掩盖失败。
 
 ## 构建与检查

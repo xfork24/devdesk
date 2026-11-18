@@ -20,6 +20,28 @@ pub struct CommandTests {
     cells: Mutex<std::collections::BTreeMap<String, std::sync::Weak<Mutex<()>>>>,
 }
 impl CommandTests {
+    fn command(recipe: &TestRecipe) -> Result<Vec<String>> {
+        if recipe.runner == TestRunner::NodeTest {
+            require(
+                recipe.preparation.is_empty(),
+                "Node 旧合同不支持准备入口；请使用项目 command 配方",
+            )?;
+            let mut command = vec![
+                "node".into(),
+                "--test".into(),
+                "--test-reporter=/run/devdesk/test-reporter.mjs".into(),
+            ];
+            command.extend(recipe.files.iter().map(|p| format!("/work/{p}")));
+            Ok(command)
+        } else {
+            Ok(vec![
+                "python3".into(),
+                "-I".into(),
+                "/run/devdesk/test-reporter.mjs".into(),
+                serde_json::to_string(recipe).map_err(storage)?,
+            ])
+        }
+    }
     pub fn new(root: &Path) -> Result<Self> {
         Ok(Self {
             root: fs::canonicalize(root).map_err(storage)?,
@@ -115,6 +137,10 @@ impl CommandTests {
         observation: &mut Option<ports::TestExecutionObservation>,
     ) -> Result<Option<Value>> {
         let recipe = self.recipe(r)?;
+        require(
+            !r.expect_assertion_failure || recipe.runner != TestRunner::Command,
+            "通用命令退出码不能证明有效业务 Red；请选择结构化独立测试执行器",
+        )?;
         let (root, job) = self.locations(r, allow_start)?;
         let digest = configuration_digest(&json!(r))?;
         let metadata = job.join("job.json");
@@ -173,15 +199,14 @@ impl CommandTests {
             reject_symlink(&reporter)?;
             fs::write(
                 &reporter,
-                include_bytes!("../../../tests/reporters/node-reporter.mjs"),
+                if recipe.runner == TestRunner::NodeTest {
+                    include_bytes!("../../../tests/reporters/node-reporter.mjs").as_slice()
+                } else {
+                    include_bytes!("../../../tests/reporters/project-tests.py").as_slice()
+                },
             )
             .map_err(storage)?;
-            let mut command = vec![
-                "node".into(),
-                "--test".into(),
-                "--test-reporter=/run/devdesk/test-reporter.mjs".into(),
-            ];
-            command.extend(recipe.files.iter().map(|p| format!("/work/{p}")));
+            let command = Self::command(&recipe)?;
             let session = r
                 .runtime
                 .as_ref()
@@ -291,13 +316,11 @@ impl CommandTests {
             };
             files.push(json!({"path":path,"sha256":format!("{:x}",Sha256::digest(content.as_bytes())),"content":content}));
         }
-        let mut command = vec![
-            "node".to_string(),
-            "--test".to_string(),
-            "--test-reporter=/run/devdesk/test-reporter.mjs".to_string(),
-        ];
-        command.extend(recipe.files.iter().map(|p| format!("/work/{p}")));
+        let command = Self::command(&recipe)?;
         result["execution"] = json!({"command":serde_json::to_string(&command).map_err(storage)?,"cwd":"/work","started_at":format!("unix_ms:{}",stopped.started_at.ok_or_else(||err("needs_reconciliation","测试缺少实际开始时间"))?),"finished_at":format!("unix_ms:{}",stopped.finished_at.ok_or_else(||err("needs_reconciliation","测试缺少实际结束时间"))?),"exit_code":stopped.exit_code,"stdout":log,"stderr":stderr,"files":files});
+        result["execution"]["recipe_digest"] = json!(configuration_digest(&json!(recipe))?);
+        result["execution"]["termination"] =
+            json!({"timed_out":timed_out,"cancelled":false,"writer_revoked":true});
         if !gaps.is_empty() {
             result["execution_file_gaps"] = json!(gaps);
         }
@@ -467,14 +490,20 @@ impl CommandTests {
 impl ports::Tests for CommandTests {
     fn identity(&self) -> String {
         format!(
-            "devdesk_adapters::CommandTests/v2+reporter.{:x}",
-            Sha256::digest(include_bytes!("../../../tests/reporters/node-reporter.mjs"))
+            "devdesk_adapters::CommandTests/v3+node.{:x}+project.{:x}",
+            Sha256::digest(include_bytes!("../../../tests/reporters/node-reporter.mjs")),
+            Sha256::digest(include_bytes!("../../../tests/reporters/project-tests.py")),
         )
     }
 
     fn accepts_identity(&self, identity: &str) -> bool {
         let current = self.identity();
         identity == current
+            || identity
+                == format!(
+                    "devdesk_adapters::CommandTests/v2+reporter.{:x}",
+                    Sha256::digest(include_bytes!("../../../tests/reporters/node-reporter.mjs"))
+                )
     }
     fn poll_test(&self, r: &TestRequest) -> Result<Option<Value>> {
         self.poll(r)

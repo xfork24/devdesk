@@ -358,6 +358,16 @@ impl EngineeringState {
     }
 }
 pub fn valid_dag(nodes: &[(String, Vec<String>)]) -> Result<()> {
+    require(
+        nodes.len() <= WORKFLOW_STEP_LIMIT
+            && nodes.iter().all(|(key, deps)| {
+                !key.trim().is_empty()
+                    && deps.len() <= WORKFLOW_STEP_LIMIT
+                    && deps.iter().collect::<std::collections::HashSet<_>>().len() == deps.len()
+                    && !deps.contains(key)
+            }),
+        "DAG 含空节点、自依赖、重复边或超出预算",
+    )?;
     let mut done = vec![];
     require(
         nodes

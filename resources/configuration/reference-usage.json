@@ -3,10 +3,10 @@
   "references": {
     "builtin-delivery-acceptance-report:1": [
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/20/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -21,10 +21,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/21/executor/arguments/accepted",
         "kind": "step_argument",
@@ -39,10 +39,10 @@
         "port": "accepted"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/16/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -57,10 +57,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/17/executor/arguments/accepted",
         "kind": "step_argument",
@@ -77,10 +77,10 @@
     ],
     "builtin-delivery-baseline-doc:1": [
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/3/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -98,10 +98,10 @@
     "builtin-delivery-checked-markdown:1": [],
     "builtin-delivery-code-candidate:1": [
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/14/inputs/candidate",
         "kind": "step_input",
@@ -116,10 +116,10 @@
         "port": "candidate"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/16/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -134,10 +134,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/17/executor/arguments/workspace",
         "kind": "step_argument",
@@ -152,10 +152,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/18/inputs/candidate",
         "kind": "step_input",
@@ -170,10 +170,10 @@
         "port": "candidate"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/19/inputs/candidate",
         "kind": "step_input",
@@ -188,10 +188,10 @@
         "port": "candidate"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/19/inputs/workspace",
         "kind": "step_input",
@@ -206,10 +206,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/20/executor/arguments/candidate",
         "kind": "step_argument",
@@ -224,10 +224,10 @@
         "port": "candidate"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/21/executor/arguments/candidate",
         "kind": "step_argument",
@@ -242,10 +242,10 @@
         "port": "candidate"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/12/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -260,10 +260,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/13/executor/arguments/workspace",
         "kind": "step_argument",
@@ -278,10 +278,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/14/inputs/candidate",
         "kind": "step_input",
@@ -296,10 +296,10 @@
         "port": "candidate"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/15/inputs/candidate",
         "kind": "step_input",
@@ -314,10 +314,10 @@
         "port": "candidate"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/15/inputs/workspace",
         "kind": "step_input",
@@ -332,10 +332,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/16/executor/arguments/candidate",
         "kind": "step_argument",
@@ -350,10 +350,10 @@
         "port": "candidate"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/17/executor/arguments/candidate",
         "kind": "step_argument",
@@ -368,10 +368,10 @@
         "port": "candidate"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/18/executor/arguments/candidate",
         "kind": "step_argument",
@@ -388,10 +388,10 @@
     ],
     "builtin-delivery-collection:2": [
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/11/inputs/tasks",
         "kind": "step_input",
@@ -406,10 +406,10 @@
         "port": "tasks"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/14/inputs/tasks",
         "kind": "step_input",
@@ -424,10 +424,10 @@
         "port": "tasks"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/18/inputs/tasks",
         "kind": "step_input",
@@ -442,10 +442,10 @@
         "port": "tasks"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/19/inputs/tasks",
         "kind": "step_input",
@@ -460,10 +460,10 @@
         "port": "tasks"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/9/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -480,10 +480,10 @@
     ],
     "builtin-delivery-design:3": [
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/11/inputs/design",
         "kind": "step_input",
@@ -498,10 +498,10 @@
         "port": "design"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/14/inputs/design",
         "kind": "step_input",
@@ -516,10 +516,10 @@
         "port": "design"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/18/inputs/design",
         "kind": "step_input",
@@ -534,10 +534,10 @@
         "port": "design"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/4/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -552,10 +552,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/5/inputs/design",
         "kind": "step_input",
@@ -570,10 +570,10 @@
         "port": "design"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/6/inputs/design",
         "kind": "step_input",
@@ -588,10 +588,10 @@
         "port": "design"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/7/inputs/design",
         "kind": "step_input",
@@ -606,10 +606,10 @@
         "port": "design"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/9/inputs/design",
         "kind": "step_input",
@@ -624,20 +624,20 @@
         "port": "design"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/inputs/design/delivery_ref",
         "kind": "workflow_input",
         "port": "design"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/1/inputs/design",
         "kind": "step_input",
@@ -652,10 +652,10 @@
         "port": "design"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/3/inputs/design",
         "kind": "step_input",
@@ -670,10 +670,10 @@
         "port": "design"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/6/inputs/design",
         "kind": "step_input",
@@ -690,10 +690,10 @@
     ],
     "builtin-delivery-diff:2": [
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/12/outputs/diff/delivery_ref",
         "kind": "step_output",
@@ -708,10 +708,10 @@
         "port": "diff"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/14/inputs/candidate_diff",
         "kind": "step_input",
@@ -726,10 +726,10 @@
         "port": "candidate_diff"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/16/outputs/diff/delivery_ref",
         "kind": "step_output",
@@ -744,10 +744,10 @@
         "port": "diff"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/18/inputs/candidate_diff",
         "kind": "step_input",
@@ -762,10 +762,10 @@
         "port": "candidate_diff"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/19/inputs/candidate_diff",
         "kind": "step_input",
@@ -780,10 +780,10 @@
         "port": "candidate_diff"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/12/outputs/diff/delivery_ref",
         "kind": "step_output",
@@ -798,10 +798,10 @@
         "port": "diff"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/14/inputs/candidate_diff",
         "kind": "step_input",
@@ -816,10 +816,10 @@
         "port": "candidate_diff"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/14/inputs/diff",
         "kind": "step_input",
@@ -834,10 +834,10 @@
         "port": "diff"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/15/inputs/candidate_diff",
         "kind": "step_input",
@@ -852,10 +852,10 @@
         "port": "candidate_diff"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/15/inputs/diff",
         "kind": "step_input",
@@ -870,10 +870,10 @@
         "port": "diff"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/18/executor/arguments/candidate_diff",
         "kind": "step_argument",
@@ -888,10 +888,10 @@
         "port": "candidate_diff"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/18/executor/arguments/diff",
         "kind": "step_argument",
@@ -906,10 +906,10 @@
         "port": "diff"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/2/outputs/diff/delivery_ref",
         "kind": "step_output",
@@ -924,10 +924,10 @@
         "port": "diff"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/4/outputs/diff/delivery_ref",
         "kind": "step_output",
@@ -942,10 +942,10 @@
         "port": "diff"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/7/outputs/diff/delivery_ref",
         "kind": "step_output",
@@ -960,10 +960,10 @@
         "port": "diff"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/7/outputs/scope_diff/delivery_ref",
         "kind": "step_output",
@@ -980,10 +980,10 @@
     ],
     "builtin-delivery-engineering-constraints:1": [
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/11/inputs/engineering_constraints",
         "kind": "step_input",
@@ -998,10 +998,10 @@
         "port": "engineering_constraints"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/3/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1016,10 +1016,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/4/inputs/engineering_constraints",
         "kind": "step_input",
@@ -1034,10 +1034,10 @@
         "port": "engineering_constraints"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/5/inputs/engineering_constraints",
         "kind": "step_input",
@@ -1052,10 +1052,10 @@
         "port": "engineering_constraints"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/6/inputs/engineering_constraints",
         "kind": "step_input",
@@ -1070,10 +1070,10 @@
         "port": "engineering_constraints"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/7/inputs/engineering_constraints",
         "kind": "step_input",
@@ -1090,10 +1090,10 @@
     ],
     "builtin-delivery-execution-evidence:2": [
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/14/inputs/evidence",
         "kind": "step_input",
@@ -1108,10 +1108,10 @@
         "port": "evidence"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/15/inputs/evidence",
         "kind": "step_input",
@@ -1126,10 +1126,10 @@
         "port": "evidence"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/18/executor/arguments/evidence",
         "kind": "step_argument",
@@ -1144,10 +1144,10 @@
         "port": "evidence"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/6/outputs/evidence/delivery_ref",
         "kind": "step_output",
@@ -1162,10 +1162,10 @@
         "port": "evidence"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/9/inputs/evidence",
         "kind": "step_input",
@@ -1182,10 +1182,10 @@
     ],
     "builtin-delivery-feature-report:1": [
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/14/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1200,10 +1200,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/18/inputs/delivery",
         "kind": "step_input",
@@ -1218,10 +1218,10 @@
         "port": "delivery"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/19/inputs/delivery",
         "kind": "step_input",
@@ -1238,10 +1238,10 @@
     ],
     "builtin-delivery-implementation-doc:1": [
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/14/inputs/documentation",
         "kind": "step_input",
@@ -1256,10 +1256,10 @@
         "port": "documentation"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/14/inputs/implementation",
         "kind": "step_input",
@@ -1274,10 +1274,10 @@
         "port": "implementation"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/15/inputs/delivery",
         "kind": "step_input",
@@ -1292,10 +1292,10 @@
         "port": "delivery"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/18/executor/arguments/documentation",
         "kind": "step_argument",
@@ -1310,10 +1310,10 @@
         "port": "documentation"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/6/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1328,10 +1328,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/9/inputs/implementation",
         "kind": "step_input",
@@ -1346,10 +1346,10 @@
         "port": "implementation"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/9/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1366,10 +1366,10 @@
     ],
     "builtin-delivery-prd:3": [
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/0/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1384,10 +1384,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/1/inputs/work",
         "kind": "step_input",
@@ -1402,10 +1402,10 @@
         "port": "work"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/11/inputs/requirements",
         "kind": "step_input",
@@ -1420,10 +1420,10 @@
         "port": "requirements"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/14/inputs/requirements",
         "kind": "step_input",
@@ -1438,10 +1438,10 @@
         "port": "requirements"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/18/inputs/requirements",
         "kind": "step_input",
@@ -1456,10 +1456,10 @@
         "port": "requirements"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/19/inputs/requirements",
         "kind": "step_input",
@@ -1474,10 +1474,10 @@
         "port": "requirements"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/4/inputs/requirements",
         "kind": "step_input",
@@ -1492,10 +1492,10 @@
         "port": "requirements"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/5/inputs/requirements",
         "kind": "step_input",
@@ -1510,10 +1510,10 @@
         "port": "requirements"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/6/inputs/requirements",
         "kind": "step_input",
@@ -1528,10 +1528,10 @@
         "port": "requirements"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/7/inputs/requirements",
         "kind": "step_input",
@@ -1544,24 +1544,150 @@
           "name": "Tasks 验收与人工确认"
         },
         "port": "requirements"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/0/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "requirements",
+          "name": "需求"
+        },
+        "step": {
+          "key": "requirements",
+          "name": "澄清需求与 PRD"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/1/inputs/work",
+        "kind": "step_input",
+        "stage": {
+          "key": "requirements",
+          "name": "需求"
+        },
+        "step": {
+          "key": "requirements_review",
+          "name": "PRD 验收与人工确认"
+        },
+        "port": "work"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/11/inputs/requirements",
+        "kind": "step_input",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "review",
+          "name": "F08 Feature Code Review"
+        },
+        "port": "requirements"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/3/inputs/requirements",
+        "kind": "step_input",
+        "stage": {
+          "key": "design",
+          "name": "设计"
+        },
+        "step": {
+          "key": "design",
+          "name": "F03 架构与接口设计"
+        },
+        "port": "requirements"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/4/inputs/requirements",
+        "kind": "step_input",
+        "stage": {
+          "key": "design",
+          "name": "设计"
+        },
+        "step": {
+          "key": "design_review",
+          "name": "F04 Design 评审与人工确认"
+        },
+        "port": "requirements"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/5/inputs/requirements",
+        "kind": "step_input",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "planning",
+          "name": "F05 规划 Tasks 与依赖 DAG"
+        },
+        "port": "requirements"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/6/inputs/requirements",
+        "kind": "step_input",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "plan_review",
+          "name": "F06 Tasks 评审与人工确认"
+        },
+        "port": "requirements"
       }
     ],
     "builtin-delivery-publication-report:1": [
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/outputs/result",
         "kind": "workflow_output",
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/21/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1576,10 +1702,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/17/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1594,10 +1720,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/18/executor/arguments/publication",
         "kind": "step_argument",
@@ -1614,10 +1740,10 @@
     ],
     "builtin-delivery-review:2": [
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/1/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1632,10 +1758,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/18/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1650,10 +1776,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/19/inputs/source_review",
         "kind": "step_input",
@@ -1668,10 +1794,10 @@
         "port": "source_review"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/19/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1686,10 +1812,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/5/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1704,10 +1830,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/7/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1722,10 +1848,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/14/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1740,10 +1866,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/15/inputs/source_review",
         "kind": "step_input",
@@ -1758,10 +1884,10 @@
         "port": "source_review"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/15/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1776,10 +1902,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/18/executor/arguments/candidate_review",
         "kind": "step_argument",
@@ -1794,10 +1920,10 @@
         "port": "candidate_review"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/18/executor/arguments/review",
         "kind": "step_argument",
@@ -1810,14 +1936,140 @@
           "name": "封存 Task 交付证据"
         },
         "port": "review"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/1/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "requirements",
+          "name": "需求"
+        },
+        "step": {
+          "key": "requirements_review",
+          "name": "PRD 验收与人工确认"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/11/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "review",
+          "name": "F08 Feature Code Review"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/17/executor/arguments/review",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "approval",
+          "name": "F13 主分支正式人工审核"
+        },
+        "port": "review"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/17/inputs/review",
+        "kind": "step_input",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "approval",
+          "name": "F13 主分支正式人工审核"
+        },
+        "port": "review"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/4/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "design",
+          "name": "设计"
+        },
+        "step": {
+          "key": "design_review",
+          "name": "F04 Design 评审与人工确认"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/6/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "plan_review",
+          "name": "F06 Tasks 评审与人工确认"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/7/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "acceptance",
+          "name": "验收"
+        },
+        "step": {
+          "key": "review",
+          "name": "T05 独立 Code Review"
+        },
+        "port": "result"
       }
     ],
     "builtin-delivery-task-completion-report:1": [
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/19/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1834,10 +2086,10 @@
     ],
     "builtin-delivery-task-creation-report:1": [
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/8/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1852,10 +2104,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/9/executor/foreach/source",
         "kind": "step_collection",
@@ -1867,24 +2119,59 @@
           "key": "implementation",
           "name": "执行各 Task"
         }
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/7/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "tasks",
+          "name": "自动登记已确认 Task 图"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/8/executor/foreach/source",
+        "kind": "step_collection",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation",
+          "name": "F07 按 DAG 并发开发 Tasks"
+        }
       }
     ],
     "builtin-delivery-task-delivery-report:1": [
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/outputs/result",
         "kind": "workflow_output",
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/18/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1901,10 +2188,10 @@
     ],
     "builtin-delivery-task-plan:3": [
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/6/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1919,10 +2206,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/7/inputs/plan",
         "kind": "step_input",
@@ -1937,10 +2224,10 @@
         "port": "plan"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/8/executor/arguments/tasks",
         "kind": "step_argument",
@@ -1957,20 +2244,20 @@
     ],
     "builtin-delivery-task-record:1": [
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/inputs/item/delivery_ref",
         "kind": "workflow_input",
         "port": "item"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/0/executor/arguments/owner_id",
         "kind": "step_argument",
@@ -1985,10 +2272,10 @@
         "port": "owner_id"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/1/inputs/task",
         "kind": "step_input",
@@ -2003,10 +2290,10 @@
         "port": "task"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/11/executor/arguments/owner_id",
         "kind": "step_argument",
@@ -2021,10 +2308,10 @@
         "port": "owner_id"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/14/inputs/task",
         "kind": "step_input",
@@ -2039,10 +2326,10 @@
         "port": "task"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/15/inputs/task",
         "kind": "step_input",
@@ -2057,10 +2344,10 @@
         "port": "task"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/18/executor/arguments/task",
         "kind": "step_argument",
@@ -2075,10 +2362,10 @@
         "port": "task"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/19/executor/arguments/task_id",
         "kind": "step_argument",
@@ -2093,10 +2380,10 @@
         "port": "task_id"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/3/inputs/task",
         "kind": "step_input",
@@ -2111,10 +2398,10 @@
         "port": "task"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/6/inputs/task",
         "kind": "step_input",
@@ -2129,10 +2416,10 @@
         "port": "task"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/9/inputs/task",
         "kind": "step_input",
@@ -2145,14 +2432,96 @@
           "name": "补充交付说明"
         },
         "port": "task"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/inputs/item/delivery_ref",
+        "kind": "workflow_input",
+        "port": "item"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/0/executor/arguments/owner_id",
+        "kind": "step_argument",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "workspace",
+          "name": "准备 Task 基线"
+        },
+        "port": "owner_id"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/1/inputs/task",
+        "kind": "step_input",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "tests",
+          "name": "T01 编写独立行为测试"
+        },
+        "port": "task"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/4/inputs/task",
+        "kind": "step_input",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation",
+          "name": "T03 实现、测试及必要文档"
+        },
+        "port": "task"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/7/inputs/task",
+        "kind": "step_input",
+        "stage": {
+          "key": "acceptance",
+          "name": "验收"
+        },
+        "step": {
+          "key": "review",
+          "name": "T05 独立 Code Review"
+        },
+        "port": "task"
       }
     ],
     "builtin-delivery-test-recipe:2": [
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/11/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2167,10 +2536,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/13/executor/arguments/recipe",
         "kind": "step_argument",
@@ -2185,10 +2554,10 @@
         "port": "recipe"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/17/executor/arguments/recipe",
         "kind": "step_argument",
@@ -2203,10 +2572,10 @@
         "port": "recipe"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/1/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2221,10 +2590,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/10/executor/arguments/recipe",
         "kind": "step_argument",
@@ -2239,10 +2608,10 @@
         "port": "recipe"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/13/executor/arguments/recipe",
         "kind": "step_argument",
@@ -2257,10 +2626,10 @@
         "port": "recipe"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/3/inputs/recipe",
         "kind": "step_input",
@@ -2275,10 +2644,10 @@
         "port": "recipe"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/5/executor/arguments/recipe",
         "kind": "step_argument",
@@ -2293,10 +2662,10 @@
         "port": "recipe"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/6/inputs/recipe",
         "kind": "step_input",
@@ -2311,10 +2680,10 @@
         "port": "recipe"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/8/executor/arguments/recipe",
         "kind": "step_argument",
@@ -2331,10 +2700,10 @@
     ],
     "builtin-delivery-test-report:2": [
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/13/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2349,10 +2718,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/14/inputs/candidate_tests",
         "kind": "step_input",
@@ -2367,10 +2736,10 @@
         "port": "candidate_tests"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/14/inputs/verification",
         "kind": "step_input",
@@ -2385,10 +2754,10 @@
         "port": "verification"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/17/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2403,10 +2772,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/18/inputs/candidate_tests",
         "kind": "step_input",
@@ -2421,10 +2790,10 @@
         "port": "candidate_tests"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/18/inputs/verification",
         "kind": "step_input",
@@ -2439,10 +2808,10 @@
         "port": "verification"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/19/inputs/tests",
         "kind": "step_input",
@@ -2457,10 +2826,10 @@
         "port": "tests"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/19/inputs/verification",
         "kind": "step_input",
@@ -2475,10 +2844,10 @@
         "port": "verification"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/20/executor/arguments/test_receipt",
         "kind": "step_argument",
@@ -2493,10 +2862,10 @@
         "port": "test_receipt"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/10/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2511,10 +2880,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/13/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2529,10 +2898,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/14/inputs/candidate_tests",
         "kind": "step_input",
@@ -2547,10 +2916,10 @@
         "port": "candidate_tests"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/14/inputs/green",
         "kind": "step_input",
@@ -2565,10 +2934,10 @@
         "port": "green"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/14/inputs/red",
         "kind": "step_input",
@@ -2583,10 +2952,10 @@
         "port": "red"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/14/inputs/verify",
         "kind": "step_input",
@@ -2601,10 +2970,10 @@
         "port": "verify"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/15/inputs/tests",
         "kind": "step_input",
@@ -2619,10 +2988,10 @@
         "port": "tests"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/15/inputs/verification",
         "kind": "step_input",
@@ -2637,10 +3006,10 @@
         "port": "verification"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/16/executor/arguments/test_receipt",
         "kind": "step_argument",
@@ -2655,10 +3024,10 @@
         "port": "test_receipt"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/18/executor/arguments/candidate_tests",
         "kind": "step_argument",
@@ -2673,10 +3042,10 @@
         "port": "candidate_tests"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/18/executor/arguments/green",
         "kind": "step_argument",
@@ -2691,10 +3060,10 @@
         "port": "green"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/18/executor/arguments/red",
         "kind": "step_argument",
@@ -2709,10 +3078,10 @@
         "port": "red"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/18/executor/arguments/verify",
         "kind": "step_argument",
@@ -2727,10 +3096,10 @@
         "port": "verify"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/5/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2745,10 +3114,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/6/inputs/red",
         "kind": "step_input",
@@ -2763,10 +3132,10 @@
         "port": "red"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/8/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2781,10 +3150,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/9/inputs/green",
         "kind": "step_input",
@@ -2801,10 +3170,10 @@
     ],
     "builtin-delivery-workspace-snapshot:1": [
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/10/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2819,10 +3188,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/11/inputs/workspace",
         "kind": "step_input",
@@ -2837,10 +3206,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/12/executor/arguments/workspace",
         "kind": "step_argument",
@@ -2855,10 +3224,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/12/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2873,10 +3242,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/13/executor/arguments/workspace",
         "kind": "step_argument",
@@ -2891,10 +3260,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/14/inputs/changes",
         "kind": "step_input",
@@ -2909,10 +3278,10 @@
         "port": "changes"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/14/inputs/workspace",
         "kind": "step_input",
@@ -2927,10 +3296,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/15/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2945,10 +3314,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/16/executor/arguments/target_revision",
         "kind": "step_argument",
@@ -2963,10 +3332,10 @@
         "port": "target_revision"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/16/executor/arguments/workspace",
         "kind": "step_argument",
@@ -2981,10 +3350,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/18/inputs/changes",
         "kind": "step_input",
@@ -2999,10 +3368,10 @@
         "port": "changes"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/18/inputs/workspace",
         "kind": "step_input",
@@ -3017,10 +3386,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/2/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -3035,10 +3404,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/20/executor/arguments/workspace",
         "kind": "step_argument",
@@ -3053,10 +3422,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/21/executor/arguments/workspace",
         "kind": "step_argument",
@@ -3071,10 +3440,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-feature-sol-high:10",
-        "name": "默认 Feature 开发流程",
+        "reference": "builtin-workflow-feature-sol-high:11",
+        "name": "详细版Feature开发流程",
         "type": "workflow",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/data/steps/4/inputs/workspace",
         "kind": "step_input",
@@ -3089,10 +3458,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/0/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -3107,10 +3476,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/1/inputs/workspace",
         "kind": "step_input",
@@ -3125,10 +3494,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/10/executor/arguments/workspace",
         "kind": "step_argument",
@@ -3143,10 +3512,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/11/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -3161,10 +3530,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/12/executor/arguments/target_revision",
         "kind": "step_argument",
@@ -3179,10 +3548,10 @@
         "port": "target_revision"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/12/executor/arguments/workspace",
         "kind": "step_argument",
@@ -3197,10 +3566,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/14/inputs/changes",
         "kind": "step_input",
@@ -3215,10 +3584,10 @@
         "port": "changes"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/14/inputs/workspace",
         "kind": "step_input",
@@ -3233,10 +3602,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/16/executor/arguments/workspace",
         "kind": "step_argument",
@@ -3251,10 +3620,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/17/executor/arguments/workspace",
         "kind": "step_argument",
@@ -3269,10 +3638,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/18/executor/arguments/workspace",
         "kind": "step_argument",
@@ -3287,10 +3656,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/2/executor/arguments/workspace",
         "kind": "step_argument",
@@ -3305,10 +3674,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/2/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -3323,10 +3692,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/3/inputs/workspace",
         "kind": "step_input",
@@ -3341,10 +3710,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/4/executor/arguments/workspace",
         "kind": "step_argument",
@@ -3359,10 +3728,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/4/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -3377,10 +3746,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/5/executor/arguments/workspace",
         "kind": "step_argument",
@@ -3395,10 +3764,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/6/inputs/workspace",
         "kind": "step_input",
@@ -3413,10 +3782,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/7/executor/arguments/diff_base",
         "kind": "step_argument",
@@ -3431,10 +3800,10 @@
         "port": "diff_base"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/7/executor/arguments/workspace",
         "kind": "step_argument",
@@ -3449,10 +3818,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/7/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -3467,10 +3836,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/8/executor/arguments/workspace",
         "kind": "step_argument",
@@ -3485,10 +3854,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/9/inputs/changes",
         "kind": "step_input",
@@ -3503,10 +3872,10 @@
         "port": "changes"
       },
       {
-        "reference": "builtin-workflow-task-sol-high:9",
-        "name": "默认 Task 开发流程",
+        "reference": "builtin-workflow-task-sol-high:10",
+        "name": "详细版Task开发流程",
         "type": "workflow",
-        "version": 9,
+        "version": 10,
         "scope": "global",
         "path": "/data/steps/9/inputs/workspace",
         "kind": "step_input",
@@ -3519,6 +3888,204 @@
           "name": "补充交付说明"
         },
         "port": "workspace"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/10/executor/arguments/diff_base",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "workspace",
+          "name": "自动固定 Feature 完整差异"
+        },
+        "port": "diff_base"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/10/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "workspace",
+          "name": "自动固定 Feature 完整差异"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/11/inputs/baseline",
+        "kind": "step_input",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "review",
+          "name": "F08 Feature Code Review"
+        },
+        "port": "baseline"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/2/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "design",
+          "name": "设计"
+        },
+        "step": {
+          "key": "source_workspace",
+          "name": "自动提供代码基线"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/3/inputs/workspace",
+        "kind": "step_input",
+        "stage": {
+          "key": "design",
+          "name": "设计"
+        },
+        "step": {
+          "key": "design",
+          "name": "F03 架构与接口设计"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/5/inputs/workspace",
+        "kind": "step_input",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "planning",
+          "name": "F05 规划 Tasks 与依赖 DAG"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/9/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "workspace_current",
+          "name": "自动读取已汇合 Feature"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/0/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "workspace",
+          "name": "准备 Task 基线"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/1/inputs/workspace",
+        "kind": "step_input",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "tests",
+          "name": "T01 编写独立行为测试"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/2/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "tests_snapshot",
+          "name": "自动固定测试及条件空接口"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/5/executor/arguments/diff_base",
+        "kind": "step_argument",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation_snapshot",
+          "name": "自动固定完整实现差异"
+        },
+        "port": "diff_base"
       }
     ],
     "builtin-skill-architecture:2": [
@@ -3603,6 +4170,60 @@
         "version": 5,
         "scope": "global",
         "path": "/skills/3",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-analyst:1",
+        "name": "精简版analyst能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-architect:1",
+        "name": "精简版architect能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-developer:1",
+        "name": "精简版developer能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-reviewer:1",
+        "name": "精简版reviewer能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-tester:1",
+        "name": "精简版tester能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/skills/2",
         "kind": "reference"
       }
     ],
@@ -3853,6 +4474,15 @@
         "scope": "global",
         "path": "/skills/1",
         "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-reviewer:1",
+        "name": "精简版reviewer能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/skills/3",
+        "kind": "reference"
       }
     ],
     "builtin-skill-prd:2": [
@@ -3881,6 +4511,15 @@
         "version": 2,
         "scope": "global",
         "path": "/skills/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-analyst:1",
+        "name": "精简版analyst能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/skills/2",
         "kind": "reference"
       }
     ],
@@ -3921,6 +4560,15 @@
         "version": 12,
         "scope": "global",
         "path": "/skills/3",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/skills/4",
         "kind": "reference"
       }
     ],
@@ -4090,6 +4738,15 @@
         "name": "Diff",
         "type": "delivery_type",
         "version": 2,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-delivery-diff:1",
+        "name": "精简版固定版本差异",
+        "type": "delivery_type",
+        "version": 1,
         "scope": "global",
         "path": "/spec_refs/0",
         "kind": "reference"
@@ -4276,6 +4933,15 @@
         "name": "Test Report",
         "type": "delivery_type",
         "version": 2,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-delivery-test-report:1",
+        "name": "精简版独立测试报告",
+        "type": "delivery_type",
+        "version": 1,
         "scope": "global",
         "path": "/spec_refs/0",
         "kind": "reference"
@@ -4539,6 +5205,60 @@
         "scope": "global",
         "path": "/tools/0",
         "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-analyst:1",
+        "name": "精简版analyst能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-architect:1",
+        "name": "精简版architect能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-developer:1",
+        "name": "精简版developer能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-reviewer:1",
+        "name": "精简版reviewer能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-tester:1",
+        "name": "精简版tester能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
       }
     ],
     "builtin-tool-configuration-catalog:1": [
@@ -4547,6 +5267,15 @@
         "name": "项目经理能力 · Sol High / Codex",
         "type": "capability",
         "version": 12,
+        "scope": "global",
+        "path": "/tools/27",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
         "scope": "global",
         "path": "/tools/27",
         "kind": "reference"
@@ -4561,6 +5290,15 @@
         "scope": "global",
         "path": "/tools/31",
         "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/31",
+        "kind": "reference"
       }
     ],
     "builtin-tool-configuration-change-preview:1": [
@@ -4569,6 +5307,15 @@
         "name": "项目经理能力 · Sol High / Codex",
         "type": "capability",
         "version": 12,
+        "scope": "global",
+        "path": "/tools/30",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
         "scope": "global",
         "path": "/tools/30",
         "kind": "reference"
@@ -4583,6 +5330,15 @@
         "scope": "global",
         "path": "/tools/28",
         "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/28",
+        "kind": "reference"
       }
     ],
     "builtin-tool-configuration-transfer-apply:2": [
@@ -4591,6 +5347,15 @@
         "name": "项目经理能力 · Sol High / Codex",
         "type": "capability",
         "version": 12,
+        "scope": "global",
+        "path": "/tools/33",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
         "scope": "global",
         "path": "/tools/33",
         "kind": "reference"
@@ -4605,6 +5370,15 @@
         "scope": "global",
         "path": "/tools/34",
         "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/34",
+        "kind": "reference"
       }
     ],
     "builtin-tool-configuration-transfer-stage:1": [
@@ -4613,6 +5387,15 @@
         "name": "项目经理能力 · Sol High / Codex",
         "type": "capability",
         "version": 12,
+        "scope": "global",
+        "path": "/tools/32",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
         "scope": "global",
         "path": "/tools/32",
         "kind": "reference"
@@ -4627,6 +5410,15 @@
         "scope": "global",
         "path": "/tools/35",
         "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/35",
+        "kind": "reference"
       }
     ],
     "builtin-tool-configuration-usage:1": [
@@ -4635,6 +5427,15 @@
         "name": "项目经理能力 · Sol High / Codex",
         "type": "capability",
         "version": 12,
+        "scope": "global",
+        "path": "/tools/29",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
         "scope": "global",
         "path": "/tools/29",
         "kind": "reference"
@@ -4781,6 +5582,15 @@
         "scope": "global",
         "path": "/tools/25",
         "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/25",
+        "kind": "reference"
       }
     ],
     "builtin-tool-project-overview:1": [
@@ -4789,6 +5599,15 @@
         "name": "项目经理能力 · Sol High / Codex",
         "type": "capability",
         "version": 12,
+        "scope": "global",
+        "path": "/tools/22",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
         "scope": "global",
         "path": "/tools/22",
         "kind": "reference"
@@ -4803,6 +5622,15 @@
         "scope": "global",
         "path": "/tools/24",
         "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/24",
+        "kind": "reference"
       }
     ],
     "builtin-tool-project-records-list:1": [
@@ -4814,6 +5642,15 @@
         "scope": "global",
         "path": "/tools/23",
         "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/23",
+        "kind": "reference"
       }
     ],
     "builtin-tool-project-resources:1": [
@@ -4822,6 +5659,15 @@
         "name": "项目经理能力 · Sol High / Codex",
         "type": "capability",
         "version": 12,
+        "scope": "global",
+        "path": "/tools/26",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
         "scope": "global",
         "path": "/tools/26",
         "kind": "reference"
@@ -4881,6 +5727,60 @@
         "scope": "global",
         "path": "/tools/2",
         "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-analyst:1",
+        "name": "精简版analyst能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-architect:1",
+        "name": "精简版architect能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-developer:1",
+        "name": "精简版developer能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/36",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-reviewer:1",
+        "name": "精简版reviewer能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-tester:1",
+        "name": "精简版tester能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/2",
+        "kind": "reference"
       }
     ],
     "builtin-tool-tasks-complete:1": [],
@@ -4895,6 +5795,15 @@
         "scope": "global",
         "path": "/tools/14",
         "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/14",
+        "kind": "reference"
       }
     ],
     "builtin-tool-workflow-change-apply:4": [
@@ -4903,6 +5812,15 @@
         "name": "项目经理能力 · Sol High / Codex",
         "type": "capability",
         "version": 12,
+        "scope": "global",
+        "path": "/tools/16",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
         "scope": "global",
         "path": "/tools/16",
         "kind": "reference"
@@ -4917,6 +5835,15 @@
         "scope": "global",
         "path": "/tools/15",
         "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/15",
+        "kind": "reference"
       }
     ],
     "builtin-tool-workflow-complete:2": [
@@ -4925,6 +5852,15 @@
         "name": "项目经理能力 · Sol High / Codex",
         "type": "capability",
         "version": 12,
+        "scope": "global",
+        "path": "/tools/20",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
         "scope": "global",
         "path": "/tools/20",
         "kind": "reference"
@@ -4939,6 +5875,15 @@
         "scope": "global",
         "path": "/tools/38",
         "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/38",
+        "kind": "reference"
       }
     ],
     "builtin-tool-workflow-controller-wait:1": [
@@ -4947,6 +5892,15 @@
         "name": "项目经理能力 · Sol High / Codex",
         "type": "capability",
         "version": 12,
+        "scope": "global",
+        "path": "/tools/37",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
         "scope": "global",
         "path": "/tools/37",
         "kind": "reference"
@@ -4961,6 +5915,15 @@
         "scope": "global",
         "path": "/tools/18",
         "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/18",
+        "kind": "reference"
       }
     ],
     "builtin-tool-workflow-events-read:1": [
@@ -4969,6 +5932,15 @@
         "name": "项目经理能力 · Sol High / Codex",
         "type": "capability",
         "version": 12,
+        "scope": "global",
+        "path": "/tools/3",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
         "scope": "global",
         "path": "/tools/3",
         "kind": "reference"
@@ -4983,6 +5955,15 @@
         "scope": "global",
         "path": "/tools/5",
         "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/5",
+        "kind": "reference"
       }
     ],
     "builtin-tool-workflow-execution-reconcile:2": [
@@ -4991,6 +5972,15 @@
         "name": "项目经理能力 · Sol High / Codex",
         "type": "capability",
         "version": 12,
+        "scope": "global",
+        "path": "/tools/19",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
         "scope": "global",
         "path": "/tools/19",
         "kind": "reference"
@@ -5005,6 +5995,15 @@
         "scope": "global",
         "path": "/tools/11",
         "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/11",
+        "kind": "reference"
       }
     ],
     "builtin-tool-workflow-inspect:1": [
@@ -5016,6 +6015,15 @@
         "scope": "global",
         "path": "/tools/2",
         "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/2",
+        "kind": "reference"
       }
     ],
     "builtin-tool-workflow-materials-import:2": [
@@ -5024,6 +6032,15 @@
         "name": "项目经理能力 · Sol High / Codex",
         "type": "capability",
         "version": 12,
+        "scope": "global",
+        "path": "/tools/17",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
         "scope": "global",
         "path": "/tools/17",
         "kind": "reference"
@@ -5092,6 +6109,60 @@
         "scope": "global",
         "path": "/tools/1",
         "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-analyst:1",
+        "name": "精简版analyst能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-architect:1",
+        "name": "精简版architect能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-developer:1",
+        "name": "精简版developer能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/4",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-reviewer:1",
+        "name": "精简版reviewer能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-tester:1",
+        "name": "精简版tester能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/1",
+        "kind": "reference"
       }
     ],
     "builtin-tool-workflow-pause:2": [
@@ -5100,6 +6171,15 @@
         "name": "项目经理能力 · Sol High / Codex",
         "type": "capability",
         "version": 12,
+        "scope": "global",
+        "path": "/tools/12",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
         "scope": "global",
         "path": "/tools/12",
         "kind": "reference"
@@ -5114,6 +6194,15 @@
         "scope": "global",
         "path": "/tools/13",
         "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/13",
+        "kind": "reference"
       }
     ],
     "builtin-tool-workflow-rework-preview:1": [
@@ -5122,6 +6211,15 @@
         "name": "项目经理能力 · Sol High / Codex",
         "type": "capability",
         "version": 12,
+        "scope": "global",
+        "path": "/tools/39",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
         "scope": "global",
         "path": "/tools/39",
         "kind": "reference"
@@ -5136,6 +6234,15 @@
         "scope": "global",
         "path": "/tools/21",
         "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/21",
+        "kind": "reference"
       }
     ],
     "builtin-tool-workflow-start:3": [
@@ -5144,6 +6251,15 @@
         "name": "项目经理能力 · Sol High / Codex",
         "type": "capability",
         "version": 12,
+        "scope": "global",
+        "path": "/tools/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
         "scope": "global",
         "path": "/tools/1",
         "kind": "reference"
@@ -5158,6 +6274,15 @@
         "scope": "global",
         "path": "/tools/7",
         "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/7",
+        "kind": "reference"
       }
     ],
     "builtin-tool-workflow-step-dispatch:2": [
@@ -5166,6 +6291,15 @@
         "name": "项目经理能力 · Sol High / Codex",
         "type": "capability",
         "version": 12,
+        "scope": "global",
+        "path": "/tools/6",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
         "scope": "global",
         "path": "/tools/6",
         "kind": "reference"
@@ -5180,6 +6314,15 @@
         "scope": "global",
         "path": "/tools/8",
         "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/8",
+        "kind": "reference"
       }
     ],
     "builtin-tool-workflow-step-retry:2": [
@@ -5188,6 +6331,15 @@
         "name": "项目经理能力 · Sol High / Codex",
         "type": "capability",
         "version": 12,
+        "scope": "global",
+        "path": "/tools/9",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
         "scope": "global",
         "path": "/tools/9",
         "kind": "reference"
@@ -5202,9 +6354,1893 @@
         "scope": "global",
         "path": "/tools/10",
         "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/tools/10",
+        "kind": "reference"
       }
     ],
     "builtin-tool-workspace-current:1": [],
-    "builtin-tool-workspace-snapshot:2": []
+    "builtin-tool-workspace-snapshot:2": [],
+    "精简版-delivery-checkpoint:1": [
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/10/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "workspace",
+          "name": "自动固定 Feature 完整差异"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/11/inputs/workspace",
+        "kind": "step_input",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "review",
+          "name": "F08 Feature Code Review"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/12/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "regression",
+          "name": "F09 Feature 源分支项目回归"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/13/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "source_publish",
+          "name": "F10 提交并推送 Feature"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/14/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "target",
+          "name": "读取最新主分支"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/15/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "publication",
+          "name": "F11 创建 Feature → 主分支 PR"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/18/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "merge",
+          "name": "F14 合入主分支并同步"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/10/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "submission",
+          "name": "提交"
+        },
+        "step": {
+          "key": "target",
+          "name": "读取最新 Feature 基线"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/11/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "submission",
+          "name": "提交"
+        },
+        "step": {
+          "key": "publication",
+          "name": "T08 创建 Task → Feature PR"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/13/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "integration",
+          "name": "合入"
+        },
+        "step": {
+          "key": "merge",
+          "name": "T10 自动合入、同步及完成登记"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/2/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "tests_snapshot",
+          "name": "自动固定测试及条件空接口"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/3/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "red",
+          "name": "T02 执行真实 Red"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/4/inputs/workspace",
+        "kind": "step_input",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation",
+          "name": "T03 实现、测试及必要文档"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/5/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation_snapshot",
+          "name": "自动固定完整实现差异"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/5/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation_snapshot",
+          "name": "自动固定完整实现差异"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/6/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "green",
+          "name": "T04 执行独立 Green"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/7/inputs/changes",
+        "kind": "step_input",
+        "stage": {
+          "key": "acceptance",
+          "name": "验收"
+        },
+        "step": {
+          "key": "review",
+          "name": "T05 独立 Code Review"
+        },
+        "port": "changes"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/7/inputs/workspace",
+        "kind": "step_input",
+        "stage": {
+          "key": "acceptance",
+          "name": "验收"
+        },
+        "step": {
+          "key": "review",
+          "name": "T05 独立 Code Review"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/8/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "acceptance",
+          "name": "验收"
+        },
+        "step": {
+          "key": "regression",
+          "name": "T06 源分支项目回归"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/9/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "submission",
+          "name": "提交"
+        },
+        "step": {
+          "key": "source_publish",
+          "name": "T07 提交并推送 Task"
+        },
+        "port": "workspace"
+      }
+    ],
+    "精简版-delivery-design:1": [
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/11/inputs/design",
+        "kind": "step_input",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "review",
+          "name": "F08 Feature Code Review"
+        },
+        "port": "design"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/3/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "design",
+          "name": "设计"
+        },
+        "step": {
+          "key": "design",
+          "name": "F03 架构与接口设计"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/4/inputs/design",
+        "kind": "step_input",
+        "stage": {
+          "key": "design",
+          "name": "设计"
+        },
+        "step": {
+          "key": "design_review",
+          "name": "F04 Design 评审与人工确认"
+        },
+        "port": "design"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/5/inputs/design",
+        "kind": "step_input",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "planning",
+          "name": "F05 规划 Tasks 与依赖 DAG"
+        },
+        "port": "design"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/6/inputs/design",
+        "kind": "step_input",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "plan_review",
+          "name": "F06 Tasks 评审与人工确认"
+        },
+        "port": "design"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/8/inputs/design",
+        "kind": "step_input",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation",
+          "name": "F07 按 DAG 并发开发 Tasks"
+        },
+        "port": "design"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/inputs/design/delivery_ref",
+        "kind": "workflow_input",
+        "port": "design"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/1/inputs/design",
+        "kind": "step_input",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "tests",
+          "name": "T01 编写独立行为测试"
+        },
+        "port": "design"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/4/inputs/design",
+        "kind": "step_input",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation",
+          "name": "T03 实现、测试及必要文档"
+        },
+        "port": "design"
+      }
+    ],
+    "精简版-delivery-diff:1": [
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/10/outputs/diff/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "workspace",
+          "name": "自动固定 Feature 完整差异"
+        },
+        "port": "diff"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/10/outputs/scope_diff/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "workspace",
+          "name": "自动固定 Feature 完整差异"
+        },
+        "port": "scope_diff"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/11/inputs/diff",
+        "kind": "step_input",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "review",
+          "name": "F08 Feature Code Review"
+        },
+        "port": "diff"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/2/outputs/diff/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "tests_snapshot",
+          "name": "自动固定测试及条件空接口"
+        },
+        "port": "diff"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/5/outputs/diff/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation_snapshot",
+          "name": "自动固定完整实现差异"
+        },
+        "port": "diff"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/5/outputs/scope_diff/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation_snapshot",
+          "name": "自动固定完整实现差异"
+        },
+        "port": "scope_diff"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/7/inputs/diff",
+        "kind": "step_input",
+        "stage": {
+          "key": "acceptance",
+          "name": "验收"
+        },
+        "step": {
+          "key": "review",
+          "name": "T05 独立 Code Review"
+        },
+        "port": "diff"
+      }
+    ],
+    "精简版-delivery-human-packet:1": [
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/17/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "approval",
+          "name": "F13 主分支正式人工审核"
+        },
+        "port": "result"
+      }
+    ],
+    "精简版-delivery-implementation:1": [
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/4/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation",
+          "name": "T03 实现、测试及必要文档"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/7/inputs/implementation",
+        "kind": "step_input",
+        "stage": {
+          "key": "acceptance",
+          "name": "验收"
+        },
+        "step": {
+          "key": "review",
+          "name": "T05 独立 Code Review"
+        },
+        "port": "implementation"
+      }
+    ],
+    "精简版-delivery-merge-sync:1": [
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/outputs/result",
+        "kind": "workflow_output",
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/18/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "merge",
+          "name": "F14 合入主分支并同步"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/outputs/result",
+        "kind": "workflow_output",
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/13/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "integration",
+          "name": "合入"
+        },
+        "step": {
+          "key": "merge",
+          "name": "T10 自动合入、同步及完成登记"
+        },
+        "port": "result"
+      }
+    ],
+    "精简版-delivery-project-tests:1": [
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/inputs/test_configuration/delivery_ref",
+        "kind": "workflow_input",
+        "port": "test_configuration"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/3/inputs/test_configuration",
+        "kind": "step_input",
+        "stage": {
+          "key": "design",
+          "name": "设计"
+        },
+        "step": {
+          "key": "design",
+          "name": "F03 架构与接口设计"
+        },
+        "port": "test_configuration"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/4/inputs/test_configuration",
+        "kind": "step_input",
+        "stage": {
+          "key": "design",
+          "name": "设计"
+        },
+        "step": {
+          "key": "design_review",
+          "name": "F04 Design 评审与人工确认"
+        },
+        "port": "test_configuration"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/5/inputs/test_configuration",
+        "kind": "step_input",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "planning",
+          "name": "F05 规划 Tasks 与依赖 DAG"
+        },
+        "port": "test_configuration"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/6/inputs/test_configuration",
+        "kind": "step_input",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "plan_review",
+          "name": "F06 Tasks 评审与人工确认"
+        },
+        "port": "test_configuration"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/8/inputs/test_configuration",
+        "kind": "step_input",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation",
+          "name": "F07 按 DAG 并发开发 Tasks"
+        },
+        "port": "test_configuration"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/inputs/test_configuration/delivery_ref",
+        "kind": "workflow_input",
+        "port": "test_configuration"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/1/inputs/test_configuration",
+        "kind": "step_input",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "tests",
+          "name": "T01 编写独立行为测试"
+        },
+        "port": "test_configuration"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/4/inputs/test_configuration",
+        "kind": "step_input",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation",
+          "name": "T03 实现、测试及必要文档"
+        },
+        "port": "test_configuration"
+      }
+    ],
+    "精简版-delivery-pull-request:1": [
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/15/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "publication",
+          "name": "F11 创建 Feature → 主分支 PR"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/16/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "merge_regression",
+          "name": "F12 隔离合并结果项目回归"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/17/executor/arguments/publication",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "approval",
+          "name": "F13 主分支正式人工审核"
+        },
+        "port": "publication"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/17/inputs/publication",
+        "kind": "step_input",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "approval",
+          "name": "F13 主分支正式人工审核"
+        },
+        "port": "publication"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/18/executor/arguments/publication",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "merge",
+          "name": "F14 合入主分支并同步"
+        },
+        "port": "publication"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/11/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "submission",
+          "name": "提交"
+        },
+        "step": {
+          "key": "publication",
+          "name": "T08 创建 Task → Feature PR"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/12/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "integration",
+          "name": "合入"
+        },
+        "step": {
+          "key": "merge_regression",
+          "name": "T09 隔离合并结果项目回归"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/13/executor/arguments/publication",
+        "kind": "step_argument",
+        "stage": {
+          "key": "integration",
+          "name": "合入"
+        },
+        "step": {
+          "key": "merge",
+          "name": "T10 自动合入、同步及完成登记"
+        },
+        "port": "publication"
+      }
+    ],
+    "精简版-delivery-regression:1": [
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/12/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "regression",
+          "name": "F09 Feature 源分支项目回归"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/16/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "merge_regression",
+          "name": "F12 隔离合并结果项目回归"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/17/executor/arguments/merge_regression",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "approval",
+          "name": "F13 主分支正式人工审核"
+        },
+        "port": "merge_regression"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/17/executor/arguments/source_regression",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "approval",
+          "name": "F13 主分支正式人工审核"
+        },
+        "port": "source_regression"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/17/inputs/merge_regression",
+        "kind": "step_input",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "approval",
+          "name": "F13 主分支正式人工审核"
+        },
+        "port": "merge_regression"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/17/inputs/source_regression",
+        "kind": "step_input",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "approval",
+          "name": "F13 主分支正式人工审核"
+        },
+        "port": "source_regression"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/12/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "integration",
+          "name": "合入"
+        },
+        "step": {
+          "key": "merge_regression",
+          "name": "T09 隔离合并结果项目回归"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/8/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "acceptance",
+          "name": "验收"
+        },
+        "step": {
+          "key": "regression",
+          "name": "T06 源分支项目回归"
+        },
+        "port": "result"
+      }
+    ],
+    "精简版-delivery-source-publication:1": [
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/13/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "source_publish",
+          "name": "F10 提交并推送 Feature"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/9/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "submission",
+          "name": "提交"
+        },
+        "step": {
+          "key": "source_publish",
+          "name": "T07 提交并推送 Task"
+        },
+        "port": "result"
+      }
+    ],
+    "精简版-delivery-target:1": [
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/14/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "target",
+          "name": "读取最新主分支"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/15/executor/arguments/target",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "publication",
+          "name": "F11 创建 Feature → 主分支 PR"
+        },
+        "port": "target"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/10/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "submission",
+          "name": "提交"
+        },
+        "step": {
+          "key": "target",
+          "name": "读取最新 Feature 基线"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/11/executor/arguments/target",
+        "kind": "step_argument",
+        "stage": {
+          "key": "submission",
+          "name": "提交"
+        },
+        "step": {
+          "key": "publication",
+          "name": "T08 创建 Task → Feature PR"
+        },
+        "port": "target"
+      }
+    ],
+    "精简版-delivery-task-plan:1": [
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/5/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "planning",
+          "name": "F05 规划 Tasks 与依赖 DAG"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/6/inputs/plan",
+        "kind": "step_input",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "plan_review",
+          "name": "F06 Tasks 评审与人工确认"
+        },
+        "port": "plan"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/7/executor/arguments/tasks",
+        "kind": "step_argument",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "tasks",
+          "name": "自动登记已确认 Task 图"
+        },
+        "port": "tasks"
+      }
+    ],
+    "精简版-delivery-task-reports:1": [
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/11/inputs/tasks",
+        "kind": "step_input",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "review",
+          "name": "F08 Feature Code Review"
+        },
+        "port": "tasks"
+      },
+      {
+        "reference": "精简版-workflow-feature:1",
+        "name": "精简版Feature开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/8/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation",
+          "name": "F07 按 DAG 并发开发 Tasks"
+        },
+        "port": "result"
+      }
+    ],
+    "精简版-delivery-test-recipe:1": [
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/1/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "tests",
+          "name": "T01 编写独立行为测试"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/2/executor/arguments/interfaces",
+        "kind": "step_argument",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "tests_snapshot",
+          "name": "自动固定测试及条件空接口"
+        },
+        "port": "interfaces"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/3/executor/arguments/recipe",
+        "kind": "step_argument",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "red",
+          "name": "T02 执行真实 Red"
+        },
+        "port": "recipe"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/4/inputs/recipe",
+        "kind": "step_input",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation",
+          "name": "T03 实现、测试及必要文档"
+        },
+        "port": "recipe"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/6/executor/arguments/recipe",
+        "kind": "step_argument",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "green",
+          "name": "T04 执行独立 Green"
+        },
+        "port": "recipe"
+      }
+    ],
+    "精简版-delivery-test-report:1": [
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/3/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "red",
+          "name": "T02 执行真实 Red"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/4/inputs/red",
+        "kind": "step_input",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation",
+          "name": "T03 实现、测试及必要文档"
+        },
+        "port": "red"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/6/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "green",
+          "name": "T04 执行独立 Green"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/7/inputs/green",
+        "kind": "step_input",
+        "stage": {
+          "key": "acceptance",
+          "name": "验收"
+        },
+        "step": {
+          "key": "review",
+          "name": "T05 独立 Code Review"
+        },
+        "port": "green"
+      },
+      {
+        "reference": "精简版-workflow-task:1",
+        "name": "精简版Task开发流程",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/7/inputs/red",
+        "kind": "step_input",
+        "stage": {
+          "key": "acceptance",
+          "name": "验收"
+        },
+        "step": {
+          "key": "review",
+          "name": "T05 独立 Code Review"
+        },
+        "port": "red"
+      }
+    ],
+    "精简版-skill-code-review:1": [
+      {
+        "reference": "精简版-capability-reviewer:1",
+        "name": "精简版reviewer能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      }
+    ],
+    "精简版-skill-context:1": [
+      {
+        "reference": "精简版-capability-analyst:1",
+        "name": "精简版analyst能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-architect:1",
+        "name": "精简版architect能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-developer:1",
+        "name": "精简版developer能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-reviewer:1",
+        "name": "精简版reviewer能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-capability-tester:1",
+        "name": "精简版tester能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      }
+    ],
+    "精简版-skill-implementation:1": [
+      {
+        "reference": "精简版-capability-developer:1",
+        "name": "精简版developer能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      }
+    ],
+    "精简版-skill-project-planning:1": [
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      }
+    ],
+    "精简版-skill-test-design:1": [
+      {
+        "reference": "精简版-capability-tester:1",
+        "name": "精简版tester能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      }
+    ],
+    "精简版-skill-workflow-orchestration:1": [
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/skills/3",
+        "kind": "reference"
+      }
+    ],
+    "精简版-spec-design:1": [
+      {
+        "reference": "精简版-capability-architect:1",
+        "name": "精简版architect能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-delivery-design:1",
+        "name": "精简版Design",
+        "type": "delivery_type",
+        "version": 1,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      }
+    ],
+    "精简版-spec-feature-code-review:1": [],
+    "精简版-spec-implementation:1": [
+      {
+        "reference": "精简版-capability-developer:1",
+        "name": "精简版developer能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-delivery-implementation:1",
+        "name": "精简版实现说明",
+        "type": "delivery_type",
+        "version": 1,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      }
+    ],
+    "精简版-spec-planning:1": [
+      {
+        "reference": "精简版-capability-project-manager:1",
+        "name": "精简版project-manager能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-delivery-task-plan:1",
+        "name": "精简版Tasks DAG",
+        "type": "delivery_type",
+        "version": 1,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      }
+    ],
+    "精简版-spec-platform-evidence:1": [
+      {
+        "reference": "精简版-delivery-checkpoint:1",
+        "name": "精简版代码检查点",
+        "type": "delivery_type",
+        "version": 1,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-delivery-human-packet:1",
+        "name": "精简版正式合入审核材料",
+        "type": "delivery_type",
+        "version": 1,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-delivery-merge-sync:1",
+        "name": "精简版远端合入与本地同步回执",
+        "type": "delivery_type",
+        "version": 1,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-delivery-project-tests:1",
+        "name": "精简版冻结项目测试配置",
+        "type": "delivery_type",
+        "version": 1,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-delivery-pull-request:1",
+        "name": "精简版交付 PR 与试合并候选",
+        "type": "delivery_type",
+        "version": 1,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-delivery-regression:1",
+        "name": "精简版项目回归回执",
+        "type": "delivery_type",
+        "version": 1,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-delivery-source-publication:1",
+        "name": "精简版源分支发布回执",
+        "type": "delivery_type",
+        "version": 1,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-delivery-target:1",
+        "name": "精简版远端上级基线",
+        "type": "delivery_type",
+        "version": 1,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-delivery-task-reports:1",
+        "name": "精简版 Task 合入与同步回执集合",
+        "type": "delivery_type",
+        "version": 1,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      }
+    ],
+    "精简版-spec-task-code-review:1": [],
+    "精简版-spec-tests:1": [
+      {
+        "reference": "精简版-capability-tester:1",
+        "name": "精简版tester能力",
+        "type": "capability",
+        "version": 1,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "精简版-delivery-test-recipe:1",
+        "name": "精简版独立测试配方",
+        "type": "delivery_type",
+        "version": 1,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      }
+    ],
+    "精简版-tool-checkpoint:1": [],
+    "精简版-tool-delivery-merge:1": [],
+    "精简版-tool-delivery-open:1": [],
+    "精简版-tool-project-tests:1": [],
+    "精简版-tool-source-publish:1": [],
+    "精简版-tool-target:1": [],
+    "精简版-tool-tests-run:1": []
   }
 }

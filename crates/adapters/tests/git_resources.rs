@@ -288,3 +288,134 @@ fn interrupted_clone_rejects_foreign_origin_without_changing_repository() {
     );
     assert!(git(&repo, &["for-each-ref"]).is_empty());
 }
+
+#[test]
+fn delivery_sync_preserves_dirty_worktrees_and_recovers_a_lost_checkout() {
+    let root = tempfile::tempdir().unwrap();
+    let project = id();
+    let repo = root
+        .path()
+        .join("projects")
+        .join(&project)
+        .join("repository");
+    fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-b", "main"]);
+    fs::write(repo.join("base.txt"), "base\n").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-m", "baseline"]);
+    let base = git(&repo, &["rev-parse", "HEAD"]);
+    let remote = root.path().join("remote.git");
+    git(root.path(), &["init", "--bare", remote.to_str().unwrap()]);
+    git(
+        &repo,
+        &["remote", "add", "origin", remote.to_str().unwrap()],
+    );
+    let adapter = CliGit::new(root.path()).unwrap();
+    let feature = adapter
+        .prepare_worktree(&project, &id(), "features", &base, &id())
+        .unwrap();
+    let task = adapter
+        .prepare_worktree(&project, &id(), "tasks", &base, &id())
+        .unwrap();
+    let context = GitContext {
+        project: project.clone(),
+        workspace: Workspace {
+            repository: "fixture/local".into(),
+            path: repo.to_string_lossy().into(),
+            mainline: "main".into(),
+        },
+        source: CodeLocation {
+            owner: task.owner.clone(),
+            branch: task.branch,
+            worktree: task.path.clone(),
+        },
+        target: CodeLocation {
+            owner: feature.owner.clone(),
+            branch: feature.branch.clone(),
+            worktree: feature.path.clone(),
+        },
+        origin: Origin::External,
+    };
+    fs::write(
+        Path::new(&task.path).join("addition.txt"),
+        "verified source\n",
+    )
+    .unwrap();
+    let source = adapter.snapshot_worktree(&context, &base, &id()).unwrap();
+    let candidate = adapter.candidate(&context, &source, &base, &id()).unwrap();
+    git(
+        &repo,
+        &[
+            "push",
+            "origin",
+            &format!("{candidate}:refs/heads/accepted"),
+        ],
+    );
+    let target = Path::new(&feature.path);
+    fs::write(target.join("local.txt"), "keep this edit\n").unwrap();
+    assert!(
+        !adapter
+            .delivery_sync_ready(&context, &base, &candidate)
+            .unwrap()
+    );
+    let original = id();
+    assert!(
+        adapter
+            .sync_delivery(&context, &base, &candidate, &original, false)
+            .is_err()
+    );
+    assert_eq!(
+        fs::read_to_string(target.join("local.txt")).unwrap(),
+        "keep this edit\n"
+    );
+    assert_eq!(git(target, &["rev-parse", "HEAD"]), base);
+    fs::remove_file(target.join("local.txt")).unwrap();
+    // Simulate the physical crash boundary after ref CAS, before checkout.
+    git(
+        &repo,
+        &[
+            "update-ref",
+            &format!("refs/heads/{}", feature.branch),
+            &candidate,
+            &base,
+        ],
+    );
+    let observed = adapter
+        .sync_delivery(&context, &base, &candidate, &original, true)
+        .unwrap()
+        .unwrap();
+    assert_eq!(observed["checkout_required"], true);
+    assert!(!target.join("addition.txt").exists());
+    assert!(
+        adapter
+            .delivery_sync_ready(&context, &base, &candidate)
+            .unwrap()
+    );
+    let recovered = adapter
+        .sync_delivery(&context, &base, &candidate, &id(), false)
+        .unwrap()
+        .unwrap();
+    assert_eq!(recovered["synchronized"], true);
+    assert_eq!(
+        fs::read_to_string(target.join("addition.txt")).unwrap(),
+        "verified source\n"
+    );
+    assert_eq!(
+        adapter
+            .sync_delivery(&context, &base, &candidate, &original, true)
+            .unwrap()
+            .unwrap()["synchronized"],
+        true
+    );
+    assert_eq!(git(Path::new(&task.path), &["rev-parse", "HEAD"]), source);
+    assert!(git(target, &["status", "--porcelain"]).is_empty());
+    fs::write(target.join("unknown.txt"), "unrelated successor\n").unwrap();
+    git(target, &["add", "."]);
+    git(target, &["commit", "-m", "unknown successor"]);
+    assert!(
+        adapter
+            .delivery_sync_ready(&context, &base, &candidate)
+            .is_err()
+    );
+    assert!(target.join("unknown.txt").exists());
+}

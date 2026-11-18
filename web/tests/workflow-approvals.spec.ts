@@ -173,6 +173,11 @@ for (const nested of [false, true]) {
           featureFrame
             .getByRole("region", { name: "项目经理协作", exact: true })
             .getByRole("article", { name: "确认需求", exact: true }),
+        ).toHaveCount(0);
+        await expect(
+          page
+            .locator(".manager-child-flow")
+            .getByRole("article", { name: "确认需求", exact: true }),
         ).toHaveCount(1);
         await expect(
           featureFrame.getByRole("heading", {
@@ -210,10 +215,15 @@ for (const nested of [false, true]) {
           .status,
       ).toBe("approved");
       if (nested) {
-        const designCard = featureFrame.getByRole("article", {
-          name: "确认设计",
-          exact: true,
-        });
+        // This backend-only project is absent from the GitHub workspace list.
+        // Read the completed native transition before refreshing its scoped card.
+        await page
+          .locator(".manager-child-flow")
+          .getByRole("button", { name: "刷新管理状态", exact: true })
+          .click();
+        const designCard = page
+          .locator(".manager-child-flow")
+          .getByRole("article", { name: "确认设计", exact: true });
         await designCard
           .getByRole("button", { name: "确认：确认设计", exact: true })
           .click();

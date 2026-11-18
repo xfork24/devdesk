@@ -1,3 +1,6 @@
+#[macro_use]
+#[path = "../../../tests/support/delegating_store.rs"]
+mod delegating_store;
 #[path = "../../../tests/support/defaults.rs"]
 mod default_fixture;
 use default_fixture::*;
@@ -8,7 +11,7 @@ mod schemas;
 use devdesk_adapters::*;
 use devdesk_core::*;
 use devdesk_domain::*;
-use serde_json::json;
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 fn engine(path: &std::path::Path) -> Engine {
@@ -1284,5 +1287,153 @@ fn turn_diagnostics_include_final_messages_and_stop_proof_without_stream_fragmen
             1
         )
         .is_err()
+    );
+}
+
+#[test]
+fn local_busy_journaling_and_projection_do_not_interrupt_or_resend_a_model_turn() {
+    use std::sync::{
+        Mutex,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    };
+    struct BusyStore {
+        inner: Arc<dyn EngineeringStore>,
+        journals: AtomicUsize,
+        projection: AtomicBool,
+    }
+    impl EngineeringStore for BusyStore {
+        fn root(&self) -> String {
+            self.inner.root()
+        }
+        fn snapshot(&self) -> Result<EngineeringState> {
+            self.inner.snapshot()
+        }
+        delegated_native_store!();
+        fn submit_changes(
+            &self,
+            changes: &concurrency::PreparedChangeSet,
+        ) -> Result<concurrency::CommitOutcome> {
+            if changes.command_id.starts_with("provider-poll-observe:")
+                && self
+                    .journals
+                    .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+                    .is_ok()
+            {
+                return Err(err("storage_busy", "injected local journal contention"));
+            }
+            if changes
+                .changes
+                .iter()
+                .any(|c| c.value["type"] == "provider_observation_batch")
+                && self.projection.swap(false, Ordering::SeqCst)
+            {
+                return Err(err("storage_busy", "injected local projection contention"));
+            }
+            self.inner.submit_changes(changes)
+        }
+    }
+    #[derive(Default)]
+    struct OnceHarness {
+        turn: Mutex<Option<Id>>,
+        sends: AtomicUsize,
+        batches: AtomicUsize,
+    }
+    impl ports::Harness for OnceHarness {
+        fn open_session(&self, r: &ports::SessionStart) -> Result<ports::SessionReceipt> {
+            Ok(ports::SessionReceipt {
+                external_session: "original-session".into(),
+                container_id: "fixture".into(),
+                image_digest: r.execution.image_digest.clone(),
+                operation_id: r.execution.operation_id.clone(),
+            })
+        }
+        fn dispatch_turn(&self, r: &ports::TurnDispatch) -> Result<()> {
+            self.sends.fetch_add(1, Ordering::SeqCst);
+            *self.turn.lock().unwrap() = Some(r.turn.id.clone());
+            Ok(())
+        }
+        fn poll_session(&self, _: &Session) -> Result<Vec<ports::ConversationObservation>> {
+            let Some(turn) = self.turn.lock().unwrap().take() else {
+                return Ok(vec![]);
+            };
+            self.batches.fetch_add(1, Ordering::SeqCst);
+            Ok(vec![
+                ports::ConversationObservation::Admitted {
+                    turn: turn.clone(),
+                    message: None,
+                    external_turn: Some("original-turn".into()),
+                },
+                ports::ConversationObservation::Consumed {
+                    turn: turn.clone(),
+                    message: None,
+                },
+                ports::ConversationObservation::Message {
+                    turn: turn.clone(),
+                    key: "original-answer".into(),
+                    content: "Only the original answer".into(),
+                    kind: ConversationEventKind::Assistant,
+                    mode: MessageMode::Full,
+                    item: "answer".into(),
+                },
+                ports::ConversationObservation::Terminal {
+                    turn,
+                    outcome: ports::ProviderTerminal::Completed,
+                    reason: "completed".into(),
+                    quiescent: true,
+                },
+            ])
+        }
+        fn stop_session(&self, _: &Session, e: &RuntimeExecution) -> Result<ports::WorkerStop> {
+            Ok(ports::WorkerStop {
+                operation_id: e.operation_id.clone(),
+                writer_revoked: true,
+                mode: "fixture completed".into(),
+                requires_successor: false,
+            })
+        }
+        fn cleanup_worker(&self, _: &Session, _: &RuntimeExecution) -> Result<()> {
+            Ok(())
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = engine(dir.path());
+    let project = e
+        .execute(
+            "project.create",
+            Command {
+                command_id: id(),
+                target: None,
+                expected_revision: None,
+                payload: json!({"title":"Local contention"}),
+            },
+        )
+        .unwrap();
+    let (_, turn) = runtime::queue_conversation(&e, project["id"].as_str().unwrap());
+    let harness = Arc::new(OnceHarness::default());
+    e.harness = harness.clone();
+    let storage = Arc::new(BusyStore {
+        inner: e.store.clone(),
+        journals: AtomicUsize::new(3),
+        projection: AtomicBool::new(true),
+    });
+    e.store = storage.clone();
+    for _ in 0..30 {
+        e.tick_conversations(4).unwrap();
+    }
+    let state = e.store.snapshot().unwrap();
+    let actual = state.turns.iter().find(|t| t.id == turn).unwrap();
+    assert_eq!(actual.status, TurnStatus::Completed);
+    assert!(!actual.cancel_requested);
+    assert_eq!(harness.sends.load(Ordering::SeqCst), 1);
+    assert_eq!(harness.batches.load(Ordering::SeqCst), 1);
+    assert_eq!(storage.journals.load(Ordering::SeqCst), 0);
+    assert!(!storage.projection.load(Ordering::SeqCst));
+    assert_eq!(
+        state
+            .conversation_events
+            .iter()
+            .filter(|e| e.turn_id == turn && e.kind == ConversationEventKind::Assistant)
+            .count(),
+        1
     );
 }

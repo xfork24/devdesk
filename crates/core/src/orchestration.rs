@@ -55,15 +55,30 @@ pub(crate) fn freeze_plan_record(
             data,
             true,
         );
+        let source = if let Ok(existing) = state.configuration(&source.id) {
+            require(
+                existing.r#type == source.r#type
+                    && existing.scope == source.scope
+                    && existing.refs == source.refs
+                    && existing.data == source.data
+                    && existing.content_hash == source.content_hash
+                    && existing.immutable,
+                "执行快照源身份内容冲突",
+            )?;
+            // The identity covers the execution document, not this change's
+            // explanation. Keep the first immutable name and record each new
+            // explanation on its own plan revision.
+            existing.clone()
+        } else {
+            state.governance.push(source.clone());
+            source
+        };
         instance.plan.workflow_revision_id = source.id.clone();
         instance.workflow_ref = source.id.clone();
         instance
             .plan
             .definitions
             .insert(source.id.clone(), source.clone());
-        if state.configuration(&source.id).is_err() {
-            state.governance.push(source);
-        }
     }
     let existing = instance.plan.standard_ref.clone();
     let included = existing
@@ -226,4 +241,98 @@ pub fn read_workflow_outputs(
         }
     }
     Ok(json!({"outputs":out}))
+}
+
+#[cfg(test)]
+mod freeze_tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn identical_plan_changes_reuse_the_first_immutable_source_and_keep_each_reason() {
+        let scope = Scope::project("project");
+        let document: WorkflowDefinition = serde_json::from_value(json!({"schema_version":6,
+            "stages":[{"key":"work","name":"Work"}],
+            "steps":[{"key":"ready","name":"Ready","stage":"work","executor":{"type":"control"}}]}))
+        .unwrap();
+        let base = record(
+            "runtime_workflow",
+            "draft".into(),
+            scope.clone(),
+            "Draft".into(),
+            1,
+            None,
+            json!(document),
+            true,
+        );
+        let plan = ConfiguredWorkflowPlan {
+            workflow_revision_id: base.id.clone(),
+            standard_ref: None,
+            work_configuration_ref: None,
+            harness_permission_ref: None,
+            base_workflow_ref: None,
+            document,
+            roles: BTreeMap::new(),
+            definitions: BTreeMap::from([(base.id.clone(), base.clone())]),
+            permission_locks: BTreeMap::new(),
+            execution_selection: ExecutionPermissionSelection {
+                sandbox_ref: "sandbox:1".into(),
+                harness: PermissionSelection::FollowTarget,
+                sandbox: PermissionSelection::FollowTarget,
+            },
+            tool_bindings: BTreeMap::new(),
+            integration_locks: BTreeMap::new(),
+            specification_view: vec![],
+        };
+        let initial = ConfiguredWorkflowInstance {
+            active_plan_revision_id: String::new(),
+            control_version: 1,
+            schema_version: 6,
+            owner_id: "task".into(),
+            workflow_ref: base.id.clone(),
+            project_id: "project".into(),
+            plan,
+            role_agent_bindings: BTreeMap::new(),
+            inputs: BTreeMap::new(),
+            user_request: Value::Null,
+            human_governance: false,
+            steps: vec![],
+            status: StepExecutionStatus::Running,
+            paused: false,
+            parent_execution_id: None,
+            root_instance_id: "root".into(),
+            cancel_requested: false,
+        };
+        let mut state = EngineeringState::default();
+        state.governance.push(base);
+        let mut first = initial.clone();
+        let first_plan =
+            freeze_plan_record(&mut state, &mut first, &scope, "First task repair").unwrap();
+        let mut second = initial.clone();
+        let second_plan =
+            freeze_plan_record(&mut state, &mut second, &scope, "Second task repair").unwrap();
+        let id = &first.plan.workflow_revision_id;
+        assert_eq!(id, &second.plan.workflow_revision_id);
+        assert_eq!(first.plan.definitions[id], second.plan.definitions[id]);
+        assert_eq!(
+            state.configuration(id).unwrap(),
+            &second.plan.definitions[id]
+        );
+        assert_eq!(state.configuration(id).unwrap().name, "First task repair");
+        assert_eq!(first_plan.data["reason"], "First task repair");
+        assert_eq!(second_plan.data["reason"], "Second task repair");
+        assert_eq!(state.governance.iter().filter(|r| &r.id == id).count(), 1);
+        let mut conflicting = state.clone();
+        conflicting
+            .governance
+            .iter_mut()
+            .find(|r| &r.id == id)
+            .unwrap()
+            .data["schema_version"] = json!(999);
+        let mut third = initial;
+        assert!(
+            freeze_plan_record(&mut conflicting, &mut third, &scope, "Must reject conflict")
+                .is_err()
+        );
+    }
 }

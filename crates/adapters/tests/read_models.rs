@@ -450,7 +450,10 @@ fn a_real_feature_root_and_its_driver_are_read_without_restoring_the_plan() {
         store.clone(),
         Arc::new(FileArtifacts::new(std::path::PathBuf::from(store.root()))),
         runtime::adapters(),
-    );
+    )
+    .with_tool_executor(Arc::new(
+        devdesk_adapters::integrations::NativeTools::new(root.path()).unwrap(),
+    ));
     engine.bootstrap().unwrap();
     let command = |key: &str,
                    target: Option<String>,

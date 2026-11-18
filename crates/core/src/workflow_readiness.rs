@@ -99,7 +99,7 @@ impl Engine {
         } else {
             advisory(selected.require_acceptance(resources, &facts.facts))
         };
-        let retry = if let Some(blocked) = &common {
+        let mut retry = if let Some(blocked) = &common {
             blocked.clone()
         } else if !matches!(
             e.status,
@@ -166,12 +166,43 @@ impl Engine {
         } else {
             "not_required"
         };
+        let mut delivery_refresh = Value::Null;
+        if let Some(policy) = &root.instance.plan.document.delivery_policy
+            && e.failure
+                .as_ref()
+                .is_some_and(|f| f.code == "stale_target" && f.automatic_retry_safe())
+        {
+            let published = root.step(self, &policy.source_publication_step)?;
+            if published.execution.status == StepExecutionStatus::Completed {
+                let reviewed = root.step(self, &policy.code_review_step)?;
+                let source = text(&reviewed.execution.inputs["workspace"], "revision")?;
+                let budget = one(
+                    self.store.as_ref(),
+                    "governance",
+                    &format!("delivery-refresh:{}:{source}", root.record.id),
+                )?;
+                let used = budget
+                    .value
+                    .as_ref()
+                    .and_then(|r| r["data"]["used"].as_u64())
+                    .unwrap_or(0);
+                let remaining = step.budget.retry_limit.saturating_sub(used);
+                if remaining == 0 {
+                    retry = Eligibility::blocked(
+                        "delivery_refresh_budget",
+                        "当前源版本的目标刷新额度已耗尽",
+                    );
+                }
+                delivery_refresh = json!({"operation":"workflow.step.retry","source_revision":source,"remaining":remaining,"retains_source_review":true,"renews_merge_regression_and_confirmation":true});
+            }
+        }
         let actions = WorkflowStepActions {
             dispatch,
             accept,
             retry,
         };
         let mut result = json!({"step":step.key,"node_id":step.node_id,"execution":e,"step_revision":resources.step.revision,"dispatchable":actions.dispatch.allowed,"actions":actions,"retry_count":retry_count,"input_gap":input_gap,"completion_satisfied":completion,"completion_overridden":overridden,"human_satisfied":human,"confirmation_status":disposition,"confirmation_ref":confirmation,"confirmation_waiver_ref":if waived{waiver.value.as_ref().map(|r|&r["id"])}else{None}});
+        result["delivery_refresh"] = delivery_refresh;
         if matches!(
             e.status,
             StepExecutionStatus::Running | StepExecutionStatus::NeedsReconciliation
@@ -208,6 +239,19 @@ impl Engine {
         .is_some()
         {
             return Ok(false);
+        }
+        if root.instance.plan.document.delivery_policy.is_some() {
+            let delivery = one(
+                self.store.as_ref(),
+                "governance",
+                &format!("workflow-delivery:{}", root.record.id),
+            )?;
+            if !delivery.value.as_ref().is_some_and(|r| {
+                r["data"]["synchronized"] == true
+                    && r["data"]["completion"]["pull_request"]["merged"] == true
+            }) {
+                return Ok(false);
+            }
         }
         let first = root
             .instance

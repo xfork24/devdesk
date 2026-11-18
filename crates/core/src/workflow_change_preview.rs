@@ -18,6 +18,8 @@ pub(crate) struct NativePreview {
     pub affected: BTreeSet<String>,
     #[serde(default)]
     pub budget_updates: BTreeSet<String>,
+    #[serde(default)]
+    pub aggregation_updates: BTreeSet<String>,
     pub bypassed: BTreeSet<String>,
     pub waivers: Vec<(String, String)>,
     pub footprint: Value,
@@ -115,6 +117,18 @@ impl Engine {
                 }
             }
             for e in &instance.steps {
+                if matches!(
+                    instance
+                        .plan
+                        .document
+                        .steps
+                        .iter()
+                        .find(|s| s.node_id == e.node_id)
+                        .map(|s| &s.executor),
+                    Some(StepExecutor::Workflow { .. })
+                ) {
+                    facts.row(self, "workflow_stop_source", &e.id)?;
+                }
                 if let Some(children) = facts.row(self, "workflow_children_source", &e.id)? {
                     for id in children.data["children"]
                         .as_array()
@@ -267,7 +281,7 @@ impl Engine {
             }
         }
         Ok(
-            json!({"preview_hash":preview.preview_hash,"standard_ref":preview.plan.standard_ref,"standard_diff":preview.standard_diff,"before_standard_ref":root.instance.plan.standard_ref,"affected":preview.affected,"budget_updates":preview.budget_updates,"bypassed":preview.bypassed,"waivers":preview.waivers,"must_stop":stop,"document":preview.plan.document,"plan_revision_id":root.instance.active_plan_revision_id,"changeset":change,"reverted_change_id":preview.reverted_change_id,"restored_execution_ids":preview.restored_executions.iter().map(|e|&e.id).collect::<Vec<_>>()}),
+            json!({"preview_hash":preview.preview_hash,"standard_ref":preview.plan.standard_ref,"standard_diff":preview.standard_diff,"invalidation_causes":preview.footprint["invalidation_causes"],"before_standard_ref":root.instance.plan.standard_ref,"affected":preview.affected,"budget_updates":preview.budget_updates,"aggregation_updates":preview.aggregation_updates,"bypassed":preview.bypassed,"waivers":preview.waivers,"must_stop":stop,"document":preview.plan.document,"plan_revision_id":root.instance.active_plan_revision_id,"changeset":change,"reverted_change_id":preview.reverted_change_id,"restored_execution_ids":preview.restored_executions.iter().map(|e|&e.id).collect::<Vec<_>>()}),
         )
     }
     fn revert_native_preview(
@@ -371,6 +385,7 @@ impl Engine {
             inputs: old.inputs.clone(),
             affected: source.affected,
             budget_updates: BTreeSet::new(),
+            aggregation_updates: BTreeSet::new(),
             bypassed: BTreeSet::new(),
             waivers: vec![],
             footprint,
@@ -667,6 +682,7 @@ impl Engine {
         }
         let mut seeds = BTreeSet::new();
         let mut budget_updates = BTreeSet::new();
+        let mut aggregation_updates = BTreeSet::new();
         for step in &old.plan.document.steps {
             let next = document.steps.iter().find(|s| s.node_id == step.node_id);
             require(
@@ -702,6 +718,54 @@ impl Engine {
             if extends_invocation_budget {
                 budget_updates.insert(step.key.clone());
             }
+            // An output-only amendment can revalidate the original completed
+            // children. It cannot restart, replace or relabel any child effect.
+            if next.is_some_and(|next| {
+                let mut business = next.clone();
+                business.outputs = step.outputs.clone();
+                next.outputs != step.outputs
+                    && business == *step
+                    && matches!(step.executor, StepExecutor::Workflow { .. })
+                    && old.steps.iter().any(|e| {
+                        e.node_id == step.node_id
+                            && e.started.is_some()
+                            && e.outputs.is_empty()
+                            && matches!(
+                                e.status,
+                                StepExecutionStatus::Running
+                                    | StepExecutionStatus::Failed
+                                    | StepExecutionStatus::NeedsReconciliation
+                            )
+                            && !facts
+                                .records
+                                .values()
+                                .any(|r| r.r#type == "workflow_stop" && r.definition_id == e.id)
+                            && facts
+                                .records
+                                .values()
+                                .find(|r| {
+                                    r.r#type == "workflow_children" && r.definition_id == e.id
+                                })
+                                .is_some_and(|group| {
+                                    group.data["children"].as_array().is_some_and(|ids| {
+                                        !ids.is_empty()
+                                            && ids.iter().all(|id| {
+                                                facts
+                                                    .records
+                                                    .get(id.as_str().unwrap_or_default())
+                                                    .is_some_and(|child| {
+                                                        child.r#type == "workflow_instance"
+                                                            && child.data["parent_execution_id"]
+                                                                == e.id
+                                                            && child.data["status"] == "completed"
+                                                    })
+                                            })
+                                    })
+                                })
+                    })
+            }) {
+                aggregation_updates.insert(step.key.clone());
+            }
             if (next != Some(step) && !extends_invocation_budget && !regroups_tool)
                 || bindings != old.role_agent_bindings
                 || inputs != old.inputs
@@ -723,7 +787,9 @@ impl Engine {
                 })
                 .map(|s| s.key.clone()),
         );
-        if document.action_requirements != old.plan.document.action_requirements {
+        if document.action_requirements != old.plan.document.action_requirements
+            || document.delivery_policy != old.plan.document.delivery_policy
+        {
             seeds.extend(old.plan.document.steps.iter().map(|s| s.key.clone()));
         }
         for step in &old.plan.document.steps {
@@ -882,25 +948,47 @@ impl Engine {
         // Children inherit their parent's compiled closure. Dropping unused parent
         // resources does not change any child execution contract.
         let old_definitions = definitions(&old.plan);
-        if plan
+        // Root Step locks are addressed by Workflow reference + Step key.
+        // A new immutable Workflow namespace is not a permission change.
+        let root_lock_prefix = format!("{}:", plan.workflow_revision_id);
+        let old_permission = |key: &str| {
+            let previous = key
+                .strip_prefix(&root_lock_prefix)
+                .map(|step| format!("{}:{step}", old.plan.workflow_revision_id))
+                .unwrap_or_else(|| key.to_owned());
+            old.plan.permission_locks.get(&previous)
+        };
+        let closure_changed = plan
             .roles
             .iter()
             .any(|(k, v)| old.plan.roles.get(k) != Some(v))
             || definitions(&plan)
                 .iter()
-                .any(|(k, v)| old_definitions.get(k) != Some(v))
+                .any(|(k, v)| old_definitions.get(k).is_some_and(|old| old != v))
             || plan
                 .permission_locks
                 .iter()
-                .any(|(k, v)| old.plan.permission_locks.get(k).map(|v| json!(v)) != Some(json!(v)))
-            || plan
-                .integration_locks
-                .iter()
-                .any(|(k, v)| old.plan.integration_locks.get(k).map(|v| json!(v)) != Some(json!(v)))
-        {
+                .any(|(k, v)| old_permission(k).map(|v| json!(v)) != Some(json!(v)))
+            || plan.integration_locks.iter().any(|(k, v)| {
+                old.plan.integration_locks.get(k).map(|v| json!(v)) != Some(json!(v))
+            });
+        if closure_changed {
             affected.extend(old.plan.document.steps.iter().map(|s| s.key.clone()));
         }
         budget_updates.retain(|key| !affected.contains(key));
+        // Preserve an invocation only when its output contract is the sole
+        // changed business input. Its consumers still require fresh execution.
+        if closure_changed
+            || bindings != old.role_agent_bindings
+            || inputs != old.inputs
+            || !task_changes.is_empty()
+            || seeds.iter().any(|key| !aggregation_updates.contains(key))
+        {
+            aggregation_updates.clear();
+        }
+        for key in &aggregation_updates {
+            affected.remove(key);
+        }
         for (name, port) in &document.inputs {
             if port.required {
                 require(inputs.contains_key(name), format!("缺少流程输入 {name}"))?;
@@ -957,7 +1045,11 @@ impl Engine {
                 task_changes.push(json!(task));
             }
         }
-        let footprint = json!({"reset_tasks":reset_tasks,"executions":old.steps.iter().filter(|s|affected.contains(&s.step)).collect::<Vec<_>>(),"tasks":task_changes,
+        let invalidation_causes = json!({"seeds":seeds,"roles":plan.roles.iter().filter(|(k,v)|old.plan.roles.get(*k)!=Some(*v)).map(|(k,_)|k).collect::<Vec<_>>(),
+            "definitions":definitions(&plan).iter().filter(|(k,v)|old_definitions.get(*k).is_some_and(|old|old!=*v)).map(|(k,_)|k).collect::<Vec<_>>(),
+            "permissions":plan.permission_locks.iter().filter(|(k,v)|old_permission(k).map(|v|json!(v))!=Some(json!(v))).map(|(k,_)|k).collect::<Vec<_>>(),
+            "integrations":plan.integration_locks.iter().filter(|(k,v)|old.plan.integration_locks.get(*k).map(|v|json!(v))!=Some(json!(v))).map(|(k,_)|k).collect::<Vec<_>>()});
+        let footprint = json!({"invalidation_causes":invalidation_causes,"reset_tasks":reset_tasks,"executions":old.steps.iter().filter(|s|affected.contains(&s.step) || aggregation_updates.contains(&s.step)).collect::<Vec<_>>(),"tasks":task_changes,
             "children":facts.records.values().filter(|r|r.r#type=="workflow_instance"&&r.data["root_instance_id"]==old.root_instance_id&&r.id!=row.id).map(|r|(&r.id,&r.data)).collect::<Vec<_>>()});
         plan.base_workflow_ref =
             if adopted.is_some() && plan.workflow_revision_id != old.plan.workflow_revision_id {
@@ -1009,6 +1101,7 @@ impl Engine {
             inputs,
             affected,
             budget_updates,
+            aggregation_updates,
             bypassed,
             waivers,
             footprint,

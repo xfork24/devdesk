@@ -851,7 +851,9 @@ impl Workspace {
                 .as_str()
                 .ok_or_else(|| err("invalid_params", "需要 repository"))?;
             let branch = params["branch"].as_str().unwrap_or("main");
-            return Ok(json!(github::GitHubPullRequests.diagnose(repo, branch)?));
+            return Ok(json!(
+                github::GitHubPullRequests.diagnose_connection(repo, branch)?
+            ));
         }
         if method == "runtime.discover_codex" {
             return Ok(json!(self.global.discover_codex()?));

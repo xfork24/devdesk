@@ -457,7 +457,7 @@ fn delivery_reuses_the_same_pinned_spec_for_producers_and_consumers() {
 }
 
 #[test]
-fn delivery_catalog_has_content_standards_and_real_diff_ports() {
+fn detailed_delivery_catalog_has_content_standards_and_real_diff_ports() {
     let dir = tempfile::tempdir().unwrap();
     let e = engine(dir.path());
     let state = e.store.snapshot().unwrap();
@@ -507,7 +507,7 @@ fn delivery_catalog_has_content_standards_and_real_diff_ports() {
     ] {
         assert!(command(&e, method, None, json!({"name":"Invalid", "data":data})).is_err());
     }
-    let defaults = e.configuration_defaults(None).unwrap();
+    let defaults = detailed_selection(e.configuration_defaults(None).unwrap());
     for (kind, reference) in [
         ("feature", &defaults["workflow_ref"]),
         ("task", &defaults["task_workflow_ref"]),
@@ -578,7 +578,7 @@ fn delivery_catalog_has_content_standards_and_real_diff_ports() {
         }
     }
     let mut forged = state
-        .configuration("builtin-workflow-task-sol-high:9")
+        .configuration("builtin-workflow-task-sol-high:10")
         .unwrap()
         .data
         .clone();

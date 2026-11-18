@@ -483,7 +483,34 @@
       ]
     },
     {
+      "method": "git.delivery.merge",
+      "access": "platform_mutation",
+      "scope": "explicit",
+      "precondition": "execution_binding",
+      "sites": [
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "git.delivery.open",
+      "access": "platform_mutation",
+      "scope": "explicit",
+      "precondition": "execution_binding",
+      "sites": [
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
       "method": "git.publish",
+      "access": "platform_mutation",
+      "scope": "explicit",
+      "precondition": "execution_binding",
+      "sites": [
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "git.source.publish",
       "access": "platform_mutation",
       "scope": "explicit",
       "precondition": "execution_binding",
@@ -2203,6 +2230,15 @@
       ]
     },
     {
+      "method": "tests.project",
+      "access": "platform_mutation",
+      "scope": "explicit",
+      "precondition": "execution_binding",
+      "sites": [
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
       "method": "tests.run",
       "access": "platform_mutation",
       "scope": "explicit",
@@ -2631,6 +2667,15 @@
       ]
     },
     {
+      "method": "workspace.checkpoint",
+      "access": "platform_mutation",
+      "scope": "explicit",
+      "precondition": "execution_binding",
+      "sites": [
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
       "method": "workspace.current",
       "access": "platform_read",
       "scope": "explicit",
@@ -2641,6 +2686,15 @@
     },
     {
       "method": "workspace.snapshot",
+      "access": "platform_mutation",
+      "scope": "explicit",
+      "precondition": "execution_binding",
+      "sites": [
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "workspace.target",
       "access": "platform_mutation",
       "scope": "explicit",
       "precondition": "execution_binding",

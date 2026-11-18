@@ -474,6 +474,32 @@ impl Engine {
                 let decision = commit.decision(&root, None, "complete", reason)?;
                 commit.new_record(record("workflow_completion",root.record.id.clone(),root.record.scope.clone(),reason.into(),1,None,json!({"plan_revision_id":root.instance.active_plan_revision_id,"decision_id":decision}),true),"workflow-completion")?;
                 let mut next = root.instance.as_ref().clone();
+                if next.plan.document.delivery_policy.is_some() {
+                    let delivery = one(
+                        self.store.as_ref(),
+                        "governance",
+                        &format!("workflow-delivery:{}", root.record.id),
+                    )?;
+                    let saved = crate::platform_facts::restored(self, &delivery)?;
+                    require(
+                        saved.data["synchronized"] == true
+                            && saved.data["completion"]["synchronized"] == true
+                            && saved.data["completion"]["pull_request"]["merged"] == true,
+                        "精简流程必须在真实 PR 合入并同步后完成",
+                    )?;
+                    commit.witness([version(&delivery)])?;
+                    let task = one(self.store.as_ref(), "task", &next.owner_id)?;
+                    if let Some(raw) = &task.value {
+                        let mut completed = raw.clone();
+                        completed["status"] = json!(Status::Completed);
+                        completed["revision"] = json!(task.revision + 1);
+                        commit.witness([version(&task)])?;
+                        commit.change(ResourceChange {
+                            resource: task.resource,
+                            value: completed,
+                        })?;
+                    }
+                }
                 next.status = StepExecutionStatus::Completed;
                 next.control_version += 1;
                 commit.header(&root, &next)?;

@@ -1,0 +1,11 @@
+{
+  "type": "skill",
+  "identity": "精简版-skill-workflow-orchestration",
+  "revision": 1,
+  "name": "精简版DAG 经理编排",
+  "scope": "global",
+  "data": {
+    "body_file": "精简版-workflow-orchestration.md",
+    "rules": []
+  }
+}

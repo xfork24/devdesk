@@ -162,6 +162,69 @@ mod tests {
         json!({"command_id":id(),"payload":{"expected_catalog_generation":p["generation"],"catalog_fingerprint":p["catalog_fingerprint"],"bundle_hash":p["bundle_hash"]}})
     }
     #[test]
+    fn factory_update_preserves_custom_sources_and_replays_the_reviewed_command() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = workspace(dir.path());
+        let custom = write(&w, "role.revise", Some(&default_role_id("analyst")),
+            json!({"name":"Custom analyst","data":{"instructions":"Keep custom responsibility","visibility":{"kind":"global"}}}), None).unwrap();
+        let before = w.global.snapshot().unwrap();
+        for sandbox in ["builtin-sandbox-docker:1", "精简版-sandbox-project-tests:1"] {
+            let target =
+                permission_target(&before, PermissionTargetKind::Sandbox, sandbox).unwrap();
+            assert!(active_permission_binding(&before, &target).is_some());
+        }
+        // Simulate a compatible catalog whose defaults still select detailed sources.
+        let mut legacy = before.clone();
+        let state = legacy
+            .governance
+            .iter_mut()
+            .find(|r| r.id == TEMPLATE_CATALOG_STATE)
+            .unwrap();
+        state.data["defaults"]["workflow_ref"] = json!("builtin-workflow-feature-sol-high:11");
+        state.data["defaults"]["task_workflow_ref"] = json!("builtin-workflow-task-sol-high:10");
+        state.data["defaults"]["standard_ref"] = json!("builtin-standard-engineering:9");
+        state.content_hash = content_digest(&state.refs, &state.data);
+        let receipt = update_factory_catalog(&mut legacy, "factory-test").unwrap();
+        assert_eq!(receipt["changed"], true);
+        assert_eq!(
+            current_template_defaults(&legacy).unwrap()["workflow_ref"],
+            "精简版-workflow-feature:1"
+        );
+        for source in before.governance.iter().filter(|r| r.immutable) {
+            assert_eq!(legacy.configuration(&source.id).unwrap(), source);
+        }
+        let custom_id = custom["id"].as_str().unwrap();
+        assert!(template_record_current(
+            &legacy,
+            legacy.configuration(custom_id).unwrap()
+        ));
+        let generation = template_catalog_generation(&legacy);
+        assert_eq!(
+            update_factory_catalog(&mut legacy, "factory-test-again").unwrap()["changed"],
+            false
+        );
+        assert_eq!(template_catalog_generation(&legacy), generation);
+        let mut command = reset_command(&w);
+        command["payload"]["preserve_custom"] = json!(true);
+        let applied = w
+            .dispatch("configuration.templates.reset", command.clone())
+            .unwrap();
+        assert_eq!(
+            w.dispatch("configuration.templates.reset", command)
+                .unwrap(),
+            applied
+        );
+        let after = w.global.snapshot().unwrap();
+        assert_eq!(
+            after.configuration(custom_id).unwrap(),
+            before.configuration(custom_id).unwrap()
+        );
+        assert!(template_record_current(
+            &after,
+            after.configuration(custom_id).unwrap()
+        ));
+    }
+    #[test]
     fn revising_a_harness_does_not_rebind_defaults_or_grant_permissions() {
         let dir = tempfile::tempdir().unwrap();
         let w = workspace(dir.path());
@@ -213,7 +276,7 @@ mod tests {
             .unwrap();
         let engine = w.project_engine(Some(&a)).unwrap();
         let project = engine.store.snapshot().unwrap().projects[0].clone();
-        let saved=w.dispatch("project.configuration.update",json!({"command_id":id(),"project_id":a,"target":a,"expected_revision":project.revision,"payload":{"workflow_ref":defaults["workflow_ref"],"standard_ref":null,"role_agent_bindings":defaults["role_agent_bindings"]}})).unwrap();
+        let saved=w.dispatch("project.configuration.update",json!({"command_id":id(),"project_id":a,"target":a,"expected_revision":project.revision,"payload":{"workflow_ref":defaults["workflow_ref"],"standard_ref":null,"role_agent_bindings":defaults["role_agent_bindings"],"test_configuration":crate::test_runtime::fixture_test_configuration()}})).unwrap();
         let feature = engine
             .execute(
                 "feature.create",

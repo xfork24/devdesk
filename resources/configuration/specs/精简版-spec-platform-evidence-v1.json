@@ -1,0 +1,19 @@
+{
+  "type": "spec",
+  "identity": "精简版-spec-platform-evidence",
+  "revision": 1,
+  "name": "精简版平台证据规范",
+  "scope": "global",
+  "data": {
+    "schema_version": 3,
+    "body_file": "精简版-platform-evidence.md",
+    "checks": [
+      {
+        "key": "provenance",
+        "name": "版本与来源",
+        "instructions": "核对确切版本、原始操作回执、生产者与真实终止事实。",
+        "evidence_required": true
+      }
+    ]
+  }
+}

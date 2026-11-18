@@ -85,10 +85,12 @@ pub use manager_workspace::{MANAGER_TOOLS, ManagerServices, read_project_knowled
 mod controller_calls;
 mod controller_lifecycle;
 mod controller_runtime;
+mod delivery_recovery;
 #[cfg(test)]
 mod human_governance;
 mod orchestration;
 mod platform_cleanup;
+mod platform_delivery;
 mod platform_facts;
 mod platform_observations;
 mod platform_preparation;
@@ -140,6 +142,7 @@ pub use templates::{
     copy_template_catalog, current_template_defaults, initialize_template_catalog,
     register_template_members, restore_template_catalog, template_bundle_info,
     template_catalog_counts, template_catalog_pristine, template_factory_counts,
+    update_factory_catalog,
 };
 mod conversation_runtime;
 mod conversations;

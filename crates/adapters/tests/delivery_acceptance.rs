@@ -64,6 +64,8 @@ fn test_request(
         code: Some(context.clone()),
         expect_assertion_failure: expect_red,
         recipe: Some(TestRecipe {
+            command: None,
+            preparation: vec![],
             runner: TestRunner::NodeTest,
             files: vec!["tests/add.test.cjs".into()],
             image: image.into(),

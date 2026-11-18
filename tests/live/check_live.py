@@ -38,11 +38,11 @@ def run(name, command):
 
 try:
     if 'git' in groups:
-        run('git', ['cargo', 'test', '--locked', '-p', 'devdesk-adapters', '--test', 'git_resources'])
+        run('git', ['cargo', 'test', '--locked', '-p', 'devdesk-adapters', '--features', 'test-fixtures', '--test', 'git_resources'])
     if 'docker' in groups:
-        run('docker', ['cargo', 'test', '--locked', '-p', 'devdesk-adapters', '--test', 'command_tests', '--test', 'docker_resources', '--', '--include-ignored'])
+        run('docker', ['cargo', 'test', '--locked', '-p', 'devdesk-adapters', '--features', 'test-fixtures', '--test', 'command_tests', '--test', 'docker_resources', '--', '--include-ignored'])
     if 'permissions' in groups:
-        run('permissions', ['cargo', 'test', '--locked', '-p', 'devdesk-adapters', '--test', 'permissions', '--test', 'permission_profiles', '--', '--include-ignored'])
+        run('permissions', ['cargo', 'test', '--locked', '-p', 'devdesk-adapters', '--features', 'test-fixtures', '--test', 'permissions', '--test', 'permission_profiles', '--', '--include-ignored'])
     if 'workbench' in groups:
         for provider in providers:
             run('workbench-' + provider, ['python3', 'tests/live/probe_workflow_workbench.py', '--url', args.url, '--github-repo', args.github_repo, '--provider', provider, '--report', str(reports / ('workbench-' + provider + '.md'))])

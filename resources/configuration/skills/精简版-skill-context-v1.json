@@ -1,0 +1,11 @@
+{
+  "type": "skill",
+  "identity": "精简版-skill-context",
+  "revision": 1,
+  "name": "精简版工程上下文",
+  "scope": "global",
+  "data": {
+    "body_file": "精简版-context.md",
+    "rules": []
+  }
+}

@@ -17,7 +17,158 @@ impl Engine {
         resources: &WorkflowResources,
         rework: bool,
     ) -> Result<StepExecution> {
+        if !rework
+            && resources
+                .execution
+                .failure
+                .as_ref()
+                .is_some_and(|f| f.code == "stale_target" && f.automatic_retry_safe())
+        {
+            return self.prepare_delivery_refresh(commit, root, resources);
+        }
         self.prepare_native_retry_scope(commit, root, resources, rework, None)
+    }
+    fn prepare_delivery_refresh(
+        &self,
+        commit: &mut WorkflowCommit<'_>,
+        root: &WorkflowHeaderFacts,
+        failed: &WorkflowResources,
+    ) -> Result<StepExecution> {
+        let policy = root
+            .instance
+            .plan
+            .document
+            .delivery_policy
+            .as_ref()
+            .ok_or_else(|| err("configuration_required", "目标刷新需要冻结交付政策"))?;
+        require(
+            failed.execution.status == StepExecutionStatus::Failed
+                && !commit.execution_active(failed)?,
+            "目标刷新必须先停止并核对原操作",
+        )?;
+        let document = &root.instance.plan.document;
+        let regression = document
+            .steps
+            .iter()
+            .find(|s| s.key == policy.merge_regression_step)
+            .ok_or_else(|| err("storage", "合并回归步骤缺失"))?;
+        let StepExecutor::Tool { arguments, .. } = &regression.executor else {
+            return Err(err("configuration_required", "合并回归必须为平台工具"));
+        };
+        let Some(InputBinding::Source { source }) = arguments.get("workspace") else {
+            return Err(err("configuration_required", "合并回归缺少确切 PR 来源"));
+        };
+        let publication = document
+            .steps
+            .iter()
+            .find(|s| s.key == source.step)
+            .ok_or_else(|| err("storage", "PR 步骤缺失"))?;
+        let StepExecutor::Tool {
+            tool_ref,
+            arguments,
+            ..
+        } = &publication.executor
+        else {
+            return Err(err("configuration_required", "PR 创建必须为平台工具"));
+        };
+        require(
+            root.instance
+                .plan
+                .definitions
+                .get(tool_ref)
+                .is_some_and(|r| r.data["qualified_name"] == "git.delivery.open"),
+            "刷新不能改变发布合同",
+        )?;
+        let Some(InputBinding::Source { source }) = arguments.get("target") else {
+            return Err(err("configuration_required", "PR 缺少目标读取来源"));
+        };
+        let target = root.step(self, &source.step)?;
+        let affected = document.impacted_nodes(&BTreeSet::from([target.execution.step.clone()]));
+        require(
+            affected.contains(&failed.execution.step)
+                && !affected.contains(&policy.code_review_step)
+                && !affected.contains(&policy.source_regression_step)
+                && affected.iter().all(|key| {
+                    document.steps.iter().any(|s| {
+                        &s.key == key
+                            && !matches!(
+                                s.executor,
+                                StepExecutor::Agent { .. } | StepExecutor::Workflow { .. }
+                            )
+                    })
+                }),
+            "目标刷新只能重做后续平台验证及人工审核",
+        )?;
+        let state = one(
+            self.store.as_ref(),
+            "governance",
+            &format!("workflow-delivery:{}", root.record.id),
+        )?;
+        let published = root.step(self, &policy.source_publication_step)?;
+        require(
+            published.execution.status == StepExecutionStatus::Completed,
+            "目标刷新必须保留已接纳的源发布",
+        )?;
+        let reviewed = root.step(self, &policy.code_review_step)?;
+        require(
+            reviewed.execution.status == StepExecutionStatus::Completed,
+            "目标刷新必须保留已接纳的代码评审",
+        )?;
+        let source_revision = text(&reviewed.execution.inputs["workspace"], "revision")?;
+        if state.value.is_some() {
+            let saved = crate::platform_facts::restored(self, &state)?;
+            require(saved.data["synchronized"] != true, "已完成合入不能重新刷新")?;
+        }
+        commit.witness([
+            version(&state),
+            version(&published.step),
+            version(&reviewed.step),
+        ])?;
+        let key = format!("delivery-refresh:{}:{source_revision}", root.record.id);
+        let budget = one(self.store.as_ref(), "governance", &key)?;
+        commit.witness([version(&budget)])?;
+        let used = budget
+            .value
+            .as_ref()
+            .and_then(|r| r["data"]["used"].as_u64())
+            .unwrap_or(0);
+        let definition = document
+            .steps
+            .iter()
+            .find(|s| s.key == failed.execution.step)
+            .unwrap();
+        require(
+            used < definition.budget.retry_limit,
+            "当前源版本的目标刷新额度已耗尽",
+        )?;
+        let mut row = if budget.value.is_some() {
+            crate::platform_facts::restored(self, &budget)?
+        } else {
+            let mut r = record(
+                "workflow_delivery_refresh_budget",
+                root.record.id.clone(),
+                root.record.scope.clone(),
+                "目标版本刷新额度".into(),
+                1,
+                None,
+                json!({}),
+                false,
+            );
+            r.id = key;
+            r
+        };
+        let data = json!({"used":used+1,"source_revision":source_revision,"failed_execution":failed.execution.id});
+        if budget.value.is_some() {
+            crate::governance::update_record(&mut row, data);
+        } else {
+            row.data = data;
+            row.content_hash = content_digest(&row.refs, &row.data);
+        }
+        commit.change(crate::concurrency::ResourceChange {
+            resource: budget.resource,
+            value: row.to_storage(),
+        })?;
+        self.prepare_native_retry_scope(commit, root, &target, true, Some(&affected))
     }
     pub(crate) fn prepare_native_retry_scope(
         &self,
@@ -406,7 +557,8 @@ impl Engine {
             row["type"] == "workflow_output"
                 && row["immutable"] == true
                 && row["data"]["provenance"]["kind"] == "platform"
-                && row["data"]["provenance"]["tool"] == "workspace.snapshot"
+                && [json!("workspace.snapshot"), json!("workspace.checkpoint")]
+                    .contains(&row["data"]["provenance"]["tool"])
                 && row["data"]["provenance"]["pointer"] == ""
                 && call.value.as_ref().is_some_and(|r| {
                     r["type"] == "platform_call"

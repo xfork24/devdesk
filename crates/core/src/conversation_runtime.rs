@@ -126,18 +126,34 @@ impl Engine {
                 )?;
                 continue;
             }
+            let pending = self
+                .store
+                .read_resources(&[crate::concurrency::ResourceKey::new(
+                    "provider_turn_pending",
+                    tid,
+                )])?;
+            if pending.first().is_some_and(|r| r.value.is_some()) {
+                continue;
+            }
             let mut poll = self.prepare_provider_poll(facts)?;
+            let mut local_observation_safe = true;
             let work = (|| -> Result<()> {
                 for interaction in self.store.conversation_answers_pending(tid)? {
                     self.deliver_interaction_answer(&poll, &interaction)?;
                 }
                 let observed = self.harness.poll_session(&poll.session);
+                local_observation_safe = observed.as_ref().is_ok_and(Vec::is_empty);
                 self.journal_provider_poll(&mut poll, &observed)?;
+                local_observation_safe |= observed.is_ok() && poll.journal.is_some();
                 self.apply_provider_observations(&mut poll, &observed?)?;
                 self.settle_provider_poll(&poll, "completed", None)
             })();
             if let Err(error) = work {
-                if error.code == "worker_log_unavailable" {
+                if error.code == "worker_log_unavailable"
+                    || (error.code == "storage_busy" && local_observation_safe)
+                {
+                    // Empty polls changed no provider fact. Nonempty positive
+                    // polls have their original durable handoff for recovery.
                     continue;
                 }
                 self.record_conversation_failure(&poll.session, tid, &error)?;

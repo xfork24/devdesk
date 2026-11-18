@@ -110,10 +110,25 @@ pub(crate) fn packaged_harness(provider: HarnessProvider) -> Result<Configuratio
 }
 pub(crate) fn packaged_runtime(provider: HarnessProvider) -> Result<ExecutionRecipe> {
     let manifest: Value = serde_json::from_str(resource("manifest.json")?).map_err(storage)?;
-    let path = manifest["types"]["sandbox"][0]
+    let defaults: Value = serde_json::from_str(resource(
+        manifest["defaults"]
+            .as_str()
+            .ok_or_else(|| err("invalid_template", "默认清单缺失"))?,
+    )?)
+    .map_err(storage)?;
+    let selected = defaults["sandbox_ref"]
         .as_str()
         .ok_or_else(|| err("configuration_required", "默认 Sandbox 缺失"))?;
-    let sandbox: SourceDefinition = serde_json::from_str(resource(path)?).map_err(storage)?;
+    let sandbox = manifest["types"]["sandbox"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find_map(|path| {
+            let source =
+                serde_json::from_str::<SourceDefinition>(resource(path.as_str()?).ok()?).ok()?;
+            (format!("{}:{}", source.identity, source.revision) == selected).then_some(source)
+        })
+        .ok_or_else(|| err("configuration_required", "默认 Sandbox 未发布"))?;
     compose_execution_recipe(&packaged_harness(provider)?, &sandbox.into_record()?)
 }
 

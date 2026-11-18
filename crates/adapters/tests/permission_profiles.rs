@@ -959,7 +959,7 @@ fn frozen_feature_pins_followed_bindings_before_the_target_default_changes() {
         &e,
         command(
             "project.configuration.update",
-            json!({"workflow_ref":defaults["workflow_ref"],"role_agent_bindings":agents}),
+            json!({"workflow_ref":defaults["workflow_ref"],"role_agent_bindings":agents,"test_configuration":fixture_test_configuration()}),
             Some(&project),
             Some(revision),
         ),

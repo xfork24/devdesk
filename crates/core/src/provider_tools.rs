@@ -323,7 +323,7 @@ impl Engine {
                 false,
             );
             pending.id = pending_id.clone();
-            self.store.commit_changes(&PreparedChangeSet {
+            let prepared = PreparedChangeSet {
                 command_id: command,
                 fingerprint: digest,
                 read_set: ReadSet::new(vec![
@@ -348,7 +348,19 @@ impl Engine {
                 ],
                 result: json!({"id":id}),
                 time: now() as i64,
-            })?
+            };
+            // Retry only persistence of this exact already-observed batch. The
+            // provider is never polled or sent its input again by this retry.
+            let mut attempts = 0;
+            loop {
+                match self.store.commit_changes(&prepared) {
+                    Err(error) if error.code == "storage_busy" && attempts < 7 => {
+                        attempts += 1;
+                        std::thread::yield_now();
+                    }
+                    result => break result?,
+                }
+            }
         };
         poll.pending = receipt
             .versions

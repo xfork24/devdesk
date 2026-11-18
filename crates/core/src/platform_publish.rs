@@ -9,12 +9,28 @@ use crate::{
 };
 
 #[derive(Serialize, Deserialize)]
-enum PublishAction {
+pub(crate) enum PublishAction {
+    DeliveryTargetHead {
+        context: GitContext,
+        expected: String,
+    },
     Repository(Box<RepositoryOperation>),
     PullRequest(PullRequestRequest),
+    DeliveryTarget {
+        context: GitContext,
+    },
+    DeliveryPullRequest(PullRequestRequest),
+    DeliveryStatus(PullRequestMergeRequest),
+    DeliveryMerge(PullRequestMergeRequest),
+    DeliverySync {
+        context: GitContext,
+        expected: String,
+        revision: String,
+        operation: Id,
+    },
 }
 impl Engine {
-    fn platform_publish_stage(
+    pub(crate) fn platform_publish_stage(
         &self,
         effect: &ConfigurationRecord,
         name: &str,
@@ -76,11 +92,53 @@ impl Engine {
                 .applied
         };
         if let Some((_, result)) = self.platform_observed(&stage, "result")?
-            && (!inspect_only || result.is_ok())
+            && (result.is_ok()
+                || (!inspect_only && !matches!(action, PublishAction::DeliverySync { .. })))
         {
             return result;
         }
         let result = match &action {
+            PublishAction::DeliveryTargetHead { context, expected } => {
+                let revision = self.git.observe_delivery_target(context)?;
+                require(
+                    revision.is_some() || context.target.owner != context.project,
+                    "项目主分支缺失",
+                )?;
+                Ok(Some(
+                    json!({"revision":revision.as_deref().unwrap_or(expected),"remote_exists":revision.is_some()}),
+                ))
+            }
+            PublishAction::DeliveryTarget { context } => self
+                .pull_requests
+                .as_ref()
+                .ok_or_else(|| err("unsupported", "未配置 PR 适配器"))?
+                .delivery_target(context, fresh)
+                .map(Some),
+            PublishAction::DeliveryPullRequest(request) => self
+                .pull_requests
+                .as_ref()
+                .ok_or_else(|| err("unsupported", "未配置 PR 适配器"))?
+                .ensure_delivery(request, !fresh)
+                .map(|v| v.map(|v| json!(v))),
+            PublishAction::DeliveryStatus(request) => self
+                .pull_requests
+                .as_ref()
+                .ok_or_else(|| err("unsupported", "未配置 PR 适配器"))?
+                .delivery_status(request, !fresh),
+            PublishAction::DeliveryMerge(request) => self
+                .pull_requests
+                .as_ref()
+                .ok_or_else(|| err("unsupported", "未配置 PR 适配器"))?
+                .merge_delivery(request, !fresh)
+                .map(|v| v.map(|v| json!(v))),
+            PublishAction::DeliverySync {
+                context,
+                expected,
+                revision,
+                operation,
+            } => self
+                .git
+                .sync_delivery(context, expected, revision, operation, !fresh),
             PublishAction::Repository(op) => {
                 if fresh {
                     self.git.repository_operation(op).map(|r| Some(json!(r)))

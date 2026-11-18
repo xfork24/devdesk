@@ -198,8 +198,21 @@ impl Engine {
             self.compile_configured_workflow(&selected, &workflow, &scope, Some(&bindings))?;
         plan.standard_ref = Some(text(&configuration.data, "standard_ref")?);
         plan.work_configuration_ref = Some(configuration.id.clone());
-        let inputs: BTreeMap<String, Value> = serde_json::from_value(selection["inputs"].clone())
-            .map_err(|e| err("invalid_params", e.to_string()))?;
+        let mut inputs: BTreeMap<String, Value> =
+            serde_json::from_value(selection["inputs"].clone())
+                .map_err(|e| err("invalid_params", e.to_string()))?;
+        if plan.document.inputs.contains_key("test_configuration") {
+            let tests = configuration
+                .data
+                .get("test_configuration")
+                .filter(|v| !v.is_null())
+                .ok_or_else(|| err("configuration_required", "该流程需要项目测试执行配置"))?;
+            require(
+                inputs.get("test_configuration").is_none_or(|v| v == tests),
+                "不能覆盖冻结项目测试配置",
+            )?;
+            inputs.insert("test_configuration".into(), tests.clone());
+        }
         self.validate_workflow_inputs(&catalog, &plan, &inputs)?;
         let start = c.payload["start_workflow"] != false;
         let feature = Feature {

@@ -12,6 +12,8 @@ pub const WORKFLOW_INSTANCE_SCHEMA: u64 = 6;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkflowDefinition {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivery_policy: Option<WorkflowDeliveryPolicy>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub rework_policies: BTreeMap<String, ReworkPolicy>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -30,6 +32,23 @@ pub struct WorkflowDefinition {
     pub outputs: BTreeMap<String, PortSource>,
     #[serde(default)]
     pub completion: CompletionRule,
+}
+
+/// References actual steps, never role names or business keys. Merge authorization
+/// consumes their accepted, versioned facts and cannot waive physical tests.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowDeliveryPolicy {
+    pub source_publication_step: String,
+    pub source_regression_step: String,
+    pub code_review_step: String,
+    pub merge_regression_step: String,
+    #[serde(default)]
+    pub independent_green_step: Option<String>,
+    #[serde(default)]
+    pub human_confirmation_step: Option<String>,
+    #[serde(default)]
+    pub children_step: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -606,6 +625,31 @@ impl WorkflowDefinition {
         )?;
         let stages: BTreeSet<_> = self.stages.iter().map(|s| s.key.as_str()).collect();
         let keys: BTreeSet<_> = self.steps.iter().map(|s| s.key.as_str()).collect();
+        if let Some(policy) = &self.delivery_policy {
+            for key in [
+                &policy.source_publication_step,
+                &policy.source_regression_step,
+                &policy.code_review_step,
+                &policy.merge_regression_step,
+            ]
+            .into_iter()
+            .chain(policy.independent_green_step.iter())
+            .chain(policy.human_confirmation_step.iter())
+            .chain(policy.children_step.iter())
+            {
+                require(keys.contains(key.as_str()), "交付政策引用了不存在的步骤")?;
+            }
+            if let Some(key) = &policy.human_confirmation_step {
+                require(
+                    self.steps.iter().any(|s| {
+                        &s.key == key
+                            && s.confirmation == ConfirmationPolicy::Human
+                            && !s.allow_completion_override
+                    }),
+                    "正式合入必须绑定不可豁免的 Human 确认",
+                )?;
+            }
+        }
         require(
             stages.len() == self.stages.len() && keys.len() == self.steps.len(),
             "流程标识重复",

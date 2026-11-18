@@ -199,6 +199,8 @@ fn test_request_schema_covers_frozen_code_documents_and_execution_instances() {
         json!({"context":context,"revision":"a".repeat(40)}),
     );
     let recipe = TestRecipe {
+        command: None,
+        preparation: vec![],
         runner: TestRunner::NodeTest,
         files: vec!["tests/example.test.mjs".into()],
         image: format!("sha256:{}", "a".repeat(64)),
@@ -536,6 +538,8 @@ fn test_recipe_schema_rejects_the_same_unsafe_paths_as_the_domain() {
         "a..b.mjs",
     ] {
         let recipe = TestRecipe {
+            command: None,
+            preparation: vec![],
             runner: TestRunner::NodeTest,
             files: vec![path.into()],
             image: format!("sha256:{}", "a".repeat(64)),
@@ -556,6 +560,8 @@ fn test_recipe_schema_rejects_the_same_unsafe_paths_as_the_domain() {
         "tests/line\nbreak.mjs",
     ] {
         let recipe = TestRecipe {
+            command: None,
+            preparation: vec![],
             runner: TestRunner::NodeTest,
             files: vec![path.into()],
             image: format!("sha256:{}", "a".repeat(64)),

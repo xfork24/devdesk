@@ -1,6 +1,6 @@
 # DevDesk
 
-DevDesk 是本地软件工程工作台：Rust 内核管理配置、工作流和权威执行事实，React Web 提供操作入口，SQLite 按项目保存工程数据与历史。它通过 GitHub 仓库、Git worktree、Linux Docker worker 和 Codex / DeepSeek Harness 执行实际工作；平台发布只创建 GitHub PR，不自动合入。
+DevDesk 是本地软件工程工作台：Rust 内核管理配置、工作流和权威执行事实，React Web 提供操作入口，SQLite 按项目保存工程数据与历史。它通过 GitHub 仓库、Git worktree、Linux Docker worker 和 Codex / DeepSeek Harness 执行实际工作；精简版在版本、回归及保护门禁通过后自动合入 Task PR，Feature PR 另须 Human 确认。
 
 核心性能约束是单 Host 在工作流运行时支撑至少 100 个活跃并发前端：各前端独立选择项目，读取并发执行，写入用乐观版本校验保护，显示允许最终一致。SQLite 底层并发重构已合入 main 并通过初步专项验证，尚未完成正式容量与联合验收，见 [设计约束](docs/design.md#单-host-并发与性能设计约束)、[合入与基本验证记录](docs/plans/single-host-concurrency/MERGE.md)、[实施计划](docs/plans/single-host-concurrency/PLAN.md) 和 [100 前端验收标准](docs/plans/single-host-concurrency/ACCEPTANCE.md)。
 
@@ -37,7 +37,7 @@ Web 和出厂资源嵌入 Host，界面更新后重新构建并重启。发行�
 4. 在“执行与交付”查看步骤、原始产物、真实测试、独立评审及候选。运行计划变更经过预演、静止等待和原子应用；未知副作用先核对。
 5. 核对候选、测试、评审、业务接纳与远端发布回执，取得 PR。模型自述不能代替 Docker 测试、Git 事实或人类签署。
 
-默认 Feature 为 7 阶段 22 步，Task 为 7 阶段 20 步，覆盖需求、设计、任务规划、独立测试、Red/Green、实现、文档、评审、候选与发布。默认 Feature 的 PRD、Design 和 Tasks 在独立 Spec 验收后分别等待人类确认；其他步骤自动推进，仍须满足业务门禁。澄清回答、后续范围/验收/关键方案变化由人类决定，Agent 不得代答或自行绕过。完整流程、预算和授权见 [工作流与编排](docs/workflow-orchestration.md) 与 [默认配置](resources/configuration/README.md)。
+默认精简版 Feature 为 5 阶段、14 个业务步骤（19 个实际节点），Task 为 5 阶段、10 个业务步骤（14 个实际节点）。独立测试与 Red/Green、独立评审、源版本及合并结果两类项目回归均保留；文档和自检在实现内完成。经理按 Task DAG 派发，默认并发上限 4；Task PR 合入并同步到所属 Feature 后才完成并解锁后继。PRD、Design、Tasks 和最终 Feature 合入要求确切版本的 Human 决定。项目必须先保存测试执行配置。详细版保留，可显式选择。完整流程、预算和授权见 [工作流与编排](docs/workflow-orchestration.md) 与 [默认配置](resources/configuration/README.md)。
 
 项目经理独立工作台可在创建 Feature 前查询资料、预演和创作配置；它与根实例调度权分开。Codex 与 DSH 提供动态工具和 Agent 经验访问桥；当前根编排驱动支持 Codex。DSH 可按源配置连接 DeepSeek、智谱国内编程订阅、MiniMax 国内订阅及本机 Ollama；目录结果不代表真实推理已验证。
 

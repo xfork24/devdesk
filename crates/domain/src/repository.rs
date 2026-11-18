@@ -11,6 +11,13 @@ pub enum WorktreeKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RepositoryAction {
+    Checkpoint {
+        context: GitContext,
+        expected: String,
+        allowed_paths: Vec<String>,
+        protected_paths: Vec<String>,
+        interfaces: Vec<TestInterface>,
+    },
     RefreshMainline {
         context: GitContext,
         expected: String,
@@ -224,6 +231,27 @@ pub enum PublishStage {
     TargetBase,
     Candidate,
     RemoteAdvance,
+    Source,
+    DeliveryBase,
+    DeliveryCandidate,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeliveryPublication {
+    pub source_revision: String,
+    pub source_branch: String,
+    pub target_revision: String,
+    pub revision: String,
+    pub tree: String,
+    pub workspace_id: Id,
+    pub owner_id: Id,
+    pub operation_id: Id,
+    pub pull_request: PullRequestReceipt,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PullRequestMergeRequest {
+    pub request: PullRequestRequest,
+    pub tree: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PullRequestRequest {

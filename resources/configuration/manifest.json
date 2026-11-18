@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "bundle_version": "2026.11.18-reference-usage-v1",
+  "bundle_version": "2026.11.18-streamlined-default-workflows-v1",
   "usage_index": "reference-usage.json",
   "types": {
     "role": [
@@ -23,7 +23,13 @@
       "skills/builtin-skill-independent-review-v2.json",
       "skills/builtin-skill-project-workbench-v1.json",
       "skills/builtin-skill-delivery-self-check-v1.json",
-      "skills/builtin-skill-workflow-orchestration-v5.json"
+      "skills/builtin-skill-workflow-orchestration-v5.json",
+      "skills/精简版-skill-context-v1.json",
+      "skills/精简版-skill-project-planning-v1.json",
+      "skills/精简版-skill-workflow-orchestration-v1.json",
+      "skills/精简版-skill-test-design-v1.json",
+      "skills/精简版-skill-implementation-v1.json",
+      "skills/精简版-skill-code-review-v1.json"
     ],
     "spec": [
       "specs/builtin-spec-stage-prd-v2.json",
@@ -51,14 +57,24 @@
       "specs/builtin-spec-delivery-implementation-doc-v1.json",
       "specs/builtin-spec-delivery-feature-report-v1.json",
       "specs/builtin-spec-checked-markdown-v1.json",
-      "specs/builtin-spec-located-review-v1.json"
+      "specs/builtin-spec-located-review-v1.json",
+      "specs/精简版-spec-planning-v1.json",
+      "specs/精简版-spec-design-v1.json",
+      "specs/精简版-spec-tests-v1.json",
+      "specs/精简版-spec-implementation-v1.json",
+      "specs/精简版-spec-task-code-review-v1.json",
+      "specs/精简版-spec-feature-code-review-v1.json",
+      "specs/精简版-spec-platform-evidence-v1.json"
     ],
     "standard": [
-      "standards/builtin-standard-engineering-v8.json"
+      "standards/builtin-standard-engineering-v9.json",
+      "standards/精简版-standard-engineering-v1.json"
     ],
     "workflow": [
-      "workflows/builtin-workflow-task-sol-high-v9.json",
-      "workflows/builtin-workflow-feature-sol-high-v10.json"
+      "workflows/builtin-workflow-task-sol-high-v10.json",
+      "workflows/builtin-workflow-feature-sol-high-v11.json",
+      "workflows/精简版-workflow-task-v1.json",
+      "workflows/精简版-workflow-feature-v1.json"
     ],
     "delivery_type": [
       "deliveries/builtin-delivery-prd-v3.json",
@@ -82,7 +98,22 @@
       "deliveries/builtin-delivery-baseline-doc-v1.json",
       "deliveries/builtin-delivery-implementation-doc-v1.json",
       "deliveries/builtin-delivery-feature-report-v1.json",
-      "deliveries/builtin-delivery-checked-markdown-v1.json"
+      "deliveries/builtin-delivery-checked-markdown-v1.json",
+      "deliveries/精简版-delivery-design-v1.json",
+      "deliveries/精简版-delivery-task-plan-v1.json",
+      "deliveries/精简版-delivery-test-recipe-v1.json",
+      "deliveries/精简版-delivery-implementation-v1.json",
+      "deliveries/精简版-delivery-project-tests-v1.json",
+      "deliveries/精简版-delivery-source-publication-v1.json",
+      "deliveries/精简版-delivery-pull-request-v1.json",
+      "deliveries/精简版-delivery-merge-sync-v1.json",
+      "deliveries/精简版-delivery-checkpoint-v1.json",
+      "deliveries/精简版-delivery-regression-v1.json",
+      "deliveries/精简版-delivery-human-packet-v1.json",
+      "deliveries/精简版-delivery-diff-v1.json",
+      "deliveries/精简版-delivery-target-v1.json",
+      "deliveries/精简版-delivery-test-report-v1.json",
+      "deliveries/精简版-delivery-task-reports-v1.json"
     ],
     "capability": [
       "capabilities/builtin-capability-sol-high-codex-v4.json",
@@ -105,7 +136,13 @@
       "capabilities/builtin-capability-reviewer-glm-dsh-v2.json",
       "capabilities/builtin-capability-project-manager-codex-v12.json",
       "capabilities/builtin-capability-project-manager-glm-dsh-v5.json",
-      "capabilities/builtin-capability-project-manager-minimax-dsh-v5.json"
+      "capabilities/builtin-capability-project-manager-minimax-dsh-v5.json",
+      "capabilities/精简版-capability-analyst-v1.json",
+      "capabilities/精简版-capability-architect-v1.json",
+      "capabilities/精简版-capability-project-manager-v1.json",
+      "capabilities/精简版-capability-developer-v1.json",
+      "capabilities/精简版-capability-tester-v1.json",
+      "capabilities/精简版-capability-reviewer-v1.json"
     ],
     "agent": [
       "agents/builtin-agent-sol-high-analyst-v6.json",
@@ -125,7 +162,13 @@
       "agents/builtin-agent-glm-reviewer-v2.json",
       "agents/builtin-agent-sol-high-project-manager-v13.json",
       "agents/builtin-agent-glm-project-manager-v5.json",
-      "agents/builtin-agent-minimax-project-manager-v5.json"
+      "agents/builtin-agent-minimax-project-manager-v5.json",
+      "agents/精简版-agent-analyst-v1.json",
+      "agents/精简版-agent-architect-v1.json",
+      "agents/精简版-agent-project-manager-v1.json",
+      "agents/精简版-agent-developer-v1.json",
+      "agents/精简版-agent-tester-v1.json",
+      "agents/精简版-agent-reviewer-v1.json"
     ],
     "model": [
       "models/builtin-model-gpt-6-1-sol-high-v1.json",
@@ -137,7 +180,8 @@
       "harnesses/builtin-harness-codex-managed-v1.json"
     ],
     "sandbox": [
-      "sandboxes/builtin-sandbox-docker-v1.json"
+      "sandboxes/builtin-sandbox-docker-v1.json",
+      "sandboxes/精简版-sandbox-project-tests-v1.json"
     ],
     "tool": [
       "tools/builtin-tool-codex-native-v1.json",
@@ -189,7 +233,14 @@
       "tools/builtin-tool-workflow-complete-v2.json",
       "tools/builtin-tool-workflow-segment-dispatch-v2.json",
       "tools/builtin-tool-workflow-decision-request-v4.json",
-      "tools/builtin-tool-workflow-rework-preview-v1.json"
+      "tools/builtin-tool-workflow-rework-preview-v1.json",
+      "tools/精简版-tool-tests-run-v1.json",
+      "tools/精简版-tool-project-tests-v1.json",
+      "tools/精简版-tool-checkpoint-v1.json",
+      "tools/精简版-tool-source-publish-v1.json",
+      "tools/精简版-tool-delivery-open-v1.json",
+      "tools/精简版-tool-delivery-merge-v1.json",
+      "tools/精简版-tool-target-v1.json"
     ],
     "permission_profile": [
       "permissions/profiles/builtin-permission-harness-full-access-v1.json",
@@ -210,7 +261,10 @@
       "permissions/profiles/builtin-permission-step-feature-sol-high-requirements_review-v1.json",
       "permissions/profiles/builtin-permission-step-feature-sol-high-design_review-v1.json",
       "permissions/profiles/builtin-permission-step-feature-sol-high-planning-v1.json",
-      "permissions/profiles/builtin-permission-step-feature-sol-high-plan_review-v1.json"
+      "permissions/profiles/builtin-permission-step-feature-sol-high-plan_review-v1.json",
+      "permissions/profiles/精简版-permission-read-v1.json",
+      "permissions/profiles/精简版-permission-tests-v1.json",
+      "permissions/profiles/精简版-permission-implementation-v1.json"
     ],
     "model_provider": [
       "model-providers/builtin-model-provider-openai-v1.json",

@@ -2,10 +2,12 @@
 fn metadata(provider: &str) -> &(String, String) {
     use std::sync::OnceLock;
     static CODEX: OnceLock<(String, String)> = OnceLock::new();
+    static PROJECT: OnceLock<(String, String)> = OnceLock::new();
     static DSH: OnceLock<(String, String)> = OnceLock::new();
     let cache = match provider {
         "codex" => &CODEX,
         "dsh" => &DSH,
+        "project" => &PROJECT,
         _ => panic!("unknown test provider"),
     };
     cache.get_or_init(|| load(provider))
@@ -22,6 +24,7 @@ fn load(provider: &str) -> (String, String) {
     let reference = std::env::var(&variable).unwrap_or_else(|_| match provider {
         "codex" => "devdesk/codex:0.167.0".into(),
         "dsh" => "devdesk/dsh:0.2.2-rc.1".into(),
+        "project" => "devdesk/project-tests:1".into(),
         _ => panic!("unknown test provider"),
     });
     let output = std::process::Command::new("docker")

@@ -356,13 +356,15 @@ impl Engine {
                     StepExecutionStatus::Failed => {
                         execution.failure.as_ref().is_some_and(|failure| {
                             failure.automatic_retry_safe()
-                                && member
-                                    .instance
-                                    .plan
-                                    .document
-                                    .scheduling
-                                    .retry_error_codes
-                                    .contains(&failure.code)
+                                && ((failure.code == "stale_target"
+                                    && member.instance.plan.document.delivery_policy.is_some())
+                                    || member
+                                        .instance
+                                        .plan
+                                        .document
+                                        .scheduling
+                                        .retry_error_codes
+                                        .contains(&failure.code))
                         })
                     }
                     _ => false,
@@ -386,17 +388,19 @@ impl Engine {
                 let ready = self.native_step_readiness(&member, &resources)?;
                 let method = if permits("retry")
                     && ready["actions"]["retry"]["allowed"] == true
-                    && ready["retry_count"].as_u64().unwrap_or(u64::MAX)
-                        < member.instance.plan.document.scheduling.max_retries
                     && e.failure.as_ref().is_some_and(|f| {
                         f.automatic_retry_safe()
-                            && member
-                                .instance
-                                .plan
-                                .document
-                                .scheduling
-                                .retry_error_codes
-                                .contains(&f.code)
+                            && ((f.code == "stale_target"
+                                && member.instance.plan.document.delivery_policy.is_some())
+                                || (ready["retry_count"].as_u64().unwrap_or(u64::MAX)
+                                    < member.instance.plan.document.scheduling.max_retries
+                                    && member
+                                        .instance
+                                        .plan
+                                        .document
+                                        .scheduling
+                                        .retry_error_codes
+                                        .contains(&f.code)))
                     }) {
                     Some("workflow.step.retry")
                 } else if permits("accept") && ready["actions"]["accept"]["allowed"] == true {

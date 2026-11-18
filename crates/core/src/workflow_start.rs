@@ -196,7 +196,7 @@ impl Engine {
             &owner.owner.resource.id,
         )?;
         commit.witness([version(&request)])?;
-        let inputs = serde_json::from_value(
+        let mut inputs: BTreeMap<String, Value> = serde_json::from_value(
             c.payload
                 .get("inputs")
                 .cloned()
@@ -209,6 +209,21 @@ impl Engine {
                 .unwrap_or(json!({})),
         )
         .map_err(|e| err("invalid_params", e.to_string()))?;
+        if plan.document.inputs.contains_key("test_configuration") {
+            let tests = configuration
+                .data
+                .get("test_configuration")
+                .filter(|v| !v.is_null())
+                .ok_or_else(|| err("configuration_required", "该流程需要项目测试执行配置"))?;
+            serde_json::from_value::<ProjectTestConfiguration>(tests.clone())
+                .map_err(|e| err("invalid_params", e.to_string()))?
+                .validate()?;
+            require(
+                inputs.get("test_configuration").is_none_or(|v| v == tests),
+                "不能覆盖冻结项目测试配置",
+            )?;
+            inputs.insert("test_configuration".into(), tests.clone());
+        }
         self.validate_workflow_inputs(&catalog, &plan, &inputs)?;
         let instance_id =
             stable_object_id(self.store.as_ref(), &c.command_id, "workflow-instance")?;

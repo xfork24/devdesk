@@ -66,6 +66,36 @@ export function TemplateSettings({
       setBusy(false);
     }
   }
+  async function updateFactory() {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const basis = await request("query.template_reset_preview");
+      const result = await request("configuration.templates.reset", {
+        command_id: crypto.randomUUID(),
+        payload: {
+          expected_catalog_generation: basis.generation,
+          catalog_fingerprint: basis.catalog_fingerprint,
+          bundle_hash: basis.bundle_hash,
+          preserve_custom: true,
+        },
+      });
+      observeCatalogGeneration(result.generation);
+      setMessage(
+        result.changed
+          ? "新版出厂默认已启用；自定义定义和已保存项目选择保留。"
+          : "已启用当前出厂默认。",
+      );
+      setCatalog(await request("query.template_catalog"));
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
   async function reset() {
     if (!preview || busy) return;
     setBusy(true);
@@ -119,6 +149,9 @@ export function TemplateSettings({
           </p>
         )}
       </div>
+      <ActionButton disabled={busy} onClick={updateFactory}>
+        启用新版出厂默认
+      </ActionButton>
       <ActionButton disabled={busy} onClick={openPreview}>
         重置模板定义
       </ActionButton>
@@ -178,6 +211,9 @@ export function TemplateSettings({
             }}
           >
             取消
+          </ActionButton>
+          <ActionButton disabled={busy} onClick={updateFactory}>
+            启用新版出厂默认
           </ActionButton>
           <ActionButton disabled={busy} onClick={openPreview}>
             重新预览

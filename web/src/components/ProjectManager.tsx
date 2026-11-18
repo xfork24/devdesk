@@ -68,6 +68,7 @@ export function ProjectManager({
       }[],
       role_agent_bindings: {} as Record<string, string>,
       source_configuration_id: "",
+      test_configuration: "",
     }),
   );
   const loadGeneration = useRef(0);
@@ -141,6 +142,14 @@ export function ProjectManager({
               role_agent_bindings:
                 configuration.configuration.data.role_agent_bindings || {},
               source_configuration_id: configuration.configuration.id,
+              test_configuration: configuration.configuration.data
+                .test_configuration
+                ? JSON.stringify(
+                    configuration.configuration.data.test_configuration,
+                    null,
+                    2,
+                  )
+                : "",
             },
       );
     else if (preset && !configuration.configuration)
@@ -161,6 +170,7 @@ export function ProjectManager({
               standard_overrides: [],
               role_agent_bindings: preset.role_agent_bindings,
               source_configuration_id: "",
+              test_configuration: "",
             },
       );
   }, [request, project?.id, setDraft]);
@@ -239,6 +249,9 @@ export function ProjectManager({
         expected_revision: project.revision,
         payload: {
           orchestration,
+          test_configuration: draft.test_configuration?.trim()
+            ? JSON.parse(draft.test_configuration)
+            : null,
           orchestrator_role_ref: draft.orchestrator_role_ref || null,
           harness_permission_ref: draft.harness_permission_ref,
           sandbox_ref: draft.sandbox_ref || undefined,
@@ -308,6 +321,7 @@ export function ProjectManager({
                     standard_overrides: [],
                     role_agent_bindings: defaults.role_agent_bindings,
                     source_configuration_id: configuration?.id || "",
+                    test_configuration: draft.test_configuration || "",
                   });
                 }}
               >
@@ -572,6 +586,24 @@ export function ProjectManager({
                 </div>
               ))}
             </details>
+            <label>
+              项目测试配置（JSON）
+              <textarea
+                aria-label="项目测试配置"
+                rows={10}
+                value={draft.test_configuration || ""}
+                onChange={(event) =>
+                  setDraft({ ...draft, test_configuration: event.target.value })
+                }
+                placeholder={
+                  '{"language":"JavaScript","independent_runner":"node_test","regression":{"runner":"command","files":["README.md"],"image":"sha256:…","timeout_seconds":1800,"command":{"argv":["node","--test"],"cwd":"."}}}'
+                }
+              />
+            </label>
+            <p className="muted">
+              精简版需要固定镜像与实际项目回归入口；独立测试可选择 Node 或
+              Python。准备及构建输出使用 /state 或 /tmp。配置随新工作冻结。
+            </p>
             <p>
               <a
                 href={`?tab=workflows&config_tab=workflow&project_id=${encodeURIComponent(project.id)}`}

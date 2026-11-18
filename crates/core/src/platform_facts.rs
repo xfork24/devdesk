@@ -10,6 +10,7 @@ use crate::{
 
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) enum PlatformAction {
+    Delivery(Box<crate::platform_delivery::DeliveryAction>),
     Value(Value),
     WorkspaceCurrent {
         context: GitContext,
@@ -175,7 +176,7 @@ impl Engine {
             reads,
         ))
     }
-    fn platform_receipt_proof(
+    pub(crate) fn platform_receipt_proof(
         &self,
         root: &str,
         handler: &str,
@@ -200,7 +201,7 @@ impl Engine {
         )?;
         Ok(version(&proof))
     }
-    fn platform_native_grant(
+    pub(crate) fn platform_native_grant(
         &self,
         request: &PlatformToolRequest,
         resources: &WorkflowResources,
@@ -222,13 +223,29 @@ impl Engine {
             "原工作空间身份或归属不符",
         )?;
         let mut accepted = None;
-        for handler in ["workspace.current", "workspace.snapshot"]
-            .into_iter()
-            // A synthetic Git candidate is a real immutable revision issued
-            // by this root. It authorizes testing that exact commit, without
-            // granting it as a writable snapshot/head for other operations.
-            .chain((request.definition.qualified_name == "tests.run").then_some("git.candidate"))
-        {
+        for handler in [
+            "workspace.current",
+            "workspace.snapshot",
+            "workspace.checkpoint",
+        ]
+        .into_iter()
+        // A synthetic Git candidate is a real immutable revision issued
+        // by this root. It authorizes testing that exact commit, without
+        // granting it as a writable snapshot/head for other operations.
+        .chain(
+            matches!(
+                request.definition.qualified_name.as_str(),
+                "tests.run" | "tests.project"
+            )
+            .then_some("git.candidate"),
+        )
+        .chain(
+            matches!(
+                request.definition.qualified_name.as_str(),
+                "tests.run" | "tests.project"
+            )
+            .then_some("git.delivery.open"),
+        ) {
             // Workspace grants may include optional diff metadata. The exact
             // issued receipt is immutable; the projection predicate below
             // selects by workspace/revision rather than inventing a receipt.
@@ -494,13 +511,22 @@ impl Engine {
                 plan.basis = plan.basis.merge(reads.versions().iter().cloned())?;
                 PlatformAction::WorkspaceCurrent { context, workspace }
             }
-            "workspace.snapshot" | "tests.run" | "git.candidate" | "git.advance"
+            "workspace.target" | "git.source.publish" | "git.delivery.open"
+            | "git.delivery.merge" => {
+                self.prepare_delivery_action(request, &resources, &mut plan)?
+            }
+            "workspace.snapshot"
+            | "workspace.checkpoint"
+            | "tests.run"
+            | "tests.project"
+            | "git.candidate"
+            | "git.advance"
             | "git.publish" => {
                 let (context, workspace, reads) =
                     self.platform_native_grant(request, &resources)?;
                 plan.basis = plan.basis.merge(reads.versions().iter().cloned())?;
                 match request.definition.qualified_name.as_str() {
-                    "workspace.snapshot" => {
+                    "workspace.snapshot" | "workspace.checkpoint" => {
                         self.platform_plan_fence(&mut plan, request, &context.source.worktree)?;
                         plan.head = Some(one(
                             self.store.as_ref(),
@@ -542,12 +568,32 @@ impl Engine {
                             operation: RepositoryOperation {
                                 id: operation.clone(),
                                 project_id: request.project_id.clone(),
-                                action: RepositoryAction::Snapshot {
-                                    run: operation,
-                                    context,
-                                    expected: text(&p["workspace"], "revision")?,
-                                    allowed_paths,
-                                    protected_paths,
+                                action: if request.definition.qualified_name
+                                    == "workspace.checkpoint"
+                                {
+                                    let interfaces: Vec<TestInterface> = serde_json::from_value(
+                                        p.get("interfaces").cloned().unwrap_or(json!([])),
+                                    )
+                                    .map_err(|e| err("invalid_params", e.to_string()))?;
+                                    require(interfaces.len() <= 32, "接口基线超出预算")?;
+                                    for interface in &interfaces {
+                                        interface.source()?;
+                                    }
+                                    RepositoryAction::Checkpoint {
+                                        context,
+                                        expected: text(&p["workspace"], "revision")?,
+                                        allowed_paths,
+                                        protected_paths,
+                                        interfaces,
+                                    }
+                                } else {
+                                    RepositoryAction::Snapshot {
+                                        run: operation,
+                                        context,
+                                        expected: text(&p["workspace"], "revision")?,
+                                        allowed_paths,
+                                        protected_paths,
+                                    }
                                 },
                                 status: RepositoryOperationStatus::Dispatched,
                                 receipt: None,
@@ -559,12 +605,34 @@ impl Engine {
                             scope_base,
                         }
                     }
-                    "tests.run" => {
+                    "tests.run" | "tests.project" => {
                         let runtime = request
                             .runtime
                             .clone()
                             .ok_or_else(|| err("configuration_required", "测试工具缺少冻结环境"))?;
-                        let mut recipe = p["recipe"].clone();
+                        let configuration = resources.instance.inputs.get("test_configuration");
+                        let mut recipe = if request.definition.qualified_name == "tests.project" {
+                            configuration.ok_or_else(|| {
+                                err("configuration_required", "项目回归缺少冻结配置")
+                            })?["regression"]
+                                .clone()
+                        } else {
+                            p["recipe"].clone()
+                        };
+                        if let Some(configuration) = configuration {
+                            if request.definition.qualified_name == "tests.run" {
+                                require(
+                                    recipe["runner"] == configuration["independent_runner"],
+                                    "独立测试执行器必须匹配冻结项目配置",
+                                )?;
+                            }
+                            if let Some(image) = recipe.get("image").and_then(Value::as_str) {
+                                require(
+                                    runtime.sandbox.image.as_deref() == Some(image),
+                                    "测试配方镜像与冻结运行环境不同",
+                                )?;
+                            }
+                        }
                         recipe["image"] = json!(
                             runtime
                                 .sandbox
@@ -668,7 +736,7 @@ impl Engine {
         }
         Ok(plan)
     }
-    fn platform_plan_fence(
+    pub(crate) fn platform_plan_fence(
         &self,
         plan: &mut PlatformPlan,
         request: &PlatformToolRequest,
@@ -736,6 +804,35 @@ impl Engine {
             })
             .collect::<Result<Vec<_>>>()?;
         let order = topological(&nodes)?;
+        for item in items {
+            if let Some(reasons) = item.get("dependency_reasons") {
+                let reasons = reasons
+                    .as_array()
+                    .ok_or_else(|| err("invalid_params", "依赖依据必须为数组"))?;
+                let deps = item["dependencies"]
+                    .as_array()
+                    .ok_or_else(|| err("invalid_params", "依赖必须为数组"))?;
+                require(
+                    reasons.len() == deps.len()
+                        && deps.iter().all(|dep| {
+                            reasons
+                                .iter()
+                                .filter(|r| {
+                                    r["dependency"] == *dep
+                                        && r["artifact"]
+                                            .as_str()
+                                            .is_some_and(|s| !s.trim().is_empty())
+                                        && r["reason"]
+                                            .as_str()
+                                            .is_some_and(|s| !s.trim().is_empty())
+                                })
+                                .count()
+                                == 1
+                        }),
+                    "每条直接依赖必须且只能有一份明确产物及原因",
+                )?;
+            }
+        }
         let ids = order
             .iter()
             .map(|key| {
@@ -847,7 +944,7 @@ impl Engine {
                             &mut catalog,
                             &WorkReference::Task { id: tid.clone() },
                             &owner.scope,
-                            &json!({"standard_ref":standard,"workflow_ref":entry,"role_agent_bindings":resources.instance.role_agent_bindings,"harness_permission_ref":resources.instance.plan.harness_permission_ref}),
+                            &json!({"standard_ref":standard,"workflow_ref":entry,"role_agent_bindings":resources.instance.role_agent_bindings,"harness_permission_ref":resources.instance.plan.harness_permission_ref,"test_configuration":resources.instance.inputs.get("test_configuration").cloned().unwrap_or_else(||parent.data["test_configuration"].clone())}),
                             Some(parent),
                         )?;
                         for row in &catalog.governance[before..] {

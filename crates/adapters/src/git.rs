@@ -803,16 +803,62 @@ impl CliGit {
             "远端操作缺少固定 SHA",
         )?;
         require(
-            branch == c.target.branch || branch.starts_with("devdesk/candidates/"),
+            branch == c.target.branch
+                || branch.starts_with("devdesk/candidates/")
+                || (stage == PublishStage::Source
+                    && branch == c.source.branch
+                    && c.source.owner != c.project),
             "发布分支不属于冻结上下文",
         )?;
         self.inspect_unlocked(&c.project, &c.workspace.repository, &c.workspace.mainline)?;
-        let policy = crate::github::GitHubPullRequests
-            .diagnose(&c.workspace.repository, &c.target.branch)?;
-        require(policy.compatible, "GitHub 规则不兼容，禁止推送")?;
+        if matches!(
+            stage,
+            PublishStage::Source | PublishStage::DeliveryBase | PublishStage::DeliveryCandidate
+        ) {
+            require(
+                match stage {
+                    PublishStage::Source => branch == c.source.branch && branch != c.target.branch,
+                    PublishStage::DeliveryBase => {
+                        branch == c.target.branch && c.target.owner != c.project
+                    }
+                    PublishStage::DeliveryCandidate => branch.starts_with("devdesk/candidates/"),
+                    _ => false,
+                },
+                "精简发布不能直接写入正式目标",
+            )?;
+        } else {
+            let policy = crate::github::GitHubPullRequests
+                .diagnose(&c.workspace.repository, &c.target.branch)?;
+            require(policy.compatible, "GitHub 规则不兼容，禁止推送")?;
+        }
         self.operation(&c.project,operation,&json!({"kind":"publish_ref","context":c,"branch":branch,"revision":revision,"expected":expected,"stage":stage}))?;
         let actual = self.remote_head(&repo, branch)?;
         if actual.as_deref() != Some(revision) {
+            if stage == PublishStage::Source {
+                if let Some(actual) = &actual {
+                    self.output(&repo, &["fetch", "--no-tags", "origin", actual])?;
+                    require(
+                        self.git(
+                            &repo,
+                            &["merge-base", "--is-ancestor", actual, revision],
+                            None,
+                        )?
+                        .code
+                            == 0,
+                        "开发分支存在未知后继，禁止覆盖",
+                    )?;
+                }
+                let refspec = format!("{revision}:refs/heads/{branch}");
+                self.output(&repo, &["push", "--porcelain", "origin", &refspec])?;
+                require(
+                    self.remote_head(&repo, branch)?.as_deref() == Some(revision),
+                    "源分支推送回执未确认",
+                )?;
+                return Ok(RepositoryReceipt::PublishedRef {
+                    revision: revision.into(),
+                    branch: branch.into(),
+                });
+            }
             require(
                 actual.as_deref() == expected,
                 "远端目标已变化，精确 lease 拒绝覆盖",
@@ -976,6 +1022,92 @@ impl CliGit {
             operation_id: op.id.clone(),
         };
         match &op.action {
+            RepositoryAction::Checkpoint {
+                context,
+                expected,
+                allowed_paths,
+                protected_paths,
+                interfaces,
+            } => {
+                let repo = self.context(context)?;
+                let path = PathBuf::from(&context.source.worktree);
+                self.verify_worktree(&repo, &path, &context.source.branch)?;
+                self.operation(
+                    &context.project,
+                    &op.id,
+                    &json!({"kind":"checkpoint","action":op.action}),
+                )?;
+                if let Some(revision) =
+                    self.existing_ref(&repo, &format!("refs/devdesk/snapshots/{}", op.id))?
+                {
+                    return Ok(RepositoryReceipt::Snapshot { revision });
+                }
+                require(
+                    self.oid(&path, "HEAD")? == *expected,
+                    "接口准备前源版本已改变",
+                )?;
+                for interface in interfaces {
+                    let content = interface.source()?;
+                    require(
+                        allowed_paths.iter().any(|p| {
+                            p == "."
+                                || &interface.path == p
+                                || interface.path.starts_with(&format!("{p}/"))
+                        }) && !protected_paths.iter().any(|p| {
+                            &interface.path == p || interface.path.starts_with(&format!("{p}/"))
+                        }),
+                        "接口基线超出授权范围",
+                    )?;
+                    let file = path.join(&interface.path);
+                    reject_symlink(&file)?;
+                    if !file.exists() {
+                        let parent = file.parent().unwrap();
+                        reject_symlink(parent)?;
+                        fs::create_dir_all(parent).map_err(storage)?;
+                        require(
+                            parent.canonicalize().map_err(storage)?.starts_with(&path),
+                            "接口路径越界",
+                        )?;
+                        use std::io::Write;
+                        let mut file = OpenOptions::new()
+                            .write(true)
+                            .create_new(true)
+                            .open(&file)
+                            .map_err(storage)?;
+                        file.write_all(content.as_bytes()).map_err(storage)?;
+                        file.sync_all().map_err(storage)?;
+                    }
+                }
+                if self
+                    .output(
+                        &path,
+                        &["status", "--porcelain", "--untracked-files=normal"],
+                    )?
+                    .is_empty()
+                {
+                    self.output(
+                        &repo,
+                        &[
+                            "update-ref",
+                            &format!("refs/devdesk/snapshots/{}", op.id),
+                            expected,
+                            &"0".repeat(expected.len()),
+                        ],
+                    )?;
+                    Ok(RepositoryReceipt::Snapshot {
+                        revision: expected.clone(),
+                    })
+                } else {
+                    self.snapshot_worktree_scoped(
+                        context,
+                        expected,
+                        &op.id,
+                        allowed_paths,
+                        protected_paths,
+                    )
+                    .map(|revision| RepositoryReceipt::Snapshot { revision })
+                }
+            }
             RepositoryAction::RefreshMainline {
                 context,
                 expected,
@@ -1032,7 +1164,8 @@ impl CliGit {
                 repository,
                 mainline,
             } => {
-                let policy = crate::github::GitHubPullRequests.diagnose(repository, mainline)?;
+                let policy =
+                    crate::github::GitHubPullRequests.diagnose_connection(repository, mainline)?;
                 require(
                     policy.compatible,
                     format!(
@@ -1103,6 +1236,16 @@ impl CliGit {
             None
         };
         match &op.action {
+            RepositoryAction::Checkpoint { context, .. } => {
+                let repo = self.context(context)?;
+                let Some(revision) =
+                    self.existing_ref(&repo, &format!("refs/devdesk/snapshots/{}", op.id))?
+                else {
+                    return Ok(None);
+                };
+                self.validate_view(context, &revision)?;
+                return Ok(Some(RepositoryReceipt::Snapshot { revision }));
+            }
             RepositoryAction::Connect {
                 repository,
                 mainline,
@@ -1360,6 +1503,153 @@ impl CliGit {
     }
 }
 impl ports::Git for CliGit {
+    fn observe_delivery_target(&self, c: &GitContext) -> Result<Option<String>> {
+        self.remote_head(&self.context(c)?, &c.target.branch)
+    }
+    fn delivery_sync_ready(&self, c: &GitContext, expected: &str, revision: &str) -> Result<bool> {
+        let repo = self.context(c)?;
+        let path = PathBuf::from(&c.target.worktree);
+        self.verify_worktree(&repo, &path, &c.target.branch)?;
+        let actual = self.oid(&path, "HEAD")?;
+        require(
+            actual == expected || actual == revision,
+            "本地目标存在未知后继，保留现场",
+        )?;
+        if self
+            .output(
+                &path,
+                &["status", "--porcelain", "--untracked-files=normal"],
+            )?
+            .is_empty()
+        {
+            return Ok(true);
+        }
+        if actual == expected {
+            return Ok(false);
+        }
+        if self
+            .git(&path, &["diff-files", "--quiet", "--"], None)?
+            .code
+            != 0
+            || !self
+                .output(&path, &["ls-files", "--others", "--exclude-standard"])?
+                .is_empty()
+        {
+            return Ok(false);
+        }
+        let index = self.output(&path, &["write-tree"])?;
+        Ok(index
+            == self.output(
+                &repo,
+                &["rev-parse", "--verify", &format!("{expected}^{{tree}}")],
+            )?
+            || index
+                == self.output(
+                    &repo,
+                    &["rev-parse", "--verify", &format!("{revision}^{{tree}}")],
+                )?)
+    }
+    fn fetch_delivery_target(&self, c: &GitContext, expected: &str) -> Result<()> {
+        let repo = self.context(c)?;
+        if self.remote_head(&repo, &c.target.branch)?.as_deref() != Some(expected) {
+            return Err(
+                err("stale_target", "远端目标已变化，必须重新构造并验证候选")
+                    .technical_not_applied(),
+            );
+        }
+        self.output(&repo, &["fetch", "--no-tags", "origin", expected])?;
+        require(
+            self.oid(&repo, "FETCH_HEAD")? == expected,
+            "交付目标抓取不符",
+        )
+    }
+    fn commit_tree(&self, c: &GitContext, revision: &str) -> Result<String> {
+        let repo = self.context(c)?;
+        require(valid_oid(revision), "tree 查询需要确切 SHA")?;
+        self.output(
+            &repo,
+            &["rev-parse", "--verify", &format!("{revision}^{{tree}}")],
+        )
+    }
+    fn sync_delivery(
+        &self,
+        c: &GitContext,
+        expected: &str,
+        revision: &str,
+        operation: &str,
+        inspect_only: bool,
+    ) -> Result<Option<Value>> {
+        let repo = self.context(c)?;
+        require(
+            valid_oid(expected) && valid_oid(revision),
+            "同步需要确切 SHA",
+        )?;
+        checked_uuid(operation)?;
+        let path = PathBuf::from(&c.target.worktree);
+        self.verify_worktree(&repo, &path, &c.target.branch)?;
+        let spec =
+            json!({"kind":"delivery_sync","context":c,"expected":expected,"revision":revision});
+        if inspect_only {
+            let marker = self
+                .project(&c.project)?
+                .join("execution/git-operations")
+                .join(format!("delivery_sync-{operation}.json"));
+            reject_symlink(&marker)?;
+            if !marker.is_file() {
+                return Ok(None);
+            }
+            let previous: Value =
+                serde_json::from_slice(&fs::read(marker).map_err(storage)?).map_err(storage)?;
+            require(previous == spec, "同步核对改变了原意图")?;
+            return if self.oid(&path, "HEAD")? == revision
+                && self
+                    .output(
+                        &path,
+                        &["status", "--porcelain", "--untracked-files=normal"],
+                    )?
+                    .is_empty()
+            {
+                Ok(Some(
+                    json!({"revision":revision,"previous":expected,"synchronized":true,"operation_id":operation}),
+                ))
+            } else if self.oid(&path, "HEAD")? == revision {
+                Ok(Some(
+                    json!({"revision":revision,"previous":expected,"synchronized":false,"checkout_required":true,"operation_id":operation}),
+                ))
+            } else {
+                Ok(None)
+            };
+        }
+        self.operation(&c.project, operation, &spec)?;
+        let actual = self.oid(&path, "HEAD")?;
+        if actual != revision {
+            self.target_clean(c, expected)?;
+            self.output(&repo, &["fetch", "--no-tags", "origin", revision])?;
+            require(
+                self.git(
+                    &repo,
+                    &["merge-base", "--is-ancestor", expected, revision],
+                    None,
+                )?
+                .code
+                    == 0,
+                "远端结果不是本地目标的后继",
+            )?;
+            self.output(
+                &repo,
+                &[
+                    "update-ref",
+                    &format!("refs/heads/{}", c.target.branch),
+                    revision,
+                    expected,
+                ],
+            )?;
+        }
+        self.sync_target(c, expected, revision)?;
+        Ok(Some(
+            json!({"revision":revision,"previous":expected,"synchronized":true,"operation_id":operation}),
+        ))
+    }
     fn identity(&self) -> String {
         "devdesk_adapters::CliGit/v2-resource-grants".into()
     }

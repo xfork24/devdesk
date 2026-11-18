@@ -9,6 +9,34 @@ use crate::{
     *,
 };
 
+pub(crate) fn reconciliation_business_basis(
+    plan: &PlatformPlan,
+    call: &ResourceKey,
+) -> Result<ReadSet> {
+    ReadSet::new(
+        plan.basis
+            .versions()
+            .iter()
+            .filter(|v| {
+                !matches!(
+                    v.resource.kind.as_str(),
+                    "workflow_header"
+                        | "workflow_step"
+                        | "workflow_run_authority"
+                        | "workflow_step_authority"
+                        | "tool_turn"
+                        | "turn"
+                        | "execution"
+                        | "session"
+                        | "session_live_workers"
+                        | "session_input_state"
+                ) && v.resource != *call
+            })
+            .cloned()
+            .collect(),
+    )
+}
+
 impl Engine {
     pub(crate) fn inspect_platform_reconciliation(
         &self,
@@ -34,6 +62,7 @@ impl Engine {
                 )),
             },
             PlatformAction::Publish { .. } => self.inspect_platform_publication(effect, action),
+            PlatformAction::Delivery(action) => self.drive_delivery(effect, action, true),
             _ => self.perform_platform_action(action, false),
         }
     }
@@ -109,28 +138,18 @@ impl Engine {
         // The new reconciliation grant supplies its own explicit workflow and
         // lifecycle witnesses. Every original business/source/target version is
         // retained: adopting a physical receipt never rebases a Task or head.
-        let original = plan
-            .basis
-            .versions()
-            .iter()
-            .filter(|v| {
-                !matches!(
-                    v.resource.kind.as_str(),
-                    "workflow_header"
-                        | "workflow_step"
-                        | "workflow_run_authority"
-                        | "workflow_step_authority"
-                        | "tool_turn"
-                        | "turn"
-                        | "execution"
-                        | "session"
-                        | "session_live_workers"
-                        | "session_input_state"
-                ) && v.resource != selected.resource
-            })
-            .cloned();
-        commit.witness(original)?;
+        commit.witness(
+            reconciliation_business_basis(&plan, &selected.resource)?
+                .versions()
+                .iter()
+                .cloned(),
+        )?;
         commit.witness([version(&effect_snapshot)])?;
+        if let PlatformAction::Delivery(action) = &plan.action
+            && let Some(change) = self.delivery_admission_change(action, receipt)?
+        {
+            commit.change(change)?;
+        }
         for change in &plan.changes {
             commit.change(change.clone())?;
         }
@@ -166,5 +185,67 @@ impl Engine {
             self.prepare_platform_test_cleanup(&effect, test, observed)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn renewed_reconciliation_authority_never_rebases_business_or_writer_guards() {
+        let call = ResourceKey::new("governance", "original-call");
+        let versions = [
+            ("workflow_header", "run", 2),
+            ("workflow_step", "step", 3),
+            ("governance", "original-call", 4),
+            ("head", "target", 17),
+            ("governance", "workspace-fence", 1),
+            ("conversation_writers", "project", 8),
+            ("catalog_clock", "configuration", 12),
+        ]
+        .map(|(kind, id, revision)| ResourceVersion {
+            resource: ResourceKey::new(kind, id),
+            revision,
+        });
+        let plan = PlatformPlan {
+            action: PlatformAction::Value(Value::Null),
+            basis: ReadSet::new(versions.to_vec()).unwrap(),
+            changes: vec![],
+            head: None,
+            fence: None,
+            permit: None,
+        };
+        let business = reconciliation_business_basis(&plan, &call).unwrap();
+        assert_eq!(business.versions().len(), 4);
+        assert!(
+            business
+                .merge([
+                    ResourceVersion {
+                        resource: ResourceKey::new("workflow_header", "run"),
+                        revision: 5
+                    },
+                    ResourceVersion {
+                        resource: call,
+                        revision: 6
+                    },
+                ])
+                .is_ok()
+        );
+        for (kind, id, revision) in [
+            ("head", "target", 18),
+            ("governance", "workspace-fence", 2),
+            ("conversation_writers", "project", 9),
+            ("catalog_clock", "configuration", 13),
+        ] {
+            assert!(
+                business
+                    .merge([ResourceVersion {
+                        resource: ResourceKey::new(kind, id),
+                        revision
+                    }])
+                    .is_err()
+            );
+        }
     }
 }

@@ -340,6 +340,18 @@ test("直接调整运行计划、复用成果、绕过与移动端刷新", async
     editor.getByRole("button", { name: "应用此计划调整", exact: true }),
   ).toHaveCount(0);
   await page.getByRole("tab", { name: "工作流程", exact: true }).click();
+  // Applying a plan acknowledges an asynchronous change. This backend-only
+  // fixture has no selected GitHub project SSE stream, so refresh after activation.
+  await expect
+    .poll(async () => {
+      const state = await rpc(page, "query.workflow_instance", {
+        project_id: project.id,
+        id: started.id,
+      });
+      return state.plan.steps.some((step: any) => step.name === "补充交接");
+    })
+    .toBe(true);
+  await runtime.getByRole("button", { name: "刷新进度", exact: true }).click();
   const added = runtime.getByRole("article", {
     name: "步骤 · 补充交接",
     exact: true,

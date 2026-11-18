@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Explicit real Codex/Git/Docker/GitHub acceptance of the default engineering graph in an isolated dataset."""
+"""Explicit real Codex/Git/Docker/GitHub acceptance of the explicit detailed engineering graph in an isolated dataset."""
 import argparse,json,os,shutil,subprocess,tempfile,time,uuid,sys,signal,hashlib
 from pathlib import Path
 from client import Client
@@ -12,6 +12,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'performance'))
 from feature_frontend_load import FeatureFrontendLoad
 
 parser=argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--detailed',action='store_true',required=True,help='Explicit opt-in to the preserved detailed suite; streamlined defaults use probe_streamlined_workflow.py')
 parser.add_argument('--binary',type=Path,required=True)
 parser.add_argument('--codex-auth-source',type=Path,required=True)
 parser.add_argument('--github-repo',required=True)
@@ -133,14 +134,16 @@ try:
  else:
   project=c.command('project.open_github',payload={'repository':args.github_repo,'mainline':'main','title':'Core engineering acceptance'})['id'];c.project=project
   c.wait(lambda:c.rpc('query.workspace'),lambda v:v['repository_ready'],300)
+  defaults=c.rpc('query.configuration_defaults');defaults.update({'workflow_ref':'builtin-workflow-feature-sol-high:11','task_workflow_ref':'builtin-workflow-task-sol-high:10','standard_ref':'builtin-standard-engineering:9','role_agent_bindings':{f'builtin-role-{role}:1':f'builtin-agent-sol-high-{role}:{13 if role=="project-manager" else 6}' for role in ['analyst','architect','project-manager','developer','tester','reviewer']}})
+  selected_project=c.rpc('query.workspace')['active_project'];c.command('project.configuration.update',project,selected_project['revision'],{'workflow_ref':defaults['workflow_ref'],'standard_ref':defaults['standard_ref'],'sandbox_ref':defaults['sandbox_ref'],'role_agent_bindings':defaults['role_agent_bindings'],'orchestrator_role_ref':defaults['orchestrator_role_ref'],'harness_permission_ref':defaults['harness_permission_ref'],'orchestration':{'mode':args.driver}})
   runtime=c.rpc('runtime.prepare',{'provider':'codex'});image=runtime['artifact']['image_id']
-  defaults=c.rpc('query.configuration_defaults');workflow=c.rpc('query.workflow',{'id':defaults['workflow_ref']})['data'];suffix=uuid.uuid4().hex[:8];module=f'src/workflow-v5-{suffix}/greeting.mjs';task_test=f'tests/workflow-v5-{suffix}-task/behavior.test.mjs';feature_test=f'tests/workflow-v5-{suffix}-feature/behavior.test.mjs';increment_test=f'test/workflow-v5-{suffix}-increments.test.mjs'
+  workflow=c.rpc('query.workflow',{'id':defaults['workflow_ref']})['data'];suffix=uuid.uuid4().hex[:8];module=f'src/workflow-v5-{suffix}/greeting.mjs';task_test=f'tests/workflow-v5-{suffix}-task/behavior.test.mjs';feature_test=f'tests/workflow-v5-{suffix}-feature/behavior.test.mjs';increment_test=f'test/workflow-v5-{suffix}-increments.test.mjs'
   goal=f'''在已有仓库新增无外部依赖的 ESM 模块 {module}，export greeting(name)。去掉字符串首尾空白，返回 Hello, <trimmed>!；空白字符串或非字符串参数抛出 TypeError。一个 Task 即可完成，稳定 key greeting，依赖为空。验收 AC-GREET：正常及带首尾空白输入返回问候；AC-INVALID：空白与非字符串输入抛出 TypeError。允许新增 {module}、Task 独立测试 {task_test}、Feature 独立测试 {feature_test} 及开发职责自有的增量测试 {increment_test}；可调整 README，禁止修改既有无关文件或增加辅助仓库文档。使用 node:test、node:assert/strict，不安装依赖、不联网。测试 import 为 ../../{module}。按两个功能增量交付：问候与 trim，以及无效输入拒绝；分别保留真实 TDD Red/Green 证据和测试源码快照。Task 配方运行 {task_test}；Feature 及最终候选配方运行 {task_test} 和 {feature_test}。固定 Node TestRecipe runner=node_test，image={image}，timeout_seconds=60。README 修改可选，不属于必填交付物。'''
   if args.requirement_file:goal=args.requirement_file.read_text().replace('$IMAGE',image).replace('$SUFFIX',suffix)
   if args.module_path:module=args.module_path
   assert {step['key'] for step in workflow['steps'] if step.get('confirmation')=='human'}=={'requirements_review','design_review','plan_review'}
   published={'id':defaults['workflow_ref']};p=c.rpc('query.workspace')['active_project']
-  configuration=c.command('project.configuration.update',project,p['revision'],{'workflow_ref':published['id'],'role_agent_bindings':defaults['role_agent_bindings'],'orchestrator_role_ref':defaults['orchestrator_role_ref'],'harness_permission_ref':defaults['harness_permission_ref'],'orchestration':{'mode':args.driver}})
+  configuration=c.command('project.configuration.update',project,p['revision'],{'workflow_ref':published['id'],'standard_ref':defaults['standard_ref'],'sandbox_ref':defaults['sandbox_ref'],'role_agent_bindings':defaults['role_agent_bindings'],'orchestrator_role_ref':defaults['orchestrator_role_ref'],'harness_permission_ref':defaults['harness_permission_ref'],'orchestration':{'mode':args.driver}})
   feature=c.command('feature.create',payload={'project_id':project,'title':'Core greeting '+suffix,'initial_requirement':goal,'start_workflow':False,'configuration_revision_id':configuration['id']})['id']
   (OUT/'context.json').write_text(json.dumps({'url':urls[0],'project':project,'feature':feature,'workflow':published['id'],'suffix':suffix,'module_path':module,'feature_test':feature_test,'goal':goal,'default_automatic_confirmations':False,'expected_human_checkpoints':['requirements_review','design_review','plan_review'],'required_increment_pairs':2,'unattended':args.unattended,'autonomous':args.driver=='agent','driver':args.driver},ensure_ascii=False,indent=2));print('Feature:',feature,flush=True)
   c.command('workflow.start',feature,c.feature(feature)['feature']['revision'])

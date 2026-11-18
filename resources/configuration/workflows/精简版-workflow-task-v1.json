@@ -1,0 +1,922 @@
+{
+  "type": "workflow",
+  "identity": "精简版-workflow-task",
+  "revision": 1,
+  "name": "精简版Task开发流程",
+  "scope": "global",
+  "data": {
+    "schema_version": 6,
+    "stages": [
+      {
+        "key": "tests",
+        "name": "独立测试",
+        "description": "按冻结依赖及真实回执推进本阶段；内部平台节点可在有界委托中连续执行。"
+      },
+      {
+        "key": "implementation",
+        "name": "实施",
+        "description": "按冻结依赖及真实回执推进本阶段；内部平台节点可在有界委托中连续执行。"
+      },
+      {
+        "key": "acceptance",
+        "name": "验收",
+        "description": "按冻结依赖及真实回执推进本阶段；内部平台节点可在有界委托中连续执行。"
+      },
+      {
+        "key": "submission",
+        "name": "提交",
+        "description": "按冻结依赖及真实回执推进本阶段；内部平台节点可在有界委托中连续执行。"
+      },
+      {
+        "key": "integration",
+        "name": "合入",
+        "description": "按冻结依赖及真实回执推进本阶段；内部平台节点可在有界委托中连续执行。"
+      }
+    ],
+    "inputs": {
+      "item": {
+        "delivery_ref": "builtin-delivery-task-record:1"
+      },
+      "design": {
+        "delivery_ref": "精简版-delivery-design:1"
+      },
+      "test_configuration": {
+        "delivery_ref": "精简版-delivery-project-tests:1"
+      }
+    },
+    "steps": [
+      {
+        "key": "workspace",
+        "name": "准备 Task 基线",
+        "stage": "tests",
+        "dependencies": [],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "builtin-tool-workspace-current:1",
+          "arguments": {
+            "owner_id": {
+              "type": "source",
+              "source": {
+                "step": "$input",
+                "port": "item",
+                "pointer": "/id"
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "builtin-delivery-workspace-snapshot:1"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7500,
+          "retry_limit": 3
+        }
+      },
+      {
+        "key": "tests",
+        "name": "T01 编写独立行为测试",
+        "stage": "tests",
+        "dependencies": [
+          "workspace"
+        ],
+        "executor": {
+          "type": "agent",
+          "role_ref": "builtin-role-tester:1"
+        },
+        "inputs": {
+          "task": {
+            "type": "source",
+            "source": {
+              "step": "$input",
+              "port": "item",
+              "pointer": ""
+            }
+          },
+          "design": {
+            "type": "source",
+            "source": {
+              "step": "$input",
+              "port": "design",
+              "pointer": ""
+            }
+          },
+          "workspace": {
+            "type": "source",
+            "source": {
+              "step": "workspace",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "test_configuration": {
+            "type": "source",
+            "source": {
+              "step": "$input",
+              "port": "test_configuration",
+              "pointer": ""
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "精简版-delivery-test-recipe:1"
+          }
+        },
+        "task_instructions": "读取冻结输入及 runtime_context，不自行执行 Git、替代平台测试回执或代签 Human。原始输出、内容版本与原生 commandExecution 由平台保存，按引用定位；说明只记录有助于下游的结论，不复制源码和日志全文。",
+        "required_skill_refs": [
+          "精简版-skill-test-design:1"
+        ],
+        "budget": {
+          "max_turns": 30,
+          "timeout_seconds": 1800,
+          "retry_limit": 3
+        },
+        "spec_refs": [
+          "精简版-spec-tests:1"
+        ],
+        "harness_permission_ref": "精简版-permission-tests:1",
+        "access": {
+          "workspace_input": "workspace"
+        }
+      },
+      {
+        "key": "tests_snapshot",
+        "name": "自动固定测试及条件空接口",
+        "stage": "tests",
+        "dependencies": [
+          "tests"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "精简版-tool-checkpoint:1",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "workspace",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "allowed_paths": {
+              "type": "constant",
+              "value": [
+                "."
+              ]
+            },
+            "interfaces": {
+              "type": "source",
+              "source": {
+                "step": "tests",
+                "port": "result",
+                "pointer": "/interfaces"
+              }
+            },
+            "include_diff": {
+              "type": "constant",
+              "value": true
+            }
+          },
+          "output_mapping": {
+            "result": "",
+            "diff": "/changes/diff"
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "精简版-delivery-checkpoint:1"
+          },
+          "diff": {
+            "delivery_ref": "精简版-delivery-diff:1"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7500,
+          "retry_limit": 3
+        }
+      },
+      {
+        "key": "red",
+        "name": "T02 执行真实 Red",
+        "stage": "tests",
+        "dependencies": [
+          "tests_snapshot"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "精简版-tool-tests-run:1",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "tests_snapshot",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "recipe": {
+              "type": "source",
+              "source": {
+                "step": "tests",
+                "port": "result",
+                "pointer": "/recipe"
+              }
+            },
+            "expect_assertion_failure": {
+              "type": "constant",
+              "value": true
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "精简版-delivery-test-report:1"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7200,
+          "retry_limit": 3
+        },
+        "completion": {
+          "op": "all",
+          "rules": [
+            {
+              "op": "equals",
+              "source": {
+                "step": "red",
+                "port": "result",
+                "pointer": "/status"
+              },
+              "value": "succeeded"
+            },
+            {
+              "op": "equals",
+              "source": {
+                "step": "red",
+                "port": "result",
+                "pointer": "/expected_failure"
+              },
+              "value": true
+            }
+          ]
+        }
+      },
+      {
+        "key": "implementation",
+        "name": "T03 实现、测试及必要文档",
+        "stage": "implementation",
+        "dependencies": [
+          "red"
+        ],
+        "executor": {
+          "type": "agent",
+          "role_ref": "builtin-role-developer:1"
+        },
+        "inputs": {
+          "task": {
+            "type": "source",
+            "source": {
+              "step": "$input",
+              "port": "item",
+              "pointer": ""
+            }
+          },
+          "design": {
+            "type": "source",
+            "source": {
+              "step": "$input",
+              "port": "design",
+              "pointer": ""
+            }
+          },
+          "recipe": {
+            "type": "source",
+            "source": {
+              "step": "tests",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "red": {
+            "type": "source",
+            "source": {
+              "step": "red",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "workspace": {
+            "type": "source",
+            "source": {
+              "step": "tests_snapshot",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "test_configuration": {
+            "type": "source",
+            "source": {
+              "step": "$input",
+              "port": "test_configuration",
+              "pointer": ""
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "精简版-delivery-implementation:1"
+          }
+        },
+        "task_instructions": "读取冻结输入及 runtime_context，不自行执行 Git、替代平台测试回执或代签 Human。原始输出、内容版本与原生 commandExecution 由平台保存，按引用定位；说明只记录有助于下游的结论，不复制源码和日志全文。",
+        "required_skill_refs": [
+          "精简版-skill-implementation:1"
+        ],
+        "budget": {
+          "max_turns": 30,
+          "timeout_seconds": 1800,
+          "retry_limit": 3
+        },
+        "spec_refs": [
+          "精简版-spec-implementation:1"
+        ],
+        "harness_permission_ref": "精简版-permission-implementation:1",
+        "access": {
+          "workspace_input": "workspace"
+        }
+      },
+      {
+        "key": "implementation_snapshot",
+        "name": "自动固定完整实现差异",
+        "stage": "implementation",
+        "dependencies": [
+          "implementation"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "精简版-tool-checkpoint:1",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "tests_snapshot",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "allowed_paths": {
+              "type": "constant",
+              "value": [
+                "."
+              ]
+            },
+            "protected_paths": {
+              "type": "constant",
+              "value": [
+                "tests"
+              ]
+            },
+            "include_diff": {
+              "type": "constant",
+              "value": true
+            },
+            "diff_base": {
+              "type": "source",
+              "source": {
+                "step": "workspace",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          },
+          "output_mapping": {
+            "result": "",
+            "diff": "/changes/diff",
+            "scope_diff": "/scope_changes/diff"
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "精简版-delivery-checkpoint:1"
+          },
+          "diff": {
+            "delivery_ref": "精简版-delivery-diff:1"
+          },
+          "scope_diff": {
+            "delivery_ref": "精简版-delivery-diff:1"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7500,
+          "retry_limit": 3
+        }
+      },
+      {
+        "key": "green",
+        "name": "T04 执行独立 Green",
+        "stage": "implementation",
+        "dependencies": [
+          "implementation_snapshot"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "精简版-tool-tests-run:1",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "implementation_snapshot",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "recipe": {
+              "type": "source",
+              "source": {
+                "step": "tests",
+                "port": "result",
+                "pointer": "/recipe"
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "精简版-delivery-test-report:1"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7200,
+          "retry_limit": 3
+        },
+        "completion": {
+          "op": "all",
+          "rules": [
+            {
+              "op": "equals",
+              "source": {
+                "step": "green",
+                "port": "result",
+                "pointer": "/status"
+              },
+              "value": "succeeded"
+            },
+            {
+              "op": "equals",
+              "source": {
+                "step": "green",
+                "port": "result",
+                "pointer": "/expected_failure"
+              },
+              "value": false
+            }
+          ]
+        }
+      },
+      {
+        "key": "review",
+        "name": "T05 独立 Code Review",
+        "stage": "acceptance",
+        "dependencies": [
+          "green"
+        ],
+        "executor": {
+          "type": "agent",
+          "role_ref": "builtin-role-reviewer:1"
+        },
+        "inputs": {
+          "task": {
+            "type": "source",
+            "source": {
+              "step": "$input",
+              "port": "item",
+              "pointer": ""
+            }
+          },
+          "implementation": {
+            "type": "source",
+            "source": {
+              "step": "implementation",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "red": {
+            "type": "source",
+            "source": {
+              "step": "red",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "green": {
+            "type": "source",
+            "source": {
+              "step": "green",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "workspace": {
+            "type": "source",
+            "source": {
+              "step": "implementation_snapshot",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "diff": {
+            "type": "source",
+            "source": {
+              "step": "implementation_snapshot",
+              "port": "scope_diff",
+              "pointer": ""
+            }
+          },
+          "changes": {
+            "type": "source",
+            "source": {
+              "step": "implementation_snapshot",
+              "port": "result",
+              "pointer": "/changes"
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "builtin-delivery-review:2",
+            "content_checks": true
+          }
+        },
+        "task_instructions": "读取冻结输入及 runtime_context，不自行执行 Git、替代平台测试回执或代签 Human。原始输出、内容版本与原生 commandExecution 由平台保存，按引用定位；说明只记录有助于下游的结论，不复制源码和日志全文。",
+        "required_skill_refs": [
+          "精简版-skill-code-review:1"
+        ],
+        "budget": {
+          "max_turns": 30,
+          "timeout_seconds": 1800,
+          "retry_limit": 3
+        },
+        "spec_refs": [
+          "精简版-spec-task-code-review:1"
+        ],
+        "completion": {
+          "op": "all",
+          "rules": [
+            {
+              "op": "equals",
+              "source": {
+                "step": "review",
+                "port": "result",
+                "pointer": "/approve"
+              },
+              "value": true
+            },
+            {
+              "op": "independent",
+              "author": "implementation",
+              "reviewer": "review"
+            }
+          ]
+        },
+        "harness_permission_ref": "精简版-permission-read:1",
+        "access": {
+          "workspace_input": "workspace"
+        }
+      },
+      {
+        "key": "regression",
+        "name": "T06 源分支项目回归",
+        "stage": "acceptance",
+        "dependencies": [
+          "review"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "精简版-tool-project-tests:1",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "implementation_snapshot",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "精简版-delivery-regression:1"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7200,
+          "retry_limit": 3
+        },
+        "completion": {
+          "op": "all",
+          "rules": [
+            {
+              "op": "equals",
+              "source": {
+                "step": "regression",
+                "port": "result",
+                "pointer": "/status"
+              },
+              "value": "succeeded"
+            },
+            {
+              "op": "equals",
+              "source": {
+                "step": "regression",
+                "port": "result",
+                "pointer": "/expected_failure"
+              },
+              "value": false
+            }
+          ]
+        }
+      },
+      {
+        "key": "source_publish",
+        "name": "T07 提交并推送 Task",
+        "stage": "submission",
+        "dependencies": [
+          "regression"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "精简版-tool-source-publish:1",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "implementation_snapshot",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "精简版-delivery-source-publication:1"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7500,
+          "retry_limit": 3
+        }
+      },
+      {
+        "key": "target",
+        "name": "读取最新 Feature 基线",
+        "stage": "submission",
+        "dependencies": [
+          "source_publish"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "精简版-tool-target:1",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "implementation_snapshot",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "精简版-delivery-target:1"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7500,
+          "retry_limit": 3
+        }
+      },
+      {
+        "key": "publication",
+        "name": "T08 创建 Task → Feature PR",
+        "stage": "submission",
+        "dependencies": [
+          "target"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "精简版-tool-delivery-open:1",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "implementation_snapshot",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "target": {
+              "type": "source",
+              "source": {
+                "step": "target",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "精简版-delivery-pull-request:1"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7500,
+          "retry_limit": 3
+        }
+      },
+      {
+        "key": "merge_regression",
+        "name": "T09 隔离合并结果项目回归",
+        "stage": "integration",
+        "dependencies": [
+          "publication"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "精简版-tool-project-tests:1",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "publication",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "精简版-delivery-regression:1"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7200,
+          "retry_limit": 3
+        },
+        "completion": {
+          "op": "all",
+          "rules": [
+            {
+              "op": "equals",
+              "source": {
+                "step": "merge_regression",
+                "port": "result",
+                "pointer": "/status"
+              },
+              "value": "succeeded"
+            },
+            {
+              "op": "equals",
+              "source": {
+                "step": "merge_regression",
+                "port": "result",
+                "pointer": "/expected_failure"
+              },
+              "value": false
+            }
+          ]
+        }
+      },
+      {
+        "key": "merge",
+        "name": "T10 自动合入、同步及完成登记",
+        "stage": "integration",
+        "dependencies": [
+          "merge_regression"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "精简版-tool-delivery-merge:1",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "implementation_snapshot",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "publication": {
+              "type": "source",
+              "source": {
+                "step": "publication",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "精简版-delivery-merge-sync:1"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7500,
+          "retry_limit": 3
+        }
+      }
+    ],
+    "outputs": {
+      "result": {
+        "step": "merge",
+        "port": "result",
+        "pointer": ""
+      }
+    },
+    "completion": {
+      "op": "all",
+      "rules": [
+        {
+          "op": "before",
+          "first": "red",
+          "second": "implementation"
+        },
+        {
+          "op": "independent",
+          "author": "tests",
+          "reviewer": "implementation"
+        },
+        {
+          "op": "independent",
+          "author": "implementation",
+          "reviewer": "review"
+        }
+      ]
+    },
+    "scheduling": {
+      "max_concurrency": 4,
+      "max_actions_per_tick": 16,
+      "lease_seconds": 60,
+      "max_retries": 0,
+      "retry_error_codes": [],
+      "agent": {
+        "max_turns_per_wakeup": 8,
+        "max_tool_calls_per_turn": 64,
+        "timeout_seconds": 600
+      }
+    },
+    "delivery_policy": {
+      "source_regression_step": "regression",
+      "code_review_step": "review",
+      "merge_regression_step": "merge_regression",
+      "independent_green_step": "green",
+      "source_publication_step": "source_publish"
+    },
+    "rework_policies": {
+      "task_implementation": {
+        "entry_step": "implementation",
+        "allowed_targets": [
+          "producer_step",
+          "after_confirmed_checkpoint",
+          "child_workflow"
+        ],
+        "max_reworks": 3
+      }
+    },
+    "review_policies": {
+      "review": {
+        "review_step": "review",
+        "rejected_when": {
+          "op": "equals",
+          "source": {
+            "step": "review",
+            "port": "result",
+            "pointer": "/approve"
+          },
+          "value": false
+        },
+        "rework_policy": "task_implementation",
+        "allow_human_approval": true
+      }
+    }
+  }
+}

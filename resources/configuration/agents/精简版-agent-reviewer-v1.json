@@ -1,0 +1,10 @@
+{
+  "type": "agent",
+  "identity": "精简版-agent-reviewer",
+  "revision": 1,
+  "name": "精简版reviewer Agent",
+  "scope": "global",
+  "role_ref": "builtin-role-reviewer:1",
+  "capability_ref": "精简版-capability-reviewer:1",
+  "data": {}
+}

@@ -44,7 +44,7 @@ fn cmd(e: &Engine, method: &str, target: Option<&str>, payload: Value) -> Result
     )
 }
 fn select(defaults: &Value, overrides: Value) -> Value {
-    json!({"standard_ref":defaults["standard_ref"],"standard_overrides":overrides,
+    json!({"test_configuration":runtime::fixture_test_configuration(),"standard_ref":defaults["standard_ref"],"standard_overrides":overrides,
         "role_agent_bindings":defaults["role_agent_bindings"],"harness_permission_ref":defaults["harness_permission_ref"],
         "orchestrator_role_ref":defaults["orchestrator_role_ref"]})
 }

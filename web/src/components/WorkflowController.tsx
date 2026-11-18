@@ -334,21 +334,20 @@ export function WorkflowController({
   }
   const controller = data?.record?.data;
   const inScope = (id: string | undefined) =>
-    instance.id === rootId || id === instance.id;
-  const decisions: Row[] = (nested ? [] : data?.decisions || []).filter(
-    (decision: Row) =>
-      inScope(
-        decision.definition_id || decision.data.request.arguments.instance_id,
-      ),
+    id ? id === instance.id : instance.id === rootId;
+  const decisions: Row[] = (data?.decisions || []).filter((decision: Row) =>
+    inScope(
+      decision.definition_id || decision.data.request.arguments.instance_id,
+    ),
   );
-  const approvals: Row[] = (nested ? [] : data?.approvals || []).filter(
-    (approval: Row) => inScope(approval.instance_id),
+  const approvals: Row[] = (data?.approvals || []).filter((approval: Row) =>
+    inScope(approval.instance_id),
   );
-  const runtimeApprovals: Row[] = (
-    nested ? [] : data?.runtimeApprovals || []
-  ).filter((item: Row) => inScope(item.instance_id));
-  const notices: Row[] = (nested ? [] : data?.interactions || []).filter(
-    (notice: Row) => inScope(notice.data.instance_id),
+  const runtimeApprovals: Row[] = (data?.runtimeApprovals || []).filter(
+    (item: Row) => inScope(item.instance_id),
+  );
+  const notices: Row[] = (data?.interactions || []).filter((notice: Row) =>
+    inScope(notice.data.instance_id),
   );
   const inputRequests = ((data?.driverWaiting || []) as Row[]).filter(
     (item) => item.status === "waiting_input" && inScope(item.instance_id),
@@ -533,8 +532,8 @@ export function WorkflowController({
           )}
         </p>
       )}
-      {(data?.driverWaiting || []).some((item: Row) =>
-        inScope(item.instance_id),
+      {(data?.driverWaiting || []).some(
+        (item: Row) => item.instance_id === instance.id,
       ) && (
         <section
           className="manager-blockers"
@@ -547,7 +546,7 @@ export function WorkflowController({
           </p>
           <ul aria-label="调度等待条件">
             {((data?.driverWaiting || []) as Row[])
-              .filter((item) => inScope(item.instance_id))
+              .filter((item) => item.instance_id === instance.id)
               .map((item) => {
                 const gate = (Object.values(item.actions || {}) as Row[]).find(
                   (action) => item.waiting_for?.includes(action.code),

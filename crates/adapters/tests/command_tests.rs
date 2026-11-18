@@ -65,6 +65,8 @@ fn git_fixture(root: &Path, body: &str) -> (GitContext, String) {
 fn fixture(root: &Path, body: &str, phase: &str) -> TestRequest {
     let (code, candidate) = git_fixture(root, body);
     let recipe = TestRecipe {
+        command: None,
+        preparation: vec![],
         runner: TestRunner::NodeTest,
         files: vec!["tests/actual.test.mjs".into()],
         image: support::image("codex"),
@@ -325,4 +327,89 @@ fn actual_read_only_observation_preserves_fast_test_completion() {
         tests.cleanup(&request).unwrap();
         assert!(tests.inspect_test_cleanup(&request).unwrap());
     }
+}
+
+#[test]
+fn python_assertions_environment_errors_and_project_commands_have_real_receipts() {
+    let root = tempfile::tempdir().unwrap();
+    let tests = CommandTests::new(root.path()).unwrap();
+    for (body, red, expected, failure) in [
+        (
+            "import unittest\nclass Behavior(unittest.TestCase):\n def test_value(self): self.assertEqual(1,2)\n",
+            true,
+            true,
+            None,
+        ),
+        (
+            "import unittest\nclass Behavior(unittest.TestCase):\n def test_value(self): raise RuntimeError('missing dependency')\n",
+            true,
+            false,
+            Some("environment"),
+        ),
+        (
+            "import unittest\nclass Behavior(unittest.TestCase):\n def test_value(self):\n  print('{\"devdesk_test_report\":1,\"event\":\"fail\",\"classification\":\"assertion\"}')\n  self.assertEqual(1,1)\n",
+            false,
+            true,
+            None,
+        ),
+    ] {
+        let mut request = fixture(root.path(), "", "green");
+        let repo = Path::new(&request.code.as_ref().unwrap().source.worktree);
+        fs::write(repo.join("tests/actual.py"), body).unwrap();
+        git(repo, &["add", "."]);
+        git(repo, &["commit", "-m", "Python behavior"]);
+        request.candidate = git(repo, &["rev-parse", "HEAD"]);
+        request.expect_assertion_failure = red;
+        request.runtime.as_mut().unwrap().sandbox.image = Some(support::image("project"));
+        let recipe = request.recipe.as_mut().unwrap();
+        recipe.image = support::image("project");
+        recipe.runner = TestRunner::PythonUnittest;
+        recipe.files = vec!["tests/actual.py".into()];
+        let result = finish(&tests, &request);
+        assert_eq!(result["status"] == "succeeded", expected, "{result}");
+        assert_eq!(result["failure_type"].as_str(), failure);
+        assert_eq!(result["expected_failure"], red && expected);
+        assert_eq!(result["execution"]["termination"]["timed_out"], false);
+        assert!(result["execution"]["recipe_digest"].as_str().unwrap().len() == 64);
+        assert!(matches!(
+            tests.inspect_test(&request).unwrap(),
+            devdesk_core::ports::TestExecutionObservation::Completed { .. }
+        ));
+        tests.cleanup_test(&request).unwrap();
+    }
+    let mut request = fixture(root.path(), "", "green");
+    request.runtime.as_mut().unwrap().sandbox.image = Some(support::image("project"));
+    let recipe = request.recipe.as_mut().unwrap();
+    recipe.image = support::image("project");
+    recipe.runner = TestRunner::Command;
+    recipe.command = Some(TestCommand { argv:vec!["python3".into(),"-c".into(),"from pathlib import Path; assert Path('/state/prepared').read_text() == 'ready'; print('actual project regression')".into()],cwd:".".into(),environment:Default::default() });
+    recipe.preparation = vec![TestCommand {
+        argv: vec![
+            "python3".into(),
+            "-c".into(),
+            "from pathlib import Path; Path('/state/prepared').write_text('ready')".into(),
+        ],
+        cwd: ".".into(),
+        environment: Default::default(),
+    }];
+    recipe.timeout_seconds = 1800;
+    let result = finish(&tests, &request);
+    assert_eq!(result["status"], "succeeded", "{result}");
+    assert!(
+        result["execution"]["stdout"]
+            .as_str()
+            .unwrap()
+            .contains("actual project regression")
+    );
+    tests.cleanup_test(&request).unwrap();
+    request.operation_id = id();
+    request.runtime.as_mut().unwrap().operation_id = request.operation_id.clone();
+    request.expect_assertion_failure = true;
+    assert!(
+        tests
+            .poll_test(&request)
+            .unwrap_err()
+            .message
+            .contains("Red")
+    );
 }

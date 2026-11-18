@@ -173,6 +173,23 @@ export function WorkflowProjectManager({
   };
   const current = data?.record || record;
   const runtime = data?.runtime || data?.record?.data || record.data;
+  const observedRevision = Math.max(
+    current.revision || 0,
+    data?.progress?.record?.revision || 0,
+  );
+  const reloadShared = shared?.reload;
+  useEffect(() => {
+    if (!nested || !reloadShared) return;
+    let active = true;
+    // A child can reach its next gate after the root's collaboration read.
+    // Refresh once per observed child revision without giving it another poller.
+    void reloadShared(true).catch((value) => {
+      if (active) setError(String(value));
+    });
+    return () => {
+      active = false;
+    };
+  }, [nested, record.id, observedRevision, reloadShared]);
   const title = nested
     ? `子流程 · ${/^执行各 Task(?: · \d+)?$/.test(current.name) ? "Task开发" : current.name}`
     : `主工作流 · ${current.name === "默认 Feature 开发流程" ? "Feature开发" : current.name}`;
@@ -239,6 +256,63 @@ export function WorkflowProjectManager({
           刷新管理状态
         </ActionButton>
       </div>
+      {data?.delivery ? (
+        <p aria-label="PR 合入与同步状态">
+          {data.delivery.pull_request_url ? (
+            <a
+              href={data.delivery.pull_request_url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              PR #{data.delivery.pull_request_number}
+            </a>
+          ) : (
+            "PR 待创建"
+          )}
+          {" · "}
+          {data.delivery.merged ? "远端已合入" : "等待合入"}
+          {" · "}
+          {data.delivery.synchronized ? "本地已同步" : "本地待同步"}
+        </p>
+      ) : null}
+      {(data?.child_slots || []).map((slots: Row) => (
+        <p key={slots.execution_id} aria-label="子流程并发槽位">
+          Task 并发：{slots.active} / {slots.limit}，可用 {slots.available}
+        </p>
+      ))}
+      {(data?.children || []).length ? (
+        <ul aria-label="Task 依赖与交付进展">
+          {data.children.map((child: Row) => (
+            <li key={child.id}>
+              {displayText(child.name)} ·{" "}
+              {child.dependency_wait_count
+                ? `等待 ${child.dependency_wait_count} 项依赖`
+                : child.status === "queued"
+                  ? "依赖已满足"
+                  : displayText(stateLabels[child.status] || child.status)}
+              {child.delivery?.pull_request_url ? (
+                <>
+                  {" "}
+                  ·{" "}
+                  <a
+                    href={child.delivery.pull_request_url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    PR #{child.delivery.pull_request_number}
+                  </a>{" "}
+                  ·{" "}
+                  {child.delivery.synchronized
+                    ? "已合入并同步"
+                    : child.delivery.merged
+                      ? "已合入，等待本地同步"
+                      : "等待合入"}
+                </>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {error ? (
         <p role="alert" className="error">
           {displayText(error)}

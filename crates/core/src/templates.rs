@@ -300,6 +300,58 @@ pub fn copy_template_catalog(
     }
     Ok(())
 }
+/// Publish the new factory closure and defaults without archiving custom or
+/// project members. A generation is still an append-only complete selection.
+pub fn update_factory_catalog(s: &mut EngineeringState, command_id: &str) -> Result<Value> {
+    let old = template_catalog_generation(s);
+    let (next, defaults, origins) = materialize(None)?;
+    if current_template_defaults(s).as_ref() == Some(&defaults)
+        && next.governance.iter().all(|source| {
+            s.governance
+                .iter()
+                .any(|r| r.source() == source.source() && template_record_current(s, r))
+        })
+    {
+        return Ok(json!({"generation":old,"changed":false,"counts":template_catalog_counts(s)}));
+    }
+    let generation = old
+        .checked_add(1)
+        .ok_or_else(|| err("invalid_configuration", "目录代次溢出"))?;
+    let existing: Vec<_> = s
+        .governance
+        .iter()
+        .filter(|r| template_definition_kind(&r.r#type) && template_record_current(s, r))
+        .cloned()
+        .collect();
+    for source in next.governance {
+        if let Some(saved) = s.governance.iter().find(|r| r.id == source.id) {
+            require(
+                saved.source() == source.source(),
+                "出厂源修订冲突，不能覆盖",
+            )?;
+        } else {
+            s.governance.push(source);
+        }
+    }
+    s.refresh_configuration_views()?;
+    for row in existing {
+        add_member(s, &row, generation, None);
+    }
+    for (id, key) in origins {
+        let row = s.configuration(&id)?.clone();
+        add_member(
+            s,
+            &row,
+            generation,
+            Some((&key, &template_source_hash(&row))),
+        );
+    }
+    set_state(s, generation, defaults)?;
+    Ok(
+        json!({"generation":generation,"previous_generation":old,"changed":true,
+        "counts":template_catalog_counts(s),"receipt_id":format!("factory-update:{command_id}")}),
+    )
+}
 pub fn restore_template_catalog(s: &mut EngineeringState, command_id: &str) -> Result<Value> {
     let old = template_catalog_generation(s);
     let generation = old

@@ -27,6 +27,17 @@ pub fn template_permission_defaults(
             targets.insert(r.id.clone());
         }
     }
+    let mut sandboxes = std::collections::BTreeSet::from([defaults["sandbox_ref"]
+        .as_str()
+        .ok_or_else(|| err("invalid_template", "默认 Sandbox 缺失"))?
+        .to_owned()]);
+    for r in s.governance.iter().filter(|r| {
+        r.r#type == "sandbox"
+            && template_record_current(s, r)
+            && template_catalog_member(s, r).is_some_and(|m| m.data["template_key"].is_string())
+    }) {
+        sandboxes.insert(r.id.clone());
+    }
     let mut changes = Vec::new();
     for (kind, id, profile) in targets
         .into_iter()
@@ -37,14 +48,13 @@ pub fn template_permission_defaults(
                 defaults["harness_permission_ref"].as_str().unwrap(),
             )
         })
-        .chain(std::iter::once((
-            PermissionTargetKind::Sandbox,
-            defaults["sandbox_ref"]
-                .as_str()
-                .ok_or_else(|| err("invalid_template", "默认 Sandbox 缺失"))?
-                .to_owned(),
-            defaults["sandbox_permission_ref"].as_str().unwrap(),
-        )))
+        .chain(sandboxes.into_iter().map(|sandbox| {
+            (
+                PermissionTargetKind::Sandbox,
+                sandbox,
+                defaults["sandbox_permission_ref"].as_str().unwrap(),
+            )
+        }))
     {
         let target = permission_target(s, kind, &id)?;
         if active_permission_binding(s, &target).is_none() {
@@ -112,7 +122,12 @@ impl Engine {
             "目录代次已变化，请重新预演",
         )?;
         let mut next = before.state.as_ref().clone();
-        let result = if preview["pristine"] == true {
+        let update = c.payload["preserve_custom"] == true;
+        let result = if update {
+            let result = update_factory_catalog(&mut next, &c.command_id)?;
+            template_permission_defaults(&mut next, contract)?;
+            result
+        } else if preview["pristine"] == true {
             json!({"generation":preview["generation"],"changed":false,"counts":preview["current_counts"],"bundle_version":preview["bundle_version"]})
         } else {
             let result = restore_template_catalog(&mut next, &c.command_id)?;

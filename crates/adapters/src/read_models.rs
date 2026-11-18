@@ -293,6 +293,27 @@ pub(super) fn decision_context(
     })
 }
 
+fn delivery_summary(
+    conn: &Connection,
+    project: &str,
+    instance: &str,
+) -> Result<Option<WorkflowDeliverySummary>> {
+    let value:Option<String>=conn.query_row("SELECT json_object('pull_request_url',substr(json_extract(data,'$.publication.pull_request.url'),1,1024),'pull_request_number',json_extract(data,'$.publication.pull_request.number'),'source_revision',substr(json_extract(data,'$.publication.source_revision'),1,64),'target_revision',substr(json_extract(data,'$.publication.target_revision'),1,64),'candidate_revision',substr(json_extract(data,'$.publication.revision'),1,64),'merged_revision',substr(json_extract(data,'$.completion.revision'),1,64),'merged',json(CASE WHEN json_extract(data,'$.completion.pull_request.merged')=1 THEN 'true' ELSE 'false' END),'synchronized',json(CASE WHEN json_extract(data,'$.synchronized')=1 THEN 'true' ELSE 'false' END)) FROM governance_records WHERE id=?1 AND type='workflow_delivery' AND owner_project=?2",params![format!("workflow-delivery:{instance}"),project],|row|row.get(0)).optional().map_err(storage)?;
+    let mut summary: Option<WorkflowDeliverySummary> = value
+        .map(|v| serde_json::from_str(&v).map_err(storage))
+        .transpose()?;
+    if let Some(current) = &mut summary
+        && !current.merged
+    {
+        let remote:Option<String>=conn.query_row("SELECT substr(json_extract(o.data,'$.result.Ok.merge_commit'),1,64) FROM governance_records w,json_each(w.data,'$.steps') s JOIN governance_records call ON call.id=json_extract(s.value,'$.tool_call_id') AND call.type='platform_call' JOIN governance_records stage ON stage.id='platform-publish-stage:'||json_extract(call.data,'$.effect_id')||':merge' AND stage.type='platform_publish_stage' JOIN governance_records o ON o.type='platform_effect_observation' AND o.definition_id=stage.id WHERE w.id=?1 AND w.owner_project=?2 AND json_extract(call.data,'$.handler')='git.delivery.merge' AND json_extract(o.data,'$.phase') IN ('result','recovery_merge') AND json_extract(o.data,'$.result.Ok.merged')=1 AND json_extract(o.data,'$.result.Ok.head')=?3 ORDER BY o.rowid DESC LIMIT 1",params![instance,project,current.candidate_revision],|r|r.get(0)).optional().map_err(storage)?.flatten();
+        if let Some(revision) = remote {
+            current.merged = true;
+            current.merged_revision = Some(revision);
+        }
+    }
+    Ok(summary)
+}
+
 pub(super) fn management(
     pool: &ConnectionPool,
     project: &str,
@@ -313,13 +334,17 @@ pub(super) fn management(
             }})
         }).optional().map_err(storage)?.ok_or_else(||err("not_found","工作流不属于本次请求的项目"))?;
     let mut children = {
-        let mut query=conn.prepare_cached("SELECT c.id,substr(c.name,1,128),c.revision FROM governance_records c WHERE c.type='workflow_instance' AND c.owner_project=?1 AND coalesce(json_extract(c.data,'$.project_id'),?4)=?4 AND json_extract(c.data,'$.parent_execution_id') IN (SELECT json_extract(s.value,'$.id') FROM governance_records p,json_each(p.data,'$.steps') s WHERE p.id=?2 AND p.type='workflow_instance' AND p.owner_project=?1) ORDER BY c.rowid LIMIT 21 OFFSET ?3").map_err(storage)?;
+        let mut query=conn.prepare_cached("SELECT c.id,substr(c.name,1,128),c.revision,json_extract(c.data,'$.owner_id'),coalesce(json_extract(c.data,'$.status'),'queued'),(SELECT count(*) FROM json_each(coalesce(t.dependencies,'[]')) d LEFT JOIN tasks upstream ON upstream.id=d.value WHERE upstream.id IS NULL OR upstream.status!='completed') FROM governance_records c LEFT JOIN tasks t ON t.id=json_extract(c.data,'$.owner_id') WHERE c.type='workflow_instance' AND c.owner_project=?1 AND coalesce(json_extract(c.data,'$.project_id'),?4)=?4 AND json_extract(c.data,'$.parent_execution_id') IN (SELECT json_extract(s.value,'$.id') FROM governance_records p,json_each(p.data,'$.steps') s WHERE p.id=?2 AND p.type='workflow_instance' AND p.owner_project=?1) ORDER BY c.rowid LIMIT 21 OFFSET ?3").map_err(storage)?;
         query
             .query_map(params![project, id, child_offset, project], |row| {
                 Ok(WorkflowChildSummary {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     revision: row.get(2)?,
+                    owner_id: row.get(3)?,
+                    status: row.get(4)?,
+                    dependency_wait_count: row.get(5)?,
+                    delivery: None,
                 })
             })
             .map_err(storage)?
@@ -327,6 +352,33 @@ pub(super) fn management(
             .map_err(storage)?
     };
     let children_more = trim_page(&mut children, 20);
+    for child in &mut children {
+        child.delivery = delivery_summary(&conn, project, &child.id)?;
+    }
+    let delivery = delivery_summary(&conn, project, id)?;
+    let mut child_slots = Vec::new();
+    {
+        let mut query=conn.prepare_cached("SELECT g.definition_id,json_extract(g.data,'$.max_concurrency'),(SELECT count(*) FROM json_each(g.data,'$.children') members JOIN governance_records c ON c.id=members.value AND c.type='workflow_instance' AND c.owner_project=?1 WHERE json_extract(c.data,'$.status') IN ('running','needs_reconciliation')) FROM governance_records g WHERE g.type='workflow_children' AND g.owner_project=?1 AND g.definition_id IN (SELECT json_extract(s.value,'$.id') FROM governance_records p,json_each(p.data,'$.steps') s WHERE p.id=?2 AND p.type='workflow_instance' AND p.owner_project=?1) ORDER BY g.rowid LIMIT 20").map_err(storage)?;
+        for row in query
+            .query_map(params![project, id], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, u64>(1)?,
+                    r.get::<_, u64>(2)?,
+                ))
+            })
+            .map_err(storage)?
+        {
+            let (execution_id, limit, active) = row.map_err(storage)?;
+            child_slots.push(WorkflowChildSlots {
+                execution_id,
+                limit,
+                active,
+                available: limit.saturating_sub(active),
+            });
+        }
+    }
+
     let cursor = cursor(&conn)?;
     conn.execute_batch("COMMIT;").map_err(storage)?;
     Ok(WorkflowManagementSummary {
@@ -337,6 +389,8 @@ pub(super) fn management(
         children_more,
         next_child_offset: children_more.then_some(child_offset + 20),
         observed_only: true,
+        delivery,
+        child_slots,
     })
 }
 

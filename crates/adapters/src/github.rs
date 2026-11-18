@@ -139,7 +139,11 @@ impl GitHubPullRequests {
         let policy = self.diagnose(&r.repository, &r.base_branch)?;
         require(policy.compatible, "GitHub 规则不兼容；禁止 PR/推进副作用")
     }
-    fn receipt(&self, r: &PullRequestRequest, row: &Value) -> Result<PullRequestReceipt> {
+    pub(crate) fn receipt(
+        &self,
+        r: &PullRequestRequest,
+        row: &Value,
+    ) -> Result<PullRequestReceipt> {
         require(
             row["head"]["repo"]["full_name"]
                 .as_str()
@@ -183,6 +187,29 @@ impl GitHubPullRequests {
     }
 }
 impl ports::PullRequests for GitHubPullRequests {
+    fn delivery_target(&self, c: &GitContext, create: bool) -> Result<Value> {
+        self.protected_target(c, create)
+    }
+    fn ensure_delivery(
+        &self,
+        r: &PullRequestRequest,
+        inspect: bool,
+    ) -> Result<Option<PullRequestReceipt>> {
+        self.delivery_ensure(r, inspect)
+    }
+    fn delivery_status(&self, r: &PullRequestMergeRequest, inspect: bool) -> Result<Option<Value>> {
+        self.delivery_report_status(r, inspect)
+    }
+    fn merge_delivery(
+        &self,
+        r: &PullRequestMergeRequest,
+        inspect: bool,
+    ) -> Result<Option<PullRequestReceipt>> {
+        self.delivery_merge(r, inspect)
+    }
+    fn delivery_merge_ready(&self, r: &PullRequestMergeRequest) -> Result<bool> {
+        self.delivery_ready(r)
+    }
     fn identity(&self) -> String {
         "github-pr/v1:indirect-merge-only".into()
     }

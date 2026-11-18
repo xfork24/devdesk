@@ -1,0 +1,23 @@
+{
+  "type": "capability",
+  "identity": "精简版-capability-developer",
+  "revision": 1,
+  "name": "精简版developer能力",
+  "scope": "global",
+  "harness_ref": "builtin-harness-codex-managed:1",
+  "model_ref": "builtin-model-gpt-6-1-sol-high:1",
+  "skills": [
+    "精简版-skill-context:1",
+    "精简版-skill-implementation:1",
+    "builtin-skill-delivery-self-check:1"
+  ],
+  "tools": [
+    "builtin-tool-codex-native:1",
+    "builtin-tool-workflow-outputs-read:2",
+    "builtin-tool-spec-lint:1"
+  ],
+  "spec_refs": [
+    "精简版-spec-implementation:1"
+  ],
+  "data": {}
+}

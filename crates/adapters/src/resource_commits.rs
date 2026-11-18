@@ -146,9 +146,10 @@ fn value(conn: &Connection, key: &ResourceKey) -> Result<Option<Value>> {
             let (instance,node):(String,String)=serde_json::from_str(&key.id).map_err(storage)?;
             Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT id FROM governance_records WHERE type='workflow_execution_history' AND json_extract(data,'$.workflow_instance_id')=?1 AND json_extract(data,'$.node_id')=?2 AND json_extract(data,'$.outputs')!='{}' ORDER BY CAST(json_extract(data,'$.round') AS INTEGER) DESC,CAST(json_extract(data,'$.sequence') AS INTEGER) DESC,CAST(json_extract(data,'$.finished') AS INTEGER) DESC LIMIT 1)",&[&instance,&node])?.into_iter().next())
         }
+        "provider_turn_pending"=>Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT p.id FROM governance_records o JOIN governance_records p ON p.type='provider_poll_pending' AND p.definition_id=o.id AND json_extract(p.data,'$.status')='prepared' WHERE o.type='provider_poll_observation' AND o.definition_id=?1 ORDER BY p.rowid LIMIT 1)",&[&key.id])?.into_iter().next()),
         "workflow_snapshot_checkpoint"=>{
             let (instance,owner,workspace,revision):(String,String,String,String)=serde_json::from_str(&key.id).map_err(storage)?;
-            Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT o.id FROM governance_records o JOIN governance_records c ON c.id=json_extract(o.data,'$.provenance.call_id') AND c.type='platform_call' WHERE o.type='workflow_output' AND o.immutable=1 AND json_extract(o.data,'$.value.owner_id')=?2 AND json_extract(o.data,'$.value.workspace_id')=?3 AND json_extract(o.data,'$.value.revision')=?4 AND json_extract(o.data,'$.provenance.kind')='platform' AND json_extract(o.data,'$.provenance.tool')='workspace.snapshot' AND json_extract(c.data,'$.request.instance_id')=?1 AND json_extract(c.data,'$.status')='succeeded' ORDER BY o.rowid DESC LIMIT 1)",&[&instance,&owner,&workspace,&revision])?.into_iter().next())
+            Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT o.id FROM governance_records o JOIN governance_records c ON c.id=json_extract(o.data,'$.provenance.call_id') AND c.type='platform_call' WHERE o.type='workflow_output' AND o.immutable=1 AND json_extract(o.data,'$.value.owner_id')=?2 AND json_extract(o.data,'$.value.workspace_id')=?3 AND json_extract(o.data,'$.value.revision')=?4 AND json_extract(o.data,'$.provenance.kind')='platform' AND json_extract(o.data,'$.provenance.tool') IN ('workspace.snapshot','workspace.checkpoint') AND json_extract(c.data,'$.request.instance_id')=?1 AND json_extract(c.data,'$.status')='succeeded' ORDER BY o.rowid DESC LIMIT 1)",&[&instance,&owner,&workspace,&revision])?.into_iter().next())
         }
         "workflow_reconciliation_active"=>Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT id FROM governance_records WHERE type='workflow_reconciliation' AND definition_id=?1 AND json_extract(data,'$.status') IN ('prepared','inspecting') ORDER BY id LIMIT 1)",&[&key.id])?.into_iter().next()),
         "workflow_stop_source"=>Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT id FROM governance_records WHERE type='workflow_stop' AND definition_id=?1 ORDER BY id LIMIT 1)",&[&key.id])?.into_iter().next()),
@@ -372,6 +373,7 @@ fn revision_projection(kind: &str) -> Option<fn(Option<&Value>) -> u64> {
         | "workflow_active_wait"
         | "workflow_last_outputs"
         | "workflow_snapshot_checkpoint"
+        | "provider_turn_pending"
         | "workflow_reconciliation_active"
         | "workflow_stop_source"
         | "feature_request_source"

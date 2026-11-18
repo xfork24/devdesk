@@ -43,6 +43,7 @@ pub mod experience;
 mod experience_index;
 pub mod git;
 pub mod github;
+mod github_delivery;
 pub mod integration_oauth;
 pub mod integrations;
 pub mod permission_profiles;

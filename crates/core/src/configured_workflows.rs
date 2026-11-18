@@ -314,6 +314,11 @@ impl Engine {
                     .cloned()
                     .unwrap_or(json!({"mode":"manual"}));
                 crate::workflow_driver::validate_selection(state, &orchestration, &scope)?;
+                if let Some(execution) = p.get("test_configuration").filter(|v| !v.is_null()) {
+                    serde_json::from_value::<ProjectTestConfiguration>(execution.clone())
+                        .map_err(|e| err("invalid_params", e.to_string()))?
+                        .validate()?;
+                }
                 let row = record(
                     "project_configuration",
                     project.id.clone(),
@@ -321,7 +326,7 @@ impl Engine {
                     project.title,
                     old.as_ref().map_or(1, |r| r.version + 1),
                     old.map(|r| r.id),
-                    json!({"orchestration":orchestration,"schema_version":4,"workflow_ref":workflow.id,"role_agent_bindings":bindings,"standard_ref":standard_ref,
+                    json!({"test_configuration":p["test_configuration"],"orchestration":orchestration,"schema_version":4,"workflow_ref":workflow.id,"role_agent_bindings":bindings,"standard_ref":standard_ref,
                     "orchestrator_role_ref":p["orchestrator_role_ref"],"harness_permission_ref":p["harness_permission_ref"],"sandbox_ref":permission_selection(&selected_state)?.sandbox_ref,"sandbox_permission_ref":p["sandbox_permission_ref"]}),
                     true,
                 );

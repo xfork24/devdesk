@@ -344,6 +344,12 @@ impl Engine {
             if let Some((_, Ok(Some(receipt)))) = self.platform_observed(&effect, "result")? {
                 return Ok(ReconciliationFact::Platform { receipt });
             }
+            if let PlatformAction::Delivery(action) = &plan.action
+                && let Some(receipt) =
+                    self.recover_reconciled_delivery_sync(root, &effect, action, attempt, basis)?
+            {
+                return Ok(ReconciliationFact::Platform { receipt });
+            }
             return self
                 .inspect_platform_reconciliation(&effect, &plan.action)
                 .map(|r| {

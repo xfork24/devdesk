@@ -7,6 +7,7 @@ pub const EVIDENCE_QUOTE_INSTRUCTIONS: &str = "Optional. If present, quote must 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MachineAssertion {
+    TaskDag { pointer: String },
     TextLength { min: usize, max: usize },
     RequiredSections { headings: Vec<String> },
     RequiredPointers { pointers: Vec<String> },
@@ -14,6 +15,7 @@ pub enum MachineAssertion {
 impl MachineAssertion {
     pub fn validate(&self) -> Result<()> {
         match self {
+            Self::TaskDag { pointer } => require(valid_pointer(pointer), "任务图 JSON 路径无效"),
             Self::TextLength { min, max } => require(
                 min <= max && *max <= SPEC_VALUE_LIMIT,
                 "文字长度检查范围无效",
@@ -46,6 +48,22 @@ impl MachineAssertion {
             "规范检查内容超过 8 MiB",
         )?;
         Ok(match self {
+            Self::TaskDag { pointer } => value
+                .pointer(pointer)
+                .and_then(Value::as_array)
+                .is_some_and(|items| {
+                    let nodes = items
+                        .iter()
+                        .map(|item| {
+                            let key = item["key"].as_str()?.to_owned();
+                            let deps =
+                                serde_json::from_value::<Vec<String>>(item["dependencies"].clone())
+                                    .ok()?;
+                            Some((key, deps))
+                        })
+                        .collect::<Option<Vec<_>>>();
+                    !items.is_empty() && nodes.is_some_and(|nodes| valid_dag(&nodes).is_ok())
+                }),
             Self::TextLength { min, max } => value.as_str().is_some_and(|s| {
                 let n = s.chars().count();
                 n >= *min && n <= *max

@@ -277,6 +277,33 @@ pub struct WorkerStop {
 }
 /// Base contract for repository revisions, candidate construction and idempotent target advancement.
 pub trait Git: Send + Sync {
+    fn observe_delivery_target(&self, _context: &GitContext) -> Result<Option<String>> {
+        Err(err("unsupported", "Git 未实现远端目标只读观察"))
+    }
+    fn delivery_sync_ready(
+        &self,
+        _context: &GitContext,
+        _expected: &str,
+        _revision: &str,
+    ) -> Result<bool> {
+        Err(err("unsupported", "Git 未实现同步前现场核对"))
+    }
+    fn fetch_delivery_target(&self, _context: &GitContext, _expected: &str) -> Result<()> {
+        Err(err("unsupported", "Git 未实现隔离交付目标读取"))
+    }
+    fn commit_tree(&self, _context: &GitContext, _revision: &str) -> Result<String> {
+        Err(err("unsupported", "Git 未实现确切提交 tree 核对"))
+    }
+    fn sync_delivery(
+        &self,
+        _context: &GitContext,
+        _expected: &str,
+        _revision: &str,
+        _operation: &str,
+        _inspect_only: bool,
+    ) -> Result<Option<Value>> {
+        Err(err("unsupported", "Git 未实现远端合入后的本地同步"))
+    }
     /// Stable provider + adapter version; production adapters must override this identity.
     fn identity(&self) -> String {
         std::any::type_name::<Self>().into()
@@ -436,6 +463,36 @@ pub struct ExecutionAdapters {
 
 /// PR API facts are separate from Git refs and model output. No platform merge/bypass operation.
 pub trait PullRequests: Send + Sync {
+    fn delivery_target(&self, _context: &GitContext, _create_protection: bool) -> Result<Value> {
+        Err(err("unsupported", "PR 适配器未声明受保护交付合同"))
+    }
+    fn ensure_delivery(
+        &self,
+        _request: &PullRequestRequest,
+        _inspect_only: bool,
+    ) -> Result<Option<PullRequestReceipt>> {
+        Err(err("unsupported", "PR 适配器未实现精简交付发布"))
+    }
+    fn delivery_status(
+        &self,
+        _request: &devdesk_domain::PullRequestMergeRequest,
+        _inspect_only: bool,
+    ) -> Result<Option<Value>> {
+        Err(err("unsupported", "PR 适配器未实现确切回归状态登记"))
+    }
+    fn merge_delivery(
+        &self,
+        _request: &devdesk_domain::PullRequestMergeRequest,
+        _inspect_only: bool,
+    ) -> Result<Option<PullRequestReceipt>> {
+        Err(err("unsupported", "PR 适配器未实现受保护合入"))
+    }
+    fn delivery_merge_ready(
+        &self,
+        _request: &devdesk_domain::PullRequestMergeRequest,
+    ) -> Result<bool> {
+        Err(err("unsupported", "PR 适配器未实现远端门禁观察"))
+    }
     fn identity(&self) -> String;
     fn ensure(
         &self,

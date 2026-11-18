@@ -1,0 +1,31 @@
+{
+  "type": "spec",
+  "identity": "精简版-spec-implementation",
+  "revision": 1,
+  "name": "精简版实现规范",
+  "scope": "global",
+  "data": {
+    "body_file": "精简版-implementation.md",
+    "schema_version": 3,
+    "checks": [
+      {
+        "key": "scope",
+        "name": "范围与版本",
+        "instructions": "核对本次确切输入、职责与版本，提供冻结证据位置。",
+        "evidence_required": true
+      },
+      {
+        "key": "content",
+        "name": "内容与接口",
+        "instructions": "按正文检查行为、边界、接口与验收责任；缺失时拒绝。",
+        "evidence_required": true
+      },
+      {
+        "key": "evidence",
+        "name": "真实来源",
+        "instructions": "区分平台回执、原生执行和模型解释，不要求尚未进入的后续步骤产物。",
+        "evidence_required": true
+      }
+    ]
+  }
+}

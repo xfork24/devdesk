@@ -439,6 +439,9 @@ test("Sandbox 版本独立绑定权限，范围预览固定当前目标并可查
       await rpc("query.permission_resources", { target_ref: original })
     ).targets.find((t: any) => t.target.revision_id === original).active,
   ).toEqual(before);
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("config_object"))
+    .toBe(original);
   await page.reload();
   await expect(editor.getByLabel("Sandbox", { exact: true })).toHaveValue(
     original,

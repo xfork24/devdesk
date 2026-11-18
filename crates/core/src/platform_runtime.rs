@@ -237,7 +237,7 @@ impl PlatformCall {
         {
             let running = Self::read(engine, &self.row.id)?;
             match &plan.action {
-                PlatformAction::Publish { .. } => {}
+                PlatformAction::Publish { .. } | PlatformAction::Delivery(_) => {}
                 _ => {
                     let result = {
                         let _external = engine
@@ -316,6 +316,11 @@ impl PlatformCall {
                     engine.prepare_platform_test_cleanup(effect, test, observation)?;
                 }
                 changes.extend(plan.changes.clone());
+                if let PlatformAction::Delivery(action) = &plan.action
+                    && let Some(change) = engine.delivery_admission_change(action, receipt)?
+                {
+                    changes.push(change);
+                }
                 if let Some(head) = &plan.head {
                     let mut next = head
                         .value
@@ -367,7 +372,12 @@ impl PlatformCall {
         }
         // A known failed read never held a physical writer. Mutating effects
         // retain their fence until there is a positive physical completion.
-        if result.is_ok()
+        let not_applied = result.as_ref().err().is_some_and(|error| {
+            error
+                .execution_failure
+                .is_some_and(|d| d.effect == ExecutionFailureEffect::NotApplied)
+        });
+        if (result.is_ok() || not_applied)
             && let Some(fence) = &plan.fence
         {
             let mut closed = fence.clone();
@@ -382,7 +392,22 @@ impl PlatformCall {
         }
         data["observation_id"] = json!(observation.resource.id);
         data["finished"] = json!(now());
-        let reads = plan.basis.merge([
+        // A proven rejected external attempt changes only its own call/fence.
+        // The target moving is the expected cause of rejection, not a reason
+        // to hide that negative observation behind a stale-head conflict.
+        let basis = if not_applied {
+            ReadSet::new(
+                plan.basis
+                    .versions()
+                    .iter()
+                    .filter(|v| plan.head.as_ref().is_none_or(|h| v.resource != h.resource))
+                    .cloned()
+                    .collect(),
+            )?
+        } else {
+            plan.basis.clone()
+        };
+        let reads = basis.merge([
             ResourceVersion {
                 resource: ResourceKey::new("governance", &effect.id),
                 revision: effect.revision,
@@ -489,6 +514,7 @@ impl PlatformCall {
         }
         let result = match &plan.action {
             PlatformAction::Publish { .. } => engine.drive_platform_publish(&effect, &plan.action),
+            PlatformAction::Delivery(action) => engine.drive_delivery(&effect, action, false),
             PlatformAction::Test(test) => {
                 let (active, _, _) = self.active(engine)?;
                 match engine.tests.inspect_test(test)? {
@@ -618,6 +644,9 @@ impl Engine {
         fresh: bool,
     ) -> Result<Option<Value>> {
         match action {
+            PlatformAction::Delivery(_) => {
+                Err(err("unsupported", "精简交付通过独立持久化阶段执行"))
+            }
             PlatformAction::ReusedPublication { receipt, .. } => {
                 // This grant contains a verified original immutable observation.
                 // Replaying its fact never dispatches another Git/GitHub effect.
@@ -663,11 +692,14 @@ impl Engine {
                 let RepositoryReceipt::Snapshot { revision } = receipt else {
                     return Err(err("adapter_contract", "快照回执类型不符"));
                 };
-                let RepositoryAction::Snapshot {
-                    context, expected, ..
-                } = &operation.action
-                else {
-                    return Err(err("storage", "原快照意图类型不符"));
+                let (context, expected) = match &operation.action {
+                    RepositoryAction::Snapshot {
+                        context, expected, ..
+                    }
+                    | RepositoryAction::Checkpoint {
+                        context, expected, ..
+                    } => (context, expected),
+                    _ => return Err(err("storage", "原快照意图类型不符")),
                 };
                 let mut out = json!({"workspace_id":workspace.id,"revision":revision,"owner_id":workspace.owner_id});
                 if *include_diff {

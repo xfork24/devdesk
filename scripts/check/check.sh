@@ -10,6 +10,7 @@ python3 tests/entrypoints/rpc_contract_inventory.py
 python3 tests/entrypoints/host_launcher.py
 node --test tests/entrypoints/ci_workflow_gate.mjs tests/entrypoints/configuration_query_cache.mjs
 ./scripts/check/check-style.sh
+python3 tests/entrypoints/prepare_project_test_runtime.py
 cargo test --workspace --locked
 cargo build --locked -p devdesk-host
 ./scripts/platform/macos/sign-macos.sh target/debug/devdesk-host

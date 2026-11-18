@@ -26,7 +26,7 @@ Workflow 是可发布的流程文档，当前出厂定义记录 schema_version=6
 
 ## 初始需求与人工决策
 
-`feature.create.initial_requirement` 保存用户自然语言描述，并以 `user_request` 冻结到 Workflow 和实际 Agent 任务，子流程继承。它独立于流程声明的类型化 `workflow_inputs`；默认 Feature 无外部输入，无须 JSON。创建表单仅在流程声明了输入时在高级选项显示 JSON 及输入名称、交付类型和必填要求。
+`feature.create.initial_requirement` 保存用户自然语言描述，并以 `user_request` 冻结到 Workflow 和实际 Agent 任务，子流程继承。它独立于流程声明的类型化 `workflow_inputs`；精简版的 test_configuration 由冻结工作选择注入，无须在 Feature 表单重复填写。创建表单仅在流程声明了输入时在高级选项显示 JSON 及输入名称、交付类型和必填要求。
 
 需求 Agent 依据本步骤要求的 Spec 判断是否需要澄清；信息充分即可提交，缺少必要事实时返回 needs_input，summary 说明问题。包含人工确认节点的流程启用持久的 human_governance，子流程继承。等待输入只能由人类经步骤或步骤会话回答，Controller、Rust Driver 和 Segment 均不能代答。
 
@@ -123,6 +123,10 @@ ChangeSet 当前提供 13 类类型化操作：adopt_standard、revert_change、
 
 工具步骤仅改变 `stage` 归属时，运行计划变更保留原执行身份、冻结合同和平台回执，不触发返工；参数、权限、依赖等业务字段改变仍重置受影响执行。Agent 的阶段背景及默认 Role 继续参与业务影响分析。
 
+运行计划预演按稳定步骤身份比较权限内容；生成新的 Workflow 引用地址本身不使相同权限失效。新增不可变交付定义由实际引用它的变更步骤及下游承担影响，不据此重做无关上游。预演返回 `invalidation_causes`，列出步骤种子及发生变化的角色、既有定义、权限和集成。
+
+Workflow 调用仅修改输出合同，且原调用尚无封存输出、未被停止、全部实际子实例均已完成时，可经正常预演和 Human 计划变更重新校验原子实例产物。子实例身份、原始回执和集合顺序保持，原调用失败另存不可变历史，新合同与实际决定记录在 `workflow_aggregation_amendment`；所有下游重新执行。输入、权限、执行器或其他业务条件变化不适用此恢复，不能重建已完成子流程或制造合入证明。
+
 ## TDD 证据链与平台动作门禁
 
 测试与候选的事实只能来自真实回执：`tests.run` 按冻结配方（固定镜像 SHA、文件清单、超时）在无网只读容器执行，区分断言失败与环境失败；`git.candidate` 产出单父提交与确切 diff；`git.advance` 必须持有 WorkflowActionPermit——按计划的 action_requirements 核对与候选匹配的成功测试回执；`git.publish` 用精确租约推送并创建 GitHub PR（平台不合入）。
@@ -131,18 +135,24 @@ ChangeSet 当前提供 13 类类型化操作：adopt_standard、revert_change、
 
 ## 默认流程概览
 
-默认入口为 `builtin-workflow-feature-sol-high:10`（8 阶段 22 步）与 `builtin-workflow-task-sol-high:9`（8 阶段 20 步），由 `builtin-standard-engineering:8` 引用。本地配置目录仅发布最新修订，数据集中的既有执行按原冻结修订追溯：
+实际默认为 `精简版-workflow-feature:1`、`精简版-workflow-task:1` 和 `精简版-standard-engineering:1`。Feature 为 5 阶段、14 个业务步骤、19 个实际节点；Task 为 5 阶段、10 个业务步骤、14 个实际节点。内部节点用于工作空间、快照、登记及目标读取，不增加模型交接。
 
-- **Feature 流程**：requirements（PRD + 独立评审）→ design（基线快照、工程约束、Design Doc + 评审）→ planning（Task Plan + 评审 + tasks.create）→ implementation（foreach 对每个 Task 运行 Task 子流程）→ verification（回归测试配方、版本冻结、真实执行）→ candidate_preparation（目标工作空间、候选、候选测试）→ delivery（Feature 报告 + 评审）→ integration（候选评审、接纳、发布）。
-- **Task 流程**：tests（读取工作空间、编写独立测试）→ red（测试快照、最小可调用基线、Red 快照、真实 Red）→ implementation（实现、实现快照、Green）→ documentation（只读交付说明、复验）→ candidate_preparation（目标工作空间、候选、候选测试）→ review（独立实现评审）→ integration（候选评审、接纳、发布）→ handoff（证据封存、完成）。Red 必须是预期失败的真实断言，模块加载或环境错误不能包装为 Red。规则强制 Red 先于实现，测试/实现/评审身份独立，并核对确切代码版本。
+- Feature：PRD 与独立评审 → Design 与独立评审 → Task DAG 与独立评审、登记 → 按依赖并发运行 Task → 整体代码评审、源回归、源分支推送、PR 创建、合并结果回归、Human 审核、PR 合入与本地同步。
+- Task：独立测试 → 固定空接口和测试快照、真实断言 Red → 实现、必要文档和开发者自测、受保护快照、独立 Green → 独立代码评审、源回归 → 源分支推送、PR 创建、合并结果回归、合入所属 Feature 与同步。
 
-默认 Feature 的 requirements_review、design_review、plan_review 使用 human 确认：独立 Agent 按 Spec 验收通过后，人类确认本轮确切输入和产物，才能接纳并派发后继步骤。其他 Feature 步骤及默认 Task 步骤保持 automatic。返工会重置受影响执行，原确认不得用于新产物；模型评审不能代替人类确认。
+项目配置的 `test_configuration` 声明语言、独立执行器和项目回归配方，随工作选择与实例输入冻结。独立执行器支持 Node test 和 Python unittest，项目回归还支持显式 argv/cwd/environment 的通用命令与有界准备命令。通用命令失败不能证明有效 Red；加载错误、超时或取消也不能证明 Red/Green。准备和测试在同一无网、无凭据、源码只读容器运行，实际镜像必须匹配冻结配方。
 
-步骤直接引用 Profile，文件与工具规则只保存在 Profile 中（见 [运行时权限](permissions.md)）；Feature/Task 各自可采用的规范见 Standard 快照与工作采用（见 [领域规范](domain.md)）。
+PRD、Design、Tasks 评审及最终 Feature 合入使用 Human 确认。签署绑定本轮计划、输入摘要和输出，返工或目标刷新后须重新签署。经理 Agent 没有 Human 身份。Task 无独立 Human 确认，但真实测试、独立评审及精确版本条件不可豁免。
+
+精简版推送原开发分支，并以试合并 tree 创建唯一父提交为确切目标的交付快照；PR 指向平台交付 ref。严格 required check `devdesk/merge-regression`、包含管理员的保护和禁止强推共同阻止目标竞争。平台仅在该候选回归通过后报告状态，并以 head SHA 前置条件 merge；核对最终父提交/tree 后才同步本地并登记完成。PR 创建或远端合入但尚未同步不算完成。原开发分支和全部失败记录保留。未知效果先核对，远端已合入后只恢复同步，脏 worktree 保留。
+
+`stale_target` 且已证明未应用的交付失败，可经 `workflow.step.retry` 重做目标读取及其下游 PR、合并回归和最终 Human 决定，保留未受影响的源回归和代码评审。平台按源版本累计刷新额度，业务返工不能重置该额度。
+
+详细版显式入口为 `builtin-workflow-feature-sol-high:11`（8 阶段、22 步）、`builtin-workflow-task-sol-high:10`（8 阶段、20 步）及 `builtin-standard-engineering:9`。其执行合同保留独立 documentation、verify、closure 及候选评审，平台只创建 PR；历史源和实例按原冻结引用恢复。详细版 Agent/Sandbox 应使用其原绑定，可用对应源闭包核对配置。
 
 ## 预算与并发
 
-步骤预算含轮次/时长/重试。创作默认值为 8 轮、300 秒、3 次重试；出厂业务 Agent 步骤大多为 30 轮、1800 秒，两个 candidate_review 步骤为 8 轮、1800 秒，重试上限均为 3。foreach 的出厂并发为 1，可配置至 32，写者按 worktree 互斥；会话同时受全局和项目额度约束。默认 Workflow 调度配置每次唤醒 8 轮、每轮最多 64 次工具调用、600 秒。人工等待与祖先暂停不消耗执行预算。
+创作默认值为 8 轮、300 秒、3 次重试；出厂业务 Agent 步骤一般为 30 轮、1800 秒、3 次重试。精简版 foreach 并发上限为 4、汇合执行预算为 21600 秒；项目与独立测试节点预算为 7200 秒，覆盖配方允许的最长测试。详细版 foreach 保持 1，可配置至 32。业务依赖等待不占活跃槽位，未知效果保留槽位；单 worktree 写者互斥，所有会话还受全局及项目额度限制。A 合入并同步后即可解锁仅依赖 A 的 C，不等待无关 B。人工等待与祖先暂停不消耗执行预算。精简版自动平台链可通过 `workflow.segment.dispatch` 在同一次有界授权中连续运行。
 
 步骤可在不可变 Workflow 修订的 `budget.time_limits` 显式选择 `{"version":1,"wall_seconds":3600,"human_wait_seconds":600}`。两个值均为有限正秒数，总墙钟最多 30 天，Human 期限不得超过总墙钟；缺省不启用，旧预算的序列化和出厂选择不变。v1 总墙钟从首次派发开始，覆盖当前逻辑节点的等待、技术重试、返工、保留 node_id 的计划替换和 Host 停机时间；它不是整个工作根或经理 Session 的总预算。
 

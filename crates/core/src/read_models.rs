@@ -376,6 +376,21 @@ pub struct WorkflowChildSummary {
     pub id: String,
     pub name: String,
     pub revision: u64,
+    pub owner_id: String,
+    pub status: String,
+    pub dependency_wait_count: u64,
+    pub delivery: Option<WorkflowDeliverySummary>,
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WorkflowDeliverySummary {
+    pub pull_request_url: Option<String>,
+    pub pull_request_number: Option<u64>,
+    pub source_revision: Option<String>,
+    pub target_revision: Option<String>,
+    pub candidate_revision: Option<String>,
+    pub merged_revision: Option<String>,
+    pub merged: bool,
+    pub synchronized: bool,
 }
 #[derive(Debug, Serialize)]
 pub struct WorkflowManagementSummary {
@@ -386,6 +401,15 @@ pub struct WorkflowManagementSummary {
     pub children_more: bool,
     pub next_child_offset: Option<u64>,
     pub observed_only: bool,
+    pub delivery: Option<WorkflowDeliverySummary>,
+    pub child_slots: Vec<WorkflowChildSlots>,
+}
+#[derive(Debug, Serialize)]
+pub struct WorkflowChildSlots {
+    pub execution_id: String,
+    pub limit: u64,
+    pub active: u64,
+    pub available: u64,
 }
 
 #[derive(Debug, Serialize)]

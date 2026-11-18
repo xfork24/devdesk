@@ -176,7 +176,17 @@ pub(crate) fn select_work_configuration_for(
         .cloned()
         .unwrap_or(json!({"mode":"manual"}));
     crate::workflow_driver::validate_selection(state, &orchestration, scope)?;
-    let selection = json!({"orchestration":orchestration,"schema_version":1,"work":work,"standard_ref":standard,"workflow_ref":workflow,"role_agent_bindings":bindings,"harness_permission_ref":context,"sandbox_ref":sandbox,"sandbox_permission_ref":sandbox_profile,"source_configuration_ref":inherited.map(|r|json!(r.id)).or_else(||payload.get("source_configuration_ref").cloned())});
+    let tests = payload
+        .get("test_configuration")
+        .or_else(|| data.get("test_configuration"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    if !tests.is_null() {
+        serde_json::from_value::<ProjectTestConfiguration>(tests.clone())
+            .map_err(|e| err("invalid_params", e.to_string()))?
+            .validate()?;
+    }
+    let selection = json!({"test_configuration":tests,"orchestration":orchestration,"schema_version":1,"work":work,"standard_ref":standard,"workflow_ref":workflow,"role_agent_bindings":bindings,"harness_permission_ref":context,"sandbox_ref":sandbox,"sandbox_permission_ref":sandbox_profile,"source_configuration_ref":inherited.map(|r|json!(r.id)).or_else(||payload.get("source_configuration_ref").cloned())});
     if let Some(old) = &old
         && old.data == selection
     {

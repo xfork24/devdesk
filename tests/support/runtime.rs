@@ -6,6 +6,7 @@ use devdesk_core::id;
 #[path = "defaults.rs"]
 #[allow(clippy::duplicate_mod)]
 mod defaults;
+pub use defaults::fixture_test_configuration;
 use defaults::*;
 use devdesk_core::{Command, Engine, ports};
 use devdesk_domain::*;
@@ -174,7 +175,7 @@ pub fn queue_conversation_for_agent(
 pub fn configure_project(e: &Engine, project: &str) {
     let s = e.store.snapshot().unwrap();
     let defaults = e.configuration_defaults(Some(project)).unwrap();
-    e.execute("project.configuration.update",Command{command_id:id(),target:Some(project.into()),expected_revision:Some(s.projects.iter().find(|p|p.id==project).unwrap().revision),payload:json!({"workflow_ref":defaults["workflow_ref"],"role_agent_bindings":defaults["role_agent_bindings"]})}).unwrap();
+    e.execute("project.configuration.update",Command{command_id:id(),target:Some(project.into()),expected_revision:Some(s.projects.iter().find(|p|p.id==project).unwrap().revision),payload:json!({"workflow_ref":defaults["workflow_ref"],"role_agent_bindings":defaults["role_agent_bindings"],"test_configuration":fixture_test_configuration()})}).unwrap();
 }
 
 /// Explicit fixture grants for current built-in targets, through the production v2 command.
@@ -211,6 +212,11 @@ pub fn bind_default_permissions(e: &Engine) {
             PermissionTargetKind::Harness,
             "builtin-harness-dsh-multi-provider:1",
             "builtin-permission-harness-full-access:1",
+        ),
+        (
+            PermissionTargetKind::Sandbox,
+            "builtin-sandbox-docker:1",
+            "builtin-permission-sandbox-full-access:1",
         ),
         (
             PermissionTargetKind::Sandbox,
