@@ -216,6 +216,8 @@ export function ResourceEditor({
     `devdesk:source-flat-v1:resource:${project?.id || "global"}:${kind}`,
     () => ({ selected: "", name: "", scope: "global", data: initial(kind) }),
   );
+  const selectedRef = useRef(draft.selected);
+  selectedRef.current = draft.selected;
   const choice = useRef<AbortController | null>(null);
   useEffect(() => () => choice.current?.abort(), []);
   const load = useCallback(async () => {
@@ -229,8 +231,8 @@ export function ResourceEditor({
     // Index refreshes can finish after a targeted detail read. Immutable source
     // details with the same hash remain valid; do not replace them with an
     // index-only row and lose a completed hydration effect.
-    setRecords((current) =>
-      records.map((row) => {
+    setRecords((current) => {
+      const refreshed = records.map((row) => {
         const detail = current.find(
           (item) =>
             item.id === row.id &&
@@ -240,8 +242,16 @@ export function ResourceEditor({
         return row._index && detail
           ? { ...detail, ...row, data: detail.data, _index: undefined }
           : row;
-      }),
-    );
+      });
+      // A restored historical revision can hydrate before the head-only index.
+      // Retain it even if both reads settle before React commits a render.
+      const selected = current.find(
+        (row) => row.id === selectedRef.current && !row._index,
+      );
+      return selected && !refreshed.some((row) => row.id === selected.id)
+        ? [...refreshed, selected]
+        : refreshed;
+    });
     setIntegrations(integrationResources);
     setProviders(modelProviders.providers || []);
     if (kind === "tool")

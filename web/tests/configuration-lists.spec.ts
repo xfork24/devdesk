@@ -4,6 +4,79 @@ import { useMockCodexCatalog } from "./support/model-catalog";
 
 useMockCodexCatalog();
 
+test("旧 Sandbox 详情先于最新目录恢复时保留编辑器和未保存草稿", async ({
+  page,
+}) => {
+  const original = "builtin-sandbox-docker:2";
+  await page.goto(
+    `/?tab=components&config_tab=sandbox&config_object=${encodeURIComponent(original)}`,
+  );
+  const editor = page.getByRole("region", {
+    name: "Sandbox 管理",
+    exact: true,
+  });
+  const selected = editor.getByLabel("Sandbox", { exact: true });
+  await expect(selected).toHaveValue(original);
+  await editor.getByLabel("名称", { exact: true }).fill("未保存的旧版本草稿");
+  const record = await page.request.post("/rpc", {
+    data: {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "query.configuration_records",
+      params: { refs: [original] },
+    },
+  });
+  const source = (await record.json()).result.records[0];
+  const response = await page.request.post("/rpc", {
+    data: {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "sandbox.revise",
+      params: {
+        command_id: crypto.randomUUID(),
+        target: original,
+        expected_revision: source.revision,
+        payload: {
+          name: "Sandbox 后继目录条目",
+          scope: "global",
+          data: {
+            provider: "docker",
+            runtime_version: "1",
+            enforcement: "docker-worker/v1",
+            platforms: ["linux/x86_64", "linux/aarch64"],
+          },
+        },
+      },
+    },
+  });
+  expect((await response.json()).error).toBeUndefined();
+
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/rpc", async (route) => {
+    if (route.request().postDataJSON().method !== "query.model_providers")
+      return route.fallback();
+    await pending;
+    await route.fallback();
+  });
+  let restored;
+  try {
+    await page.reload();
+    await expect(selected).toHaveValue(original);
+    restored = await selected.elementHandle();
+  } finally {
+    release();
+  }
+  await expect(
+    editor.getByRole("button", { name: /Sandbox 后继目录条目/ }),
+  ).toBeVisible();
+  await expect(selected).toHaveValue(original);
+  expect(await restored!.evaluate((node) => node.isConnected)).toBe(true);
+  await expect(editor.getByLabel("名称", { exact: true })).toHaveValue(
+    "未保存的旧版本草稿",
+  );
+});
+
 test("目录读取晚于 Role 详情时保留已加载的职责正文", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem(
