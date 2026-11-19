@@ -50,14 +50,28 @@ pub(super) fn segments_pending_sql() -> String {
 pub(super) const WORKFLOW_READY: &str = "(
  json_extract(c.data,'$.status') NOT IN ('completed','cancelled') AND (
  coalesce(json_extract(c.data,'$.cancel_requested'),0)=1
+ OR (json_extract(c.data,'$.status') IN ('failed','needs_reconciliation')
+   AND EXISTS(SELECT 1 FROM workflow_display_steps s WHERE s.instance_id=c.id)
+   AND NOT EXISTS(SELECT 1 FROM workflow_display_steps s WHERE s.instance_id=c.id
+     AND json_extract(s.data,'$.status') IN ('failed','needs_reconciliation')))
  OR EXISTS(SELECT 1 FROM workflow_display_steps s WHERE s.instance_id=c.id AND (
    json_extract(s.data,'$.status')='running'
    OR (json_extract(s.data,'$.status')='needs_reconciliation' AND
       json_extract(c.data,'$.status')!='needs_reconciliation')
    OR (json_extract(s.data,'$.status')='failed' AND json_extract(c.data,'$.status') NOT IN ('failed','needs_reconciliation'))
    OR (json_extract(c.data,'$.status')='queued' AND json_extract(s.data,'$.started') IS NOT NULL)))
- OR EXISTS(SELECT 1 FROM governance_records stop WHERE stop.type='workflow_stop'
-   AND stop.definition_id=json_extract(c.data,'$.parent_execution_id'))
+ OR EXISTS(SELECT 1 FROM governance_records stop WHERE stop.type IN ('workflow_stop','workflow_stop_reassertion')
+   AND stop.definition_id=json_extract(c.data,'$.parent_execution_id')
+   AND NOT EXISTS(SELECT 1 FROM governance_records resolved WHERE resolved.type='workflow_stop_reconciliation'
+     AND resolved.definition_id=stop.id AND resolved.immutable=1 AND json_extract(resolved.data,'$.issuer')='kernel_workspace_reconciliation'))
+ OR EXISTS(SELECT 1 FROM json_each(c.data,'$.steps') s
+   WHERE json_extract(s.value,'$.status') IN ('failed','needs_reconciliation')
+   AND json_extract(s.value,'$.failure.code')='child_execution_failed'
+   AND EXISTS(SELECT 1 FROM governance_records child WHERE child.type='workflow_instance'
+     AND json_extract(child.data,'$.parent_execution_id')=json_extract(s.value,'$.id'))
+   AND NOT EXISTS(SELECT 1 FROM governance_records child WHERE child.type='workflow_instance'
+     AND json_extract(child.data,'$.parent_execution_id')=json_extract(s.value,'$.id')
+     AND json_extract(child.data,'$.status') IN ('failed','cancelled','needs_reconciliation')))
  OR EXISTS(SELECT 1 FROM governance_records a WHERE a.type='workflow_instance'
    AND json_extract(a.data,'$.root_instance_id')=json_extract(c.data,'$.root_instance_id')
    AND json_extract(a.data,'$.status') NOT IN ('completed','cancelled')

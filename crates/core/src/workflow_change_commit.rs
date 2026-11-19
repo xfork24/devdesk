@@ -13,6 +13,178 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 impl Engine {
+    pub(crate) fn native_workflow_change_reconcile(
+        &self,
+        c: &Command,
+        fingerprint: &str,
+        context: &InvocationContext,
+    ) -> Result<Value> {
+        require(
+            matches!(context.actor(), WorkflowActor::Human),
+            "计划历史恢复仅供人类维护",
+        )?;
+        if let Some(receipt) = self.store.replay_commit(&c.command_id, fingerprint)? {
+            return Ok(receipt.result);
+        }
+        let root = WorkflowHeaderFacts::read(
+            self,
+            c.target
+                .as_deref()
+                .ok_or_else(|| err("invalid_params", "缺少流程目标"))?,
+        )?;
+        root.active()?;
+        root.guard_request(c, None)?;
+        require(!root.instance.paused, "暂停中的流程不能恢复执行")?;
+        let change_id = text(&c.payload, "change_id")?;
+        let (executions, reads) = self.unchanged_change_executions(&root, &change_id)?;
+        let mut commit = WorkflowCommit::new(self, "workflow.change.reconcile", c, context)?;
+        commit.authorize(&root)?;
+        commit.require_no_change(&root.record.id)?;
+        commit.witness(reads.versions().iter().cloned())?;
+        let catalog = self.store.configuration_snapshot()?;
+        commit.witness([ResourceVersion {
+            resource: ResourceKey::new("catalog_clock", "configuration"),
+            revision: catalog.revision,
+        }])?;
+        let mut replaced = vec![];
+        for original in &executions {
+            let resources = root.step(self, &original.node_id)?;
+            let current = &resources.execution;
+            require(
+                current.status == StepExecutionStatus::Queued
+                    && current.inputs.is_empty()
+                    && current.input_digest.is_empty()
+                    && current.outputs.is_empty()
+                    && current.session_id.is_none()
+                    && current.turn_id.is_none()
+                    && current.tool_call_id.is_none()
+                    && current.started.is_none()
+                    && current.finished.is_none(),
+                "替代执行已启动，不能恢复旧执行",
+            )?;
+            require(
+                !commit.execution_active(&resources)?
+                    && !commit.archived_execution_active(original)?,
+                "不能恢复活动写者或未知副作用",
+            )?;
+            let target = one(
+                self.store.as_ref(),
+                "workflow_step",
+                &json!([root.record.id, original.id]).to_string(),
+            )?;
+            require(
+                target.value.is_none() && target.revision > 0,
+                "原执行不属于已归档的步骤",
+            )?;
+            let key = ResourceKey::new("workflow_step_restore", resources.step.resource.id.clone());
+            commit.witness(resources.reads.versions().iter().cloned())?;
+            commit.witness([
+                version(&target),
+                ResourceVersion {
+                    resource: key.clone(),
+                    revision: resources.step.revision,
+                },
+            ])?;
+            commit.change(ResourceChange {
+                resource: key,
+                value: self
+                    .store
+                    .encode_configuration_value(&catalog, &json!(original))?,
+            })?;
+            commit.new_record(
+                record(
+                    "workflow_execution_history",
+                    current.id.clone(),
+                    root.record.scope.clone(),
+                    current.step.clone(),
+                    1,
+                    None,
+                    json!(current),
+                    true,
+                ),
+                &format!("workflow-history:{}", current.id),
+            )?;
+            commit.new_record(record("workflow_carry_forward",original.id.clone(),root.record.scope.clone(),original.step.clone(),1,None,
+                json!({"from_plan":root.instance.active_plan_revision_id,"to_plan":root.instance.active_plan_revision_id,"source_plan":original.plan_revision_id,"execution_id":original.id,"contract_digest":original.contract_digest,"input_digest":original.input_digest,"outputs":original.outputs,"reconciled_change_id":change_id}),true), &format!("carry-forward:{}",original.id))?;
+            replaced.push(current.id.clone());
+        }
+        let mut next = root.instance.as_ref().clone();
+        next.control_version += 1;
+        commit.header(&root, &next)?;
+        let restored_ids = executions.iter().map(|e| &e.id).collect::<Vec<_>>();
+        let id = commit.new_record(record("workflow_change_reconciliation",root.record.id.clone(),root.record.scope.clone(),"恢复计划变更中未受影响的执行".into(),1,None,
+            json!({"change_id":change_id,"plan_revision_id":root.instance.active_plan_revision_id,"restored_execution_ids":restored_ids,"replaced_execution_ids":replaced,"actor":context.actor()}),true), "change-reconciliation")?;
+        commit.decision(
+            &root,
+            None,
+            "change.reconcile",
+            "从不可变历史恢复原合同未改变且替代执行尚未启动的已完成执行",
+        )?;
+        commit.finish(
+            fingerprint,
+            json!({"id":id,"status":"reconciled","restored_execution_ids":restored_ids}),
+        )
+    }
+
+    fn workflow_change_activation_basis(
+        &self,
+        context: &InvocationContext,
+        reads: &ReadSet,
+    ) -> Result<ReadSet> {
+        let WorkflowActor::Controller {
+            controller_id,
+            session_id,
+            turn_id,
+            epoch,
+        } = context.actor()
+        else {
+            return Ok(reads.clone());
+        };
+        // The prepare commit checks the complete native caller read set.
+        // Once admitted, call completion and worker cleanup may proceed while
+        // activation waits for quiescence. Retain the immutable action grant
+        // and stable controller authority instead of those transport versions.
+        let mut transient = BTreeSet::from([
+            ResourceKey::new("governance", controller_id),
+            ResourceKey::new("session", session_id),
+            ResourceKey::new("session_live_workers", session_id),
+            ResourceKey::new("tool_turn", turn_id),
+        ]);
+        for original in context.original_authority().versions() {
+            if original.resource.kind == "tool_worker" {
+                transient.insert(original.resource.clone());
+            } else if original.resource.kind == "governance" {
+                let selected = one(self.store.as_ref(), "governance", &original.resource.id)?;
+                if selected.value.as_ref().is_some_and(|row| {
+                    row["type"] == "controller_tool_call"
+                        && row["definition_id"] == *controller_id
+                        && row["data"]["turn_id"] == *turn_id
+                        && row["data"]["method"] == "workflow.change.apply"
+                }) {
+                    transient.insert(original.resource.clone());
+                }
+            }
+        }
+        let authority = one(self.store.as_ref(), "controller_authority", controller_id)?;
+        require(
+            authority.value.as_ref().is_some_and(|row| {
+                row["data"]["epoch"] == *epoch
+                    && row["data"]["session_id"] == *session_id
+                    && row["data"]["status"] == "active"
+            }),
+            "原经理授权已变化，不能准备计划变更",
+        )?;
+        ReadSet::new(
+            reads
+                .versions()
+                .iter()
+                .filter(|version| !transient.contains(&version.resource))
+                .cloned()
+                .collect(),
+        )?
+        .merge([version(&authority)])
+    }
+
     pub(crate) fn native_workflow_change_command(
         &self,
         c: &Command,
@@ -53,7 +225,7 @@ impl Engine {
                 .any(|op| matches!(op, WorkflowChangeOperation::AdoptReworkBaseline { .. })))
             && !matches!(context.actor(), WorkflowActor::Human)
         {
-            commit.require_signed_change(&root)?;
+            commit.require_signed_request(&root)?;
         }
         commit.require_no_change(&root.record.id)?;
         commit.witness(facts.reads.versions().iter().cloned())?;
@@ -111,9 +283,12 @@ impl Engine {
             .iter()
             .filter(|c| c.resource.kind == "source")
             .count() as u64;
+        let activation_reads = self.workflow_change_activation_basis(context, &commit.reads)?;
+        // Verify the stable token in the prepare transaction as well, before
+        // handing its original version to the asynchronous activation.
+        commit.witness(activation_reads.versions().iter().cloned())?;
         let basis = ReadSet::new(
-            commit
-                .reads
+            activation_reads
                 .versions()
                 .iter()
                 .filter(|v| {

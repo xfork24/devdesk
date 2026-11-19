@@ -27,6 +27,164 @@ fn git(path: &Path, args: &[&str]) -> String {
     );
     String::from_utf8(output.stdout).unwrap().trim().into()
 }
+
+#[test]
+fn native_continuation_preserves_exact_pending_work_and_rejects_other_writers_or_content() {
+    use serde_json::json;
+    let root = tempfile::tempdir().unwrap();
+    let project = id();
+    let owner = id();
+    let session = id();
+    let turn = id();
+    let previous = id();
+    let operation = id();
+    let project_path = root.path().join("projects").join(&project);
+    let repo = project_path.join("repository");
+    fs::create_dir_all(repo.join("tests")).unwrap();
+    git(&repo, &["init", "-b", "main"]);
+    fs::write(repo.join("tests/check.mjs"), "original\n").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-m", "baseline"]);
+    let revision = git(&repo, &["rev-parse", "HEAD"]);
+    let adapter = CliGit::new(root.path()).unwrap();
+    let work = adapter
+        .prepare_worktree(&project, &owner, "tasks", &revision, &id())
+        .unwrap();
+    let repo = fs::canonicalize(repo).unwrap();
+    let context = GitContext {
+        project: project.clone(),
+        workspace: Workspace {
+            repository: "fixture/local".into(),
+            path: repo.to_string_lossy().into(),
+            mainline: "main".into(),
+        },
+        source: CodeLocation {
+            owner,
+            branch: work.branch,
+            worktree: work.path.clone(),
+        },
+        target: CodeLocation {
+            owner: project.clone(),
+            branch: "main".into(),
+            worktree: repo.to_string_lossy().into(),
+        },
+        origin: Origin::External,
+    };
+    let path = Path::new(&work.path);
+    fs::write(path.join("tests/check.mjs"), "staged\n").unwrap();
+    git(path, &["add", "tests/check.mjs"]);
+    fs::write(path.join("tests/check.mjs"), "unstaged\n").unwrap();
+    fs::write(path.join("tests/new.mjs"), "untracked\n").unwrap();
+    let before_status = git(path, &["status", "--porcelain"]);
+    let before_index = git(path, &["diff", "--cached", "--binary"]);
+    let before_index_blob = git(path, &["rev-parse", ":tests/check.mjs"]);
+    assert!(adapter.validate_view(&context, &revision).is_err());
+    let state = adapter.working_state(&context, &revision).unwrap().unwrap();
+    // Minimal native ledger fixture: actual prepared worker + exact source Turn.
+    let conn = rusqlite::Connection::open(project_path.join("engineering.sqlite3")).unwrap();
+    conn.execute_batch("CREATE TABLE governance_records(id TEXT PRIMARY KEY,type TEXT,definition_id TEXT,immutable INTEGER,data TEXT); CREATE TABLE turns(id TEXT PRIMARY KEY,status TEXT); CREATE TABLE executions(id TEXT PRIMARY KEY,writer_revoked INTEGER,status TEXT);").unwrap();
+    conn.execute("INSERT INTO turns VALUES(?1,'dispatching')", [&turn])
+        .unwrap();
+    conn.execute("INSERT INTO turns VALUES(?1,'completed')", [&previous])
+        .unwrap();
+    conn.execute("INSERT INTO executions VALUES('worker',0,'prepared')", [])
+        .unwrap();
+    let authority = json!({"execution_id":"execution","session_id":session,"plan_revision_id":"plan","input_digest":"input","contract_digest":"contract"});
+    let scope = json!({"writable_paths":["tests"],"read_only_paths":[]});
+    let view = json!({"context":context,"revision":revision});
+    let mut pending = json!({"session_id":session,"execution_id":"worker","worker_operation_id":operation,"authority":{"workflow":authority},"status":"prepared","request":{"session":{"id":session,"agent":"agent:1"},"execution":{"operation_id":operation},"code_view":view,"configured_task":{"source":{"execution_id":"execution"},"task":{"authorization":scope}}}});
+    let mut checkpoint = json!({"issuer":"kernel_workspace_checkpoint","turn_id":previous,"session_id":session,"authority":authority,"agent_revision_id":"agent:1","view":view,"authorization":scope,"state":state});
+    pending["request"]["session"]["runtime_binding"] = json!({"permissions":{"scope":scope}});
+    conn.execute(
+        "INSERT INTO governance_records VALUES('open','conversation_open_intent',?1,0,?2)",
+        rusqlite::params![turn, pending.to_string()],
+    )
+    .unwrap();
+    assert!(
+        adapter.validate_view(&context, &revision).is_err(),
+        "a previous Session alone grants nothing"
+    );
+    conn.execute("INSERT INTO governance_records VALUES('checkpoint','workspace_continuation_checkpoint',?1,1,?2)",rusqlite::params![session,checkpoint.to_string()]).unwrap();
+    adapter.validate_view(&context, &revision).unwrap();
+    assert!(
+        adapter.validate_workspace(&context, &revision).is_err(),
+        "ordinary platform preflight stays strict"
+    );
+    fs::write(path.join("tests/check.mjs"), "foreign change\n").unwrap();
+    assert!(
+        adapter.validate_view(&context, &revision).is_err(),
+        "changed bytes are not the checkpoint"
+    );
+    fs::write(path.join("tests/check.mjs"), "unstaged\n").unwrap();
+    git(path, &["add", "tests/check.mjs"]);
+    assert!(
+        adapter.validate_view(&context, &revision).is_err(),
+        "staging changed independently"
+    );
+    // Restore the fixture's index only, retaining its unstaged content.
+    git(
+        path,
+        &[
+            "update-index",
+            "--cacheinfo",
+            &format!("100644,{before_index_blob},tests/check.mjs"),
+        ],
+    );
+    // Use a second checkpoint to exercise the remaining authority fences.
+    checkpoint["state"] = adapter.working_state(&context, &revision).unwrap().unwrap();
+    let save_checkpoint = |value: &serde_json::Value| {
+        conn.execute(
+            "UPDATE governance_records SET data=?1 WHERE id='checkpoint'",
+            [value.to_string()],
+        )
+        .unwrap();
+    };
+    save_checkpoint(&checkpoint);
+    pending["authority"]["workflow"]["execution_id"] = json!("another-execution");
+    pending["request"]["configured_task"]["source"]["execution_id"] = json!("another-execution");
+    conn.execute(
+        "UPDATE governance_records SET data=?1 WHERE id='open'",
+        [pending.to_string()],
+    )
+    .unwrap();
+    assert!(
+        adapter.validate_view(&context, &revision).is_err(),
+        "same Session cannot authorize a new execution"
+    );
+    pending["authority"]["workflow"]["execution_id"] = json!("execution");
+    pending["request"]["configured_task"]["source"]["execution_id"] = json!("execution");
+    conn.execute(
+        "UPDATE governance_records SET data=?1 WHERE id='open'",
+        [pending.to_string()],
+    )
+    .unwrap();
+    checkpoint["authorization"]["read_only_paths"] = json!(["tests/check.mjs"]);
+    pending["request"]["configured_task"]["task"]["authorization"] =
+        checkpoint["authorization"].clone();
+    pending["request"]["session"]["runtime_binding"]["permissions"]["scope"] =
+        checkpoint["authorization"].clone();
+    save_checkpoint(&checkpoint);
+    conn.execute(
+        "UPDATE governance_records SET data=?1 WHERE id='open'",
+        [pending.to_string()],
+    )
+    .unwrap();
+    assert!(
+        adapter.validate_view(&context, &revision).is_err(),
+        "protected files remain protected"
+    );
+    assert_eq!(git(path, &["status", "--porcelain"]), before_status);
+    assert_eq!(
+        fs::read_to_string(path.join("tests/check.mjs")).unwrap(),
+        "unstaged\n"
+    );
+    assert_eq!(
+        fs::read_to_string(path.join("tests/new.mjs")).unwrap(),
+        "untracked\n"
+    );
+    assert_eq!(git(path, &["rev-parse", "HEAD"]), revision);
+    assert_eq!(git(path, &["diff", "--cached", "--binary"]), before_index);
+}
 #[test]
 fn mainline_projection_keeps_real_tests_and_source_materials_without_advancing_any_branch() {
     let root = tempfile::tempdir().unwrap();

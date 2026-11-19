@@ -335,6 +335,11 @@ pub trait Git: Send + Sync {
     fn validate_workspace(&self, _context: &GitContext, _revision: &str) -> Result<()> {
         Err(err("unsupported", "Git 适配器缺少写入工作空间校验"))
     }
+    /// Read the exact pending work without staging, committing or restoring it.
+    /// None means this adapter has no physical workspace checkpoint support.
+    fn working_state(&self, _context: &GitContext, _revision: &str) -> Result<Option<Value>> {
+        Ok(None)
+    }
     fn repository_operation(
         &self,
         _operation: &devdesk_domain::RepositoryOperation,

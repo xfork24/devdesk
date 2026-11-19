@@ -26,6 +26,14 @@ enum ReconciliationFact {
     Agent {
         observation: Value,
     },
+    AgentStartNotApplied {
+        source: Id,
+        error: Error,
+    },
+    WorkspaceContinuation {
+        failed_turn_id: Id,
+        previous_turn_id: Id,
+    },
     NotApplied {
         source: Id,
     },
@@ -263,16 +271,27 @@ impl Engine {
                 )?,
             )
             .map_err(|e| err("storage", e.to_string()))?;
+            let recovery = self.workspace_recovery_source(&resources.execution)?;
             let tid = attempt.data["turn_id"]
                 .as_str()
+                .or_else(|| recovery.as_ref().map(|(id, _)| id.as_str()))
                 .ok_or_else(|| err("needs_reconciliation", "原会话核对缺少真实轮次来源"))?;
             self.reconcile_authorized_workers(&session, tid, &authorization, basis)?;
+            if let Some((failed_turn_id, previous_turn_id)) = recovery {
+                return Ok(ReconciliationFact::WorkspaceContinuation {
+                    failed_turn_id,
+                    previous_turn_id,
+                });
+            }
             let observed = one(self.store.as_ref(), "workflow_turn_observation", tid)?;
             let value = observed
                 .value
                 .ok_or_else(|| err("not_found", "原轮次观察缺失"))?;
             if value["turn"]["status"] == "completed" {
                 return Ok(ReconciliationFact::Agent { observation: value });
+            }
+            if let Some((error, source, _)) = self.unapplied_conversation_start(tid)? {
+                return Ok(ReconciliationFact::AgentStartNotApplied { source, error });
             }
             let resolution = attempt.data["resolution"].as_str().unwrap_or("inspect");
             if resolution != "inspect" {
@@ -408,6 +427,36 @@ impl Engine {
         basis: ReadSet,
         fact: ReconciliationFact,
     ) -> Result<()> {
+        if let ReconciliationFact::WorkspaceContinuation {
+            failed_turn_id,
+            previous_turn_id,
+        } = fact
+        {
+            let command = Command {
+                command_id: format!("workspace-reconciliation-admit:{}", attempt.id),
+                target: Some(root.record.id.clone()),
+                expected_revision: Some(root.record.revision),
+                payload: json!({"execution_id":resources.execution.id,"expected_step_revision":resources.step.revision,"plan_revision_id":root.instance.active_plan_revision_id,"control_version":root.instance.control_version,"failed_turn_id":failed_turn_id,"previous_turn_id":previous_turn_id,"reason":"按已授权的执行核对，验证原检查点、未发送证明和原始拒绝时间，恢复同一执行"}),
+            };
+            let context = InvocationContext::workflow(
+                WorkflowActor::Coordinator {
+                    source_id: request.id.clone(),
+                },
+                Some(root.instance.project_id.clone()),
+            );
+            let auth = crate::workspace_continuation::WorkspaceRecoveryAuthority {
+                request_snapshot,
+                request,
+                attempt,
+                observation: observed,
+                basis: &basis,
+            };
+            let fingerprint =
+                configuration_hash(&("workspace-reconciliation-admit/v1", &attempt.id, observed));
+            return self
+                .recover_workspace_continuation(&command, &fingerprint, &context, Some(&auth))
+                .map(|_| ());
+        }
         let command = Command {
             command_id: format!("workflow-reconciliation-admit:{}", attempt.id),
             target: Some(root.record.id.clone()),
@@ -654,6 +703,42 @@ impl Engine {
                     )?;
                 }
             }
+            ReconciliationFact::AgentStartNotApplied { source, error } => {
+                let tid = text(&attempt.data, "turn_id")?;
+                let (actual, proof, reads) = self
+                    .unapplied_conversation_start(&tid)?
+                    .ok_or_else(|| err("revision_conflict", "原启动未执行证明已变化"))?;
+                require(
+                    proof == source && json!(actual) == json!(error),
+                    "原启动观察不匹配",
+                )?;
+                commit.witness(reads.versions().iter().cloned())?;
+                let turn = one(self.store.as_ref(), "turn", &tid)?;
+                let mut raw = turn
+                    .value
+                    .clone()
+                    .ok_or_else(|| err("not_found", "原轮次缺失"))?;
+                raw["status"] = json!("failed");
+                raw["finished"] = json!(now());
+                raw["revision"] = json!(turn.revision + 1);
+                commit.change(ResourceChange {
+                    resource: turn.resource,
+                    value: raw,
+                })?;
+                next.status = if stopped {
+                    StepExecutionStatus::Cancelled
+                } else {
+                    StepExecutionStatus::Failed
+                };
+                let failure = error.execution_failure.as_ref().unwrap();
+                next.failure = Some(WorkflowFailure {
+                    code: error.code,
+                    message: error.message,
+                    source_ref: source,
+                    kind: failure.kind,
+                    effect: failure.effect,
+                });
+            }
             ReconciliationFact::NotApplied { source } => {
                 next.status = if stopped {
                     StepExecutionStatus::Cancelled
@@ -719,6 +804,7 @@ impl Engine {
                 });
             }
             ReconciliationFact::Pending => return Ok(()),
+            ReconciliationFact::WorkspaceContinuation { .. } => unreachable!(),
         }
         if next.status != StepExecutionStatus::NeedsReconciliation {
             next.runtime_context

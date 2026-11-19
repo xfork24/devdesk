@@ -25,6 +25,7 @@ fn record_instance(conn: &Connection, record: &Value) -> Result<Option<String>> 
     match record["type"].as_str() {
         Some("workflow_instance") => Ok(record["id"].as_str().map(str::to_owned)),
         Some("workflow_pending_decision" | "workflow_segment") => Ok(record["definition_id"].as_str().map(str::to_owned)),
+        Some("workflow_reconciliation") => Ok(record["data"]["instance_id"].as_str().map(str::to_owned)),
         Some("workflow_confirmation") => conn.query_row("SELECT i.id FROM governance_records i,json_each(i.data,'$.steps') s WHERE i.type='workflow_instance' AND json_extract(s.value,'$.id')=?1 LIMIT 1",[record["definition_id"].as_str().unwrap_or("")],|r|r.get(0)).optional().map_err(storage),
         _=>Ok(None),
     }
@@ -50,6 +51,7 @@ pub(super) fn capture(conn: &Connection, prepared: &PreparedChangeSet) -> Result
                             | "workflow_pending_decision"
                             | "workflow_confirmation"
                             | "workflow_segment"
+                            | "workflow_reconciliation"
                     )
                 ) =>
             {
@@ -207,8 +209,16 @@ pub(super) fn append(
         let fact = if kind == "workflow_pending_decision"
             && old.is_none_or(|r| r["data"]["status"] != next["data"]["status"])
         {
+            let mut fact = json!({"kind":"decision.changed","decision_id":next["id"],"status":next["data"]["status"],"decision_ref":next["data"]["decision_ref"]});
+            if let Some(reference) = next["data"].get("material_input_ref") {
+                fact["material_input_ref"] = reference.clone();
+            }
+            Some(fact)
+        } else if kind == "workflow_reconciliation"
+            && old.is_none_or(|r| r["data"]["status"] != next["data"]["status"])
+        {
             Some(
-                json!({"kind":"decision.changed","decision_id":next["id"],"status":next["data"]["status"],"decision_ref":next["data"]["decision_ref"]}),
+                json!({"kind":"execution.reconciled","reconciliation_id":next["id"],"execution_id":next["data"]["execution_id"],"status":next["data"]["status"],"error":next["data"]["error"]}),
             )
         } else if kind == "workflow_confirmation" && old.is_none() {
             Some(

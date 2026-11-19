@@ -2356,6 +2356,16 @@
       ]
     },
     {
+      "method": "workflow.change.reconcile",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/workflow_controls.rs",
+        "crates/core/src/workflow_change_commit.rs"
+      ]
+    },
+    {
       "method": "workflow.complete",
       "access": "mutation",
       "scope": "explicit",
@@ -2393,6 +2403,16 @@
       "precondition": "resource_read_set",
       "sites": [
         "crates/core/src/workflow_controls.rs"
+      ]
+    },
+    {
+      "method": "workflow.decision.reconcile",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/workflow_controls.rs",
+        "crates/core/src/workflow_material_inputs.rs"
       ]
     },
     {
@@ -2686,6 +2706,16 @@
       ]
     },
     {
+      "method": "workflow.workspace.reconcile",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/workflow_controls.rs",
+        "crates/core/src/workspace_continuation.rs"
+      ]
+    },
+    {
       "method": "workspace.checkpoint",
       "access": "platform_mutation",
       "scope": "explicit",
@@ -2728,6 +2758,7 @@
     "context.revised",
     "decision.changed",
     "execution.cleanup_retry_requested",
+    "execution.reconciled",
     "execution.stopped",
     "experience.imported",
     "harness.native",

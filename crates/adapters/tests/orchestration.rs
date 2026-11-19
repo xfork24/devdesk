@@ -15,6 +15,75 @@ use devdesk_domain::*;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
+#[test]
+fn a_later_human_stop_survives_reconciliation_of_an_earlier_kernel_stop() {
+    let directory = tempfile::tempdir().unwrap();
+    let e = engine(directory.path());
+    let root = start(&e, document());
+    cmd(
+        &e,
+        "workflow.step.dispatch",
+        Some(&root),
+        json!({"step":"one"}),
+    )
+    .unwrap();
+    let state = e.store.snapshot().unwrap();
+    let owner = state.configuration(&root).unwrap().clone();
+    let execution = owner.data["steps"][0]["id"].as_str().unwrap().to_owned();
+    let mut stopped = owner.clone();
+    stopped.id = id();
+    stopped.r#type = "workflow_stop".into();
+    stopped.definition_id = execution.clone();
+    stopped.version = 1;
+    stopped.revision = 1;
+    stopped.immutable = true;
+    stopped.refs.clear();
+    stopped.supersedes = None;
+    stopped.data = json!({"actor":null,"origin":{"kind":"runtime_coordinator","execution_id":execution},"reason":"fixture: previously reconciled kernel timeout"});
+    stopped.content_hash = content_digest(&stopped.refs, &stopped.data);
+    let mut resolved = stopped.clone();
+    resolved.id = id();
+    resolved.r#type = "workflow_stop_reconciliation".into();
+    resolved.definition_id = stopped.id.clone();
+    resolved.data = json!({"issuer":"kernel_workspace_reconciliation","execution_id":execution});
+    resolved.content_hash = content_digest(&resolved.refs, &resolved.data);
+    e.store
+        .seed_fixture_state(None, &mut |s| {
+            s.governance.extend([stopped.clone(), resolved.clone()]);
+            Ok(Value::Null)
+        })
+        .unwrap();
+    cmd(
+        &e,
+        "workflow.execution.stop",
+        Some(&root),
+        json!({"execution_id":execution,"reason":"实际用户要求停止"}),
+    )
+    .unwrap();
+    let key = devdesk_core::concurrency::ResourceKey::new(
+        "workflow_step_authority",
+        json!([root, execution]).to_string(),
+    );
+    assert_eq!(
+        e.store.read_resources(&[key]).unwrap()[0]
+            .value
+            .as_ref()
+            .unwrap()["stop_requested"],
+        true
+    );
+    let after = e.store.snapshot().unwrap();
+    assert!(after.governance.iter().any(|r| r.id == stopped.id));
+    assert!(after.governance.iter().any(|r| r.id == resolved.id));
+    assert!(
+        after
+            .governance
+            .iter()
+            .any(|r| r.r#type == "workflow_stop_reassertion"
+                && r.definition_id == execution
+                && r.data["actor"]["kind"] == "human")
+    );
+}
+
 fn engine(path: &std::path::Path) -> Engine {
     let e = Engine::new(
         Arc::new(SqliteStore::open_fixture(path).unwrap()),
@@ -901,6 +970,7 @@ fn bounded_segment_requires_explicit_authorization_and_stops_at_plan_change() {
 
 #[derive(Default)]
 struct NativeManager {
+    plan_change: Option<Value>,
     segment: bool,
     human: bool,
     wait_for_execution: bool,
@@ -1000,7 +1070,9 @@ impl ports::Harness for NativeManager {
             .unwrap()
             .iter()
             .find(|s| s["status"] != "completed");
-        let (method, mut args) = if self.segment {
+        let (method, mut args) = if let Some(change) = &self.plan_change {
+            ("workflow_change_apply", change.clone())
+        } else if self.segment {
             (
                 "workflow_segment_dispatch",
                 json!({"instance_id":root,"plan_revision_id":plan,"steps":["one","two"],"reason":"明确委托两个自动节点"}),
@@ -1168,6 +1240,316 @@ fn drive_manager_cycle(e: &Engine, allow_send: bool, full_tick: bool) {
         e.tick(1).unwrap();
     } else {
         e.tick_conversations(1).unwrap();
+    }
+}
+
+#[test]
+fn adding_agent_assets_preserves_completed_steps_and_legacy_invalidation_can_be_reconciled() {
+    use concurrency::*;
+    for (legacy, started) in [(false, false), (true, false), (true, true)] {
+        let directory = tempfile::tempdir().unwrap();
+        let e = engine(directory.path());
+        let root = start(&e, document());
+        cmd(
+            &e,
+            "workflow.step.dispatch",
+            Some(&root),
+            json!({"step":"one"}),
+        )
+        .unwrap();
+        accept(&e, &root, "one");
+        cmd(
+            &e,
+            "workflow.step.dispatch",
+            Some(&root),
+            json!({"step":"two"}),
+        )
+        .unwrap();
+        let before = runtime(&e, &root);
+        let mut document = before["runtime"]["plan"]["document"].clone();
+        document["steps"][1]["dependencies"] = json!(["repair"]);
+        document["steps"].as_array_mut().unwrap().insert(1, json!({"key":"repair","name":"修复环境","stage":"work","dependencies":["one"],"task_instructions":"仅修复验收环境","executor":{"type":"agent","role_ref":"builtin-role-analyst:1"}}));
+        let changes = json!({"plan_revision_id":before["runtime"]["active_plan_revision_id"],"reason":"在已完成步骤后加入 Agent 修复","operations":[{"type":"replace_plan","document":document}]});
+        let preview = e
+            .query(
+                "workflow.change.preview",
+                &json!({"id":root,"changeset":changes}),
+                4,
+            )
+            .unwrap();
+        assert_eq!(preview["affected"], json!(["repair", "two"]));
+        for kind in ["roles", "permissions", "integrations"] {
+            assert_eq!(preview["invalidation_causes"][kind], json!([]));
+        }
+        let revision = e
+            .store
+            .snapshot()
+            .unwrap()
+            .configuration(&root)
+            .unwrap()
+            .revision;
+        let result = e
+            .execute(
+                "workflow.change.apply",
+                Command {
+                    command_id: id(),
+                    target: Some(root.clone()),
+                    expected_revision: Some(revision),
+                    payload: json!({"changeset":changes,"preview_hash":preview["preview_hash"]}),
+                },
+            )
+            .unwrap();
+        if legacy {
+            // Reproduce an already persisted pre-fix preparation. Only the
+            // historical impact is inflated; the approved document is intact.
+            let state = e.store.snapshot().unwrap();
+            let mut row = state
+                .configuration(result["id"].as_str().unwrap())
+                .unwrap()
+                .clone();
+            let original_revision = row.revision;
+            row.data["preview"]["affected"] = json!(["one", "repair", "two"]);
+            row.data["preview"]["footprint"]["executions"] = before["runtime"]["steps"].clone();
+            row.revision += 1;
+            row.content_hash = content_digest(&row.refs, &row.data);
+            let key = ResourceKey::new("governance", &row.id);
+            let catalog = e.store.configuration_snapshot().unwrap();
+            e.store
+                .commit_changes(&PreparedChangeSet {
+                    command_id: id(),
+                    fingerprint: id(),
+                    read_set: ReadSet::new(vec![ResourceVersion {
+                        resource: key.clone(),
+                        revision: original_revision,
+                    }])
+                    .unwrap(),
+                    changes: vec![ResourceChange {
+                        resource: key,
+                        value: e.store.encode_configuration_record(&catalog, &row).unwrap(),
+                    }],
+                    result: Value::Null,
+                    time: 1,
+                })
+                .unwrap();
+        }
+        for _ in 0..4 {
+            e.drive_workflow_changes().unwrap();
+        }
+        let applied = runtime(&e, &root);
+        if !legacy {
+            assert_eq!(
+                applied["runtime"]["steps"][0],
+                before["runtime"]["steps"][0]
+            );
+            let mut repair = applied["runtime"]["plan"]["document"]["steps"][1].clone();
+            repair["harness_permission_ref"] = json!("builtin-permission-harness-full-access:1");
+            let changes = json!({"plan_revision_id":applied["runtime"]["active_plan_revision_id"],"reason":"实际修改已有权限仍需失效","operations":[{"type":"upsert_step","step":repair}]});
+            let preview = e
+                .query(
+                    "workflow.change.preview",
+                    &json!({"id":root,"changeset":changes}),
+                    4,
+                )
+                .unwrap();
+            assert!(
+                preview["affected"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!("one"))
+            );
+            continue;
+        }
+        assert_eq!(applied["runtime"]["steps"][0]["status"], "queued");
+        if started {
+            cmd(
+                &e,
+                "workflow.step.dispatch",
+                Some(&root),
+                json!({"step":"one"}),
+            )
+            .unwrap();
+        }
+        let state = e.store.snapshot().unwrap();
+        let command = Command {
+            command_id: id(),
+            target: Some(root.clone()),
+            expected_revision: Some(state.configuration(&root).unwrap().revision),
+            payload: json!({"change_id":result["id"],"plan_revision_id":applied["runtime"]["active_plan_revision_id"],"control_version":applied["runtime"]["control_version"]}),
+        };
+        let receipt = e.execute("workflow.change.reconcile", command.clone());
+        if started {
+            assert!(receipt.is_err());
+            continue;
+        }
+        let receipt = receipt.unwrap();
+        assert_eq!(
+            receipt["restored_execution_ids"],
+            json!([before["runtime"]["steps"][0]["id"]])
+        );
+        let restored = runtime(&e, &root);
+        assert_eq!(
+            restored["runtime"]["steps"][0],
+            before["runtime"]["steps"][0]
+        );
+        assert_eq!(
+            restored["runtime"]["steps"].as_array().unwrap()[1..],
+            applied["runtime"]["steps"].as_array().unwrap()[1..]
+        );
+        assert_eq!(
+            restored["runtime"]["active_plan_revision_id"],
+            applied["runtime"]["active_plan_revision_id"]
+        );
+        assert_eq!(
+            e.execute("workflow.change.reconcile", command).unwrap(),
+            receipt
+        );
+        let after = e.store.snapshot().unwrap();
+        assert_eq!(
+            after.configuration(result["id"].as_str().unwrap()).unwrap(),
+            state.configuration(result["id"].as_str().unwrap()).unwrap()
+        );
+        assert!(
+            cmd(
+                &e,
+                "workflow.change.reconcile",
+                Some(&root),
+                json!({"change_id":result["id"]})
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn native_plan_change_outlives_its_call_but_retains_takeover_and_control_fences() {
+    for intervention in ["none", "takeover", "pause"] {
+        let directory = tempfile::tempdir().unwrap();
+        let mut e = engine(directory.path());
+        let root = start(&e, document());
+        let before = runtime(&e, &root);
+        let mut document = before["runtime"]["plan"]["document"].clone();
+        document["steps"][1]["name"] = json!("经理批准的后续步骤");
+        let changes = json!({"plan_revision_id":before["runtime"]["active_plan_revision_id"],"reason":"调整后续阶段名称","operations":[{"type":"replace_plan","document":document}]});
+        let preview = e
+            .query(
+                "workflow.change.preview",
+                &json!({"id":root,"changeset":changes}),
+                4,
+            )
+            .unwrap();
+        let original = e
+            .store
+            .snapshot()
+            .unwrap()
+            .configuration(&root)
+            .unwrap()
+            .clone();
+        let mut arguments = json!({"changeset":changes,"preview_hash":preview["preview_hash"],"instance_id":root,"plan_revision_id":before["runtime"]["active_plan_revision_id"],"expected_revision":original.revision,"control_version":before["runtime"]["control_version"]});
+        let pending = cmd(&e,"workflow.decision.request",Some(&root),json!({"operation":"workflow.change.apply","reason":"请人类批准此确切调整","arguments":arguments})).unwrap();
+        let signed = cmd(
+            &e,
+            "workflow.decision.resolve",
+            pending["id"].as_str(),
+            json!({"approved":true,"reason":"批准当前确切计划变更"}),
+        )
+        .unwrap();
+        arguments["decision_ref"] = signed["decision_ref"].clone();
+        e.harness = Arc::new(NativeManager {
+            plan_change: Some(arguments),
+            ..Default::default()
+        });
+        let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4"})).unwrap();
+        cmd(
+            &e,
+            "workflow.driver.select",
+            Some(&root),
+            json!({"mode":"agent"}),
+        )
+        .unwrap();
+        let mut change_id = None;
+        for _ in 0..16 {
+            drive_manager_cycle(&e, true, false);
+            let state = e.store.snapshot().unwrap();
+            if let Some(change) = state
+                .governance
+                .iter()
+                .find(|row| row.r#type == "workflow_change")
+            {
+                change_id = Some(change.id.clone());
+                assert_eq!(change.data["status"], "prepared");
+                break;
+            }
+        }
+        let change_id = change_id.expect("the real native manager must prepare its plan change");
+        for _ in 0..3 {
+            drive_manager_cycle(&e, false, false);
+        }
+        let state = e.store.snapshot().unwrap();
+        assert!(
+            state
+                .governance
+                .iter()
+                .any(|row| row.r#type == "controller_tool_call"
+                    && row.data["method"] == "workflow.change.apply"
+                    && row.data["status"] == "succeeded"
+                    && row.revision > 1)
+        );
+        assert!(
+            state
+                .turns
+                .iter()
+                .any(|turn| turn.status == TurnStatus::Completed)
+        );
+        assert!(state.executions.iter().all(|worker| worker.writer_revoked));
+        match intervention {
+            "takeover" => {
+                cmd(
+                    &e,
+                    "orchestration.takeover",
+                    opened["id"].as_str(),
+                    json!({}),
+                )
+                .unwrap();
+            }
+            "pause" => {
+                cmd(
+                    &e,
+                    "workflow.pause",
+                    Some(&root),
+                    json!({"reason":"人类暂停原计划"}),
+                )
+                .unwrap();
+            }
+            _ => {}
+        }
+        for _ in 0..3 {
+            e.drive_workflow_changes().unwrap();
+        }
+        let state = e.store.snapshot().unwrap();
+        let change = state.configuration(&change_id).unwrap();
+        if intervention == "none" {
+            assert_eq!(change.data["status"], "applied", "{}", change.data["error"]);
+            let after = runtime(&e, &root);
+            assert_ne!(
+                after["runtime"]["active_plan_revision_id"],
+                before["runtime"]["active_plan_revision_id"]
+            );
+            assert_eq!(
+                after["runtime"]["plan"]["document"]["steps"][1]["name"],
+                "经理批准的后续步骤"
+            );
+            e.drive_workflow_changes().unwrap();
+            assert_eq!(
+                runtime(&e, &root)["runtime"]["active_plan_revision_id"],
+                after["runtime"]["active_plan_revision_id"]
+            );
+        } else {
+            assert_eq!(change.data["status"], "conflicted");
+            assert_eq!(
+                runtime(&e, &root)["runtime"]["active_plan_revision_id"],
+                before["runtime"]["active_plan_revision_id"]
+            );
+        }
     }
 }
 
@@ -2519,6 +2901,177 @@ fn changes_before_send_admission_are_coalesced_into_one_pending_wakeup() {
     );
     assert_eq!(state.orchestration_wakeups.len(), 1);
     assert!(state.turns.is_empty());
+}
+
+#[test]
+fn manager_notices_show_original_human_feedback_after_consumption_and_restart() {
+    let directory = tempfile::tempdir().unwrap();
+    let e = engine(directory.path());
+    let root = start(&e, document());
+    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4"})).unwrap();
+    let controller = opened["id"].as_str().unwrap();
+    let notify = |controller: &str, instance: &str, title: &str, execution: Option<&str>| {
+        let notice_id = id();
+        e.store
+            .seed_fixture_state(None, &mut |state| {
+                let mut notice = state.configuration(controller)?.clone();
+                notice.id = notice_id.clone();
+                notice.r#type = "controller_interaction".into();
+                notice.definition_id = controller.into();
+                notice.name = title.into();
+                let evidence = execution.map(|execution| json!({"instance_id":instance,"execution_id":execution})).into_iter().collect::<Vec<_>>();
+                notice.data = json!({"instance_id":instance,"plan_revision_id":state.configuration(instance)?.data["active_plan_revision_id"],"interaction":{"title":title,"materials":[],"evidence":evidence}});
+                notice.immutable = true;
+                notice.content_hash = content_digest(&notice.refs, &notice.data);
+                state.governance.push(notice);
+                Ok(Value::Null)
+            })
+            .unwrap();
+        notice_id
+    };
+    cmd(
+        &e,
+        "orchestration.input",
+        Some(controller),
+        json!({"input":"请求之前的指令"}),
+    )
+    .unwrap();
+    let first = notify(controller, &root, "请明确测试范围", None);
+    let original = "选择 B：包含最小实际断言。\n保留 **原始格式** 和 <页面> 文字。";
+    cmd(
+        &e,
+        "orchestration.input",
+        Some(controller),
+        json!({"input":original}),
+    )
+    .unwrap();
+    cmd(
+        &e,
+        "orchestration.input",
+        Some(controller),
+        json!({"input":"补充：验证欢迎文字"}),
+    )
+    .unwrap();
+    let second = notify(controller, &root, "请明确页面文案", None);
+    cmd(
+        &e,
+        "orchestration.input",
+        Some(controller),
+        json!({"input":"页面使用：欢迎使用 DevDesk"}),
+    )
+    .unwrap();
+
+    let third = notify(
+        controller,
+        &root,
+        "请补充步骤输入",
+        Some("supplemental-step"),
+    );
+    let direct_id = id();
+    {
+        use devdesk_core::concurrency::*;
+        let state = e.store.snapshot().unwrap();
+        let task = json!({"source":{"workflow_instance_id":root,"execution_id":"supplemental-step","plan_revision_id":state.configuration(&root).unwrap().data["active_plan_revision_id"]},"agent":{"id":"simplified-agent-analyst:4"},"inputs":{},"input_sources":{},"supplemental_input":"选择B\n保留七项断言"});
+        let mut changes = Vec::new();
+        let mut guards = Vec::new();
+        for (kind, definition, record_id, data) in [
+            (
+                "workflow_intent",
+                "supplemental-step",
+                direct_id.clone(),
+                json!({"configured":true,"method":"conversation.send","command":{"payload":{"input":task.to_string()}}}),
+            ),
+            (
+                "workflow_decision",
+                root.as_str(),
+                id(),
+                json!({"operation":"input","execution_id":"supplemental-step","actor":{"kind":"human"}}),
+            ),
+        ] {
+            let mut record = state.configuration(controller).unwrap().clone();
+            record.id = record_id;
+            record.r#type = kind.into();
+            record.definition_id = definition.into();
+            record.data = data;
+            record.content_hash = content_digest(&record.refs, &record.data);
+            record.revision = 1;
+            let resource = ResourceKey::new("governance", &record.id);
+            let value = record.to_storage();
+            guards.push(ResourceVersion {
+                resource: resource.clone(),
+                revision: 0,
+            });
+            changes.push(ResourceChange { resource, value });
+        }
+        e.store
+            .commit_changes(&PreparedChangeSet {
+                command_id: id(),
+                fingerprint: id(),
+                read_set: ReadSet::new(guards).unwrap(),
+                changes,
+                result: Value::Null,
+                time: 1,
+            })
+            .unwrap();
+    }
+
+    let foreign_root = start(&e, document());
+    let foreign = cmd(&e,"orchestration.open",Some(&foreign_root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4"})).unwrap();
+    let foreign_controller = foreign["id"].as_str().unwrap();
+    notify(foreign_controller, &foreign_root, "其他流程的问题", None);
+    cmd(
+        &e,
+        "orchestration.input",
+        Some(foreign_controller),
+        json!({"input":"其他流程的反馈"}),
+    )
+    .unwrap();
+
+    let read = |e: &Engine| {
+        e.query("query.orchestration", &json!({"root_instance_id":root}), 1)
+            .unwrap()
+    };
+    let before = read(&e);
+    let first_feedback = &before["interactions"][0]["feedback"];
+    assert_eq!(before["interactions"][0]["id"], first);
+    assert_eq!(first_feedback.as_array().unwrap().len(), 2);
+    assert_eq!(first_feedback[0]["input"], original);
+    assert_eq!(first_feedback[1]["input"], "补充：验证欢迎文字");
+    assert_eq!(before["interactions"][1]["id"], second);
+    assert_eq!(
+        before["interactions"][1]["feedback"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        before["interactions"][1]["feedback"][0]["input"],
+        "页面使用：欢迎使用 DevDesk"
+    );
+    assert_eq!(before["interactions"][2]["id"], third);
+    assert_eq!(
+        before["interactions"][2]["feedback"],
+        json!([{"id":direct_id,"input":"选择B\n保留七项断言"}])
+    );
+    e.store
+        .seed_fixture_state(None, &mut |state| {
+            for input in state
+                .governance
+                .iter_mut()
+                .filter(|row| row.r#type == "controller_input")
+            {
+                input.data["consumed"] = json!(true);
+                input.revision += 1;
+                input.content_hash = content_digest(&input.refs, &input.data);
+            }
+            Ok(Value::Null)
+        })
+        .unwrap();
+    assert_eq!(read(&e)["interactions"], before["interactions"]);
+    drop(e);
+    let reopened = engine(directory.path());
+    assert_eq!(read(&reopened)["interactions"], before["interactions"]);
 }
 
 #[test]

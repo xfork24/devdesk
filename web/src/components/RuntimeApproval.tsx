@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { displayText } from "../display-text";
 import { ActionButton } from "./ActionFeedback";
+import { ManagerDisclosure } from "./ManagerDisclosure";
 import { DiscussionLink } from "./reading";
 import type { Request, Row } from "./rpc-types";
 
@@ -43,7 +44,7 @@ export function RuntimeApproval({
   }
   return (
     <article className="manager-interaction" aria-label="运行时工具审批">
-      <details className="manager-disclosure" open>
+      <ManagerDisclosure className="manager-disclosure" open>
         <summary>
           <strong>运行时工具审批</strong>
           <span className="manager-interaction-status">待审批</span>
@@ -79,7 +80,7 @@ export function RuntimeApproval({
             </p>
           )}
         </div>
-      </details>
+      </ManagerDisclosure>
     </article>
   );
 }

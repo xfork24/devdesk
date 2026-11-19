@@ -206,10 +206,10 @@ impl Engine {
                 }
                 Err(error) => {
                     self.journal_conversation_failure(session, &turn.id, &error)?;
-                    if error.execution_failure.is_some_and(|f| {
-                        f.kind == ExecutionFailureKind::Technical
-                            && f.effect == ExecutionFailureEffect::NotApplied
-                    }) {
+                    if error
+                        .execution_failure
+                        .is_some_and(|f| f.effect == ExecutionFailureEffect::NotApplied)
+                    {
                         self.finish_conversation(
                             session,
                             &turn.id,
@@ -351,10 +351,10 @@ impl Engine {
             if error.code == "conversation_dispatch_suspended" {
                 return Ok(true);
             }
-            if error.execution_failure.is_some_and(|f| {
-                f.kind == ExecutionFailureKind::Technical
-                    && f.effect == ExecutionFailureEffect::NotApplied
-            }) {
+            if error
+                .execution_failure
+                .is_some_and(|f| f.effect == ExecutionFailureEffect::NotApplied)
+            {
                 self.finish_conversation(
                     &start.request.session,
                     &start.turn.id,

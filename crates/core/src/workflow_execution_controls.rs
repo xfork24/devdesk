@@ -30,8 +30,19 @@ impl WorkflowCommit<'_> {
             &execution.id,
         )?;
         self.witness([version(&marker)])?;
-        if marker.value.is_none() {
-            self.new_record(record("workflow_stop",execution.id.clone(),resources.record.scope.clone(),reason.into(),1,None,json!({"actor":if self.coordinator_origin.is_none(){Some(self.context.actor())}else{None},"origin":self.coordinator_origin,"reason":reason}),true),&format!("workflow-stop:{}",execution.id))?;
+        if marker.value.is_none() || self.coordinator_origin.is_none() {
+            let history = one(
+                self.engine.store.as_ref(),
+                "workflow_stop_history",
+                &execution.id,
+            )?;
+            self.witness([version(&history)])?;
+            let kind = if history.value.is_some() {
+                "workflow_stop_reassertion"
+            } else {
+                "workflow_stop"
+            };
+            self.new_record(record(kind,execution.id.clone(),resources.record.scope.clone(),reason.into(),1,None,json!({"actor":if self.coordinator_origin.is_none(){Some(self.context.actor())}else{None},"origin":self.coordinator_origin,"reason":reason}),true),&format!("workflow-stop:{}",execution.id))?;
         }
         if let Some(session) = &execution.session_id {
             let turns = one(self.engine.store.as_ref(), "session_active_turns", session)?;
@@ -227,6 +238,39 @@ impl Engine {
                 next.turn_id = None;
                 next.status = StepExecutionStatus::Running;
                 next.budget_wait_started = None;
+                let input = if let Some(reference) = commit.material_input.clone() {
+                    commit.grant_material_input(&resources, &next, &reference)?;
+                    let reader = resources.instance.plan.definitions.values().any(|r| {
+                        r.r#type == "tool"
+                            && r.data["qualified_name"] == "workflow.outputs.read"
+                            && step.access.tool_refs.contains(&r.id)
+                    });
+                    if reader {
+                        reference.rendered()
+                    } else {
+                        let (_, value, reads) = self.workflow_material_source(
+                            &resources.instance.project_id,
+                            &resources.instance.root_instance_id,
+                            &reference.source_id,
+                            &reference.pointer,
+                        )?;
+                        commit.witness(reads.versions().iter().cloned())?;
+                        require(
+                            value.to_string().len() <= 32768,
+                            "大材料需要原步骤已授权的 workflow.outputs.read 完整读取能力",
+                        )?;
+                        let mut rendered: Value =
+                            serde_json::from_str(&reference.rendered()).unwrap();
+                        rendered["value"] = value;
+                        rendered["complete"] = json!(true);
+                        rendered["instructions"] = json!(
+                            "Existing platform evidence is included verbatim. This is not a Human answer or approval; preserve the original task and Human gates."
+                        );
+                        rendered.to_string()
+                    }
+                } else {
+                    input
+                };
                 let rendered = render_source_task(&resources.instance, step, &next, Some(&input))?;
                 let session = one(
                     self.store.as_ref(),
@@ -260,6 +304,12 @@ impl Engine {
             method.rsplit('.').next().unwrap_or(method),
             reason,
         )?;
-        commit.finish(fingerprint,json!({"id":root.record.id,"accepted":true,"execution":next,"plan_revision_id":root.instance.active_plan_revision_id,"control_version":root.instance.control_version}))
+        let mut result = json!({"id":root.record.id,"accepted":true,"execution":next,"plan_revision_id":root.instance.active_plan_revision_id,"control_version":root.instance.control_version});
+        if let Some(reference) = &commit.material_input {
+            result["input_origin"] = json!("platform_material");
+            result["human_decision_required"] = json!(false);
+            result["material_input_ref"] = json!(reference.reference());
+        }
+        commit.finish(fingerprint, result)
     }
 }

@@ -8,6 +8,18 @@ use crate::{
 };
 impl WorkflowCommit<'_> {
     pub fn authorize(&mut self, root: &WorkflowHeaderFacts) -> Result<()> {
+        let mut human_input = false;
+        if self.method == "workflow.step.input" {
+            let input = text(&self.command.payload, "input")?;
+            // Preserve an actual Human reply in full, even when it quotes
+            // platform evidence. Only explicit references opt into transfer.
+            if !crate::workflow_material_inputs::MaterialInput::is_reference(&input) {
+                human_input = self.relays_human_input(root)?;
+            }
+            if !human_input {
+                self.material_input = self.resolve_material_input(root, &input)?;
+            }
+        }
         let actor = self.context.actor();
         let method = self.method;
         if matches!(actor, WorkflowActor::Human) {
@@ -35,14 +47,14 @@ impl WorkflowCommit<'_> {
             .as_ref()
             .is_some_and(|v| v["governed"] == true)
         {
-            if method == "workflow.step.input" && !self.relays_human_input(root)? {
+            if method == "workflow.step.input" && self.material_input.is_none() && !human_input {
                 return Err(err(
                     "human_input_required",
-                    "必须由人类回答；经理只能原样转交本轮收到的用户指令",
+                    "需要人类判断的问题必须由人类回答；已有平台材料请先 workflow.outputs.read，再使用返回的 input_ref 原样转交，无需人工确认",
                 ));
             }
             if method == "workflow.change.apply" {
-                self.require_signed_change(root)?;
+                self.require_signed_request(root)?;
             }
         }
         let driver = one(
@@ -122,8 +134,10 @@ impl WorkflowCommit<'_> {
                     _ => method.rsplit('.').next().unwrap_or(method),
                 };
                 controller.policy.permits(operation)?;
-                if controller.policy.human_operations.contains(operation) {
-                    self.require_signed_change(root)?;
+                if controller.policy.human_operations.contains(operation)
+                    && self.material_input.is_none()
+                {
+                    self.require_signed_request(root)?;
                 }
                 let lease = one(
                     self.engine.store.as_ref(),
@@ -235,6 +249,12 @@ impl WorkflowCommit<'_> {
         else {
             return Ok(false);
         };
+        if self.command.payload["decision_ref"].is_string() {
+            // A Human may approve the exact proposed supplemental input.
+            // This never treats manager-authored text as a Human message.
+            self.require_signed_request(root)?;
+            return Ok(true);
+        }
         let Some(input) = self.command.payload["input"]
             .as_str()
             .filter(|s| !s.trim().is_empty())
@@ -285,13 +305,13 @@ impl WorkflowCommit<'_> {
                     && r["data"]["epoch"] == *epoch
             }))
     }
-    pub(crate) fn require_signed_change(&mut self, root: &WorkflowHeaderFacts) -> Result<()> {
+    pub(crate) fn require_signed_request(&mut self, root: &WorkflowHeaderFacts) -> Result<()> {
         let mut arguments = self.command.payload.clone();
         let id = arguments
             .as_object_mut()
             .and_then(|o| o.remove("decision_ref"))
             .and_then(|v| v.as_str().map(str::to_owned))
-            .ok_or_else(|| err("human_decision_required", "计划变更需要人类批准确切原预演"))?;
+            .ok_or_else(|| err("human_decision_required", "该操作需要人类批准确切请求"))?;
         let row = one(self.engine.store.as_ref(), "governance", &id)?;
         let raw = row
             .value
@@ -305,7 +325,7 @@ impl WorkflowCommit<'_> {
                 && raw["data"]["plan_revision_id"] == root.instance.active_plan_revision_id
                 && raw["data"]["request"]["operation"] == self.method
                 && raw["data"]["request"]["arguments"] == arguments,
-            "人类签署不属于该确切计划变更",
+            "人类签署不属于该确切请求",
         )?;
         let pending = one(
             self.engine.store.as_ref(),

@@ -193,6 +193,21 @@ impl Engine {
             }),
         });
         if terminal && accepted == TurnStatus::Completed {
+            if !forced
+                && let Some((checkpoint, reads)) = self.workspace_turn_checkpoint(session, tid)?
+            {
+                for original in reads.versions() {
+                    if let Some(previous) =
+                        guards.insert(original.resource.clone(), original.revision)
+                    {
+                        require(previous == original.revision, "工作区检查点依据发生变化")?;
+                    }
+                }
+                changes.push(ResourceChange {
+                    resource: ResourceKey::new("governance", &checkpoint.id),
+                    value: self.store.encode_runtime_record(&checkpoint)?,
+                });
+            }
             let key = ResourceKey::new("governance", format!("conversation-capture:{digest}"));
             guards.insert(key.clone(), 0);
             let scope = if session.scope == Some(SessionScope::Global) {

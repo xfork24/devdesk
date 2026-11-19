@@ -80,7 +80,21 @@ pub fn append_workflow_events(before: &EngineeringState, state: &mut Engineering
                 .iter()
                 .find(|i| i.id == row.definition_id && i.r#type == "workflow_instance")
             {
-                facts.push((target(instance), json!({"kind":"decision.changed","decision_id":row.id,"status":row.data["status"],"decision_ref":row.data["decision_ref"]})));
+                let mut fact = json!({"kind":"decision.changed","decision_id":row.id,"status":row.data["status"],"decision_ref":row.data["decision_ref"]});
+                if let Some(reference) = row.data.get("material_input_ref") {
+                    fact["material_input_ref"] = reference.clone();
+                }
+                facts.push((target(instance), fact));
+            }
+        } else if row.r#type == "workflow_reconciliation"
+            && previous.is_none_or(|r| r.data["status"] != row.data["status"])
+        {
+            if let Some(instance) = state
+                .governance
+                .iter()
+                .find(|r| r.id == row.data["instance_id"] && r.r#type == "workflow_instance")
+            {
+                facts.push((target(instance),json!({"kind":"execution.reconciled","reconciliation_id":row.id,"execution_id":row.data["execution_id"],"status":row.data["status"],"error":row.data["error"]})));
             }
         } else if row.r#type == "workflow_confirmation"
             && previous.is_none()

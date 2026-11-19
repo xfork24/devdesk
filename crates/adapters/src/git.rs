@@ -6,6 +6,8 @@ use std::{process::Command, time::Duration};
 mod delivery_projection;
 #[path = "git_test_configuration.rs"]
 mod test_configuration;
+#[path = "git_workspace_continuation.rs"]
+mod workspace_continuation;
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct RepositoryFacts {
@@ -79,6 +81,7 @@ impl CliGit {
         command
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_OPTIONAL_LOCKS", "0")
             .env("GIT_TERMINAL_PROMPT", "0");
         command
             .args([
@@ -545,6 +548,14 @@ impl CliGit {
         )
     }
     pub fn validate_view(&self, c: &GitContext, revision: &str) -> Result<()> {
+        self.validate_working_view(c, revision, true)
+    }
+    fn validate_working_view(
+        &self,
+        c: &GitContext,
+        revision: &str,
+        continuation: bool,
+    ) -> Result<()> {
         let repo = self.context(c)?;
         let path = Path::new(&c.source.worktree);
         self.verify_worktree(&repo, path, &c.source.branch)?;
@@ -565,6 +576,16 @@ impl CliGit {
             .output(path, &["status", "--porcelain", "--untracked-files=normal"])?
             .is_empty()
         {
+            if continuation {
+                match self.native_workspace_continuation(c, revision) {
+                    Ok(true) => return Ok(()),
+                    Ok(false) => {}
+                    Err(error) => {
+                        return Err(recovery("未封存现场与原执行检查点无法核对，保留现场")
+                            .with_context("workspace continuation", json!({"cause":error})));
+                    }
+                }
+            }
             return Err(recovery(
                 "执行 worktree 存在未封存修改，需保留现场并核对来源、封存或恢复后再派发",
             ));
@@ -1321,7 +1342,7 @@ impl CliGit {
                 else {
                     return Ok(None);
                 };
-                self.validate_view(context, &revision)?;
+                self.validate_working_view(context, &revision, false)?;
                 return Ok(Some(RepositoryReceipt::Snapshot { revision }));
             }
             RepositoryAction::Connect {
@@ -1820,7 +1841,10 @@ impl ports::Git for CliGit {
         self.oid(&repo, &format!("refs/heads/{}", c.source.branch))
     }
     fn validate_workspace(&self, c: &GitContext, revision: &str) -> Result<()> {
-        self.validate_view(c, revision)
+        self.validate_working_view(c, revision, false)
+    }
+    fn working_state(&self, c: &GitContext, revision: &str) -> Result<Option<Value>> {
+        self.pending_work_state(c, revision).map(Some)
     }
     fn candidate(
         &self,

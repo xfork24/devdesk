@@ -74,6 +74,11 @@ impl Engine {
                 return Ok(out);
             }
             let mut out = json!(execution);
+            if execution.status == StepExecutionStatus::NeedsReconciliation
+                && let Some((failed, previous)) = self.workspace_recovery_source(&execution)?
+            {
+                out["reconciliation"] = json!({"operation":"workflow.execution.reconcile","available_without_human_signature":true,"failed_turn_id":failed,"checkpoint_turn_id":previous,"basis":"Original startup reported not_applied and this execution has a sealed workspace continuation checkpoint. Reconcile verifies unchanged files, original wait timing, remaining budget and actual stop authority before restoring. Decide whether the situation additionally needs Human judgment."});
+            }
             if let Some(progress) = self.publication_read_progress(&project, &root, &execution)? {
                 out["publication"] = progress;
             }
@@ -178,55 +183,34 @@ impl Engine {
         let budget =
             p["max_bytes"].as_u64().unwrap_or(16384).clamp(1024, 65536) / ids.len().max(1) as u64;
         for id in ids {
-            let row = restored(self, &one(self.store.as_ref(), "governance", &id)?)?;
-            require(
-                row.immutable
-                    && row.scope.project_id() == Some(project)
-                    && matches!(row.r#type.as_str(), "workflow_output" | "typed_material"),
-                "原产物不属于当前项目",
-            )?;
-            if row.r#type == "typed_material" {
-                require(row.data["root_instance_id"] == root, "材料跨流程根")?;
-            } else {
-                let e = text(&row.data, "execution_id")?;
-                let owner = one(self.store.as_ref(), "workflow_execution_owner", &e)?;
-                let id = if let Some(raw) = &owner.value {
-                    text(raw, "instance_id")?
-                } else {
-                    let history = restored(
-                        self,
-                        &one(self.store.as_ref(), "workflow_history_source", &e)?,
-                    )?;
-                    text(&history.data, "workflow_instance_id")?
-                };
-                let source = one(self.store.as_ref(), "workflow_run_authority", &id)?;
-                require(
-                    source
-                        .value
-                        .as_ref()
-                        .is_some_and(|v| v["root_instance_id"] == root),
-                    "产物跨流程根",
-                )?;
+            let pointer = p["pointer"].as_str().unwrap_or("");
+            let (row, value, _) = self.workflow_material_source(project, root, &id, pointer)?;
+            let input_ref = crate::workflow_material_inputs::MaterialInput {
+                source_id: id,
+                pointer: pointer.into(),
+                value_digest: configuration_hash(&value),
             }
-            let value = row.data["value"]
-                .pointer(p["pointer"].as_str().unwrap_or(""))
-                .ok_or_else(|| err("invalid_params", "产物字段不存在"))?;
+            .reference();
             let mut request = p.clone();
             request["max_bytes"] = json!(budget.max(1));
-            let chunk = crate::orchestration::read_chunk(value, &request)?;
-            if chunk["next_offset"].is_null() && chunk["offset"] == 0 {
+            let chunk = crate::orchestration::read_chunk(&value, &request)?;
+            let mut raw = if chunk["next_offset"].is_null() && chunk["offset"] == 0 {
                 let mut raw = json!(row);
                 raw["data"]["value"] = value.clone();
-                out.push(raw);
+                raw
             } else {
                 let mut data = row.data.clone();
                 data.as_object_mut().unwrap().remove("value");
                 let mut raw = chunk;
                 raw["id"] = json!(row.id);
                 raw["data"] = data;
-                out.push(raw);
-            }
+                raw
+            };
+            raw["input_ref"] = json!(input_ref);
+            out.push(raw);
         }
-        Ok(json!({"outputs":out}))
+        Ok(
+            json!({"outputs":out,"material_transfer":{"tool":"workflow.step.input","input":"You may forward an output input_ref as existing platform evidence; the receiver can read that exact source field. Decide whether Human judgment is needed for the situation. An explicit decision.request remains a Human request and is never automatically bypassed."}}),
+        )
     }
 }

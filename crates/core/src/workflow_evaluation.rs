@@ -48,6 +48,13 @@ impl Engine {
         resources: &WorkflowResources,
     ) -> Result<()> {
         let execution = &resources.execution;
+        let child_failure = execution
+            .failure
+            .as_ref()
+            .is_some_and(|f| f.code == "child_execution_failed")
+            && root.instance.plan.document.steps.iter().any(|s| {
+                s.key == execution.step && matches!(s.executor, StepExecutor::Workflow { .. })
+            });
         let timed = execution.time_budget.is_some()
             && !matches!(
                 execution.status,
@@ -60,7 +67,8 @@ impl Engine {
         if !matches!(
             execution.status,
             StepExecutionStatus::Running | StepExecutionStatus::NeedsReconciliation
-        ) && !root.instance.cancel_requested
+        ) && !child_failure
+            && !root.instance.cancel_requested
             && !timed
         {
             return Ok(());
@@ -107,7 +115,7 @@ impl Engine {
             commit.finish(&fingerprint, json!({"id":next.id}))?;
             return Ok(());
         }
-        if execution.status == StepExecutionStatus::NeedsReconciliation {
+        if execution.status == StepExecutionStatus::NeedsReconciliation && !child_failure {
             return Ok(());
         }
         if let Err(error) = self.require_execution_time(resources) {
@@ -127,7 +135,7 @@ impl Engine {
             commit.finish(&fingerprint, json!({"id":next.id}))?;
             return Ok(());
         }
-        if execution.status != StepExecutionStatus::Running {
+        if execution.status != StepExecutionStatus::Running && !child_failure {
             return Ok(());
         }
         let step = resources
@@ -403,6 +411,14 @@ impl Engine {
                         self.native_child_outputs(&mut commit, resources, step)?
                     {
                         files=self.prepare_native_outputs(&mut commit,resources,&mut next,&json!({"status":"completed","summary":"本次实际子流程已经完成","outputs":outputs}),&proof,finished)?;
+                    } else if child_failure {
+                        // This is a projection of the child, not an unknown
+                        // operation performed by the parent. Re-read the real
+                        // children above before clearing only this projection.
+                        next.status = StepExecutionStatus::Running;
+                        next.failure = None;
+                        next.finished = None;
+                        next.reason = "原子流程已恢复，继续等待实际子流程结果".into();
                     }
                 }
                 StepExecutor::Control => {}
@@ -552,18 +568,22 @@ impl Engine {
                                 e.status,
                                 StepExecutionStatus::Running
                                     | StepExecutionStatus::NeedsReconciliation
-                            ) || (e
-                                .time_budget
+                            ) || e
+                                .failure
                                 .as_ref()
-                                .is_some_and(|b| b.next_deadline_at.is_some())
-                                && !matches!(
-                                    e.status,
-                                    StepExecutionStatus::Completed
-                                        | StepExecutionStatus::Cancelled
-                                        | StepExecutionStatus::Skipped
-                                        | StepExecutionStatus::Failed
-                                        | StepExecutionStatus::NeedsReconciliation
-                                ))
+                                .is_some_and(|f| f.code == "child_execution_failed")
+                                || (e
+                                    .time_budget
+                                    .as_ref()
+                                    .is_some_and(|b| b.next_deadline_at.is_some())
+                                    && !matches!(
+                                        e.status,
+                                        StepExecutionStatus::Completed
+                                            | StepExecutionStatus::Cancelled
+                                            | StepExecutionStatus::Skipped
+                                            | StepExecutionStatus::Failed
+                                            | StepExecutionStatus::NeedsReconciliation
+                                    ))
                                 || (root.instance.cancel_requested
                                     && !matches!(
                                         e.status,

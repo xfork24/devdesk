@@ -87,7 +87,7 @@ fn fixture(
         "root",
         "workflow_instance",
         "root",
-        json!({"owner_id":project,"root_instance_id":"root","status":"running","steps":steps,"plan":{"$source":"not-a-restorable-plan","large_history":"x".repeat(100_000)}}),
+        json!({"owner_id":project,"root_instance_id":"root","active_plan_revision_id":"frozen-plan","control_version":3,"status":"running","steps":steps,"plan":{"$source":"not-a-restorable-plan","large_history":"x".repeat(100_000)}}),
     );
     record(
         &conn,
@@ -191,6 +191,12 @@ fn summaries_are_bounded_and_never_restore_unreadable_history_or_authorize_actio
     assert!(driver.observed_only && driver.waiting_more);
     assert_eq!(driver.waiting.len(), 20);
     assert_eq!(driver.instance_revision, 7);
+    for step in &driver.waiting {
+        assert_eq!(step.revision, 7);
+        assert_eq!(step.plan_revision_id, "frozen-plan");
+        assert_eq!(step.control_version, 3);
+        assert_eq!(step.step_revision, 1);
+    }
     assert_eq!(management.record.revision, 7);
     assert!(management.observed_only && management.children_more);
     assert_eq!(management.children.len(), 20);

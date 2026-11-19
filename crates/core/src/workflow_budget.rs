@@ -106,11 +106,24 @@ impl Engine {
         resources: &WorkflowResources,
         next: &mut StepExecution,
     ) -> Result<()> {
+        self.update_native_workflow_budget_with_wait(commit, root, resources, next, None)
+    }
+    pub(crate) fn update_native_workflow_budget_with_wait(
+        &self,
+        commit: &mut WorkflowCommit<'_>,
+        root: &WorkflowHeaderFacts,
+        resources: &WorkflowResources,
+        next: &mut StepExecution,
+        recovery_wait: Option<u64>,
+    ) -> Result<()> {
         let Some(started) = next.started else {
             return Ok(());
         };
         let clock = now();
         let mut intervals = Vec::<(u64, u64, bool)>::new();
+        if let Some(wait) = recovery_wait {
+            intervals.push((wait.max(started), clock, true));
+        }
         let mut current = root.record.id.clone();
         let mut seen = std::collections::BTreeSet::new();
         loop {

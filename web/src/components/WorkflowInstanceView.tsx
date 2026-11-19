@@ -6,6 +6,7 @@ import { ActionButton } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
 import { type Request, type Row } from "./rpc-types";
 import { ReadingLink, ReadState } from "./reading";
+import { WorkflowStepInput } from "./WorkflowStepInput";
 import { WorkflowReferences } from "./WorkflowReferences";
 import { WorkflowStageProgress } from "./WorkflowStageProgress";
 import { useReading } from "./reading-state";
@@ -83,7 +84,6 @@ export function WorkflowInstanceView({
     useActionFeedback();
   const [data, setData] = useState<Row>(),
     [busy, setBusy] = useState(false);
-  const [inputs, setInputs] = useState<Record<string, string>>({});
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [childOffset, setChildOffset] = useState(0);
   const [stepOffset, setStepOffset] = useState(0);
@@ -378,11 +378,6 @@ export function WorkflowInstanceView({
       });
       attempts.current.delete(key);
       drafts.current.delete(draftKey(executionId));
-      setInputs((previous) => {
-        const next = { ...previous };
-        delete next[executionId];
-        return next;
-      });
       setReasons((previous) => {
         const next = { ...previous };
         delete next[executionId];
@@ -765,37 +760,25 @@ export function WorkflowInstanceView({
                             ) : null}
                           </div>
                           {execution.status === "waiting_input" ? (
-                            <div className="workflow-step-inline-input">
-                              <label>
-                                补充本次任务
-                                <textarea
-                                  value={inputs[execution.id] || ""}
-                                  onChange={(event) => {
-                                    beginDraft(execution);
-                                    setInputs((previous) => ({
-                                      ...previous,
-                                      [execution.id]: event.target.value,
-                                    }));
-                                  }}
-                                />
-                              </label>
-                              <ActionButton
-                                type="button"
-                                disabled={busy || !inputs[execution.id]?.trim()}
-                                onClick={() =>
-                                  void act(
-                                    "workflow.step.input",
-                                    {
-                                      step: execution.step,
-                                      input: inputs[execution.id],
-                                    },
-                                    execution,
-                                  )
-                                }
-                              >
-                                提交补充输入
-                              </ActionButton>
-                            </div>
+                            <WorkflowStepInput
+                              key={`${projectId}:${record.id}:${execution.id}`}
+                              request={request}
+                              projectId={projectId}
+                              item={{
+                                instance_id: current.id,
+                                revision: current.revision,
+                                plan_revision_id:
+                                  runtime.active_plan_revision_id,
+                                control_version: runtime.control_version,
+                                step_revision:
+                                  activeData?.step_revisions?.[execution.id],
+                                execution_id: execution.id,
+                                step: execution.step,
+                              }}
+                              refresh={async () => {
+                                await Promise.all([load(true), refresh()]);
+                              }}
+                            />
                           ) : null}
                           {[
                             "waiting_confirmation",

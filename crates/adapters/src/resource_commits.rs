@@ -98,11 +98,73 @@ fn value(conn: &Connection, key: &ResourceKey) -> Result<Option<Value>> {
             let rows=load_table_filtered_params::<Value>(conn,"governance_records","id IN (SELECT id FROM governance_records WHERE type='controller_input' AND definition_id=?1 AND json_extract(data,'$.consumed')=0 ORDER BY rowid LIMIT 8)",&[&key.id])?;
             require(rows.iter().map(|r|r["data"]["input"].as_str().unwrap_or("").len()).sum::<usize>()<=65536,"原经理输入页超过预算")?;Ok(Some(json!(rows)))
         }
+        "controller_material_sources" => {
+            let (controller,epoch,session):(String,u64,String)=serde_json::from_str(&key.id).map_err(storage)?;
+            let mut q=conn.prepare_cached("SELECT c.id,source.value,coalesce(json_extract(c.data,'$.arguments.pointer'),'') FROM (SELECT id,data FROM governance_records WHERE type='controller_tool_call' AND definition_id=?1 AND json_extract(data,'$.epoch')=?2 AND json_extract(data,'$.session_id')=?3 AND json_extract(data,'$.method')='workflow.outputs.read' AND json_extract(data,'$.status')='succeeded' ORDER BY rowid DESC LIMIT 32) c,json_each(c.data,'$.arguments.ids') source LIMIT 128").map_err(storage)?;
+            let rows=q.query_map(rusqlite::params![controller,epoch,session],|r|Ok(json!({"call_id":r.get::<_,String>(0)?,"source_id":r.get::<_,String>(1)?,"pointer":r.get::<_,String>(2)?}))).map_err(storage)?.collect::<rusqlite::Result<Vec<_>>>().map_err(storage)?;
+            Ok(Some(json!(rows)))
+        }
+        "workflow_material_inputs" => Ok(Some(json!(load_table_filtered_params::<Value>(conn,"governance_records","id IN (SELECT id FROM governance_records WHERE type='workflow_material_input' AND definition_id=?1 ORDER BY rowid DESC LIMIT 64)",&[&key.id])?))),
         "workflow_step_decisions"=>{
             let rows=load_table_filtered_params::<Value>(conn,"governance_records","id IN (SELECT id FROM governance_records WHERE type='workflow_pending_decision' AND json_extract(data,'$.status')='pending' AND json_extract(data,'$.request.arguments.execution_id')=?1 ORDER BY rowid LIMIT 33)",&[&key.id])?;
             require(rows.len()<=32,"单个执行待决定项超过预算")?;Ok(Some(json!(rows)))
         }
-        "controller_interaction_page"=>Ok(Some(json!(load_table_filtered_params::<Value>(conn,"governance_records","id IN (SELECT id FROM governance_records WHERE type='controller_interaction' AND definition_id=?1 ORDER BY rowid DESC LIMIT 20)",&[&key.id])?))),
+        "controller_interaction_page" => {
+            let mut notices = load_table_filtered_params::<Value>(
+                conn,
+                "governance_records",
+                "id IN (SELECT id FROM governance_records WHERE type='controller_interaction' AND definition_id=?1 ORDER BY rowid DESC LIMIT 20)",
+                &[&key.id],
+            )?;
+            for notice in &mut notices {
+                // User messages belong to the notice preceding them in this
+                // controller's journal, up to its next notice. Consumption
+                // updates preserve rowid, so replies survive manager turns.
+                let notice_id = notice["id"].as_str().unwrap_or_default();
+                let replies = load_table_filtered_params::<Value>(
+                    conn,
+                    "governance_records",
+                    "id IN (SELECT reply.id FROM governance_records reply WHERE reply.type='controller_input' AND reply.definition_id=?1 AND json_extract(reply.data,'$.actor.kind')='human' AND reply.rowid>(SELECT rowid FROM governance_records WHERE id=?2) AND reply.rowid<coalesce((SELECT min(rowid) FROM governance_records WHERE type='controller_interaction' AND definition_id=?1 AND rowid>(SELECT rowid FROM governance_records WHERE id=?2)),9223372036854775807) ORDER BY reply.rowid DESC LIMIT 20)",
+                    &[&key.id, &notice_id],
+                )?;
+                let mut feedback = replies.iter().map(|reply| json!({
+                    "id": reply["id"],
+                    "input": reply["data"]["input"],
+                })).collect::<Vec<_>>();
+                let controller_inputs = feedback.iter().filter_map(|reply| reply["input"].as_str().map(str::to_owned)).collect::<std::collections::BTreeSet<_>>();
+                let references = ["materials", "evidence"].into_iter().flat_map(|field| notice["data"]["interaction"][field].as_array().into_iter().flatten()).filter_map(|reference| Some((reference["instance_id"].as_str()?.to_owned(), reference["execution_id"].as_str()?.to_owned()))).collect::<std::collections::BTreeSet<_>>();
+                for (instance, execution) in references {
+                    let inputs = load_table_filtered_params::<Value>(
+                        conn,
+                        "governance_records",
+                        "id IN (SELECT reply.id FROM governance_records reply WHERE reply.type='workflow_intent' AND reply.definition_id=?1 AND json_extract(reply.data,'$.method')='conversation.send' AND json_extract(reply.data,'$.configured')=1 AND NOT EXISTS(SELECT 1 FROM governance_records material WHERE material.type='workflow_material_input' AND material.definition_id=?1 AND json_extract(reply.data,'$.command.payload.client_message_id')=material.definition_id||':'||json_extract(material.data,'$.sequence')) AND reply.rowid>(SELECT rowid FROM governance_records WHERE id=?2) AND EXISTS(SELECT 1 FROM governance_records decision WHERE decision.type='workflow_decision' AND json_extract(decision.data,'$.operation')='input' AND json_extract(decision.data,'$.execution_id')=?1 AND json_extract(decision.data,'$.actor.kind') IN ('human','controller') AND decision.rowid>reply.rowid) AND reply.rowid<coalesce((SELECT min(later.rowid) FROM governance_records later WHERE later.type='controller_interaction' AND later.definition_id=?3 AND later.rowid>(SELECT rowid FROM governance_records WHERE id=?2) AND (EXISTS(SELECT 1 FROM json_each(later.data,'$.interaction.evidence') reference WHERE json_extract(reference.value,'$.execution_id')=?1) OR EXISTS(SELECT 1 FROM json_each(later.data,'$.interaction.materials') reference WHERE json_extract(reference.value,'$.execution_id')=?1))),9223372036854775807) ORDER BY reply.rowid DESC LIMIT 20)",
+                        &[&execution, &notice_id, &key.id],
+                    )?;
+                    for input in inputs {
+                        let raw = &input["data"]["command"]["payload"]["input"];
+                        let task = match source_views::task_descriptor(raw)? {
+                            Some(task) => task,
+                            None => match raw.as_str().and_then(|text| serde_json::from_str::<Value>(text).ok()) {
+                                Some(task) => task,
+                                None => continue,
+                            },
+                        };
+                        if task["source"]["workflow_instance_id"] != instance
+                            || task["source"]["execution_id"] != execution
+                            || (!notice["data"]["plan_revision_id"].is_null()
+                                && task["source"]["plan_revision_id"] != notice["data"]["plan_revision_id"])
+                        {
+                            continue;
+                        }
+                        if let Some(text) = task["supplemental_input"].as_str().filter(|text| !text.is_empty() && !controller_inputs.contains(*text)) {
+                            feedback.push(json!({"id":input["id"],"input":text}));
+                        }
+                    }
+                }
+                notice["feedback"] = json!(feedback);
+            }
+            Ok(Some(json!(notices)))
+        }
         "controller_runtime_events"=>{
             let (root,cursor):(String,u64)=serde_json::from_str(&key.id).map_err(storage)?;
             let mut q=conn.prepare_cached("SELECT id,target,kind,detail,time FROM events INDEXED BY events_workflow_root WHERE kind='workflow.runtime' AND json_extract(CASE WHEN kind='workflow.runtime' THEN detail ELSE '{}' END,'$.root_instance_id')=?1 AND id>?2 ORDER BY id LIMIT 32").map_err(storage)?;
@@ -152,7 +214,7 @@ fn value(conn: &Connection, key: &ResourceKey) -> Result<Option<Value>> {
             Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT o.id FROM governance_records o JOIN governance_records c ON c.id=json_extract(o.data,'$.provenance.call_id') AND c.type='platform_call' WHERE o.type='workflow_output' AND o.immutable=1 AND json_extract(o.data,'$.value.owner_id')=?2 AND json_extract(o.data,'$.value.workspace_id')=?3 AND json_extract(o.data,'$.value.revision')=?4 AND json_extract(o.data,'$.provenance.kind')='platform' AND json_extract(o.data,'$.provenance.tool') IN ('workspace.snapshot','workspace.checkpoint') AND json_extract(c.data,'$.request.instance_id')=?1 AND json_extract(c.data,'$.status')='succeeded' ORDER BY o.rowid DESC LIMIT 1)",&[&instance,&owner,&workspace,&revision])?.into_iter().next())
         }
         "workflow_reconciliation_active"=>Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT id FROM governance_records WHERE type='workflow_reconciliation' AND definition_id=?1 AND json_extract(data,'$.status') IN ('prepared','inspecting') ORDER BY id LIMIT 1)",&[&key.id])?.into_iter().next()),
-        "workflow_stop_source"=>Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT id FROM governance_records WHERE type='workflow_stop' AND definition_id=?1 ORDER BY id LIMIT 1)",&[&key.id])?.into_iter().next()),
+        "workflow_stop_source"=>Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT s.id FROM governance_records s WHERE s.type IN ('workflow_stop','workflow_stop_reassertion') AND s.definition_id=?1 AND NOT EXISTS(SELECT 1 FROM governance_records r WHERE r.type='workflow_stop_reconciliation' AND r.definition_id=s.id AND r.immutable=1 AND json_extract(r.data,'$.issuer')='kernel_workspace_reconciliation') ORDER BY s.rowid DESC LIMIT 1)",&[&key.id])?.into_iter().next()),
         "session_active_turns"=>{
             let rows=load_table_filtered_params::<Value>(conn,"turns","id IN (SELECT id FROM turns WHERE session_id=?1 AND status NOT IN ('completed','failed','cancelled') ORDER BY id LIMIT 65)",&[&key.id])?;require(rows.len()<=64,"原会话活动轮次超过预算")?;Ok(Some(json!(rows)))
         }
@@ -285,9 +347,11 @@ fn value(conn: &Connection, key: &ResourceKey) -> Result<Option<Value>> {
         "workflow_run_authority" => conn.query_row("SELECT json_object('scope',json(scope),'project_id',json_extract(data,'$.project_id'),'root_instance_id',json_extract(data,'$.root_instance_id'),'status',json_extract(data,'$.status'),'paused',json(coalesce(data->'$.paused','false')),'cancel_requested',json(coalesce(data->'$.cancel_requested','false')),'parent_execution_id',json_extract(data,'$.parent_execution_id')) FROM governance_records WHERE id=?1 AND type='workflow_instance'",[&key.id],|r|r.get::<_,String>(0)).optional().map_err(storage)?.map(|s|serde_json::from_str(&s).map_err(storage)).transpose(),
         "workflow_step_authority" => {
             let (instance,execution):(String,String)=serde_json::from_str(&key.id).map_err(storage)?;
-            conn.query_row("SELECT json_object('id',json_extract(value,'$.id'),'status',json_extract(value,'$.status'),'plan_revision_id',json_extract(value,'$.plan_revision_id'),'input_digest',json_extract(value,'$.input_digest'),'contract_digest',json_extract(value,'$.contract_digest'),'node_id',json_extract(value,'$.node_id'),'session_id',json_extract(value,'$.session_id'),'stop_requested',json(CASE WHEN EXISTS(SELECT 1 FROM governance_records s WHERE s.type='workflow_stop' AND s.definition_id=?2) THEN 'true' ELSE 'false' END)) FROM json_each((SELECT data FROM governance_records WHERE id=?1 AND type='workflow_instance'),'$.steps') WHERE json_extract(value,'$.id')=?2 LIMIT 1",rusqlite::params![instance,execution],|r|r.get::<_,String>(0)).optional().map_err(storage)?.map(|s|serde_json::from_str(&s).map_err(storage)).transpose()
+            conn.query_row("SELECT json_object('id',json_extract(value,'$.id'),'status',json_extract(value,'$.status'),'plan_revision_id',json_extract(value,'$.plan_revision_id'),'input_digest',json_extract(value,'$.input_digest'),'contract_digest',json_extract(value,'$.contract_digest'),'node_id',json_extract(value,'$.node_id'),'session_id',json_extract(value,'$.session_id'),'stop_requested',json(CASE WHEN EXISTS(SELECT 1 FROM governance_records s WHERE s.type IN ('workflow_stop','workflow_stop_reassertion') AND s.definition_id=?2 AND NOT EXISTS(SELECT 1 FROM governance_records r WHERE r.type='workflow_stop_reconciliation' AND r.definition_id=s.id AND r.immutable=1 AND json_extract(r.data,'$.issuer')='kernel_workspace_reconciliation')) THEN 'true' ELSE 'false' END)) FROM json_each((SELECT data FROM governance_records WHERE id=?1 AND type='workflow_instance'),'$.steps') WHERE json_extract(value,'$.id')=?2 LIMIT 1",rusqlite::params![instance,execution],|r|r.get::<_,String>(0)).optional().map_err(storage)?.map(|s|serde_json::from_str(&s).map_err(storage)).transpose()
         }
         "conversation_open_seed" => Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT id FROM governance_records WHERE type='conversation_open_intent' AND definition_id=?1 ORDER BY rowid LIMIT 1)",&[&key.id])?.into_iter().next()),
+        "workspace_continuation_source" => Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT id FROM governance_records WHERE type='workspace_continuation_checkpoint' AND definition_id=?1 AND immutable=1 ORDER BY rowid DESC LIMIT 1)",&[&key.id])?.into_iter().next()),
+        "workflow_stop_history" => Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT id FROM governance_records WHERE type='workflow_stop' AND definition_id=?1 ORDER BY rowid LIMIT 1)",&[&key.id])?.into_iter().next()),
         "immutable_document" | "immutable_snapshot" => {
             let table = if key.kind == "immutable_document" { "documents" } else { "snapshots" };
             conn.query_row(&format!("SELECT id FROM {table} WHERE id=?1"), [&key.id], |r| r.get::<_,String>(0)).optional().map(|v| v.map(|id| json!({"id":id}))).map_err(storage)
@@ -376,6 +440,8 @@ fn revision_projection(kind: &str) -> Option<fn(Option<&Value>) -> u64> {
         | "provider_turn_pending"
         | "workflow_reconciliation_active"
         | "workflow_stop_source"
+        | "workspace_continuation_source"
+        | "workflow_stop_history"
         | "feature_request_source"
         | "controller_owner_source"
         | "workflow_driver_root"
@@ -449,6 +515,14 @@ fn current_revision(conn: &Connection, key: &ResourceKey) -> Result<u64> {
         return current_revision(conn, &feature_collection(&key.id));
     }
 
+    if key.kind == "controller_material_sources" {
+        let (controller, epoch, session): (String, u64, String) =
+            serde_json::from_str(&key.id).map_err(storage)?;
+        return conn.query_row("SELECT coalesce(max(rowid),0) FROM governance_records WHERE type='controller_tool_call' AND definition_id=?1 AND json_extract(data,'$.epoch')=?2 AND json_extract(data,'$.session_id')=?3 AND json_extract(data,'$.method')='workflow.outputs.read' AND json_extract(data,'$.status')='succeeded'",rusqlite::params![controller,epoch,session],|r|r.get(0)).map_err(storage);
+    }
+    if key.kind == "workflow_material_inputs" {
+        return conn.query_row("SELECT coalesce(max(rowid),0) FROM governance_records WHERE type='workflow_material_input' AND definition_id=?1",[&key.id],|r|r.get(0)).map_err(storage);
+    }
     if key.kind == "controller_pending_inputs" {
         return current_revision(
             conn,

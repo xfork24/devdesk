@@ -303,6 +303,10 @@ pub struct DriverState {
 }
 #[derive(Debug, Serialize)]
 pub struct WaitingStep {
+    pub revision: u64,
+    pub plan_revision_id: String,
+    pub control_version: u64,
+    pub step_revision: u64,
     pub feature_id: Option<String>,
     pub task_id: Option<String>,
     pub instance_id: String,
@@ -338,6 +342,7 @@ pub type DecisionDetail = RuntimeSummary<DecisionRequest>;
 
 #[derive(Debug, Deserialize)]
 pub struct DecisionExecutionState {
+    pub revision: u64,
     pub status: devdesk_domain::StepExecutionStatus,
     pub input_digest: String,
     pub outputs: std::collections::BTreeMap<String, String>,
@@ -346,6 +351,7 @@ pub struct DecisionExecutionState {
 #[derive(Debug)]
 pub struct DecisionContext {
     pub active_plan_revision_id: String,
+    pub control_version: u64,
     pub execution: Option<DecisionExecutionState>,
     pub ancestor_instance_ids: Vec<String>,
 }

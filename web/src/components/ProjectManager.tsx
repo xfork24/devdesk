@@ -322,7 +322,7 @@ export function ProjectManager({
             </p>
           </div>
         </div>
-        {defaults && (
+        {defaults && !configuration && (
           <div className="notice">
             <strong>默认配置已准备好</strong>
             <p>
@@ -350,7 +350,7 @@ export function ProjectManager({
                     standard_ref: defaults.standard_ref,
                     standard_overrides: [],
                     role_agent_bindings: defaults.role_agent_bindings,
-                    source_configuration_id: configuration?.id || "",
+                    source_configuration_id: "",
                     test_configuration: draft.test_configuration || "",
                   });
                 }}

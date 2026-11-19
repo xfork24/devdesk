@@ -72,6 +72,110 @@ impl ChangeFacts {
     }
 }
 impl Engine {
+    pub(crate) fn unchanged_change_executions(
+        &self,
+        root: &WorkflowHeaderFacts,
+        change_id: &str,
+    ) -> Result<(Vec<StepExecution>, ReadSet)> {
+        let selected = one(self.store.as_ref(), "governance", change_id)?;
+        let change = restored(self, &selected)?;
+        require(
+            change.r#type == "workflow_change"
+                && change.definition_id == root.record.id
+                && change.data["status"] == "applied"
+                && change.data["new_plan_revision_id"] == root.instance.active_plan_revision_id,
+            "只能核对当前计划的已应用变更",
+        )?;
+        let changes: WorkflowChangeSet = serde_json::from_value(change.data["changeset"].clone())
+            .map_err(|e| err("storage", e.to_string()))?;
+        require(
+            changes.operations.iter().all(|op| {
+                matches!(
+                    op,
+                    WorkflowChangeOperation::ReplacePlan { .. }
+                        | WorkflowChangeOperation::UpsertStep { .. }
+                        | WorkflowChangeOperation::UpsertStage { .. }
+                )
+            }),
+            "只能恢复节点修订中未受影响的执行，不能撤销输入、范围或外部作用",
+        )?;
+        let mut facts = self.native_change_facts(root, &changes)?;
+        facts.reads = facts.reads.merge([version(&selected)])?;
+        let previous = facts
+            .row(self, "governance", &changes.plan_revision_id)?
+            .ok_or_else(|| err("not_found", "原冻结计划缺失"))?;
+        require(
+            previous.r#type == "workflow_plan_revision"
+                && previous.data["instance_id"] == root.record.id,
+            "原冻结计划归属不符",
+        )?;
+        let source: NativePreview = serde_json::from_value(change.data["preview"].clone())
+            .map_err(|e| err("storage", e.to_string()))?;
+        require(
+            source.plan.document == root.instance.plan.document
+                && previous.data["inputs"] == json!(root.instance.inputs)
+                && previous.data["role_agent_bindings"] == json!(root.instance.role_agent_bindings),
+            "应用后的合同、输入或绑定已变化",
+        )?;
+        let archived: Vec<StepExecution> =
+            serde_json::from_value(source.footprint["executions"].clone())
+                .map_err(|e| err("storage", e.to_string()))?;
+        for execution in &archived {
+            let history = facts
+                .row(self, "workflow_history_source", &execution.id)?
+                .ok_or_else(|| err("not_found", "不可变执行历史缺失"))?;
+            require(
+                history.immutable
+                    && history.r#type == "workflow_execution_history"
+                    && history.definition_id == execution.id
+                    && history.data == json!(execution),
+                "原执行与不可变历史不符",
+            )?;
+        }
+        let mut original = root.instance.as_ref().clone();
+        original.plan = serde_json::from_value(previous.data["plan"].clone())
+            .map_err(|e| err("storage", e.to_string()))?;
+        original.workflow_ref = original.plan.workflow_revision_id.clone();
+        original.active_plan_revision_id = changes.plan_revision_id.clone();
+        original.control_version = change.data["control_version"]
+            .as_u64()
+            .ok_or_else(|| err("storage", "原控制版本缺失"))?;
+        original.steps = original
+            .plan
+            .document
+            .steps
+            .iter()
+            .map(|step| {
+                archived
+                    .iter()
+                    .chain(root.instance.steps.iter())
+                    .find(|e| e.node_id == step.node_id)
+                    .cloned()
+                    .ok_or_else(|| err("storage", "原执行集合不完整"))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let mut row = root.record.as_ref().clone();
+        row.data = json!(original);
+        let corrected = self.native_change_preview_in(&facts, &row, &changes)?;
+        let restored = archived
+            .into_iter()
+            .filter(|execution| {
+                !corrected.affected.contains(&execution.step)
+                    && matches!(
+                        execution.status,
+                        StepExecutionStatus::Completed | StepExecutionStatus::Skipped
+                    )
+                    && root.instance.plan.document.steps.iter().any(|step| {
+                        step.node_id == execution.node_id
+                            && !matches!(step.executor, StepExecutor::Workflow { .. })
+                            && configuration_hash(step) == execution.contract_digest
+                    })
+            })
+            .collect::<Vec<_>>();
+        require(!restored.is_empty(), "没有可恢复的未受影响执行")?;
+        Ok((restored, facts.reads))
+    }
+
     pub(crate) fn native_change_facts(
         &self,
         root: &WorkflowHeaderFacts,
@@ -736,10 +840,12 @@ impl Engine {
                                     | StepExecutionStatus::Failed
                                     | StepExecutionStatus::NeedsReconciliation
                             )
-                            && !facts
-                                .records
-                                .values()
-                                .any(|r| r.r#type == "workflow_stop" && r.definition_id == e.id)
+                            && !facts.records.values().any(|r| {
+                                matches!(
+                                    r.r#type.as_str(),
+                                    "workflow_stop" | "workflow_stop_reassertion"
+                                ) && r.definition_id == e.id
+                            })
                             && facts
                                 .records
                                 .values()
@@ -961,17 +1067,23 @@ impl Engine {
         let closure_changed = plan
             .roles
             .iter()
-            .any(|(k, v)| old.plan.roles.get(k) != Some(v))
+            .any(|(k, v)| old.plan.roles.get(k).is_some_and(|old| old != v))
             || definitions(&plan)
                 .iter()
                 .any(|(k, v)| old_definitions.get(k).is_some_and(|old| old != v))
             || plan
                 .permission_locks
                 .iter()
-                .any(|(k, v)| old_permission(k).map(|v| json!(v)) != Some(json!(v)))
+                .any(|(k, v)| old_permission(k).is_some_and(|old| json!(old) != json!(v)))
             || plan.integration_locks.iter().any(|(k, v)| {
-                old.plan.integration_locks.get(k).map(|v| json!(v)) != Some(json!(v))
+                old.plan
+                    .integration_locks
+                    .get(k)
+                    .is_some_and(|old| json!(old) != json!(v))
             });
+        // Assets introduced by a new node are not changes to an old execution.
+        // Its own contract and dependency closure are already included in seeds.
+        // Only changes to previously frozen assets invalidate the whole plan.
         if closure_changed {
             affected.extend(old.plan.document.steps.iter().map(|s| s.key.clone()));
         }
@@ -1045,10 +1157,10 @@ impl Engine {
                 task_changes.push(json!(task));
             }
         }
-        let invalidation_causes = json!({"seeds":seeds,"roles":plan.roles.iter().filter(|(k,v)|old.plan.roles.get(*k)!=Some(*v)).map(|(k,_)|k).collect::<Vec<_>>(),
+        let invalidation_causes = json!({"seeds":seeds,"roles":plan.roles.iter().filter(|(k,v)|old.plan.roles.get(*k).is_some_and(|old|old!=*v)).map(|(k,_)|k).collect::<Vec<_>>(),
             "definitions":definitions(&plan).iter().filter(|(k,v)|old_definitions.get(*k).is_some_and(|old|old!=*v)).map(|(k,_)|k).collect::<Vec<_>>(),
-            "permissions":plan.permission_locks.iter().filter(|(k,v)|old_permission(k).map(|v|json!(v))!=Some(json!(v))).map(|(k,_)|k).collect::<Vec<_>>(),
-            "integrations":plan.integration_locks.iter().filter(|(k,v)|old.plan.integration_locks.get(*k).map(|v|json!(v))!=Some(json!(v))).map(|(k,_)|k).collect::<Vec<_>>()});
+            "permissions":plan.permission_locks.iter().filter(|(k,v)|old_permission(k).is_some_and(|old|json!(old)!=json!(v))).map(|(k,_)|k).collect::<Vec<_>>(),
+            "integrations":plan.integration_locks.iter().filter(|(k,v)|old.plan.integration_locks.get(*k).is_some_and(|old|json!(old)!=json!(v))).map(|(k,_)|k).collect::<Vec<_>>()});
         let footprint = json!({"invalidation_causes":invalidation_causes,"reset_tasks":reset_tasks,"executions":old.steps.iter().filter(|s|affected.contains(&s.step) || aggregation_updates.contains(&s.step)).collect::<Vec<_>>(),"tasks":task_changes,
             "children":facts.records.values().filter(|r|r.r#type=="workflow_instance"&&r.data["root_instance_id"]==old.root_instance_id&&r.id!=row.id).map(|r|(&r.id,&r.data)).collect::<Vec<_>>()});
         plan.base_workflow_ref =

@@ -1,5 +1,13 @@
 import { displayText } from "../display-text";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { ManagerDisclosureContext } from "./manager-disclosure-state";
 import { useRuntimeRefresh } from "./useRuntimeRefresh";
 import { runtimeDisplayKey } from "../runtime-state";
 import { ActionButton } from "./ActionFeedback";
@@ -42,6 +50,15 @@ export function WorkflowProjectManager({
       : undefined;
   const [error, setError] = useState("");
   const [manualRefresh, setManualRefresh] = useState(0);
+  const inheritedDisclosures = useContext(ManagerDisclosureContext);
+  const localDisclosures = useMemo(
+    () => ({
+      revision: manualRefresh,
+      reset: () => setManualRefresh((value) => value + 1),
+    }),
+    [manualRefresh],
+  );
+  const disclosures = inheritedDisclosures || localDisclosures;
   const [collaboration, setCollaboration] = useState<WorkflowCollaboration>();
   const shared = inherited || collaboration;
   const updateCollaboration = onCollaboration || setCollaboration;
@@ -249,7 +266,7 @@ export function WorkflowProjectManager({
           type="button"
           onClick={() =>
             void Promise.all([load(true), shared?.reload(true)])
-              .then(() => setManualRefresh((value) => value + 1))
+              .then(disclosures.reset)
               .catch((error) => setError(String(error)))
           }
         >
@@ -508,11 +525,11 @@ export function WorkflowProjectManager({
     </>
   );
   return (
-    <>
+    <ManagerDisclosureContext.Provider value={disclosures}>
       <section
         className={cardClass}
         data-instance-id={current.id}
-        data-manual-refresh={manualRefresh}
+        data-manual-refresh={disclosures.revision}
         aria-label={displayText(nested ? title : "项目经理")}
       >
         {content}
@@ -555,6 +572,6 @@ export function WorkflowProjectManager({
           )}
         </div>
       )}
-    </>
+    </ManagerDisclosureContext.Provider>
   );
 }

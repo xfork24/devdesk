@@ -133,6 +133,19 @@ impl Engine {
             && context.active_plan_revision_id == row.data["plan_revision_id"]
             && (execution.is_none()
                 || context.execution.as_ref().is_some_and(|e| {
+                    if !matches!(
+                        request["operation"].as_str(),
+                        Some(
+                            "workflow.step.confirm"
+                                | "workflow.step.accept"
+                                | "workflow.step.approve"
+                        )
+                    ) {
+                        return (request["operation"] != "workflow.step.input"
+                            || e.status == StepExecutionStatus::WaitingInput)
+                            && request["arguments"]["expected_step_revision"] == e.revision
+                            && request["arguments"]["control_version"] == context.control_version;
+                    }
                     json!(e.input_digest) == request["arguments"]["input_digest"]
                         && json!(e.outputs) == request["arguments"]["outputs"]
                         && matches!(

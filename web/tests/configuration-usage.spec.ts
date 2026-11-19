@@ -131,10 +131,10 @@ test("Spec 正文之前展示确切 Delivery 与 Capability，Delivery 展示生
     }),
   ).toBeVisible();
   await expect(featureUsage).toContainText(
-    "阶段：需求 · 步骤：澄清需求与 PRD · 输出：result",
+    "阶段：需求 · 步骤：F01 澄清需求与 PRD · 输出：result",
   );
   await expect(featureUsage).toContainText(
-    "阶段：需求 · 步骤：PRD 验收与人工确认 · 输入：work",
+    "阶段：需求 · 步骤：F02 PRD 验收与人工确认 · 输入：work",
   );
   await page.screenshot({
     path: info.outputPath("delivery-reference-positions.png"),
@@ -147,12 +147,12 @@ test("Spec 正文之前展示确切 Delivery 与 Capability，Delivery 展示生
   });
   await featureUsage
     .getByRole("link", {
-      name: "阶段：需求 · 步骤：澄清需求与 PRD · 输出：result",
+      name: "阶段：需求 · 步骤：F01 澄清需求与 PRD · 输出：result",
       exact: true,
     })
     .click();
   await expect(page.getByLabel("步骤名称", { exact: true })).toHaveValue(
-    "澄清需求与 PRD",
+    "F01 澄清需求与 PRD",
   );
   await expect(page.getByLabel("所属阶段", { exact: true })).toHaveValue(
     "requirements",
@@ -161,12 +161,12 @@ test("Spec 正文之前展示确切 Delivery 与 Capability，Delivery 展示生
   await expect(page.getByLabel("名称", { exact: true })).toHaveValue("PRD");
   await featureUsage
     .getByRole("link", {
-      name: "阶段：需求 · 步骤：PRD 验收与人工确认 · 输入：work",
+      name: "阶段：需求 · 步骤：F02 PRD 验收与人工确认 · 输入：work",
       exact: true,
     })
     .click();
   await expect(page.getByLabel("步骤名称", { exact: true })).toHaveValue(
-    "PRD 验收与人工确认",
+    "F02 PRD 验收与人工确认",
   );
   await page.getByRole("link", { name: "查看 PRD", exact: true }).click();
   await expect(page.getByLabel("名称", { exact: true })).toHaveValue("PRD");

@@ -1,6 +1,8 @@
 import { displayText } from "../display-text";
 import { ManagerInteraction } from "./ManagerInteraction";
+import { ManagerDisclosure } from "./ManagerDisclosure";
 import { RuntimeApproval } from "./RuntimeApproval";
+import { WorkflowStepInput } from "./WorkflowStepInput";
 import { DiscussionLink, ReadingLink } from "./reading";
 import { StandardDiff } from "./StandardManager";
 import {
@@ -116,12 +118,11 @@ export function WorkflowController({
               ).then((summary) => {
                 const needsDetails =
                   summary.runtime_approval_pending ||
-                  (summary.driver?.data.mode !== "agent" &&
-                    (summary.workflow_approval_pending ||
-                      ((summary.driver?.data.mode || "manual") === "manual" &&
-                        (summary.waiting || []).some(
-                          (step: Row) => step.status === "awaiting_acceptance",
-                        ))));
+                  summary.workflow_approval_pending ||
+                  ((summary.driver?.data.mode || "manual") === "manual" &&
+                    (summary.waiting || []).some(
+                      (step: Row) => step.status === "awaiting_acceptance",
+                    ));
                 return needsDetails
                   ? request(
                       "query.workflow_driver",
@@ -130,7 +131,18 @@ export function WorkflowController({
                         project_id: projectId,
                       },
                       { fresh },
-                    )
+                    ).then((details) => ({
+                      ...details,
+                      waiting: summary.waiting
+                        ? summary.waiting.map((item: Row) => ({
+                            ...item,
+                            ...(details.waiting || []).find(
+                              (detail: Row) =>
+                                detail.execution_id === item.execution_id,
+                            ),
+                          }))
+                        : details.waiting,
+                    }))
                   : summary;
               }),
         ]);
@@ -357,12 +369,14 @@ export function WorkflowController({
   const inputRequests = ((data?.driverWaiting || []) as Row[]).filter(
     (item) => item.status === "waiting_input" && inScope(item.instance_id),
   );
-  const currentInputNotice = notices.find((notice) =>
-    (notice.data.interaction?.evidence || []).some((reference: Row) =>
-      inputRequests.some(
-        (item) => item.execution_id === reference.execution_id,
+  const currentInputNotice = notices.find(
+    (notice) =>
+      !notice.feedback?.length &&
+      (notice.data.interaction?.evidence || []).some((reference: Row) =>
+        inputRequests.some(
+          (item) => item.execution_id === reference.execution_id,
+        ),
       ),
-    ),
   )?.id;
   const interactive =
     workspaceOnly || !["completed", "cancelled"].includes(instance.data.status);
@@ -412,6 +426,10 @@ export function WorkflowController({
             ...(decision.data.request.interaction || {}),
             rework_budgets: decision.rework_budgets,
             signed_reason: decision.signed_reason,
+            supplemental_input:
+              decision.data.request.operation === "workflow.step.input"
+                ? decision.data.request.arguments.input
+                : undefined,
             exception:
               decision.data.request.operation === "workflow.step.approve",
           }}
@@ -473,7 +491,7 @@ export function WorkflowController({
       {approvals
         .filter(
           (approval: Row) =>
-            data?.driver?.data.mode !== "agent" &&
+            (data?.driver?.data.mode !== "agent" || approval.human_required) &&
             !(data?.decisions || []).some(
               (decision: Row) =>
                 decision.current !== false &&
@@ -505,6 +523,7 @@ export function WorkflowController({
         <ManagerInteraction
           key={notice.id}
           interaction={notice.data.interaction}
+          feedback={notice.feedback}
           projectId={projectId}
           ownerId={controller?.owner_id || projectId}
           busy={busy}
@@ -551,6 +570,7 @@ export function WorkflowController({
               ["waiting_input", "waiting_confirmation"].includes(item.status),
             ) &&
             runtimeApprovals.length === 0 &&
+            !approvals.some((approval) => approval.human_required) &&
             !data?.more?.decisions &&
             decisionPages.length === 0 &&
             !decisions.some(
@@ -559,7 +579,7 @@ export function WorkflowController({
                 decision.data.status === "pending",
             )
               ? "产物已完成，等待项目经理研判并接纳；当前没有需要你确认的事项。"
-              : "需要确认的产物或计划在下方处理；需要补充信息时，可通过“与项目经理继续讨论”回复。"}
+              : "在此补充步骤信息、确认产物，或回复项目经理讨论处理方案。"}
           </p>
           <ul aria-label="调度等待条件">
             {waiting.map((item) => {
@@ -568,11 +588,13 @@ export function WorkflowController({
               );
               return (
                 <li key={item.execution_id}>
-                  <details
+                  <ManagerDisclosure
                     className="manager-disclosure"
-                    open={
-                      item.status === "waiting_input" && !currentInputNotice
-                    }
+                    open={[
+                      "waiting_input",
+                      "failed",
+                      "needs_reconciliation",
+                    ].includes(item.status)}
                   >
                     <summary>
                       <strong>
@@ -601,6 +623,20 @@ export function WorkflowController({
                             "正在等待执行条件就绪。",
                         )}
                       </p>
+                      {item.status === "waiting_input" && (
+                        <WorkflowStepInput
+                          key={`${projectId}:${item.instance_id}:${item.execution_id}`}
+                          request={request}
+                          projectId={projectId}
+                          item={item}
+                          refresh={async () => {
+                            await Promise.all([
+                              (shared?.reload || load)(true),
+                              refresh(),
+                            ]);
+                          }}
+                        />
+                      )}
                       <ReadingLink
                         detail="overview"
                         projectId={projectId}
@@ -617,7 +653,7 @@ export function WorkflowController({
                         查看流程阻塞点
                       </ReadingLink>
                     </div>
-                  </details>
+                  </ManagerDisclosure>
                 </li>
               );
             })}
@@ -699,7 +735,7 @@ export function WorkflowController({
           </DiscussionLink>
         </p>
       )}
-      {workspaceOnly && interactive && (
+      {(workspaceOnly || waiting.length > 0) && interactive && (
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -769,7 +805,7 @@ export function WorkflowController({
       )}
       {interactionCards}
       {!!data?.messages?.length && (
-        <details className="manager-disclosure manager-log">
+        <ManagerDisclosure className="manager-disclosure manager-log">
           <summary>
             <strong>项目经理日志</strong>
             <span>{displayText(data.messages.length)} 条</span>
@@ -796,7 +832,7 @@ export function WorkflowController({
                 </div>
               ))}
           </div>
-        </details>
+        </ManagerDisclosure>
       )}
     </section>
   );

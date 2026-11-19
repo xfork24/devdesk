@@ -41,7 +41,7 @@
     "steps": [
       {
         "key": "requirements",
-        "name": "澄清需求与 PRD",
+        "name": "F01 澄清需求与 PRD",
         "stage": "requirements",
         "dependencies": [],
         "inputs": {},
@@ -73,7 +73,7 @@
       },
       {
         "key": "requirements_review",
-        "name": "PRD 验收与人工确认",
+        "name": "F02 PRD 验收与人工确认",
         "stage": "requirements",
         "dependencies": [
           "requirements"

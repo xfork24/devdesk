@@ -166,10 +166,14 @@ pub(super) fn driver(
     let (revision,root):(u64,String)=conn.query_row("SELECT revision,coalesce(json_extract(data,'$.root_instance_id'),id) FROM governance_records WHERE id=?1 AND type='workflow_instance' AND owner_project=?2",params![id,project],|row|Ok((row.get(0)?,row.get(1)?))).optional().map_err(storage)?.ok_or_else(||err("not_found","工作流不属于本次请求的项目"))?;
     let mut driver=conn.query_row("SELECT id,substr(name,1,128),revision,json_extract(data,'$.mode'),json_extract(data,'$.epoch'),substr(coalesce(json_extract(data,'$.reason.message'),json_extract(data,'$.reason'),''),1,256),length(coalesce(json_extract(data,'$.reason.message'),json_extract(data,'$.reason'),''))>256 FROM governance_records WHERE type='workflow_driver' AND definition_id=?1 AND owner_project=?2 ORDER BY rowid DESC LIMIT 1",params![root,project],|row|Ok(RuntimeSummary {id:row.get(0)?,name:row.get(1)?,revision:row.get(2)?,data:DriverState {mode:row.get(3)?,epoch:row.get(4)?,reason:row.get(5)?,reason_truncated:row.get(6)?}})).optional().map_err(storage)?;
     let mut waiting = {
-        let mut query=conn.prepare_cached("SELECT h.instance_id,json_extract(h.record,'$.data.owner_id'),s.execution_id,substr(json_extract(s.data,'$.step'),1,128),substr(coalesce(json_extract(s.data,'$.path'),''),1,256),json_extract(s.data,'$.status'),substr(coalesce(json_extract(s.data,'$.reason'),''),1,256),(coalesce(json_extract(s.data,'$.reason_truncated'),0) OR length(coalesce(json_extract(s.data,'$.reason'),''))>256),coalesce((SELECT feature_id FROM tasks WHERE id=json_extract(h.record,'$.data.owner_id')),(SELECT id FROM features WHERE id=json_extract(h.record,'$.data.owner_id'))),(SELECT id FROM tasks WHERE id=json_extract(h.record,'$.data.owner_id')) FROM workflow_display_headers h JOIN workflow_display_steps s ON s.instance_id=h.instance_id WHERE json_extract(h.record,'$.data.project_id')=?1 AND json_extract(h.record,'$.data.root_instance_id')=?2 AND coalesce(json_extract(h.record,'$.data.status'),'') NOT IN ('completed','cancelled') AND json_extract(s.data,'$.status') IN ('waiting_input','waiting_confirmation','awaiting_acceptance','failed','needs_reconciliation') ORDER BY h.instance_id,json_extract(s.data,'$.path'),s.execution_id LIMIT 21").map_err(storage)?;
+        let mut query=conn.prepare_cached("SELECT h.instance_id,json_extract(h.record,'$.data.owner_id'),s.execution_id,substr(json_extract(s.data,'$.step'),1,128),substr(coalesce(json_extract(s.data,'$.path'),''),1,256),json_extract(s.data,'$.status'),substr(coalesce(json_extract(s.data,'$.reason'),''),1,256),(coalesce(json_extract(s.data,'$.reason_truncated'),0) OR length(coalesce(json_extract(s.data,'$.reason'),''))>256),coalesce((SELECT feature_id FROM tasks WHERE id=json_extract(h.record,'$.data.owner_id')),(SELECT id FROM features WHERE id=json_extract(h.record,'$.data.owner_id'))),(SELECT id FROM tasks WHERE id=json_extract(h.record,'$.data.owner_id')),json_extract(h.record,'$.revision'),coalesce(json_extract(h.record,'$.data.active_plan_revision_id'),''),coalesce(json_extract(h.record,'$.data.control_version'),0),s.step_revision FROM workflow_display_headers h JOIN workflow_display_steps s ON s.instance_id=h.instance_id WHERE json_extract(h.record,'$.data.project_id')=?1 AND json_extract(h.record,'$.data.root_instance_id')=?2 AND coalesce(json_extract(h.record,'$.data.status'),'') NOT IN ('completed','cancelled') AND json_extract(s.data,'$.status') IN ('waiting_input','waiting_confirmation','awaiting_acceptance','failed','needs_reconciliation') ORDER BY h.instance_id,json_extract(s.data,'$.path'),s.execution_id LIMIT 21").map_err(storage)?;
         query
             .query_map(params![project, root], |row| {
                 Ok(WaitingStep {
+                    revision: row.get(10)?,
+                    plan_revision_id: row.get(11)?,
+                    control_version: row.get(12)?,
+                    step_revision: row.get(13)?,
                     feature_id: row.get(8)?,
                     task_id: row.get(9)?,
                     instance_id: row.get(0)?,
@@ -235,21 +239,21 @@ pub(super) fn decision_context(
     let _span = performance::Span::new("read_model.decision_context");
     let conn = pool.read()?;
     conn.execute_batch("BEGIN;").map_err(storage)?;
-    let header = |id: &str| -> Result<(String, Option<String>, String)> {
+    let header = |id: &str| -> Result<(String, Option<String>, String, u64)> {
         conn.query_row(
-            "SELECT json_extract(data,'$.active_plan_revision_id'),json_extract(data,'$.parent_execution_id'),coalesce(json_extract(data,'$.root_instance_id'),id) FROM governance_records WHERE id=?1 AND type='workflow_instance' AND owner_project=?2 AND coalesce(json_extract(data,'$.project_id'),?2)=?2",
+            "SELECT json_extract(data,'$.active_plan_revision_id'),json_extract(data,'$.parent_execution_id'),coalesce(json_extract(data,'$.root_instance_id'),id),coalesce(json_extract(data,'$.control_version'),0) FROM governance_records WHERE id=?1 AND type='workflow_instance' AND owner_project=?2 AND coalesce(json_extract(data,'$.project_id'),?2)=?2",
             params![id, project],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()
         .map_err(storage)?
         .ok_or_else(|| err("not_found", "审批流程不属于当前项目"))
     };
-    let (active_plan_revision_id, mut parent, root) = header(instance)?;
+    let (active_plan_revision_id, mut parent, root, control_version) = header(instance)?;
     let execution = execution
         .map(|id| {
             conn.query_row(
-                "SELECT json_object('status',json_extract(data,'$.status'),'input_digest',json_extract(data,'$.input_digest'),'outputs',json(coalesce(data->'$.outputs','{}'))) FROM workflow_display_steps WHERE instance_id=?1 AND execution_id=?2",
+                "SELECT json_object('revision',step_revision,'status',json_extract(data,'$.status'),'input_digest',json_extract(data,'$.input_digest'),'outputs',json(coalesce(data->'$.outputs','{}'))) FROM workflow_display_steps WHERE instance_id=?1 AND execution_id=?2",
                 params![instance, id],
                 |row| row.get::<_, String>(0),
             )
@@ -279,7 +283,7 @@ pub(super) fn decision_context(
             id != instance && !ancestor_instance_ids.contains(id),
             "审批流程祖先循环",
         )?;
-        let (_, next, actual_root) = header(id)?;
+        let (_, next, actual_root, _) = header(id)?;
         require(actual_root == root, "审批流程祖先不属于同一根")?;
         ancestor_instance_ids.push(id.clone());
         parent = next;
@@ -288,6 +292,7 @@ pub(super) fn decision_context(
     conn.execute_batch("COMMIT;").map_err(storage)?;
     Ok(DecisionContext {
         active_plan_revision_id,
+        control_version,
         execution,
         ancestor_instance_ids,
     })

@@ -213,7 +213,18 @@ impl Engine {
                     }
                     _ => false,
                 });
-            require(authorized, "只能读取当前步骤显式输入及原返工产物的声明字段")?;
+            let supplemental = if authorized {
+                None
+            } else {
+                self.supplemental_material_read(instance, execution, &id, pointer)?
+            };
+            require(
+                authorized || supplemental.is_some(),
+                "只能读取当前步骤显式输入、已转交的平台材料及原返工产物的声明字段",
+            )?;
+            if let Some(supplemental) = supplemental {
+                reads = reads.merge(supplemental.versions().iter().cloned())?;
+            }
             let selected = one(self.store.as_ref(), "governance", &id)?;
             let row = restored(self, &selected)?;
             require(
@@ -240,10 +251,11 @@ impl Engine {
                 }
                 let mut data = row.data.clone();
                 data.as_object_mut().unwrap().remove("value");
-                outputs.push(json!({"id":row.id,"data":data,"value_chunk":&body[offset..end],"offset":offset,"next_offset":if end<body.len(){Some(end)}else{None},"total_bytes":body.len()}));
+                outputs.push(json!({"id":row.id,"value_digest":configuration_hash(value),"data":data,"value_chunk":&body[offset..end],"offset":offset,"next_offset":if end<body.len(){Some(end)}else{None},"total_bytes":body.len()}));
             } else {
                 let mut out = json!(row);
                 out["data"]["value"] = value.clone();
+                out["value_digest"] = json!(configuration_hash(value));
                 outputs.push(out);
             }
         }

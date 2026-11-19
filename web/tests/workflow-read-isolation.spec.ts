@@ -490,6 +490,193 @@ test("manager prepares exact materials and review evidence for a human decision"
   await expect(card).toContainText("你已确认本轮事项");
 });
 
+test("经理页刷新只展开当前待处理交互，历史折叠后仍可查看反馈全文", async ({
+  page,
+}) => {
+  const url = await fixture(page);
+  const replies = [
+    "选择 B：包含最小实际断言。\n保留 **原始格式** 和 <img src=x onerror=alert(1)>。",
+    "补充：验证欢迎文字。",
+  ];
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    if (call.method === "query.workflow_driver")
+      return route.fulfill({
+        json: {
+          jsonrpc: "2.0",
+          id: call.id,
+          result: {
+            driver: { data: { mode: "agent" } },
+            waiting: [
+              {
+                instance_id: "read-instance",
+                execution_id: "clarification-execution",
+                status: "waiting_input",
+                reason: "请补充页面颜色",
+              },
+            ],
+          },
+        },
+      });
+    if (call.method !== "query.orchestration") return route.fallback();
+    await route.fulfill({
+      json: {
+        jsonrpc: "2.0",
+        id: call.id,
+        result: {
+          record: {
+            id: "feedback-controller",
+            data: { status: "active", owner_id: "read-feature" },
+          },
+          decisions: [
+            {
+              id: "current-confirmation",
+              revision: 1,
+              current: true,
+              definition_id: "read-instance",
+              data: {
+                status: "pending",
+                request: {
+                  operation: "workflow.step.confirm",
+                  arguments: { execution_id: "confirmation-execution" },
+                  interaction: {
+                    title: "确认当前方案",
+                    requested_action: "审阅方案",
+                    materials: [],
+                    evidence: [],
+                  },
+                },
+              },
+            },
+          ],
+          interactions: [
+            {
+              id: "scope-request",
+              data: {
+                instance_id: "read-instance",
+                interaction: {
+                  title: "请明确测试范围",
+                  background: "项目经理建议只建立测试骨架。",
+                  materials: [],
+                  evidence: [{ execution_id: "clarification-execution" }],
+                },
+              },
+              feedback: replies.map((input, index) => ({
+                id: `reply-${index}`,
+                input,
+              })),
+            },
+            {
+              id: "copy-request",
+              data: {
+                instance_id: "read-instance",
+                interaction: {
+                  title: "请明确页面文案",
+                  materials: [],
+                  evidence: [{ execution_id: "clarification-execution" }],
+                },
+              },
+              feedback: [
+                { id: "copy-reply", input: "页面使用：欢迎使用 DevDesk。" },
+              ],
+            },
+            {
+              id: "unanswered-request",
+              data: {
+                instance_id: "read-instance",
+                interaction: {
+                  title: "请明确页面颜色",
+                  materials: [],
+                  evidence: [{ execution_id: "clarification-execution" }],
+                },
+              },
+            },
+          ],
+        },
+      },
+    });
+  });
+  const scope = page.getByRole("article", {
+    name: "请明确测试范围",
+    exact: true,
+  });
+  const copy = page.getByRole("article", {
+    name: "请明确页面文案",
+    exact: true,
+  });
+  const unanswered = page.getByRole("article", {
+    name: "请明确页面颜色",
+    exact: true,
+  });
+  const current = page.getByRole("article", {
+    name: "确认当前方案",
+    exact: true,
+  });
+  async function expectFeedback() {
+    const feedback = scope.getByRole("region", {
+      name: "用户反馈",
+      exact: true,
+    });
+    await expect(feedback).toBeVisible();
+    await expect(feedback.locator("p")).toHaveCount(2);
+    for (const [index, reply] of replies.entries())
+      await expect(feedback.locator("p").nth(index)).toHaveJSProperty(
+        "textContent",
+        reply,
+      );
+    await expect(feedback.locator("p").first()).toHaveCSS(
+      "white-space",
+      "pre-wrap",
+    );
+    await expect(feedback.locator("img")).toHaveCount(0);
+    await expect(
+      copy.getByRole("region", { name: "用户反馈", exact: true }),
+    ).toHaveText("用户反馈页面使用：欢迎使用 DevDesk。");
+    await expect(copy).not.toContainText(replies[0]);
+    await expect(scope).not.toContainText("页面使用：欢迎使用 DevDesk。");
+    await expect(
+      unanswered.getByRole("region", { name: "用户反馈", exact: true }),
+    ).toHaveCount(0);
+  }
+  async function expectDefaultDisclosure() {
+    await expect(
+      scope.locator("details.manager-disclosure"),
+    ).not.toHaveAttribute("open");
+    await expect(
+      copy.locator("details.manager-disclosure"),
+    ).not.toHaveAttribute("open");
+    await expect(current.locator("details.manager-disclosure")).toHaveAttribute(
+      "open",
+      "",
+    );
+    await expect(
+      unanswered.locator("details.manager-disclosure"),
+    ).toHaveAttribute("open", "");
+  }
+  async function openFeedback() {
+    await scope.locator("summary").first().click();
+    await copy.locator("summary").first().click();
+    await expectFeedback();
+  }
+  await page.goto(url);
+  await expectDefaultDisclosure();
+  await openFeedback();
+  const draft = "保留尚未提交的确认意见";
+  await current.getByLabel("意见或修改要求", { exact: true }).fill(draft);
+  await current.locator("summary").first().click();
+  await unanswered.locator("summary").first().click();
+  await page.getByRole("button", { name: "刷新管理状态", exact: true }).click();
+  await expectDefaultDisclosure();
+  await expect(
+    current.getByLabel("意见或修改要求", { exact: true }),
+  ).toHaveValue(draft);
+  await openFeedback();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await expectDefaultDisclosure();
+  await openFeedback();
+});
+
 test("manager scopes child confirmations and tool approvals, with errors beside the relevant card", async ({
   page,
 }) => {
@@ -566,6 +753,32 @@ test("manager scopes child confirmations and tool approvals, with errors beside 
           },
         },
         decisions: [],
+        interactions: [
+          {
+            id: "root-history",
+            data: {
+              instance_id: "read-instance",
+              interaction: {
+                title: "主流程历史交互",
+                materials: [],
+                evidence: [],
+              },
+            },
+            feedback: [{ id: "root-reply", input: "主流程历史回答" }],
+          },
+          {
+            id: "child-history",
+            data: {
+              instance_id: "child-instance",
+              interaction: {
+                title: "子流程历史交互",
+                materials: [],
+                evidence: [],
+              },
+            },
+            feedback: [{ id: "child-reply", input: "子流程历史回答" }],
+          },
+        ],
         messages: [
           {
             id: "manager-message",
@@ -671,6 +884,45 @@ test("manager scopes child confirmations and tool approvals, with errors beside 
     name: "项目经理协作",
     exact: true,
   });
+  const rootHistory = mainCollaboration.getByRole("article", {
+    name: "主流程历史交互",
+    exact: true,
+  });
+  const childHistory = childCollaboration.getByRole("article", {
+    name: "子流程历史交互",
+    exact: true,
+  });
+  const pending = childCollaboration.getByRole("article", {
+    name: "确认子流程需求",
+    exact: true,
+  });
+  const runtime = childCollaboration.getByRole("article", {
+    name: "运行时工具审批",
+    exact: true,
+  });
+  const draft = "保留子流程未提交意见";
+  await pending.getByLabel("意见或修改要求", { exact: true }).fill(draft);
+  for (const panel of [page.locator(".manager-workflow-summary"), childPanel]) {
+    await rootHistory.locator("summary").first().click();
+    await childHistory.locator("summary").first().click();
+    await pending.locator("summary").first().click();
+    await runtime.locator("summary").first().click();
+    await panel
+      .getByRole("button", { name: "刷新管理状态", exact: true })
+      .click();
+    for (const history of [rootHistory, childHistory])
+      await expect(
+        history.locator("details.manager-disclosure"),
+      ).not.toHaveAttribute("open");
+    for (const current of [pending, runtime])
+      await expect(
+        current.locator("details.manager-disclosure"),
+      ).toHaveAttribute("open", "");
+    await expect(
+      pending.getByLabel("意见或修改要求", { exact: true }),
+    ).toHaveValue(draft);
+  }
+  await pending.getByLabel("意见或修改要求", { exact: true }).fill("");
   await expect(
     childCollaboration.getByRole("heading", {
       name: "项目经理协作",
@@ -1034,6 +1286,10 @@ test("manager shows the current blocker without scheduling configuration at desk
           {
             instance_id: "read-instance",
             execution_id: "requirements-execution",
+            revision: 11,
+            plan_revision_id: "input-plan",
+            control_version: 3,
+            step_revision: 5,
             step: "requirements",
             step_name: "澄清需求与PRD",
             status: "waiting_input",
@@ -1063,13 +1319,222 @@ test("manager shows the current blocker without scheduling configuration at desk
   await expect(manager.locator(".manager-configuration-row")).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(manager.getByLabel("回复项目经理", { exact: true })).toHaveCount(
-    0,
+    1,
   );
+  await expect(
+    manager.getByLabel("补充本次任务", { exact: true }),
+  ).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+});
+
+test("经理页可直接回答子流程阻塞，保留过期草稿并幂等重试", async ({ page }) => {
+  const url = await fixture(page);
+  let revision = 5;
+  let fail = true;
+  const commands: any[] = [];
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    let result: any;
+    if (call.method === "query.orchestration")
+      result = {
+        record: {
+          id: "manager",
+          revision: 1,
+          data: { status: "active", owner_id: "read-feature", epoch: 1 },
+        },
+      };
+    else if (call.method === "query.workflow_driver")
+      result = {
+        driver: { data: { mode: "agent" } },
+        waiting: [
+          {
+            instance_id: "child-input",
+            ancestor_instance_ids: ["read-instance"],
+            execution_id: "child-execution",
+            step: "repair",
+            step_name: "补齐验收材料",
+            status: "waiting_input",
+            reason: "请补充原失败报告",
+            revision: 11,
+            plan_revision_id: "child-plan",
+            control_version: 3,
+            step_revision: revision,
+          },
+        ],
+      };
+    else if (call.method === "workflow.step.input") {
+      commands.push(call.params);
+      if (fail)
+        return route.fulfill({
+          json: {
+            jsonrpc: "2.0",
+            id: call.id,
+            error: { code: -32000, message: "temporary failure" },
+          },
+        });
+      result = { status: "queued" };
+    } else return route.fallback();
+    await route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
+  });
+  await page.goto(url);
+  const blockers = page.getByRole("region", { name: "当前阻塞点" });
+  const input = blockers.getByLabel("补充本次任务", { exact: true });
+  const raw = "保留原断言。\n核对原报告与修复后的结果。";
+  await input.fill(raw);
+  revision = 6;
+  await page.getByRole("button", { name: "刷新管理状态", exact: true }).click();
+  await expect(blockers).toContainText("步骤或计划已变化，原输入已保留");
+  await expect(input).toHaveValue(raw);
+  await expect(
+    blockers.getByRole("button", { name: "提交补充输入", exact: true }),
+  ).toBeDisabled();
+  expect(commands).toEqual([]);
+  await blockers.getByRole("button", { name: "使用当前步骤重新核对" }).click();
+  await blockers
+    .getByRole("button", { name: "提交补充输入", exact: true })
+    .click();
+  await expect(blockers.getByRole("alert")).toContainText("temporary failure");
+  await expect(input).toHaveValue(raw);
+  fail = false;
+  await blockers
+    .getByRole("button", { name: "提交补充输入", exact: true })
+    .click();
+  await expect.poll(() => commands.length).toBe(2);
+  expect(commands[1]).toEqual(commands[0]);
+  expect(commands[0]).toMatchObject({
+    target: "child-input",
+    expected_revision: 11,
+    payload: {
+      execution_id: "child-execution",
+      step: "repair",
+      plan_revision_id: "child-plan",
+      control_version: 3,
+      expected_step_revision: 6,
+      input: raw,
+    },
+  });
+  await expect(input).toHaveValue("");
+});
+
+test("Agent 模式在经理页展示步骤人工确认并保留失败结果给经理处理", async ({
+  page,
+}) => {
+  const url = await fixture(page);
+  let submitted: any;
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    let result: any;
+    if (call.method === "query.orchestration")
+      result = {
+        record: { id: "manager", data: { status: "active" } },
+        decisions: [
+          {
+            id: "input-decision",
+            revision: 1,
+            current: true,
+            definition_id: "read-instance",
+            data: {
+              status: "pending",
+              request: {
+                operation: "workflow.step.input",
+                arguments: {
+                  execution_id: "input-execution",
+                  input:
+                    "原报告：<script>保留原始文本</script>\n不得改写为通过。",
+                },
+                interaction: {
+                  title: "转交原报告",
+                  requested_action: "确认原样转交",
+                  materials: [],
+                  evidence: [],
+                },
+              },
+            },
+          },
+        ],
+      };
+    else if (call.method === "query.workflow_driver")
+      result = {
+        driver: { data: { mode: "agent" } },
+        workflow_approval_pending: true,
+        waiting: [],
+        approvals: [
+          {
+            instance_id: "read-instance",
+            owner_id: "read-feature",
+            revision: 12,
+            operation: "workflow.step.confirm",
+            human_required: true,
+            arguments: {
+              execution_id: "human-gate",
+              plan_revision_id: "gate-plan",
+              control_version: 4,
+              expected_step_revision: 7,
+              input_digest: "original-input",
+              outputs: { result: "sealed-output" },
+              accept_result: true,
+            },
+            interaction: {
+              title: "确认本轮验收",
+              requested_action: "审阅当前验收材料",
+              materials: [],
+              evidence: [],
+            },
+          },
+          {
+            instance_id: "read-instance",
+            operation: "workflow.step.approve",
+            human_required: false,
+            arguments: { execution_id: "failed-green" },
+            interaction: { title: "自动校验失败", materials: [], evidence: [] },
+          },
+        ],
+      };
+    else if (call.method === "workflow.step.confirm") {
+      submitted = call.params;
+      result = { status: "confirmed" };
+    } else return route.fallback();
+    await route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
+  });
+  await page.goto(url);
+  const card = page.getByRole("article", { name: "确认本轮验收", exact: true });
+  await expect(card).toBeVisible();
+  const inputCard = page.getByRole("article", {
+    name: "转交原报告",
+    exact: true,
+  });
+  await inputCard
+    .getByText("拟转交的补充输入（原文）", { exact: true })
+    .click();
+  await expect(inputCard.locator(".manager-feedback-text")).toHaveText(
+    "原报告：<script>保留原始文本</script>\n不得改写为通过。",
+  );
+  await expect(inputCard.locator("script")).toHaveCount(0);
+  await expect(
+    page.getByRole("article", { name: "自动校验失败", exact: true }),
+  ).toHaveCount(0);
+  await card
+    .getByRole("button", { name: /确认|批准/ })
+    .first()
+    .click();
+  await expect
+    .poll(() => submitted)
+    .toMatchObject({
+      target: "read-instance",
+      expected_revision: 12,
+      payload: {
+        execution_id: "human-gate",
+        plan_revision_id: "gate-plan",
+        control_version: 4,
+        expected_step_revision: 7,
+        input_digest: "original-input",
+        outputs: { result: "sealed-output" },
+      },
+    });
 });
 
 test("流程经理只保留审批入口和接管操作，状态刷新恢复后清除超时提示", async ({
@@ -2093,7 +2558,7 @@ test("parallel supplemental inputs retain separate drafts and original control v
       status: "running",
       paused: false,
       active_plan_revision_id: "plan-original",
-      control_version: revision,
+      control_version: 5,
       steps: ["first", "second"].map((step) => ({
         id: `${step}-execution`,
         step,
@@ -2112,6 +2577,7 @@ test("parallel supplemental inputs retain separate drafts and original control v
             name: `输入状态 ${revision}`,
             revision,
           },
+          step_revisions: { "first-execution": 2, "second-execution": 2 },
           runtime,
           plan: {
             stages: [{ key: "work", name: "并行输入" }],

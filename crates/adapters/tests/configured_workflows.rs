@@ -349,6 +349,10 @@ fn child_closure_rejects_wrong_type_and_recursive_calls_before_publish() {
 
 #[derive(Default)]
 struct RecordingAgent {
+    native_input: Option<Value>,
+    native_steps: Mutex<Vec<(String, Value)>>,
+    agent_reads: Mutex<Vec<Value>>,
+    native_replies: Mutex<Vec<(bool, ToolReceipt)>>,
     starts: Mutex<Vec<ports::SessionStart>>,
     hold: std::sync::atomic::AtomicBool,
     responses: Mutex<Vec<Value>>,
@@ -357,12 +361,45 @@ struct RecordingAgent {
     writes: Mutex<Vec<(std::path::PathBuf, String)>>,
     view_validator: Mutex<Option<Arc<devdesk_adapters::CliGit>>>,
 }
+impl RecordingAgent {
+    fn scripted_call(
+        &self,
+        session: &Session,
+        turn: &str,
+        method: &str,
+        args: Value,
+    ) -> ports::ConversationObservation {
+        ports::ConversationObservation::ToolCall {
+            turn: turn.into(),
+            request: json!(id()),
+            thread: session.external_session.clone().unwrap(),
+            external_turn: format!("fixture-{turn}"),
+            call: id(),
+            tool: format!("devdesk_{}", method.replace('.', "_")),
+            arguments: args,
+            worktree: String::new(),
+        }
+    }
+}
 impl ports::Harness for RecordingAgent {
     fn identity(&self) -> String {
         "fixture:configured-agent".into()
     }
     fn open_session(&self, request: &ports::SessionStart) -> Result<ports::SessionReceipt> {
         self.starts.lock().unwrap().push(request.clone());
+        if request
+            .session
+            .runtime_binding
+            .as_ref()
+            .is_some_and(|b| b.work_type == WorkType::Orchestration)
+        {
+            return Ok(ports::SessionReceipt {
+                external_session: format!("fixture-{}", request.session.id),
+                container_id: "fixture-container".into(),
+                image_digest: request.execution.image_digest.clone(),
+                operation_id: request.execution.operation_id.clone(),
+            });
+        }
         let task = request
             .configured_task
             .as_ref()
@@ -395,6 +432,83 @@ impl ports::Harness for RecordingAgent {
             request.turn.input
         );
         self.calls.lock().unwrap().push(request.clone());
+        let manager = request
+            .session
+            .runtime_binding
+            .as_ref()
+            .is_some_and(|b| b.work_type == WorkType::Orchestration);
+        let scripted = if manager {
+            let mut steps = self.native_steps.lock().unwrap();
+            if steps.is_empty() {
+                None
+            } else {
+                Some(steps.remove(0))
+            }
+        } else if request.configured_task.as_ref().is_some_and(|task| {
+            task.task["supplemental_input"]
+                .as_str()
+                .is_some_and(|text| text.contains("\"kind\":\"platform_material\""))
+        }) {
+            let mut reads = self.agent_reads.lock().unwrap();
+            if reads.is_empty() {
+                None
+            } else {
+                Some(("workflow.outputs.read".into(), reads.remove(0)))
+            }
+        } else {
+            None
+        };
+        if let Some((method, args)) = scripted {
+            self.pending.lock().unwrap().insert(
+                request.session.id.clone(),
+                vec![
+                    Event::Admitted {
+                        turn: request.turn.id.clone(),
+                        message: Some("fixture-message".into()),
+                        external_turn: Some(format!("fixture-{}", request.turn.id)),
+                    },
+                    Event::Consumed {
+                        turn: request.turn.id.clone(),
+                        message: Some("fixture-message".into()),
+                    },
+                    self.scripted_call(&request.session, &request.turn.id, &method, args),
+                ],
+            );
+            return Ok(());
+        }
+        if request
+            .session
+            .runtime_binding
+            .as_ref()
+            .is_some_and(|b| b.work_type == WorkType::Orchestration)
+            && let Some(arguments) = &self.native_input
+        {
+            self.pending.lock().unwrap().insert(
+                request.session.id.clone(),
+                vec![
+                    Event::Admitted {
+                        turn: request.turn.id.clone(),
+                        message: Some("fixture-message".into()),
+                        external_turn: Some(format!("fixture-{}", request.turn.id)),
+                    },
+                    Event::Consumed {
+                        turn: request.turn.id.clone(),
+                        message: Some("fixture-message".into()),
+                    },
+                    Event::ToolCall {
+                        turn: request.turn.id.clone(),
+                        request: json!(1),
+                        thread: request.session.external_session.clone().unwrap(),
+                        external_turn: format!("fixture-{}", request.turn.id),
+                        call: format!("input-{}", request.turn.id),
+                        tool: "devdesk_workflow_step_input".into(),
+                        arguments: arguments.clone(),
+                        worktree: String::new(),
+                    },
+                ],
+            );
+            return Ok(());
+        }
         let mut writes = self.writes.lock().unwrap();
         if !writes.is_empty() {
             let (path, content) = writes.remove(0);
@@ -420,6 +534,66 @@ impl ports::Harness for RecordingAgent {
             .unwrap()
             .remove(&session.id)
             .unwrap_or_default())
+    }
+    fn answer_tool_call(&self, session: &Session, _: &Value, receipt: &ToolReceipt) -> Result<()> {
+        let turn = self
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .find(|r| r.session.id == session.id)
+            .unwrap()
+            .turn
+            .id
+            .clone();
+        let manager = session
+            .runtime_binding
+            .as_ref()
+            .is_some_and(|b| b.work_type == WorkType::Orchestration);
+        self.native_replies
+            .lock()
+            .unwrap()
+            .push((manager, receipt.clone()));
+        let next = if manager {
+            let mut steps = self.native_steps.lock().unwrap();
+            if steps.is_empty() {
+                None
+            } else {
+                Some(steps.remove(0))
+            }
+        } else {
+            let mut reads = self.agent_reads.lock().unwrap();
+            if reads.is_empty() {
+                None
+            } else {
+                Some(("workflow.outputs.read".into(), reads.remove(0)))
+            }
+        };
+        if let Some((method, args)) = next {
+            self.pending.lock().unwrap().insert(
+                session.id.clone(),
+                vec![self.scripted_call(session, &turn, &method, args)],
+            );
+            return Ok(());
+        }
+        if !manager {
+            self.pending.lock().unwrap().insert(session.id.clone(),vec![
+                ports::ConversationObservation::Message {turn:turn.clone(),key:id(),content:json!({"status":"completed","summary":"仅验证材料转交，不代表业务测试通过","outputs":{"risks":{"source_read":true}}}).to_string(),kind:ConversationEventKind::Assistant,mode:MessageMode::Full,item:id()},
+                ports::ConversationObservation::Terminal {turn,outcome:ports::ProviderTerminal::Completed,reason:"material read fixture".into(),quiescent:true},
+            ]);
+            return Ok(());
+        }
+        self.pending.lock().unwrap().insert(
+            session.id.clone(),
+            vec![ports::ConversationObservation::Terminal {
+                turn,
+                outcome: ports::ProviderTerminal::Completed,
+                reason: "signed input relay fixture".into(),
+                quiescent: true,
+            }],
+        );
+        Ok(())
     }
     fn stop_session(&self, _: &Session, execution: &RuntimeExecution) -> Result<ports::WorkerStop> {
         Ok(ports::WorkerStop {
@@ -582,6 +756,621 @@ fn custom_agent_executes_actual_task_through_ports_and_persists_typed_artifact()
             .data["task"],
         expected_task
     );
+}
+
+#[test]
+fn unsealed_work_survives_supplemental_input_and_host_restart_in_the_same_execution() {
+    unsealed_workspace_case(false);
+}
+#[test]
+fn historical_workspace_recovery_preserves_changes_and_unblocks_parent_projection() {
+    unsealed_workspace_case(true);
+}
+struct UncheckpointedGit(Arc<devdesk_adapters::CliGit>);
+impl ports::Git for UncheckpointedGit {
+    fn identity(&self) -> String {
+        ports::Git::identity(self.0.as_ref())
+    }
+    fn identity_for(&self, c: Option<&GitContext>) -> String {
+        ports::Git::identity_for(self.0.as_ref(), c)
+    }
+    fn workspace_revision(&self, c: &GitContext) -> Result<String> {
+        ports::Git::workspace_revision(self.0.as_ref(), c)
+    }
+    fn validate_workspace(&self, c: &GitContext, r: &str) -> Result<()> {
+        ports::Git::validate_workspace(self.0.as_ref(), c, r)
+    }
+    fn candidate(&self, c: &GitContext, s: &str, t: &str, o: &str) -> Result<String> {
+        ports::Git::candidate(self.0.as_ref(), c, s, t, o)
+    }
+    fn advance(&self, c: &GitContext, b: &str, e: &str, r: &str, o: &str) -> Result<String> {
+        ports::Git::advance(self.0.as_ref(), c, b, e, r, o)
+    }
+}
+fn unsealed_workspace_case(legacy: bool) {
+    struct Clock(std::sync::atomic::AtomicU64);
+    impl ports::ApplicationEnvironment for Clock {
+        fn allocate_id(&self) -> String {
+            uuid::Uuid::new_v4().to_string()
+        }
+        fn unix_millis(&self) -> u64 {
+            self.0.load(std::sync::atomic::Ordering::SeqCst)
+        }
+        fn monotonic_clock(&self) -> Option<(String, u64)> {
+            Some(("workspace-fixture".into(), self.unix_millis()))
+        }
+    }
+    let clock = Arc::new(Clock(std::sync::atomic::AtomicU64::new(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64,
+    )));
+    devdesk_core::with_application_environment(clock.clone(), || {
+        unsealed_workspace_at_clock(legacy, &clock.0)
+    });
+}
+fn unsealed_workspace_at_clock(legacy: bool, clock: &std::sync::atomic::AtomicU64) {
+    fn git(path: &std::path::Path, args: &[&str]) -> String {
+        let out = std::process::Command::new("git")
+            .args([
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@localhost",
+                "-c",
+                "commit.gpgSign=false",
+                "-c",
+                "core.hooksPath=/dev/null",
+                "-C",
+            ])
+            .arg(path)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap().trim().into()
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let project = id();
+    let mut e = Engine::new(
+        Arc::new(SqliteStore::open_project(directory.path(), &project).unwrap()),
+        Arc::new(FileArtifacts::new(directory.path().into())),
+        runtime::adapters(),
+    )
+    .with_tool_executor(Arc::new(NativeTools::new(directory.path()).unwrap()));
+    e.bootstrap().unwrap();
+    runtime::retired_configuration::install(&e);
+    runtime::bind_default_permissions(&e);
+    let recorder = Arc::new(RecordingAgent::default());
+    e.harness = recorder.clone();
+    let (role, agent) = research_agent(&e);
+    command(
+        &e,
+        "project.create",
+        None,
+        json!({"title":"保留原执行修改"}),
+    )
+    .unwrap();
+    let repo = directory
+        .path()
+        .join("projects")
+        .join(&project)
+        .join("repository");
+    std::fs::create_dir_all(repo.join("tests")).unwrap();
+    git(&repo, &["init", "-b", "main"]);
+    std::fs::write(repo.join("tests/base.mjs"), "base\n").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-m", "baseline"]);
+    let base = git(&repo, &["rev-parse", "HEAD"]);
+    let adapter = Arc::new(devdesk_adapters::CliGit::new(directory.path()).unwrap());
+    let feature = id();
+    let main = adapter
+        .prepare_mainline(&project, "integration-main", &base, &id())
+        .unwrap();
+    let work = adapter
+        .prepare_worktree(&project, &feature, "features", &base, &id())
+        .unwrap();
+    e.store
+        .seed_fixture_state(None, &mut |state| {
+            state.projects[0].workspace_definition = Some(Workspace {
+                repository: "fixture/local".into(),
+                path: std::fs::canonicalize(&repo)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into(),
+                mainline: "integration-main".into(),
+            });
+            state.features.push(Feature {
+                id: feature.clone(),
+                project_id: project.clone(),
+                title: "保留现场".into(),
+                status: Status::Queued,
+                revision: 1,
+                input_version: 1,
+                predecessor: None,
+                source_materials: vec![],
+            });
+            for receipt in [&main, &work] {
+                state.heads.push(GitHead {
+                    id: receipt.owner.clone(),
+                    project_id: project.clone(),
+                    revision: base.clone(),
+                });
+                state.repository_worktrees.push(RepositoryWorktree {
+                    id: receipt.owner.clone(),
+                    owner_id: receipt.owner.clone(),
+                    project_id: project.clone(),
+                    kind: if receipt.owner == project {
+                        WorktreeKind::Mainline
+                    } else {
+                        WorktreeKind::Feature
+                    },
+                    branch: receipt.branch.clone(),
+                    path: receipt.path.clone(),
+                    base: base.clone(),
+                    operation_id: receipt.operation.clone(),
+                });
+                state.repository_operations.push(RepositoryOperation {
+                    id: receipt.operation.clone(),
+                    project_id: project.clone(),
+                    action: RepositoryAction::CreateWorktree {
+                        owner: receipt.owner.clone(),
+                        worktree_kind: if receipt.owner == project {
+                            WorktreeKind::Mainline
+                        } else {
+                            WorktreeKind::Feature
+                        },
+                        base: base.clone(),
+                    },
+                    status: RepositoryOperationStatus::Completed,
+                    receipt: Some(RepositoryReceipt::Worktree {
+                        worktree: state.repository_worktrees.last().unwrap().clone(),
+                    }),
+                    reason: String::new(),
+                    revision: 1,
+                });
+            }
+            Ok(Value::Null)
+        })
+        .unwrap();
+    e.git = if legacy {
+        Arc::new(UncheckpointedGit(adapter.clone()))
+    } else {
+        adapter.clone()
+    };
+    *recorder.view_validator.lock().unwrap() = Some(adapter.clone());
+    let changed = std::path::Path::new(&work.path).join("tests/pending.mjs");
+    recorder
+        .writes
+        .lock()
+        .unwrap()
+        .push((changed.clone(), "preserve this unsealed work\n".into()));
+    recorder
+        .responses
+        .lock()
+        .unwrap()
+        .push(json!({"status":"needs_input","summary":"已有修改，等待补充材料","outputs":{}}));
+    let workflow = publish(
+        &e,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"工作"}],"steps":[
+            {"key":"current","name":"读取基线","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-workspace-current:1","arguments":{"owner_id":{"type":"constant","value":feature}}},"outputs":{"workspace":{"delivery_ref":"fixture-delivery-object:1"}}},
+            {"key":"writer","name":"修改后继续","stage":"work","dependencies":["current"],"executor":{"type":"agent","role_ref":role["id"]},"task_instructions":"在原工作区保留 tests 的修改并继续。","inputs":{"workspace":{"type":"source","source":{"step":"current","port":"workspace"}}},"access":{"workspace_input":"workspace","writable_paths":["tests"],"tool_refs":[DEFAULT_NATIVE_TOOL_ID]},"budget":{"timeout_seconds":1000,"max_turns":30,"retry_limit":3},"confirmation":"human","outputs":{"risks":{"delivery_ref":"fixture-delivery-object:1"}}}
+        ]}),
+    );
+    let selected_workflow = if legacy {
+        publish(
+            &e,
+            json!({"schema_version":6,"stages":[{"key":"work","name":"工作"}],"steps":[{"key":"child","name":"子流程","stage":"work","executor":{"type":"workflow","workflow_ref":workflow["id"]}}]}),
+        )
+    } else {
+        workflow.clone()
+    };
+    let outer=command(&e,"workflow.start",Some(&feature),json!({"workflow_ref":selected_workflow["id"],"role_agent_bindings":{role["id"].as_str().unwrap():agent["id"]}})).unwrap();
+    drive(&e, 12);
+    let run = if legacy {
+        let state = e.store.snapshot().unwrap();
+        json!({"id":state.governance.iter().find(|r|r.r#type=="workflow_instance" && r.data["workflow_ref"]==workflow["id"]).unwrap().id})
+    } else {
+        outer.clone()
+    };
+    let before = instance(&e, &run["id"]);
+    let original = before["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["step"] == "writer")
+        .unwrap()
+        .clone();
+    assert_eq!(original["status"], "waiting_input");
+    let checkpoints = e
+        .store
+        .snapshot()
+        .unwrap()
+        .governance
+        .iter()
+        .filter(|r| r.r#type == "workspace_continuation_checkpoint")
+        .cloned()
+        .collect::<Vec<_>>();
+    assert_eq!(checkpoints.len(), usize::from(!legacy));
+    let status = git(std::path::Path::new(&work.path), &["status", "--porcelain"]);
+    drop(e);
+    let mut e = Engine::new(
+        Arc::new(SqliteStore::open_project(directory.path(), &project).unwrap()),
+        Arc::new(FileArtifacts::new(directory.path().into())),
+        runtime::adapters(),
+    )
+    .with_tool_executor(Arc::new(NativeTools::new(directory.path()).unwrap()));
+    e.git = adapter;
+    e.harness = recorder.clone();
+    command(
+        &e,
+        "workflow.step.input",
+        run["id"].as_str(),
+        json!({"step":"writer","input":"继续处理，保留已有修改"}),
+    )
+    .unwrap();
+    drive(&e, 12);
+    if legacy {
+        let failed = instance(&e, &run["id"]);
+        let failed_step = failed["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["step"] == "writer")
+            .unwrap();
+        assert_eq!(failed_step["status"], "failed");
+        assert_eq!(failed_step["failure"]["effect"], "not_applied");
+        assert_eq!(instance(&e, &outer["id"])["steps"][0]["status"], "failed");
+        clock.fetch_add(2_000_000, std::sync::atomic::Ordering::SeqCst);
+        // A late legacy reconciliation changes terminal time, not the actual
+        // original refusal time. The inactivity must start at that receipt.
+        let db = directory
+            .path()
+            .join("projects")
+            .join(&project)
+            .join("engineering.sqlite3");
+        rusqlite::Connection::open(&db)
+            .unwrap()
+            .execute(
+                "UPDATE turns SET status='needs_reconciliation',revision=revision+1 WHERE id=?1",
+                [failed_step["turn_id"].as_str().unwrap()],
+            )
+            .unwrap();
+        e.store
+            .seed_fixture_state(None, &mut |state| {
+                let record = state
+                    .governance
+                    .iter_mut()
+                    .find(|r| r.id == run["id"])
+                    .unwrap();
+                let node = record.data["steps"]
+                    .as_array_mut()
+                    .unwrap()
+                    .iter_mut()
+                    .find(|s| s["step"] == "writer")
+                    .unwrap();
+                node["status"] = json!("needs_reconciliation");
+                record.data["status"] = json!("needs_reconciliation");
+                record.revision += 1;
+                record.content_hash = content_digest(&record.refs, &record.data);
+                Ok(Value::Null)
+            })
+            .unwrap();
+        command(
+            &e,
+            "workflow.execution.reconcile",
+            run["id"].as_str(),
+            json!({"execution_id":failed_step["id"],"reason":"延迟核对原生未发送证明"}),
+        )
+        .unwrap();
+        drive(&e, 2);
+        command(&e,"workflow.workspace.reconcile",run["id"].as_str(),json!({"execution_id":failed_step["id"],"previous_turn_id":original["turn_id"],"reason":"用户要求保留原修改并恢复，核对真实未发送证明"})).unwrap();
+        // Reproduce the old accounting bug to exercise correction of an
+        // already persisted kernel timeout, keeping its immutable stop marker.
+        e.store
+            .seed_fixture_state(None, &mut |state| {
+                for wait in state.governance.iter_mut().filter(|r| {
+                    r.r#type == "workflow_wait_interval"
+                        && r.definition_id == failed_step["id"].as_str().unwrap()
+                        && r.data["finished"].is_null()
+                }) {
+                    wait.data["started"] = json!(clock.load(std::sync::atomic::Ordering::SeqCst));
+                    wait.revision += 1;
+                    wait.content_hash = content_digest(&wait.refs, &wait.data);
+                }
+                Ok(Value::Null)
+            })
+            .unwrap();
+        drive(&e, 4);
+        let observed_parent = instance(&e, &outer["id"]);
+        assert_eq!(
+            observed_parent["steps"][0]["status"],
+            "running",
+            "parent={},child={}",
+            observed_parent["steps"][0],
+            instance(&e, &run["id"])["steps"]
+        );
+        command(
+            &e,
+            "workflow.step.input",
+            run["id"].as_str(),
+            json!({"step":"writer","input":"按原任务继续，保留修改"}),
+        )
+        .unwrap();
+        drive(&e, 12);
+        let timed = instance(&e, &run["id"]);
+        let timed_step = timed["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["step"] == "writer")
+            .unwrap();
+        assert_eq!(timed_step["failure"]["code"], "execution_timeout");
+        assert!(timed_step["turn_id"].is_null());
+        let view = e
+            .query("workflow.inspect", &json!({"id":run["id"]}), 4)
+            .unwrap();
+        let waiting = e
+            .query("query.workflow_driver", &json!({"id":run["id"]}), 4)
+            .unwrap()["waiting"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["execution_id"] == timed_step["id"])
+            .unwrap()
+            .clone();
+        *recorder.native_steps.lock().unwrap() = vec![(
+            "workflow.execution.reconcile".into(),
+            json!({"instance_id":run["id"],"step":"writer","execution_id":timed_step["id"],"expected_revision":view["record"]["revision"],"expected_step_revision":waiting["step_revision"],"plan_revision_id":view["runtime"]["active_plan_revision_id"],"control_version":view["runtime"]["control_version"],"reason":"核对原始拒绝时间并恢复原执行，不申请 Human 判定"}),
+        )];
+        command(&e,"orchestration.open",outer["id"].as_str(),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4"})).unwrap();
+        command(
+            &e,
+            "workflow.driver.select",
+            outer["id"].as_str(),
+            json!({"mode":"agent"}),
+        )
+        .unwrap();
+        for _ in 0..16 {
+            e.drive_controllers().unwrap();
+            drive(&e, 1);
+            if e.store
+                .snapshot()
+                .unwrap()
+                .governance
+                .iter()
+                .any(|r| r.r#type == "workflow_reconciliation" && r.data["status"] == "unresolved")
+            {
+                break;
+            }
+            if instance(&e, &run["id"])["steps"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|s| s["step"] == "writer" && s["status"] == "waiting_input")
+            {
+                break;
+            }
+        }
+        assert_eq!(
+            instance(&e, &run["id"])["steps"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|s| s["step"] == "writer")
+                .unwrap()["status"],
+            "waiting_input",
+            "recovery diagnostics: {}",json!(e.store.snapshot().unwrap().governance.iter().filter(|r|r.r#type=="workflow_reconciliation" || r.r#type=="controller_tool_call").map(|r|json!({"type":r.r#type,"status":r.data["status"],"method":r.data["method"],"error":r.data["error"]})).collect::<Vec<_>>())
+        );
+        command(
+            &e,
+            "workflow.step.input",
+            run["id"].as_str(),
+            json!({"step":"writer","input":"按原任务继续，保留修改"}),
+        )
+        .unwrap();
+        drive(&e, 12);
+        assert_eq!(instance(&e, &outer["id"])["steps"][0]["status"], "running");
+        let state = e.store.snapshot().unwrap();
+        assert_eq!(
+            state
+                .governance
+                .iter()
+                .filter(|r| r.r#type == "workflow_stop_reconciliation")
+                .count(),
+            1
+        );
+        assert!(state.governance.iter().any(|r| r.r#type == "workflow_stop"));
+        assert!(
+            state
+                .governance
+                .iter()
+                .any(|r| r.r#type == "controller_tool_call"
+                    && r.data["method"] == "workflow.execution.reconcile"
+                    && r.data["status"] == "succeeded")
+        );
+        assert!(
+            !state
+                .governance
+                .iter()
+                .any(|r| r.r#type == "workflow_manual_effect_decision")
+        );
+    }
+    let after = instance(&e, &run["id"]);
+    let resumed = after["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["step"] == "writer")
+        .unwrap();
+    assert_eq!(resumed["status"], "waiting_confirmation");
+    for field in [
+        "id",
+        "input_digest",
+        "contract_digest",
+        "session_id",
+        "plan_revision_id",
+    ] {
+        assert_eq!(resumed[field], original[field], "{field}");
+    }
+    assert_eq!(
+        recorder
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|r| r.configured_task.is_some())
+            .count(),
+        2
+    );
+    assert_eq!(
+        std::fs::read_to_string(changed).unwrap(),
+        "preserve this unsealed work\n"
+    );
+    assert_eq!(
+        git(std::path::Path::new(&work.path), &["status", "--porcelain"]),
+        status
+    );
+    assert_eq!(
+        git(std::path::Path::new(&work.path), &["rev-parse", "HEAD"]),
+        base
+    );
+    assert_eq!(
+        after["active_plan_revision_id"],
+        before["active_plan_revision_id"]
+    );
+}
+
+struct RefusedStartup {
+    asynchronous: bool,
+    known: bool,
+}
+impl RefusedStartup {
+    fn failure(&self) -> Error {
+        let mut error = err("fixture_start_refused", "fixture: no input submitted");
+        error.execution_failure = Some(ExecutionFailureDisposition {
+            kind: ExecutionFailureKind::Business,
+            effect: if self.known {
+                ExecutionFailureEffect::NotApplied
+            } else {
+                ExecutionFailureEffect::Unknown
+            },
+        });
+        error
+    }
+}
+impl ports::Harness for RefusedStartup {
+    fn begin_session(&self, _: &ports::SessionStart) -> Result<Option<ports::SessionReceipt>> {
+        if self.asynchronous {
+            Ok(None)
+        } else {
+            Err(self.failure())
+        }
+    }
+    fn poll_session_start(
+        &self,
+        _: &Session,
+        _: &RuntimeExecution,
+    ) -> Result<Option<ports::SessionReceipt>> {
+        Err(self.failure())
+    }
+    fn dispatch_turn(&self, _: &ports::TurnDispatch) -> Result<()> {
+        panic!("refused startup must never submit input")
+    }
+    fn stop_session(&self, _: &Session, e: &RuntimeExecution) -> Result<ports::WorkerStop> {
+        Ok(ports::WorkerStop {
+            operation_id: e.operation_id.clone(),
+            writer_revoked: true,
+            mode: "fixture: preparation refused".into(),
+            requires_successor: false,
+        })
+    }
+    fn cleanup_worker(&self, _: &Session, _: &RuntimeExecution) -> Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn startup_not_applied_is_not_misclassified_as_unknown_in_sync_async_or_legacy_reconciliation() {
+    for (asynchronous, known) in [(false, true), (true, true), (false, false), (true, false)] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut e = engine(dir.path());
+        e.harness = Arc::new(RefusedStartup {
+            asynchronous,
+            known,
+        });
+        let (role, agent) = research_agent(&e);
+        let run = launch(
+            &e,
+            &role,
+            &agent,
+            json!({"confirmation":"human","outputs":{"risks":{"delivery_ref":"fixture-delivery-object:1"}}}),
+        );
+        drive(&e, 8);
+        let before = instance(&e, &run["id"]);
+        let step = &before["steps"][0];
+        assert_eq!(
+            step["status"],
+            if known {
+                "failed"
+            } else {
+                "needs_reconciliation"
+            },
+            "async={asynchronous}"
+        );
+        if known {
+            assert_eq!(step["failure"]["kind"], "business");
+            assert_eq!(step["failure"]["effect"], "not_applied");
+            // Reproduce an old persisted misclassification without altering its
+            // immutable native observation. The public reconciliation must use
+            // that original receipt instead of demanding a Human verdict.
+            // Direct fixture SQL represents the old release's terminal ledger;
+            // current public APIs correctly forbid reopening a terminal Turn.
+            rusqlite::Connection::open(dir.path().join("engineering.sqlite3")).unwrap().execute("UPDATE turns SET status='needs_reconciliation',revision=revision+1 WHERE id=?1",[step["turn_id"].as_str().unwrap()]).unwrap();
+            e.store
+                .seed_fixture_state(None, &mut |state| {
+                    let record = state
+                        .governance
+                        .iter_mut()
+                        .find(|r| r.id == run["id"])
+                        .unwrap();
+                    record.data["steps"][0]["status"] = json!("needs_reconciliation");
+                    record.data["status"] = json!("needs_reconciliation");
+                    record.revision += 1;
+                    record.content_hash = content_digest(&record.refs, &record.data);
+                    Ok(Value::Null)
+                })
+                .unwrap();
+            command(
+                &e,
+                "workflow.execution.reconcile",
+                run["id"].as_str(),
+                json!({"execution_id":step["id"],"step":"study","reason":"核对原启动未执行回执"}),
+            )
+            .unwrap();
+            drive(&e, 4);
+            let after = instance(&e, &run["id"]);
+            assert_eq!(after["steps"][0]["status"], "failed");
+            assert_eq!(after["steps"][0]["failure"]["effect"], "not_applied");
+            assert_eq!(
+                after["steps"][0]["failure"]["code"],
+                "fixture_start_refused"
+            );
+            assert!(
+                !e.store
+                    .snapshot()
+                    .unwrap()
+                    .governance
+                    .iter()
+                    .any(|r| r.r#type == "workflow_manual_effect_decision")
+            );
+        }
+    }
 }
 
 #[test]
@@ -1728,6 +2517,468 @@ fn persisted_evidence_case(large: bool) {
         .unwrap(),
         evidence
     );
+}
+
+fn platform_material_forwarding_case(mode: &str) {
+    let directory = tempfile::tempdir().unwrap();
+    let mut e = engine(directory.path());
+    let recorder = Arc::new(RecordingAgent::default());
+    recorder
+        .responses
+        .lock()
+        .unwrap()
+        .push(json!({"status":"needs_input","summary":"缺少已封存的平台材料","outputs":{}}));
+    e.harness = recorder;
+    let (role, _) = research_agent(&e);
+    let capability=command(&e,"capability.create",None,json!({"name":"材料读取能力","model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"skills":[],"tools":[DEFAULT_NATIVE_TOOL_ID,"builtin-tool-workflow-outputs-read:2"],"data":{}})).unwrap();
+    let agent=command(&e,"agent.create",None,json!({"name":"材料接收者","role_ref":role["id"],"capability_ref":capability["id"],"data":{}})).unwrap();
+    let run = launch(
+        &e,
+        &role,
+        &agent,
+        json!({"confirmation":"human","access":{"tool_refs":["builtin-tool-workflow-outputs-read:2"]},"outputs":{"risks":{"delivery_ref":"fixture-delivery-object:1"}}}),
+    );
+    let root = run["id"].as_str().unwrap();
+    for _ in 0..12 {
+        drive(&e, 1);
+        if instance(&e, &run["id"])["steps"][0]["status"] == "waiting_input" {
+            break;
+        }
+    }
+    // Synthetic archived data exercises the transfer, not a claim that
+    // these counts came from an actual acceptance execution.
+    let value = json!({"report":"原材料🙂".repeat(1700),"counts":{"failed":5,"passed":2}});
+    let material=command(&e,"workflow.materials.import",Some(root),json!({"delivery_ref":"fixture-delivery-object:1","value":value,"source":"fixture: archived evidence, not a test verdict"})).unwrap()["id"].as_str().unwrap().to_owned();
+    let unrelated=command(&e,"workflow.materials.import",Some(root),json!({"delivery_ref":"fixture-delivery-object:1","value":{"private":"undeclared"},"source":"fixture: unrelated material"})).unwrap()["id"].clone();
+    let pointer = if mode == "reference" { "/counts" } else { "" };
+    let page = e
+        .query(
+            "workflow.outputs.read",
+            &json!({"id":root,"ids":[material],"pointer":pointer,"max_bytes":1024}),
+            4,
+        )
+        .unwrap();
+    let mut reference = page["outputs"][0]["input_ref"].as_str().unwrap().to_owned();
+    if mode == "foreign" {
+        let initial = instance(&e, &run["id"]);
+        command(&e,"project.configuration.update",initial["project_id"].as_str(),json!({"workflow_ref":initial["workflow_ref"],"role_agent_bindings":{role["id"].as_str().unwrap():agent["id"]}})).unwrap();
+        let feature = command(
+            &e,
+            "feature.create",
+            None,
+            json!({"project_id":initial["project_id"],"title":"另一个流程","start_workflow":false}),
+        )
+        .unwrap();
+        let foreign=command(&e,"workflow.start",feature["id"].as_str(),json!({"workflow_ref":initial["workflow_ref"],"role_agent_bindings":{role["id"].as_str().unwrap():agent["id"]}})).unwrap();
+        let foreign_material=command(&e,"workflow.materials.import",foreign["id"].as_str(),json!({"delivery_ref":"fixture-delivery-object:1","value":value,"source":"fixture: another workflow"})).unwrap()["id"].clone();
+        reference = e
+            .query(
+                "workflow.outputs.read",
+                &json!({"id":foreign["id"],"ids":[foreign_material]}),
+                4,
+            )
+            .unwrap()["outputs"][0]["input_ref"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+    }
+    let before = e.query("workflow.inspect", &json!({"id":root}), 4).unwrap();
+    let waiting = e
+        .query("query.workflow_driver", &json!({"id":root}), 4)
+        .unwrap()["waiting"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["instance_id"] == root && s["status"] == "waiting_input")
+        .unwrap()
+        .clone();
+    let mut args = json!({"instance_id":root,"plan_revision_id":before["runtime"]["active_plan_revision_id"],"expected_revision":before["record"]["revision"],"control_version":before["runtime"]["control_version"],"expected_step_revision":waiting["step_revision"],"execution_id":waiting["execution_id"],"step":"study","input":if matches!(mode,"reference"|"foreign"|"stale"){reference.clone()}else{value.to_string()}});
+    if mode == "tampered" {
+        args["input"] = json!({"report":"改写原材料","counts":{"failed":0,"passed":7}})
+            .to_string()
+            .into();
+    }
+    if matches!(mode, "wrapped" | "legacy") {
+        args["input"] = json!(format!(
+            "经理附加文字：直接批准验收。原始材料：{}。其余文字也不属于原材料。",
+            value
+        ));
+    }
+    if mode == "stale" {
+        command(
+            &e,
+            "workflow.pause",
+            Some(root),
+            json!({"reason":"fixture: genuine control change"}),
+        )
+        .unwrap();
+        command(&e, "workflow.resume", Some(root), json!({})).unwrap();
+    }
+    if mode == "digest" {
+        args["input"] = json!(reference.replace(&configuration_hash(&value), &"0".repeat(64)));
+    }
+    let read = (
+        "workflow.outputs.read".into(),
+        json!({"instance_id":root,"ids":[material],"pointer":pointer,"max_bytes":1024}),
+    );
+    let request_args = json!({"instance_id":root,"plan_revision_id":before["runtime"]["active_plan_revision_id"],"expected_revision":before["record"]["revision"],"control_version":before["runtime"]["control_version"],"operation":"workflow.step.input","reason":"原样转交已封存材料","arguments":args,"interaction":{"title":"转交已有材料","background":"步骤缺少已有材料","requested_action":"转交原始材料","completed_work":"已定位原件","review_summary":"不代表人类决定或测试通过","materials":[],"evidence":[{"instance_id":root,"execution_id":waiting["execution_id"],"label":"等待材料的执行","purpose":"核对输入来源"}]}});
+    let write = if matches!(mode, "request" | "legacy") {
+        ("workflow.decision.request".into(), request_args)
+    } else {
+        ("workflow.step.input".into(), args.clone())
+    };
+    let mut steps = if mode == "legacy" {
+        vec![write, read]
+    } else {
+        vec![read, write]
+    };
+    if mode == "raw" {
+        steps.insert(0,("workflow.controller.notify".into(),json!({"instance_id":root,"plan_revision_id":before["runtime"]["active_plan_revision_id"],"interaction":{"title":"经理转交已有平台材料","background":"原件已封存","requested_action":"由经理核对转交","completed_work":"已定位源记录","review_summary":"只转交原件，不生成 Human 决定","materials":[],"evidence":[{"instance_id":root,"execution_id":waiting["execution_id"],"label":"材料接收者","purpose":"核对转交位置"}]}})));
+    }
+    let relay = Arc::new(RecordingAgent {
+        native_steps: Mutex::new(steps),
+        agent_reads: Mutex::new(vec![
+            json!({"ids":[material],"pointer":pointer,"max_bytes":1024}),
+            json!({"ids":[material],"pointer":if pointer.is_empty(){"/counts"}else{""}}),
+            json!({"ids":[unrelated]}),
+        ]),
+        ..Default::default()
+    });
+    e.harness = relay.clone();
+    command(&e,"orchestration.open",Some(root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4"})).unwrap();
+    command(
+        &e,
+        "workflow.driver.select",
+        Some(root),
+        json!({"mode":"agent"}),
+    )
+    .unwrap();
+    for _ in 0..12 {
+        e.drive_controllers().unwrap();
+        drive(&e, 1);
+        if matches!(mode, "tampered" | "foreign" | "stale" | "digest")
+            && relay
+                .native_replies
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(m, _)| *m)
+                .count()
+                >= 2
+        {
+            break;
+        }
+        if (matches!(mode, "legacy" | "request")
+            && relay
+                .native_replies
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(m, _)| *m)
+                .count()
+                >= 2)
+            || relay
+                .native_replies
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(m, _)| !*m)
+                .count()
+                >= 3
+        {
+            break;
+        }
+    }
+    if mode == "legacy" {
+        let state = e.store.snapshot().unwrap();
+        let pending = state
+            .governance
+            .iter()
+            .find(|r| r.r#type == "workflow_pending_decision")
+            .unwrap();
+        let result = command(
+            &e,
+            "workflow.decision.reconcile",
+            Some(&pending.id),
+            json!({"reason":"按用户明确要求撤回此额外确认，交回原经理处理"}),
+        )
+        .unwrap();
+        assert_eq!(result["status"], "withdrawn");
+        let after = e.store.snapshot().unwrap();
+        assert_eq!(
+            after.configuration(&pending.id).unwrap().data["request"],
+            pending.data["request"]
+        );
+        assert!(
+            !after
+                .governance
+                .iter()
+                .any(|r| r.r#type == "workflow_human_decision")
+        );
+        assert!(
+            after
+                .events
+                .iter()
+                .any(|event| event.kind == "workflow.runtime"
+                    && event.detail.contains("material_input_ref"))
+        );
+        args["input"] = result["material_input_ref"].clone();
+        *relay.native_steps.lock().unwrap() = vec![("workflow.step.input".into(), args)];
+        for _ in 0..12 {
+            e.drive_controllers().unwrap();
+            drive(&e, 1);
+            if relay
+                .native_replies
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(m, _)| !*m)
+                .count()
+                >= 3
+            {
+                break;
+            }
+        }
+    }
+    let state = e.store.snapshot().unwrap();
+    let grants = state
+        .governance
+        .iter()
+        .filter(|r| r.r#type == "workflow_material_input")
+        .collect::<Vec<_>>();
+    let allowed = !matches!(
+        mode,
+        "request" | "tampered" | "foreign" | "stale" | "digest"
+    );
+    assert_eq!(!grants.is_empty(), allowed, "{mode}");
+    assert!(
+        !state
+            .governance
+            .iter()
+            .any(|r| r.r#type == "workflow_human_decision"),
+        "{mode}"
+    );
+    if mode == "request" {
+        let pending = state
+            .governance
+            .iter()
+            .find(|r| r.r#type == "workflow_pending_decision")
+            .unwrap();
+        assert_eq!(pending.data["status"], "pending");
+        assert_eq!(pending.data["request"]["operation"], "workflow.step.input");
+        assert_eq!(
+            pending.data["request"]["arguments"]["input"],
+            value.to_string()
+        );
+    }
+    if mode == "raw" {
+        let manager = e
+            .query("query.orchestration", &json!({"root_instance_id":root}), 4)
+            .unwrap();
+        let notices = manager["interactions"].as_array().unwrap();
+        assert!(!notices.is_empty());
+        assert!(notices.iter().all(|notice| {
+            notice["feedback"]
+                .as_array()
+                .is_some_and(|feedback| feedback.is_empty())
+        }));
+    }
+    if allowed {
+        assert_eq!(grants.len(), 1, "{mode}");
+        assert_eq!(grants[0].data["material"]["source_id"], material);
+        assert_eq!(grants[0].data["actor"]["kind"], "controller");
+        assert!(!relay.calls.lock().unwrap().iter().any(|r| {
+            r.configured_task.as_ref().is_some_and(|task| {
+                task.task["supplemental_input"]
+                    .as_str()
+                    .is_some_and(|input| {
+                        input.contains("经理附加文字") || input.contains("直接批准验收")
+                    })
+            })
+        }));
+        assert_eq!(
+            state.configuration(root).unwrap().data["active_plan_revision_id"],
+            before["runtime"]["active_plan_revision_id"]
+        );
+        let receipts = relay.native_replies.lock().unwrap();
+        let reads = receipts
+            .iter()
+            .filter(|(manager, _)| !*manager)
+            .map(|(_, r)| r)
+            .collect::<Vec<_>>();
+        assert_eq!(reads.len(), 3, "{mode}");
+        assert!(reads[0].success, "{mode}: {:?}", reads[0]);
+        assert!(!reads[1].success && !reads[2].success, "{mode}");
+        assert_eq!(
+            reads[0].structured_content.as_ref().unwrap()["outputs"][0]["value_digest"],
+            configuration_hash(value.pointer(pointer).unwrap())
+        );
+        if mode != "legacy" {
+            assert!(
+                !state
+                    .governance
+                    .iter()
+                    .any(|r| r.r#type == "workflow_pending_decision"),
+                "{mode}"
+            );
+        }
+    } else {
+        assert_eq!(
+            instance(&e, &run["id"])["steps"][0]["status"],
+            "waiting_input",
+            "{mode}"
+        );
+    }
+}
+
+#[test]
+fn platform_material_forwarding_raw() {
+    platform_material_forwarding_case("raw");
+}
+#[test]
+fn platform_material_forwarding_wrapped() {
+    platform_material_forwarding_case("wrapped");
+}
+#[test]
+fn platform_material_forwarding_reference() {
+    platform_material_forwarding_case("reference");
+}
+#[test]
+fn platform_material_forwarding_request() {
+    platform_material_forwarding_case("request");
+}
+#[test]
+fn platform_material_forwarding_tampered() {
+    platform_material_forwarding_case("tampered");
+}
+#[test]
+fn platform_material_forwarding_foreign() {
+    platform_material_forwarding_case("foreign");
+}
+#[test]
+fn platform_material_forwarding_stale() {
+    platform_material_forwarding_case("stale");
+}
+#[test]
+fn platform_material_forwarding_digest() {
+    platform_material_forwarding_case("digest");
+}
+#[test]
+fn platform_material_forwarding_legacy() {
+    platform_material_forwarding_case("legacy");
+}
+
+#[test]
+fn manager_input_decisions_are_current_and_only_exact_approved_content_can_be_relayed() {
+    for (approved, altered) in [(true, false), (false, false), (true, true)] {
+        let directory = tempfile::tempdir().unwrap();
+        let mut e = engine(directory.path());
+        let recorder = Arc::new(RecordingAgent::default());
+        recorder
+            .responses
+            .lock()
+            .unwrap()
+            .push(json!({"status":"needs_input","summary":"请补充原报告","outputs":{}}));
+        e.harness = recorder;
+        let (role, agent) = research_agent(&e);
+        let workflow = publish(
+            &e,
+            json!({"schema_version":6,"stages":[{"key":"work","name":"工作"}],"steps":[{"key":"repair","name":"修复验收环境","stage":"work","executor":{"type":"agent","role_ref":role["id"]},"task_instructions":"核对原报告后继续","confirmation":"human","outputs":{"risks":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
+        );
+        let project = command(&e, "project.create", None, json!({"title":"补充输入审批"})).unwrap();
+        let configuration = command(&e,"project.configuration.update",project["id"].as_str(),json!({"workflow_ref":workflow["id"],"role_agent_bindings":{role["id"].as_str().unwrap():agent["id"]}})).unwrap();
+        let feature = command(&e,"feature.create",None,json!({"project_id":project["id"],"title":"输入审批","initial_requirement":"核对失败回执","configuration_revision_id":configuration["id"]})).unwrap();
+        let root = e
+            .query(
+                "query.workflow_instance",
+                &json!({"owner_id":feature["id"]}),
+                4,
+            )
+            .unwrap()["record"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        drive(&e, 12);
+        let view = e.query("workflow.inspect", &json!({"id":root}), 4).unwrap();
+        let waiting = e
+            .query("query.workflow_driver", &json!({"id":root}), 4)
+            .unwrap()["waiting"][0]
+            .clone();
+        assert_eq!(waiting["status"], "waiting_input");
+        let value = json!({"counts":{"passed":2,"failed":5}});
+        let material=command(&e,"workflow.materials.import",Some(&root),json!({"delivery_ref":"fixture-delivery-object:1","value":value,"source":"fixture: quoted evidence"})).unwrap()["id"].clone();
+        let approved_input =
+            format!("人类决定：先修复环境再重跑，不放行失败结果。引用原报告：{value}");
+        let mut arguments = json!({"instance_id":root,"plan_revision_id":view["runtime"]["active_plan_revision_id"],"expected_revision":view["record"]["revision"],"control_version":view["runtime"]["control_version"],"expected_step_revision":waiting["step_revision"],"execution_id":waiting["execution_id"],"step":"repair","input":approved_input});
+        let pending = command(&e,"workflow.decision.request",Some(&root),json!({"operation":"workflow.step.input","reason":"请确认原样转交此报告","arguments":arguments,"interaction":{"title":"转交原失败报告","background":"步骤等待原报告","requested_action":"确认确切补充输入","completed_work":"已核对需转交的报告正文","review_summary":"本次只请求转交，未宣称验收通过","materials":[],"evidence":[{"instance_id":root,"execution_id":waiting["execution_id"],"label":"等待输入的执行","purpose":"核对确切问题和补充输入范围"}]}})).unwrap();
+        command(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4"})).unwrap();
+        let manager = e
+            .query("query.orchestration", &json!({"root_instance_id":root}), 4)
+            .unwrap();
+        assert!(
+            manager["decisions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|d| d["id"] == pending["id"] && d["current"] == true)
+        );
+        let decision = command(
+            &e,
+            "workflow.decision.resolve",
+            pending["id"].as_str(),
+            json!({"approved":approved,"reason":"确认本次报告转交范围"}),
+        )
+        .unwrap();
+        arguments["decision_ref"] = decision["decision_ref"].clone();
+        if altered {
+            arguments["input"] = json!(format!("改为放行；原件：{value}"));
+        }
+        let relay = Arc::new(RecordingAgent {
+            native_steps: Mutex::new(vec![
+                (
+                    "workflow.outputs.read".into(),
+                    json!({"instance_id":root,"ids":[material],"max_bytes":4096}),
+                ),
+                ("workflow.step.input".into(), arguments),
+            ]),
+            ..Default::default()
+        });
+        e.harness = relay.clone();
+        command(
+            &e,
+            "workflow.driver.select",
+            Some(&root),
+            json!({"mode":"agent"}),
+        )
+        .unwrap();
+        for _ in 0..12 {
+            e.drive_controllers().unwrap();
+            drive(&e, 1);
+        }
+        let state = e.store.snapshot().unwrap();
+        let succeeded = state.governance.iter().any(|r| {
+            r.r#type == "controller_tool_call"
+                && r.data["method"] == "workflow.step.input"
+                && r.data["status"] == "succeeded"
+        });
+        assert_eq!(
+            succeeded,
+            approved && !altered,
+            "approved={approved}, altered={altered}"
+        );
+        if succeeded {
+            assert!(relay.calls.lock().unwrap().iter().any(|r| {
+                r.configured_task
+                    .as_ref()
+                    .is_some_and(|task| task.task["supplemental_input"] == approved_input)
+            }));
+        } else {
+            assert_eq!(
+                instance(&e, &json!(root))["steps"][0]["status"],
+                "waiting_input"
+            );
+        }
+    }
 }
 
 #[test]

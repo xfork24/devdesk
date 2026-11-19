@@ -1,6 +1,7 @@
 import { displayText } from "../display-text";
 import { useState } from "react";
 import { ActionButton } from "./ActionFeedback";
+import { ManagerDisclosure } from "./ManagerDisclosure";
 import { MarkdownPreview } from "./configuration-ui";
 import { ReadingLink } from "./reading";
 import type { Row } from "./rpc-types";
@@ -15,6 +16,7 @@ type Props = {
   onDecide?: (approved: boolean, reason: string) => Promise<void>;
   requireReason?: boolean;
   awaitingInput?: boolean;
+  feedback?: { id: string; input: string }[];
 };
 
 function ManagerMarkdown({ text }: { text: string }) {
@@ -31,6 +33,7 @@ export function ManagerInteraction({
   onDecide: latestDecide,
   requireReason = false,
   awaitingInput = false,
+  feedback = [],
 }: Props) {
   const [reason, setReason] = useState("");
   const [original, setOriginal] = useState<{
@@ -38,7 +41,9 @@ export function ManagerInteraction({
     decide: Props["onDecide"];
     basis?: string;
   }>();
-  const settled = latestStatus === "approved" || latestStatus === "rejected";
+  const settled = ["approved", "rejected", "withdrawn"].includes(
+    latestStatus || "",
+  );
   const interaction = settled
     ? latestInteraction
     : original?.interaction || latestInteraction;
@@ -83,7 +88,7 @@ export function ManagerInteraction({
           </button>
         </p>
       )}
-      <details
+      <ManagerDisclosure
         className="manager-disclosure"
         open={status === "pending" || awaitingInput}
       >
@@ -104,9 +109,10 @@ export function ManagerInteraction({
                         ? "评审未通过，用户已例外批准"
                         : "已确认",
                       rejected: "已退回",
+                      withdrawn: "已撤回额外确认",
                       stale: "已过期",
                     } as Record<string, string>
-                  )[status || ""] || "说明",
+                  )[status || ""] || (feedback.length ? "已反馈" : "说明"),
             )}
           </span>
         </summary>
@@ -117,6 +123,24 @@ export function ManagerInteraction({
             </p>
           )}
           <ManagerMarkdown text={interaction.background || ""} />
+          {typeof interaction.supplemental_input === "string" && (
+            <details>
+              <summary>拟转交的补充输入（原文）</summary>
+              <p className="manager-feedback-text">
+                {interaction.supplemental_input}
+              </p>
+            </details>
+          )}
+          {feedback.length > 0 && (
+            <section aria-label="用户反馈">
+              <h5>用户反馈</h5>
+              {feedback.map((reply) => (
+                <p key={reply.id} className="manager-feedback-text">
+                  {reply.input}
+                </p>
+              ))}
+            </section>
+          )}
           {interaction.signed_reason ? (
             <>
               <h5>用户签署意见</h5>
@@ -310,7 +334,7 @@ export function ManagerInteraction({
             <p role="status">你已退回本轮事项，项目经理将依据意见继续处理。</p>
           )}
         </div>
-      </details>
+      </ManagerDisclosure>
     </article>
   );
 }

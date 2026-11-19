@@ -36,6 +36,21 @@ impl Engine {
                 .native_workflow_change_command(c, fingerprint, context)
                 .map(Some);
         }
+        if method == "workflow.change.reconcile" {
+            return self
+                .native_workflow_change_reconcile(c, fingerprint, context)
+                .map(Some);
+        }
+        if method == "workflow.decision.reconcile" {
+            return self
+                .reconcile_material_decision(c, fingerprint, context)
+                .map(Some);
+        }
+        if method == "workflow.workspace.reconcile" {
+            return self
+                .reconcile_workspace_continuation(c, fingerprint, context)
+                .map(Some);
+        }
         if method == "workflow.start" {
             return self
                 .native_workflow_start(c, fingerprint, context)
@@ -324,6 +339,14 @@ impl Engine {
                     .or_else(|| arguments["id"].as_str())
                 {
                     require(target == root.record.id, "决定目标与流程不一致")?;
+                }
+                if arguments["execution_id"].is_string()
+                    && !matches!(
+                        operation.as_str(),
+                        "workflow.step.confirm" | "workflow.step.accept" | "workflow.step.approve"
+                    )
+                {
+                    self.require_step_decision(&mut commit, &root, &operation, arguments)?;
                 }
                 let time_resources = if matches!(
                     operation.as_str(),
@@ -670,6 +693,26 @@ impl Engine {
             self.prepare_controller_decision(&mut commit, &selected, pending, approved, &reason)?;
         commit.finish(fingerprint, result)
     }
+    fn require_step_decision(
+        &self,
+        commit: &mut WorkflowCommit<'_>,
+        root: &WorkflowHeaderFacts,
+        operation: &str,
+        arguments: &Value,
+    ) -> Result<()> {
+        let resources = root.step(self, &text(arguments, "execution_id")?)?;
+        require(
+            (operation != "workflow.step.input"
+                || resources.execution.status == StepExecutionStatus::WaitingInput)
+                && arguments["expected_step_revision"] == resources.step.revision
+                && arguments["control_version"] == root.instance.control_version,
+            "待决定的原执行或控制版本已变化",
+        )?;
+        if operation == "workflow.step.input" {
+            text(arguments, "input")?;
+        }
+        commit.witness(resources.reads.versions().iter().cloned())
+    }
     fn close_execution_human_wait(
         &self,
         commit: &mut WorkflowCommit<'_>,
@@ -710,6 +753,14 @@ impl Engine {
             .to_owned();
         let arguments = pending.data["request"]["arguments"].clone();
         let args = &arguments;
+        if args["execution_id"].is_string()
+            && !matches!(
+                operation.as_str(),
+                "workflow.step.confirm" | "workflow.step.accept" | "workflow.step.approve"
+            )
+        {
+            self.require_step_decision(commit, &root, &operation, args)?;
+        }
         if matches!(
             operation.as_str(),
             "workflow.step.confirm" | "workflow.step.accept" | "workflow.step.approve"

@@ -827,7 +827,7 @@ test("顶部授权等待提示在登录结束或取消后消失，刷新不恢�
   });
 });
 
-test("项目默认调度与 Profile 保存恢复，工具接入空状态区分模型登录", async ({
+test("项目默认调度与 Profile 保存恢复，已配置项目不提示默认配置", async ({
   page,
 }) => {
   await page.goto("/");
@@ -842,6 +842,14 @@ test("项目默认调度与 Profile 保存恢复，工具接入空状态区分�
   const mode = panel.getByLabel("默认调度模式", { exact: true });
   const profile = panel.getByLabel("Harness Profile", { exact: true });
   const fullAccess = "builtin-permission-harness-full-access:1";
+  const defaultNotice = page.locator(".notice").filter({
+    hasText: "默认配置已准备好",
+  });
+  const adoptDefaults = page.getByRole("button", {
+    name: "采用默认配置",
+    exact: true,
+  });
+  await expect(defaultNotice).toBeVisible();
   await expect(mode).toHaveValue("agent");
   await expect(profile).toHaveValue(fullAccess);
   await expect(profile.locator("option:checked")).toContainText(
@@ -850,6 +858,12 @@ test("项目默认调度与 Profile 保存恢复，工具接入空状态区分�
   await expect(
     panel.getByLabel("Harness Profile（留空采用默认）", { exact: true }),
   ).toHaveCount(0);
+  await mode.selectOption("manual");
+  await profile.selectOption("builtin-permission-harness-read-only:1");
+  await adoptDefaults.click();
+  await expect(mode).toHaveValue("agent");
+  await expect(profile).toHaveValue(fullAccess);
+  await expect(defaultNotice).toBeVisible();
   async function saveProject(expectedMode: string, expectedProfile: string) {
     const response = page.waitForResponse(
       (r) =>
@@ -867,20 +881,22 @@ test("项目默认调度与 Profile 保存恢复，工具接入空状态区分�
     expect(saved.configuration.data.harness_permission_ref).toBe(
       expectedProfile,
     );
+    await expect(defaultNotice).toHaveCount(0);
+    await expect(adoptDefaults).toHaveCount(0);
   }
   await saveProject("agent", fullAccess);
   await page.reload();
   await expect(mode).toHaveValue("agent");
   await expect(profile).toHaveValue(fullAccess);
+  await expect(defaultNotice).toHaveCount(0);
   await mode.selectOption("manual");
   await profile.selectOption("builtin-permission-harness-read-only:1");
   await saveProject("manual", "builtin-permission-harness-read-only:1");
   await page.reload();
   await expect(mode).toHaveValue("manual");
   await expect(profile).toHaveValue("builtin-permission-harness-read-only:1");
-  await page.getByRole("button", { name: "采用默认配置", exact: true }).click();
-  await expect(mode).toHaveValue("agent");
-  await expect(profile).toHaveValue(fullAccess);
+  await expect(defaultNotice).toHaveCount(0);
+  await expect(adoptDefaults).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "项目工具接入绑定", exact: true }),
   ).toBeVisible();
