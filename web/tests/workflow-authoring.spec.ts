@@ -62,8 +62,8 @@ test("内置 Delivery 全部关联内容标准并可查看确切规范", async (
   }
   await page.getByRole("button", { name: "流程与规范", exact: true }).click();
   await page.getByRole("tab", { name: "Delivery", exact: true }).click();
-  await page.getByRole("button", { name: /^Test Report\s/ }).click();
-  const report = deliveries.find((r: any) => r.name === "Test Report");
+  await page.getByRole("button", { name: /^精简版独立测试报告\s/ }).click();
+  const report = deliveries.find((r: any) => r.name === "精简版独立测试报告");
   await expect(page.getByLabel("内容规范", { exact: true })).toHaveValues(
     report.spec_refs,
   );
@@ -87,7 +87,7 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
   ).toBeVisible();
   const defaults = await rpc(page, "query.configuration_defaults");
   expect(Object.keys(defaults.role_agent_bindings)).toHaveLength(6);
-  expect(defaults.capability_ref).toBe("simplified-capability-developer:3");
+  expect(defaults.capability_ref).toBe("simplified-capability-developer:4");
   const completeTools = await rpc(page, "query.configuration_records", {
     refs: ["builtin-tool-codex-native:1", "builtin-tool-dsh-native:1"],
   });

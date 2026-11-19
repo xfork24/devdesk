@@ -44,6 +44,24 @@ def preserve_human_request(output, request, manager_url, check):
     return path
 
 
+def observe_human_request(output, request, manager_url, check):
+    """Preserve and diagnose a gate without controlling the observed Host.
+
+    A failed diagnostic is returned for explicit review, never approval. The
+    original URL is archival metadata; a new Host port does not change a request.
+    """
+    identity = request.get("id", "")
+    if not identity or Path(identity).name != identity or identity in (".", ".."):
+        return {"path": None, "diagnostic_passed": False, "diagnostic": "Invalid request identity"}
+    path = Path(output) / ("human-request-" + identity + ".json")
+    try:
+        original_url = json.loads(path.read_text())["manager_url"] if path.exists() else manager_url
+        preserve_human_request(output, request, original_url, check)
+    except (ReviewBasisError, ValueError, KeyError) as error:
+        return {"path": str(path), "diagnostic_passed": False, "diagnostic": str(error)}
+    return {"path": str(path), "diagnostic_passed": True, "diagnostic": None}
+
+
 def check_human_request(client, tree, request, expected_ancestors=None):
     """Check current, exact review links; the command remains authoritative.
 

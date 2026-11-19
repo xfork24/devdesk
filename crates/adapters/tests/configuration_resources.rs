@@ -480,6 +480,13 @@ fn detailed_delivery_catalog_has_content_standards_and_real_diff_ports() {
             .unwrap();
         assert_ne!(delivery.name, "结构化材料");
     }
+    runtime::retired_configuration::install(&e);
+    let state = e.store.snapshot().unwrap();
+    let deliveries: Vec<_> = state
+        .governance
+        .iter()
+        .filter(|r| r.r#type == "delivery_type")
+        .collect();
     for name in [
         "Review Report",
         "Task Doc",

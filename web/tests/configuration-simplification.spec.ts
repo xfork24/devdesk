@@ -180,7 +180,7 @@ test("配置归属与权限工具行，Workflow 内嵌调度", async ({ page }, 
   );
   await expect(page.getByLabel("运行资源精确修订")).toHaveCount(0);
   await page.goto(
-    "/?tab=components&config_tab=sandbox&config_object=builtin-sandbox-docker%3A1",
+    "/?tab=components&config_tab=sandbox&config_object=builtin-sandbox-docker%3A2",
   );
   await expect(page.getByLabel("Docker 基础环境与构建")).toHaveValue(
     /base_image/,

@@ -21,6 +21,44 @@ fn engine(path: &std::path::Path, bind: bool) -> Engine {
     engine
 }
 #[test]
+fn factory_retires_detailed_sources_and_compiles_the_remaining_default_closure() {
+    let directory = tempfile::tempdir().unwrap();
+    let engine = engine(directory.path(), true);
+    let state = engine.store.snapshot().unwrap();
+    let retired: Vec<SourceDefinition> = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/configuration/retired-engineering.json"
+    ))
+    .unwrap();
+    for source in retired {
+        assert!(
+            state
+                .configuration(&source_reference(&source.identity, source.revision).unwrap())
+                .is_err()
+        );
+    }
+    let defaults = engine.configuration_defaults(None).unwrap();
+    let bindings = serde_json::from_value(defaults["role_agent_bindings"].clone()).unwrap();
+    for key in ["workflow_ref", "task_workflow_ref"] {
+        let plan = engine
+            .compile_configured_workflow(
+                &state,
+                state
+                    .configuration(defaults[key].as_str().unwrap())
+                    .unwrap(),
+                &Scope::global(),
+                Some(&bindings),
+            )
+            .unwrap();
+        assert!(!plan.definitions.is_empty());
+    }
+    standard_snapshot(
+        &state,
+        defaults["standard_ref"].as_str().unwrap(),
+        &Scope::global(),
+    )
+    .unwrap();
+}
+#[test]
 fn step_profiles_are_the_only_scope_and_do_not_share_a_lock_by_agent() {
     let directory = tempfile::tempdir().unwrap();
     let engine = engine(directory.path(), true);

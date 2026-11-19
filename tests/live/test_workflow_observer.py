@@ -145,13 +145,57 @@ class ReviewRequestTests(unittest.TestCase):
     def test_both_probe_call_sites_preserve_before_checking(self):
         import ast
         from pathlib import Path
-        for name in ('probe_default_engineering_workflow.py', 'probe_child_approvals.py'):
+        for name in ('probe_streamlined_workflow.py', 'probe_child_approvals.py'):
             tree = ast.parse(Path(__file__).with_name(name).read_text())
             calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and
-                     isinstance(n.func, ast.Name) and n.func.id == 'preserve_human_request']
+                     isinstance(n.func, ast.Name) and n.func.id == 'observe_human_request']
             self.assertEqual(len(calls), 1, name)
             self.assertIsInstance(calls[0].args[-1], ast.Lambda)
             self.assertEqual(calls[0].args[-1].body.func.id, 'check_human_request')
+
+    def test_failed_diagnostic_preserves_packet_and_observes_the_next_gate(self):
+        import tempfile
+        from pathlib import Path
+        from workflow_observer import observe_human_request
+        with tempfile.TemporaryDirectory() as directory:
+            self.contract['inputs'] = {'source': {'type': 'source', 'source': {'step': 'producer', 'port': 'result'}}}
+            self.tree['root']['runtime']['steps'].append({'id': 'upstream', 'step': 'producer', 'outputs': {'result': 'original'}})
+            first = observe_human_request(directory, self.request, 'http://local:1', self.check)
+            self.assertFalse(first['diagnostic_passed'])
+            self.assertEqual(self.json.loads(Path(first['path']).read_text())['request'], self.request)
+            self.assertIn('Missing upstream output', Path(first['path']).with_suffix('.validation.jsonl').read_text())
+            self.contract['inputs'] = {}
+            second_request = copy.deepcopy(self.request)
+            second_request['id'] = 'next-request'
+            second = observe_human_request(directory, second_request, 'http://local:1', self.check)
+            self.assertTrue(second['diagnostic_passed'])
+            self.assertEqual(self.request['data']['status'], 'pending')
+
+    def test_resume_port_change_preserves_original_packet_and_still_checks_identity(self):
+        import tempfile
+        from pathlib import Path
+        from workflow_observer import observe_human_request
+        with tempfile.TemporaryDirectory() as directory:
+            first = observe_human_request(directory, self.request, 'http://local:1', self.check)
+            original = Path(first['path']).read_bytes()
+            resumed = observe_human_request(directory, self.request, 'http://local:2', self.check)
+            self.assertTrue(resumed['diagnostic_passed'])
+            changed = copy.deepcopy(self.request)
+            changed['data']['request']['arguments']['input_digest'] = 'changed'
+            self.assertFalse(observe_human_request(directory, changed, 'http://local:2', self.check)['diagnostic_passed'])
+            self.assertEqual(Path(first['path']).read_bytes(), original)
+
+    def test_invalid_request_identity_cannot_escape_the_evidence_directory(self):
+        import tempfile
+        from pathlib import Path
+        from workflow_observer import observe_human_request
+        with tempfile.TemporaryDirectory() as directory:
+            changed = copy.deepcopy(self.request)
+            changed['id'] = '../outside'
+            result = observe_human_request(directory, changed, 'http://local', self.check)
+            self.assertFalse(result['diagnostic_passed'])
+            self.assertIsNone(result['path'])
+            self.assertEqual(list(Path(directory).iterdir()), [])
 
     def test_original_is_durable_before_any_failure_and_never_overwritten(self):
         import tempfile

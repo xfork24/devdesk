@@ -145,6 +145,40 @@ pub struct EvidenceTarget {
     pub value_digest: String,
     pub value: Value,
 }
+impl EvidenceTarget {
+    /// Bounded locator hints for the exact frozen value, without repeating its body.
+    pub fn location_guidance(&self) -> Value {
+        let mut result = serde_json::json!({
+            "source_ref": self.source_ref,
+            "value_digest": self.value_digest,
+            "root_locator": {"type":"json_pointer","pointer":""}
+        });
+        if let Some(text) = self.value.as_str() {
+            let line_count = text.lines().count();
+            let headings: Vec<_> = text
+                .lines()
+                .enumerate()
+                .filter_map(|(index, line)| {
+                    let line = line.trim_start();
+                    let level = line.bytes().take_while(|c| *c == b'#').count();
+                    ((1..=6).contains(&level) && line.as_bytes().get(level) == Some(&b' '))
+                        .then_some((index + 1, line))
+                })
+                .take(9)
+                .collect();
+            result["line_count"] = serde_json::json!(line_count);
+            result["character_count"] = serde_json::json!(text.chars().count());
+            result["sections"] = serde_json::json!(headings.iter().take(8).enumerate().map(|(index, (start, heading))| {
+                serde_json::json!({
+                    "heading": heading.chars().take(80).collect::<String>(),
+                    "locator": {"type":"lines","start":start,"end":headings.get(index + 1).map_or(line_count, |(next, _)| next - 1)}
+                })
+            }).collect::<Vec<_>>());
+            result["sections_truncated"] = serde_json::json!(headings.len() > 8);
+        }
+        result
+    }
+}
 impl EvidenceLocation {
     /// The same bounded primitive shape must be visible to producers before admission.
     pub fn json_schema() -> Value {
@@ -184,7 +218,14 @@ impl EvidenceLocation {
                     .ok_or_else(|| err("evidence_location", "行定位只支持文本"))?;
                 require(*start > 0 && start <= end, "证据行范围无效")?;
                 let lines: Vec<_> = text.lines().collect();
-                require(*end <= lines.len(), "证据行范围越界")?;
+                require(
+                    *end <= lines.len(),
+                    format!(
+                        "证据行范围越界：{} 请求 {start}..{end}，冻结文本共 {} 行（1-based inclusive）",
+                        self.source_ref,
+                        lines.len()
+                    ),
+                )?;
                 lines[start - 1..*end].join("\n")
             }
             EvidenceLocator::Characters { start, end } => {
@@ -194,7 +235,11 @@ impl EvidenceLocation {
                     .ok_or_else(|| err("evidence_location", "字符定位只支持文本"))?;
                 require(
                     start < end && *end <= text.chars().count(),
-                    "证据字符范围越界",
+                    format!(
+                        "证据字符范围越界：{} 请求 {start}..{end}，冻结文本共 {} 个 Unicode 字符（0-based exclusive end）",
+                        self.source_ref,
+                        text.chars().count()
+                    ),
                 )?;
                 text.chars().skip(*start).take(end - start).collect()
             }
@@ -285,6 +330,72 @@ mod tests {
         evidence.value_digest = target.value_digest.clone();
         evidence.source_ref = "another-input".into();
         assert!(evidence.verify(&[target]).is_err());
+    }
+    #[test]
+    fn locator_guidance_uses_the_validators_unicode_and_line_boundaries() {
+        let text = "# 标题\r\n\r\n## 范围\r\n中文😀\r\n\r\n## 验证\r\n结果\r\n";
+        let value = serde_json::json!(text);
+        let target = EvidenceTarget {
+            source_ref: "frozen".into(),
+            value_digest: configuration_hash(&value),
+            value,
+        };
+        let guidance = target.location_guidance();
+        assert_eq!(guidance["line_count"], 7);
+        assert_eq!(guidance["character_count"], text.chars().count());
+        assert_eq!(
+            guidance["sections"][1]["locator"],
+            serde_json::json!({"type":"lines","start":3,"end":5})
+        );
+        for section in guidance["sections"].as_array().unwrap() {
+            let location = EvidenceLocation {
+                source_ref: target.source_ref.clone(),
+                value_digest: target.value_digest.clone(),
+                locator: serde_json::from_value(section["locator"].clone()).unwrap(),
+                quote: None,
+            };
+            location.verify(std::slice::from_ref(&target)).unwrap();
+        }
+        let invalid = EvidenceLocation {
+            source_ref: target.source_ref.clone(),
+            value_digest: target.value_digest.clone(),
+            locator: EvidenceLocator::Lines { start: 1, end: 8 },
+            quote: None,
+        };
+        assert!(
+            invalid
+                .verify(&[target])
+                .unwrap_err()
+                .message
+                .contains("共 7 行")
+        );
+    }
+    #[test]
+    fn locator_guidance_is_bounded_and_never_copies_the_document_body() {
+        let value = serde_json::json!(
+            (0..100)
+                .map(|i| format!("## {i} {}\nprivate body\n", "中".repeat(100)))
+                .collect::<String>()
+        );
+        let target = EvidenceTarget {
+            source_ref: "frozen".into(),
+            value_digest: configuration_hash(&value),
+            value,
+        };
+        let guidance = target.location_guidance();
+        assert_eq!(guidance["sections"].as_array().unwrap().len(), 8);
+        assert_eq!(guidance["sections_truncated"], true);
+        assert!(guidance.to_string().len() < 4096);
+        assert!(!guidance.to_string().contains("private body"));
+        for section in guidance["sections"].as_array().unwrap() {
+            let location = EvidenceLocation {
+                source_ref: target.source_ref.clone(),
+                value_digest: target.value_digest.clone(),
+                locator: serde_json::from_value(section["locator"].clone()).unwrap(),
+                quote: None,
+            };
+            location.verify(std::slice::from_ref(&target)).unwrap();
+        }
     }
     #[test]
     fn model_claims_cannot_override_machine_checks_or_replace_required_locations() {

@@ -37,7 +37,7 @@ Web 和出厂资源嵌入 Host，界面更新后重新构建并重启。发行�
 4. 在“执行与交付”查看步骤、原始产物、真实测试、独立评审及候选。运行计划变更经过预演、静止等待和原子应用；未知副作用先核对。
 5. 核对候选、测试、评审、业务接纳与远端发布回执，取得 PR。模型自述不能代替 Docker 测试、Git 事实或人类签署。
 
-默认精简版 Feature 为 5 阶段、14 个业务步骤（19 个实际节点），Task 为 5 阶段、10 个业务步骤（14 个实际节点）。独立测试与 Red/Green、独立评审、源版本及合并结果两类项目回归均保留；文档和自检在实现内完成。经理按 Task DAG 派发，默认并发上限 4；Task PR 合入并同步到所属 Feature 后才完成并解锁后继。PRD、Design、Tasks 和最终 Feature 合入要求确切版本的 Human 决定。项目必须先保存测试执行配置。详细版保留，可显式选择。完整流程、预算和授权见 [工作流与编排](docs/workflow-orchestration.md) 与 [默认配置](resources/configuration/README.md)。
+默认精简版 Feature 为 5 阶段、14 个业务步骤（19 个实际节点），Task 为 5 阶段、10 个业务步骤（14 个实际节点）。独立测试与 Red/Green、独立评审、源版本及合并结果两类项目回归均保留；文档和自检在实现内完成。经理按 Task DAG 派发，默认并发上限 4；Task PR 合入并同步到所属 Feature 后才完成并解锁后继。PRD、Design、Tasks 和最终 Feature 合入要求确切版本的 Human 决定。项目必须先保存测试执行配置。出厂目录仅发布精简版；已有详细版工作按原冻结源继续追溯。完整流程、预算和授权见 [工作流与编排](docs/workflow-orchestration.md) 与 [默认配置](resources/configuration/README.md)。
 
 项目经理独立工作台可在创建 Feature 前查询资料、预演和创作配置；它与根实例调度权分开。Codex 与 DSH 提供动态工具和 Agent 经验访问桥；当前根编排驱动支持 Codex。DSH 可按源配置连接 DeepSeek、智谱国内编程订阅、MiniMax 国内订阅及本机 Ollama；目录结果不代表真实推理已验证。
 

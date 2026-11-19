@@ -3,7 +3,7 @@
 import argparse,json,os,shutil,subprocess,tempfile,time,uuid,sys,signal,hashlib
 from pathlib import Path
 from client import Client
-from workflow_observer import read_workflow_tree, preserve_human_request, check_human_request
+from workflow_observer import read_workflow_tree, observe_human_request, check_human_request
 from autonomous_orchestration import verify as verify_autonomy
 import sqlite3
 parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--binary',type=Path,required=True);parser.add_argument('--codex-auth-source',type=Path,required=True);parser.add_argument('--report-directory',type=Path);args=parser.parse_args()
@@ -60,7 +60,9 @@ try:
   for request in manager_view['decisions']:
    if request['data']['status']!='pending' or request['id'] in shown:continue
    manager_url=urls[0]+'/?tab=execution&detail=manager&project_id='+project+'&instance_id='+run['id']
-   preserve_human_request(OUT,request,manager_url,lambda saved:check_human_request(c,tree,saved,[run['id']]));shown.add(request['id']);print('CHILD HUMAN REQUEST '+request['id']+' '+request['definition_id']+' '+manager_url,flush=True)
+   observation=observe_human_request(OUT,request,manager_url,lambda saved:check_human_request(c,tree,saved,[run['id']]))
+   if not observation['diagnostic_passed']:print('Human review diagnostic:',observation['diagnostic'],flush=True)
+   shown.add(request['id']);print('CHILD HUMAN REQUEST '+request['id']+' '+request['definition_id']+' '+manager_url,flush=True)
   # A child failure is a fact for the actual manager to handle, not permission
   # for this read-only observer to stop its Host before it can reconcile/retry.
   # The manager's own terminal failure and the unchanged overall deadline still

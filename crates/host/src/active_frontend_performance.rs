@@ -88,6 +88,9 @@ fn active_frontend_server() {
             let project=workspace.dispatch("project.create",json!({"command_id":id(),"payload":{"title":format!("Local HTTP fixture {project_index}")}})).unwrap()["id"].as_str().unwrap().to_owned();
             let engine = workspace.project_engine(Some(&project)).unwrap();
             test_runtime::bind_default_permissions(&engine);
+            if real_runtime {
+                test_runtime::retired_configuration::install(&engine);
+            }
             let steps = if real_runtime {
                 repository::seed(&workspace, &root.canonicalize().unwrap(), &project);
                 let image = std::env::var("DEVDESK_PERFORMANCE_TEST_IMAGE")

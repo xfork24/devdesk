@@ -1,1550 +1,8 @@
 {
   "schema_version": 1,
   "references": {
-    "builtin-delivery-acceptance-report:1": [
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/20/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "advance",
-          "name": "接纳确切候选"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/21/executor/arguments/accepted",
-        "kind": "step_argument",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "publish",
-          "name": "同步并核对 GitHub"
-        },
-        "port": "accepted"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/16/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "advance",
-          "name": "接纳确切候选"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/17/executor/arguments/accepted",
-        "kind": "step_argument",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "publish",
-          "name": "同步并核对 GitHub"
-        },
-        "port": "accepted"
-      }
-    ],
-    "builtin-delivery-baseline-doc:1": [
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/3/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "red",
-          "name": "Red 基线"
-        },
-        "step": {
-          "key": "red_baseline",
-          "name": "准备可执行的 Red 基线"
-        },
-        "port": "result"
-      }
-    ],
     "builtin-delivery-checked-markdown:1": [],
-    "builtin-delivery-code-candidate:1": [
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/14/inputs/candidate",
-        "kind": "step_input",
-        "stage": {
-          "key": "delivery",
-          "name": "交付整理"
-        },
-        "step": {
-          "key": "closure",
-          "name": "整理交付与限制"
-        },
-        "port": "candidate"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/16/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "candidate_preparation",
-          "name": "候选准备"
-        },
-        "step": {
-          "key": "candidate",
-          "name": "准备代码候选"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/17/executor/arguments/workspace",
-        "kind": "step_argument",
-        "stage": {
-          "key": "candidate_preparation",
-          "name": "候选准备"
-        },
-        "step": {
-          "key": "candidate_tests",
-          "name": "验证确切候选"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/18/inputs/candidate",
-        "kind": "step_input",
-        "stage": {
-          "key": "delivery",
-          "name": "交付整理"
-        },
-        "step": {
-          "key": "closure_review",
-          "name": "独立核对 · closure"
-        },
-        "port": "candidate"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/19/inputs/candidate",
-        "kind": "step_input",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "candidate_review",
-          "name": "独立核对并确认候选"
-        },
-        "port": "candidate"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/19/inputs/workspace",
-        "kind": "step_input",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "candidate_review",
-          "name": "独立核对并确认候选"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/20/executor/arguments/candidate",
-        "kind": "step_argument",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "advance",
-          "name": "接纳确切候选"
-        },
-        "port": "candidate"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/21/executor/arguments/candidate",
-        "kind": "step_argument",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "publish",
-          "name": "同步并核对 GitHub"
-        },
-        "port": "candidate"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/12/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "candidate_preparation",
-          "name": "候选准备"
-        },
-        "step": {
-          "key": "candidate",
-          "name": "准备代码候选"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/13/executor/arguments/workspace",
-        "kind": "step_argument",
-        "stage": {
-          "key": "candidate_preparation",
-          "name": "候选准备"
-        },
-        "step": {
-          "key": "candidate_tests",
-          "name": "验证确切候选"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/14/inputs/candidate",
-        "kind": "step_input",
-        "stage": {
-          "key": "review",
-          "name": "独立评审"
-        },
-        "step": {
-          "key": "review",
-          "name": "独立核对 · implementation"
-        },
-        "port": "candidate"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/15/inputs/candidate",
-        "kind": "step_input",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "candidate_review",
-          "name": "独立核对并确认候选"
-        },
-        "port": "candidate"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/15/inputs/workspace",
-        "kind": "step_input",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "candidate_review",
-          "name": "独立核对并确认候选"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/16/executor/arguments/candidate",
-        "kind": "step_argument",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "advance",
-          "name": "接纳确切候选"
-        },
-        "port": "candidate"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/17/executor/arguments/candidate",
-        "kind": "step_argument",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "publish",
-          "name": "同步并核对 GitHub"
-        },
-        "port": "candidate"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/18/executor/arguments/candidate",
-        "kind": "step_argument",
-        "stage": {
-          "key": "handoff",
-          "name": "交接"
-        },
-        "step": {
-          "key": "handoff",
-          "name": "封存 Task 交付证据"
-        },
-        "port": "candidate"
-      }
-    ],
-    "builtin-delivery-collection:2": [
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/11/inputs/tasks",
-        "kind": "step_input",
-        "stage": {
-          "key": "verification",
-          "name": "整体验证"
-        },
-        "step": {
-          "key": "release_recipe",
-          "name": "编写整体回归测试"
-        },
-        "port": "tasks"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/14/inputs/tasks",
-        "kind": "step_input",
-        "stage": {
-          "key": "delivery",
-          "name": "交付整理"
-        },
-        "step": {
-          "key": "closure",
-          "name": "整理交付与限制"
-        },
-        "port": "tasks"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/18/inputs/tasks",
-        "kind": "step_input",
-        "stage": {
-          "key": "delivery",
-          "name": "交付整理"
-        },
-        "step": {
-          "key": "closure_review",
-          "name": "独立核对 · closure"
-        },
-        "port": "tasks"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/19/inputs/tasks",
-        "kind": "step_input",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "candidate_review",
-          "name": "独立核对并确认候选"
-        },
-        "port": "tasks"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/9/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "implementation",
-          "name": "实施"
-        },
-        "step": {
-          "key": "implementation",
-          "name": "执行各 Task"
-        },
-        "port": "result"
-      }
-    ],
-    "builtin-delivery-design:3": [
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/11/inputs/design",
-        "kind": "step_input",
-        "stage": {
-          "key": "verification",
-          "name": "整体验证"
-        },
-        "step": {
-          "key": "release_recipe",
-          "name": "编写整体回归测试"
-        },
-        "port": "design"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/14/inputs/design",
-        "kind": "step_input",
-        "stage": {
-          "key": "delivery",
-          "name": "交付整理"
-        },
-        "step": {
-          "key": "closure",
-          "name": "整理交付与限制"
-        },
-        "port": "design"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/18/inputs/design",
-        "kind": "step_input",
-        "stage": {
-          "key": "delivery",
-          "name": "交付整理"
-        },
-        "step": {
-          "key": "closure_review",
-          "name": "独立核对 · closure"
-        },
-        "port": "design"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/4/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "design",
-          "name": "设计"
-        },
-        "step": {
-          "key": "design",
-          "name": "设计架构与接口"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/5/inputs/design",
-        "kind": "step_input",
-        "stage": {
-          "key": "design",
-          "name": "设计"
-        },
-        "step": {
-          "key": "design_review",
-          "name": "Design 验收与人工确认"
-        },
-        "port": "design"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/6/inputs/design",
-        "kind": "step_input",
-        "stage": {
-          "key": "planning",
-          "name": "任务规划"
-        },
-        "step": {
-          "key": "planning",
-          "name": "划分实施任务"
-        },
-        "port": "design"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/7/inputs/design",
-        "kind": "step_input",
-        "stage": {
-          "key": "planning",
-          "name": "任务规划"
-        },
-        "step": {
-          "key": "plan_review",
-          "name": "Tasks 验收与人工确认"
-        },
-        "port": "design"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/9/inputs/design",
-        "kind": "step_input",
-        "stage": {
-          "key": "implementation",
-          "name": "实施"
-        },
-        "step": {
-          "key": "implementation",
-          "name": "执行各 Task"
-        },
-        "port": "design"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/inputs/design/delivery_ref",
-        "kind": "workflow_input",
-        "port": "design"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/1/inputs/design",
-        "kind": "step_input",
-        "stage": {
-          "key": "tests",
-          "name": "独立测试"
-        },
-        "step": {
-          "key": "tests",
-          "name": "编写独立行为测试"
-        },
-        "port": "design"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/3/inputs/design",
-        "kind": "step_input",
-        "stage": {
-          "key": "red",
-          "name": "Red 基线"
-        },
-        "step": {
-          "key": "red_baseline",
-          "name": "准备可执行的 Red 基线"
-        },
-        "port": "design"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/6/inputs/design",
-        "kind": "step_input",
-        "stage": {
-          "key": "implementation",
-          "name": "实施"
-        },
-        "step": {
-          "key": "implementation",
-          "name": "实现 Task"
-        },
-        "port": "design"
-      }
-    ],
-    "builtin-delivery-diff:2": [
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/12/outputs/diff/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "verification",
-          "name": "整体验证"
-        },
-        "step": {
-          "key": "tests_snapshot",
-          "name": "固定 Feature 测试版本"
-        },
-        "port": "diff"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/14/inputs/candidate_diff",
-        "kind": "step_input",
-        "stage": {
-          "key": "delivery",
-          "name": "交付整理"
-        },
-        "step": {
-          "key": "closure",
-          "name": "整理交付与限制"
-        },
-        "port": "candidate_diff"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/16/outputs/diff/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "candidate_preparation",
-          "name": "候选准备"
-        },
-        "step": {
-          "key": "candidate",
-          "name": "准备代码候选"
-        },
-        "port": "diff"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/18/inputs/candidate_diff",
-        "kind": "step_input",
-        "stage": {
-          "key": "delivery",
-          "name": "交付整理"
-        },
-        "step": {
-          "key": "closure_review",
-          "name": "独立核对 · closure"
-        },
-        "port": "candidate_diff"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/19/inputs/candidate_diff",
-        "kind": "step_input",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "candidate_review",
-          "name": "独立核对并确认候选"
-        },
-        "port": "candidate_diff"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/12/outputs/diff/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "candidate_preparation",
-          "name": "候选准备"
-        },
-        "step": {
-          "key": "candidate",
-          "name": "准备代码候选"
-        },
-        "port": "diff"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/14/inputs/candidate_diff",
-        "kind": "step_input",
-        "stage": {
-          "key": "review",
-          "name": "独立评审"
-        },
-        "step": {
-          "key": "review",
-          "name": "独立核对 · implementation"
-        },
-        "port": "candidate_diff"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/14/inputs/diff",
-        "kind": "step_input",
-        "stage": {
-          "key": "review",
-          "name": "独立评审"
-        },
-        "step": {
-          "key": "review",
-          "name": "独立核对 · implementation"
-        },
-        "port": "diff"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/15/inputs/candidate_diff",
-        "kind": "step_input",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "candidate_review",
-          "name": "独立核对并确认候选"
-        },
-        "port": "candidate_diff"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/15/inputs/diff",
-        "kind": "step_input",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "candidate_review",
-          "name": "独立核对并确认候选"
-        },
-        "port": "diff"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/18/executor/arguments/candidate_diff",
-        "kind": "step_argument",
-        "stage": {
-          "key": "handoff",
-          "name": "交接"
-        },
-        "step": {
-          "key": "handoff",
-          "name": "封存 Task 交付证据"
-        },
-        "port": "candidate_diff"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/18/executor/arguments/diff",
-        "kind": "step_argument",
-        "stage": {
-          "key": "handoff",
-          "name": "交接"
-        },
-        "step": {
-          "key": "handoff",
-          "name": "封存 Task 交付证据"
-        },
-        "port": "diff"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/2/outputs/diff/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "red",
-          "name": "Red 基线"
-        },
-        "step": {
-          "key": "tests_snapshot",
-          "name": "固定代码版本"
-        },
-        "port": "diff"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/4/outputs/diff/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "red",
-          "name": "Red 基线"
-        },
-        "step": {
-          "key": "red_snapshot",
-          "name": "固定 Red 基线版本"
-        },
-        "port": "diff"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/7/outputs/diff/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "implementation",
-          "name": "实施"
-        },
-        "step": {
-          "key": "implementation_snapshot",
-          "name": "固定代码版本"
-        },
-        "port": "diff"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/7/outputs/scope_diff/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "implementation",
-          "name": "实施"
-        },
-        "step": {
-          "key": "implementation_snapshot",
-          "name": "固定代码版本"
-        },
-        "port": "scope_diff"
-      }
-    ],
-    "builtin-delivery-engineering-constraints:1": [
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/11/inputs/engineering_constraints",
-        "kind": "step_input",
-        "stage": {
-          "key": "verification",
-          "name": "整体验证"
-        },
-        "step": {
-          "key": "release_recipe",
-          "name": "编写整体回归测试"
-        },
-        "port": "engineering_constraints"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/3/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "design",
-          "name": "设计"
-        },
-        "step": {
-          "key": "engineering_constraints",
-          "name": "固定工程执行约束"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/4/inputs/engineering_constraints",
-        "kind": "step_input",
-        "stage": {
-          "key": "design",
-          "name": "设计"
-        },
-        "step": {
-          "key": "design",
-          "name": "设计架构与接口"
-        },
-        "port": "engineering_constraints"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/5/inputs/engineering_constraints",
-        "kind": "step_input",
-        "stage": {
-          "key": "design",
-          "name": "设计"
-        },
-        "step": {
-          "key": "design_review",
-          "name": "Design 验收与人工确认"
-        },
-        "port": "engineering_constraints"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/6/inputs/engineering_constraints",
-        "kind": "step_input",
-        "stage": {
-          "key": "planning",
-          "name": "任务规划"
-        },
-        "step": {
-          "key": "planning",
-          "name": "划分实施任务"
-        },
-        "port": "engineering_constraints"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/7/inputs/engineering_constraints",
-        "kind": "step_input",
-        "stage": {
-          "key": "planning",
-          "name": "任务规划"
-        },
-        "step": {
-          "key": "plan_review",
-          "name": "Tasks 验收与人工确认"
-        },
-        "port": "engineering_constraints"
-      }
-    ],
-    "builtin-delivery-execution-evidence:2": [
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/14/inputs/evidence",
-        "kind": "step_input",
-        "stage": {
-          "key": "review",
-          "name": "独立评审"
-        },
-        "step": {
-          "key": "review",
-          "name": "独立核对 · implementation"
-        },
-        "port": "evidence"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/15/inputs/evidence",
-        "kind": "step_input",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "candidate_review",
-          "name": "独立核对并确认候选"
-        },
-        "port": "evidence"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/18/executor/arguments/evidence",
-        "kind": "step_argument",
-        "stage": {
-          "key": "handoff",
-          "name": "交接"
-        },
-        "step": {
-          "key": "handoff",
-          "name": "封存 Task 交付证据"
-        },
-        "port": "evidence"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/6/outputs/evidence/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "implementation",
-          "name": "实施"
-        },
-        "step": {
-          "key": "implementation",
-          "name": "实现 Task"
-        },
-        "port": "evidence"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/9/inputs/evidence",
-        "kind": "step_input",
-        "stage": {
-          "key": "documentation",
-          "name": "文档复验"
-        },
-        "step": {
-          "key": "documentation",
-          "name": "补充交付说明"
-        },
-        "port": "evidence"
-      }
-    ],
-    "builtin-delivery-feature-report:1": [
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/14/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "delivery",
-          "name": "交付整理"
-        },
-        "step": {
-          "key": "closure",
-          "name": "整理交付与限制"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/18/inputs/delivery",
-        "kind": "step_input",
-        "stage": {
-          "key": "delivery",
-          "name": "交付整理"
-        },
-        "step": {
-          "key": "closure_review",
-          "name": "独立核对 · closure"
-        },
-        "port": "delivery"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/19/inputs/delivery",
-        "kind": "step_input",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "candidate_review",
-          "name": "独立核对并确认候选"
-        },
-        "port": "delivery"
-      }
-    ],
-    "builtin-delivery-implementation-doc:1": [
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/14/inputs/documentation",
-        "kind": "step_input",
-        "stage": {
-          "key": "review",
-          "name": "独立评审"
-        },
-        "step": {
-          "key": "review",
-          "name": "独立核对 · implementation"
-        },
-        "port": "documentation"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/14/inputs/implementation",
-        "kind": "step_input",
-        "stage": {
-          "key": "review",
-          "name": "独立评审"
-        },
-        "step": {
-          "key": "review",
-          "name": "独立核对 · implementation"
-        },
-        "port": "implementation"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/15/inputs/delivery",
-        "kind": "step_input",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "candidate_review",
-          "name": "独立核对并确认候选"
-        },
-        "port": "delivery"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/18/executor/arguments/documentation",
-        "kind": "step_argument",
-        "stage": {
-          "key": "handoff",
-          "name": "交接"
-        },
-        "step": {
-          "key": "handoff",
-          "name": "封存 Task 交付证据"
-        },
-        "port": "documentation"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/6/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "implementation",
-          "name": "实施"
-        },
-        "step": {
-          "key": "implementation",
-          "name": "实现 Task"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/9/inputs/implementation",
-        "kind": "step_input",
-        "stage": {
-          "key": "documentation",
-          "name": "文档复验"
-        },
-        "step": {
-          "key": "documentation",
-          "name": "补充交付说明"
-        },
-        "port": "implementation"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/9/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "documentation",
-          "name": "文档复验"
-        },
-        "step": {
-          "key": "documentation",
-          "name": "补充交付说明"
-        },
-        "port": "result"
-      }
-    ],
     "builtin-delivery-prd:3": [
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/0/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "requirements",
-          "name": "需求"
-        },
-        "step": {
-          "key": "requirements",
-          "name": "澄清需求与 PRD"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/1/inputs/work",
-        "kind": "step_input",
-        "stage": {
-          "key": "requirements",
-          "name": "需求"
-        },
-        "step": {
-          "key": "requirements_review",
-          "name": "PRD 验收与人工确认"
-        },
-        "port": "work"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/11/inputs/requirements",
-        "kind": "step_input",
-        "stage": {
-          "key": "verification",
-          "name": "整体验证"
-        },
-        "step": {
-          "key": "release_recipe",
-          "name": "编写整体回归测试"
-        },
-        "port": "requirements"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/14/inputs/requirements",
-        "kind": "step_input",
-        "stage": {
-          "key": "delivery",
-          "name": "交付整理"
-        },
-        "step": {
-          "key": "closure",
-          "name": "整理交付与限制"
-        },
-        "port": "requirements"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/18/inputs/requirements",
-        "kind": "step_input",
-        "stage": {
-          "key": "delivery",
-          "name": "交付整理"
-        },
-        "step": {
-          "key": "closure_review",
-          "name": "独立核对 · closure"
-        },
-        "port": "requirements"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/19/inputs/requirements",
-        "kind": "step_input",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "candidate_review",
-          "name": "独立核对并确认候选"
-        },
-        "port": "requirements"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/4/inputs/requirements",
-        "kind": "step_input",
-        "stage": {
-          "key": "design",
-          "name": "设计"
-        },
-        "step": {
-          "key": "design",
-          "name": "设计架构与接口"
-        },
-        "port": "requirements"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/5/inputs/requirements",
-        "kind": "step_input",
-        "stage": {
-          "key": "design",
-          "name": "设计"
-        },
-        "step": {
-          "key": "design_review",
-          "name": "Design 验收与人工确认"
-        },
-        "port": "requirements"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/6/inputs/requirements",
-        "kind": "step_input",
-        "stage": {
-          "key": "planning",
-          "name": "任务规划"
-        },
-        "step": {
-          "key": "planning",
-          "name": "划分实施任务"
-        },
-        "port": "requirements"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/7/inputs/requirements",
-        "kind": "step_input",
-        "stage": {
-          "key": "planning",
-          "name": "任务规划"
-        },
-        "step": {
-          "key": "plan_review",
-          "name": "Tasks 验收与人工确认"
-        },
-        "port": "requirements"
-      },
       {
         "reference": "simplified-workflow-feature:4",
         "name": "精简版Feature开发流程",
@@ -1672,271 +130,7 @@
         "port": "requirements"
       }
     ],
-    "builtin-delivery-publication-report:1": [
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/outputs/result",
-        "kind": "workflow_output",
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/21/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "publish",
-          "name": "同步并核对 GitHub"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/17/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "publish",
-          "name": "同步并核对 GitHub"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/18/executor/arguments/publication",
-        "kind": "step_argument",
-        "stage": {
-          "key": "handoff",
-          "name": "交接"
-        },
-        "step": {
-          "key": "handoff",
-          "name": "封存 Task 交付证据"
-        },
-        "port": "publication"
-      }
-    ],
     "builtin-delivery-review:2": [
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/1/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "requirements",
-          "name": "需求"
-        },
-        "step": {
-          "key": "requirements_review",
-          "name": "PRD 验收与人工确认"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/18/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "delivery",
-          "name": "交付整理"
-        },
-        "step": {
-          "key": "closure_review",
-          "name": "独立核对 · closure"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/19/inputs/source_review",
-        "kind": "step_input",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "candidate_review",
-          "name": "独立核对并确认候选"
-        },
-        "port": "source_review"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/19/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "candidate_review",
-          "name": "独立核对并确认候选"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/5/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "design",
-          "name": "设计"
-        },
-        "step": {
-          "key": "design_review",
-          "name": "Design 验收与人工确认"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/7/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "planning",
-          "name": "任务规划"
-        },
-        "step": {
-          "key": "plan_review",
-          "name": "Tasks 验收与人工确认"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/14/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "review",
-          "name": "独立评审"
-        },
-        "step": {
-          "key": "review",
-          "name": "独立核对 · implementation"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/15/inputs/source_review",
-        "kind": "step_input",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "candidate_review",
-          "name": "独立核对并确认候选"
-        },
-        "port": "source_review"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/15/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "candidate_review",
-          "name": "独立核对并确认候选"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/18/executor/arguments/candidate_review",
-        "kind": "step_argument",
-        "stage": {
-          "key": "handoff",
-          "name": "交接"
-        },
-        "step": {
-          "key": "handoff",
-          "name": "封存 Task 交付证据"
-        },
-        "port": "candidate_review"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/18/executor/arguments/review",
-        "kind": "step_argument",
-        "stage": {
-          "key": "handoff",
-          "name": "交接"
-        },
-        "step": {
-          "key": "handoff",
-          "name": "封存 Task 交付证据"
-        },
-        "port": "review"
-      },
       {
         "reference": "simplified-workflow-feature:4",
         "name": "精简版Feature开发流程",
@@ -2064,62 +258,7 @@
         "port": "result"
       }
     ],
-    "builtin-delivery-task-completion-report:1": [
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/19/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "handoff",
-          "name": "交接"
-        },
-        "step": {
-          "key": "complete",
-          "name": "完成任务"
-        },
-        "port": "result"
-      }
-    ],
     "builtin-delivery-task-creation-report:1": [
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/8/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "planning",
-          "name": "任务规划"
-        },
-        "step": {
-          "key": "tasks",
-          "name": "创建任务集合"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/9/executor/foreach/source",
-        "kind": "step_collection",
-        "stage": {
-          "key": "implementation",
-          "name": "实施"
-        },
-        "step": {
-          "key": "implementation",
-          "name": "执行各 Task"
-        }
-      },
       {
         "reference": "simplified-workflow-feature:4",
         "name": "精简版Feature开发流程",
@@ -2156,283 +295,7 @@
         }
       }
     ],
-    "builtin-delivery-task-delivery-report:1": [
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/outputs/result",
-        "kind": "workflow_output",
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/18/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "handoff",
-          "name": "交接"
-        },
-        "step": {
-          "key": "handoff",
-          "name": "封存 Task 交付证据"
-        },
-        "port": "result"
-      }
-    ],
-    "builtin-delivery-task-plan:3": [
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/6/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "planning",
-          "name": "任务规划"
-        },
-        "step": {
-          "key": "planning",
-          "name": "划分实施任务"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/7/inputs/plan",
-        "kind": "step_input",
-        "stage": {
-          "key": "planning",
-          "name": "任务规划"
-        },
-        "step": {
-          "key": "plan_review",
-          "name": "Tasks 验收与人工确认"
-        },
-        "port": "plan"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/8/executor/arguments/tasks",
-        "kind": "step_argument",
-        "stage": {
-          "key": "planning",
-          "name": "任务规划"
-        },
-        "step": {
-          "key": "tasks",
-          "name": "创建任务集合"
-        },
-        "port": "tasks"
-      }
-    ],
     "builtin-delivery-task-record:1": [
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/inputs/item/delivery_ref",
-        "kind": "workflow_input",
-        "port": "item"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/0/executor/arguments/owner_id",
-        "kind": "step_argument",
-        "stage": {
-          "key": "tests",
-          "name": "独立测试"
-        },
-        "step": {
-          "key": "workspace",
-          "name": "读取工作空间"
-        },
-        "port": "owner_id"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/1/inputs/task",
-        "kind": "step_input",
-        "stage": {
-          "key": "tests",
-          "name": "独立测试"
-        },
-        "step": {
-          "key": "tests",
-          "name": "编写独立行为测试"
-        },
-        "port": "task"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/11/executor/arguments/owner_id",
-        "kind": "step_argument",
-        "stage": {
-          "key": "candidate_preparation",
-          "name": "候选准备"
-        },
-        "step": {
-          "key": "target",
-          "name": "读取工作空间"
-        },
-        "port": "owner_id"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/14/inputs/task",
-        "kind": "step_input",
-        "stage": {
-          "key": "review",
-          "name": "独立评审"
-        },
-        "step": {
-          "key": "review",
-          "name": "独立核对 · implementation"
-        },
-        "port": "task"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/15/inputs/task",
-        "kind": "step_input",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "candidate_review",
-          "name": "独立核对并确认候选"
-        },
-        "port": "task"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/18/executor/arguments/task",
-        "kind": "step_argument",
-        "stage": {
-          "key": "handoff",
-          "name": "交接"
-        },
-        "step": {
-          "key": "handoff",
-          "name": "封存 Task 交付证据"
-        },
-        "port": "task"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/19/executor/arguments/task_id",
-        "kind": "step_argument",
-        "stage": {
-          "key": "handoff",
-          "name": "交接"
-        },
-        "step": {
-          "key": "complete",
-          "name": "完成任务"
-        },
-        "port": "task_id"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/3/inputs/task",
-        "kind": "step_input",
-        "stage": {
-          "key": "red",
-          "name": "Red 基线"
-        },
-        "step": {
-          "key": "red_baseline",
-          "name": "准备可执行的 Red 基线"
-        },
-        "port": "task"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/6/inputs/task",
-        "kind": "step_input",
-        "stage": {
-          "key": "implementation",
-          "name": "实施"
-        },
-        "step": {
-          "key": "implementation",
-          "name": "实现 Task"
-        },
-        "port": "task"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/9/inputs/task",
-        "kind": "step_input",
-        "stage": {
-          "key": "documentation",
-          "name": "文档复验"
-        },
-        "step": {
-          "key": "documentation",
-          "name": "补充交付说明"
-        },
-        "port": "task"
-      },
       {
         "reference": "simplified-workflow-task:3",
         "name": "精简版Task开发流程",
@@ -2516,1379 +379,7 @@
         "port": "task"
       }
     ],
-    "builtin-delivery-test-recipe:2": [
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/11/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "verification",
-          "name": "整体验证"
-        },
-        "step": {
-          "key": "release_recipe",
-          "name": "编写整体回归测试"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/13/executor/arguments/recipe",
-        "kind": "step_argument",
-        "stage": {
-          "key": "verification",
-          "name": "整体验证"
-        },
-        "step": {
-          "key": "verification",
-          "name": "执行测试"
-        },
-        "port": "recipe"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/17/executor/arguments/recipe",
-        "kind": "step_argument",
-        "stage": {
-          "key": "candidate_preparation",
-          "name": "候选准备"
-        },
-        "step": {
-          "key": "candidate_tests",
-          "name": "验证确切候选"
-        },
-        "port": "recipe"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/1/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "tests",
-          "name": "独立测试"
-        },
-        "step": {
-          "key": "tests",
-          "name": "编写独立行为测试"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/10/executor/arguments/recipe",
-        "kind": "step_argument",
-        "stage": {
-          "key": "documentation",
-          "name": "文档复验"
-        },
-        "step": {
-          "key": "verify",
-          "name": "复验交付"
-        },
-        "port": "recipe"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/13/executor/arguments/recipe",
-        "kind": "step_argument",
-        "stage": {
-          "key": "candidate_preparation",
-          "name": "候选准备"
-        },
-        "step": {
-          "key": "candidate_tests",
-          "name": "验证确切候选"
-        },
-        "port": "recipe"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/3/inputs/recipe",
-        "kind": "step_input",
-        "stage": {
-          "key": "red",
-          "name": "Red 基线"
-        },
-        "step": {
-          "key": "red_baseline",
-          "name": "准备可执行的 Red 基线"
-        },
-        "port": "recipe"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/5/executor/arguments/recipe",
-        "kind": "step_argument",
-        "stage": {
-          "key": "red",
-          "name": "Red 基线"
-        },
-        "step": {
-          "key": "red",
-          "name": "执行测试"
-        },
-        "port": "recipe"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/6/inputs/recipe",
-        "kind": "step_input",
-        "stage": {
-          "key": "implementation",
-          "name": "实施"
-        },
-        "step": {
-          "key": "implementation",
-          "name": "实现 Task"
-        },
-        "port": "recipe"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/8/executor/arguments/recipe",
-        "kind": "step_argument",
-        "stage": {
-          "key": "implementation",
-          "name": "实施"
-        },
-        "step": {
-          "key": "green",
-          "name": "执行测试"
-        },
-        "port": "recipe"
-      }
-    ],
-    "builtin-delivery-test-report:2": [
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/13/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "verification",
-          "name": "整体验证"
-        },
-        "step": {
-          "key": "verification",
-          "name": "执行测试"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/14/inputs/candidate_tests",
-        "kind": "step_input",
-        "stage": {
-          "key": "delivery",
-          "name": "交付整理"
-        },
-        "step": {
-          "key": "closure",
-          "name": "整理交付与限制"
-        },
-        "port": "candidate_tests"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/14/inputs/verification",
-        "kind": "step_input",
-        "stage": {
-          "key": "delivery",
-          "name": "交付整理"
-        },
-        "step": {
-          "key": "closure",
-          "name": "整理交付与限制"
-        },
-        "port": "verification"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/17/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "candidate_preparation",
-          "name": "候选准备"
-        },
-        "step": {
-          "key": "candidate_tests",
-          "name": "验证确切候选"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/18/inputs/candidate_tests",
-        "kind": "step_input",
-        "stage": {
-          "key": "delivery",
-          "name": "交付整理"
-        },
-        "step": {
-          "key": "closure_review",
-          "name": "独立核对 · closure"
-        },
-        "port": "candidate_tests"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/18/inputs/verification",
-        "kind": "step_input",
-        "stage": {
-          "key": "delivery",
-          "name": "交付整理"
-        },
-        "step": {
-          "key": "closure_review",
-          "name": "独立核对 · closure"
-        },
-        "port": "verification"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/19/inputs/tests",
-        "kind": "step_input",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "candidate_review",
-          "name": "独立核对并确认候选"
-        },
-        "port": "tests"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/19/inputs/verification",
-        "kind": "step_input",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "candidate_review",
-          "name": "独立核对并确认候选"
-        },
-        "port": "verification"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/20/executor/arguments/test_receipt",
-        "kind": "step_argument",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "advance",
-          "name": "接纳确切候选"
-        },
-        "port": "test_receipt"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/10/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "documentation",
-          "name": "文档复验"
-        },
-        "step": {
-          "key": "verify",
-          "name": "复验交付"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/13/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "candidate_preparation",
-          "name": "候选准备"
-        },
-        "step": {
-          "key": "candidate_tests",
-          "name": "验证确切候选"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/14/inputs/candidate_tests",
-        "kind": "step_input",
-        "stage": {
-          "key": "review",
-          "name": "独立评审"
-        },
-        "step": {
-          "key": "review",
-          "name": "独立核对 · implementation"
-        },
-        "port": "candidate_tests"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/14/inputs/green",
-        "kind": "step_input",
-        "stage": {
-          "key": "review",
-          "name": "独立评审"
-        },
-        "step": {
-          "key": "review",
-          "name": "独立核对 · implementation"
-        },
-        "port": "green"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/14/inputs/red",
-        "kind": "step_input",
-        "stage": {
-          "key": "review",
-          "name": "独立评审"
-        },
-        "step": {
-          "key": "review",
-          "name": "独立核对 · implementation"
-        },
-        "port": "red"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/14/inputs/verify",
-        "kind": "step_input",
-        "stage": {
-          "key": "review",
-          "name": "独立评审"
-        },
-        "step": {
-          "key": "review",
-          "name": "独立核对 · implementation"
-        },
-        "port": "verify"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/15/inputs/tests",
-        "kind": "step_input",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "candidate_review",
-          "name": "独立核对并确认候选"
-        },
-        "port": "tests"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/15/inputs/verification",
-        "kind": "step_input",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "candidate_review",
-          "name": "独立核对并确认候选"
-        },
-        "port": "verification"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/16/executor/arguments/test_receipt",
-        "kind": "step_argument",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "advance",
-          "name": "接纳确切候选"
-        },
-        "port": "test_receipt"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/18/executor/arguments/candidate_tests",
-        "kind": "step_argument",
-        "stage": {
-          "key": "handoff",
-          "name": "交接"
-        },
-        "step": {
-          "key": "handoff",
-          "name": "封存 Task 交付证据"
-        },
-        "port": "candidate_tests"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/18/executor/arguments/green",
-        "kind": "step_argument",
-        "stage": {
-          "key": "handoff",
-          "name": "交接"
-        },
-        "step": {
-          "key": "handoff",
-          "name": "封存 Task 交付证据"
-        },
-        "port": "green"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/18/executor/arguments/red",
-        "kind": "step_argument",
-        "stage": {
-          "key": "handoff",
-          "name": "交接"
-        },
-        "step": {
-          "key": "handoff",
-          "name": "封存 Task 交付证据"
-        },
-        "port": "red"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/18/executor/arguments/verify",
-        "kind": "step_argument",
-        "stage": {
-          "key": "handoff",
-          "name": "交接"
-        },
-        "step": {
-          "key": "handoff",
-          "name": "封存 Task 交付证据"
-        },
-        "port": "verify"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/5/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "red",
-          "name": "Red 基线"
-        },
-        "step": {
-          "key": "red",
-          "name": "执行测试"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/6/inputs/red",
-        "kind": "step_input",
-        "stage": {
-          "key": "implementation",
-          "name": "实施"
-        },
-        "step": {
-          "key": "implementation",
-          "name": "实现 Task"
-        },
-        "port": "red"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/8/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "implementation",
-          "name": "实施"
-        },
-        "step": {
-          "key": "green",
-          "name": "执行测试"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/9/inputs/green",
-        "kind": "step_input",
-        "stage": {
-          "key": "documentation",
-          "name": "文档复验"
-        },
-        "step": {
-          "key": "documentation",
-          "name": "补充交付说明"
-        },
-        "port": "green"
-      }
-    ],
     "builtin-delivery-workspace-snapshot:1": [
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/10/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "verification",
-          "name": "整体验证"
-        },
-        "step": {
-          "key": "workspace",
-          "name": "读取工作空间"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/11/inputs/workspace",
-        "kind": "step_input",
-        "stage": {
-          "key": "verification",
-          "name": "整体验证"
-        },
-        "step": {
-          "key": "release_recipe",
-          "name": "编写整体回归测试"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/12/executor/arguments/workspace",
-        "kind": "step_argument",
-        "stage": {
-          "key": "verification",
-          "name": "整体验证"
-        },
-        "step": {
-          "key": "tests_snapshot",
-          "name": "固定 Feature 测试版本"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/12/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "verification",
-          "name": "整体验证"
-        },
-        "step": {
-          "key": "tests_snapshot",
-          "name": "固定 Feature 测试版本"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/13/executor/arguments/workspace",
-        "kind": "step_argument",
-        "stage": {
-          "key": "verification",
-          "name": "整体验证"
-        },
-        "step": {
-          "key": "verification",
-          "name": "执行测试"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/14/inputs/changes",
-        "kind": "step_input",
-        "stage": {
-          "key": "delivery",
-          "name": "交付整理"
-        },
-        "step": {
-          "key": "closure",
-          "name": "整理交付与限制"
-        },
-        "port": "changes"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/14/inputs/workspace",
-        "kind": "step_input",
-        "stage": {
-          "key": "delivery",
-          "name": "交付整理"
-        },
-        "step": {
-          "key": "closure",
-          "name": "整理交付与限制"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/15/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "candidate_preparation",
-          "name": "候选准备"
-        },
-        "step": {
-          "key": "mainline",
-          "name": "读取工作空间"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/16/executor/arguments/target_revision",
-        "kind": "step_argument",
-        "stage": {
-          "key": "candidate_preparation",
-          "name": "候选准备"
-        },
-        "step": {
-          "key": "candidate",
-          "name": "准备代码候选"
-        },
-        "port": "target_revision"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/16/executor/arguments/workspace",
-        "kind": "step_argument",
-        "stage": {
-          "key": "candidate_preparation",
-          "name": "候选准备"
-        },
-        "step": {
-          "key": "candidate",
-          "name": "准备代码候选"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/18/inputs/changes",
-        "kind": "step_input",
-        "stage": {
-          "key": "delivery",
-          "name": "交付整理"
-        },
-        "step": {
-          "key": "closure_review",
-          "name": "独立核对 · closure"
-        },
-        "port": "changes"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/18/inputs/workspace",
-        "kind": "step_input",
-        "stage": {
-          "key": "delivery",
-          "name": "交付整理"
-        },
-        "step": {
-          "key": "closure_review",
-          "name": "独立核对 · closure"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/2/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "design",
-          "name": "设计"
-        },
-        "step": {
-          "key": "source_workspace",
-          "name": "读取设计基线"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/20/executor/arguments/workspace",
-        "kind": "step_argument",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "advance",
-          "name": "接纳确切候选"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/21/executor/arguments/workspace",
-        "kind": "step_argument",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "publish",
-          "name": "同步并核对 GitHub"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-feature-sol-high:12",
-        "name": "详细版Feature开发流程",
-        "type": "workflow",
-        "version": 12,
-        "scope": "global",
-        "path": "/data/steps/4/inputs/workspace",
-        "kind": "step_input",
-        "stage": {
-          "key": "design",
-          "name": "设计"
-        },
-        "step": {
-          "key": "design",
-          "name": "设计架构与接口"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/0/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "tests",
-          "name": "独立测试"
-        },
-        "step": {
-          "key": "workspace",
-          "name": "读取工作空间"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/1/inputs/workspace",
-        "kind": "step_input",
-        "stage": {
-          "key": "tests",
-          "name": "独立测试"
-        },
-        "step": {
-          "key": "tests",
-          "name": "编写独立行为测试"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/10/executor/arguments/workspace",
-        "kind": "step_argument",
-        "stage": {
-          "key": "documentation",
-          "name": "文档复验"
-        },
-        "step": {
-          "key": "verify",
-          "name": "复验交付"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/11/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "candidate_preparation",
-          "name": "候选准备"
-        },
-        "step": {
-          "key": "target",
-          "name": "读取工作空间"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/12/executor/arguments/target_revision",
-        "kind": "step_argument",
-        "stage": {
-          "key": "candidate_preparation",
-          "name": "候选准备"
-        },
-        "step": {
-          "key": "candidate",
-          "name": "准备代码候选"
-        },
-        "port": "target_revision"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/12/executor/arguments/workspace",
-        "kind": "step_argument",
-        "stage": {
-          "key": "candidate_preparation",
-          "name": "候选准备"
-        },
-        "step": {
-          "key": "candidate",
-          "name": "准备代码候选"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/14/inputs/changes",
-        "kind": "step_input",
-        "stage": {
-          "key": "review",
-          "name": "独立评审"
-        },
-        "step": {
-          "key": "review",
-          "name": "独立核对 · implementation"
-        },
-        "port": "changes"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/14/inputs/workspace",
-        "kind": "step_input",
-        "stage": {
-          "key": "review",
-          "name": "独立评审"
-        },
-        "step": {
-          "key": "review",
-          "name": "独立核对 · implementation"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/16/executor/arguments/workspace",
-        "kind": "step_argument",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "advance",
-          "name": "接纳确切候选"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/17/executor/arguments/workspace",
-        "kind": "step_argument",
-        "stage": {
-          "key": "integration",
-          "name": "接纳发布"
-        },
-        "step": {
-          "key": "publish",
-          "name": "同步并核对 GitHub"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/18/executor/arguments/workspace",
-        "kind": "step_argument",
-        "stage": {
-          "key": "handoff",
-          "name": "交接"
-        },
-        "step": {
-          "key": "handoff",
-          "name": "封存 Task 交付证据"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/2/executor/arguments/workspace",
-        "kind": "step_argument",
-        "stage": {
-          "key": "red",
-          "name": "Red 基线"
-        },
-        "step": {
-          "key": "tests_snapshot",
-          "name": "固定代码版本"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/2/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "red",
-          "name": "Red 基线"
-        },
-        "step": {
-          "key": "tests_snapshot",
-          "name": "固定代码版本"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/3/inputs/workspace",
-        "kind": "step_input",
-        "stage": {
-          "key": "red",
-          "name": "Red 基线"
-        },
-        "step": {
-          "key": "red_baseline",
-          "name": "准备可执行的 Red 基线"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/4/executor/arguments/workspace",
-        "kind": "step_argument",
-        "stage": {
-          "key": "red",
-          "name": "Red 基线"
-        },
-        "step": {
-          "key": "red_snapshot",
-          "name": "固定 Red 基线版本"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/4/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "red",
-          "name": "Red 基线"
-        },
-        "step": {
-          "key": "red_snapshot",
-          "name": "固定 Red 基线版本"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/5/executor/arguments/workspace",
-        "kind": "step_argument",
-        "stage": {
-          "key": "red",
-          "name": "Red 基线"
-        },
-        "step": {
-          "key": "red",
-          "name": "执行测试"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/6/inputs/workspace",
-        "kind": "step_input",
-        "stage": {
-          "key": "implementation",
-          "name": "实施"
-        },
-        "step": {
-          "key": "implementation",
-          "name": "实现 Task"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/7/executor/arguments/diff_base",
-        "kind": "step_argument",
-        "stage": {
-          "key": "implementation",
-          "name": "实施"
-        },
-        "step": {
-          "key": "implementation_snapshot",
-          "name": "固定代码版本"
-        },
-        "port": "diff_base"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/7/executor/arguments/workspace",
-        "kind": "step_argument",
-        "stage": {
-          "key": "implementation",
-          "name": "实施"
-        },
-        "step": {
-          "key": "implementation_snapshot",
-          "name": "固定代码版本"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/7/outputs/result/delivery_ref",
-        "kind": "step_output",
-        "stage": {
-          "key": "implementation",
-          "name": "实施"
-        },
-        "step": {
-          "key": "implementation_snapshot",
-          "name": "固定代码版本"
-        },
-        "port": "result"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/8/executor/arguments/workspace",
-        "kind": "step_argument",
-        "stage": {
-          "key": "implementation",
-          "name": "实施"
-        },
-        "step": {
-          "key": "green",
-          "name": "执行测试"
-        },
-        "port": "workspace"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/9/inputs/changes",
-        "kind": "step_input",
-        "stage": {
-          "key": "documentation",
-          "name": "文档复验"
-        },
-        "step": {
-          "key": "documentation",
-          "name": "补充交付说明"
-        },
-        "port": "changes"
-      },
-      {
-        "reference": "builtin-workflow-task-sol-high:11",
-        "name": "详细版Task开发流程",
-        "type": "workflow",
-        "version": 11,
-        "scope": "global",
-        "path": "/data/steps/9/inputs/workspace",
-        "kind": "step_input",
-        "stage": {
-          "key": "documentation",
-          "name": "文档复验"
-        },
-        "step": {
-          "key": "documentation",
-          "name": "补充交付说明"
-        },
-        "port": "workspace"
-      },
       {
         "reference": "simplified-workflow-feature:4",
         "name": "精简版Feature开发流程",
@@ -4090,15 +581,6 @@
     ],
     "builtin-skill-architecture:2": [
       {
-        "reference": "builtin-capability-architect-codex:5",
-        "name": "架构师能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/skills/1",
-        "kind": "reference"
-      },
-      {
         "reference": "builtin-capability-architect-glm-dsh:2",
         "name": "架构师能力 · GLM 5.3 Flash / DSH",
         "type": "capability",
@@ -4117,72 +599,7 @@
         "kind": "reference"
       }
     ],
-    "builtin-skill-delivery-self-check:1": [
-      {
-        "reference": "builtin-capability-analyst-codex:5",
-        "name": "需求分析师能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/skills/2",
-        "kind": "reference"
-      },
-      {
-        "reference": "builtin-capability-architect-codex:5",
-        "name": "架构师能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/skills/2",
-        "kind": "reference"
-      },
-      {
-        "reference": "builtin-capability-developer-codex:5",
-        "name": "开发能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/skills/2",
-        "kind": "reference"
-      },
-      {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/skills/4",
-        "kind": "reference"
-      },
-      {
-        "reference": "builtin-capability-reviewer-codex:5",
-        "name": "评审能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/skills/2",
-        "kind": "reference"
-      },
-      {
-        "reference": "builtin-capability-tester-codex:5",
-        "name": "测试能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/skills/3",
-        "kind": "reference"
-      }
-    ],
     "builtin-skill-engineering-context:3": [
-      {
-        "reference": "builtin-capability-analyst-codex:5",
-        "name": "需求分析师能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/skills/0",
-        "kind": "reference"
-      },
       {
         "reference": "builtin-capability-analyst-glm-dsh:2",
         "name": "需求分析师能力 · GLM 5.3 Flash / DSH",
@@ -4202,15 +619,6 @@
         "kind": "reference"
       },
       {
-        "reference": "builtin-capability-architect-codex:5",
-        "name": "架构师能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/skills/0",
-        "kind": "reference"
-      },
-      {
         "reference": "builtin-capability-architect-glm-dsh:2",
         "name": "架构师能力 · GLM 5.3 Flash / DSH",
         "type": "capability",
@@ -4224,15 +632,6 @@
         "name": "架构师能力 · MiniMax M3.1 Flash / DSH",
         "type": "capability",
         "version": 2,
-        "scope": "global",
-        "path": "/skills/0",
-        "kind": "reference"
-      },
-      {
-        "reference": "builtin-capability-developer-codex:5",
-        "name": "开发能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
         "scope": "global",
         "path": "/skills/0",
         "kind": "reference"
@@ -4274,15 +673,6 @@
         "kind": "reference"
       },
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/skills/0",
-        "kind": "reference"
-      },
-      {
         "reference": "builtin-capability-project-manager-glm-dsh:5",
         "name": "项目经理能力 · GLM 5.3 Flash / DSH",
         "type": "capability",
@@ -4294,15 +684,6 @@
       {
         "reference": "builtin-capability-project-manager-minimax-dsh:5",
         "name": "项目经理能力 · MiniMax M3.1 Flash / DSH",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/skills/0",
-        "kind": "reference"
-      },
-      {
-        "reference": "builtin-capability-reviewer-codex:5",
-        "name": "评审能力 · Sol High / Codex",
         "type": "capability",
         "version": 5,
         "scope": "global",
@@ -4332,15 +713,6 @@
         "name": "默认能力 · GPT-6.1 Sol High / Codex",
         "type": "capability",
         "version": 4,
-        "scope": "global",
-        "path": "/skills/0",
-        "kind": "reference"
-      },
-      {
-        "reference": "builtin-capability-tester-codex:5",
-        "name": "测试能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
         "scope": "global",
         "path": "/skills/0",
         "kind": "reference"
@@ -4395,15 +767,6 @@
     ],
     "builtin-skill-independent-review:2": [
       {
-        "reference": "builtin-capability-reviewer-codex:5",
-        "name": "评审能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/skills/1",
-        "kind": "reference"
-      },
-      {
         "reference": "builtin-capability-reviewer-glm-dsh:2",
         "name": "评审能力 · GLM 5.3 Flash / DSH",
         "type": "capability",
@@ -4422,25 +785,16 @@
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-reviewer:3",
+        "reference": "simplified-capability-reviewer:4",
         "name": "精简版reviewer能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/skills/3",
         "kind": "reference"
       }
     ],
     "builtin-skill-prd:2": [
-      {
-        "reference": "builtin-capability-analyst-codex:5",
-        "name": "需求分析师能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/skills/1",
-        "kind": "reference"
-      },
       {
         "reference": "builtin-capability-analyst-glm-dsh:2",
         "name": "需求分析师能力 · GLM 5.3 Flash / DSH",
@@ -4460,25 +814,16 @@
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-analyst:3",
+        "reference": "simplified-capability-analyst:4",
         "name": "精简版analyst能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/skills/2",
         "kind": "reference"
       }
     ],
     "builtin-skill-project-planning:2": [
-      {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/skills/1",
-        "kind": "reference"
-      },
       {
         "reference": "builtin-capability-project-manager-glm-dsh:5",
         "name": "项目经理能力 · GLM 5.3 Flash / DSH",
@@ -4500,34 +845,16 @@
     ],
     "builtin-skill-project-workbench:1": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/skills/3",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/skills/4",
         "kind": "reference"
       }
     ],
     "builtin-skill-release-verification:2": [
-      {
-        "reference": "builtin-capability-tester-codex:5",
-        "name": "测试能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/skills/2",
-        "kind": "reference"
-      },
       {
         "reference": "builtin-capability-tester-glm-dsh:2",
         "name": "测试能力 · GLM 5.3 Flash / DSH",
@@ -4549,15 +876,6 @@
     ],
     "builtin-skill-tdd-implementation:2": [
       {
-        "reference": "builtin-capability-developer-codex:5",
-        "name": "开发能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/skills/1",
-        "kind": "reference"
-      },
-      {
         "reference": "builtin-capability-developer-glm-dsh:2",
         "name": "开发能力 · GLM 5.3 Flash / DSH",
         "type": "capability",
@@ -4578,15 +896,6 @@
     ],
     "builtin-skill-test-design:2": [
       {
-        "reference": "builtin-capability-tester-codex:5",
-        "name": "测试能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/skills/1",
-        "kind": "reference"
-      },
-      {
         "reference": "builtin-capability-tester-glm-dsh:2",
         "name": "测试能力 · GLM 5.3 Flash / DSH",
         "type": "capability",
@@ -4606,15 +915,6 @@
       }
     ],
     "builtin-skill-workflow-orchestration:5": [
-      {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/skills/2",
-        "kind": "reference"
-      },
       {
         "reference": "builtin-capability-project-manager-glm-dsh:5",
         "name": "项目经理能力 · GLM 5.3 Flash / DSH",
@@ -4645,49 +945,7 @@
         "kind": "reference"
       }
     ],
-    "builtin-spec-delivery-acceptance-report:1": [
-      {
-        "reference": "builtin-delivery-acceptance-report:1",
-        "name": "Acceptance Report",
-        "type": "delivery_type",
-        "version": 1,
-        "scope": "global",
-        "path": "/spec_refs/0",
-        "kind": "reference"
-      }
-    ],
-    "builtin-spec-delivery-baseline-doc:1": [
-      {
-        "reference": "builtin-delivery-baseline-doc:1",
-        "name": "Baseline Doc",
-        "type": "delivery_type",
-        "version": 1,
-        "scope": "global",
-        "path": "/spec_refs/0",
-        "kind": "reference"
-      }
-    ],
-    "builtin-spec-delivery-code-candidate:1": [
-      {
-        "reference": "builtin-delivery-code-candidate:1",
-        "name": "Code Candidate",
-        "type": "delivery_type",
-        "version": 1,
-        "scope": "global",
-        "path": "/spec_refs/0",
-        "kind": "reference"
-      }
-    ],
     "builtin-spec-delivery-diff:1": [
-      {
-        "reference": "builtin-delivery-diff:2",
-        "name": "Diff",
-        "type": "delivery_type",
-        "version": 2,
-        "scope": "global",
-        "path": "/spec_refs/0",
-        "kind": "reference"
-      },
       {
         "reference": "simplified-delivery-diff:1",
         "name": "精简版固定版本差异",
@@ -4725,71 +983,9 @@
         "scope": "global",
         "path": "/spec_refs/0",
         "kind": "reference"
-      },
-      {
-        "reference": "builtin-delivery-engineering-constraints:1",
-        "name": "Engineering Constraints Doc",
-        "type": "delivery_type",
-        "version": 1,
-        "scope": "global",
-        "path": "/spec_refs/0",
-        "kind": "reference"
-      }
-    ],
-    "builtin-spec-delivery-execution-evidence:1": [
-      {
-        "reference": "builtin-delivery-execution-evidence:2",
-        "name": "Execution Report",
-        "type": "delivery_type",
-        "version": 2,
-        "scope": "global",
-        "path": "/spec_refs/0",
-        "kind": "reference"
-      }
-    ],
-    "builtin-spec-delivery-feature-report:1": [
-      {
-        "reference": "builtin-delivery-feature-report:1",
-        "name": "Feature Report",
-        "type": "delivery_type",
-        "version": 1,
-        "scope": "global",
-        "path": "/spec_refs/0",
-        "kind": "reference"
-      }
-    ],
-    "builtin-spec-delivery-implementation-doc:1": [
-      {
-        "reference": "builtin-delivery-implementation-doc:1",
-        "name": "Implementation Doc",
-        "type": "delivery_type",
-        "version": 1,
-        "scope": "global",
-        "path": "/spec_refs/0",
-        "kind": "reference"
-      }
-    ],
-    "builtin-spec-delivery-publication-report:1": [
-      {
-        "reference": "builtin-delivery-publication-report:1",
-        "name": "Publication Report",
-        "type": "delivery_type",
-        "version": 1,
-        "scope": "global",
-        "path": "/spec_refs/0",
-        "kind": "reference"
       }
     ],
     "builtin-spec-delivery-review:1": [
-      {
-        "reference": "builtin-capability-reviewer-codex:5",
-        "name": "评审能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/spec_refs/0",
-        "kind": "reference"
-      },
       {
         "reference": "builtin-capability-reviewer-glm-dsh:2",
         "name": "评审能力 · GLM 5.3 Flash / DSH",
@@ -4818,32 +1014,10 @@
         "kind": "reference"
       }
     ],
-    "builtin-spec-delivery-task-completion-report:1": [
-      {
-        "reference": "builtin-delivery-task-completion-report:1",
-        "name": "Task Completion Report",
-        "type": "delivery_type",
-        "version": 1,
-        "scope": "global",
-        "path": "/spec_refs/0",
-        "kind": "reference"
-      }
-    ],
     "builtin-spec-delivery-task-creation-report:1": [
       {
         "reference": "builtin-delivery-task-creation-report:1",
         "name": "Task Creation Report",
-        "type": "delivery_type",
-        "version": 1,
-        "scope": "global",
-        "path": "/spec_refs/0",
-        "kind": "reference"
-      }
-    ],
-    "builtin-spec-delivery-task-delivery-report:1": [
-      {
-        "reference": "builtin-delivery-task-delivery-report:1",
-        "name": "Task Delivery Report",
         "type": "delivery_type",
         "version": 1,
         "scope": "global",
@@ -4862,27 +1036,7 @@
         "kind": "reference"
       }
     ],
-    "builtin-spec-delivery-task-report:1": [
-      {
-        "reference": "builtin-delivery-collection:2",
-        "name": "Task Report",
-        "type": "delivery_type",
-        "version": 2,
-        "scope": "global",
-        "path": "/spec_refs/0",
-        "kind": "reference"
-      }
-    ],
     "builtin-spec-delivery-test-report:1": [
-      {
-        "reference": "builtin-delivery-test-report:2",
-        "name": "Test Report",
-        "type": "delivery_type",
-        "version": 2,
-        "scope": "global",
-        "path": "/spec_refs/0",
-        "kind": "reference"
-      },
       {
         "reference": "simplified-delivery-test-report:1",
         "name": "精简版独立测试报告",
@@ -4907,15 +1061,6 @@
     "builtin-spec-located-review:1": [],
     "builtin-spec-stage-architecture:2": [
       {
-        "reference": "builtin-capability-architect-codex:5",
-        "name": "架构师能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/spec_refs/0",
-        "kind": "reference"
-      },
-      {
         "reference": "builtin-capability-architect-glm-dsh:2",
         "name": "架构师能力 · GLM 5.3 Flash / DSH",
         "type": "capability",
@@ -4932,28 +1077,9 @@
         "scope": "global",
         "path": "/spec_refs/0",
         "kind": "reference"
-      },
-      {
-        "reference": "builtin-delivery-design:3",
-        "name": "Design Doc",
-        "type": "delivery_type",
-        "version": 3,
-        "scope": "global",
-        "path": "/spec_refs/0",
-        "kind": "reference"
       }
     ],
-    "builtin-spec-stage-closure:2": [],
     "builtin-spec-stage-implementation:2": [
-      {
-        "reference": "builtin-capability-developer-codex:5",
-        "name": "开发能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/spec_refs/0",
-        "kind": "reference"
-      },
       {
         "reference": "builtin-capability-developer-glm-dsh:2",
         "name": "开发能力 · GLM 5.3 Flash / DSH",
@@ -4974,15 +1100,6 @@
       }
     ],
     "builtin-spec-stage-prd:2": [
-      {
-        "reference": "builtin-capability-analyst-codex:5",
-        "name": "需求分析师能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/spec_refs/0",
-        "kind": "reference"
-      },
       {
         "reference": "builtin-capability-analyst-glm-dsh:2",
         "name": "需求分析师能力 · GLM 5.3 Flash / DSH",
@@ -5013,15 +1130,6 @@
     ],
     "builtin-spec-stage-project-planning:3": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/spec_refs/0",
-        "kind": "reference"
-      },
-      {
         "reference": "builtin-capability-project-manager-glm-dsh:5",
         "name": "项目经理能力 · GLM 5.3 Flash / DSH",
         "type": "capability",
@@ -5038,28 +1146,9 @@
         "scope": "global",
         "path": "/spec_refs/0",
         "kind": "reference"
-      },
-      {
-        "reference": "builtin-delivery-task-plan:3",
-        "name": "Task Doc",
-        "type": "delivery_type",
-        "version": 3,
-        "scope": "global",
-        "path": "/spec_refs/0",
-        "kind": "reference"
       }
     ],
-    "builtin-spec-stage-release:2": [],
     "builtin-spec-stage-test-design:2": [
-      {
-        "reference": "builtin-capability-tester-codex:5",
-        "name": "测试能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/spec_refs/0",
-        "kind": "reference"
-      },
       {
         "reference": "builtin-capability-tester-glm-dsh:2",
         "name": "测试能力 · GLM 5.3 Flash / DSH",
@@ -5077,63 +1166,9 @@
         "scope": "global",
         "path": "/spec_refs/0",
         "kind": "reference"
-      },
-      {
-        "reference": "builtin-delivery-test-recipe:2",
-        "name": "Test Doc",
-        "type": "delivery_type",
-        "version": 2,
-        "scope": "global",
-        "path": "/spec_refs/0",
-        "kind": "reference"
       }
     ],
     "builtin-tool-codex-native:1": [
-      {
-        "reference": "builtin-capability-analyst-codex:5",
-        "name": "需求分析师能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/tools/0",
-        "kind": "reference"
-      },
-      {
-        "reference": "builtin-capability-architect-codex:5",
-        "name": "架构师能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/tools/0",
-        "kind": "reference"
-      },
-      {
-        "reference": "builtin-capability-developer-codex:5",
-        "name": "开发能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/tools/0",
-        "kind": "reference"
-      },
-      {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/0",
-        "kind": "reference"
-      },
-      {
-        "reference": "builtin-capability-reviewer-codex:5",
-        "name": "评审能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/tools/0",
-        "kind": "reference"
-      },
       {
         "reference": "builtin-capability-sol-high-codex:4",
         "name": "默认能力 · GPT-6.1 Sol High / Codex",
@@ -5144,64 +1179,55 @@
         "kind": "reference"
       },
       {
-        "reference": "builtin-capability-tester-codex:5",
-        "name": "测试能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/tools/0",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-analyst:3",
+        "reference": "simplified-capability-analyst:4",
         "name": "精简版analyst能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/0",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-architect:3",
+        "reference": "simplified-capability-architect:4",
         "name": "精简版architect能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/0",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-developer:3",
+        "reference": "simplified-capability-developer:4",
         "name": "精简版developer能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/0",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/0",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-reviewer:3",
+        "reference": "simplified-capability-reviewer:4",
         "name": "精简版reviewer能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/0",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-tester:3",
+        "reference": "simplified-capability-tester:4",
         "name": "精简版tester能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/0",
         "kind": "reference"
@@ -5209,19 +1235,10 @@
     ],
     "builtin-tool-configuration-catalog:1": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/27",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/27",
         "kind": "reference"
@@ -5229,19 +1246,10 @@
     ],
     "builtin-tool-configuration-change-apply:1": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/31",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/31",
         "kind": "reference"
@@ -5249,19 +1257,10 @@
     ],
     "builtin-tool-configuration-change-preview:1": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/30",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/30",
         "kind": "reference"
@@ -5269,19 +1268,10 @@
     ],
     "builtin-tool-configuration-read:1": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/28",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/28",
         "kind": "reference"
@@ -5289,19 +1279,10 @@
     ],
     "builtin-tool-configuration-transfer-apply:2": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/33",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/33",
         "kind": "reference"
@@ -5309,19 +1290,10 @@
     ],
     "builtin-tool-configuration-transfer-cancel:2": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/34",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/34",
         "kind": "reference"
@@ -5329,19 +1301,10 @@
     ],
     "builtin-tool-configuration-transfer-stage:1": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/32",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/32",
         "kind": "reference"
@@ -5349,19 +1312,10 @@
     ],
     "builtin-tool-configuration-transfer-status:1": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/35",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/35",
         "kind": "reference"
@@ -5369,19 +1323,10 @@
     ],
     "builtin-tool-configuration-usage:1": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/29",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/29",
         "kind": "reference"
@@ -5515,25 +1460,13 @@
         "kind": "reference"
       }
     ],
-    "builtin-tool-git-advance:1": [],
-    "builtin-tool-git-candidate:1": [],
-    "builtin-tool-git-publish:1": [],
     "builtin-tool-materials-capture:1": [],
     "builtin-tool-project-artifact-read:1": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/25",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/25",
         "kind": "reference"
@@ -5541,19 +1474,10 @@
     ],
     "builtin-tool-project-overview:1": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/22",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/22",
         "kind": "reference"
@@ -5561,19 +1485,10 @@
     ],
     "builtin-tool-project-record-read:1": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/24",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/24",
         "kind": "reference"
@@ -5581,19 +1496,10 @@
     ],
     "builtin-tool-project-records-list:1": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/23",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/23",
         "kind": "reference"
@@ -5601,19 +1507,10 @@
     ],
     "builtin-tool-project-resources:1": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/26",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/26",
         "kind": "reference"
@@ -5621,132 +1518,67 @@
     ],
     "builtin-tool-spec-lint:1": [
       {
-        "reference": "builtin-capability-analyst-codex:5",
-        "name": "需求分析师能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/tools/2",
-        "kind": "reference"
-      },
-      {
-        "reference": "builtin-capability-architect-codex:5",
-        "name": "架构师能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/tools/2",
-        "kind": "reference"
-      },
-      {
-        "reference": "builtin-capability-developer-codex:5",
-        "name": "开发能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/tools/2",
-        "kind": "reference"
-      },
-      {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/36",
-        "kind": "reference"
-      },
-      {
-        "reference": "builtin-capability-reviewer-codex:5",
-        "name": "评审能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/tools/2",
-        "kind": "reference"
-      },
-      {
-        "reference": "builtin-capability-tester-codex:5",
-        "name": "测试能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/tools/2",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-analyst:3",
+        "reference": "simplified-capability-analyst:4",
         "name": "精简版analyst能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/2",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-architect:3",
+        "reference": "simplified-capability-architect:4",
         "name": "精简版architect能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/2",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-developer:3",
+        "reference": "simplified-capability-developer:4",
         "name": "精简版developer能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/2",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/36",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-reviewer:3",
+        "reference": "simplified-capability-reviewer:4",
         "name": "精简版reviewer能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/2",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-tester:3",
+        "reference": "simplified-capability-tester:4",
         "name": "精简版tester能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/2",
         "kind": "reference"
       }
     ],
-    "builtin-tool-tasks-complete:1": [],
     "builtin-tool-tasks-create:1": [],
-    "builtin-tool-tests-run:2": [],
     "builtin-tool-workflow-cancel:2": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/14",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/14",
         "kind": "reference"
@@ -5754,19 +1586,10 @@
     ],
     "builtin-tool-workflow-change-apply:4": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/16",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/16",
         "kind": "reference"
@@ -5774,19 +1597,10 @@
     ],
     "builtin-tool-workflow-change-preview:3": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/15",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/15",
         "kind": "reference"
@@ -5794,19 +1608,10 @@
     ],
     "builtin-tool-workflow-complete:2": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/20",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/20",
         "kind": "reference"
@@ -5814,19 +1619,10 @@
     ],
     "builtin-tool-workflow-controller-notify:1": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/38",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/38",
         "kind": "reference"
@@ -5834,19 +1630,10 @@
     ],
     "builtin-tool-workflow-controller-wait:1": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/37",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/37",
         "kind": "reference"
@@ -5854,19 +1641,10 @@
     ],
     "builtin-tool-workflow-decision-request:4": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/18",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/18",
         "kind": "reference"
@@ -5874,19 +1652,10 @@
     ],
     "builtin-tool-workflow-events-read:1": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/3",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/3",
         "kind": "reference"
@@ -5894,19 +1663,10 @@
     ],
     "builtin-tool-workflow-execution-inspect:1": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/5",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/5",
         "kind": "reference"
@@ -5914,19 +1674,10 @@
     ],
     "builtin-tool-workflow-execution-reconcile:2": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/19",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/19",
         "kind": "reference"
@@ -5934,19 +1685,10 @@
     ],
     "builtin-tool-workflow-execution-stop:2": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/11",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/11",
         "kind": "reference"
@@ -5954,19 +1696,10 @@
     ],
     "builtin-tool-workflow-inspect:1": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/2",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/2",
         "kind": "reference"
@@ -5974,70 +1707,16 @@
     ],
     "builtin-tool-workflow-materials-import:2": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/17",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/17",
         "kind": "reference"
       }
     ],
     "builtin-tool-workflow-outputs-read:2": [
-      {
-        "reference": "builtin-capability-analyst-codex:5",
-        "name": "需求分析师能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/tools/1",
-        "kind": "reference"
-      },
-      {
-        "reference": "builtin-capability-architect-codex:5",
-        "name": "架构师能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/tools/1",
-        "kind": "reference"
-      },
-      {
-        "reference": "builtin-capability-developer-codex:5",
-        "name": "开发能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/tools/1",
-        "kind": "reference"
-      },
-      {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/4",
-        "kind": "reference"
-      },
-      {
-        "reference": "builtin-capability-reviewer-codex:5",
-        "name": "评审能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/tools/1",
-        "kind": "reference"
-      },
       {
         "reference": "builtin-capability-sol-high-codex:4",
         "name": "默认能力 · GPT-6.1 Sol High / Codex",
@@ -6048,64 +1727,55 @@
         "kind": "reference"
       },
       {
-        "reference": "builtin-capability-tester-codex:5",
-        "name": "测试能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 5,
-        "scope": "global",
-        "path": "/tools/1",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-analyst:3",
+        "reference": "simplified-capability-analyst:4",
         "name": "精简版analyst能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/1",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-architect:3",
+        "reference": "simplified-capability-architect:4",
         "name": "精简版architect能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/1",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-developer:3",
+        "reference": "simplified-capability-developer:4",
         "name": "精简版developer能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/1",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/4",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-reviewer:3",
+        "reference": "simplified-capability-reviewer:4",
         "name": "精简版reviewer能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/1",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-tester:3",
+        "reference": "simplified-capability-tester:4",
         "name": "精简版tester能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/1",
         "kind": "reference"
@@ -6113,19 +1783,10 @@
     ],
     "builtin-tool-workflow-pause:2": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/12",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/12",
         "kind": "reference"
@@ -6133,19 +1794,10 @@
     ],
     "builtin-tool-workflow-resume:2": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/13",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/13",
         "kind": "reference"
@@ -6153,19 +1805,10 @@
     ],
     "builtin-tool-workflow-rework-preview:1": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/39",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/39",
         "kind": "reference"
@@ -6173,19 +1816,10 @@
     ],
     "builtin-tool-workflow-segment-dispatch:2": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/21",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/21",
         "kind": "reference"
@@ -6193,19 +1827,10 @@
     ],
     "builtin-tool-workflow-start:3": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/1",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/1",
         "kind": "reference"
@@ -6213,19 +1838,10 @@
     ],
     "builtin-tool-workflow-step-accept:2": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/7",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/7",
         "kind": "reference"
@@ -6233,19 +1849,10 @@
     ],
     "builtin-tool-workflow-step-dispatch:2": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/6",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/6",
         "kind": "reference"
@@ -6253,19 +1860,10 @@
     ],
     "builtin-tool-workflow-step-input:2": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/8",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/8",
         "kind": "reference"
@@ -6273,19 +1871,10 @@
     ],
     "builtin-tool-workflow-step-retry:2": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/9",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/9",
         "kind": "reference"
@@ -6293,26 +1882,16 @@
     ],
     "builtin-tool-workflow-step-rework:3": [
       {
-        "reference": "builtin-capability-project-manager-codex:12",
-        "name": "项目经理能力 · Sol High / Codex",
-        "type": "capability",
-        "version": 12,
-        "scope": "global",
-        "path": "/tools/10",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/tools/10",
         "kind": "reference"
       }
     ],
     "builtin-tool-workspace-current:1": [],
-    "builtin-tool-workspace-snapshot:2": [],
     "simplified-delivery-checkpoint:2": [
       {
         "reference": "simplified-workflow-feature:4",
@@ -7907,10 +3486,10 @@
     ],
     "simplified-skill-code-review:1": [
       {
-        "reference": "simplified-capability-reviewer:3",
+        "reference": "simplified-capability-reviewer:4",
         "name": "精简版reviewer能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/skills/1",
         "kind": "reference"
@@ -7918,111 +3497,111 @@
     ],
     "simplified-skill-context:2": [
       {
-        "reference": "simplified-capability-analyst:3",
+        "reference": "simplified-capability-analyst:4",
         "name": "精简版analyst能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/skills/0",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-architect:3",
+        "reference": "simplified-capability-architect:4",
         "name": "精简版architect能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/skills/0",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-developer:3",
+        "reference": "simplified-capability-developer:4",
         "name": "精简版developer能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/skills/0",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/skills/0",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-reviewer:3",
+        "reference": "simplified-capability-reviewer:4",
         "name": "精简版reviewer能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/skills/0",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-tester:3",
+        "reference": "simplified-capability-tester:4",
         "name": "精简版tester能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/skills/0",
         "kind": "reference"
       }
     ],
-    "simplified-skill-delivery-self-check:2": [
+    "simplified-skill-delivery-self-check:3": [
       {
-        "reference": "simplified-capability-analyst:3",
+        "reference": "simplified-capability-analyst:4",
         "name": "精简版analyst能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/skills/1",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-architect:3",
+        "reference": "simplified-capability-architect:4",
         "name": "精简版architect能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/skills/1",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-developer:3",
+        "reference": "simplified-capability-developer:4",
         "name": "精简版developer能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/skills/2",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/skills/2",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-reviewer:3",
+        "reference": "simplified-capability-reviewer:4",
         "name": "精简版reviewer能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/skills/2",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-tester:3",
+        "reference": "simplified-capability-tester:4",
         "name": "精简版tester能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/skills/2",
         "kind": "reference"
@@ -8030,10 +3609,10 @@
     ],
     "simplified-skill-implementation:1": [
       {
-        "reference": "simplified-capability-developer:3",
+        "reference": "simplified-capability-developer:4",
         "name": "精简版developer能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/skills/1",
         "kind": "reference"
@@ -8041,10 +3620,10 @@
     ],
     "simplified-skill-project-planning:1": [
       {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/skills/1",
         "kind": "reference"
@@ -8052,10 +3631,10 @@
     ],
     "simplified-skill-test-design:1": [
       {
-        "reference": "simplified-capability-tester:3",
+        "reference": "simplified-capability-tester:4",
         "name": "精简版tester能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/skills/1",
         "kind": "reference"
@@ -8063,10 +3642,10 @@
     ],
     "simplified-skill-workflow-orchestration:3": [
       {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/skills/3",
         "kind": "reference"
@@ -8074,10 +3653,10 @@
     ],
     "simplified-spec-design:1": [
       {
-        "reference": "simplified-capability-architect:3",
+        "reference": "simplified-capability-architect:4",
         "name": "精简版architect能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/spec_refs/0",
         "kind": "reference"
@@ -8095,10 +3674,10 @@
     "simplified-spec-feature-code-review:1": [],
     "simplified-spec-implementation:1": [
       {
-        "reference": "simplified-capability-developer:3",
+        "reference": "simplified-capability-developer:4",
         "name": "精简版developer能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/spec_refs/0",
         "kind": "reference"
@@ -8115,10 +3694,10 @@
     ],
     "simplified-spec-planning:1": [
       {
-        "reference": "simplified-capability-project-manager:3",
+        "reference": "simplified-capability-project-manager:4",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/spec_refs/0",
         "kind": "reference"
@@ -8219,10 +3798,10 @@
     "simplified-spec-task-code-review:1": [],
     "simplified-spec-tests:1": [
       {
-        "reference": "simplified-capability-tester:3",
+        "reference": "simplified-capability-tester:4",
         "name": "精简版tester能力",
         "type": "capability",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/spec_refs/0",
         "kind": "reference"

@@ -1,0 +1,11 @@
+{
+  "type": "skill",
+  "identity": "simplified-skill-delivery-self-check",
+  "revision": 3,
+  "name": "精简版交付自检",
+  "scope": "global",
+  "data": {
+    "body_file": "simplified-delivery-self-check-v3.md",
+    "rules": []
+  }
+}

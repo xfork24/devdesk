@@ -139,7 +139,7 @@ Workflow 调用仅修改输出合同，且原调用尚无封存输出、未被�
 
 ## 默认流程概览
 
-实际默认为 `simplified-workflow-feature:4`、`simplified-workflow-task:3` 和 `simplified-standard-engineering:4`。Feature 为 5 阶段、14 个业务步骤、19 个实际节点；Task 为 5 阶段、10 个业务步骤、14 个实际节点。内部节点用于工作空间、快照、登记及目标读取，不增加模型交接。默认精简版 Agent/Capability 采用第 3 修订，以紧凑文档和精简版交付自检减少重复成文；结构检查仍由平台执行，独立评审与真实测试门禁不变。经理按实例将 automatic 节点一次交给有界 segment，包括 Agent、Tool 与子流程调用；Human 节点排除在委托之外，异常回到经理处理。
+实际默认为 `simplified-workflow-feature:4`、`simplified-workflow-task:3` 和 `simplified-standard-engineering:4`。Feature 为 5 阶段、14 个业务步骤、19 个实际节点；Task 为 5 阶段、10 个业务步骤、14 个实际节点。内部节点用于工作空间、快照、登记及目标读取，不增加模型交接。默认精简版 Agent/Capability 采用第 4 修订，以紧凑文档和精简版交付自检减少重复成文；结构检查仍由平台执行，独立评审与真实测试门禁不变。经理按实例将 automatic 节点一次交给有界 segment，包括 Agent、Tool 与子流程调用；Human 节点排除在委托之外，异常回到经理处理。
 
 运行事件与业务事实同事务保存。仅同一 running 执行挂接会话/轮次标识、且状态、产物、输入摘要及原因不变的通知标记为 `metadata_only`；经理消费时合并此类通知并以版本守卫推进游标，SSE 和审计保留原事件。结果、失败、停止、Human、计划和控制变化继续处理；旧的无标记通知不被忽略。
 
@@ -154,11 +154,11 @@ Task 直接以已推送的开发分支向所属 Feature 创建 PR，平台冻结
 
 `stale_target` 且已证明未应用的交付失败，可经 `workflow.step.retry` 重做目标读取及其下游 PR、合并回归和最终 Human 决定，保留未受影响的源回归和代码评审。平台按源版本累计刷新额度，业务返工不能重置该额度。
 
-详细版显式入口为 `builtin-workflow-feature-sol-high:12`（8 阶段、22 步）、`builtin-workflow-task-sol-high:11`（8 阶段、20 步）及 `builtin-standard-engineering:10`。其执行合同保留独立 documentation、verify、closure 及候选评审，平台只创建 PR；历史源和实例按原冻结引用恢复。详细版 Agent/Sandbox 应使用其原绑定，可用对应源闭包核对配置。
+出厂目录仅提供精简版工程规范快照及 Feature / Task 流程。详细版及其专属源已从发布包移除；兼容数据集仍保留原不可变源、项目选择和冻结实例，不自动替换已有工作。共享配置继续由实际保留引用决定。
 
 ## 预算与并发
 
-创作默认值为 8 轮、300 秒、3 次重试；出厂业务 Agent 步骤一般为 30 轮、1800 秒、3 次重试。精简版 foreach 并发上限为 4、汇合执行预算为 21600 秒；项目与独立测试节点预算为 7200 秒，覆盖配方允许的最长测试。详细版 foreach 保持 1，可配置至 32。业务依赖等待不占活跃槽位，未知效果保留槽位；单 worktree 写者互斥，所有会话还受全局及项目额度限制。A 合入并同步后即可解锁仅依赖 A 的 C，不等待无关 B。人工等待与祖先暂停不消耗执行预算。精简版自动平台链可通过 `workflow.segment.dispatch` 在同一次有界授权中连续运行。
+创作默认值为 8 轮、300 秒、3 次重试；出厂业务 Agent 步骤一般为 30 轮、1800 秒、3 次重试。精简版 foreach 并发上限为 4、汇合执行预算为 21600 秒；项目与独立测试节点预算为 7200 秒，覆盖配方允许的最长测试。业务依赖等待不占活跃槽位，未知效果保留槽位；单 worktree 写者互斥，所有会话还受全局及项目额度限制。A 合入并同步后即可解锁仅依赖 A 的 C，不等待无关 B。人工等待与祖先暂停不消耗执行预算。精简版自动平台链可通过 `workflow.segment.dispatch` 在同一次有界授权中连续运行。
 
 步骤可在不可变 Workflow 修订的 `budget.time_limits` 显式选择 `{"version":1,"wall_seconds":3600,"human_wait_seconds":600}`。两个值均为有限正秒数，总墙钟最多 30 天，Human 期限不得超过总墙钟；缺省不启用，旧预算的序列化和出厂选择不变。v1 总墙钟从首次派发开始，覆盖当前逻辑节点的等待、技术重试、返工、保留 node_id 的计划替换和 Host 停机时间；它不是整个工作根或经理 Session 的总预算。
 
@@ -191,6 +191,8 @@ Agent 的实际任务包含冻结的 `runtime_context`：`runtime_context.bindin
 技术重试按当前业务轮次中的执行历史计算次数，与补充输入的 sequence 分开；每次新执行以 sequence=1 开始，retry_of 关联旧执行，原冻结输入和最近补充指令继续传给后继任务。步骤 retry_limit 与 Rust 策略 max_retries 共同限制重试，重启不重置次数，业务返工另起 round。自动重试只消费可信端口明确给出的 technical/not_applied 失败及所选错误码；模型文字、未知副作用、规范拒绝和未停止 writer 都不能触发自动重试。失败保存结构化 code、kind、effect 和实际来源引用，原意图终态不接受迟到结果改写。
 
 结果未知的执行继续保留根 worker 和 foreach 槽位，核对前不能把它视为空闲容量。
+
+默认精简版自检 Skill 第 3 修订要求 content_checks 评审报告先调用本步骤 spec.lint，通过 structure_valid 和 content_report_valid 后再最终提交；按实际冻结文本行数、Unicode 字符数及章节锚点修正定位，不猜测转义 JSON 的显示行号。普通简单 Markdown 文档仍可直接自检提交。
 
 默认 Codex 业务角色获得只读 spec.lint，通过步骤直接引用的 Profile 使用。Agent 从 outputs.<port>.definition.id 取得精确 Delivery 引用，在提交前检查草稿；关键评审的定位、摘要和引文仍由同一接纳检查器复算。默认 PRD/Design 后继 Spec 已声明必要章节，关键评审后继 Spec 要求真实冻结输入位置；既有工作不会随出厂选择改变而升级。自检报告明确区分结构、报告证据和语义判断，不替代独立评审或真实工具结果。
 

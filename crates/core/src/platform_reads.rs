@@ -137,12 +137,19 @@ impl Engine {
                 .map(|_| restored(self, &selected))
                 .transpose()?;
             reads = reads.merge([version(&selected)])?;
+            let targets = input_evidence_from_manifest(execution, manifest.as_ref())?;
+            report["content_report_sources"] = json!(
+                targets
+                    .iter()
+                    .map(EvidenceTarget::location_guidance)
+                    .collect::<Vec<_>>()
+            );
             let validation = serde_json::from_value::<ContentCheckReport>(value.clone())
                 .map_err(|e| err("output_invalid", e.to_string()))
                 .and_then(|r| {
                     r.validate_evidence(
                         &crate::spec_lint::step_content_checks(instance, step)?,
-                        &input_evidence_from_manifest(execution, manifest.as_ref())?,
+                        &targets,
                     )
                 });
             report["content_report_valid"] = json!(validation.is_ok());

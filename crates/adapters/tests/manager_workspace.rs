@@ -465,7 +465,7 @@ fn non_manager_agents_cannot_open_project_management_controllers() {
                     expected_revision: Some(e.store.snapshot().unwrap().projects[0].revision),
                     payload: json!({
                         "role_ref": "builtin-role-analyst:1",
-                        "agent_ref": "builtin-agent-sol-high-analyst:6",
+                        "agent_ref": "simplified-agent-analyst:4",
                     }),
                 },
             )
@@ -482,7 +482,7 @@ fn non_manager_agents_cannot_open_project_management_controllers() {
                 command_id: id(),
                 target: Some(project.clone()),
                 expected_revision: Some(e.store.snapshot().unwrap().projects[0].revision),
-                payload: json!({"agent_ref":"builtin-agent-sol-high-analyst:6"}),
+                payload: json!({"agent_ref":"simplified-agent-analyst:4"}),
             },
         )
         .unwrap_err();

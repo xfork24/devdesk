@@ -44,7 +44,7 @@ test("Spec 正文之前展示确切 Delivery 与 Capability，Delivery 展示生
   expect(Math.abs(referenceGap - 4)).toBeLessThan(1);
   await expect(
     usage.getByRole("link", {
-      name: "评审能力 · Sol High / Codex",
+      name: "评审能力 · GLM 5.3 Flash / DSH",
       exact: true,
     }),
   ).toBeVisible();
@@ -68,10 +68,10 @@ test("Spec 正文之前展示确切 Delivery 与 Capability，Delivery 展示生
     ),
   ).toBe(true);
   await usage
-    .getByRole("link", { name: "评审能力 · Sol High / Codex", exact: true })
+    .getByRole("link", { name: "评审能力 · GLM 5.3 Flash / DSH", exact: true })
     .click();
   await expect(page.getByLabel("名称", { exact: true })).toHaveValue(
-    "评审能力 · Sol High / Codex",
+    "评审能力 · GLM 5.3 Flash / DSH",
   );
   const specLink = page.getByRole("link", {
     name: "查看 Review Report 内容规范 · v1",
@@ -174,25 +174,25 @@ test("Spec 正文之前展示确切 Delivery 与 Capability，Delivery 展示生
 
 test("工具参数和子流程集合的 Delivery 引用可以双向定位", async ({ page }) => {
   await page.goto(
-    "/?tab=workflows&config_tab=delivery_type&config_object=builtin-delivery-test-recipe%3A2",
+    "/?tab=workflows&config_tab=delivery_type&config_object=simplified-delivery-test-recipe%3A1",
   );
   const usage = page.getByLabel("被引用情况", { exact: true });
   await usage
     .getByRole("link", {
-      name: "阶段：Red 基线 · 步骤：执行测试 · 工具参数：recipe",
+      name: "阶段：独立测试 · 步骤：T02 执行真实 Red · 工具参数：recipe",
       exact: true,
     })
     .click();
   await expect(page.getByLabel("步骤名称", { exact: true })).toHaveValue(
-    "执行测试",
+    "T02 执行真实 Red",
   );
   const argument = page.locator('[id="workflow-port:argument:recipe"]');
   await expect(argument).toBeInViewport();
   await argument
-    .getByRole("link", { name: "查看 Test Doc", exact: true })
+    .getByRole("link", { name: "查看 精简版独立测试配方", exact: true })
     .click();
   await expect(page.getByLabel("名称", { exact: true })).toHaveValue(
-    "Test Doc",
+    "精简版独立测试配方",
   );
   await page.goto(
     "/?tab=workflows&config_tab=delivery_type&config_object=builtin-delivery-task-creation-report%3A1",
@@ -326,7 +326,7 @@ test("Skill、HTTP 工具和原生工具显示 Capability 引用，提交后同�
   ).toHaveCount(0);
   await expect(usage).toContainText("当前没有配置引用此修订。");
   await page.goto(
-    "/?tab=actors&config_tab=capability&config_object=builtin-capability-reviewer-codex%3A5",
+    "/?tab=actors&config_tab=capability&config_object=simplified-capability-reviewer%3A4",
   );
   await page
     .getByRole("link", {
@@ -344,6 +344,9 @@ test("Skill、HTTP 工具和原生工具显示 Capability 引用，提交后同�
     page
       .getByRole("region", { name: "Tool 定义", exact: true })
       .getByLabel("被引用情况")
-      .getByRole("link", { name: "评审能力 · Sol High / Codex", exact: true }),
+      .getByRole("link", {
+        name: "精简版reviewer能力",
+        exact: true,
+      }),
   ).toBeVisible();
 });

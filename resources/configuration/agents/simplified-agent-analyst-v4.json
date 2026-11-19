@@ -1,0 +1,10 @@
+{
+  "type": "agent",
+  "identity": "simplified-agent-analyst",
+  "revision": 4,
+  "name": "精简版analyst Agent",
+  "scope": "global",
+  "role_ref": "builtin-role-analyst:1",
+  "capability_ref": "simplified-capability-analyst:4",
+  "data": {}
+}

@@ -40,6 +40,7 @@ fn actual_git_docker_workflow_handoffs() {
     let root = std::fs::canonicalize(root).unwrap();
     let project = tests::create(&w, "Dedicated workflow transport probe");
     let e = w.project_engine(Some(&project)).unwrap();
+    crate::test_runtime::retired_configuration::install(&e);
     let command = |method: &str, target: Option<&str>, payload: Value| {
         let state = e.store.snapshot().unwrap();
         let global = w.global.snapshot().unwrap();

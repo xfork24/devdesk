@@ -200,7 +200,14 @@ mod tests {
         .unwrap();
         assert!(active_permission_binding(&before, &target).is_some());
         // Simulate a compatible catalog whose defaults still select detailed sources.
+        let retired: Vec<SourceDefinition> = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/configuration/retired-engineering.json"
+        ))
+        .unwrap();
         let mut legacy = before.clone();
+        for source in retired {
+            legacy.governance.push(source.into_record().unwrap());
+        }
         let state = legacy
             .governance
             .iter_mut()
@@ -210,7 +217,15 @@ mod tests {
         state.data["defaults"]["task_workflow_ref"] = json!("builtin-workflow-task-sol-high:11");
         state.data["defaults"]["standard_ref"] = json!("builtin-standard-engineering:10");
         state.content_hash = content_digest(&state.refs, &state.data);
+        let frozen_retired = legacy
+            .configuration("builtin-standard-engineering:10")
+            .unwrap()
+            .clone();
         let receipt = update_factory_catalog(&mut legacy, "factory-test").unwrap();
+        assert_eq!(
+            legacy.configuration(&frozen_retired.id).unwrap(),
+            &frozen_retired
+        );
         assert_eq!(receipt["changed"], true);
         assert_eq!(
             current_template_defaults(&legacy).unwrap()["workflow_ref"],

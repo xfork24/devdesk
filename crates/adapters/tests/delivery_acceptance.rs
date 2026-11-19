@@ -133,6 +133,7 @@ fn actual_docker_red_green_candidate_reports_and_git_diff_match_their_specs() {
         runtime::adapters(),
     );
     engine.bootstrap().unwrap();
+    runtime::retired_configuration::install(&engine);
     let project = engine
         .execute(
             "project.create",

@@ -399,7 +399,7 @@ fn identities_are_scoped_and_a_global_session_cannot_leak_through_a_controller_r
             .code,
         "not_found"
     );
-    conn.execute("INSERT INTO sessions(id,owner_id,agent,harness,sandbox,origin,project_id,runtime_binding,scope) VALUES('global-session','global','builtin-agent-sol-high-analyst:6','fixture','fixture','external','00000000-0000-4000-8000-000000000000','{}','global')",[]).unwrap();
+    conn.execute("INSERT INTO sessions(id,owner_id,agent,harness,sandbox,origin,project_id,runtime_binding,scope) VALUES('global-session','global','simplified-agent-analyst:4','fixture','fixture','external','00000000-0000-4000-8000-000000000000','{}','global')",[]).unwrap();
     conn.execute("INSERT INTO turns(id,project_id,session_id,client_message_id,input,input_digest,status,consumed,revision) VALUES('global-turn','00000000-0000-4000-8000-000000000000','global-session','global-message','fixture','digest','queued',0,1)",[]).unwrap();
     conn.execute("INSERT INTO conversation_events(id,session_id,turn_id,sequence,deduplication_key,kind,content,time) VALUES('global-event','global-session','global-turn',1,'global-event','assistant','Global secret',1)",[]).unwrap();
     conn.execute("UPDATE governance_records SET data=json_set(data,'$.session_id','global-session') WHERE id='controller'",[]).unwrap();

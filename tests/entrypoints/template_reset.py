@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise a copied standalone Host: factory copies, atomic reset, history and restart."""
+"""Exercise a copied Host: preserving update, explicit destructive reset and restart."""
 import http.cookiejar
 import json
 import os
@@ -53,6 +53,14 @@ def run():
                 "name": "Standalone custom delivery", "data": {"format":"markdown","body":"database copy"}
             }})
             preview = rpc("query.template_reset_preview")
+            preserving = rpc("configuration.templates.reset", {"command_id": "preserving-update", "payload": {
+                "expected_catalog_generation": preview["generation"],
+                "catalog_fingerprint": preview["catalog_fingerprint"], "bundle_hash": preview["bundle_hash"],
+                "preserve_custom": True,
+            }})
+            assert preserving["changed"] is False
+            assert custom in rpc("query.configurations", {"kind": "delivery_type", "limit": 100})["records"]
+            preview = rpc("query.template_reset_preview")
             command = {"command_id": "reset-standalone", "payload": {
                 "expected_catalog_generation": preview["generation"],
                 "catalog_fingerprint": preview["catalog_fingerprint"], "bundle_hash": preview["bundle_hash"],
@@ -64,7 +72,9 @@ def run():
             assert current["total"] == delivery_count
             assert not any(record["id"] == custom["id"] for record in current["records"])
             history = rpc("query.configurations", {"kind": "delivery_type", "include_archived": True, "include_history": True, "limit": 100})
-            assert custom in history["records"]
+            # The default reset is explicitly destructive. Historical evidence
+            # preservation belongs to preserve_custom, checked above.
+            assert not any(record["id"] == custom["id"] for record in history["records"])
             restored = rpc("query.configuration_defaults")
             assert restored["model_ref"] == defaults["model_ref"]
             state = rpc("query.workspace")
@@ -86,7 +96,7 @@ def run():
         finally:
             child.terminate()
             child.wait(timeout=15)
-    print("PASS standalone templates: database copies, reset, immutable history, replay, preferences, restart, no-op")
+    print("PASS standalone templates: preserving update, destructive reset, replay, preferences, restart, no-op")
 
 
 if __name__ == "__main__":

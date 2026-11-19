@@ -285,7 +285,7 @@ Standard 页展开 Workflow、Delivery、Spec 配置项后，在“替换为”�
 
 StepExecution 可带 failure（WorkflowFailure）和 retry_of；workflow.inspect 的 retry_count 从同一实例、节点和 round 的历史执行推导。可信端口错误可附 ExecutionFailureDisposition，缺失分类时不推测为可自动重试。旧的文本意图错误只保留原文；新观察保存结构化错误，已记录终态只能幂等重报。
 
-普通 Workflow Tool/Agent 的 spec.lint 仅接受 delivery_ref/value，目标必须是当前冻结步骤声明的输入或输出 Delivery；任意 specification/delivery 草稿参数只属于已授权经理预演入口。未授予该工具的业务步骤不能调用。输出为内容报告时，附 content_report_valid/content_report_error，复用接纳时的检查集合与冻结输入证据校验；草稿检查不生成 workflow_output 或人工决定。
+普通 Workflow Tool/Agent 的 spec.lint 仅接受 delivery_ref/value，目标必须是当前冻结步骤声明的输入或输出 Delivery；任意 specification/delivery 草稿参数只属于已授权经理预演入口。未授予该工具的业务步骤不能调用。输出为内容报告时，附 content_report_valid/content_report_error 和 content_report_sources，复用接纳时的检查集合与冻结输入证据校验。后者只给本轮已授权输入的 source_ref/value_digest、文本行数、Unicode 字符数及最多八个章节定位提示（每个标题最多 80 字符），标记截断，不复制正文；行数与接纳使用同一 lines 语义，字符使用 Unicode 标量计数，越界诊断给出实际边界；草稿检查不生成 workflow_output 或人工决定。
 
 权限预设目录切换与重载使用读取时的 `source.revision` 作为命令 `expected_revision`；切换目录的编辑基线在打开选择器时保留。跨库配置采用与取消使用暂存操作原 `revision`，经理工具通过 `expected_revision` 提供；跨库恢复继续原始采用意图，不产生新的 Human 决定。配置发布在同一资源提交中校验源 head、相关引用谓词和目录条件。
 

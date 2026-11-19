@@ -4,15 +4,15 @@
   "model_ref": "builtin-model-gpt-6-1-sol-high:1",
   "harness_ref": "builtin-harness-codex-managed:1",
   "sandbox_ref": "builtin-sandbox-docker:2",
-  "capability_ref": "simplified-capability-developer:3",
+  "capability_ref": "simplified-capability-developer:4",
   "standard_ref": "simplified-standard-engineering:4",
   "role_agent_bindings": {
-    "builtin-role-analyst:1": "simplified-agent-analyst:3",
-    "builtin-role-architect:1": "simplified-agent-architect:3",
-    "builtin-role-project-manager:1": "simplified-agent-project-manager:3",
-    "builtin-role-developer:1": "simplified-agent-developer:3",
-    "builtin-role-tester:1": "simplified-agent-tester:3",
-    "builtin-role-reviewer:1": "simplified-agent-reviewer:3"
+    "builtin-role-analyst:1": "simplified-agent-analyst:4",
+    "builtin-role-architect:1": "simplified-agent-architect:4",
+    "builtin-role-project-manager:1": "simplified-agent-project-manager:4",
+    "builtin-role-developer:1": "simplified-agent-developer:4",
+    "builtin-role-tester:1": "simplified-agent-tester:4",
+    "builtin-role-reviewer:1": "simplified-agent-reviewer:4"
   },
   "harness_permission_ref": "builtin-permission-harness-full-access:1",
   "sandbox_permission_ref": "builtin-permission-sandbox-full-access:1",

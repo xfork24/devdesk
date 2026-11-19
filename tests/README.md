@@ -90,7 +90,7 @@ DEVDESK_DSH_MOCK_IMAGE=sha256:… cargo test -p devdesk-adapters --test model_pr
 
 ```bash
 python3 tests/live/probe_configured_workflow.py --binary target/debug/devdesk-host --codex-auth-source /专用/auth.json
-python3 tests/live/probe_default_engineering_workflow.py --binary target/debug/devdesk-host --codex-auth-source /专用/auth.json --github-repo owner/dedicated-test-repo
+python3 tests/live/probe_streamlined_workflow.py --binary target/release/devdesk-host --codex-auth-source /专用/auth.json --github-repo owner/dedicated-test-repo --requirement-file /专用/requirement.md --report-directory /新的证据目录 --performance
 ```
 
 两者都可用 `--report-directory` 指定临时证据目录。完整工程推荐使用 `target/release/devdesk-host`；通过同一证据目录的 `--resume` 可接管原根实例，先核对中断执行，再以新执行身份重试，保留已接纳成果。工程探针默认最多等待三小时，可用 `--timeout-seconds` 调整验收入口的等待时限，不改变工作流本身的预算或门禁。运行程序先复制二进制，避免同时构建影响正在执行的程序。不要把登录文件或证据写入源码目录。
@@ -105,9 +105,9 @@ macOS 凭据助手专项入口为 `tests/entrypoints/credential_helper_startup.p
 
 Harness 编排回归：`crates/adapters/tests/orchestration.rs` 验证显式驱动、版本、替代材料、绕过、有界委托和真实原生调用来源（Harness 端口夹具）。`tests/entrypoints/dataset_protocol.py` 验证拒绝旧数据协议且不改写源数据。
 
-`tests/live/probe_harness_orchestration.py` 使用实际 Codex 项目经理和业务 Agent，验证运行时绕过、实际平台调用及暂停重启后的后继 Session。`probe_default_engineering_workflow.py` 使用独立数据集、专用 GitHub 仓库与真实 Codex、Docker、Git 执行默认 Feature/Task；人工确认精确绑定当前材料，不覆盖拒绝。二者必须显式提供二进制与认证源；临时复制凭据在退出时清理。
+`tests/live/probe_harness_orchestration.py` 使用实际 Codex 项目经理和业务 Agent，验证运行时绕过、实际平台调用及暂停重启后的后继 Session。`probe_streamlined_workflow.py` 使用独立数据集、专用 GitHub 仓库与真实 Codex、Docker、Git 执行默认 Feature/Task；人工确认精确绑定当前材料，不覆盖拒绝。二者必须显式提供二进制与认证源；临时复制凭据在退出时清理。
 
-Standard 的真实两 Task 工程验收入口为 `tests/live/probe_standard_snapshots.py`，使用独立数据集、真实 Codex、Docker 和专用 GitHub 测试仓库，验证不同快照、运行中切换、重启恢复、真实测试及 Git 回执。完整回归在整合到 main 后统一运行。通过同一 `--report-directory` 和 `--resume` 可以保留原实例、接管项目经理，并只恢复已核对的中断执行、修复后的只读目标查询，或对并行任务推进后过期的候选从 target 返工。父调用由子步骤恢复，不重新创建 Task。完成后运行 `python3 tests/live/verify_standard_history.py /临时证据目录`，离线核对 62 个步骤、唯一的规范切换、旧输入输出、零豁免、每项 Task 的两轮原生命令 Red/Green 与三个精确测试后发布版本。
+Standard 捕获、采用、历史冻结与项目隔离由 `crates/adapters/tests/standard_snapshots.rs` 覆盖。当前出厂精简版的真实完整工程使用 `probe_streamlined_workflow.py`；`probe_standard_snapshots.py` 和 `verify_standard_history.py` 保留用于旧版本独立两 Task 的历史证据复核，不作为当前出厂默认验收入口。
 
 Workflow 执行性能的显式组件入口为 `crates/adapters/tests/workflow_performance.rs`，通过 `DEVDESK_WORKFLOW_PERF_OUTPUT` 指定全新输出文件，测量确定性隔离流程；`frozen_history_performance.rs` 只读取明确选择的备份，使用 `DEVDESK_HISTORY_DATASET`、`DEVDESK_HISTORY_PROJECT` 和 `DEVDESK_HISTORY_OUTPUT`。两者默认 ignored，不启动模型或恢复原 worker。它们不是 100 前端或完整原生往返验收。
 
@@ -128,7 +128,7 @@ Workflow 执行性能的显式组件入口为 `crates/adapters/tests/workflow_pe
 
 ## 工作流读取与审批观察专项
 
-`python3 -m unittest discover -s tests/live -p test_workflow_observer.py` 覆盖审批请求先保存后检查、两类材料联合覆盖、确切版本及只读观察。生产命令合同另由 `configured_workflows` 中的 `human_interaction_uses_production_union_and_exact_execution_context` 验证；单独运行适配器测试时加 `--features test-fixtures`。这些入口不调用模型或推进真实 Feature。
+`python3 -m unittest discover -s tests/live -p test_workflow_observer.py` 覆盖精简版和子流程探针审批请求先保存后检查、诊断失败继续观察、重启端口变化和原件不可覆盖、两类材料联合覆盖、确切版本及只读观察。生产命令合同另由 `configured_workflows` 中的 `human_interaction_uses_production_union_and_exact_execution_context` 验证；单独运行适配器测试时加 `--features test-fixtures`。这些入口不调用模型或推进真实 Feature。
 
 `tests/performance/workflow_reads.py --test-binary <release测试入口> --dataset <专用兼容备份> --output <新证据目录> --samples 200` 通过关闭调度的实际 HTTP 服务测 control、状态页及执行详情，保留逐请求错误、bytes、内容摘要和 trace 关联。结果只用于本机定位，不等于原生往返或正式容量。`joint_frontends.py --browser` 的 1/2 页面诊断支持混合读、写和导航，较高并发仍分别记录动作数和真实 RPC；导航取消只对已观测到的只读请求单列，修改失败不豁免。
 
@@ -137,3 +137,5 @@ Workflow 执行性能的显式组件入口为 `crates/adapters/tests/workflow_pe
 预算专项在 `configured_workflows` 中用可控 UTC/单调时钟、真实 SQLite 验证显式 time_limits v1 的 Human 截止、签署/补充输入、技术重试/重启、时钟倒退及计划采用；缺省旧预算的序列化由 schema_contracts 验证。新项目基线为 60；旧 59 数据集拒绝测试核对原文件字节未改写。
 
 `DEVDESK_TRANSACTION_PROFILE_OUTPUT=/tmp/全新文件 cargo test --release --locked -p devdesk-adapters --test resource_commits transaction_observation_profile -- --ignored --exact --nocapture` 在新全局库交错执行启用/关闭 Trace 的同尺寸提交，预热另存，分别保存千样本。计时不含报告文件/日志输出，结果只定位内存观测开销；逐事务记录的上限、冲突/回滚、重放及内容排除另有默认回归。
+
+`configured_workflows::out_of_bounds_review_is_repaired_by_lint_in_the_same_turn_before_admission` 使用真实 SQLite 和生产原生工具桥合同，验证 63 行文本的越界草稿先被 lint 拒绝、同一 Turn 依照冻结位置指导修正后接纳，没有新评审尝试或历史覆盖。该确定性端口测试不调用付费模型。

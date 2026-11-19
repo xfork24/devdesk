@@ -30,6 +30,7 @@ fn engine(path: &std::path::Path) -> Engine {
     )
     .with_tool_executor(Arc::new(NativeTools::new(path).unwrap()));
     engine.bootstrap().unwrap();
+    runtime::retired_configuration::install(&engine);
     runtime::bind_default_permissions(&engine);
     engine
 }
@@ -3598,6 +3599,10 @@ struct PlatformCallingAgent {
     call_tool: Option<String>,
     call_arguments: Option<Value>,
     final_outputs: Option<Value>,
+    repair_locations: bool,
+}
+fn grounded_review(source: &Value, locator: Value) -> Value {
+    json!({"approve":true,"summary":"Reviewed frozen section","checks":[{"key":"source","passed":true,"evidence":"Reviewed the exact declared section","locations":[{"source_ref":source.get("source_ref").unwrap_or(&source["evidence_source_ref"]),"value_digest":source["value_digest"],"locator":locator}]}]})
 }
 impl ports::Harness for PlatformCallingAgent {
     fn open_session(&self, request: &ports::SessionStart) -> Result<ports::SessionReceipt> {
@@ -3631,7 +3636,10 @@ impl ports::Harness for PlatformCallingAgent {
                     arguments: self
                         .call_arguments
                         .clone()
-                        .unwrap_or_else(|| json!({"note":"可复核的实际输入"})),
+                        .unwrap_or_else(|| if self.repair_locations {
+                            let source = &request.configured_task.as_ref().unwrap().task["input_sources"]["document"];
+                            json!({"delivery_ref":"fixture-delivery-object:1","value":grounded_review(source, json!({"type":"lines","start":1,"end":65}))})
+                        } else { json!({"note":"可复核的实际输入"}) }),
                     worktree: String::new(),
                 },
             ],
@@ -3644,10 +3652,33 @@ impl ports::Harness for PlatformCallingAgent {
         request: &Value,
         receipt: &ToolReceipt,
     ) -> Result<()> {
-        assert_eq!(*request, json!(47));
+        assert!(*request == json!(47) || (self.repair_locations && *request == json!(48)));
         self.replies.lock().unwrap().push(receipt.clone());
         let calls = self.base.calls.lock().unwrap();
         let turn = &calls.last().unwrap().turn;
+        let mut final_outputs = self.final_outputs.clone().unwrap_or_else(|| json!({}));
+        if self.repair_locations {
+            assert!(receipt.success);
+            let report = receipt.structured_content.as_ref().unwrap();
+            let source = &report["content_report_sources"][0];
+            assert_eq!(source["line_count"], 63);
+            let corrected = grounded_review(source, source["sections"][0]["locator"].clone());
+            if *request == json!(47) {
+                assert_eq!(report["content_report_valid"], false);
+                assert!(
+                    report["content_report_error"]["message"]
+                        .as_str()
+                        .unwrap()
+                        .contains("共 63 行")
+                );
+                self.base.pending.lock().unwrap().insert(session.id.clone(), vec![ports::ConversationObservation::ToolCall {
+                    turn: turn.id.clone(), request: json!(48), thread: format!("fixture-{}", session.id), external_turn: format!("fixture-{}", turn.id), call: "native-call-48".into(), tool: "devdesk_spec_lint".into(), arguments: json!({"delivery_ref":"fixture-delivery-object:1","value":corrected}), worktree: String::new()
+                }]);
+                return Ok(());
+            }
+            assert_eq!(report["content_report_valid"], true);
+            final_outputs = json!({"draft":corrected});
+        }
         self.base.pending.lock().unwrap().insert(
             session.id.clone(),
             vec![
@@ -3655,7 +3686,7 @@ impl ports::Harness for PlatformCallingAgent {
                     turn: turn.id.clone(),
                     key: "native-final".into(),
                     content:
-                        json!({"status":"completed","summary":"已收到实际平台回执","outputs":self.final_outputs.clone().unwrap_or_else(||json!({}))})
+                        json!({"status":"completed","summary":"已收到实际平台回执","outputs":final_outputs})
                             .to_string(),
                     kind: ConversationEventKind::Assistant,
                     mode: MessageMode::Full,
@@ -4901,6 +4932,52 @@ fn worker_self_lint_checks_the_same_frozen_report_locations_as_admission() {
             .governance
             .iter()
             .any(|r| r.r#type == "workflow_output")
+    );
+}
+
+#[test]
+fn out_of_bounds_review_is_repaired_by_lint_in_the_same_turn_before_admission() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = engine(dir.path());
+    let harness = Arc::new(PlatformCallingAgent {
+        call_tool: Some("devdesk_spec_lint".into()),
+        repair_locations: true,
+        ..Default::default()
+    });
+    e.harness = harness.clone();
+    let spec = command(&e, "spec.create", None, json!({"name":"Located review","data":{"schema_version":3,"body":"Review actual frozen section","checks":[{"key":"source","name":"Source","instructions":"Cite the frozen section","evidence_required":true}]}})).unwrap();
+    let role = command(
+        &e,
+        "role.create",
+        None,
+        json!({"name":"Reviewer","data":{"instructions":"Lint before submitting"}}),
+    )
+    .unwrap();
+    let capability = command(&e, "capability.create", None, json!({"name":"Review preflight","model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"skills":[],"tools":[DEFAULT_NATIVE_TOOL_ID,"builtin-tool-spec-lint:1"],"data":{}})).unwrap();
+    let agent = command(&e, "agent.create", None, json!({"name":"Reviewer","role_ref":role["id"],"capability_ref":capability["id"],"data":{}})).unwrap();
+    let document = format!(
+        "## Frozen section\n{}",
+        (0..62).map(|i| format!("line {i}\n")).collect::<String>()
+    );
+    let run = launch(
+        &e,
+        &role,
+        &agent,
+        json!({"spec_refs":[spec["id"]],"inputs":{"document":{"type":"constant","value":document}},"access":{"tool_refs":["builtin-tool-spec-lint:1"]},"outputs":{"draft":{"delivery_ref":"fixture-delivery-object:1","content_checks":true}}}),
+    );
+    drive_platform_fixture(&e, 24);
+    let completed = instance(&e, &run["id"]);
+    assert_eq!(completed["status"], "completed");
+    assert_eq!(harness.base.calls.lock().unwrap().len(), 1);
+    assert_eq!(harness.replies.lock().unwrap().len(), 2);
+    assert!(completed["steps"][0]["retry_of"].is_null());
+    assert!(
+        !e.store
+            .snapshot()
+            .unwrap()
+            .governance
+            .iter()
+            .any(|r| r.r#type == "workflow_execution_history")
     );
 }
 

@@ -7,6 +7,9 @@ use devdesk_core::id;
 #[allow(clippy::duplicate_mod)]
 mod defaults;
 pub use defaults::fixture_test_configuration;
+#[path = "retired_configuration.rs"]
+#[allow(clippy::duplicate_mod)]
+pub mod retired_configuration;
 use defaults::*;
 use devdesk_core::{Command, Engine, ports};
 use devdesk_domain::*;
@@ -75,7 +78,7 @@ pub fn queue_conversation_with(
     project: &str,
     configure: impl Fn(&EngineeringState, &mut RuntimeBinding) -> Result<()>,
 ) -> (Id, Id) {
-    queue_conversation_for_agent(e, project, "builtin-agent-sol-high-analyst:6", configure)
+    queue_conversation_for_agent(e, project, "simplified-agent-analyst:4", configure)
 }
 pub fn queue_conversation_for_agent(
     e: &Engine,

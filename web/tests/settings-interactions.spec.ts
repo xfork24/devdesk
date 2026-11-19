@@ -436,7 +436,7 @@ test("角色页仅保留 Agent 定义，旧入口兼容且可在讨论内创建�
   const role = page.getByLabel("讨论角色", { exact: true });
   // Select an agent explicitly: the catalog now mixes codex and dsh stacks, so the
   // default option must not be relied on.
-  await role.selectOption("builtin-agent-sol-high-analyst:6");
+  await role.selectOption("simplified-agent-analyst:4");
   await expect(role).not.toHaveValue("");
   const agentId = await role.inputValue();
   const created = page.waitForResponse(
@@ -472,7 +472,7 @@ test("角色页仅保留 Agent 定义，旧入口兼容且可在讨论内创建�
     page.getByRole("tab", { name: "Agent", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
   await expect(page.getByLabel("名称", { exact: true })).toHaveValue(
-    /Sol High/,
+    "精简版analyst Agent",
   );
 });
 

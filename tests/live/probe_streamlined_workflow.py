@@ -10,7 +10,7 @@ import signal
 import subprocess
 import time
 from client import Client
-from workflow_observer import read_workflow_tree
+from workflow_observer import read_workflow_tree, observe_human_request, check_human_request
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--binary', type=Path, required=True)
@@ -18,7 +18,6 @@ parser.add_argument('--codex-auth-source', type=Path, required=True)
 parser.add_argument('--github-repo', required=True)
 parser.add_argument('--mainline', default='main')
 parser.add_argument('--title', default='Normalize, format and compose with concurrent DAG')
-parser.add_argument('--suite', choices=['streamlined', 'detailed'], default='streamlined')
 parser.add_argument('--report-directory', type=Path, required=True)
 parser.add_argument('--requirement-file', type=Path, required=True)
 parser.add_argument('--resume', action='store_true')
@@ -26,6 +25,7 @@ parser.add_argument('--url', help='Observe an already running Host using report-
 parser.add_argument('--timeout-seconds', type=int, default=1800, help='Bound observation of this same workflow instance')
 parser.add_argument('--performance', action='store_true', help='Record native timing spans and observer query latency without changing workflow controls')
 args = parser.parse_args()
+assert 'test' in args.github_repo.lower(), 'use a dedicated test repository'
 out = args.report_directory.resolve()
 out.mkdir(parents=True, exist_ok=True)
 assert args.resume == (out / 'context.json').exists()
@@ -68,34 +68,30 @@ try:
         context['url'] = urls[0]
         context.setdefault('resumptions', []).append({'binary_sha256': identity, 'time': time.time()})
     else:
-        project = client.command('project.open_github', payload={'repository': args.github_repo, 'mainline': args.mainline, 'title': args.suite + ' DAG acceptance'})['id']
+        project = client.command('project.open_github', payload={'repository': args.github_repo, 'mainline': args.mainline, 'title': 'streamlined acceptance'})['id']
         client.project = project
         client.wait(lambda: client.rpc('query.workspace'), lambda v: v['repository_ready'], 300)
         client.timeout = 1250
         runtime = client.rpc('runtime.prepare', {'provider': 'codex'})
         client.timeout = 180
-        image = runtime['artifact']['image_id']
         defaults = client.rpc('query.configuration_defaults')
         assert defaults['workflow_ref'] == 'simplified-workflow-feature:4'
         assert defaults['task_workflow_ref'] == 'simplified-workflow-task:3'
         assert defaults['standard_ref'] == 'simplified-standard-engineering:4'
-        if args.suite == 'detailed':
-            defaults.update({'workflow_ref': 'builtin-workflow-feature-sol-high:12', 'task_workflow_ref': 'builtin-workflow-task-sol-high:11', 'standard_ref': 'builtin-standard-engineering:10', 'role_agent_bindings': {f'builtin-role-{role}:1': f'builtin-agent-sol-high-{role}:{13 if role == "project-manager" else 6}' for role in ['analyst', 'architect', 'project-manager', 'developer', 'tester', 'reviewer']}})
-        test_configuration = {'language': 'JavaScript ESM / Node 24', 'independent_runner': 'node_test', 'regression': {
-            'runner': 'command', 'files': ['README.md'], 'image': image, 'timeout_seconds': 1800,
-            'command': {'argv': ['node', '--test'], 'cwd': '.'}}}
+        discovery = client.rpc('query.project_test_configuration')
+        (out / 'test-discovery.json').write_text(json.dumps(discovery, ensure_ascii=False, indent=2))
         current = client.rpc('query.workspace')['active_project']
         client.command('project.update', project, current['revision'], {'concurrency': 4})
         current = client.rpc('query.workspace')['active_project']
         configuration = client.command('project.configuration.update', project, current['revision'], {
-            **{key: defaults[key] for key in ['workflow_ref', 'standard_ref', 'role_agent_bindings', 'orchestrator_role_ref', 'harness_permission_ref', 'sandbox_ref', 'sandbox_permission_ref', 'orchestration']},
-            'test_configuration': test_configuration})
+            **{key: defaults[key] for key in ['workflow_ref', 'standard_ref', 'role_agent_bindings', 'orchestrator_role_ref', 'harness_permission_ref', 'sandbox_ref', 'sandbox_permission_ref', 'orchestration']}})
+        test_configuration = configuration['data']['test_configuration']
         feature = client.command('feature.create', payload={'project_id': project, 'title': args.title,
             'initial_requirement': args.requirement_file.read_text(), 'start_workflow': False, 'configuration_revision_id': configuration['id']})['id']
         client.command('workflow.start', feature, client.feature(feature)['feature']['revision'])
         root = client.rpc('query.workflow_instance', {'owner_id': feature})['record']['id']
         context = {'url': urls[0], 'project': project, 'feature': feature, 'root': root, 'binary_sha256': identity,
-                   'defaults': defaults, 'test_configuration': test_configuration, 'suite': args.suite, 'mainline': args.mainline, 'human_decisions_by_probe': 0}
+                   'defaults': defaults, 'test_configuration': test_configuration, 'suite': 'streamlined', 'mainline': args.mainline, 'human_decisions_by_probe': 0}
     (out / 'context.json').write_text(json.dumps(context, ensure_ascii=False, indent=2))
     seen = set()
     deadline = time.monotonic() + args.timeout_seconds
@@ -112,9 +108,12 @@ try:
         (out / 'latest-manager.json').write_text(json.dumps(manager, ensure_ascii=False, indent=2))
         for request in manager.get('decisions', []):
             if request['data']['status'] == 'pending' and request['id'] not in seen:
-                path = out / ('human-request-' + request['id'] + '.json')
-                path.write_text(json.dumps(request, ensure_ascii=False, indent=2))
-                print('Human review pending:', request['id'], str(path), flush=True)
+                manager_url = urls[0] + '/?tab=execution&detail=manager&project_id=' + context['project'] + '&feature_id=' + context['feature']
+                observation = observe_human_request(out, request, manager_url,
+                    lambda saved: check_human_request(client, tree, saved))
+                if not observation['diagnostic_passed']:
+                    print('Human review diagnostic:', observation['diagnostic'], flush=True)
+                print('Human review pending:', request['id'], observation['path'], flush=True)
                 seen.add(request['id'])
         statuses = [(node['record']['id'], step['step'], step['status'], step['id'], step.get('round')) for node in tree.values()
                     for step in node['record']['data']['steps'] if step['status'] not in ['completed', 'queued', 'skipped']]

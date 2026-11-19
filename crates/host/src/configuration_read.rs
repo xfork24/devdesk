@@ -592,7 +592,7 @@ mod tests {
         let recipe = w
             .dispatch(
                 "query.configuration_usage",
-                json!({"id":"builtin-delivery-test-recipe:2"}),
+                json!({"id":"simplified-delivery-test-recipe:1"}),
             )
             .unwrap();
         assert!(

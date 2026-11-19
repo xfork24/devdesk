@@ -20,7 +20,7 @@ Agent 运行保存 canonical `agent-task/v6`、Session、Turn 和真实 worker�
 
 精简版 Task 在独立测试之后由平台快照封存测试及声明的固定空接口，不允许模型先实现业务行为。实现快照核对测试保护路径；Green、独立代码评审与源回归针对同一源版本。Feature 在所有 Task 合入并同步后才进入整体评审。Task 和 Feature 均执行源版本与试合并结果两类项目回归。
 
-精简版交付保留源分支，PR 使用以确切目标为唯一父提交的完整试合并快照。目标需启用严格 `devdesk/merge-regression` required check，包含管理员的保护及禁止强推；不支持的保护组合明确阻塞。Task 自动合入所属 Feature，Feature 合入 main 须确切版本 Human 决定。最终父提交/tree 验证及本地同步完成后才登记完成。门禁不能由模型报告、普通批准或豁免替代；目标变化须重新回归和审核，未知效果先核对。详细版仍保留原候选接纳、本地 CAS、精确 lease 及只创建 PR 的合同。
+Task 直接以开发分支创建 PR，使用 GitHub 试合并的确切源/目标双父提交及 tree 进行候选回归。Feature 在全部 Task 合入同步、源代码评审和回归通过后，按冻结声明剔除流程验证材料、保留正式项目测试，生成以确切目标为单父提交的代码投影及专用 candidates 分支；候选回归、Human 审核和合入绑定这份投影的 SHA/tree。PR 创建不要求新增保护规则；无保护目标通过 beforeOid 与 force=false 原子快进，已有保护目标遵守现有 PR 合入门禁。Task 自动合入所属 Feature，Feature 合入主分支须确切版本 Human 决定。核对最终父提交/tree 和本地同步后才登记完成。门禁不能由模型报告、普通批准或豁免替代；目标变化须重新回归和审核，未知效果先核对。历史详细版仍按原冻结合同恢复。
 
 所有外部调用先持久化意图，再在事务外执行，最后接纳回执。取消必须停止实际 worker 或测试容器；未知调用不直接重放。重启后保留待核对状态，副作用按原操作 ID 恢复。切换项目和关闭浏览器不取消后台工作，Host 退出停止自己拥有的执行者。
 
@@ -30,14 +30,14 @@ Agent 运行保存 canonical `agent-task/v6`、Session、Turn 和真实 worker�
 
 当前配置使用扁平源协议，数据库基线为 global 24 / project 60。不提供旧协议转换或升级；验证使用独立空目录。不兼容的既有目录会被明确拒绝，兼容数据集可正常重开，不通过删库恢复。
 
-完整工程验收核对真实 DAG 并发、依赖基线、源版本、独立 Red/Green 与评审、两类回归、PR 归属、远端保护和本地同步。原生回执与模型记录分别读取；Human 确认通过可信入口绑定确切材料，经理不能代签。详细版兼容探针与精简版实际默认验收分别报告。
+完整工程验收核对真实 DAG 并发、依赖基线、源版本、独立 Red/Green 与评审、两类回归、PR 归属、远端保护和本地同步。原生回执与模型记录分别读取；Human 确认通过可信入口绑定确切材料，经理不能代签。历史合同兼容性回归与精简版实际默认验收分别报告。
 
 ## 本地验收证据保留
 
-`tests/live/probe_streamlined_workflow.py` 在独立数据目录观察精简版实际默认 Feature/Task 图，保存构建身份、状态时间线和待决定材料，不生成 Human 决定。`tests/live/probe_default_engineering_workflow.py --detailed` 显式运行详细版兼容场景，默认保留数据、原生日志、冻结工作实例、回执及 report.md；只有明确调用才产生模型调用和测试仓库变化。`--dedicated-repository` 用于调用者明确指定、名称不含 test 的专用仓库；它不自动授权其他仓库。中断后的 `--resume` 保留历史并核对原执行者，已完成实例只复核证据，不重新派发或发布。
+`tests/live/probe_streamlined_workflow.py` 在独立数据目录观察精简版实际默认 Feature/Task 图，保存构建身份、自动识别的项目测试入口、状态时间线及确切待决定材料，不生成 Human 决定。它调用真实 Codex、Docker、Git 和专用 GitHub 测试仓库；需明确提供二进制、认证源、需求文件和证据目录。`--performance` 保存原生计时和观察查询样本；同一证据目录的 `--resume` 继续观察已有实例。详细版原生入口已退役。
 
 `tests/live/export_evidence.py` 保存一致的项目 SQLite 快照、按登记摘要核验的产物、遮蔽凭据字段的记录投影、实际执行安装事实和逐文件 SHA256 清单。它不复制全局凭据设置、认证文件、worker 状态或进程环境。导出到新的本地私有目录；保留失败/未运行项，不能仅凭模型回复宣布验收通过。证据导出本身失败也必须报告。
 
 验收保留实际使用的 Host 与各辅助脚本的内容身份，历史执行不从当前 PATH 或当前源码补推。`runtime_context.binding` 表示运行选择，`runtime_context.inputs` 关联上游真实 Turn 的外层镜像和停止证明；它们不证明任意嵌套或远程命令的环境。
 
-实现依据：[工作流运行](../crates/core/src/workflow_runtime.rs)、[根驱动](../crates/core/src/workflow_driver.rs)、[平台动作](../crates/core/src/platform_tools.rs)、[工程探针](../tests/live/probe_default_engineering_workflow.py)、[证据导出](../tests/live/export_evidence.py)。
+实现依据：[工作流运行](../crates/core/src/workflow_runtime.rs)、[根驱动](../crates/core/src/workflow_driver.rs)、[平台动作](../crates/core/src/platform_tools.rs)、[工程探针](../tests/live/probe_streamlined_workflow.py)、[证据导出](../tests/live/export_evidence.py)。

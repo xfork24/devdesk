@@ -204,7 +204,7 @@ fn initialize(e: &Engine) -> (Id, Id, Id) {
                 command_id: id(),
                 target: Some(pid.clone()),
                 expected_revision: Some(1),
-                payload: json!({"agent":"builtin-agent-sol-high-analyst:6"}),
+                payload: json!({"agent":"simplified-agent-analyst:4"}),
             },
         )
         .unwrap()["id"]
@@ -968,7 +968,7 @@ fn coordinator_never_resends_unknown_input_or_finishes_without_stop_and_export()
                 command_id: id(),
                 target: Some(pid),
                 expected_revision: Some(1),
-                payload: json!({"agent":"builtin-agent-sol-high-analyst:6","force_new":true}),
+                payload: json!({"agent":"simplified-agent-analyst:4","force_new":true}),
             },
         )
         .unwrap();
