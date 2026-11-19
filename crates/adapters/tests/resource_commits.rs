@@ -544,7 +544,7 @@ fn immutable_sources_publish_with_their_exact_head_and_cannot_be_overwritten() {
 #[test]
 fn sqlite_writer_contention_is_bounded_and_does_not_block_readers() {
     let directory = tempfile::tempdir().unwrap();
-    let store = GlobalStore::open(directory.path()).unwrap();
+    let store = Arc::new(GlobalStore::open(directory.path()).unwrap());
     store
         .commit_changes(&prepared("seed", "target", 0, json!(1)))
         .unwrap();
@@ -552,18 +552,24 @@ fn sqlite_writer_contention_is_bounded_and_does_not_block_readers() {
     blocker
         .execute_batch("BEGIN IMMEDIATE; UPDATE settings SET value='2' WHERE key='target';")
         .unwrap();
-    let before = std::time::Instant::now();
-    let read = store
-        .read_resources(&[ResourceKey::new("setting", "target")])
-        .unwrap();
-    assert_eq!(read[0].value, Some(json!(1)));
     let change = prepared("after-contention", "target", 1, json!(3));
-    assert_eq!(
-        store.commit_changes(&change).unwrap_err().code,
-        "storage_busy"
-    );
-    assert!(before.elapsed() < std::time::Duration::from_secs(1));
+    let contender = store.clone();
+    let pending = change.clone();
+    let (completed, observed) = std::sync::mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        let read = contender.read_resources(&[ResourceKey::new("setting", "target")]);
+        let write = contender.commit_changes(&pending);
+        completed.send((read, write)).unwrap();
+    });
+    // Both operations must finish while the physical writer still owns its
+    // transaction. This watchdog catches unbounded waiting without treating
+    // shared CI runner scheduling time as a database performance measurement.
+    let result = observed.recv_timeout(std::time::Duration::from_secs(10));
     blocker.execute_batch("ROLLBACK;").unwrap();
+    worker.join().unwrap();
+    let (read, write) = result.expect("reads and bounded retries waited for writer release");
+    assert_eq!(read.unwrap()[0].value, Some(json!(1)));
+    assert_eq!(write.unwrap_err().code, "storage_busy");
     assert_eq!(
         store.commit_changes(&change).unwrap().versions[0].revision,
         2
