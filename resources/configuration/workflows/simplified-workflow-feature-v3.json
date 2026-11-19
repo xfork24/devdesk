@@ -1,7 +1,7 @@
 {
   "type": "workflow",
   "identity": "simplified-workflow-feature",
-  "revision": 2,
+  "revision": 3,
   "name": "精简版Feature开发流程",
   "scope": "global",
   "data": {
@@ -35,7 +35,7 @@
     ],
     "inputs": {
       "test_configuration": {
-        "delivery_ref": "simplified-delivery-project-tests:1"
+        "delivery_ref": "simplified-delivery-project-tests:2"
       }
     },
     "steps": [
@@ -485,7 +485,7 @@
         ],
         "executor": {
           "type": "workflow",
-          "workflow_ref": "simplified-workflow-task:1",
+          "workflow_ref": "simplified-workflow-task:2",
           "foreach": {
             "source": {
               "step": "tasks",
@@ -521,7 +521,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "simplified-delivery-task-reports:1"
+            "delivery_ref": "simplified-delivery-task-reports:2"
           }
         },
         "budget": {
@@ -599,7 +599,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "simplified-delivery-checkpoint:1"
+            "delivery_ref": "simplified-delivery-checkpoint:2"
           },
           "diff": {
             "delivery_ref": "simplified-delivery-diff:1"
@@ -726,7 +726,7 @@
         ],
         "executor": {
           "type": "tool",
-          "tool_ref": "simplified-tool-project-tests:1",
+          "tool_ref": "simplified-tool-project-tests:2",
           "arguments": {
             "workspace": {
               "type": "source",
@@ -740,7 +740,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "simplified-delivery-regression:1"
+            "delivery_ref": "simplified-delivery-regression:2"
           }
         },
         "budget": {
@@ -795,7 +795,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "simplified-delivery-source-publication:1"
+            "delivery_ref": "simplified-delivery-source-publication:2"
           }
         },
         "budget": {
@@ -827,7 +827,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "simplified-delivery-target:1"
+            "delivery_ref": "simplified-delivery-target:2"
           }
         },
         "budget": {
@@ -867,7 +867,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "simplified-delivery-pull-request:1"
+            "delivery_ref": "simplified-delivery-pull-request:2"
           }
         },
         "budget": {
@@ -885,7 +885,7 @@
         ],
         "executor": {
           "type": "tool",
-          "tool_ref": "simplified-tool-project-tests:1",
+          "tool_ref": "simplified-tool-project-tests:2",
           "arguments": {
             "workspace": {
               "type": "source",
@@ -899,7 +899,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "simplified-delivery-regression:1"
+            "delivery_ref": "simplified-delivery-regression:2"
           }
         },
         "budget": {
@@ -978,7 +978,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "simplified-delivery-human-packet:1"
+            "delivery_ref": "simplified-delivery-human-packet:2"
           }
         },
         "confirmation": "human",
@@ -1053,7 +1053,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "simplified-delivery-merge-sync:1"
+            "delivery_ref": "simplified-delivery-merge-sync:2"
           }
         },
         "budget": {

@@ -359,8 +359,9 @@ impl Engine {
             })();
             return match inspected {
                 Err(error)
-                    if matches!(&plan.action, PlatformAction::Delivery(action) if matches!(action.as_ref(),crate::platform_delivery::DeliveryAction::Merge {..}))
-                        && error.code == "stale_target"
+                    if matches!(&plan.action, PlatformAction::Delivery(action) if
+                        (matches!(action.as_ref(),crate::platform_delivery::DeliveryAction::Merge {..}) && error.code=="stale_target")
+                        || (matches!(action.as_ref(),crate::platform_delivery::DeliveryAction::Open {..}) && error.code=="obsolete_protection_preflight"))
                         && error.execution_failure.as_ref().is_some_and(|f| {
                             f.kind == ExecutionFailureKind::Technical
                                 && f.effect == ExecutionFailureEffect::NotApplied
@@ -446,12 +447,13 @@ impl Engine {
         match fact {
             ReconciliationFact::PlatformNotApplied { source, error } => {
                 require(
-                    error.code == "stale_target"
+                    ["stale_target", "obsolete_protection_preflight"]
+                        .contains(&error.code.as_str())
                         && error.execution_failure.as_ref().is_some_and(|f| {
                             f.kind == ExecutionFailureKind::Technical
                                 && f.effect == ExecutionFailureEffect::NotApplied
                         }),
-                    "缺少平台未合入的确切观察",
+                    "缺少平台操作未应用的确切观察",
                 )?;
                 let selected = one(
                     self.store.as_ref(),
@@ -470,9 +472,23 @@ impl Engine {
                         && call.r#type == "platform_call"
                         && call.data["request"]["instance_id"] == resources.record.id
                         && call.data["request"]["execution_id"] == resources.execution.id
-                        && matches!(&plan.action, PlatformAction::Delivery(action) if matches!(action.as_ref(),crate::platform_delivery::DeliveryAction::Merge {..})),
-                    "未合入观察不属于原合入请求",
+                        && matches!(&plan.action, PlatformAction::Delivery(action) if
+                            (matches!(action.as_ref(),crate::platform_delivery::DeliveryAction::Merge {..}) && error.code=="stale_target")
+                            || (matches!(action.as_ref(),crate::platform_delivery::DeliveryAction::Open {..}) && error.code=="obsolete_protection_preflight")),
+                    "未应用观察不属于原平台请求",
                 )?;
+                if error.code == "obsolete_protection_preflight"
+                    && let PlatformAction::Delivery(action) = &plan.action
+                    && let crate::platform_delivery::DeliveryAction::Open { context, .. } =
+                        action.as_ref()
+                {
+                    let (proof, _) = self
+                        .legacy_unapplied_pr_preflight(&effect, context)?
+                        .ok_or_else(|| {
+                            err("revision_conflict", "旧预检的未写入证明已变化，请重新核对")
+                        })?;
+                    commit.witness(proof.versions().iter().cloned())?;
+                }
                 commit.witness([version(&original)])?;
                 commit.witness(
                     crate::platform_reconciliation::reconciliation_business_basis(

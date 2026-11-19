@@ -1,11 +1,11 @@
 {
   "type": "delivery_type",
   "identity": "simplified-delivery-task-reports",
-  "revision": 1,
+  "revision": 2,
   "name": "精简版 Task 合入与同步回执集合",
   "scope": "global",
   "spec_refs": [
-    "simplified-spec-platform-evidence:1"
+    "simplified-spec-platform-evidence:2"
   ],
   "data": {
     "format": "json",

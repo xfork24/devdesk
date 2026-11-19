@@ -664,7 +664,12 @@ fn drive(engine: &Engine, rounds: usize) {
             let result = if method == "workflow.tool.execute" {
                 let prepared = engine.prepare_configured_platform(&c).unwrap().unwrap();
                 let mut request = prepared.request().clone();
-                if let Some(source) = &request.definition.runtime {
+                if let Some(source) = request
+                    .definition
+                    .runtime
+                    .as_ref()
+                    .filter(|_| prepared.runtime_required())
+                {
                     request.runtime = Some(serde_json::from_value(json!({"id":prepared.runtime_operation_id(),"operation_id":prepared.runtime_operation_id(),"harness":{"id":source.harness_ref,"provider":"fixture","version":"fixture","capabilities":[],"origin":"external"},"sandbox":{"id":source.sandbox_ref,"provider":"fixture","version":"fixture","platform":"linux","image":format!("sha256:{}","a".repeat(64)),"network":false,"origin":"external"},"status":"prepared"})).unwrap());
                 }
                 engine.enqueue_prepared_platform_tool(&c, &request, &prepared)
@@ -2414,48 +2419,63 @@ fn cancelling_one_child_does_not_cancel_its_sibling_and_rework_replaces_the_old_
 
 #[test]
 fn configured_workspace_snapshot_and_candidate_use_actual_git_and_reject_forged_requests() {
-    actual_git_candidate(false, false, false, false, false);
+    actual_git_candidate(false, false, false, false, false, None);
 }
 
 #[test]
 fn explicit_waivers_allow_actual_git_without_inventing_test_or_human_receipts() {
-    actual_git_candidate(true, false, false, false, false);
+    actual_git_candidate(true, false, false, false, false, None);
 }
 
 #[test]
 fn actual_task_reads_its_feature_merge_target_before_building_git_candidate() {
-    actual_git_candidate(false, true, false, false, false);
+    actual_git_candidate(false, true, false, false, false, None);
 }
 
 #[test]
 fn actual_git_writer_rework_uses_sealed_checkpoint_and_preserves_history() {
-    actual_git_candidate(false, true, true, false, false);
+    actual_git_candidate(false, true, true, false, false, None);
 }
 
 #[test]
 fn checkpoint_writer_rework_uses_the_current_sealed_source_without_rewinding_git() {
-    actual_git_candidate(false, true, true, false, true);
+    actual_git_candidate(false, true, true, false, true, None);
 }
 
 #[test]
 fn actual_git_candidate_is_a_test_grant_only_in_its_original_root() {
-    actual_git_candidate(false, true, false, true, false);
+    actual_git_candidate(false, true, false, true, false, None);
+}
+
+#[test]
+fn unconfigured_project_regression_passes_without_runtime_but_configured_tests_execute() {
+    actual_git_candidate(false, true, false, false, false, Some("unconfigured"));
+    actual_git_candidate(false, true, false, false, false, Some("succeeded"));
+    actual_git_candidate(false, true, false, false, false, Some("failed"));
 }
 
 #[derive(Default)]
-struct CandidateTests(Mutex<Vec<ports::TestRequest>>);
+struct CandidateTests(
+    Mutex<Vec<ports::TestRequest>>,
+    std::sync::atomic::AtomicBool,
+);
 impl ports::Tests for CandidateTests {
     fn poll_test(&self, request: &ports::TestRequest) -> Result<Option<Value>> {
         self.0.lock().unwrap().push(request.clone());
+        let fail = self.1.load(std::sync::atomic::Ordering::SeqCst);
         Ok(Some(json!(TestResult {
             operation_id: request.operation_id.clone(),
-            status: TestOutcome::Succeeded,
+            status: if fail {
+                TestOutcome::Failed
+            } else {
+                TestOutcome::Succeeded
+            },
             candidate: request.candidate.clone(),
             environment: request.environment.clone(),
             origin: Origin::External,
             assertion_failed: false,
             expected_failure: false,
-            failure_type: None,
+            failure_type: fail.then(|| "environment".into()),
         })))
     }
     fn cleanup_test(&self, _: &ports::TestRequest) -> Result<()> {
@@ -2469,6 +2489,7 @@ fn actual_git_candidate(
     rework_writer: bool,
     verify_candidate: bool,
     streamlined_checkpoint: bool,
+    regression: Option<&str>,
 ) {
     fn git(path: &std::path::Path, args: &[&str]) -> String {
         let output = std::process::Command::new("git")
@@ -2499,7 +2520,11 @@ fn actual_git_candidate(
     let recorder = Arc::new(RecordingAgent::default());
     engine.harness = recorder.clone();
     let candidate_tests = Arc::new(CandidateTests::default());
-    if verify_candidate {
+    candidate_tests.1.store(
+        regression == Some("failed"),
+        std::sync::atomic::Ordering::SeqCst,
+    );
+    if verify_candidate || regression.is_some() {
         engine.tests = candidate_tests.clone();
     }
     let (role, agent) = research_agent(&engine);
@@ -2648,7 +2673,7 @@ fn actual_git_candidate(
         document["steps"][2]["executor"]["arguments"]["target_revision"] = json!({"type":"source","source":{"step":"target","port":"workspace","pointer":"/revision"}});
     }
     if verify_candidate {
-        document["steps"].as_array_mut().unwrap().push(json!({"key":"candidate_tests","name":"验证真实合成候选","stage":"work","dependencies":["candidate"],"executor":{"type":"tool","tool_ref":"builtin-tool-tests-run:1","arguments":{"workspace":{"type":"source","source":{"step":"candidate","port":"candidate"}},"recipe":{"type":"constant","value":{"runner":"node_test","files":["probe.test.mjs"],"timeout_seconds":30}}}},"outputs":{"report":{"delivery_ref":"fixture-delivery-object:1"}}}));
+        document["steps"].as_array_mut().unwrap().push(json!({"key":"candidate_tests","name":"验证真实合成候选","stage":"work","dependencies":["candidate"],"executor":{"type":"tool","tool_ref":"builtin-tool-tests-run:2","arguments":{"workspace":{"type":"source","source":{"step":"candidate","port":"candidate"}},"recipe":{"type":"constant","value":{"runner":"node_test","files":["probe.test.mjs"],"timeout_seconds":30}}}},"outputs":{"report":{"delivery_ref":"fixture-delivery-object:1"}}}));
     }
     if waived_advance {
         document["action_requirements"] = json!({"git.advance":["tests","confirmation"]});
@@ -2672,6 +2697,11 @@ fn actual_git_candidate(
                 json!("simplified-delivery-diff:1");
         }
     }
+    if regression.is_some() {
+        document["inputs"] =
+            json!({"test_configuration":{"delivery_ref":"simplified-delivery-project-tests:2"}});
+        document["steps"].as_array_mut().unwrap().push(json!({"key":"project_regression","name":"项目回归","stage":"work","dependencies":["candidate"],"executor":{"type":"tool","tool_ref":"simplified-tool-project-tests:2","arguments":{"workspace":{"type":"source","source":{"step":"candidate","port":"candidate"}}}},"outputs":{"result":{"delivery_ref":"simplified-delivery-regression:2"}},"completion":{"op":"equals","source":{"step":"project_regression","port":"result","pointer":"/status"},"value":"succeeded"}}));
+    }
     let workflow = publish(&engine, document);
     let run = engine
         .execute(
@@ -2680,7 +2710,7 @@ fn actual_git_candidate(
                 command_id: id(),
                 target: Some(if task_owner { task.clone() } else { feature.clone() }),
                 expected_revision: Some(1),
-                payload: json!({"workflow_ref":workflow["id"],"role_agent_bindings":{role["id"].as_str().unwrap():agent["id"]}}),
+                payload: json!({"workflow_ref":workflow["id"],"role_agent_bindings":{role["id"].as_str().unwrap():agent["id"]},"test_configuration":if regression.is_some_and(|outcome| outcome != "unconfigured") { fixture_test_configuration() } else { json!(ProjectTestConfiguration::default()) }}),
             },
         )
         .unwrap();
@@ -2770,6 +2800,38 @@ fn actual_git_candidate(
     }
     drive(&engine, 12);
     let runtime = instance(&engine, &run["id"]);
+    if let Some(outcome) = regression {
+        let configured = outcome != "unconfigured";
+        let state = engine.store.snapshot().unwrap();
+        let call = state
+            .governance
+            .iter()
+            .find(|r| r.r#type == "platform_call" && r.data["handler"] == "tests.project")
+            .unwrap();
+        assert_eq!(
+            call.data["receipt"]["status"],
+            if outcome == "failed" {
+                "failed"
+            } else {
+                "succeeded"
+            }
+        );
+        assert_eq!(call.data["receipt"]["skipped"] == true, !configured);
+        assert_eq!(
+            candidate_tests.0.lock().unwrap().len(),
+            usize::from(configured)
+        );
+        if outcome == "failed" {
+            assert_ne!(runtime["status"], "completed");
+            assert_eq!(call.data["receipt"]["failure_type"], "environment");
+        }
+        if !configured {
+            assert_eq!(call.data["receipt"]["reason"], "no_regression_configured");
+            assert!(call.data["receipt"]["execution"].is_null());
+        }
+        return;
+    }
+
     if rework_writer {
         assert_eq!(
             runtime["steps"][3]["status"], "waiting_confirmation",
@@ -3184,7 +3246,7 @@ fn actual_git_candidate(
         // authority to use the first root's platform receipt as its grant.
         let foreign = publish(
             &engine,
-            json!({"schema_version":6,"stages":[{"key":"work","name":"来源边界"}],"steps":[{"key":"foreign","name":"拒绝其他根候选","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-tests-run:1","arguments":{"workspace":{"type":"constant","value":grant},"recipe":{"type":"constant","value":{"runner":"node_test","files":["probe.test.mjs"],"timeout_seconds":30}}}},"outputs":{"report":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
+            json!({"schema_version":6,"stages":[{"key":"work","name":"来源边界"}],"steps":[{"key":"foreign","name":"拒绝其他根候选","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-tests-run:2","arguments":{"workspace":{"type":"constant","value":grant},"recipe":{"type":"constant","value":{"runner":"node_test","files":["probe.test.mjs"],"timeout_seconds":30}}}},"outputs":{"report":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
         );
         let run = command(&engine,"workflow.start",Some(&task),json!({"workflow_ref":foreign["id"],"role_agent_bindings":{role["id"].as_str().unwrap():agent["id"]}})).unwrap();
         drive(&engine, 4);
@@ -5330,11 +5392,11 @@ fn actual_defaults_compile_the_streamlined_suite_and_freeze_project_tests() {
     let dir = tempfile::tempdir().unwrap();
     let e = engine(dir.path());
     let defaults = e.configuration_defaults(None).unwrap();
-    assert_eq!(defaults["workflow_ref"], "simplified-workflow-feature:2");
-    assert_eq!(defaults["task_workflow_ref"], "simplified-workflow-task:1");
+    assert_eq!(defaults["workflow_ref"], "simplified-workflow-feature:3");
+    assert_eq!(defaults["task_workflow_ref"], "simplified-workflow-task:2");
     assert_eq!(
         defaults["standard_ref"],
-        "simplified-standard-engineering:2"
+        "simplified-standard-engineering:3"
     );
     let state = e.store.snapshot().unwrap();
     let bindings = serde_json::from_value(defaults["role_agent_bindings"].clone()).unwrap();
@@ -5387,6 +5449,28 @@ fn actual_defaults_compile_the_streamlined_suite_and_freeze_project_tests() {
     )
     .unwrap();
     let pid = project["id"].as_str().unwrap();
+    let automatic = command(&e,"project.configuration.update",Some(pid),json!({"standard_ref":defaults["standard_ref"],"role_agent_bindings":defaults["role_agent_bindings"]})).unwrap();
+    assert_eq!(
+        automatic["data"]["test_configuration"],
+        json!(ProjectTestConfiguration::default())
+    );
+    let automatic_feature = command(
+        &e,
+        "feature.create",
+        None,
+        json!({"project_id":pid,"title":"Automatic project tests"}),
+    )
+    .unwrap();
+    let automatic_state = e.store.snapshot().unwrap();
+    let automatic_run = automatic_state
+        .governance
+        .iter()
+        .find(|r| r.r#type == "workflow_instance" && r.data["owner_id"] == automatic_feature["id"])
+        .unwrap();
+    assert_eq!(
+        automatic_run.data["inputs"]["test_configuration"],
+        json!(ProjectTestConfiguration::default())
+    );
     let tests = fixture_test_configuration();
     command(&e,"project.configuration.update",Some(pid),json!({"standard_ref":defaults["standard_ref"],"role_agent_bindings":defaults["role_agent_bindings"],"test_configuration":tests})).unwrap();
     let feature = command(
@@ -5423,17 +5507,17 @@ fn actual_defaults_compile_the_streamlined_suite_and_freeze_project_tests() {
         .unwrap();
     assert!(
         matches!(&tasks.executor,StepExecutor::Workflow{workflow_ref,foreach:Some(collection),..}
-        if workflow_ref=="simplified-workflow-task:1" && collection.max_concurrency==4)
+        if workflow_ref=="simplified-workflow-task:2" && collection.max_concurrency==4)
     );
     assert!(
         tasks.budget.timeout_seconds >= 7200,
         "汇合预算必须覆盖真实 Task 开发与回归，不能继承 300 秒工具默认值"
     );
-    for step in graph.steps.iter().filter(|s| matches!(&s.executor, StepExecutor::Tool {tool_ref,..} if tool_ref == "simplified-tool-project-tests:1")) {
+    for step in graph.steps.iter().filter(|s| matches!(&s.executor, StepExecutor::Tool {tool_ref,..} if tool_ref == "simplified-tool-project-tests:2")) {
         assert!(step.budget.timeout_seconds >= 7200, "项目配方可配置至 7200 秒，工具预算不能提前截断");
     }
     let collection_ref = &tasks.outputs["result"].delivery_ref;
-    assert_eq!(collection_ref, "simplified-delivery-task-reports:1");
+    assert_eq!(collection_ref, "simplified-delivery-task-reports:2");
     let completed = json!({"operation_id":"merge-operation","publication":{},
         "pull_request":{"merged":true,"merge_commit":"merged-sha"},"revision":"merged-sha",
         "sync":{"revision":"merged-sha","synchronized":true},"synchronized":true});
@@ -6521,4 +6605,164 @@ fn parent_wall_expiry_stops_a_legacy_human_waiting_child_and_then_becomes_idle()
         }
         assert_eq!(e.store.event_cursor().unwrap(), cursor);
     });
+}
+
+#[test]
+fn transient_dispatch_conflicts_recover_automatically_and_after_restart_once() {
+    for (code, restart) in [
+        ("revision_conflict", false),
+        ("storage_busy", false),
+        ("revision_conflict", true),
+        ("storage_busy", true),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let e = engine(dir.path());
+        let (role, agent) = research_agent(&e);
+        let run = launch(
+            &e,
+            &role,
+            &agent,
+            json!({"outputs":{"risks":{"delivery_ref":"fixture-delivery-object:1"}}}),
+        );
+        control_fixture::evaluate(&e).unwrap();
+        let pending = e.pending_workflow_intents().unwrap().remove(0);
+        assert_eq!(pending.data["method"], "session.open");
+        let original = pending.data["command"].clone();
+        if code == "revision_conflict" {
+            // Another observer commits metadata after the dispatch baseline
+            // was captured. The task and its authorization remain unchanged.
+            let key = concurrency::ResourceKey::new(
+                "workflow_step",
+                json!([run["id"], pending.definition_id]).to_string(),
+            );
+            let step = e
+                .store
+                .read_resources(std::slice::from_ref(&key))
+                .unwrap()
+                .remove(0);
+            let mut value = step.value.unwrap();
+            value["reason"] = json!("concurrent observation updated the runtime metadata");
+            e.store
+                .commit_changes(&concurrency::PreparedChangeSet {
+                    command_id: id(),
+                    fingerprint: configuration_hash(&value),
+                    read_set: concurrency::ReadSet::new(vec![concurrency::ResourceVersion {
+                        resource: key.clone(),
+                        revision: step.revision,
+                    }])
+                    .unwrap(),
+                    changes: vec![concurrency::ResourceChange {
+                        resource: key,
+                        value,
+                    }],
+                    result: json!({"id":"metadata-observation"}),
+                    time: 1,
+                })
+                .unwrap();
+        }
+        let cursor = e.store.event_cursor().unwrap();
+        e.observe_workflow_intent(
+            &pending,
+            &Err(err(code, "原步骤在准备期间已变化").technical_not_applied()),
+        )
+        .unwrap();
+        assert_eq!(
+            e.store.event_cursor().unwrap(),
+            cursor,
+            "contention must not persist a failed operation or business event"
+        );
+        let current = e.store.snapshot().unwrap();
+        assert_eq!(
+            current.configuration(&pending.id).unwrap().data["status"],
+            "prepared"
+        );
+        assert!(!current.governance.iter().any(|r|r.r#type == "workflow_intent_observation" && r.definition_id == pending.id));
+        drop(current);
+        let mut recovered = if restart {
+            drop(e);
+            engine(dir.path())
+        } else {
+            e
+        };
+        let recorder = Arc::new(RecordingAgent::default());
+        recovered.harness = recorder.clone();
+        let fresh = recovered.pending_workflow_intents().unwrap().remove(0);
+        assert_eq!(fresh.data["command"], original);
+        assert!(recovered.workflow_intent_drivable(&fresh).unwrap());
+        drive(&recovered, 12);
+        assert_eq!(instance(&recovered, &run["id"])["status"], "completed");
+        assert_eq!(recorder.starts.lock().unwrap().len(), 1);
+        assert_eq!(recorder.calls.lock().unwrap().len(), 1);
+        assert_eq!(
+            recovered
+                .store
+                .snapshot()
+                .unwrap()
+                .configuration(&fresh.id)
+                .unwrap()
+                .data["status"],
+            "completed"
+        );
+    }
+}
+
+#[test]
+fn a_committed_dispatch_receipt_wins_over_a_late_conflict_without_reopening() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = engine(dir.path());
+    let recorder = Arc::new(RecordingAgent::default());
+    e.harness = recorder.clone();
+    let (role, agent) = research_agent(&e);
+    let run = launch(
+        &e,
+        &role,
+        &agent,
+        json!({"outputs":{"risks":{"delivery_ref":"fixture-delivery-object:1"}}}),
+    );
+    control_fixture::evaluate(&e).unwrap();
+    let pending = e.pending_workflow_intents().unwrap().remove(0);
+    let mut command: Command = serde_json::from_value(pending.data["command"].clone()).unwrap();
+    let fingerprint = command_fingerprint("session.open", &command);
+    command.payload["binding"] = json!(fixture_binding());
+    workflow_intents::execute(&e, "session.open", command, &fingerprint).unwrap();
+    e.observe_workflow_intent(
+        &pending,
+        &Err(err("revision_conflict", "late response after commit")),
+    )
+    .unwrap();
+    assert_eq!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .configuration(&pending.id)
+            .unwrap()
+            .data["status"],
+        "completed"
+    );
+    drive(&e, 12);
+    assert_eq!(instance(&e, &run["id"])["status"], "completed");
+    assert_eq!(recorder.starts.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn uncertain_effects_and_real_dispatch_errors_are_not_retried_as_contention() {
+    for error in [
+        err("revision_conflict", "external outcome unknown").technical_unknown(),
+        err("adapter_contract", "invalid runtime receipt").technical_not_applied(),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let e = engine(dir.path());
+        let (role, agent) = research_agent(&e);
+        launch(&e, &role, &agent, json!({}));
+        control_fixture::evaluate(&e).unwrap();
+        let pending = e.pending_workflow_intents().unwrap().remove(0);
+        e.observe_workflow_intent(&pending, &Err(error.clone()))
+            .unwrap();
+        let state = e.store.snapshot().unwrap();
+        let saved = state.configuration(&pending.id).unwrap();
+        assert_eq!(saved.data["status"], "failed");
+        assert_eq!(saved.data["error"]["code"], error.code);
+        assert!(saved.data["error"]["location"].is_object());
+        assert!(!e.workflow_intent_drivable(&pending).unwrap());
+    }
 }

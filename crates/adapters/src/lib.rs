@@ -79,8 +79,9 @@ use std::{
     path::{Path, PathBuf},
     sync::Mutex,
 };
-fn storage(e: impl std::fmt::Display) -> Error {
-    err("storage", e.to_string())
+#[track_caller]
+fn storage(e: impl std::fmt::Display + std::fmt::Debug) -> Error {
+    err("storage", e.to_string()).with_context("adapter storage", json!({"cause":format!("{e:?}")}))
 }
 pub struct SqliteStore {
     connection: connection_pool::ConnectionPool,
@@ -1275,7 +1276,16 @@ impl EngineeringStore for SqliteStore {
         let sql = if kind == "workflow_controller" {
             format!(
                 "SELECT c.id FROM governance_records c INDEXED BY idx_runtime_work_seek WHERE c.type=?1 AND json_extract(c.data,'$.status')=?2 AND c.id>?3 AND {} ORDER BY c.id LIMIT 17",
-                runtime_queries::CONTROLLER_READY
+                if status == "budget_exhausted" {
+                    runtime_queries::CONTROLLER_RECOVERABLE_BUDGET
+                } else {
+                    runtime_queries::CONTROLLER_READY
+                }
+            )
+        } else if kind == "workflow_segment" && status == "stopped" {
+            format!(
+                "SELECT c.id FROM governance_records c INDEXED BY idx_runtime_work_seek WHERE c.type=?1 AND json_extract(c.data,'$.status')=?2 AND c.id>?3 AND {} ORDER BY c.id LIMIT 17",
+                runtime_queries::SEGMENT_RECOVERABLE
             )
         } else if kind == "workflow_driver" {
             "SELECT id FROM governance_records WHERE type=?1 AND json_extract(data,'$.mode')=?2 AND id>?3 ORDER BY id LIMIT 17".into()

@@ -69,7 +69,7 @@ fn explicit_profiles_replace_defaults_without_requiring_a_default_binding() {
     let state = engine.store.snapshot().unwrap();
     let before = state.governance.len();
     let selection = ExecutionPermissionSelection {
-        sandbox_ref: "builtin-sandbox-docker:1".into(),
+        sandbox_ref: "builtin-sandbox-docker:2".into(),
         harness: PermissionSelection::Profile {
             permission_revision_id: "builtin-permission-harness-read-only:1".into(),
         },
@@ -142,7 +142,7 @@ fn installation_version_and_sandbox_inputs_both_determine_composed_content() {
         .unwrap()
         .clone();
     let mut sandbox = state
-        .configuration("builtin-sandbox-docker:1")
+        .configuration("builtin-sandbox-docker:2")
         .unwrap()
         .clone();
     let original = compose_execution_recipe(&harness, &sandbox).unwrap();
@@ -294,7 +294,7 @@ fn frozen_materialization_uses_its_sandbox_after_the_project_default_changes() {
         .configuration("builtin-harness-codex-managed:1")
         .unwrap()
         .clone();
-    let sandbox = state.configuration("builtin-sandbox-docker:1").unwrap();
+    let sandbox = state.configuration("builtin-sandbox-docker:2").unwrap();
     let expected = compose_execution_recipe(&harness, sandbox)
         .unwrap()
         .recipe_digest();
@@ -321,7 +321,7 @@ fn frozen_materialization_uses_its_sandbox_after_the_project_default_changes() {
         store: engine.store.as_ref(),
     };
     let result = engine
-        .materialize_harness_in_sandbox(&resources, &harness, "builtin-sandbox-docker:1")
+        .materialize_harness_in_sandbox(&resources, &harness, "builtin-sandbox-docker:2")
         .unwrap();
     assert_eq!(result.recipe_digest.as_deref(), Some(expected.as_str()));
     let state = engine.store.snapshot().unwrap();
@@ -330,5 +330,5 @@ fn frozen_materialization_uses_its_sandbox_after_the_project_default_changes() {
         .iter()
         .find(|r| r.r#type == "harness_materialization")
         .unwrap();
-    assert_eq!(receipt.data["sandbox_ref"], "builtin-sandbox-docker:1");
+    assert_eq!(receipt.data["sandbox_ref"], "builtin-sandbox-docker:2");
 }

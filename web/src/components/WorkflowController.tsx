@@ -545,7 +545,21 @@ export function WorkflowController({
         >
           <h4>当前阻塞点</h4>
           <p className="muted">
-            需要确认的产物或计划在下方处理；需要补充信息时，可通过“与项目经理继续讨论”回复。
+            {data?.driver?.data.mode === "agent" &&
+            waiting.some((item) => item.status === "awaiting_acceptance") &&
+            !waiting.some((item) =>
+              ["waiting_input", "waiting_confirmation"].includes(item.status),
+            ) &&
+            runtimeApprovals.length === 0 &&
+            !data?.more?.decisions &&
+            decisionPages.length === 0 &&
+            !decisions.some(
+              (decision: Row) =>
+                decision.current !== false &&
+                decision.data.status === "pending",
+            )
+              ? "产物已完成，等待项目经理研判并接纳；当前没有需要你确认的事项。"
+              : "需要确认的产物或计划在下方处理；需要补充信息时，可通过“与项目经理继续讨论”回复。"}
           </p>
           <ul aria-label="调度等待条件">
             {waiting.map((item) => {

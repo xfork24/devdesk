@@ -1,28 +1,21 @@
 {
   "type": "tool",
-  "identity": "simplified-tool-tests-run",
-  "revision": 1,
-  "name": "精简版独立测试执行",
+  "identity": "simplified-tool-project-tests",
+  "revision": 2,
+  "name": "精简版项目回归",
   "scope": "global",
   "data": {
-    "qualified_name": "tests.run",
+    "qualified_name": "tests.project",
     "implementation": "platform",
     "input_schema": {
       "type": "object",
       "properties": {
         "workspace": {
           "type": "object"
-        },
-        "recipe": {
-          "type": "object"
-        },
-        "expect_assertion_failure": {
-          "type": "boolean"
         }
       },
       "required": [
-        "workspace",
-        "recipe"
+        "workspace"
       ],
       "additionalProperties": false
     },
@@ -32,7 +25,7 @@
     "capabilities": [],
     "runtime": {
       "harness_ref": "builtin-harness-codex-managed:1",
-      "sandbox_ref": "simplified-sandbox-project-tests:1"
+      "sandbox_ref": "builtin-sandbox-docker:2"
     }
   }
 }

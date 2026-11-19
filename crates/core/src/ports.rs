@@ -277,6 +277,14 @@ pub struct WorkerStop {
 }
 /// Base contract for repository revisions, candidate construction and idempotent target advancement.
 pub trait Git: Send + Sync {
+    /// Inspect tracked configuration without running repository commands or fetching.
+    fn discover_project_tests(
+        &self,
+        _project: &str,
+        _mainline: &str,
+    ) -> Result<devdesk_domain::ProjectTestDiscovery> {
+        Ok(devdesk_domain::ProjectTestDiscovery::default())
+    }
     fn observe_delivery_target(&self, _context: &GitContext) -> Result<Option<String>> {
         Err(err("unsupported", "Git 未实现远端目标只读观察"))
     }
@@ -290,6 +298,10 @@ pub trait Git: Send + Sync {
     }
     fn fetch_delivery_target(&self, _context: &GitContext, _expected: &str) -> Result<()> {
         Err(err("unsupported", "Git 未实现隔离交付目标读取"))
+    }
+    /// Fetch a fixed PR test-merge object without publishing a branch.
+    fn fetch_delivery_commit(&self, _context: &GitContext, _revision: &str) -> Result<()> {
+        Err(err("unsupported", "Git 未实现确切 PR 候选对象读取"))
     }
     fn commit_tree(&self, _context: &GitContext, _revision: &str) -> Result<String> {
         Err(err("unsupported", "Git 未实现确切提交 tree 核对"))
@@ -461,10 +473,14 @@ pub struct ExecutionAdapters {
     pub pull_requests: Option<Arc<dyn PullRequests>>,
 }
 
-/// PR API facts are separate from Git refs and model output. No platform merge/bypass operation.
+/// PR API facts are separate from Git refs and model output; no protection bypass.
 pub trait PullRequests: Send + Sync {
-    fn delivery_target(&self, _context: &GitContext, _create_protection: bool) -> Result<Value> {
-        Err(err("unsupported", "PR 适配器未声明受保护交付合同"))
+    fn delivery_target(
+        &self,
+        _context: &GitContext,
+        _legacy_create_protection: bool,
+    ) -> Result<Value> {
+        Err(err("unsupported", "PR 适配器未实现目标分支只读观察"))
     }
     fn ensure_delivery(
         &self,
@@ -472,6 +488,15 @@ pub trait PullRequests: Send + Sync {
         _inspect_only: bool,
     ) -> Result<Option<PullRequestReceipt>> {
         Err(err("unsupported", "PR 适配器未实现精简交付发布"))
+    }
+    fn delivery_candidate(
+        &self,
+        _request: &PullRequestRequest,
+    ) -> Result<Option<devdesk_domain::PullRequestMergeCandidate>> {
+        Err(err(
+            "unsupported",
+            "PR 适配器未实现源分支 PR 的确切试合并观察",
+        ))
     }
     fn delivery_status(
         &self,

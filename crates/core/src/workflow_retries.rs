@@ -270,7 +270,9 @@ impl Engine {
         };
         if rework {
             self.reopen_rework_owner(commit, root)?;
-            self.consume_native_rework_budgets(commit, root, &impacted)?;
+            if commit.method != "workflow.delivery.republish" {
+                self.consume_native_rework_budgets(commit, root, &impacted)?;
+            }
         }
         let checkpoint = if rework {
             self.native_rework_checkpoint(commit, resources, definition)?

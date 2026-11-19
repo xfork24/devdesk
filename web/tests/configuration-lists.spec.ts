@@ -209,7 +209,7 @@ test("MCP 与 HTTP 的接入源、绑定和动作共用排序与首项选择", a
       data: {
         integration_ref: source.id,
         harness_ref: "builtin-harness-codex-managed:1",
-        sandbox_ref: "builtin-sandbox-docker:1",
+        sandbox_ref: "builtin-sandbox-docker:2",
         auth: { kind: "none" },
         allowed_origins: ["https://example.test"],
         allowed_tools: [],

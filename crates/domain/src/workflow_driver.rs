@@ -22,8 +22,6 @@ impl WorkflowScheduling {
                 && (5..=3600).contains(&self.lease_seconds)
                 && self.max_retries <= 8
                 && self.retry_error_codes.len() <= 32
-                && (1..=64).contains(&self.agent.max_turns_per_wakeup)
-                && (1..=256).contains(&self.agent.max_tool_calls_per_turn)
                 && (1..=3600).contains(&self.agent.timeout_seconds),
             "Workflow 调度配置超出原语资源边界",
         )

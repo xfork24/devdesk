@@ -17,7 +17,9 @@ pub struct PlatformPermission {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct AgentSchedulingBudget {
+    /// Legacy configuration metadata. Manager wakeups are no longer limited.
     pub max_turns_per_wakeup: u64,
+    /// Legacy configuration metadata. Manager tool calls are no longer limited.
     pub max_tool_calls_per_turn: u64,
     pub timeout_seconds: u64,
 }
@@ -68,7 +70,9 @@ pub struct WorkflowControlPolicy {
     pub waivable_requirements: BTreeSet<String>,
     #[serde(default)]
     pub allow_task_revision: bool,
+    #[serde(default)]
     pub max_turns_per_wakeup: u64,
+    #[serde(default)]
     pub max_tool_calls_per_turn: u64,
     pub timeout_seconds: u64,
 }
@@ -119,13 +123,8 @@ impl Default for WorkflowControlPolicy {
 impl WorkflowControlPolicy {
     pub fn validate(&self) -> Result<()> {
         require(
-            self.max_turns_per_wakeup > 0
-                && self.max_turns_per_wakeup <= 64
-                && self.max_tool_calls_per_turn > 0
-                && self.max_tool_calls_per_turn <= 256
-                && self.timeout_seconds > 0
-                && self.timeout_seconds <= 3600,
-            "编排预算超出允许范围",
+            self.timeout_seconds > 0 && self.timeout_seconds <= 3600,
+            "经理单次调用的故障检测超时超出允许范围",
         )
     }
     pub fn permits(&self, operation: &str) -> Result<()> {

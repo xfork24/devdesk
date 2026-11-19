@@ -39,6 +39,7 @@ export function ProjectManager({
     [records, setRecords] = useState<Row[]>([]),
     [configuration, setConfiguration] = useState<Row>(),
     [defaults, setDefaults] = useState<Row>(),
+    [testDiscovery, setTestDiscovery] = useState<Row>(),
     [requirements, setRequirements] = useState<Row>(),
     [busy, setBusy] = useState(false);
   const [orchestration, setOrchestration] = useState<Row>({ mode: "agent" });
@@ -76,20 +77,26 @@ export function ProjectManager({
   const previewScope = useRef("");
   const load = useCallback(async () => {
     const ticket = ++loadGeneration.current;
-    const [workspace, records, configuration, preset] = await Promise.all([
-      request("query.project_directory", { limit: 100, project_offset: 0 }),
-      loadCatalogWithStandardHistory(request, project?.id),
-      project?.id
-        ? request("query.project_configuration", {
-            project_id: project?.id,
-            view: "selection",
-          })
-        : Promise.resolve({}),
-      request("query.configuration_defaults", {
-        project_id: project?.id,
-        view: "selection",
-      }).catch(() => undefined),
-    ]);
+    const [workspace, records, configuration, preset, detectedTests] =
+      await Promise.all([
+        request("query.project_directory", { limit: 100, project_offset: 0 }),
+        loadCatalogWithStandardHistory(request, project?.id),
+        project?.id
+          ? request("query.project_configuration", {
+              project_id: project?.id,
+              view: "selection",
+            })
+          : Promise.resolve({}),
+        request("query.configuration_defaults", {
+          project_id: project?.id,
+          view: "selection",
+        }).catch(() => undefined),
+        project?.id
+          ? request("query.project_test_configuration", {
+              project_id: project.id,
+            })
+          : Promise.resolve(undefined),
+      ]);
     if (ticket !== loadGeneration.current) return;
     const saved = configuration.standard;
     if (ticket !== loadGeneration.current) return;
@@ -120,6 +127,7 @@ export function ProjectManager({
         : undefined,
     );
     setDefaults(preset);
+    setTestDiscovery(detectedTests);
     const data = configuration.configuration?.data || preset;
     const selection = {
       sandbox_ref: data?.sandbox_ref || "",
@@ -138,7 +146,9 @@ export function ProjectManager({
             null,
             2,
           )
-        : "",
+        : detectedTests?.configuration
+          ? JSON.stringify(detectedTests.configuration, null, 2)
+          : "",
     };
     const standards = new Set(
       availableRecords
@@ -161,10 +171,16 @@ export function ProjectManager({
           harness_permission_ref:
             current.harness_permission_ref || harnessProfile,
           source_configuration_id: selection.source_configuration_id,
+          test_configuration: current.test_configuration?.trim()
+            ? current.test_configuration
+            : selection.test_configuration,
         };
       return current.workflow_ref
         ? {
             ...current,
+            test_configuration: current.test_configuration?.trim()
+              ? current.test_configuration
+              : selection.test_configuration,
             harness_permission_ref:
               current.harness_permission_ref || harnessProfile,
           }
@@ -279,6 +295,21 @@ export function ProjectManager({
       setBusy(false);
     }
   }
+  let testSummary: Row | undefined;
+  try {
+    testSummary = JSON.parse(draft.test_configuration || "null");
+  } catch {
+    // Keep the user's draft available for correction in advanced settings.
+  }
+  const usingDetectedTests =
+    JSON.stringify(testSummary) ===
+    JSON.stringify(testDiscovery?.configuration);
+  const testCommand = Array.isArray(testSummary?.regression?.command?.argv)
+    ? testSummary.regression.command.argv.join(" ")
+    : "";
+  const testFiles = Array.isArray(testSummary?.regression?.files)
+    ? testSummary.regression.files.join("、")
+    : "";
   return (
     <>
       <section className="panel">
@@ -585,24 +616,87 @@ export function ProjectManager({
                 </div>
               ))}
             </details>
-            <label>
-              项目测试配置（JSON）
-              <textarea
-                aria-label="项目测试配置"
-                rows={10}
-                value={draft.test_configuration || ""}
-                onChange={(event) =>
-                  setDraft({ ...draft, test_configuration: event.target.value })
-                }
-                placeholder={
-                  '{"language":"JavaScript","independent_runner":"node_test","regression":{"runner":"command","files":["README.md"],"image":"sha256:…","timeout_seconds":1800,"command":{"argv":["node","--test"],"cwd":"."}}}'
-                }
-              />
-            </label>
-            <p className="muted">
-              精简版需要固定镜像与实际项目回归入口；独立测试可选择 Node 或
-              Python。准备及构建输出使用 /state 或 /tmp。配置随新工作冻结。
-            </p>
+            <fieldset aria-label="项目测试">
+              <legend>项目测试</legend>
+              <p>
+                独立测试：
+                {testSummary?.independent_runner === "python_unittest"
+                  ? "Python unittest"
+                  : "Node test"}
+                {" · "}回归入口：
+                {testCommand ||
+                  (testFiles
+                    ? `测试文件（${testFiles}）`
+                    : "未配置，回归步骤直接通过")}
+              </p>
+              <p className="muted">
+                优先读取仓库测试入口；未配置回归测试时直接通过，独立 Red/Green
+                测试照常执行。 测试镜像由运行环境自动绑定。
+              </p>
+              {usingDetectedTests && testDiscovery?.files?.length > 0 && (
+                <p className="muted">
+                  识别来源：{testDiscovery?.files.join("、")}
+                </p>
+              )}
+              {usingDetectedTests &&
+                testDiscovery?.notes?.map((note: string) => (
+                  <p className="muted" key={note}>
+                    {note}
+                  </p>
+                ))}
+              <ActionButton
+                type="button"
+                disabled={busy}
+                onClick={async () => {
+                  captureFeedback();
+                  setBusy(true);
+                  setError("");
+                  try {
+                    const detected = await request(
+                      "query.project_test_configuration",
+                      { project_id: project.id },
+                    );
+                    setTestDiscovery(detected);
+                    setDraft((current) => ({
+                      ...current,
+                      test_configuration: JSON.stringify(
+                        detected.configuration,
+                        null,
+                        2,
+                      ),
+                    }));
+                    setMessage("已重新识别测试入口，保存项目配置后生效。");
+                  } catch (error) {
+                    setError(String(error));
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                重新从仓库识别
+              </ActionButton>
+              <details>
+                <summary>手动调整测试配置</summary>
+                <label>
+                  项目测试配置（JSON）
+                  <textarea
+                    aria-label="项目测试配置"
+                    rows={8}
+                    value={draft.test_configuration || ""}
+                    onChange={(event) =>
+                      setDraft({
+                        ...draft,
+                        test_configuration: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <p className="muted">
+                  仅在自动入口不适用时修改命令、目录或超时。清空后保存会重新自动识别。准备及构建输出使用
+                  /state 或 /tmp。
+                </p>
+              </details>
+            </fieldset>
             <p>
               <a
                 href={`?tab=workflows&config_tab=workflow&project_id=${encodeURIComponent(project.id)}`}

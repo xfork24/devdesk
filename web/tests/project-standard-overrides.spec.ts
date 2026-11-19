@@ -72,6 +72,12 @@ test("Standard 决定入口，项目覆盖保存来源与差异并在重载后�
   ).toHaveCount(0);
   const save = panel.getByRole("button", { name: "保存项目配置", exact: true });
   await expect(save).toBeEnabled();
+  await expect(
+    panel.getByRole("group", { name: "项目测试", exact: true }),
+  ).toContainText("未配置，回归步骤直接通过");
+  await expect(
+    panel.getByLabel("项目测试配置", { exact: true }),
+  ).not.toBeVisible();
   await save.click();
   await expect(save.locator("..").getByRole("status")).toContainText(
     "项目配置已保存",
@@ -82,6 +88,17 @@ test("Standard 决定入口，项目覆盖保存来源与差异并在重载后�
   });
   expect(initial.configuration.data.standard_ref).toBe(defaults.standard_ref);
   expect(initial.configuration.data.workflow_ref).toBe(defaults.workflow_ref);
+  expect(initial.configuration.data.test_configuration.regression).toBeNull();
+  expect(initial.configuration.data.test_configuration.independent_runner).toBe(
+    "node_test",
+  );
+  const sandbox = await rpc(page, "query.configuration_index", {
+    kind: "sandbox",
+    project_id: project.id,
+    limit: 100,
+  });
+  expect(sandbox.records).toHaveLength(1);
+  expect(sandbox.records[0].name).toBe("Docker Sandbox");
 
   const orchestration = panel.locator(".project-orchestration-fields select");
   const orchestrationBoxes = await orchestration.evaluateAll((nodes) =>

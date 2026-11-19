@@ -144,12 +144,11 @@ impl Engine {
                     "controller_lease_active",
                     json!([controller_id, epoch]).to_string(),
                 ),
-                ResourceKey::new("controller_turn_calls", &poll.turn.id),
             ];
             let facts = self.store.read_resources(&keys)?;
             require(
-                facts.len() == 3 && facts.iter().zip(&keys).all(|(r, k)| &r.resource == k),
-                "Controller 调用预算事实不完整",
+                facts.len() == 2 && facts.iter().zip(&keys).all(|(r, k)| &r.resource == k),
+                "Controller 授权事实不完整",
             )?;
             let row = ConfigurationRecord::from_storage(
                 facts[0]
@@ -193,10 +192,7 @@ impl Engine {
                         },
                         "原 Controller 未声明此工具",
                     )?;
-                    require(
-                        facts[2].revision < controller.policy.max_tool_calls_per_turn,
-                        "Controller 原轮次工具预算耗尽",
-                    )
+                    Ok(())
                 })
                 .err();
             reads = reads

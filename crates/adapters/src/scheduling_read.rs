@@ -14,6 +14,7 @@ fn stages(
     clock: &ExecutionClockAnchor,
 ) -> Result<Vec<devdesk_core::SchedulingStage>> {
     use devdesk_core::SchedulingStage as S;
+    let segments = runtime_queries::segments_pending_sql();
     let work = &[
         (
             S::Conversations,
@@ -43,10 +44,7 @@ fn stages(
             S::PlanChanges,
             "EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_change' AND json_extract(data,'$.status') IN ('prepared','waiting_quiescence'))",
         ),
-        (
-            S::Segments,
-            "EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_segment' AND json_extract(data,'$.status')='active')",
-        ),
+        (S::Segments, segments.as_str()),
         (
             S::Drivers,
             "EXISTS(SELECT 1 FROM governance_records d JOIN governance_records w ON w.id=d.definition_id WHERE d.type='workflow_driver' AND json_extract(d.data,'$.mode')='rust' AND json_extract(w.data,'$.status') NOT IN ('completed','cancelled') AND coalesce(json_extract(w.data,'$.paused'),0)=0)",

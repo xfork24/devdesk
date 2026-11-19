@@ -1,7 +1,7 @@
 {
   "type": "workflow",
   "identity": "simplified-workflow-task",
-  "revision": 1,
+  "revision": 2,
   "name": "精简版Task开发流程",
   "scope": "global",
   "data": {
@@ -41,7 +41,7 @@
         "delivery_ref": "simplified-delivery-design:1"
       },
       "test_configuration": {
-        "delivery_ref": "simplified-delivery-project-tests:1"
+        "delivery_ref": "simplified-delivery-project-tests:2"
       }
     },
     "steps": [
@@ -187,7 +187,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "simplified-delivery-checkpoint:1"
+            "delivery_ref": "simplified-delivery-checkpoint:2"
           },
           "diff": {
             "delivery_ref": "simplified-delivery-diff:1"
@@ -208,7 +208,7 @@
         ],
         "executor": {
           "type": "tool",
-          "tool_ref": "simplified-tool-tests-run:1",
+          "tool_ref": "simplified-tool-tests-run:2",
           "arguments": {
             "workspace": {
               "type": "source",
@@ -401,7 +401,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "simplified-delivery-checkpoint:1"
+            "delivery_ref": "simplified-delivery-checkpoint:2"
           },
           "diff": {
             "delivery_ref": "simplified-delivery-diff:1"
@@ -425,7 +425,7 @@
         ],
         "executor": {
           "type": "tool",
-          "tool_ref": "simplified-tool-tests-run:1",
+          "tool_ref": "simplified-tool-tests-run:2",
           "arguments": {
             "workspace": {
               "type": "source",
@@ -599,7 +599,7 @@
         ],
         "executor": {
           "type": "tool",
-          "tool_ref": "simplified-tool-project-tests:1",
+          "tool_ref": "simplified-tool-project-tests:2",
           "arguments": {
             "workspace": {
               "type": "source",
@@ -613,7 +613,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "simplified-delivery-regression:1"
+            "delivery_ref": "simplified-delivery-regression:2"
           }
         },
         "budget": {
@@ -668,7 +668,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "simplified-delivery-source-publication:1"
+            "delivery_ref": "simplified-delivery-source-publication:2"
           }
         },
         "budget": {
@@ -700,7 +700,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "simplified-delivery-target:1"
+            "delivery_ref": "simplified-delivery-target:2"
           }
         },
         "budget": {
@@ -740,7 +740,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "simplified-delivery-pull-request:1"
+            "delivery_ref": "simplified-delivery-pull-request:2"
           }
         },
         "budget": {
@@ -758,7 +758,7 @@
         ],
         "executor": {
           "type": "tool",
-          "tool_ref": "simplified-tool-project-tests:1",
+          "tool_ref": "simplified-tool-project-tests:2",
           "arguments": {
             "workspace": {
               "type": "source",
@@ -772,7 +772,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "simplified-delivery-regression:1"
+            "delivery_ref": "simplified-delivery-regression:2"
           }
         },
         "budget": {
@@ -835,7 +835,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "simplified-delivery-merge-sync:1"
+            "delivery_ref": "simplified-delivery-merge-sync:2"
           }
         },
         "budget": {

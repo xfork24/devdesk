@@ -15,6 +15,36 @@ pub(super) const CONTROLLER_READY: &str = "(
    AND json_extract(CASE WHEN e.kind='workflow.runtime' THEN e.detail ELSE '{}' END,'$.root_instance_id')=json_extract(c.data,'$.root_instance_id'))
 )";
 
+pub(super) const CONTROLLER_RECOVERABLE_BUDGET: &str = "(
+ json_extract(c.data,'$.status')='budget_exhausted'
+ AND json_extract(c.data,'$.reason')='编排唤醒预算已耗尽，请恢复或补充指令'
+)";
+
+// A technical suspension keeps the original manager epoch. Human takeover or
+// replacement changes it, so their revoked delegations cannot match this read.
+pub(super) const SEGMENT_RECOVERABLE: &str = "(
+ json_extract(c.data,'$.status')='stopped'
+ AND json_extract(c.data,'$.reason')='blocked: 原委托决定者已撤权'
+ AND json_extract(c.data,'$.actor.kind')='controller'
+ AND json_extract(c.data,'$.operations')<json_extract(c.data,'$.max_operations')
+ AND EXISTS(SELECT 1 FROM governance_records a WHERE a.id=json_extract(c.data,'$.actor.controller_id')
+   AND a.type='workflow_controller' AND json_extract(a.data,'$.status')='active'
+   AND json_extract(a.data,'$.epoch')=json_extract(c.data,'$.actor.epoch'))
+ AND EXISTS(SELECT 1 FROM governance_records w WHERE w.id=c.definition_id AND w.type='workflow_instance'
+   AND json_extract(w.data,'$.active_plan_revision_id')=json_extract(c.data,'$.plan_revision_id')
+   AND json_extract(w.data,'$.status') NOT IN ('completed','cancelled')
+   AND coalesce(json_extract(w.data,'$.paused'),0)=0 AND coalesce(json_extract(w.data,'$.cancel_requested'),0)=0)
+ AND EXISTS(SELECT 1 FROM governance_records d WHERE d.id=json_extract(c.data,'$.driver_id')
+   AND d.type='workflow_driver' AND json_extract(d.data,'$.epoch')=json_extract(c.data,'$.driver_epoch')
+   AND json_extract(d.data,'$.mode')=json_extract(c.data,'$.driver_mode'))
+)";
+
+pub(super) fn segments_pending_sql() -> String {
+    format!(
+        "EXISTS(SELECT 1 FROM governance_records c WHERE c.type='workflow_segment' AND (json_extract(c.data,'$.status')='active' OR {SEGMENT_RECOVERABLE}))"
+    )
+}
+
 // The display rows are transactional hints, never dispatch authority. Include
 // status repairs and cancellation as well as actual running receipts.
 pub(super) const WORKFLOW_READY: &str = "(
@@ -35,7 +65,7 @@ pub(super) const WORKFLOW_READY: &str = "(
 ))";
 
 pub(super) fn controllers(conn: &Connection) -> Result<bool> {
-    conn.query_row(&format!("SELECT EXISTS(SELECT 1 FROM governance_records c WHERE c.type='workflow_controller' AND json_extract(c.data,'$.status')='active' AND {CONTROLLER_READY})"), [], |r|r.get(0)).map_err(storage)
+    conn.query_row(&format!("SELECT EXISTS(SELECT 1 FROM governance_records c WHERE c.type='workflow_controller' AND ((json_extract(c.data,'$.status')='active' AND {CONTROLLER_READY}) OR {CONTROLLER_RECOVERABLE_BUDGET}))"), [], |r|r.get(0)).map_err(storage)
 }
 // Values are supplied by the application clock. This hint neither authorizes
 // expiry nor compares monotonic counters from different process epochs.
@@ -91,7 +121,7 @@ pub(super) fn pending(conn: &Connection, kind: ports::WorkflowRuntimeWork) -> Re
               OR (json_extract(c.data,'$.status') IN ('succeeded','failed')
                 AND NOT EXISTS(SELECT 1 FROM governance_records r WHERE r.type='controller_tool_reply' AND r.definition_id=c.id))))",
         ports::WorkflowRuntimeWork::Changes => "SELECT EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_change' AND json_extract(data,'$.status') IN ('prepared','waiting_quiescence'))",
-        ports::WorkflowRuntimeWork::Segments => "SELECT EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_segment' AND json_extract(data,'$.status')='active')",
+        ports::WorkflowRuntimeWork::Segments => return conn.query_row(&format!("SELECT {}", segments_pending_sql()), [], |r|r.get(0)).map_err(storage),
         ports::WorkflowRuntimeWork::RustDrivers => "SELECT EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_driver' AND json_extract(data,'$.mode')='rust')",
         ports::WorkflowRuntimeWork::PlatformTools => {
             let active: bool = conn.query_row("SELECT
@@ -301,6 +331,36 @@ mod tests {
         conn.execute("UPDATE turns SET status='cancelled'", [])
             .unwrap();
         assert!(pending(&conn, Controllers).unwrap());
+    }
+
+    #[test]
+    fn only_a_legacy_wakeup_count_suspension_is_automatically_recoverable() {
+        let conn = database();
+        let mut data = json!({"status":"budget_exhausted","run_state":"waiting","epoch":1,"bootstrap_epoch":1,"reason":"编排唤醒预算已耗尽，请恢复或补充指令"});
+        record(
+            &conn,
+            "controller",
+            "workflow_controller",
+            "root",
+            data.clone(),
+        );
+        assert!(pending(&conn, Controllers).unwrap());
+        for (status, reason) in [
+            ("budget_exhausted", "经理轮次超时，已请求停止"),
+            ("paused", "编排唤醒预算已耗尽，请恢复或补充指令"),
+            ("failed", "原经理轮次失败"),
+            ("needs_reconciliation", "原经理轮次结果未知"),
+            ("closed", ""),
+        ] {
+            data["status"] = json!(status);
+            data["reason"] = json!(reason);
+            conn.execute(
+                "UPDATE governance_records SET data=?1 WHERE id='controller'",
+                [data.to_string()],
+            )
+            .unwrap();
+            assert!(!pending(&conn, Controllers).unwrap(), "{status}: {reason}");
+        }
     }
 
     #[test]

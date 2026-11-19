@@ -1,7 +1,7 @@
 {
   "type": "sandbox",
   "identity": "builtin-sandbox-docker",
-  "revision": 1,
+  "revision": 2,
   "name": "Docker Sandbox",
   "scope": "global",
   "data": {
@@ -16,7 +16,8 @@
       "base_image": "node:24.13.0-bookworm-slim@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced307cf4b6f",
       "packages": [
         "ca-certificates",
-        "bubblewrap"
+        "bubblewrap",
+        "python3"
       ],
       "files": []
     }

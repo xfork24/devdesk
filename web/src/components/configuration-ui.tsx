@@ -171,14 +171,20 @@ export function RevisionSelect(props: RevisionSelectProps) {
 export function MarkdownPreview({
   text,
   trailing,
+  linkGithubRevisions,
 }: {
   text: string;
   trailing?: ReactNode;
+  linkGithubRevisions?: boolean;
 }) {
   return (
     <div className="markdown-preview" aria-label="内容预览">
       <Suspense fallback={<p>正在加载内容…</p>}>
-        <RenderMarkdown text={text} trailing={trailing} />
+        <RenderMarkdown
+          text={text}
+          trailing={trailing}
+          linkGithubRevisions={linkGithubRevisions}
+        />
       </Suspense>
     </div>
   );

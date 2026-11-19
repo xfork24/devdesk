@@ -132,6 +132,16 @@ impl Engine {
         let receipt = self
             .store
             .replay_commit(&command.command_id, &fingerprint)?;
+        // No operation was admitted. Preserve the exact durable command for a
+        // fresh scheduling pass; a transient conflict is not a failed execution.
+        // A committed receipt takes precedence over the caller's stale response.
+        if receipt.is_none()
+            && result
+                .as_ref()
+                .is_err_and(|error| error.retryable_conflict())
+        {
+            return Ok(());
+        }
         let reported = match result {
             Ok(value) => {
                 json!({"result_id":text(value,"id")?,"result_digest":configuration_hash(value)})

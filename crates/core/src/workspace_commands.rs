@@ -206,9 +206,18 @@ impl Engine {
                 .data
                 .get("test_configuration")
                 .filter(|v| !v.is_null())
-                .ok_or_else(|| err("configuration_required", "该流程需要项目测试执行配置"))?;
+                .cloned();
+            let tests = match tests {
+                Some(tests) => tests,
+                None => {
+                    json!(self.discover_project_tests()?.configuration)
+                }
+            };
+            serde_json::from_value::<ProjectTestConfiguration>(tests.clone())
+                .map_err(|e| err("invalid_params", e.to_string()))?
+                .validate()?;
             require(
-                inputs.get("test_configuration").is_none_or(|v| v == tests),
+                inputs.get("test_configuration").is_none_or(|v| v == &tests),
                 "不能覆盖冻结项目测试配置",
             )?;
             inputs.insert("test_configuration".into(), tests.clone());

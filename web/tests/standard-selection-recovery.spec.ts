@@ -111,7 +111,9 @@ test("清理未保存项目草稿中的失效规范，保留独立的测试配�
   await expect(panel.getByLabel("基础 Standard", { exact: true })).toHaveValue(
     defaults.standard_ref,
   );
-  const testConfiguration = '{"language":"JavaScript"}';
+  const testConfiguration =
+    '{"language":"JavaScript","regression":{"files":"editing"}}';
+  await panel.getByText("手动调整测试配置", { exact: true }).click();
   await panel
     .getByLabel("项目测试配置", { exact: true })
     .fill(testConfiguration);

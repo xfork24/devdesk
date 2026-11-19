@@ -252,6 +252,17 @@ pub struct DeliveryPublication {
 pub struct PullRequestMergeRequest {
     pub request: PullRequestRequest,
     pub tree: String,
+    /// Frozen GitHub test-merge commit for direct source-branch PRs.
+    /// Absent on historical candidate-branch publications.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merge_revision: Option<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PullRequestMergeCandidate {
+    pub revision: String,
+    pub tree: String,
+    pub source_revision: String,
+    pub target_revision: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PullRequestRequest {

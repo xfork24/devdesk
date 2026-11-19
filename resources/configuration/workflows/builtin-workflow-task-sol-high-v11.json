@@ -1,7 +1,7 @@
 {
   "type": "workflow",
   "identity": "builtin-workflow-task-sol-high",
-  "revision": 10,
+  "revision": 11,
   "name": "详细版Task开发流程",
   "scope": "global",
   "data": {
@@ -346,7 +346,7 @@
         },
         "executor": {
           "type": "tool",
-          "tool_ref": "builtin-tool-tests-run:1",
+          "tool_ref": "builtin-tool-tests-run:2",
           "arguments": {
             "workspace": {
               "type": "source",
@@ -572,7 +572,7 @@
         },
         "executor": {
           "type": "tool",
-          "tool_ref": "builtin-tool-tests-run:1",
+          "tool_ref": "builtin-tool-tests-run:2",
           "arguments": {
             "workspace": {
               "type": "source",
@@ -712,7 +712,7 @@
         },
         "executor": {
           "type": "tool",
-          "tool_ref": "builtin-tool-tests-run:1",
+          "tool_ref": "builtin-tool-tests-run:2",
           "arguments": {
             "workspace": {
               "type": "source",
@@ -836,7 +836,7 @@
         ],
         "executor": {
           "type": "tool",
-          "tool_ref": "builtin-tool-tests-run:1",
+          "tool_ref": "builtin-tool-tests-run:2",
           "arguments": {
             "workspace": {
               "type": "source",

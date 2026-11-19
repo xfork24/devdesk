@@ -315,8 +315,10 @@ HTTP 的执行工作台、经理交互及运行摘要复用 Workspace 所属的�
 
 ## 精简版交付与项目测试
 
-项目和工作配置可冻结 `test_configuration:{language,independent_runner,regression}`。`independent_runner` 为 `node_test|python_unittest`；regression 为 TestRecipe，支持 `node_test|python_unittest|command`，含 files、固定 image、timeout_seconds、可选 preparation；command 执行器必须有 `command:{argv,cwd,environment}`。配置缺失或镜像不匹配明确阻塞，不能由模型填入成功结论。
+项目和工作配置可冻结 `test_configuration:{language,independent_runner,regression}`。`independent_runner` 为 `node_test|python_unittest`；regression 可为 null（未配置项目回归，直接通过并记录原因），或项目测试配方，支持 `node_test|python_unittest|command`，含 files、timeout_seconds、可选 preparation；image 可省略，由冻结运行环境绑定；command 执行器必须有 `command:{argv,cwd,environment}`。未提供测试设置时从仓库识别，未发现回归入口则生成 regression:null 的有效默认配置。已配置测试失败、环境缺失或超时必须阻塞，不能由模型填入成功结论。
 
 新平台处理器为 `workspace.checkpoint`、`workspace.target`、`tests.project`、`git.source.publish`、`git.delivery.open`、`git.delivery.merge`，均经现有平台调用的意图、外部执行、回执接纳管线。`WorkflowDefinition.delivery_policy` 绑定源发布、源回归、代码评审、合并回归及可选独立 Green、子实例、最终 Human 步骤。完成要求远端已合入且本地已同步。原 `git.publish` 合同保持。
 
 `query.workflow_management_summary` 增加有界 delivery 摘要、child_slots，子项含 owner/status/dependency_wait_count/delivery。delivery 分别表达 PR、remote_merged 与 synchronized；远端已合入但同步未完成不能显示为工作完成。资格查询的 `delivery_refresh` 描述确切源版本的剩余刷新额度；提交仍重新核对实际原生事实。
+
+交付迁移：`workflow.delivery.republish` 是 project 显式作用域的 Human 写入命令，target 为原 workflow instance；携带 expected_revision、原计划/步骤控制版本、expected_pr_number、expected_head、expected_candidate 与 reason。仅支持未合入的历史 candidates 交付，保留逻辑工作、源发布与评审/测试，重新排队交付后继并使旧审批失效；重放原 command_id 不重复迁移。

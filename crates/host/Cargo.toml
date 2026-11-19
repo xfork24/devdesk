@@ -19,6 +19,7 @@ uuid.workspace = true
 base64 = "0.22"
 url = "2"
 [dev-dependencies]
+rusqlite = { version = "0.37", features = ["bundled"] }
 devdesk-adapters = { path = "../adapters", features = ["test-fixtures"] }
 devdesk-core = { path = "../core", features = ["test-fixtures"] }
 tempfile = "3"

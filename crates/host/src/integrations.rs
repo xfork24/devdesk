@@ -17,10 +17,19 @@ impl Workspace {
         }
         if let Some(prepared) = e.prepare_configured_platform(&command)? {
             let mut request = prepared.request().clone();
-            if let Some(runtime) = &request.definition.runtime {
+            if let Some(runtime) = request
+                .definition
+                .runtime
+                .as_ref()
+                .filter(|_| prepared.runtime_required())
+            {
                 let state = e.store.configuration_snapshot()?.state.clone();
                 let harness = state.configuration(&runtime.harness_ref)?;
-                let installation = self.materialize_harness(e, harness)?;
+                let installation = e.materialize_harness_in_sandbox(
+                    &self.session_resources(),
+                    harness,
+                    &runtime.sandbox_ref,
+                )?;
                 let image = match installation.artifact {
                     RuntimeArtifact::DockerImage { image_id } => image_id,
                     _ => return Err(err("unsupported", "测试工具需要确切 Docker 镜像")),

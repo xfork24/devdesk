@@ -383,7 +383,7 @@ test("MCP 页面实际发现 stdio 服务、只授权选中工具并查看 Docke
   const resources = await rpc(page, "query.permission_resources");
   const bindings = resources.targets
     .filter((r: any) =>
-      ["builtin-harness-codex-managed:1", "builtin-sandbox-docker:1"].includes(
+      ["builtin-harness-codex-managed:1", "builtin-sandbox-docker:2"].includes(
         r.target.revision_id,
       ),
     )

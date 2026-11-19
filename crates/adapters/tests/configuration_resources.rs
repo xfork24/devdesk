@@ -578,7 +578,7 @@ fn detailed_delivery_catalog_has_content_standards_and_real_diff_ports() {
         }
     }
     let mut forged = state
-        .configuration("builtin-workflow-task-sol-high:10")
+        .configuration("builtin-workflow-task-sol-high:11")
         .unwrap()
         .data
         .clone();

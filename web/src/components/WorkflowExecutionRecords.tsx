@@ -45,7 +45,6 @@ function ExecutionReader({
         <>
           <h3>
             {displayText(record.step_name)} · 第 {displayText(record.round)} 轮
-            {displayText(record.historical ? " · 历史执行" : "")}
           </h3>
           <h4>执行身份与结果</h4>
           <p>
@@ -205,7 +204,6 @@ export function WorkflowExecutionRecords({
     offset,
     limit: 100,
   });
-  const [showHistory, setShowHistory] = useState(false);
   const records: Row[] = (state.value?.records || []).filter(
     (record: Row) => record.execution_available ?? record.status !== "queued",
   );
@@ -222,7 +220,9 @@ export function WorkflowExecutionRecords({
               "needs_reconciliation",
               "waiting_confirmation",
             ].includes(r.status),
-        ) || records.find((r) => !r.historical)
+        ) ||
+        records.find((r) => !r.historical) ||
+        records[0]
       : undefined);
   const instances = [...new Set(records.map((r) => r.instance_id))];
   return (
@@ -232,14 +232,6 @@ export function WorkflowExecutionRecords({
         审计视角：核对步骤的派发、人工决定、确认与工具回执。冻结输入在上下文页，会话消息在角色讨论页。
       </p>
       <ReadState {...state} />
-      <label>
-        <input
-          type="checkbox"
-          checked={showHistory}
-          onChange={(e) => setShowHistory(e.target.checked)}
-        />
-        显示历史执行
-      </label>
       <div className="reading-layout">
         <nav className="reading-directory" aria-label="执行轮次目录">
           {instances.map((id) => (
@@ -254,11 +246,7 @@ export function WorkflowExecutionRecords({
                 )}
               </h4>
               {records
-                .filter(
-                  (r) =>
-                    r.instance_id === id &&
-                    (showHistory || !r.historical || r.id === selected?.id),
-                )
+                .filter((r) => r.instance_id === id)
                 .map((r) => (
                   <button
                     key={r.id}
@@ -275,7 +263,6 @@ export function WorkflowExecutionRecords({
                     {displayText(r.step_name)}
                     <small>
                       第 {displayText(r.round)} 轮 ·{" "}
-                      {displayText(r.historical ? "历史 · " : "")}
                       {displayText(labels[r.status] || r.status)}
                     </small>
                   </button>

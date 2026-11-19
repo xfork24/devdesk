@@ -68,7 +68,35 @@ pub fn test_relative_path(file: &str) -> bool {
 pub struct ProjectTestConfiguration {
     pub language: String,
     pub independent_runner: TestRunner,
-    pub regression: TestRecipe,
+    pub regression: Option<TestRecipe>,
+}
+impl Default for ProjectTestConfiguration {
+    fn default() -> Self {
+        Self {
+            language: "JavaScript / Node.js".into(),
+            independent_runner: TestRunner::NodeTest,
+            regression: None,
+        }
+    }
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectTestDiscovery {
+    pub configuration: ProjectTestConfiguration,
+    pub source: String,
+    pub files: Vec<String>,
+    pub notes: Vec<String>,
+    pub revision: Option<String>,
+}
+impl Default for ProjectTestDiscovery {
+    fn default() -> Self {
+        Self {
+            configuration: ProjectTestConfiguration::default(),
+            source: "unconfigured".into(),
+            files: vec![],
+            notes: vec![],
+            revision: None,
+        }
+    }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -119,7 +147,13 @@ impl ProjectTestConfiguration {
             self.independent_runner != TestRunner::Command,
             "独立测试需要可区分断言与环境失败的执行器",
         )?;
-        self.regression.validate()
+        if let Some(regression) = &self.regression {
+            if !regression.image.is_empty() {
+                regression.validate()?;
+            }
+            regression.validate_parameters()?;
+        }
+        Ok(())
     }
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -127,6 +161,7 @@ impl ProjectTestConfiguration {
 pub struct TestRecipe {
     pub runner: TestRunner,
     pub files: Vec<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub image: String,
     pub timeout_seconds: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -144,6 +179,9 @@ impl TestRecipe {
                     .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
             "测试镜像必须是固定 Docker image ID",
         )?;
+        self.validate_parameters()
+    }
+    fn validate_parameters(&self) -> Result<()> {
         require(
             (1..=7200).contains(&self.timeout_seconds),
             "测试超时需为 1—7200 秒",

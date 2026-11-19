@@ -28,7 +28,7 @@ fn harness(engine: &Engine) -> ConfigurationRecord {
         .clone()
 }
 fn receipt(record: &ConfigurationRecord) -> Value {
-    json!({"harness_revision_id":record.id,"sandbox_ref":"builtin-sandbox-docker:1","recipe_digest":"verified-fixture-recipe","installation_id":"verified-fixture-installation","key":{"provider":"codex","version":"fixture","os":"linux","arch":"aarch64"},"artifact":{"kind":"docker_image","image_id":format!("sha256:{}","a".repeat(64))}})
+    json!({"harness_revision_id":record.id,"sandbox_ref":"builtin-sandbox-docker:2","recipe_digest":"verified-fixture-recipe","installation_id":"verified-fixture-installation","key":{"provider":"codex","version":"fixture","os":"linux","arch":"aarch64"},"artifact":{"kind":"docker_image","image_id":format!("sha256:{}","a".repeat(64))}})
 }
 
 #[test]
@@ -105,7 +105,7 @@ fn materialization_reads_no_unrelated_engineering_history() {
                 store: engine.store.as_ref(),
             },
             &record,
-            "builtin-sandbox-docker:1",
+            "builtin-sandbox-docker:2",
         )
         .unwrap();
     assert!(result.recipe_digest.is_some());

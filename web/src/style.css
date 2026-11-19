@@ -74,6 +74,15 @@ select {
   flex-shrink: 0;
   padding-inline-end: 32px;
 }
+/* Native intrinsic sizing includes the longest option; shrink only at the container edge. */
+:root select:not([multiple]) {
+  field-sizing: fixed;
+  width: max-content;
+  min-width: 0;
+  max-width: 100%;
+  flex: 0 1 auto;
+  align-self: flex-start;
+}
 input:focus,
 textarea:focus,
 select:focus,
@@ -2526,6 +2535,42 @@ pre {
 .work-standard {
   margin-block: 12px;
 }
+.work-standard-toggles {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.work-standard-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+}
+.work-standard-toggle > span {
+  font-size: 0.8em;
+}
+.work-standard-content,
+.work-standard-actions {
+  margin-top: 12px;
+}
+.work-standard-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 20px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.work-standard-actions > label {
+  margin-bottom: 12px;
+}
 @media (max-width: 760px) {
   .standard-comparison {
     grid-template-columns: 1fr;
@@ -2577,14 +2622,15 @@ pre {
   align-items: center;
   gap: 12px;
   flex-wrap: nowrap;
-  width: min(100%, 640px);
+  width: fit-content;
+  max-width: 100%;
 }
 .standard-source-override .configuration-field-title {
   flex: 0 0 auto;
 }
 .standard-source-override select {
-  flex: 1;
-  max-width: 560px;
+  flex: 0 1 auto;
+  max-width: 100%;
   min-width: 0;
   width: auto;
 }

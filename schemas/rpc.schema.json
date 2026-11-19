@@ -6673,7 +6673,14 @@
           ]
         },
         "regression": {
-          "$ref": "#/$defs/TestRecipe"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectTestRecipe"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
@@ -6828,6 +6835,62 @@
         "human_wait_closed"
       ],
       "additionalProperties": false
+    },
+    "ProjectTestRecipe": {
+      "type": "object",
+      "required": [
+        "runner",
+        "files",
+        "timeout_seconds"
+      ],
+      "properties": {
+        "runner": {
+          "enum": [
+            "node_test",
+            "python_unittest",
+            "command"
+          ]
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?![-/])(?!.*[\\\\\\n\\r\\u0000])(?!\\.{1,2}(?:/|$))(?!.*\\/\\.{1,2}(?:/|$))[^/]+(?:/[^/]+)*$"
+          }
+        },
+        "image": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 7200
+        },
+        "command": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TestCommand"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "preparation": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/TestCommand"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "description": "Project test entry. Image is resolved from the frozen Sandbox at execution."
     }
   },
   "allOf": [

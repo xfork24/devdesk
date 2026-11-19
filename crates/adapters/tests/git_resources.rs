@@ -419,3 +419,167 @@ fn delivery_sync_preserves_dirty_worktrees_and_recovers_a_lost_checkout() {
     );
     assert!(target.join("unknown.txt").exists());
 }
+
+#[test]
+fn pr_test_merge_is_fetched_and_pinned_locally_without_remote_candidate_branches() {
+    let root = tempfile::tempdir().unwrap();
+    let project = id();
+    let feature = id();
+    let repo = root
+        .path()
+        .join("projects")
+        .join(&project)
+        .join("repository");
+    let remote = root.path().join("remote.git");
+    fs::create_dir_all(&repo).unwrap();
+    fs::create_dir_all(&remote).unwrap();
+    git(&repo, &["init", "-b", "main"]);
+    git(&remote, &["init", "--bare"]);
+    fs::write(repo.join("base.txt"), "base\n").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-m", "base"]);
+    let base = git(&repo, &["rev-parse", "HEAD"]);
+    git(
+        &repo,
+        &["remote", "add", "origin", remote.to_str().unwrap()],
+    );
+    let adapter = CliGit::new(root.path()).unwrap();
+    let work = adapter
+        .prepare_worktree(&project, &feature, "features", &base, &id())
+        .unwrap();
+    let path = Path::new(&work.path);
+    fs::write(path.join("feature.txt"), "feature\n").unwrap();
+    git(path, &["add", "."]);
+    git(path, &["commit", "-m", "feature"]);
+    let source = git(path, &["rev-parse", "HEAD"]);
+    let tree = git(path, &["rev-parse", "HEAD^{tree}"]);
+    git(&repo, &["push", "origin", "main", &work.branch]);
+    // GitHub owns refs/pull/.../merge. Simulate that server-side object only.
+    let merge = git(
+        &remote,
+        &[
+            "commit-tree",
+            &tree,
+            "-p",
+            &base,
+            "-p",
+            &source,
+            "-m",
+            "GitHub test merge",
+        ],
+    );
+    git(&remote, &["update-ref", "refs/pull/7/merge", &merge]);
+    struct Daemon(std::process::Child);
+    impl Drop for Daemon {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let _daemon = Daemon(
+        Command::new("git")
+            .args([
+                "daemon",
+                "--reuseaddr",
+                "--export-all",
+                "--listen=127.0.0.1",
+                &format!("--port={port}"),
+                &format!("--base-path={}", root.path().display()),
+            ])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    for _ in 0..100 {
+        if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    git(
+        &repo,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            &format!("git://127.0.0.1:{port}/remote.git"),
+        ],
+    );
+    let context = GitContext {
+        project: project.clone(),
+        workspace: Workspace {
+            repository: "fixture/local".into(),
+            path: fs::canonicalize(&repo).unwrap().to_string_lossy().into(),
+            mainline: "main".into(),
+        },
+        source: CodeLocation {
+            owner: feature,
+            branch: work.branch.clone(),
+            worktree: work.path.clone(),
+        },
+        target: CodeLocation {
+            owner: project,
+            branch: "main".into(),
+            worktree: fs::canonicalize(&repo).unwrap().to_string_lossy().into(),
+        },
+        origin: Origin::External,
+    };
+    for _ in 0..2 {
+        adapter.fetch_delivery_commit(&context, &merge).unwrap();
+    }
+    assert_eq!(
+        git(
+            &repo,
+            &["rev-parse", &format!("refs/devdesk/pr-candidates/{merge}")]
+        ),
+        merge
+    );
+    assert_eq!(
+        adapter.commit_parents(&context, &merge).unwrap(),
+        vec![base.clone(), source.clone()]
+    );
+    assert_eq!(adapter.commit_tree(&context, &merge).unwrap(), tree);
+    assert_eq!(git(&repo, &["rev-parse", "main"]), base);
+    assert_eq!(git(&repo, &["rev-parse", &work.branch]), source);
+    let refs = git(
+        &remote,
+        &["for-each-ref", "--format=%(refname)", "refs/heads/"],
+    );
+    assert!(!refs.contains("devdesk/candidates/"));
+    let operation = RepositoryOperation {
+        id: id(),
+        project_id: context.project.clone(),
+        action: RepositoryAction::PublishRef {
+            merge: id(),
+            context: context.clone(),
+            branch: format!("devdesk/candidates/{}", id()),
+            revision: merge,
+            expected: None,
+            stage: PublishStage::DeliveryCandidate,
+        },
+        status: RepositoryOperationStatus::Prepared,
+        receipt: None,
+        reason: String::new(),
+        revision: 1,
+    };
+    assert_eq!(
+        adapter
+            .repository_operation(&operation)
+            .unwrap_err()
+            .execution_failure
+            .unwrap()
+            .effect,
+        ExecutionFailureEffect::NotApplied
+    );
+    assert_eq!(
+        git(
+            &remote,
+            &["for-each-ref", "--format=%(refname)", "refs/heads/"]
+        ),
+        refs
+    );
+}

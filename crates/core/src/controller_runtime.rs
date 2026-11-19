@@ -41,6 +41,39 @@ impl Engine {
     }
     pub fn drive_controllers(&self) -> Result<()> {
         self.drive_native_controller_calls()?;
+        // Older hosts permanently suspended managers after a finite number of
+        // wakeups. Restore that technical suspension without changing the
+        // manager's authority, epoch, session or any Human decision.
+        for selected in self.pending_runtime_records("workflow_controller", "budget_exhausted")? {
+            let row = restored(self, &selected)?;
+            let mut controller: WorkflowController = row.decode()?;
+            if controller.reason != "编排唤醒预算已耗尽，请恢复或补充指令" {
+                continue;
+            }
+            controller.status = "active".into();
+            controller.reason.clear();
+            controller.wakeup_turns = 0;
+            let c = Command {
+                command_id: format!("controller-unlimit:{}:{}", row.id, selected.revision),
+                target: Some(row.id.clone()),
+                expected_revision: Some(selected.revision),
+                payload: json!({"epoch": controller.epoch}),
+            };
+            let context = InvocationContext::workflow(
+                WorkflowActor::Coordinator {
+                    source_id: row.id.clone(),
+                },
+                Some(controller.project_id.clone()),
+            );
+            let mut commit = WorkflowCommit::new(self, "runtime.controller.unlimit", &c, &context)?;
+            commit.replace_record(&selected, row, json!(controller))?;
+            match commit.finish(&configuration_hash(&c), json!({"id":c.target})) {
+                Err(error) if error.retryable_conflict() => continue,
+                result => {
+                    result?;
+                }
+            }
+        }
         let began = std::time::Instant::now();
         for (visited, selected) in self
             .pending_runtime_records("workflow_controller", "active")?
@@ -138,7 +171,7 @@ impl Engine {
                 } else if turn["started"].as_u64().is_some_and(|t| {
                     now().saturating_sub(t) > controller.policy.timeout_seconds * 1000
                 }) {
-                    controller.status = "budget_exhausted".into();
+                    controller.status = "failed".into();
                     controller.reason = "经理轮次超时，已请求停止".into();
                     self.prepare_controller_turn_cancellation(&mut commit, &controller)?;
                 }
@@ -279,109 +312,89 @@ impl Engine {
                         }) {
                             controller.status = "closed".into();
                         } else {
-                            let progress = events.iter().any(|e| {
-                                let source = &e["source"];
-                                source["origin_turn_id"].is_null()
-                                    && (source["change"]["kind"] == "human.confirmed"
-                                        || (source["change"]["kind"] == "decision.changed"
-                                            && source["change"]["status"] != "pending")
-                                        || source["change"]["has_outputs"] == true
-                                        || source["change"]["changes"]
-                                            .as_array()
-                                            .into_iter()
-                                            .flatten()
-                                            .any(|c| {
-                                                c["execution"]["outputs"]
-                                                    .as_object()
-                                                    .is_some_and(|v| !v.is_empty())
-                                            }))
-                            });
-                            if progress || !users.is_empty() {
-                                controller.wakeup_turns = 0;
+                            // A manager remains available for the entire project. Wakeup
+                            // counts are historical metadata, never admission authority.
+                            controller.event_cursor += 1;
+                            controller.delivery_id = format!(
+                                "controller:{}:{}:{}",
+                                row.id, controller.epoch, controller.event_cursor
+                            );
+                            let mut snapshot = json!({"renderer_version":ORCHESTRATION_RENDERER,"delivery_id":controller.delivery_id,"controller_id":row.id,"epoch":controller.epoch,"owner_id":controller.owner_id,"root_instance_id":controller.root_instance_id,"project_id":controller.project_id,"workspace_only":controller.workspace_only,"bootstrap":bootstrap,"events":events,"deadline_reached":deadline,"user_messages":users.iter().map(|r|&r["data"]["input"]).collect::<Vec<_>>()});
+                            if let Some(root) = controller.root_instance_id.as_deref() {
+                                snapshot["human_gates"] = self.controller_human_gates(root)?;
                             }
-                            if controller.wakeup_turns >= controller.policy.max_turns_per_wakeup {
-                                controller.status = "budget_exhausted".into();
-                                controller.reason = "编排唤醒预算已耗尽，请恢复或补充指令".into();
-                            } else {
-                                controller.event_cursor += 1;
-                                controller.delivery_id = format!(
-                                    "controller:{}:{}:{}",
-                                    row.id, controller.epoch, controller.event_cursor
-                                );
-                                let mut snapshot = json!({"renderer_version":ORCHESTRATION_RENDERER,"delivery_id":controller.delivery_id,"controller_id":row.id,"epoch":controller.epoch,"owner_id":controller.owner_id,"root_instance_id":controller.root_instance_id,"project_id":controller.project_id,"workspace_only":controller.workspace_only,"bootstrap":bootstrap,"events":events,"deadline_reached":deadline,"user_messages":users.iter().map(|r|&r["data"]["input"]).collect::<Vec<_>>()});
-                                if let Some(root) = controller.root_instance_id.as_deref() {
-                                    snapshot["human_gates"] = self.controller_human_gates(root)?;
-                                }
-                                if bootstrap {
-                                    snapshot["root"]=root.as_ref().map(|r|json!({"id":r.record.id,"revision":r.record.revision,"plan_revision_id":r.instance.active_plan_revision_id,"control_version":r.instance.control_version,"status":r.instance.status,"human_governance":r.instance.human_governance,"user_request":r.instance.user_request})).unwrap_or(Value::Null);
-                                    snapshot["policy"] = json!(controller.policy);
-                                    snapshot["checkpoint"] = controller.checkpoint.clone();
-                                    snapshot["instances"] = json!(instances);
-                                    snapshot["project_tools"] = json!(MANAGER_TOOLS);
+                            snapshot["policy"] = json!(controller.policy);
+                            // Refresh this metadata on every delivery, including old
+                            // sessions whose bootstrap advertised the removed limits.
+                            if let Some(policy) = snapshot["policy"].as_object_mut() {
+                                policy.remove("max_turns_per_wakeup");
+                                policy.remove("max_tool_calls_per_turn");
+                            }
+                            snapshot["manager_availability"] = json!("continuous");
+                            if bootstrap {
+                                snapshot["root"]=root.as_ref().map(|r|json!({"id":r.record.id,"revision":r.record.revision,"plan_revision_id":r.instance.active_plan_revision_id,"control_version":r.instance.control_version,"status":r.instance.status,"human_governance":r.instance.human_governance,"user_request":r.instance.user_request})).unwrap_or(Value::Null);
+                                snapshot["checkpoint"] = controller.checkpoint.clone();
+                                snapshot["instances"] = json!(instances);
+                                snapshot["project_tools"] = json!(MANAGER_TOOLS);
 
-                                    snapshot["decisions"] = decisions;
-                                    snapshot["event_hint"] = hint;
-                                    controller.bootstrap_epoch = controller.epoch;
-                                    controller.source_cursor =
-                                        event_page.as_ref().map_or(0, |p| p.revision);
-                                }
-                                if let Some(cursor) = events.last().and_then(|e| e["id"].as_u64()) {
-                                    controller.source_cursor = cursor;
-                                }
-                                controller.run_state = "running".into();
-                                controller.wait_deadline = None;
-                                controller.reason.clear();
-                                require(
-                                    snapshot.to_string().len() <= 512 * 1024,
-                                    "经理唤醒快照超出预算，请先分块处理输入",
-                                )?;
-                                let session = one(self.store.as_ref(), "session", &sid)?;
-                                commit.witness([version(&session)])?;
-                                controller.wakeup_turns += 1;
-                                let client = format!(
-                                    "controller:{}:{}:{}",
-                                    row.id, controller.epoch, controller.event_cursor
-                                );
-                                self.prepare_controller_runtime_intent(&mut commit,&row,&controller,"conversation.send",(&sid,session.revision),json!({"client_message_id":client,"input":snapshot.to_string(),"controller_epoch":controller.epoch,"controller_input_refs":users.iter().map(|r|&r["id"]).collect::<Vec<_>>()}))?;
-                                let wakeup = OrchestrationWakeup {
-                                    id: client.clone(),
-                                    controller_id: row.id.clone(),
-                                    event_cursor: controller.event_cursor,
-                                    status: "prepared".into(),
-                                    turn_id: None,
-                                    created_at: now(),
-                                };
-                                let key = ResourceKey::new("orchestration_wakeup", client);
-                                commit.witness([ResourceVersion {
-                                    resource: key.clone(),
-                                    revision: 0,
-                                }])?;
-                                commit.change(ResourceChange {
-                                    resource: key,
-                                    value: json!(wakeup),
-                                })?;
-                                for raw in users {
-                                    let input = ConfigurationRecord::from_storage(raw.clone())?;
-                                    require(
-                                        input.r#type == "controller_input"
-                                            && input.definition_id == row.id,
-                                        "用户输入跨经理",
-                                    )?;
-                                    let selected = ResourceSnapshot {
-                                        resource: ResourceKey::new("governance", &input.id),
-                                        revision: input.revision,
-                                        value: Some(raw.clone()),
-                                    };
-                                    let mut data = input.data.clone();
-                                    data["consumed"] = json!(true);
-                                    commit.replace_record(&selected, input, data)?;
-                                }
-                                self.renew_native_controller_lease(
-                                    &mut commit,
-                                    &row.id,
-                                    &controller,
-                                )?;
+                                snapshot["decisions"] = decisions;
+                                snapshot["event_hint"] = hint;
+                                controller.bootstrap_epoch = controller.epoch;
+                                controller.source_cursor =
+                                    event_page.as_ref().map_or(0, |p| p.revision);
                             }
+                            if let Some(cursor) = events.last().and_then(|e| e["id"].as_u64()) {
+                                controller.source_cursor = cursor;
+                            }
+                            controller.run_state = "running".into();
+                            controller.wait_deadline = None;
+                            controller.reason.clear();
+                            require(
+                                snapshot.to_string().len() <= 512 * 1024,
+                                "经理唤醒快照超出预算，请先分块处理输入",
+                            )?;
+                            let session = one(self.store.as_ref(), "session", &sid)?;
+                            commit.witness([version(&session)])?;
+                            controller.wakeup_turns = controller.wakeup_turns.saturating_add(1);
+                            let client = format!(
+                                "controller:{}:{}:{}",
+                                row.id, controller.epoch, controller.event_cursor
+                            );
+                            self.prepare_controller_runtime_intent(&mut commit,&row,&controller,"conversation.send",(&sid,session.revision),json!({"client_message_id":client,"input":snapshot.to_string(),"controller_epoch":controller.epoch,"controller_input_refs":users.iter().map(|r|&r["id"]).collect::<Vec<_>>()}))?;
+                            let wakeup = OrchestrationWakeup {
+                                id: client.clone(),
+                                controller_id: row.id.clone(),
+                                event_cursor: controller.event_cursor,
+                                status: "prepared".into(),
+                                turn_id: None,
+                                created_at: now(),
+                            };
+                            let key = ResourceKey::new("orchestration_wakeup", client);
+                            commit.witness([ResourceVersion {
+                                resource: key.clone(),
+                                revision: 0,
+                            }])?;
+                            commit.change(ResourceChange {
+                                resource: key,
+                                value: json!(wakeup),
+                            })?;
+                            for raw in users {
+                                let input = ConfigurationRecord::from_storage(raw.clone())?;
+                                require(
+                                    input.r#type == "controller_input"
+                                        && input.definition_id == row.id,
+                                    "用户输入跨经理",
+                                )?;
+                                let selected = ResourceSnapshot {
+                                    resource: ResourceKey::new("governance", &input.id),
+                                    revision: input.revision,
+                                    value: Some(raw.clone()),
+                                };
+                                let mut data = input.data.clone();
+                                data["consumed"] = json!(true);
+                                commit.replace_record(&selected, input, data)?;
+                            }
+                            self.renew_native_controller_lease(&mut commit, &row.id, &controller)?;
                         }
                     }
                 }

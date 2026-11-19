@@ -89,8 +89,42 @@ pub struct Error {
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_failure: Option<ExecutionFailureDisposition>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<ErrorLocation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub context: Vec<ErrorContext>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ErrorLocation {
+    pub file: String,
+    pub line: u32,
+    pub column: u32,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ErrorContext {
+    pub operation: String,
+    pub details: serde_json::Value,
 }
 impl Error {
+    pub fn with_context(
+        mut self,
+        operation: impl Into<String>,
+        details: serde_json::Value,
+    ) -> Self {
+        self.context.push(ErrorContext {
+            operation: operation.into(),
+            details,
+        });
+        self
+    }
+    /// OCC and short SQLite contention are retryable only without an unknown/applied effect.
+    pub fn retryable_conflict(&self) -> bool {
+        matches!(self.code.as_str(), "revision_conflict" | "storage_busy")
+            && self
+                .execution_failure
+                .as_ref()
+                .is_none_or(|failure| failure.effect == ExecutionFailureEffect::NotApplied)
+    }
     /// Only the boundary that observed the result may supply this disposition.
     pub fn technical_unknown(mut self) -> Self {
         self.execution_failure = Some(ExecutionFailureDisposition {
@@ -108,11 +142,19 @@ impl Error {
     }
 }
 pub type Result<T> = std::result::Result<T, Error>;
+#[track_caller]
 pub fn err(code: &str, message: impl Into<String>) -> Error {
+    let caller = std::panic::Location::caller();
     Error {
         code: code.into(),
         message: message.into(),
         execution_failure: None,
+        location: Some(ErrorLocation {
+            file: caller.file().into(),
+            line: caller.line(),
+            column: caller.column(),
+        }),
+        context: vec![],
     }
 }
 pub fn require(ok: bool, message: impl Into<String>) -> Result<()> {
@@ -468,3 +510,41 @@ pub use workflow_driver::*;
 
 mod spec_checks;
 pub use spec_checks::*;
+
+#[cfg(test)]
+mod error_diagnostic_tests {
+    use super::*;
+    #[test]
+    fn retryable_conflicts_exclude_unknown_or_applied_effects_and_keep_diagnostics() {
+        let conflict = err("revision_conflict", "stale step").with_context("prepare step", serde_json::json!({"workflow_instance_id":"root","execution_id":"step","expected_revision":1,"actual_revision":2}));
+        assert!(conflict.retryable_conflict());
+        assert!(
+            err("storage_busy", "short transaction")
+                .technical_not_applied()
+                .retryable_conflict()
+        );
+        assert!(!conflict.clone().technical_unknown().retryable_conflict());
+        let mut applied = conflict.clone();
+        applied.execution_failure = Some(ExecutionFailureDisposition {
+            kind: ExecutionFailureKind::Technical,
+            effect: ExecutionFailureEffect::Applied,
+        });
+        assert!(!applied.retryable_conflict());
+        assert!(!err("storage", "broken database").retryable_conflict());
+        let value = serde_json::to_value(&conflict).unwrap();
+        assert!(
+            value["location"]["file"]
+                .as_str()
+                .unwrap()
+                .ends_with("lib.rs")
+        );
+        assert!(value["location"]["line"].as_u64().unwrap() > 0);
+        assert_eq!(value["context"][0]["details"]["actual_revision"], 2);
+        let old: Error = serde_json::from_value(
+            serde_json::json!({"code":"revision_conflict","message":"old error"}),
+        )
+        .unwrap();
+        assert!(old.retryable_conflict());
+        assert!(old.location.is_none());
+    }
+}

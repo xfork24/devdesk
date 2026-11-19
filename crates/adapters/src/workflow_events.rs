@@ -24,7 +24,7 @@ fn session_instances(conn: &Connection, session: &str) -> Result<Vec<String>> {
 fn record_instance(conn: &Connection, record: &Value) -> Result<Option<String>> {
     match record["type"].as_str() {
         Some("workflow_instance") => Ok(record["id"].as_str().map(str::to_owned)),
-        Some("workflow_pending_decision") => Ok(record["definition_id"].as_str().map(str::to_owned)),
+        Some("workflow_pending_decision" | "workflow_segment") => Ok(record["definition_id"].as_str().map(str::to_owned)),
         Some("workflow_confirmation") => conn.query_row("SELECT i.id FROM governance_records i,json_each(i.data,'$.steps') s WHERE i.type='workflow_instance' AND json_extract(s.value,'$.id')=?1 LIMIT 1",[record["definition_id"].as_str().unwrap_or("")],|r|r.get(0)).optional().map_err(storage),
         _=>Ok(None),
     }
@@ -46,7 +46,10 @@ pub(super) fn capture(conn: &Connection, prepared: &PreparedChangeSet) -> Result
                 if matches!(
                     change.value["type"].as_str(),
                     Some(
-                        "workflow_instance" | "workflow_pending_decision" | "workflow_confirmation"
+                        "workflow_instance"
+                            | "workflow_pending_decision"
+                            | "workflow_confirmation"
+                            | "workflow_segment"
                     )
                 ) =>
             {
@@ -210,6 +213,12 @@ pub(super) fn append(
         } else if kind == "workflow_confirmation" && old.is_none() {
             Some(
                 json!({"kind":"human.confirmed","execution_id":next["definition_id"],"confirmation_ref":next["id"]}),
+            )
+        } else if kind == "workflow_segment"
+            && old.is_none_or(|r| r["data"]["status"] != next["data"]["status"])
+        {
+            Some(
+                json!({"kind":"segment.changed","segment_id":next["id"],"status":next["data"]["status"],"reason":next["data"]["reason"],"plan_revision_id":next["data"]["plan_revision_id"],"operations":next["data"]["operations"],"max_operations":next["data"]["max_operations"]}),
             )
         } else {
             None

@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "bundle_version": "2026.11.19-streamlined-runtime-efficiency-v3",
+  "bundle_version": "2026.11.19-project-test-discovery-v4",
   "usage_index": "reference-usage.json",
   "types": {
     "role": [
@@ -65,17 +65,17 @@
       "specs/simplified-spec-implementation-v1.json",
       "specs/simplified-spec-task-code-review-v1.json",
       "specs/simplified-spec-feature-code-review-v1.json",
-      "specs/simplified-spec-platform-evidence-v1.json"
+      "specs/simplified-spec-platform-evidence-v2.json"
     ],
     "standard": [
-      "standards/builtin-standard-engineering-v9.json",
-      "standards/simplified-standard-engineering-v2.json"
+      "standards/builtin-standard-engineering-v10.json",
+      "standards/simplified-standard-engineering-v3.json"
     ],
     "workflow": [
-      "workflows/builtin-workflow-task-sol-high-v10.json",
-      "workflows/builtin-workflow-feature-sol-high-v11.json",
-      "workflows/simplified-workflow-task-v1.json",
-      "workflows/simplified-workflow-feature-v2.json"
+      "workflows/builtin-workflow-task-sol-high-v11.json",
+      "workflows/builtin-workflow-feature-sol-high-v12.json",
+      "workflows/simplified-workflow-task-v2.json",
+      "workflows/simplified-workflow-feature-v3.json"
     ],
     "delivery_type": [
       "deliveries/builtin-delivery-prd-v3.json",
@@ -104,17 +104,17 @@
       "deliveries/simplified-delivery-task-plan-v1.json",
       "deliveries/simplified-delivery-test-recipe-v1.json",
       "deliveries/simplified-delivery-implementation-v1.json",
-      "deliveries/simplified-delivery-project-tests-v1.json",
-      "deliveries/simplified-delivery-source-publication-v1.json",
-      "deliveries/simplified-delivery-pull-request-v1.json",
-      "deliveries/simplified-delivery-merge-sync-v1.json",
-      "deliveries/simplified-delivery-checkpoint-v1.json",
-      "deliveries/simplified-delivery-regression-v1.json",
-      "deliveries/simplified-delivery-human-packet-v1.json",
+      "deliveries/simplified-delivery-project-tests-v2.json",
+      "deliveries/simplified-delivery-source-publication-v2.json",
+      "deliveries/simplified-delivery-pull-request-v2.json",
+      "deliveries/simplified-delivery-merge-sync-v2.json",
+      "deliveries/simplified-delivery-checkpoint-v2.json",
+      "deliveries/simplified-delivery-regression-v2.json",
+      "deliveries/simplified-delivery-human-packet-v2.json",
       "deliveries/simplified-delivery-diff-v1.json",
-      "deliveries/simplified-delivery-target-v1.json",
+      "deliveries/simplified-delivery-target-v2.json",
       "deliveries/simplified-delivery-test-report-v1.json",
-      "deliveries/simplified-delivery-task-reports-v1.json"
+      "deliveries/simplified-delivery-task-reports-v2.json"
     ],
     "capability": [
       "capabilities/builtin-capability-sol-high-codex-v4.json",
@@ -181,8 +181,7 @@
       "harnesses/builtin-harness-codex-managed-v1.json"
     ],
     "sandbox": [
-      "sandboxes/builtin-sandbox-docker-v1.json",
-      "sandboxes/simplified-sandbox-project-tests-v1.json"
+      "sandboxes/builtin-sandbox-docker-v2.json"
     ],
     "tool": [
       "tools/builtin-tool-codex-native-v1.json",
@@ -191,7 +190,7 @@
       "tools/builtin-tool-workspace-snapshot-v2.json",
       "tools/builtin-tool-tasks-create-v1.json",
       "tools/builtin-tool-materials-capture-v1.json",
-      "tools/builtin-tool-tests-run-v1.json",
+      "tools/builtin-tool-tests-run-v2.json",
       "tools/builtin-tool-git-candidate-v1.json",
       "tools/builtin-tool-git-advance-v1.json",
       "tools/builtin-tool-git-publish-v1.json",
@@ -235,8 +234,8 @@
       "tools/builtin-tool-workflow-segment-dispatch-v2.json",
       "tools/builtin-tool-workflow-decision-request-v4.json",
       "tools/builtin-tool-workflow-rework-preview-v1.json",
-      "tools/simplified-tool-tests-run-v1.json",
-      "tools/simplified-tool-project-tests-v1.json",
+      "tools/simplified-tool-tests-run-v2.json",
+      "tools/simplified-tool-project-tests-v2.json",
       "tools/simplified-tool-checkpoint-v1.json",
       "tools/simplified-tool-source-publish-v1.json",
       "tools/simplified-tool-delivery-open-v1.json",

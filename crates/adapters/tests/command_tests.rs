@@ -413,3 +413,52 @@ fn python_assertions_environment_errors_and_project_commands_have_real_receipts(
             .contains("Red")
     );
 }
+
+#[test]
+#[ignore = "requires the fixed Docker Sandbox with Python 3"]
+fn actual_python_regression_and_missing_command_environment_keep_real_results() {
+    for (runner, body, argv, expected) in [
+        (
+            TestRunner::PythonUnittest,
+            "import unittest\nclass Regression(unittest.TestCase):\n def test_behavior(self): self.assertEqual(2+3,5)\n",
+            None,
+            "succeeded",
+        ),
+        (
+            TestRunner::PythonUnittest,
+            "import devdesk_missing_dependency\n",
+            None,
+            "failed",
+        ),
+        (
+            TestRunner::Command,
+            "",
+            Some(vec!["python3", "-c", "import devdesk_missing_dependency"]),
+            "failed",
+        ),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let mut request = fixture(root.path(), "export const fixture = true;", "green");
+        let repo = Path::new(&request.code.as_ref().unwrap().workspace.path);
+        fs::write(repo.join("tests/test_runtime.py"), body).unwrap();
+        git(repo, &["add", "."]);
+        git(repo, &["commit", "-m", "Project regression"]);
+        request.candidate = git(repo, &["rev-parse", "HEAD"]);
+        let recipe = request.recipe.as_mut().unwrap();
+        recipe.runner = runner;
+        recipe.files = vec!["tests/test_runtime.py".into()];
+        recipe.command = argv.map(|args| TestCommand {
+            argv: args.into_iter().map(str::to_owned).collect(),
+            cwd: ".".into(),
+            environment: Default::default(),
+        });
+        let tests = CommandTests::new(root.path()).unwrap();
+        let result = finish(&tests, &request);
+        assert_eq!(result["status"], expected, "{result}");
+        if expected == "failed" {
+            assert_eq!(result["failure_type"], "environment");
+            assert_eq!(result["expected_failure"], false);
+        }
+        tests.cleanup_test(&request).unwrap();
+    }
+}

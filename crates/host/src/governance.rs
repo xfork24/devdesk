@@ -68,6 +68,7 @@ impl Workspace {
         // Engine::tick owns evaluation. These two Host passes only deliver the
         // durable intents around it; re-evaluating here restores the same history
         // twice more while a native worker is waiting for its next poll.
+        let mut deferred = vec![];
         for intent in e.pending_workflow_intents()? {
             if should_stop() {
                 return Ok(());
@@ -98,7 +99,13 @@ impl Workspace {
                 None
             };
             // Persist the dispatched result even if shutdown was requested during the call.
-            e.observe_workflow_intent(&intent, &result)?;
+            e.observe_workflow_intent(&intent, &result).map_err(|error| error.with_context("Workspace::tick_workflow_engine", json!({"project_id":e.store.project_id(),"intent_id":intent.id,"method":method,"command_id":intent.data["command"]["command_id"],"target":intent.data["command"]["target"],"execution_id":intent.data["execution_authority"]["execution_id"],"workflow_instances":intent.data["execution_authority"]["instances"]})))?;
+            if let Err(error) = &result
+                && error.retryable_conflict()
+                && e.workflow_intent_drivable(&intent)?
+            {
+                deferred.push(error.clone().with_context("Workspace::tick_workflow_engine",json!({"project_id":e.store.project_id(),"intent_id":intent.id,"method":method,"command_id":intent.data["command"]["command_id"],"execution_id":intent.data["execution_authority"]["execution_id"],"workflow_instances":intent.data["execution_authority"]["instances"]})));
+            }
             if should_stop() {
                 return Ok(());
             }
@@ -111,7 +118,12 @@ impl Workspace {
         if should_stop() {
             return Ok(());
         }
-        Ok(())
+        if deferred.is_empty() {
+            Ok(())
+        } else {
+            let first = deferred[0].clone();
+            Err(first.with_context("deferred workflow intents", json!({"conflicts":deferred})))
+        }
     }
     pub(super) fn governance_dispatch(
         &self,

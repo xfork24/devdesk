@@ -1,5 +1,5 @@
-//! Protected PR merges of single-parent delivery snapshots. The server's strict
-//! required check closes the base race; a client-side GET is never the fence.
+//! PR publication observes existing repository rules without installing policy.
+//! Unprotected targets use an exact remote CAS; protected targets use PR gates.
 use super::*;
 use crate::github::GitHubPullRequests;
 use std::time::Duration;
@@ -42,41 +42,10 @@ impl GitHubPullRequests {
                     err("remote_gate_blocked", message).technical_not_applied()
                 } else {
                     err("needs_reconciliation", message).technical_unknown()
-                },
+                }.with_context("GitHub delivery API", json!({"method":method,"endpoint":endpoint,"exit_code":output.code,"truncated":output.truncated,"response":value.as_ref().ok(),"response_text":value.as_ref().err().map(|_|String::from_utf8_lossy(&output.stdout).chars().take(8192).collect::<String>())})),
             );
         }
         value.map_err(storage)
-    }
-    fn protected_delivery_branch(&self, repository: &str, branch: &str) -> Result<Value> {
-        // diagnose validates repository shape and checks complete inherited rules.
-        let policy = self.diagnose(repository, branch)?;
-        require(
-            policy
-                .blocked_reasons
-                .iter()
-                .all(|r| r == "仓库存在传统分支保护；本轮本地 CAS 策略不支持，不会修改或绕过规则")
-                && policy.active_branch_rulesets.is_empty(),
-            "当前精简合入合同不支持规则集，不能绕过",
-        )?;
-        let rule = self.delivery_api(
-            "GET",
-            &format!("repos/{repository}/branches/{}/protection", segment(branch)),
-            None,
-        )?;
-        Self::validate_delivery_protection(&rule)?;
-        Ok(rule)
-    }
-    pub(crate) fn validate_delivery_protection(rule: &Value) -> Result<()> {
-        require(
-            rule["enforce_admins"]["enabled"] == true
-                && rule["required_status_checks"]["strict"] == true
-                && rule["required_status_checks"]["contexts"]
-                    .as_array()
-                    .is_some_and(|v| v.iter().any(|v| v == CHECK))
-                && rule["allow_force_pushes"]["enabled"] == false
-                && rule["required_linear_history"]["enabled"] == false,
-            "需要包含管理员的严格 merge-regression 检查和禁止强推；不支持线性历史替换合入",
-        )
     }
     pub fn diagnose_connection(
         &self,
@@ -84,37 +53,242 @@ impl GitHubPullRequests {
         branch: &str,
     ) -> Result<GitHubRepositoryPolicy> {
         let mut policy = self.diagnose(repository, branch)?;
-        if !policy.compatible
-            && ["ADMIN", "MAINTAIN", "WRITE"].contains(&policy.viewer_permission.as_str())
-            && self.protected_delivery_branch(repository, branch).is_ok()
-        {
-            policy.compatible = true;
-            policy.blocked_reasons.clear();
-        }
+        // These are restrictions of the legacy direct-push path, not reasons
+        // to reject a normal PR. Existing rules stay on GitHub and are enforced there.
+        policy.blocked_reasons.retain(|reason| {
+            !matches!(
+                reason.as_str(),
+                "仓库存在传统分支保护；本轮本地 CAS 策略不支持，不会修改或绕过规则"
+                    | "存在分支/推送规则集；本轮策略保守阻塞，不使用管理员 bypass 或平台合入替代"
+            )
+        });
+        policy.compatible = policy.blocked_reasons.is_empty();
         Ok(policy)
+    }
+    pub(crate) fn observe_delivery_target(&self, context: &GitContext) -> Result<Value> {
+        self.with_delivery(|client| {
+            client.delivery_target(&context.workspace.repository, &context.target.branch)
+        })
+    }
+    pub(crate) fn delivery_ensure(
+        &self,
+        request: &PullRequestRequest,
+        inspect: bool,
+    ) -> Result<Option<PullRequestReceipt>> {
+        self.with_delivery(|client| client.delivery_ensure(request, inspect))
+    }
+    pub(crate) fn observe_delivery_candidate(
+        &self,
+        request: &PullRequestRequest,
+    ) -> Result<Option<PullRequestMergeCandidate>> {
+        self.with_delivery(|client| client.delivery_candidate(request))
+    }
+    pub(crate) fn delivery_report_status(
+        &self,
+        request: &PullRequestMergeRequest,
+        inspect: bool,
+    ) -> Result<Option<Value>> {
+        self.with_delivery(|client| client.delivery_report_status(request, inspect))
+    }
+    pub(crate) fn delivery_ready(&self, request: &PullRequestMergeRequest) -> Result<bool> {
+        self.with_delivery(|client| client.delivery_ready(request))
+    }
+    pub(crate) fn delivery_merge(
+        &self,
+        request: &PullRequestMergeRequest,
+        inspect: bool,
+    ) -> Result<Option<PullRequestReceipt>> {
+        self.with_delivery(|client| client.delivery_merge(request, inspect))
+    }
+    fn with_delivery<T>(
+        &self,
+        operation: impl FnOnce(&DeliveryClient<'_>) -> Result<T>,
+    ) -> Result<T> {
+        operation(&DeliveryClient {
+            api: &|method, endpoint, input| self.delivery_api(method, endpoint, input),
+        })
+    }
+}
+
+type DeliveryApi<'a> = dyn Fn(&str, &str, Option<Value>) -> Result<Value> + 'a;
+struct DeliveryClient<'a> {
+    api: &'a DeliveryApi<'a>,
+}
+impl DeliveryClient<'_> {
+    fn delivery_api(&self, method: &str, endpoint: &str, input: Option<Value>) -> Result<Value> {
+        (self.api)(method, endpoint, input)
+    }
+    fn receipt(&self, request: &PullRequestRequest, value: &Value) -> Result<PullRequestReceipt> {
+        GitHubPullRequests.receipt(request, value)
+    }
+    fn delivery_target(&self, repository: &str, branch: &str) -> Result<Value> {
+        GitHubPullRequests::validate_repository_branch(repository, branch)?;
+        self.delivery_api(
+            "GET",
+            &format!("repos/{repository}/branches/{}", segment(branch)),
+            None,
+        )
+    }
+
+    fn advance_unprotected_target(
+        &self,
+        request: &PullRequestRequest,
+        revision: &str,
+    ) -> Result<()> {
+        let repository =
+            self.delivery_api("GET", &format!("repos/{}", request.repository), None)?;
+        let repository_id = repository["node_id"].as_str().ok_or_else(|| {
+            err("adapter_contract", "GitHub 仓库缺少 node_id").technical_not_applied()
+        })?;
+        // updateRefs compares beforeOid atomically; force=false permits only a
+        // fast-forward and GitHub still enforces any rules added concurrently.
+        let result = self.delivery_api("POST","graphql",Some(json!({
+            "query":"mutation($input:UpdateRefsInput!){updateRefs(input:$input){clientMutationId}}",
+            "variables":{"input":{"repositoryId":repository_id,"clientMutationId":request.merge,
+                "refUpdates":[{"name":format!("refs/heads/{}",request.base_branch),"beforeOid":request.expected_target,"afterOid":revision,"force":false}]}}
+        })))?;
+        if let Some(errors) = result["errors"]
+            .as_array()
+            .filter(|errors| !errors.is_empty())
+        {
+            let rejected = errors.iter().all(|error| {
+                matches!(
+                    error["type"].as_str(),
+                    Some(
+                        "FORBIDDEN"
+                            | "UNPROCESSABLE"
+                            | "STALE_DATA"
+                            | "NOT_FOUND"
+                            | "INSUFFICIENT_SCOPES"
+                    )
+                )
+            });
+            let error = err(if rejected {"remote_gate_blocked"} else {"needs_reconciliation"},"GitHub 未确认目标分支的原子推进")
+                .with_context("GitHub updateRefs",json!({"repository":request.repository,"branch":request.base_branch,"expected_target":request.expected_target,"candidate":request.candidate,"response":result}));
+            return Err(if rejected {
+                error.technical_not_applied()
+            } else {
+                error.technical_unknown()
+            });
+        }
+        require(
+            !result["data"]["updateRefs"].is_null(),
+            "GitHub 缺少目标推进回执",
+        )?;
+        Ok(())
     }
     fn delivery_request(&self, r: &PullRequestRequest) -> Result<()> {
         require(
             uuid::Uuid::parse_str(&r.project).is_ok()
                 && uuid::Uuid::parse_str(&r.merge).is_ok()
-                && r.head_branch == format!("devdesk/candidates/{}", r.merge)
+                && (r.head_branch == format!("devdesk/candidates/{}", r.merge)
+                    || ["devdesk/tasks/", "devdesk/features/"]
+                        .iter()
+                        .any(|prefix| {
+                            r.head_branch
+                                .strip_prefix(prefix)
+                                .is_some_and(|owner| uuid::Uuid::parse_str(owner).is_ok())
+                        }))
                 && [r.candidate.as_str(), r.expected_target.as_str()]
                     .iter()
                     .all(|v| v.len() == 40 && v.bytes().all(|b| b.is_ascii_hexdigit())),
             "精简 PR 归属或版本无效",
         )?;
-        self.protected_delivery_branch(&r.repository, &r.base_branch)?;
+        GitHubPullRequests::validate_repository_branch(&r.repository, &r.base_branch)?;
         let commit = self.delivery_api(
             "GET",
             &format!("repos/{}/git/commits/{}", r.repository, r.candidate),
             None,
         )?;
+        if r.head_branch.starts_with("devdesk/candidates/") {
+            require(
+                commit["parents"]
+                    .as_array()
+                    .is_some_and(|p| p.len() == 1 && p[0]["sha"] == r.expected_target),
+                "历史候选父提交与冻结目标不符",
+            )?;
+        }
+        Ok(())
+    }
+    fn delivery_candidate(
+        &self,
+        request: &PullRequestRequest,
+    ) -> Result<Option<PullRequestMergeCandidate>> {
+        self.delivery_request(request)?;
+        let row = self.delivery_pr(request)?;
+        self.receipt(request, &row)?;
+        if row["mergeable"].is_null() {
+            return Ok(None);
+        }
         require(
-            commit["parents"]
-                .as_array()
-                .is_some_and(|p| p.len() == 1 && p[0]["sha"] == r.expected_target),
-            "远端原候选必须以已验目标为唯一直接父提交",
+            row["mergeable"] == true,
+            "PR 存在合并冲突，需修复源分支后重新验证",
         )
+        .map_err(|error| error.technical_not_applied())?;
+        let actual = self.delivery_target_head(request)?;
+        if actual != request.expected_target {
+            return Err(err("stale_target","PR 目标基线已变化，需要重新生成合并候选")
+                .technical_not_applied().with_context("PR candidate target",json!({"expected":request.expected_target,"actual":actual,"number":request.number})));
+        }
+        let Some(revision) = row["merge_commit_sha"].as_str() else {
+            return Ok(None);
+        };
+        let commit = self.delivery_api(
+            "GET",
+            &format!("repos/{}/git/commits/{revision}", request.repository),
+            None,
+        )?;
+        require(
+            commit["parents"].as_array().is_some_and(|parents| {
+                parents.len() == 2
+                    && parents[0]["sha"] == request.expected_target
+                    && parents[1]["sha"] == request.candidate
+            }),
+            "PR 试合并的源或目标版本不符",
+        )
+        .map_err(|error| error.technical_not_applied())?;
+        let tree = commit["tree"]["sha"]
+            .as_str()
+            .ok_or_else(|| err("adapter_contract", "PR 试合并缺少 tree"))?;
+        require(
+            [revision, tree]
+                .iter()
+                .all(|sha| sha.len() == 40 && sha.bytes().all(|c| c.is_ascii_hexdigit())),
+            "PR 试合并对象无效",
+        )?;
+        Ok(Some(PullRequestMergeCandidate {
+            revision: revision.into(),
+            tree: tree.into(),
+            source_revision: request.candidate.clone(),
+            target_revision: request.expected_target.clone(),
+        }))
+    }
+    fn validate_merge_candidate(&self, request: &PullRequestMergeRequest) -> Result<()> {
+        if let Some(revision) = &request.merge_revision {
+            require(
+                revision.len() == 40 && revision.bytes().all(|c| c.is_ascii_hexdigit()),
+                "缺少冻结试合并版本",
+            )?;
+            let commit = self.delivery_api(
+                "GET",
+                &format!(
+                    "repos/{}/git/commits/{revision}",
+                    request.request.repository
+                ),
+                None,
+            )?;
+            require(
+                commit["tree"]["sha"] == request.tree
+                    && commit["parents"].as_array().is_some_and(|parents| {
+                        parents.len() == 2
+                            && parents[0]["sha"] == request.request.expected_target
+                            && parents[1]["sha"] == request.request.candidate
+                    }),
+                "冻结试合并与已测试源、目标或 tree 不符",
+            )
+            .map_err(|error| error.technical_not_applied())?;
+        }
+        Ok(())
     }
     fn delivery_pr(&self, r: &PullRequestRequest) -> Result<Value> {
         let number = r
@@ -128,7 +302,8 @@ impl GitHubPullRequests {
     }
     fn delivery_target_head(&self, r: &PullRequestRequest) -> Result<String> {
         // PR.base.sha can remain the creation snapshot while the branch moves.
-        // Read the actual branch; strict server checks still close the GET/PUT race.
+        // Read the actual branch. Unprotected targets additionally compare
+        // beforeOid on the server; protected targets retain their merge rules.
         let branch = self.delivery_api(
             "GET",
             &format!(
@@ -146,40 +321,6 @@ impl GitHubPullRequests {
             "目标分支实际提交无效",
         )?;
         Ok(head.into())
-    }
-    pub(crate) fn protected_target(&self, c: &GitContext, create: bool) -> Result<Value> {
-        if let Ok(rule) = self.protected_delivery_branch(&c.workspace.repository, &c.target.branch)
-        {
-            return Ok(rule);
-        }
-        require(
-            create && c.target.owner != c.project && c.target.branch != c.workspace.mainline,
-            "项目主分支必须预先配置支持的严格保护，平台不能降低或绕过规则",
-        )?;
-        let policy = self.diagnose(&c.workspace.repository, &c.target.branch)?;
-        require(
-            policy.active_branch_rulesets.is_empty(),
-            "目标存在未支持的规则集",
-        )?;
-        // Only initialize a completely unprotected, managed parent branch. Never
-        // overwrite an existing protection to make our request pass.
-        let branch = self.delivery_api(
-            "GET",
-            &format!(
-                "repos/{}/branches/{}",
-                c.workspace.repository,
-                segment(&c.target.branch)
-            ),
-            None,
-        )?;
-        require(
-            branch["protected"] == false,
-            "保留既有分支保护，需配置支持的交付检查",
-        )?;
-        self.delivery_api("PUT",&format!("repos/{}/branches/{}/protection",c.workspace.repository,segment(&c.target.branch)),
-            Some(json!({"required_status_checks":{"strict":true,"contexts":[CHECK]},"enforce_admins":true,
-            "required_pull_request_reviews":null,"restrictions":null,"allow_force_pushes":false,"allow_deletions":false})))?;
-        self.protected_delivery_branch(&c.workspace.repository, &c.target.branch)
     }
     pub(crate) fn delivery_ensure(
         &self,
@@ -204,8 +345,17 @@ impl GitHubPullRequests {
         let rows = rows
             .as_array()
             .ok_or_else(|| err("adapter_contract", "PR 列表无效"))?;
-        require(rows.len() <= 1, "交付 PR 不唯一，不推测归属")?;
-        let row = if let Some(row) = rows.first() {
+        require(rows.len() < 100, "交付 PR 列表未完整读取，不推测归属")?;
+        let matching = rows
+            .iter()
+            .filter(|row| {
+                row["body"]
+                    .as_str()
+                    .is_some_and(|body| body.contains(&r.marker()))
+            })
+            .collect::<Vec<_>>();
+        require(matching.len() <= 1, "当前交付的 PR 不唯一，不推测归属")?;
+        let row = if let Some(row) = matching.first() {
             self.delivery_api(
                 "GET",
                 &format!(
@@ -220,8 +370,32 @@ impl GitHubPullRequests {
         } else if inspect {
             return Ok(None);
         } else {
+            require(
+                !r.head_branch.starts_with("devdesk/candidates/"),
+                "历史 candidates 发布不能新建 PR；请以原开发分支重新发布",
+            )
+            .map_err(|error| error.technical_not_applied())?;
+            require(
+                rows.iter().all(|row| row["state"] != "open"),
+                "此源分支已有其他交付的未关闭 PR，请先核对归属",
+            )
+            .map_err(|error| error.technical_not_applied())?;
+            let branch = self.delivery_api(
+                "GET",
+                &format!(
+                    "repos/{}/branches/{}",
+                    r.repository,
+                    segment(&r.head_branch)
+                ),
+                None,
+            )?;
+            require(
+                branch["commit"]["sha"] == r.candidate,
+                "源分支已变化，不能用旧版本创建 PR",
+            )
+            .map_err(|error| error.technical_not_applied())?;
             self.delivery_api("POST",&format!("repos/{}/pulls",r.repository),Some(json!({"title":format!("DevDesk delivery {}",r.merge),
-                "head":r.head_branch,"base":r.base_branch,"body":format!("{}\n\nDelivery snapshot: `{}`\nValidated target: `{}`\n\nOriginal source, reviews, test receipts and final Human decision are retained in the owning DevDesk workflow. This PR cannot advance the target until exact merge regression and protected server checks pass.",r.marker(),r.candidate,r.expected_target)})))?
+                "head":r.head_branch,"base":r.base_branch,"body":format!("{}\n\nSource revision: `{}`\nValidated target: `{}`\n\nThe source branch is used directly. The exact PR test-merge commit, original source, reviews, test receipts and final Human decision are retained in the owning DevDesk workflow. This PR can advance the target only after exact merge regression, the workflow approval, and the repository’s existing merge requirements pass.",r.marker(),r.candidate,r.expected_target)})))?
         };
         self.receipt(r, &row).map(Some)
     }
@@ -231,6 +405,7 @@ impl GitHubPullRequests {
         inspect: bool,
     ) -> Result<Option<Value>> {
         self.delivery_request(&r.request)?;
+        self.validate_merge_candidate(r)?;
         let pr = self.delivery_pr(&r.request)?;
         self.receipt(&r.request, &pr)?;
         if !pr["merged"].as_bool().unwrap_or(false)
@@ -238,7 +413,10 @@ impl GitHubPullRequests {
         {
             return Err(err("stale_target", "目标已变化，旧回归和批准失效").technical_not_applied());
         }
-        let description = format!("DevDesk tested tree {}", r.tree);
+        let description = r.merge_revision.as_ref().map_or_else(
+            || format!("DevDesk tested tree {}", r.tree),
+            |revision| format!("DevDesk tested merge {revision} tree {}", r.tree),
+        );
         if inspect {
             let rows = self.delivery_api(
                 "GET",
@@ -268,6 +446,7 @@ impl GitHubPullRequests {
     }
     pub(crate) fn delivery_ready(&self, r: &PullRequestMergeRequest) -> Result<bool> {
         self.delivery_request(&r.request)?;
+        self.validate_merge_candidate(r)?;
         let row = self.delivery_pr(&r.request)?;
         let receipt = self.receipt(&r.request, &row)?;
         if receipt.merged {
@@ -287,10 +466,16 @@ impl GitHubPullRequests {
         inspect: bool,
     ) -> Result<Option<PullRequestReceipt>> {
         self.delivery_request(&r.request)?;
+        self.validate_merge_candidate(r)?;
         let mut row = self.delivery_pr(&r.request)?;
         let mut receipt = self.receipt(&r.request, &row)?;
         if !receipt.merged {
             let target = self.delivery_target_head(&r.request)?;
+            if target == *r.merge_revision.as_ref().unwrap_or(&r.request.candidate) {
+                // The exact CAS may already be committed while GitHub is still
+                // updating the PR's indirect-merge observation. Never write again.
+                return Ok(None);
+            }
             if target != r.request.expected_target {
                 return Err(err(
                     "stale_target",
@@ -304,31 +489,54 @@ impl GitHubPullRequests {
             if inspect {
                 return Ok(None);
             }
-            let reply = self
-                .delivery_api(
-                    "PUT",
-                    &format!(
-                        "repos/{}/pulls/{}/merge",
-                        r.request.repository, receipt.number
-                    ),
-                    Some(json!({"sha":r.request.candidate,"merge_method":"merge"})),
-                )
-                .map_err(|error| {
+            require(row["mergeable"] == true && ["clean","unstable"].contains(&row["mergeable_state"].as_str().unwrap_or("")),"GitHub 现有合并规则尚未满足；等待 required checks、评审或其他仓库门禁")
+                .map_err(|error|error.technical_not_applied().with_context("GitHub PR merge gates",json!({"repository":r.request.repository,"number":receipt.number,"mergeable":row["mergeable"],"mergeable_state":row["mergeable_state"]})))?;
+            let branch = self.delivery_target(&r.request.repository, &r.request.base_branch)?;
+            if branch["protected"] == false {
+                self.advance_unprotected_target(&r.request,r.merge_revision.as_deref().unwrap_or(&r.request.candidate)).map_err(|error| {
                     if error.code == "remote_gate_blocked"
-                        && let Ok(current) = self.delivery_pr(&r.request)
-                        && let Ok(observed) = self.receipt(&r.request, &current)
                         && let Ok(target) = self.delivery_target_head(&r.request)
-                        && !observed.merged
-                        && target != r.request.expected_target
+                        && target != r.request.expected_target && target != *r.merge_revision.as_ref().unwrap_or(&r.request.candidate)
                     {
-                        return err("stale_target", "服务端拒绝了目标竞争后的陈旧合入")
-                            .technical_not_applied();
+                        return err("stale_target", "目标分支在原子推进前已变化，需要刷新合并回归及审核")
+                            .technical_not_applied().with_context("GitHub target CAS rejection",json!({"original_error":error,"expected_target":r.request.expected_target,"actual_target":target,"candidate":r.request.candidate}));
                     }
                     error
                 })?;
-            require(reply["merged"] == true, "GitHub 没有确认合入")?;
-            row = self.delivery_pr(&r.request)?;
-            receipt = self.receipt(&r.request, &row)?;
+                row = self.delivery_pr(&r.request)?;
+                receipt = self.receipt(&r.request, &row)?;
+                if !receipt.merged {
+                    return Ok(None);
+                }
+            } else {
+                require(branch["protected"] == true, "不能确认目标分支的保护状态")
+                    .map_err(|error| error.technical_not_applied())?;
+                let reply = self
+                    .delivery_api(
+                        "PUT",
+                        &format!(
+                            "repos/{}/pulls/{}/merge",
+                            r.request.repository, receipt.number
+                        ),
+                        Some(json!({"sha":r.request.candidate,"merge_method":"merge"})),
+                    )
+                    .map_err(|error| {
+                        if error.code == "remote_gate_blocked"
+                            && let Ok(current) = self.delivery_pr(&r.request)
+                            && let Ok(observed) = self.receipt(&r.request, &current)
+                            && let Ok(target) = self.delivery_target_head(&r.request)
+                            && !observed.merged
+                            && target != r.request.expected_target
+                        {
+                            return err("stale_target", "服务端拒绝了目标竞争后的陈旧合入")
+                                .technical_not_applied();
+                        }
+                        error
+                    })?;
+                require(reply["merged"] == true, "GitHub 没有确认合入")?;
+                row = self.delivery_pr(&r.request)?;
+                receipt = self.receipt(&r.request, &row)?;
+            }
         }
         require(receipt.merged, "PR 合入观察未确认")?;
         let revision = receipt
@@ -360,6 +568,494 @@ impl GitHubPullRequests {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::{Cell, RefCell};
+    fn request() -> PullRequestRequest {
+        let merge = uuid::Uuid::new_v4().to_string();
+        PullRequestRequest {
+            repository: "owner/repo".into(),
+            project: uuid::Uuid::new_v4().to_string(),
+            head_branch: format!("devdesk/candidates/{merge}"),
+            merge,
+            base_branch: "main".into(),
+            candidate: "a".repeat(40),
+            expected_target: "b".repeat(40),
+            number: Some(7),
+        }
+    }
+    fn pr(request: &PullRequestRequest, merged: bool, state: &str) -> Value {
+        json!({"number":7,"html_url":"https://github.com/owner/repo/pull/7","body":request.marker(),"head":{"repo":{"full_name":request.repository},"ref":request.head_branch,"sha":request.candidate},"base":{"repo":{"full_name":request.repository},"ref":request.base_branch,"sha":request.expected_target},"merged":merged,"merge_commit_sha":if merged {Some(request.candidate.clone())} else {None},"mergeable":true,"mergeable_state":state})
+    }
+    fn candidate(request: &PullRequestRequest) -> Value {
+        json!({"parents":[{"sha":request.expected_target}],"tree":{"sha":"tested-tree"}})
+    }
+    #[test]
+    fn pr_creation_and_lost_receipt_recovery_never_require_or_write_branch_protection() {
+        for protected in [false, true] {
+            let mut request = request();
+            request.number = None;
+            request.head_branch = format!("devdesk/features/{}", uuid::Uuid::new_v4());
+            let exists = Cell::new(false);
+            let writes = RefCell::new(Vec::new());
+            let api = |method: &str, endpoint: &str, input: Option<Value>| match (method, endpoint)
+            {
+                ("GET", "repos/owner/repo/branches/main") => {
+                    Ok(json!({"protected":protected,"commit":{"sha":request.expected_target}}))
+                }
+                ("GET", endpoint) if endpoint.contains("/branches/devdesk%2Ffeatures%2F") => {
+                    Ok(json!({"commit":{"sha":request.candidate}}))
+                }
+                ("GET", endpoint) if endpoint.contains("/git/commits/") => Ok(candidate(&request)),
+                ("GET", endpoint) if endpoint.contains("pulls?state=all") => Ok(if exists.get() {
+                    json!([pr(&request, false, "blocked")])
+                } else {
+                    json!([])
+                }),
+                ("GET", "repos/owner/repo/pulls/7") => Ok(pr(&request, false, "blocked")),
+                ("POST", "repos/owner/repo/pulls") => {
+                    assert_eq!(input.unwrap()["base"], "main");
+                    writes.borrow_mut().push(endpoint.to_owned());
+                    exists.set(true);
+                    Ok(pr(&request, false, "blocked"))
+                }
+                _ => panic!("unexpected request {method} {endpoint}"),
+            };
+            let client = DeliveryClient { api: &api };
+            assert_eq!(
+                client.delivery_target("owner/repo", "main").unwrap()["protected"],
+                protected
+            );
+            assert!(client.delivery_ensure(&request, true).unwrap().is_none());
+            let created = client.delivery_ensure(&request, false).unwrap().unwrap();
+            let recovered = client.delivery_ensure(&request, true).unwrap().unwrap();
+            let repeated = client.delivery_ensure(&request, false).unwrap().unwrap();
+            assert_eq!(created.number, recovered.number);
+            assert_eq!(created.number, repeated.number);
+            assert_eq!(writes.borrow().as_slice(), &["repos/owner/repo/pulls"]);
+        }
+    }
+    #[test]
+    fn reused_source_branch_recovers_only_its_own_delivery_pr() {
+        let mut request = request();
+        request.number = None;
+        request.head_branch = format!("devdesk/features/{}", uuid::Uuid::new_v4());
+        let mut unrelated = pr(&request, true, "clean");
+        unrelated["number"] = json!(6);
+        unrelated["body"] = json!("A historical delivery with a different marker");
+        unrelated["state"] = json!("closed");
+        let api = |method: &str, endpoint: &str, _: Option<Value>| match (method, endpoint) {
+            ("GET", endpoint) if endpoint.contains("/git/commits/") => Ok(candidate(&request)),
+            ("GET", endpoint) if endpoint.contains("pulls?state=all") => {
+                Ok(json!([unrelated, pr(&request, false, "clean")]))
+            }
+            ("GET", "repos/owner/repo/pulls/7") => Ok(pr(&request, false, "clean")),
+            _ => panic!("recovery must not write: {method} {endpoint}"),
+        };
+        let client = DeliveryClient { api: &api };
+        assert_eq!(
+            client
+                .delivery_ensure(&request, true)
+                .unwrap()
+                .unwrap()
+                .number,
+            7
+        );
+    }
+    #[test]
+    fn an_existing_required_gate_blocks_merge_without_changing_rules_or_using_a_bypass() {
+        let request = request();
+        let api = |method: &str, endpoint: &str, _: Option<Value>| match (method, endpoint) {
+            ("GET", endpoint) if endpoint.contains("/git/commits/") => Ok(candidate(&request)),
+            ("GET", "repos/owner/repo/pulls/7") => Ok(pr(&request, false, "blocked")),
+            ("GET", "repos/owner/repo/branches/main") => {
+                Ok(json!({"protected":true,"commit":{"sha":request.expected_target}}))
+            }
+            _ => panic!("gate must prevent {method} {endpoint}"),
+        };
+        let client = DeliveryClient { api: &api };
+        let merge = PullRequestMergeRequest {
+            request: request.clone(),
+            tree: "tested-tree".into(),
+            merge_revision: None,
+        };
+        assert!(!client.delivery_ready(&merge).unwrap());
+        let error = client.delivery_merge(&merge, false).unwrap_err();
+        assert_eq!(
+            error.execution_failure.unwrap().effect,
+            ExecutionFailureEffect::NotApplied
+        );
+    }
+    #[test]
+    fn unprotected_merge_is_an_atomic_fast_forward_and_recovers_without_a_second_write() {
+        let request = request();
+        let merged = Cell::new(false);
+        let writes = Cell::new(0);
+        let api = |method: &str, endpoint: &str, input: Option<Value>| match (method, endpoint) {
+            ("GET", endpoint) if endpoint.contains("/git/commits/") => Ok(candidate(&request)),
+            ("GET", "repos/owner/repo/pulls/7") => Ok(pr(&request, merged.get(), "clean")),
+            ("GET", "repos/owner/repo/branches/main") => Ok(
+                json!({"protected":false,"commit":{"sha":if merged.get(){&request.candidate}else{&request.expected_target}}}),
+            ),
+            ("GET", "repos/owner/repo") => Ok(json!({"node_id":"repository-id"})),
+            ("POST", "graphql") => {
+                let input = input.unwrap();
+                let update = &input["variables"]["input"]["refUpdates"][0];
+                assert_eq!(update["beforeOid"], request.expected_target);
+                assert_eq!(update["afterOid"], request.candidate);
+                assert_eq!(update["force"], false);
+                assert_eq!(update["name"], "refs/heads/main");
+                writes.set(writes.get() + 1);
+                merged.set(true);
+                Ok(json!({"data":{"updateRefs":{"clientMutationId":request.merge}}}))
+            }
+            _ => panic!("unexpected request {method} {endpoint}"),
+        };
+        let client = DeliveryClient { api: &api };
+        let merge = PullRequestMergeRequest {
+            request: request.clone(),
+            tree: "tested-tree".into(),
+            merge_revision: None,
+        };
+        assert!(
+            client
+                .delivery_merge(&merge, false)
+                .unwrap()
+                .unwrap()
+                .merged
+        );
+        assert!(client.delivery_merge(&merge, true).unwrap().unwrap().merged);
+        assert_eq!(writes.get(), 1);
+    }
+    #[test]
+    fn protected_merge_uses_existing_pr_rules_and_preserves_the_remote_rejection() {
+        let request = request();
+        let writes = Cell::new(0);
+        let api = |method: &str, endpoint: &str, input: Option<Value>| match (method, endpoint) {
+            ("GET", endpoint) if endpoint.contains("/git/commits/") => Ok(candidate(&request)),
+            ("GET", "repos/owner/repo/pulls/7") => Ok(pr(&request, false, "clean")),
+            ("GET", "repos/owner/repo/branches/main") => {
+                Ok(json!({"protected":true,"commit":{"sha":request.expected_target}}))
+            }
+            ("PUT", "repos/owner/repo/pulls/7/merge") => {
+                let input = input.unwrap();
+                assert_eq!(
+                    input,
+                    json!({"sha":request.candidate,"merge_method":"merge"})
+                );
+                writes.set(writes.get() + 1);
+                Err(err(
+                    "remote_gate_blocked",
+                    "A repository rule requires another review",
+                )
+                .technical_not_applied())
+            }
+            _ => panic!("must not bypass a protected merge using {method} {endpoint}"),
+        };
+        let client = DeliveryClient { api: &api };
+        let merge = PullRequestMergeRequest {
+            request: request.clone(),
+            tree: "tested-tree".into(),
+            merge_revision: None,
+        };
+        let error = client.delivery_merge(&merge, false).unwrap_err();
+        assert_eq!(error.code, "remote_gate_blocked");
+        assert!(error.message.contains("another review"));
+        assert_eq!(writes.get(), 1);
+    }
+    #[test]
+    fn a_target_race_rejects_the_original_cas_without_a_force_push() {
+        let request = request();
+        let api = |method: &str, endpoint: &str, input: Option<Value>| match (method, endpoint) {
+            ("GET", endpoint) if endpoint.contains("/git/commits/") => Ok(candidate(&request)),
+            ("GET", "repos/owner/repo/pulls/7") => Ok(pr(&request, false, "clean")),
+            ("GET", "repos/owner/repo/branches/main") => {
+                Ok(json!({"protected":false,"commit":{"sha":request.expected_target}}))
+            }
+            ("GET", "repos/owner/repo") => Ok(json!({"node_id":"repository-id"})),
+            ("POST", "graphql") => {
+                let input = input.unwrap();
+                assert_eq!(
+                    input["variables"]["input"]["refUpdates"][0]["beforeOid"],
+                    request.expected_target
+                );
+                Ok(
+                    json!({"data":{"updateRefs":null},"errors":[{"type":"UNPROCESSABLE","message":"beforeOid no longer matches"}]}),
+                )
+            }
+            _ => panic!("unexpected request {method} {endpoint}"),
+        };
+        let client = DeliveryClient { api: &api };
+        let merge = PullRequestMergeRequest {
+            request: request.clone(),
+            tree: "tested-tree".into(),
+            merge_revision: None,
+        };
+        let error = client.delivery_merge(&merge, false).unwrap_err();
+        assert_eq!(error.code, "remote_gate_blocked");
+        assert_eq!(
+            error.execution_failure.as_ref().unwrap().effect,
+            ExecutionFailureEffect::NotApplied
+        );
+        assert!(!error.context.is_empty());
+    }
+    #[test]
+    fn an_already_applied_fast_forward_waits_for_the_pr_receipt_without_writing_again() {
+        let request = request();
+        let api = |method: &str, endpoint: &str, _: Option<Value>| match (method, endpoint) {
+            ("GET", endpoint) if endpoint.contains("/git/commits/") => Ok(candidate(&request)),
+            ("GET", "repos/owner/repo/pulls/7") => Ok(pr(&request, false, "clean")),
+            ("GET", "repos/owner/repo/branches/main") => {
+                Ok(json!({"protected":false,"commit":{"sha":request.candidate}}))
+            }
+            _ => panic!("lost receipt must not write: {method} {endpoint}"),
+        };
+        let client = DeliveryClient { api: &api };
+        let merge = PullRequestMergeRequest {
+            request: request.clone(),
+            tree: "tested-tree".into(),
+            merge_revision: None,
+        };
+        for inspect in [true, false] {
+            assert!(client.delivery_merge(&merge, inspect).unwrap().is_none());
+        }
+    }
+    #[test]
+    fn protected_merge_can_succeed_under_existing_rules_without_the_custom_protection_template() {
+        let request = request();
+        let merged = Cell::new(false);
+        let writes = Cell::new(0);
+        let api = |method: &str, endpoint: &str, input: Option<Value>| match (method, endpoint) {
+            ("GET", endpoint)
+                if endpoint.ends_with(&format!("/git/commits/{}", request.candidate)) =>
+            {
+                Ok(candidate(&request))
+            }
+            ("GET", endpoint)
+                if endpoint.ends_with(&format!("/git/commits/{}", "c".repeat(40))) =>
+            {
+                Ok(
+                    json!({"tree":{"sha":"tested-tree"},"parents":[{"sha":request.expected_target},{"sha":request.candidate}]}),
+                )
+            }
+            ("GET", "repos/owner/repo/pulls/7") => {
+                let mut row = pr(&request, merged.get(), "clean");
+                if merged.get() {
+                    row["merge_commit_sha"] = json!("c".repeat(40));
+                }
+                Ok(row)
+            }
+            ("GET", "repos/owner/repo/branches/main") => {
+                Ok(json!({"protected":true,"commit":{"sha":request.expected_target}}))
+            }
+            ("PUT", "repos/owner/repo/pulls/7/merge") => {
+                assert_eq!(
+                    input.unwrap(),
+                    json!({"sha":request.candidate,"merge_method":"merge"})
+                );
+                writes.set(writes.get() + 1);
+                merged.set(true);
+                Ok(json!({"merged":true}))
+            }
+            _ => panic!("must preserve repository policy: {method} {endpoint}"),
+        };
+        let client = DeliveryClient { api: &api };
+        let merge = PullRequestMergeRequest {
+            request: request.clone(),
+            tree: "tested-tree".into(),
+            merge_revision: None,
+        };
+        assert!(
+            client
+                .delivery_merge(&merge, false)
+                .unwrap()
+                .unwrap()
+                .merged
+        );
+        assert_eq!(writes.get(), 1);
+    }
+    #[test]
+    fn graphql_internal_failures_keep_the_unknown_effect_and_complete_error() {
+        let request = request();
+        let api = |method: &str, endpoint: &str, _: Option<Value>| match (method, endpoint) {
+            ("GET", "repos/owner/repo") => Ok(json!({"node_id":"repository-id"})),
+            ("POST", "graphql") => Ok(
+                json!({"data":{"updateRefs":null},"errors":[{"type":"INTERNAL","message":"result unknown"}]}),
+            ),
+            _ => panic!("unexpected request {method} {endpoint}"),
+        };
+        let error = DeliveryClient { api: &api }
+            .advance_unprotected_target(&request, &request.candidate)
+            .unwrap_err();
+        assert_eq!(
+            error.execution_failure.unwrap().effect,
+            ExecutionFailureEffect::Unknown
+        );
+        assert!(
+            error
+                .context
+                .iter()
+                .any(|context| context.details.to_string().contains("result unknown"))
+        );
+    }
+    #[test]
+    fn source_branch_candidate_waits_for_github_and_freezes_both_parents_and_tree() {
+        let mut request = request();
+        request.head_branch = format!("devdesk/features/{}", uuid::Uuid::new_v4());
+        let ready = Cell::new(false);
+        let candidate_sha = "c".repeat(40);
+        let tree = "d".repeat(40);
+        let api = |method: &str, endpoint: &str, _: Option<Value>| match (method, endpoint) {
+            ("GET", endpoint)
+                if endpoint.ends_with(&format!("/git/commits/{}", request.candidate)) =>
+            {
+                Ok(candidate(&request))
+            }
+            ("GET", endpoint) if endpoint.ends_with(&format!("/git/commits/{candidate_sha}")) => {
+                Ok(
+                    json!({"parents":[{"sha":request.expected_target},{"sha":request.candidate}],"tree":{"sha":tree}}),
+                )
+            }
+            ("GET", "repos/owner/repo/pulls/7") => {
+                let mut row = pr(&request, false, "clean");
+                row["mergeable"] = if ready.get() {
+                    json!(true)
+                } else {
+                    Value::Null
+                };
+                row["merge_commit_sha"] = json!(candidate_sha);
+                Ok(row)
+            }
+            ("GET", "repos/owner/repo/branches/main") => {
+                Ok(json!({"protected":false,"commit":{"sha":request.expected_target}}))
+            }
+            _ => panic!("candidate observation cannot publish refs: {method} {endpoint}"),
+        };
+        let client = DeliveryClient { api: &api };
+        assert!(client.delivery_candidate(&request).unwrap().is_none());
+        ready.set(true);
+        let frozen = client.delivery_candidate(&request).unwrap().unwrap();
+        assert_eq!(frozen.revision, candidate_sha);
+        assert_eq!(frozen.tree, tree);
+        assert_eq!(frozen.source_revision, request.candidate);
+        assert_eq!(frozen.target_revision, request.expected_target);
+    }
+    #[test]
+    fn direct_source_merge_advances_only_the_frozen_test_merge_and_recovers_once() {
+        let mut request = request();
+        request.head_branch = format!("devdesk/tasks/{}", uuid::Uuid::new_v4());
+        let candidate_sha = "c".repeat(40);
+        let tree = "d".repeat(40);
+        let merged = Cell::new(false);
+        let writes = Cell::new(0);
+        let api = |method: &str, endpoint: &str, input: Option<Value>| match (method, endpoint) {
+            ("GET", endpoint)
+                if endpoint.ends_with(&format!("/git/commits/{}", request.candidate)) =>
+            {
+                Ok(candidate(&request))
+            }
+            ("GET", endpoint) if endpoint.ends_with(&format!("/git/commits/{candidate_sha}")) => {
+                Ok(
+                    json!({"parents":[{"sha":request.expected_target},{"sha":request.candidate}],"tree":{"sha":tree}}),
+                )
+            }
+            ("GET", "repos/owner/repo/pulls/7") => {
+                let mut row = pr(&request, merged.get(), "clean");
+                row["merge_commit_sha"] = json!(candidate_sha);
+                Ok(row)
+            }
+            ("GET", "repos/owner/repo/branches/main") => Ok(
+                json!({"protected":false,"commit":{"sha":if merged.get(){&candidate_sha}else{&request.expected_target}}}),
+            ),
+            ("GET", "repos/owner/repo") => Ok(json!({"node_id":"repository-id"})),
+            ("POST", "graphql") => {
+                let update = &input.as_ref().unwrap()["variables"]["input"]["refUpdates"][0];
+                assert_eq!(update["beforeOid"], request.expected_target);
+                assert_eq!(update["afterOid"], candidate_sha);
+                assert_eq!(update["force"], false);
+                assert_eq!(update["name"], "refs/heads/main");
+                writes.set(writes.get() + 1);
+                merged.set(true);
+                Ok(json!({"data":{"updateRefs":{"clientMutationId":request.merge}}}))
+            }
+            _ => panic!(
+                "direct source delivery cannot create candidates branches: {method} {endpoint}"
+            ),
+        };
+        let client = DeliveryClient { api: &api };
+        let merge = PullRequestMergeRequest {
+            request: request.clone(),
+            tree: tree.clone(),
+            merge_revision: Some(candidate_sha.clone()),
+        };
+        let receipt = client.delivery_merge(&merge, false).unwrap().unwrap();
+        assert_eq!(receipt.head, request.candidate);
+        assert_eq!(
+            receipt.merge_commit.as_deref(),
+            Some(candidate_sha.as_str())
+        );
+        assert!(client.delivery_merge(&merge, true).unwrap().unwrap().merged);
+        assert_eq!(writes.get(), 1);
+    }
+    #[test]
+    fn legacy_candidate_pr_is_readable_but_cannot_be_newly_created() {
+        let mut request = request();
+        request.number = None;
+        let exists = Cell::new(true);
+        let api = |method: &str, endpoint: &str, _: Option<Value>| match (method, endpoint) {
+            ("GET", endpoint) if endpoint.contains("/git/commits/") => Ok(candidate(&request)),
+            ("GET", endpoint) if endpoint.contains("pulls?state=all") => Ok(if exists.get() {
+                json!([pr(&request, true, "clean")])
+            } else {
+                json!([])
+            }),
+            ("GET", "repos/owner/repo/pulls/7") => Ok(pr(&request, true, "clean")),
+            _ => panic!("legacy recovery is read-only: {method} {endpoint}"),
+        };
+        let client = DeliveryClient { api: &api };
+        assert!(
+            client
+                .delivery_ensure(&request, false)
+                .unwrap()
+                .unwrap()
+                .merged
+        );
+        exists.set(false);
+        let error = client.delivery_ensure(&request, false).unwrap_err();
+        assert_eq!(
+            error.execution_failure.unwrap().effect,
+            ExecutionFailureEffect::NotApplied
+        );
+    }
+    #[test]
+    fn changed_source_or_tested_tree_is_rejected_before_direct_merge() {
+        let mut request = request();
+        request.head_branch = format!("devdesk/features/{}", uuid::Uuid::new_v4());
+        let revision = "c".repeat(40);
+        for changed_source in [false, true] {
+            let api = |method: &str, endpoint: &str, _: Option<Value>| match (method, endpoint) {
+                ("GET", endpoint)
+                    if endpoint.ends_with(&format!("/git/commits/{}", request.candidate)) =>
+                {
+                    Ok(candidate(&request))
+                }
+                ("GET", endpoint) if endpoint.ends_with(&format!("/git/commits/{revision}")) => Ok(
+                    json!({"parents":[{"sha":request.expected_target},{"sha":if changed_source{"e".repeat(40)}else{request.candidate.clone()}}],"tree":{"sha":if changed_source{"d".repeat(40)}else{"f".repeat(40)}}}),
+                ),
+                _ => panic!("changed evidence cannot authorize {method} {endpoint}"),
+            };
+            let merge = PullRequestMergeRequest {
+                request: request.clone(),
+                tree: "d".repeat(40),
+                merge_revision: Some(revision.clone()),
+            };
+            let error = DeliveryClient { api: &api }
+                .delivery_merge(&merge, false)
+                .unwrap_err();
+            assert_eq!(
+                error.execution_failure.unwrap().effect,
+                ExecutionFailureEffect::NotApplied
+            );
+        }
+    }
     #[test]
     fn gate_rejection_accepts_numeric_and_string_status_without_hiding_unknowns() {
         for code in [403, 405, 409, 422] {

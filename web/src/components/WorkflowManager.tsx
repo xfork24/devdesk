@@ -38,8 +38,6 @@ const emptyDocument = () => ({
     max_retries: 0,
     retry_error_codes: [],
     agent: {
-      max_turns_per_wakeup: 8,
-      max_tool_calls_per_turn: 64,
       timeout_seconds: 600,
     },
   },

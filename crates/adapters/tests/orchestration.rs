@@ -4827,3 +4827,225 @@ fn wait_registration_rechecks_concurrent_events_without_replaying_business_actio
         );
     }
 }
+
+#[test]
+fn managers_do_not_exhaust_wakeup_or_tool_call_counts_and_keep_human_gates() {
+    for legacy_exhausted in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let mut e = engine(directory.path());
+        let harness = Arc::new(NativeManager {
+            human: true,
+            ..Default::default()
+        });
+        e.harness = harness.clone();
+        let mut doc = document();
+        doc["steps"][0]["confirmation"] = json!("human");
+        let root = start(&e, doc);
+        let mut policy = serde_json::to_value(WorkflowControlPolicy::default()).unwrap();
+        policy["max_turns_per_wakeup"] = json!(1);
+        policy["max_tool_calls_per_turn"] = json!(1);
+        let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:13","policy":policy})).unwrap();
+        let controller_id = opened["id"].as_str().unwrap().to_owned();
+        cmd(
+            &e,
+            "workflow.driver.select",
+            Some(&root),
+            json!({"mode":"agent"}),
+        )
+        .unwrap();
+        e.store
+            .seed_fixture_state(None, &mut |s| {
+                let row = s
+                    .governance
+                    .iter_mut()
+                    .find(|r| r.id == controller_id)
+                    .unwrap();
+                let mut data = row.data.clone();
+                data["wakeup_turns"] = json!(u64::MAX);
+                if legacy_exhausted {
+                    data["status"] = json!("budget_exhausted");
+                    data["run_state"] = json!("waiting");
+                    data["reason"] = json!("编排唤醒预算已耗尽，请恢复或补充指令");
+                }
+                row.revision += 1;
+                row.data = data;
+                row.content_hash = content_digest(&row.refs, &row.data);
+                Ok(Value::Null)
+            })
+            .unwrap();
+        assert!(
+            e.scheduling_hints()
+                .unwrap()
+                .stages
+                .contains(&SchedulingStage::Controllers)
+        );
+        for _ in 0..40 {
+            drive_manager(&e);
+            let state = e.store.snapshot().unwrap();
+            if state
+                .governance
+                .iter()
+                .any(|r| r.r#type == "workflow_pending_decision")
+                && state.configuration(&controller_id).unwrap().data["run_state"] == "waiting"
+                && state.turns.iter().all(|t| !t.status.active())
+            {
+                break;
+            }
+        }
+        let state = e.store.snapshot().unwrap();
+        let manager = state.configuration(&controller_id).unwrap();
+        assert_eq!(manager.data["status"], "active");
+        assert_eq!(manager.data["epoch"], 1);
+        assert_eq!(
+            runtime(&e, &root)["runtime"]["steps"][0]["status"],
+            "waiting_confirmation"
+        );
+        let decision = state
+            .governance
+            .iter()
+            .find(|r| r.r#type == "workflow_pending_decision")
+            .unwrap();
+        assert_eq!(decision.data["status"], "pending");
+        assert!(
+            !state
+                .governance
+                .iter()
+                .any(|r| r.r#type == "workflow_confirmation")
+        );
+        assert!(harness.replies.lock().unwrap().len() > 1);
+        let deliveries = harness.deliveries.lock().unwrap();
+        let delivered = deliveries.values().next().unwrap();
+        if delivered["bootstrap"] == true {
+            assert!(delivered["policy"].get("max_turns_per_wakeup").is_none());
+            assert!(delivered["policy"].get("max_tool_calls_per_turn").is_none());
+        }
+        drop(deliveries);
+        cmd(&e,"workflow.decision.resolve",Some(&decision.id),json!({"approved":true,"reason":"Fixture Human explicitly confirms the unchanged exact result"})).unwrap();
+        for _ in 0..40 {
+            drive_manager(&e);
+            if runtime(&e, &root)["runtime"]["status"] == "completed" {
+                break;
+            }
+        }
+        assert_eq!(runtime(&e, &root)["runtime"]["status"], "completed");
+    }
+}
+
+#[test]
+fn a_legacy_manager_suspension_recovers_its_original_delegation_after_restart() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut e = engine(directory.path());
+    let harness = Arc::new(NativeManager {
+        segment: true,
+        ..Default::default()
+    });
+    e.harness = harness.clone();
+    let root = start(&e, document());
+    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:13"})).unwrap();
+    let controller_id = opened["id"].as_str().unwrap().to_owned();
+    cmd(
+        &e,
+        "workflow.driver.select",
+        Some(&root),
+        json!({"mode":"agent"}),
+    )
+    .unwrap();
+    for _ in 0..20 {
+        drive_manager_cycle(&e, true, false);
+        if e.store
+            .snapshot()
+            .unwrap()
+            .governance
+            .iter()
+            .any(|r| r.r#type == "controller_tool_call" && r.data["status"] == "prepared")
+        {
+            break;
+        }
+    }
+    e.drive_controllers().unwrap();
+    let state = e.store.snapshot().unwrap();
+    let original = state
+        .governance
+        .iter()
+        .find(|r| r.r#type == "workflow_segment" && r.data["status"] == "active")
+        .unwrap()
+        .clone();
+    let session = state.configuration(&controller_id).unwrap().data["session_id"].clone();
+    for _ in 0..3 {
+        e.tick_conversations(1).unwrap();
+    }
+    e.store
+        .seed_fixture_state(None, &mut |s| {
+            for row in s
+                .governance
+                .iter_mut()
+                .filter(|r| r.id == controller_id || r.id == original.id)
+            {
+                let mut data = row.data.clone();
+                if row.id == controller_id {
+                    data["status"] = json!("budget_exhausted");
+                    data["run_state"] = json!("waiting");
+                    data["wakeup_turns"] = json!(8);
+                    data["reason"] = json!("编排唤醒预算已耗尽，请恢复或补充指令");
+                } else {
+                    data["status"] = json!("stopped");
+                    data["reason"] = json!("blocked: 原委托决定者已撤权");
+                }
+                row.revision += 1;
+                row.data = data;
+                row.content_hash = content_digest(&row.refs, &row.data);
+            }
+            Ok(Value::Null)
+        })
+        .unwrap();
+    drop(e);
+    let mut e = engine(directory.path());
+    e.harness = harness;
+    e.drive_controllers().unwrap();
+    let recovered = e.store.snapshot().unwrap();
+    assert!(
+        e.scheduling_hints()
+            .unwrap()
+            .stages
+            .contains(&SchedulingStage::Segments),
+        "manager={:?}, segment={:?}, driver={:?}, root={:?}",
+        recovered.configuration(&controller_id).unwrap().data,
+        recovered.configuration(&original.id).unwrap().data,
+        recovered
+            .governance
+            .iter()
+            .find(|r| r.r#type == "workflow_driver")
+            .unwrap()
+            .data,
+        recovered.configuration(&root).unwrap().data["status"]
+    );
+    for _ in 0..20 {
+        e.drive_workflow_segments().unwrap();
+        if e.store
+            .snapshot()
+            .unwrap()
+            .configuration(&original.id)
+            .unwrap()
+            .data["status"]
+            == "completed"
+        {
+            break;
+        }
+    }
+    let state = e.store.snapshot().unwrap();
+    let segment = state.configuration(&original.id).unwrap();
+    assert_eq!(segment.data["status"], "completed");
+    assert_eq!(segment.data["actor"], original.data["actor"]);
+    assert!(segment.data["operations"].as_u64().unwrap() > 0);
+    assert_eq!(
+        state.configuration(&controller_id).unwrap().data["session_id"],
+        session
+    );
+    assert_eq!(
+        state.configuration(&controller_id).unwrap().data["epoch"],
+        1
+    );
+    assert!(state.events.iter().any(|e| e.kind == "workflow.runtime"
+        && e.detail.contains("segment.changed")
+        && e.detail.contains(&original.id)));
+}

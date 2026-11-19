@@ -1,7 +1,7 @@
 {
   "type": "spec",
   "identity": "simplified-spec-platform-evidence",
-  "revision": 1,
+  "revision": 2,
   "name": "精简版平台证据规范",
   "scope": "global",
   "data": {

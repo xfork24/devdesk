@@ -593,8 +593,11 @@ impl Engine {
                         let resources = root.step(self, id)?;
                         self.native_workflow_step_observation(&root, &resources)?;
                     }
-                    self.publish_workflow_rule_hints(&root)?;
-                    self.native_workflow_header_observation(&root.record.id)
+                    // Observations above may have changed these very steps.
+                    // Do not feed our own pre-commit view into completion hints.
+                    let current = WorkflowHeaderFacts::read(self, &root.record.id)?;
+                    self.publish_workflow_rule_hints(&current)?;
+                    self.native_workflow_header_observation(&current.record.id)
                 })();
                 if let Err(error) = result
                     && !matches!(

@@ -207,9 +207,24 @@ fn sibling_steps_commit_from_the_same_header_without_lost_updates_and_stale_targ
             value: old.value.unwrap(),
         }],
     );
+    let conflict = store.commit_changes(&stale).unwrap_err();
+    assert_eq!(conflict.code, "revision_conflict");
+    assert!(conflict.retryable_conflict());
     assert_eq!(
-        store.commit_changes(&stale).unwrap_err().code,
-        "revision_conflict"
+        conflict.execution_failure.unwrap().effect,
+        ExecutionFailureEffect::NotApplied
+    );
+    assert_eq!(
+        conflict.context[0].details["resource"]["kind"],
+        "workflow_step"
+    );
+    assert_eq!(
+        conflict.context[0].details["resource"]["id"],
+        old.resource.id
+    );
+    assert!(
+        conflict.context[0].details["actual_revision"].as_u64()
+            > conflict.context[0].details["expected_revision"].as_u64()
     );
     assert_eq!(
         store.workflow_progress("root", 0).unwrap().counts.completed,

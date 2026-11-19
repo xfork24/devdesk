@@ -1,11 +1,11 @@
-//! GitHub is the remote PR system. This adapter never invokes a platform merge or protection bypass.
+//! GitHub PR publication and observed merges; existing rules are never changed or bypassed.
 use super::*;
 use crate::process::capture;
 use std::time::Duration;
 pub type RepositoryPolicy = GitHubRepositoryPolicy;
 pub struct GitHubPullRequests;
 impl GitHubPullRequests {
-    pub fn diagnose(&self, repository: &str, branch: &str) -> Result<RepositoryPolicy> {
+    pub(crate) fn validate_repository_branch(repository: &str, branch: &str) -> Result<()> {
         let pieces: Vec<_> = repository.split('/').collect();
         require(
             pieces.len() == 2
@@ -20,6 +20,11 @@ impl GitHubPullRequests {
             !branch.is_empty() && branch.len() <= 200 && !branch.contains(['\n', '\r']),
             "分支无效",
         )?;
+        Ok(())
+    }
+    pub fn diagnose(&self, repository: &str, branch: &str) -> Result<RepositoryPolicy> {
+        Self::validate_repository_branch(repository, branch)?;
+        let pieces: Vec<_> = repository.split('/').collect();
         let query = r#"query($owner:String!,$name:String!,$branch:String!){repository(owner:$owner,name:$name){id nameWithOwner viewerPermission ref(qualifiedName:$branch){target{oid}} branchProtectionRules(first:100){totalCount pageInfo{hasNextPage}} rulesets(first:100,includeParents:true){nodes{id name enforcement target} pageInfo{hasNextPage}}}}"#;
         let args = vec![
             "api".into(),
@@ -130,14 +135,22 @@ impl GitHubPullRequests {
             "PR 归属无效",
         )?;
         require(
-            r.head_branch == format!("devdesk/candidates/{}", r.merge)
+            (r.head_branch == format!("devdesk/candidates/{}", r.merge)
+                || ["devdesk/tasks/", "devdesk/features/"]
+                    .iter()
+                    .any(|prefix| {
+                        r.head_branch
+                            .strip_prefix(prefix)
+                            .is_some_and(|id| uuid::Uuid::parse_str(id).is_ok())
+                    }))
                 && r.candidate.len() == 40
                 && r.candidate.bytes().all(|v| v.is_ascii_hexdigit())
                 && !r.base_branch.is_empty(),
             "PR 分支或候选无效",
         )?;
-        let policy = self.diagnose(&r.repository, &r.base_branch)?;
-        require(policy.compatible, "GitHub 规则不兼容；禁止 PR/推进副作用")
+        // Opening or reading a PR never advances its base. Merge protection
+        // belongs to the merge path, not to publication validation.
+        Self::validate_repository_branch(&r.repository, &r.base_branch)
     }
     pub(crate) fn receipt(
         &self,
@@ -187,8 +200,8 @@ impl GitHubPullRequests {
     }
 }
 impl ports::PullRequests for GitHubPullRequests {
-    fn delivery_target(&self, c: &GitContext, create: bool) -> Result<Value> {
-        self.protected_target(c, create)
+    fn delivery_target(&self, c: &GitContext, _legacy_create_protection: bool) -> Result<Value> {
+        self.observe_delivery_target(c)
     }
     fn ensure_delivery(
         &self,
@@ -196,6 +209,12 @@ impl ports::PullRequests for GitHubPullRequests {
         inspect: bool,
     ) -> Result<Option<PullRequestReceipt>> {
         self.delivery_ensure(r, inspect)
+    }
+    fn delivery_candidate(
+        &self,
+        request: &PullRequestRequest,
+    ) -> Result<Option<PullRequestMergeCandidate>> {
+        self.observe_delivery_candidate(request)
     }
     fn delivery_status(&self, r: &PullRequestMergeRequest, inspect: bool) -> Result<Option<Value>> {
         self.delivery_report_status(r, inspect)
@@ -240,6 +259,11 @@ impl ports::PullRequests for GitHubPullRequests {
                 .ok_or_else(|| err("github_unavailable", "PR number 缺失"))?;
             self.api(&format!("repos/{}/pulls/{number}", r.repository), None)?
         } else {
+            require(
+                !r.head_branch.starts_with("devdesk/candidates/"),
+                "历史 candidates PR 仅支持核对，请以开发分支重新发布",
+            )
+            .map_err(|error| error.technical_not_applied())?;
             self.api(&format!("repos/{}/pulls",r.repository),Some(json!({"title":format!("DevDesk delivery {}",r.merge),"head":r.head_branch,"base":r.base_branch,"body":format!("{}\n\nFrozen candidate: `{}`\nExpected target: `{}`\n\nValidated and reviewed by DevDesk before local CAS and exact remote lease. GitHub records indirect merge; no platform merge endpoint is used.",r.marker(),r.candidate,r.expected_target)})))?
         };
         self.receipt(r, &row)
@@ -289,6 +313,21 @@ mod tests {
     use super::*;
     fn fixture() -> Value {
         json!({"id":"fixture-repo","nameWithOwner":"owner/repo","viewerPermission":"ADMIN","ref":{"target":{"oid":"a".repeat(40)}},"branchProtectionRules":{"totalCount":0,"pageInfo":{"hasNextPage":false}},"rulesets":{"nodes":[],"pageInfo":{"hasNextPage":false}}})
+    }
+    #[test]
+    fn pr_request_validation_does_not_query_or_require_branch_protection() {
+        let merge = uuid::Uuid::new_v4().to_string();
+        let request = PullRequestRequest {
+            repository: "owner/repo".into(),
+            project: uuid::Uuid::new_v4().to_string(),
+            head_branch: format!("devdesk/candidates/{merge}"),
+            merge,
+            base_branch: "main".into(),
+            candidate: "a".repeat(40),
+            expected_target: "b".repeat(40),
+            number: None,
+        };
+        GitHubPullRequests.validate_request(&request).unwrap();
     }
     #[test]
     fn never_treat_admin_or_incomplete_rules_as_permission_to_bypass() {

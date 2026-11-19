@@ -26,13 +26,13 @@ TestRequest 固定操作 ID、候选、环境、GitContext、实际实例和 Tes
 
 目录来自明确授权，不要求 `tests/` 前缀。适配器校验路径规范化、symlink、受保护元数据、读写冲突和实际工作副本。只读根目录不生成重复的点路径挂载，局部只读覆盖不能被更宽的写授权突破。
 
-Git 候选是基于预期目标的实际单父提交，并返回平台读取的父提交和 diff。接纳核对当前计划的 ActionPermit、本次运行的候选和对应测试/评审条件；human 策略或 Approved 条件才要求确切人类决定，automatic 不产生人工签名。授权内的 waiver 单独记录，不能伪造实际测试、候选或 CAS。本地 CAS、远端 lease、PR head / merged / merge_commit 分别核对；详细版平台只创建 PR，本地推进不能冒充远端交付。精简版由严格 required check 与直接父目标约束保护，以确切 head SHA 调用 PR merge，验证最终父提交/tree 后同步本地；Feature/main 还需绑定确切交付的 Human 决定，硬性测试不能豁免。
+旧版 Git 候选为基于预期目标的单父提交；新交付直接使用开发分支 PR，以 GitHub 试合并的目标/源双父提交及 tree 作为测试候选。平台读取真实父提交和 diff，兼容历史单父候选，但不再新建远端 candidates 分支。接纳核对当前计划的 ActionPermit、本次运行的候选和对应测试/评审条件；human 策略或 Approved 条件才要求确切人类决定，automatic 不产生人工签名。授权内的 waiver 单独记录，不能伪造实际测试、候选或 CAS。本地 CAS、远端 lease、PR head / merged / merge_commit 分别核对；详细版平台只创建 PR，本地推进不能冒充远端交付。精简版 PR 创建无需额外保护配置，不修改已有规则；无保护分支以 GitHub updateRefs beforeOid 和 force=false 原子快进，已有保护分支按现有门禁以确切 head SHA 调用普通 PR merge，验证最终父提交/tree 后同步本地；Feature/main 还需绑定确切交付的 Human 决定，硬性测试不能豁免。
 
 取消等待真实停止，封存与清理分开确认。未知副作用进入核对，不盲目重试；技术重试使用新执行身份并保留原请求和结果。输出合同拒绝实际回执时保留观察证据并及时失败，不让步骤永久停留在运行状态。
 
 精简版合入核对先只读确认原 PR 的合入版本、父提交与 tree。远端已合入但本地尚未同步时，核对授权可以派生只含本地同步的不可变意图，保留原业务版本、目标头和工作区围栏；脏现场阻塞，checkout 中断只恢复同步，不再发布状态或调用 merge。原执行已有停止决定时仍保留取消终态；之后明确的技术重试只可采用同节点、计划、输入和原请求的真实合入及同步回执，不能伪造原执行成功或覆盖更新的目标。
 
-PR 的 `base.sha` 可能保留创建时快照，精简版的状态发布、就绪检查、合入及核对另读实际目标分支 `commit.sha`。连接 EOF 保持未知分类；只读核对确认确切 PR 未合入、严格保护仍有效且目标已推进后，才能记录 `stale_target/not_applied`，释放原确切写入围栏并允许正常目标刷新。已停止执行仍保留取消终态，刷新使用新执行与原源版本预算，重新执行合并结果回归和确切 Human 门禁；不提交原计划的业务头变更，不重发旧候选。HTTP 拒绝状态同时接受字符串和数字形式，其余未知响应不能当作未应用。
+PR 的 `base.sha` 可能保留创建时快照，精简版的状态发布、就绪检查、合入及核对另读实际目标分支 `commit.sha`。连接 EOF 保持未知分类；只读核对确认确切 PR 未合入且目标已推进后，才能记录 `stale_target/not_applied`，释放原确切写入围栏并允许正常目标刷新。已停止执行仍保留取消终态，刷新使用新执行与原源版本预算，重新执行合并结果回归和确切 Human 门禁；不提交原计划的业务头变更，不重发旧候选。HTTP 拒绝状态同时接受字符串和数字形式，其余未知响应不能当作未应用。
 
 Artifact 使用不可变 ID、相对路径和 SHA-256，先暂存、fsync、rename，再提交引用。执行和策略身份包含固定版本与资产摘要，缺失能力不能用模拟结果替代。
 
@@ -43,3 +43,7 @@ Artifact 使用不可变 ID、相对路径和 SHA-256，先暂存、fsync、rena
 运行准备按源修订中的构建文件/OCI digest 执行，安装以配方摘要、实际镜像及驱动/权限资产验证报告绑定；版本标签不是兼容判据。Codex 的 prepare 探测初始化、会话与动态工具注册，DSH 只探测初始化，均不调用模型或执行工具。
 
 实现依据：[执行端口](../crates/core/src/ports.rs)、[Harness](../crates/adapters/src/harness.rs)、[真实测试](../crates/adapters/src/tests.rs)、[Git](../crates/adapters/src/git.rs)、[协议探针](../crates/adapters/src/runtime_verification.rs)。
+
+PR 创建、目标观察和失败核对不会写入分支保护规则。GitHub 原子目标比较语义参见 [updateRefs](https://docs.github.com/en/graphql/reference/git#updaterefs)；现有 required checks 和评审规则由仓库配置与 GitHub 合并门禁执行。
+
+直接开发分支 PR 分别保留源 head SHA 与已测试的试合并 SHA。无保护分支原子推进到已测试试合并提交，使用原目标 beforeOid、force=false；已有保护分支走普通 PR 合并门禁，核对实际合入的目标/源父提交和测试 tree。历史请求未包含 merge_revision 时继续按旧版 head 语义核对；新请求额外携带冻结试合并 SHA。PR 可合并性尚在计算时只读轮询，不能把空观察缓存为永久完成。参考 [GitHub 的 PR 试合并提交语义](https://docs.github.com/en/rest/pulls/pulls#get-a-pull-request)。

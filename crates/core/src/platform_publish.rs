@@ -21,6 +21,7 @@ pub(crate) enum PublishAction {
     },
     DeliveryPullRequest(PullRequestRequest),
     DeliveryStatus(PullRequestMergeRequest),
+    DeliveryCandidate(PullRequestRequest),
     DeliveryMerge(PullRequestMergeRequest),
     DeliverySync {
         context: GitContext,
@@ -92,8 +93,10 @@ impl Engine {
                 .applied
         };
         if let Some((_, result)) = self.platform_observed(&stage, "result")?
-            && (result.is_ok()
-                || (!inspect_only && !matches!(action, PublishAction::DeliverySync { .. })))
+            && (matches!(&result, Ok(Some(_)))
+                || (result.is_err()
+                    && !inspect_only
+                    && !matches!(action, PublishAction::DeliverySync { .. })))
         {
             return result;
         }
@@ -120,6 +123,12 @@ impl Engine {
                 .ok_or_else(|| err("unsupported", "未配置 PR 适配器"))?
                 .ensure_delivery(request, !fresh)
                 .map(|v| v.map(|v| json!(v))),
+            PublishAction::DeliveryCandidate(request) => self
+                .pull_requests
+                .as_ref()
+                .ok_or_else(|| err("unsupported", "缺少 PR 适配器"))?
+                .delivery_candidate(request)
+                .map(|value| value.map(|candidate| json!(candidate))),
             PublishAction::DeliveryStatus(request) => self
                 .pull_requests
                 .as_ref()

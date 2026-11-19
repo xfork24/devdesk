@@ -532,6 +532,10 @@ fn immutable_manifests_reject_incomplete_current_shapes() {
 
 #[test]
 fn test_recipe_schema_rejects_the_same_unsafe_paths_as_the_domain() {
+    let automatic = ProjectTestConfiguration::default();
+    automatic.validate().unwrap();
+    round_trip::<ProjectTestConfiguration>("ProjectTestConfiguration", json!(automatic));
+    assert!(automatic.regression.is_none());
     for path in [
         "tests/example.test.mjs",
         "tests/nested/test.mjs",

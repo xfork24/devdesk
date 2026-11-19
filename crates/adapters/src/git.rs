@@ -2,6 +2,8 @@
 use super::*;
 use crate::process::{Output, capture_command};
 use std::{process::Command, time::Duration};
+#[path = "git_test_configuration.rs"]
+mod test_configuration;
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct RepositoryFacts {
@@ -810,6 +812,24 @@ impl CliGit {
                     && c.source.owner != c.project),
             "发布分支不属于冻结上下文",
         )?;
+        if branch.starts_with("devdesk/candidates/") {
+            let actual = self.remote_head(&repo, branch)?;
+            if actual.as_deref() == Some(revision) {
+                return Ok(RepositoryReceipt::PublishedRef {
+                    revision: revision.into(),
+                    branch: branch.into(),
+                });
+            }
+            return Err(err(
+                "legacy_candidate_publication",
+                "不再创建或更新远端 candidates 分支；请以原开发分支重新发布 PR",
+            )
+            .technical_not_applied()
+            .with_context(
+                "retired remote candidate ref",
+                json!({"branch":branch,"requested":revision,"actual":actual}),
+            ));
+        }
         self.inspect_unlocked(&c.project, &c.workspace.repository, &c.workspace.mainline)?;
         if matches!(
             stage,
@@ -1503,6 +1523,13 @@ impl CliGit {
     }
 }
 impl ports::Git for CliGit {
+    fn discover_project_tests(
+        &self,
+        project: &str,
+        mainline: &str,
+    ) -> Result<ProjectTestDiscovery> {
+        self.discover_tests(project, mainline)
+    }
     fn observe_delivery_target(&self, c: &GitContext) -> Result<Option<String>> {
         self.remote_head(&self.context(c)?, &c.target.branch)
     }
@@ -1548,6 +1575,29 @@ impl ports::Git for CliGit {
                     &repo,
                     &["rev-parse", "--verify", &format!("{revision}^{{tree}}")],
                 )?)
+    }
+    fn fetch_delivery_commit(&self, c: &GitContext, revision: &str) -> Result<()> {
+        require(valid_oid(revision), "PR 候选必须为固定 SHA")?;
+        let repo = self.context(c)?;
+        let reference = format!("refs/devdesk/pr-candidates/{revision}");
+        if let Some(saved) = self.existing_ref(&repo, &reference)? {
+            return require(saved == revision, "本地 PR 候选引用不符");
+        }
+        self.output(&repo, &["fetch", "--no-tags", "origin", revision])?;
+        require(
+            self.oid(&repo, "FETCH_HEAD")? == revision,
+            "PR 候选读取版本不符",
+        )?;
+        self.output(
+            &repo,
+            &[
+                "update-ref",
+                &reference,
+                revision,
+                &"0".repeat(revision.len()),
+            ],
+        )?;
+        Ok(())
     }
     fn fetch_delivery_target(&self, c: &GitContext, expected: &str) -> Result<()> {
         let repo = self.context(c)?;

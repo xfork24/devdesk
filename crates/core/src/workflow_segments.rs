@@ -86,6 +86,71 @@ impl Engine {
         commit.finish(fingerprint, json!({"id":id,"status":"active"}))
     }
     pub fn drive_workflow_segments(&self) -> Result<()> {
+        for selected in self.pending_runtime_records("workflow_segment", "stopped")? {
+            let segment = restored(self, &selected)?;
+            if segment.data["reason"] != "blocked: 原委托决定者已撤权"
+                || segment.data["actor"]["kind"] != "controller"
+                || segment.data["operations"].as_u64().unwrap_or(u64::MAX)
+                    >= segment.data["max_operations"].as_u64().unwrap_or(0)
+            {
+                continue;
+            }
+            let root = WorkflowHeaderFacts::read(self, &segment.definition_id)?;
+            let driver = one(
+                self.store.as_ref(),
+                "workflow_driver_root",
+                &root.instance.root_instance_id,
+            )?;
+            let authority = one(
+                self.store.as_ref(),
+                "controller_authority",
+                &text(&segment.data["actor"], "controller_id")?,
+            )?;
+            if root.instance.paused
+                || root.instance.cancel_requested
+                || matches!(
+                    root.instance.status,
+                    StepExecutionStatus::Completed | StepExecutionStatus::Cancelled
+                )
+                || root.instance.active_plan_revision_id != segment.data["plan_revision_id"]
+                || !segment_driver_matches(driver.value.as_ref(), &segment.data)
+                || !authority.value.as_ref().is_some_and(|r| {
+                    r["data"]["status"] == "active"
+                        && r["data"]["epoch"] == segment.data["actor"]["epoch"]
+                })
+            {
+                continue;
+            }
+            let mut next = segment.clone();
+            let mut data = next.data.clone();
+            data["status"] = json!("active");
+            data["reason"] = json!("");
+            update_record(&mut next, data);
+            match self.store.commit_changes(&PreparedChangeSet {
+                command_id: format!(
+                    "segment-authority-restored:{}:{}",
+                    segment.id, selected.revision
+                ),
+                fingerprint: configuration_hash(&next.data),
+                read_set: ReadSet::new(vec![
+                    version(&selected),
+                    version(&root.header),
+                    version(&driver),
+                    version(&authority),
+                ])?,
+                changes: vec![ResourceChange {
+                    resource: selected.resource,
+                    value: self.store.encode_runtime_record(&next)?,
+                }],
+                result: json!({"id":segment.id}),
+                time: now() as i64,
+            }) {
+                Err(error) if error.retryable_conflict() => continue,
+                result => {
+                    result?;
+                }
+            }
+        }
         let began = std::time::Instant::now();
         for (visited, selected) in self
             .pending_runtime_records("workflow_segment", "active")?

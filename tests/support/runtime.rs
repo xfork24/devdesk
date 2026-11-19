@@ -215,11 +215,6 @@ pub fn bind_default_permissions(e: &Engine) {
         ),
         (
             PermissionTargetKind::Sandbox,
-            "builtin-sandbox-docker:1",
-            "builtin-permission-sandbox-full-access:1",
-        ),
-        (
-            PermissionTargetKind::Sandbox,
             DEFAULT_PERMISSION_SANDBOX,
             "builtin-permission-sandbox-full-access:1",
         ),

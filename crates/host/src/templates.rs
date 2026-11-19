@@ -192,14 +192,13 @@ mod tests {
         let custom = write(&w, "role.revise", Some(&default_role_id("analyst")),
             json!({"name":"Custom analyst","data":{"instructions":"Keep custom responsibility","visibility":{"kind":"global"}}}), None).unwrap();
         let before = w.global.snapshot().unwrap();
-        for sandbox in [
-            "builtin-sandbox-docker:1",
-            "simplified-sandbox-project-tests:1",
-        ] {
-            let target =
-                permission_target(&before, PermissionTargetKind::Sandbox, sandbox).unwrap();
-            assert!(active_permission_binding(&before, &target).is_some());
-        }
+        let target = permission_target(
+            &before,
+            PermissionTargetKind::Sandbox,
+            "builtin-sandbox-docker:2",
+        )
+        .unwrap();
+        assert!(active_permission_binding(&before, &target).is_some());
         // Simulate a compatible catalog whose defaults still select detailed sources.
         let mut legacy = before.clone();
         let state = legacy
@@ -207,15 +206,15 @@ mod tests {
             .iter_mut()
             .find(|r| r.id == TEMPLATE_CATALOG_STATE)
             .unwrap();
-        state.data["defaults"]["workflow_ref"] = json!("builtin-workflow-feature-sol-high:11");
-        state.data["defaults"]["task_workflow_ref"] = json!("builtin-workflow-task-sol-high:10");
-        state.data["defaults"]["standard_ref"] = json!("builtin-standard-engineering:9");
+        state.data["defaults"]["workflow_ref"] = json!("builtin-workflow-feature-sol-high:12");
+        state.data["defaults"]["task_workflow_ref"] = json!("builtin-workflow-task-sol-high:11");
+        state.data["defaults"]["standard_ref"] = json!("builtin-standard-engineering:10");
         state.content_hash = content_digest(&state.refs, &state.data);
         let receipt = update_factory_catalog(&mut legacy, "factory-test").unwrap();
         assert_eq!(receipt["changed"], true);
         assert_eq!(
             current_template_defaults(&legacy).unwrap()["workflow_ref"],
-            "simplified-workflow-feature:2"
+            "simplified-workflow-feature:3"
         );
         for source in before.governance.iter().filter(|r| r.immutable) {
             assert_eq!(legacy.configuration(&source.id).unwrap(), source);

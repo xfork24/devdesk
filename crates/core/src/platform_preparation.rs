@@ -25,6 +25,10 @@ impl PreparedConfiguredPlatform {
     pub fn runtime_operation_id(&self) -> &str {
         &self.operation
     }
+    pub fn runtime_required(&self) -> bool {
+        self.request.definition.runtime.is_some()
+            && self.grant.data["regression_not_configured"] != true
+    }
 }
 impl Engine {
     pub fn prepare_configured_platform(
@@ -235,7 +239,7 @@ impl Engine {
             "冻结平台调用".into(),
             1,
             None,
-            json!({"status":"prepared","command":c,"fingerprint":fingerprint,"request":request,"authority":authority,"source_basis":basis,"origin":origin,"runtime_operation_id":operation,"root_instance_id":resources.instance.root_instance_id}),
+            json!({"status":"prepared","command":c,"fingerprint":fingerprint,"request":request,"authority":authority,"source_basis":basis,"origin":origin,"runtime_operation_id":operation,"root_instance_id":resources.instance.root_instance_id,"regression_not_configured":request.definition.qualified_name == "tests.project" && resources.instance.inputs.get("test_configuration").and_then(|c|c.get("regression")).is_some_and(Value::is_null)}),
             false,
         );
         grant.id = key.id.clone();
@@ -346,10 +350,7 @@ impl Engine {
                 "平台运行环境改变了原确切源或操作身份",
             )?;
         } else {
-            require(
-                request.definition.runtime.is_none(),
-                "工具需要原冻结运行环境",
-            )?;
+            require(!prepared.runtime_required(), "工具需要原冻结运行环境")?;
         }
         let authority: WorkflowToolAuthority =
             serde_json::from_value(prepared.grant.data["authority"].clone())

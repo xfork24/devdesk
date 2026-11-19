@@ -606,54 +606,66 @@ impl Engine {
                         }
                     }
                     "tests.run" | "tests.project" => {
-                        let runtime = request
-                            .runtime
-                            .clone()
-                            .ok_or_else(|| err("configuration_required", "测试工具缺少冻结环境"))?;
                         let configuration = resources.instance.inputs.get("test_configuration");
-                        let mut recipe = if request.definition.qualified_name == "tests.project" {
-                            configuration.ok_or_else(|| {
-                                err("configuration_required", "项目回归缺少冻结配置")
-                            })?["regression"]
-                                .clone()
+                        if request.definition.qualified_name == "tests.project"
+                            && configuration
+                                .and_then(|c| c.get("regression"))
+                                .is_some_and(Value::is_null)
+                        {
+                            PlatformAction::Value(
+                                json!({"operation_id":operation,"candidate":text(&p["workspace"], "revision")?,"status":"succeeded","skipped":true,"reason":"no_regression_configured","summary":"未配置项目回归测试，按项目配置直接通过","expected_failure":false,"assertion_failed":false,"writer_revoked":true,"exit_code":0,"counts":{"tests":0,"passed":0,"failed":0},"execution":null,"environment":null}),
+                            )
                         } else {
-                            p["recipe"].clone()
-                        };
-                        if let Some(configuration) = configuration {
-                            if request.definition.qualified_name == "tests.run" {
-                                require(
-                                    recipe["runner"] == configuration["independent_runner"],
-                                    "独立测试执行器必须匹配冻结项目配置",
-                                )?;
+                            let runtime = request.runtime.clone().ok_or_else(|| {
+                                err("configuration_required", "测试工具缺少冻结环境")
+                            })?;
+                            let mut recipe = if request.definition.qualified_name == "tests.project"
+                            {
+                                configuration.ok_or_else(|| {
+                                    err("configuration_required", "项目回归缺少冻结配置")
+                                })?["regression"]
+                                    .clone()
+                            } else {
+                                p["recipe"].clone()
+                            };
+                            if let Some(configuration) = configuration {
+                                if request.definition.qualified_name == "tests.run" {
+                                    require(
+                                        recipe["runner"] == configuration["independent_runner"],
+                                        "独立测试执行器必须匹配冻结项目配置",
+                                    )?;
+                                }
+                                if let Some(image) = recipe
+                                    .get("image")
+                                    .and_then(Value::as_str)
+                                    .filter(|_| request.definition.qualified_name == "tests.run")
+                                {
+                                    require(
+                                        runtime.sandbox.image.as_deref() == Some(image),
+                                        "测试配方镜像与冻结运行环境不同",
+                                    )?;
+                                }
                             }
-                            if let Some(image) = recipe.get("image").and_then(Value::as_str) {
-                                require(
-                                    runtime.sandbox.image.as_deref() == Some(image),
-                                    "测试配方镜像与冻结运行环境不同",
-                                )?;
-                            }
+                            recipe["image"] =
+                                json!(runtime.sandbox.image.as_ref().ok_or_else(|| err(
+                                    "configuration_required",
+                                    "测试镜像未冻结"
+                                ))?);
+                            let recipe: TestRecipe = serde_json::from_value(recipe)
+                                .map_err(|e| err("invalid_params", e.to_string()))?;
+                            recipe.validate()?;
+                            PlatformAction::Test(ports::TestRequest {
+                                operation_id: runtime.operation_id.clone(),
+                                session_id: None,
+                                candidate: text(&p["workspace"], "revision")?,
+                                environment: runtime.id.clone(),
+                                origin: Origin::External,
+                                code: Some(context),
+                                runtime: Some(runtime),
+                                recipe: Some(recipe),
+                                expect_assertion_failure: p["expect_assertion_failure"] == true,
+                            })
                         }
-                        recipe["image"] = json!(
-                            runtime
-                                .sandbox
-                                .image
-                                .as_ref()
-                                .ok_or_else(|| err("configuration_required", "测试镜像未冻结"))?
-                        );
-                        let recipe: TestRecipe = serde_json::from_value(recipe)
-                            .map_err(|e| err("invalid_params", e.to_string()))?;
-                        recipe.validate()?;
-                        PlatformAction::Test(ports::TestRequest {
-                            operation_id: runtime.operation_id.clone(),
-                            session_id: None,
-                            candidate: text(&p["workspace"], "revision")?,
-                            environment: runtime.id.clone(),
-                            origin: Origin::External,
-                            code: Some(context),
-                            runtime: Some(runtime),
-                            recipe: Some(recipe),
-                            expect_assertion_failure: p["expect_assertion_failure"] == true,
-                        })
                     }
                     "git.candidate" => PlatformAction::Candidate {
                         context,

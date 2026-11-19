@@ -1236,15 +1236,6 @@
       ]
     },
     {
-      "method": "query.configuration_usage",
-      "access": "read",
-      "scope": "explicit",
-      "precondition": "none",
-      "sites": [
-        "crates/host/src/configuration_read.rs"
-      ]
-    },
-    {
       "method": "query.configuration_references",
       "access": "read",
       "scope": "explicit",
@@ -1252,6 +1243,15 @@
       "sites": [
         "crates/core/src/configuration.rs",
         "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.configuration_usage",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/configuration_read.rs"
       ]
     },
     {
@@ -1448,6 +1448,15 @@
       "sites": [
         "crates/core/src/standards.rs",
         "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.project_test_configuration",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/lib.rs"
       ]
     },
     {
@@ -2405,6 +2414,16 @@
       ]
     },
     {
+      "method": "workflow.delivery.republish",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/workflow_controls.rs",
+        "crates/core/src/workflow_delivery_migration.rs"
+      ]
+    },
+    {
       "method": "workflow.draft.create",
       "access": "mutation",
       "scope": "explicit",
@@ -2734,6 +2753,7 @@
     "runtime.step_checkpoint",
     "workflow.changed",
     "runtime.controller.observe",
+    "runtime.controller.unlimit",
     "runtime.task.worktree",
     "runtime.workflow.change.activate",
     "runtime.workflow.change.quiesce",

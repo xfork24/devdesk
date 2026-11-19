@@ -30,7 +30,11 @@ Workflow 是可发布的流程文档，当前出厂定义记录 schema_version=6
 
 需求 Agent 依据本步骤要求的 Spec 判断是否需要澄清；信息充分即可提交，缺少必要事实时返回 needs_input，summary 说明问题。包含人工确认节点的流程启用持久的 human_governance，子流程继承。等待输入只能由人类经步骤或步骤会话回答，Controller、Rust Driver 和 Segment 均不能代答。
 
-Agent 调度在启动 Feature 后自动唤起经理，继续派发和接纳有资格推进的工作。人工审核点以冻结 Workflow 的 confirmation 和完成规则为准，不由经理按文档名称另加确认。常规文档审核应先满足 Spec 和独立评审条件；需求澄清可发生在文档完成之前。用户可在经理会话中回答，经理仅按本轮用户原文转交步骤，不能自行补造答案。技术故障、执行结果未知及预算耗尽也会暂停调度，应明确报告故障而非包装成需求澄清。
+Agent 调度在启动 Feature 后自动唤起经理，继续派发和接纳有资格推进的工作。人工审核点以冻结 Workflow 的 confirmation 和完成规则为准，不由经理按文档名称另加确认。常规文档审核应先满足 Spec 和独立评审条件；需求澄清可发生在文档完成之前。用户可在经理会话中回答，经理仅按本轮用户原文转交步骤，不能自行补造答案。技术故障及执行结果未知应明确报告故障而非包装成需求澄清。
+
+项目经理在项目生命周期内持续待命，不限制唤醒次数或单轮工具调用次数。旧配置中的 `max_turns_per_wakeup`、`max_tool_calls_per_turn` 仅兼容读取，不再参与调度或授权判断，也不投递给经理。等待、收到实际执行事件或用户指令都不会耗尽经理资格；旧版仅因唤醒次数耗尽而暂停的经理自动恢复原会话和代次，不改变人工审批记录。单次模型调用故障超时仍会停止该次异常执行并报告真实故障，人工接管、明确暂停及未知副作用不会被自动恢复。步骤自身的执行时限与有限返工策略仍按其合同执行。
+
+若旧版次数暂停曾连带停止自动委托，只在原经理与代次、原计划、原驱动及剩余委托额度均有效时恢复原委托。人工接管、更换经理、改变计划、失败评审和真实撤权不会恢复。委托状态变化与其原因随同事务发布 `segment.changed` 事件，经理不再盲等已停止的委托。
 
 Docker create 失败后，只有 daemon 可达且确定该操作的容器不存在，才记录 technical/not_applied：worker 未启动、模型输入未发送。无法核对容器身份或 daemon 不可达仍按结果未知处理，不重发原输入。经理的失败状态展示实际会话错误；恢复通过带上下文的后继会话重新读取当前工作状态，保留原失败轮次。
 
@@ -135,22 +139,22 @@ Workflow 调用仅修改输出合同，且原调用尚无封存输出、未被�
 
 ## 默认流程概览
 
-实际默认为 `simplified-workflow-feature:2`、`simplified-workflow-task:1` 和 `simplified-standard-engineering:2`。Feature 为 5 阶段、14 个业务步骤、19 个实际节点；Task 为 5 阶段、10 个业务步骤、14 个实际节点。内部节点用于工作空间、快照、登记及目标读取，不增加模型交接。默认精简版 Agent/Capability 采用第 3 修订，以紧凑文档和精简版交付自检减少重复成文；结构检查仍由平台执行，独立评审与真实测试门禁不变。经理按实例将 automatic 节点一次交给有界 segment，包括 Agent、Tool 与子流程调用；Human 节点排除在委托之外，异常回到经理处理。
+实际默认为 `simplified-workflow-feature:3`、`simplified-workflow-task:2` 和 `simplified-standard-engineering:3`。Feature 为 5 阶段、14 个业务步骤、19 个实际节点；Task 为 5 阶段、10 个业务步骤、14 个实际节点。内部节点用于工作空间、快照、登记及目标读取，不增加模型交接。默认精简版 Agent/Capability 采用第 3 修订，以紧凑文档和精简版交付自检减少重复成文；结构检查仍由平台执行，独立评审与真实测试门禁不变。经理按实例将 automatic 节点一次交给有界 segment，包括 Agent、Tool 与子流程调用；Human 节点排除在委托之外，异常回到经理处理。
 
 运行事件与业务事实同事务保存。仅同一 running 执行挂接会话/轮次标识、且状态、产物、输入摘要及原因不变的通知标记为 `metadata_only`；经理消费时合并此类通知并以版本守卫推进游标，SSE 和审计保留原事件。结果、失败、停止、Human、计划和控制变化继续处理；旧的无标记通知不被忽略。
 
 - Feature：PRD 与独立评审 → Design 与独立评审 → Task DAG 与独立评审、登记 → 按依赖并发运行 Task → 整体代码评审、源回归、源分支推送、PR 创建、合并结果回归、Human 审核、PR 合入与本地同步。
 - Task：独立测试 → 固定空接口和测试快照、真实断言 Red → 实现、必要文档和开发者自测、受保护快照、独立 Green → 独立代码评审、源回归 → 源分支推送、PR 创建、合并结果回归、合入所属 Feature 与同步。
 
-项目配置的 `test_configuration` 声明语言、独立执行器和项目回归配方，随工作选择与实例输入冻结。独立执行器支持 Node test 和 Python unittest，项目回归还支持显式 argv/cwd/environment 的通用命令与有界准备命令。通用命令失败不能证明有效 Red；加载错误、超时或取消也不能证明 Red/Green。准备和测试在同一无网、无凭据、源码只读容器运行，实际镜像必须匹配冻结配方。
+项目配置的 `test_configuration` 自动从仓库识别语言、独立执行器和项目回归配方；无回归入口时使用 `regression:null` 并记录未配置、直接通过，独立 Red/Green 照常执行。测试配置随工作选择与实例输入冻结。独立执行器支持 Node test 和 Python unittest，项目回归还支持显式 argv/cwd/environment 的通用命令与有界准备命令。通用命令失败不能证明有效 Red；加载错误、超时或取消也不能证明 Red/Green。准备和测试在同一无网、无凭据、源码只读容器运行，实际镜像由冻结的 Docker Sandbox 自动绑定。
 
 PRD、Design、Tasks 评审及最终 Feature 合入使用 Human 确认。签署绑定本轮计划、输入摘要和输出，返工或目标刷新后须重新签署。经理 Agent 没有 Human 身份。Task 无独立 Human 确认，但真实测试、独立评审及精确版本条件不可豁免。
 
-精简版推送原开发分支，并以试合并 tree 创建唯一父提交为确切目标的交付快照；PR 指向平台交付 ref。严格 required check `devdesk/merge-regression`、包含管理员的保护和禁止强推共同阻止目标竞争。平台仅在该候选回归通过后报告状态，并以 head SHA 前置条件 merge；核对最终父提交/tree 后才同步本地并登记完成。PR 创建或远端合入但尚未同步不算完成。原开发分支和全部失败记录保留。未知效果先核对，远端已合入后只恢复同步，脏 worktree 保留。
+精简版直接以开发分支创建 PR：Task → 所属 Feature，Feature → main。不再创建或更新远端 `devdesk/candidates/*` 分支。PR head 固定为已推送的源 SHA，目标为确切基线；平台读取 GitHub 的 PR 试合并提交，核对其两个父提交正好是目标 SHA 与源 SHA，并将该提交固定到本地 `refs/devdesk/pr-candidates/<SHA>`，合并回归和 Human 审批绑定这份完整交付对象及 tree。PR 创建不要求目标分支开启保护，也不新增、修改或删除保护规则。平台仅在候选回归通过后报告 `devdesk/merge-regression` 状态。无保护目标以 GitHub `updateRefs` 的 `beforeOid` 原子比较和 `force=false` 快进推进，目标竞争使原请求失败；已有保护的目标经普通 PR 合并路径遵守仓库现有检查和评审门禁，不使用管理员绕过或降级直推。核对最终父提交/tree 后才同步本地并登记完成。PR 创建或远端合入但尚未同步不算完成。原开发分支和全部失败记录保留。未知效果先核对，远端已合入后只恢复同步，脏 worktree 保留。
 
 `stale_target` 且已证明未应用的交付失败，可经 `workflow.step.retry` 重做目标读取及其下游 PR、合并回归和最终 Human 决定，保留未受影响的源回归和代码评审。平台按源版本累计刷新额度，业务返工不能重置该额度。
 
-详细版显式入口为 `builtin-workflow-feature-sol-high:11`（8 阶段、22 步）、`builtin-workflow-task-sol-high:10`（8 阶段、20 步）及 `builtin-standard-engineering:9`。其执行合同保留独立 documentation、verify、closure 及候选评审，平台只创建 PR；历史源和实例按原冻结引用恢复。详细版 Agent/Sandbox 应使用其原绑定，可用对应源闭包核对配置。
+详细版显式入口为 `builtin-workflow-feature-sol-high:12`（8 阶段、22 步）、`builtin-workflow-task-sol-high:11`（8 阶段、20 步）及 `builtin-standard-engineering:10`。其执行合同保留独立 documentation、verify、closure 及候选评审，平台只创建 PR；历史源和实例按原冻结引用恢复。详细版 Agent/Sandbox 应使用其原绑定，可用对应源闭包核对配置。
 
 ## 预算与并发
 
@@ -231,3 +235,15 @@ Web 命令成功后使相应项目的显示缓存失效；显式刷新绕过标�
 Rust 驱动与已授权委托的纯控制阶段若一轮未产生提交，Host 用该项目已提交事件游标暂记空闲；游标变化立即使提示过期，另以一秒补扫核对租约及遗漏。记录最多 128 项，不保存或授予业务资格；外部轮询、取消停止及原生回执交付不受此提示限制。实际命令仍重新读取权威状态并验证原资源读集合。
 
 运行中的流程使用 ChangeSet `set_review_policies{rework_policies,review_policies}` 只调整后续拒绝处置规则，保留原步骤合同、执行和报告；首次采用时同批提交 adopt_rework_baseline 明确历史额度。
+
+## 调度冲突恢复与故障诊断
+
+未提交的 `revision_conflict` 与短事务 `storage_busy` 保留原待执行意图及 command_id，后续调度重新读取状态，不把并发保护记为业务失败。已提交回执优先接纳；具有 applied/unknown 外部效果的失败进入原核对路径，不按普通竞争自动重发。步骤观察写入后，完成条件提示读取新的执行快照，避免与本轮刚提交的状态冲突。
+
+后台冲突释放阶段占用、清除空闲提示，并以最高一秒的退避重新调度。相同错误至少连续八次且持续五秒仍无进展时，报告 `scheduler_retry_stalled`，保留自动重试，每三十秒最多重复报告一次；源状态变化或成功后重置竞争统计。单项目调度读取失败不阻止其他项目的调度，并为无法读取运行计数的项目保守保留并发名额，避免超额启动。
+
+普通并发竞争不输出错误日志。真实故障输出单行 JSON `type:scheduler_error`，包含时间、完整错误对象及调度边界堆栈。错误的 `location` 标识产生错误的源码位置，`context` 按操作保留项目、阶段、原意图与命令、流程及执行 ID；步骤冲突还保留原/实际版本与变化字段。后台同时发生多个故障会保留在 `failures` 数组中，不再只留下第一句错误。工作线程故障包含该线程的边界堆栈，panic 保留原消息；这些堆栈与原始错误位置共同用于定位。
+
+旧版主分支强制保护的只读预检失败，只有在原不可变阶段回执完全匹配、且候选和 PR 阶段均未授予时，核对才可确认为 `obsolete_protection_preflight/not_applied` 并释放原围栏，交由正常重试继续。已有 PR 写入授予或未知外部结果仍须按原 marker 核对，不自动重发。
+
+`workflow.delivery.republish` 由实际 Human 请求旧版未合入交付迁移，需携带原流程/步骤版本、PR number、head SHA、候选 SHA 与原因。它只替换 PR 发布及其后继平台验证/人工确认，归档原执行，保留源发布、源测试、独立评审和已完成子流程；不消耗业务返工额度，不迁移未知副作用或已合入交付。原审批因执行/输入变化失效，必须对新 PR 重新确认。历史 candidates PR 仍可只读核对和恢复，适配器不再新建对应远端分支或 PR。

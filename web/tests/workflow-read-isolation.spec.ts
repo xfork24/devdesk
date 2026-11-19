@@ -1238,7 +1238,7 @@ test("paused root manager resumes its frozen sources without configuration contr
 });
 
 for (const failure of ["catalog", "defaults"] as const) {
-  test(`Standard history remains visible when ${failure} loading fails`, async ({
+  test(`Standard details keep errors visible when ${failure} loading fails`, async ({
     page,
   }) => {
     const url = await fixture(page, failure);
@@ -1246,83 +1246,85 @@ for (const failure of ["catalog", "defaults"] as const) {
     const standard = page
       .getByRole("region", { name: "流程规范", exact: true })
       .locator(".work-standard");
-    await standard.locator(":scope > summary").click();
-    await standard.getByText("规范采用历史（2）", { exact: true }).click();
-    await expect(
-      standard.getByText("standard-old:1 · 采用记录 1", { exact: false }),
-    ).toBeVisible();
+    await standard
+      .getByRole("button", { name: "采用的规范", exact: true })
+      .click();
     await expect(standard.getByRole("alert")).toContainText(
       "controlled read failure",
     );
+    await expect(standard.getByText(/规范采用历史/)).toHaveCount(0);
     await expect(
-      standard.getByText("standard-old:1 · 采用记录 1", { exact: false }),
-    ).toBeVisible();
+      standard.getByText("与其他工作比较规范", { exact: true }),
+    ).toHaveCount(0);
   });
 }
 
-test("a late defaults read preserves an already displayed Standard comparison", async ({
+test("Standard and authorization open independently on one row without comparison or history controls", async ({
   page,
-}) => {
+}, info) => {
   const url = await fixture(page);
-  let releaseDefaults!: () => void;
-  const defaults = new Promise<void>((resolve) => {
-    releaseDefaults = resolve;
-  });
-  const selection = {
-    standard_ref: "standard-current:1",
-    children: [],
-    exceptions: [],
-  };
-  const diff = {
-    equal: false,
-    changes: [{ kind: "definition_changed", source_kind: "workflow" }],
-  };
-  await page.route("**/rpc", async (route) => {
-    const call = route.request().postDataJSON();
-    let result: any;
-    if (call.method === "query.project_configuration") {
-      await defaults;
-      result = { configuration: null };
-    } else if (call.method === "query.work_standard_choices") {
-      result = {
-        records: [
-          {
-            id: "other-work",
-            project_title: "Fixture",
-            title: "Other work",
-            work: { kind: "task" },
-          },
-        ],
-        total: 1,
-      };
-    } else if (call.method === "query.work_standard_diff") {
-      result = { entry_diff: diff, diff, before: selection, after: selection };
-    } else return route.fallback();
-    await route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
+  const reads: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().endsWith("/rpc"))
+      reads.push(request.postDataJSON().method);
   });
   await page.goto(url);
   const standard = page
     .getByRole("region", { name: "流程规范", exact: true })
     .locator(".work-standard");
-  await standard.locator(":scope > summary").click();
-  await standard.getByText("与其他工作比较规范", { exact: true }).click();
-  await standard
-    .getByLabel("比较工作", { exact: true })
-    .selectOption("other-work");
-  await standard
-    .getByRole("button", { name: "比较工作规范", exact: true })
-    .click();
-  await expect(standard.locator(".standard-diff").first()).toContainText(
-    "1 项规范变化",
-  );
-  releaseDefaults();
-  // This selection is set by the late read's callback, so the assertion runs after it.
+  const adopted = standard.getByRole("button", {
+    name: "采用的规范",
+    exact: true,
+  });
+  const authorization = standard.getByRole("button", {
+    name: "执行者与授权",
+    exact: true,
+  });
+  await expect(adopted).toHaveAttribute("aria-expanded", "false");
+  await expect(authorization).toHaveAttribute("aria-expanded", "false");
+  const [left, right] = await Promise.all([
+    adopted.boundingBox(),
+    authorization.boundingBox(),
+  ]);
+  expect(Math.abs(left!.y - right!.y)).toBeLessThan(2);
+  await authorization.click();
   await expect(
-    standard.getByLabel("采用 Standard", { exact: true }),
-  ).toHaveValue("standard-current:1");
-  await expect(standard.locator(".standard-diff").first()).toContainText(
-    "1 项规范变化",
-  );
+    standard.getByRole("region", { name: "执行者与授权内容", exact: true }),
+  ).toBeVisible();
+  await expect(
+    standard.getByRole("region", { name: "采用的规范内容", exact: true }),
+  ).toBeHidden();
+  await expect(adopted).toHaveAttribute("aria-expanded", "false");
+  await adopted.click();
+  await expect(
+    standard.getByRole("region", { name: "采用的规范内容", exact: true }),
+  ).toBeVisible();
+  await expect(authorization).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    standard.getByRole("button", { name: "保存采用的规范", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    standard.getByText("与其他工作比较规范", { exact: true }),
+  ).toHaveCount(0);
+  await expect(standard.getByText(/规范采用历史/)).toHaveCount(0);
+  await expect(standard.getByText(/展开查看/)).toHaveCount(0);
+  expect(reads).not.toContain("query.work_standard_choices");
+  expect(reads).not.toContain("query.work_standard_diff");
+  await page.screenshot({
+    path: info.outputPath("standard-and-authorization.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const [narrowLeft, narrowRight] = await Promise.all([
+    adopted.boundingBox(),
+    authorization.boundingBox(),
+  ]);
+  expect(Math.abs(narrowLeft!.y - narrowRight!.y)).toBeLessThan(2);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
 });
 
 for (const catalogState of ["pending", "failed"] as const) {
@@ -1523,7 +1525,20 @@ test("流程、材料、步骤上下文、Agent 讨论和审计定位同一执�
                 },
               ],
             }
-          : { records: [record, pendingRecord] };
+          : {
+              records: [
+                record,
+                pendingRecord,
+                {
+                  ...record,
+                  id: "previous-execution",
+                  execution_id: "previous-execution",
+                  step_name: "首轮需求",
+                  historical: true,
+                  outputs: [],
+                },
+              ],
+            };
         break;
       case "query.workflow_progress":
         result = {
@@ -1744,6 +1759,14 @@ test("流程、材料、步骤上下文、Agent 讨论和审计定位同一执�
   }
   await step.getByRole("link", { name: "查看执行记录", exact: true }).click();
   await expect(
+    page.getByRole("checkbox", { name: "显示历史执行" }),
+  ).toHaveCount(0);
+  await expect(
+    page
+      .getByRole("navigation", { name: "执行轮次目录" })
+      .getByRole("button", { name: /首轮需求/ }),
+  ).toBeVisible();
+  await expect(
     page.getByRole("article", { name: "选中执行记录" }),
   ).toContainText("人类确认回执");
   await expect(
@@ -1817,6 +1840,14 @@ test("上下文切换保留完整目录，经理编排轮次不读取步骤执�
       session_id: "design-session",
       turn_id: "design-turn",
     },
+    {
+      ...requirements,
+      execution_id: "earlier-requirements-execution",
+      step_name: "首轮需求",
+      session_id: "earlier-requirements-session",
+      turn_id: "earlier-requirements-turn",
+      historical: true,
+    },
   ];
   const executionReads: string[] = [];
   await page.route("**/rpc", async (route) => {
@@ -1862,7 +1893,13 @@ test("上下文切换保留完整目录，经理编排轮次不读取步骤执�
     name: "流程步骤上下文目录",
   });
   const detail = page.getByRole("article", { name: "选中步骤上下文" });
-  await expect(directory.getByRole("button")).toHaveCount(3);
+  await expect(
+    page.getByRole("checkbox", { name: "显示历史执行" }),
+  ).toHaveCount(0);
+  await expect(
+    directory.getByRole("button", { name: /首轮需求/ }),
+  ).toBeVisible();
+  await expect(directory.getByRole("button")).toHaveCount(4);
   await expect(detail).toContainText("项目经理编排轮次的请求与响应见关联会话");
   await expect(detail.getByRole("alert")).toHaveCount(0);
   await expect(
@@ -1891,7 +1928,7 @@ test("上下文切换保留完整目录，经理编排轮次不读取步骤执�
     await expect(
       detail.getByRole("heading", { name, exact: true }),
     ).toBeVisible();
-    await expect(directory.getByRole("button")).toHaveCount(3);
+    await expect(directory.getByRole("button")).toHaveCount(4);
     await expect(detail.getByRole("alert")).toHaveCount(0);
   }
   await expect(
@@ -1900,7 +1937,7 @@ test("上下文切换保留完整目录，经理编排轮次不读取步骤执�
   await page
     .getByLabel("上下文任务与轮次")
     .selectOption("manager-previous-turn");
-  await expect(directory.getByRole("button")).toHaveCount(3);
+  await expect(directory.getByRole("button")).toHaveCount(4);
   await expect(detail).toContainText("项目经理编排轮次的请求与响应见关联会话");
   expect(executionReads).toEqual([]);
   await page.screenshot({
@@ -2354,7 +2391,9 @@ test("folded work configuration is lazy and Standard apply keeps its original re
   expect(workReads).toBe(0);
   expect(fullReads).toBe(0);
   const standard = manager.locator(".work-standard").first();
-  await standard.locator(":scope > summary").click();
+  await standard
+    .getByRole("button", { name: "采用的规范", exact: true })
+    .click();
   await expect.poll(() => workReads).toBe(1);
   await expect(
     standard.getByLabel("采用的入口 Workflow", { exact: true }),
@@ -2366,8 +2405,12 @@ test("folded work configuration is lazy and Standard apply keeps its original re
   await manager
     .getByRole("button", { name: "刷新管理状态", exact: true })
     .click();
-  await standard.locator(":scope > summary").click();
-  await standard.locator(":scope > summary").click();
+  await standard
+    .getByRole("button", { name: "采用的规范", exact: true })
+    .click();
+  await standard
+    .getByRole("button", { name: "采用的规范", exact: true })
+    .click();
   await expect(
     standard.getByLabel("规范切换原因", { exact: true }),
   ).toHaveValue("keep original baseline");
@@ -2656,5 +2699,244 @@ test("manual background bodies load only for the selected disclosure", async ({
   await expect(selected.locator("a.raw-json-link")).toHaveAttribute(
     "href",
     /context_id=background-3/,
+  );
+});
+
+test("经理待接纳产物与真正的人工确认分别展示", async ({ page }) => {
+  const url = await fixture(page);
+  let pendingHuman = false;
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    let result: any;
+    if (call.method === "query.orchestration") {
+      result = {
+        record: {
+          id: "manager",
+          revision: 1,
+          data: { status: "active", owner_id: "read-feature", epoch: 1 },
+        },
+        decisions: pendingHuman
+          ? [
+              {
+                id: "exact-decision",
+                revision: 1,
+                current: true,
+                data: {
+                  status: "pending",
+                  request: {
+                    instance_id: "read-instance",
+                    operation: "workflow.step.confirm",
+                    arguments: { execution_id: "implementation-2" },
+                    interaction: {
+                      title: "请确认本轮实施产物",
+                      requested_action: "确认或拒绝本轮产物",
+                      materials: [],
+                      evidence: [],
+                    },
+                  },
+                },
+              },
+            ]
+          : [],
+        interactions: [],
+        messages: [],
+        calls: [],
+      };
+    } else if (call.method === "query.workflow_driver") {
+      result = {
+        driver: { id: "driver", data: { mode: "agent" } },
+        waiting: [
+          {
+            instance_id: "read-instance",
+            execution_id: "implementation-2",
+            path: "/implementation/0/implementation",
+            status: "awaiting_acceptance",
+            actions: {},
+          },
+        ],
+      };
+    } else return route.fallback();
+    await route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
+  });
+  await page.goto(url);
+  await expect(
+    page.getByText(
+      "产物已完成，等待项目经理研判并接纳；当前没有需要你确认的事项。",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(page.getByText(/待经理研判/)).toBeVisible();
+  await expect(
+    page.getByText("请确认本轮实施产物", { exact: true }),
+  ).toHaveCount(0);
+  pendingHuman = true;
+  await page.reload();
+  await expect(
+    page.getByText("请确认本轮实施产物", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "产物已完成，等待项目经理研判并接纳；当前没有需要你确认的事项。",
+      { exact: true },
+    ),
+  ).toHaveCount(0);
+});
+
+async function managerReviewLinks(page: Page, review: string) {
+  const url = await fixture(page);
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    if (call.method !== "query.orchestration") return route.fallback();
+    await route.fulfill({
+      json: {
+        jsonrpc: "2.0",
+        id: call.id,
+        result: {
+          record: {
+            id: "link-manager",
+            revision: 1,
+            data: { status: "active", owner_id: "read-feature", epoch: 1 },
+          },
+          decisions: [
+            {
+              id: "link-decision",
+              revision: 1,
+              current: true,
+              data: {
+                status: "pending",
+                request: {
+                  instance_id: "read-instance",
+                  operation: "workflow.step.confirm",
+                  arguments: { execution_id: "publication" },
+                  interaction: {
+                    title: "确认 PR 与确切版本",
+                    requested_action: "请查看 PR 和版本后确认",
+                    review_summary: review,
+                    materials: [],
+                    evidence: [],
+                  },
+                },
+              },
+            },
+          ],
+          interactions: [],
+          messages: [],
+          calls: [],
+        },
+      },
+    });
+  });
+  await page.goto(url);
+  const card = page.getByRole("article", {
+    name: "确认 PR 与确切版本",
+    exact: true,
+  });
+  await expect(card).toBeVisible();
+  return card;
+}
+
+test("经理 PR 摘要仅链接 PR 和三个提交，中文说明保持正文且点击到达确切地址", async ({
+  page,
+}) => {
+  const repository = "https://github.com/xfork24/devdesk-project-2";
+  const pr = `${repository}/pull/2`;
+  const revisions = [
+    "8d2d450bd71b75180697bef09d5a8d6a15fb2e07",
+    "f1eaa0d11add3772c9c31ba25beb2a98b1677a12",
+    "5b9989797e96c1280335d9516a5b038169cebd39",
+  ];
+  const review = `PR ${pr}；源版本${revisions[0]}，目标main基线${revisions[1]}，待合入候选${revisions[2]}。改动为欢迎页、独立测试及验证材料，评审未发现阻塞问题。`;
+  const card = await managerReviewLinks(page, review);
+  const summary = card
+    .locator(".markdown-preview")
+    .filter({ hasText: "改动为欢迎页" });
+  await expect(summary).toHaveText(review);
+  await expect(summary.getByRole("link")).toHaveCount(4);
+  const destinations = [
+    pr,
+    ...revisions.map((sha) => `${repository}/commit/${sha}`),
+  ];
+  for (const [index, href] of destinations.entries())
+    await expect(summary.getByRole("link").nth(index)).toHaveAttribute(
+      "href",
+      href,
+    );
+  await expect(
+    summary.getByRole("link").filter({ hasText: "改动为" }),
+  ).toHaveCount(0);
+  await page.context().route("https://github.com/**", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: "<p>GitHub link destination</p>",
+    }),
+  );
+  for (const [index, href] of destinations.entries()) {
+    await summary.getByRole("link").nth(index).click();
+    await expect(page).toHaveURL(href);
+    await page.goBack();
+    await expect(summary).toHaveText(review);
+  }
+});
+
+test("经理版本链接保留显式中文地址、行内代码和代码块", async ({ page }) => {
+  const repository = "https://github.com/owner/repository";
+  const source = "a".repeat(40);
+  const target = "b".repeat(40);
+  const codeCommit = "c".repeat(40);
+  const chineseUrl = "https://example.com/中文/路径?说明=版本，基线";
+  const codeUrl = `${repository}/pull/2；这是代码`;
+  const review =
+    `PR [查看 PR](${repository}/pull/2)；源版本 \`${source}\`，目标基线${target}。\n\n[中文地址](${chineseUrl})\n\n\`${codeUrl}\`\n\n\`\`\`text\n${codeCommit}\n${codeUrl}\n\`\`\`\n\n完整摘要 ${"d".repeat(64)}`.replaceAll(
+      "\\n",
+      "\n",
+    );
+  const card = await managerReviewLinks(page, review);
+  await expect(
+    card.getByRole("link", { name: "查看 PR", exact: true }),
+  ).toHaveAttribute("href", `${repository}/pull/2`);
+  await expect(
+    card.getByRole("link", { name: source, exact: true }),
+  ).toHaveAttribute("href", `${repository}/commit/${source}`);
+  await expect(
+    card.getByRole("link", { name: target, exact: true }),
+  ).toHaveAttribute("href", `${repository}/commit/${target}`);
+  expect(
+    decodeURI(
+      (await card
+        .getByRole("link", { name: "中文地址", exact: true })
+        .getAttribute("href"))!,
+    ),
+  ).toBe(chineseUrl);
+  await expect(card.locator("pre code")).toHaveText(
+    `${codeCommit}\n${codeUrl}\n`,
+  );
+  await expect(card.locator("pre a")).toHaveCount(0);
+  await expect(
+    card.getByRole("link", { name: codeUrl, exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    card.getByRole("link", { name: "d".repeat(64), exact: true }),
+  ).toHaveCount(0);
+});
+
+test("经理摘要包含多个仓库时保留各 PR 地址并避免猜测提交所属仓库", async ({
+  page,
+}) => {
+  const sha = "a".repeat(40);
+  const card = await managerReviewLinks(
+    page,
+    `PR https://github.com/owner/first/pull/1；参照 https://github.com/owner/second/pull/2；源版本${sha}。`,
+  );
+  await expect(card.getByRole("link")).toHaveCount(2);
+  await expect(card.getByRole("link").nth(0)).toHaveAttribute(
+    "href",
+    "https://github.com/owner/first/pull/1",
+  );
+  await expect(card.getByRole("link").nth(1)).toHaveAttribute(
+    "href",
+    "https://github.com/owner/second/pull/2",
+  );
+  await expect(card.getByRole("link", { name: sha, exact: true })).toHaveCount(
+    0,
   );
 });

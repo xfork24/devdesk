@@ -2,6 +2,7 @@ import { createContext, useContext, type ReactNode } from "react";
 import Markdown, { type Components, type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { displayText } from "../display-text";
+import { markdownLinks } from "./markdown-links";
 
 type Element = NonNullable<ExtraProps["node"]>;
 type Container = Pick<Element, "children">;
@@ -59,14 +60,16 @@ function abbreviateUuids() {
 export default function MarkdownPreview({
   text,
   trailing,
+  linkGithubRevisions = false,
 }: {
   text: string;
   trailing?: ReactNode;
+  linkGithubRevisions?: boolean;
 }) {
   return (
     <TrailingContext.Provider value={trailing}>
       <Markdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, [markdownLinks, { linkGithubRevisions }]]}
         rehypePlugins={
           trailing ? [abbreviateUuids, appendTrailing] : [abbreviateUuids]
         }

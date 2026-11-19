@@ -1,5 +1,5 @@
 import { displayText } from "../display-text";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ActionButton } from "./ActionFeedback";
 import { loadCatalog } from "./configuration-state";
 import { RevisionSelect } from "./configuration-ui";
@@ -13,8 +13,9 @@ type WorkStandardProps = {
   instance?: Row;
   refresh: () => Promise<void>;
 };
+type Panel = "standard" | "authorization";
 
-/** A folded work card does not read catalogs, configuration or history. */
+/** The two disclosures share one frozen editing baseline and load only when opened. */
 export function WorkStandard(props: WorkStandardProps) {
   return (
     <LazyWorkStandard key={`${props.projectId}:${props.owner.id}`} {...props} />
@@ -25,7 +26,11 @@ function LazyWorkStandard(props: WorkStandardProps) {
   const [snapshot, setSnapshot] = useState<WorkStandardProps>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const details = useRef<HTMLDetailsElement>(null);
+  const [panels, setPanels] = useState({
+    standard: false,
+    authorization: false,
+  });
+  const panelId = useId();
   const lifetime = useRef(0);
   useEffect(
     () => () => {
@@ -62,62 +67,71 @@ function LazyWorkStandard(props: WorkStandardProps) {
       if (epoch === lifetime.current) setLoading(false);
     }
   }
+  const expanded = panels.standard || panels.authorization;
   return (
-    <details
-      className="work-standard"
-      ref={details}
-      onToggle={(event) => {
-        if (event.currentTarget.open) void open();
-      }}
-    >
-      <summary>
-        采用的规范 · {props.instance?.data.plan?.standard_name || "展开查看"}
-      </summary>
-      {loading ? <p role="status">正在读取执行配置…</p> : null}
-      {error ? <p role="alert">{error}</p> : null}
-      {snapshot ? (
-        <WorkStandardEditor
-          {...snapshot}
-          refresh={async () => {
-            await props.refresh();
-            // A successful edit ends this baseline. Reopening captures new versions;
-            // failures keep the mounted editor, original versions and draft intact.
-            if (details.current) details.current.open = false;
-            setSnapshot(undefined);
-          }}
-        />
-      ) : null}
-    </details>
+    <div className="work-standard">
+      <div className="work-standard-toggles">
+        {(["standard", "authorization"] as const).map((panel) => (
+          <button
+            key={panel}
+            type="button"
+            className="work-standard-toggle"
+            aria-expanded={panels[panel]}
+            aria-controls={`${panelId}-${panel}`}
+            onClick={() => {
+              if (!panels[panel]) void open();
+              setPanels((current) => ({
+                ...current,
+                [panel]: !current[panel],
+              }));
+            }}
+          >
+            <span aria-hidden="true">{panels[panel] ? "▼" : "▶"}</span>
+            {panel === "standard" ? "采用的规范" : "执行者与授权"}
+          </button>
+        ))}
+      </div>
+      <div hidden={!expanded}>
+        {loading ? <p role="status">正在读取执行配置…</p> : null}
+        {error ? <p role="alert">{error}</p> : null}
+        {snapshot ? (
+          <WorkStandardEditor
+            {...snapshot}
+            panels={panels}
+            panelId={panelId}
+            refresh={async () => {
+              await props.refresh();
+              setPanels({ standard: false, authorization: false });
+              setSnapshot(undefined);
+            }}
+          />
+        ) : null}
+      </div>
+    </div>
   );
 }
 
-/** An opened editor owns its original input and version until it succeeds. */
+/** Failed changes keep their original versions and drafts across both disclosures. */
 function WorkStandardEditor({
   request,
   projectId,
   owner,
   instance,
   refresh,
-}: WorkStandardProps) {
-  const [records, setRecords] = useState<Row[]>([]),
-    [configuration, setConfiguration] = useState<Row>(),
-    [history, setHistory] = useState<Row[]>([]),
-    [historyLoading, setHistoryLoading] = useState(true);
-  const [selected, setSelected] = useState(""),
-    [workflow, setWorkflow] = useState(""),
-    [reason, setReason] = useState("");
-  const [preview, setPreview] = useState<Row>(),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
-  const [bindings, setBindings] = useState<Row>({}),
-    [permission, setPermission] = useState(""),
-    [requirements, setRequirements] = useState<Row>();
-  const [historyDiff, setHistoryDiff] = useState<Row>();
-  const [compareChoices, setCompareChoices] = useState<Row[]>([]);
-  const [choiceTotal, setChoiceTotal] = useState(0);
-  const [compareOwner, setCompareOwner] = useState("");
-  const [workComparison, setWorkComparison] = useState<Row>();
-  const [selectionVersion, setSelectionVersion] = useState(0);
+  panels,
+  panelId,
+}: WorkStandardProps & { panels: Record<Panel, boolean>; panelId: string }) {
+  const [records, setRecords] = useState<Row[]>([]);
+  const [configuration, setConfiguration] = useState<Row>();
+  const [selected, setSelected] = useState("");
+  const [workflow, setWorkflow] = useState("");
+  const [reason, setReason] = useState("");
+  const [preview, setPreview] = useState<Row>();
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [bindings, setBindings] = useState<Row>({});
+  const [permission, setPermission] = useState("");
+  const [requirements, setRequirements] = useState<Row>();
   const command = useRef<{ fingerprint: string; id: string }>(undefined);
   function commandId(value: Row) {
     const fingerprint = JSON.stringify(value);
@@ -125,24 +139,12 @@ function WorkStandardEditor({
       command.current = { fingerprint, id: crypto.randomUUID() };
     return command.current.id;
   }
-  const comparisonGeneration = useRef(0);
-  useEffect(() => {
-    comparisonGeneration.current++;
-    setWorkComparison(undefined);
-  }, [
-    projectId,
-    owner.id,
-    instance?.data.active_plan_revision_id,
-    selectionVersion,
-  ]);
   const instanceBindings = JSON.stringify(instance?.data.role_agent_bindings);
   const runtime = instance?.data;
   const activeStandard =
     runtime?.plan.standard_ref || configuration?.data.standard_ref;
   useEffect(() => {
     let active = true;
-    setHistoryLoading(true);
-    setPreview(undefined);
     void loadCatalog(request, projectId, true)
       .then((rows) => {
         if (active) setRecords(rows);
@@ -153,46 +155,38 @@ function WorkStandardEditor({
     const work = request("query.work_configuration", {
       project_id: projectId,
       owner_id: owner.id,
-    })
-      .then((data) => {
-        if (active) {
-          setConfiguration(data.configuration);
-          setHistory(data.history || []);
-        }
-        return data;
-      })
-      .finally(() => {
-        if (active) setHistoryLoading(false);
-      });
+    }).then((data) => {
+      if (active) setConfiguration(data.configuration);
+      return data;
+    });
     void Promise.all([
       work,
       request("query.project_configuration", { project_id: projectId }),
     ])
       .then(([data, defaults]) => {
-        if (active) {
-          setSelected(
-            instance?.data.plan.standard_ref ||
-              data.configuration?.data.standard_ref ||
-              "",
-          );
-          setWorkflow(
-            instance?.data.workflow_ref ||
-              data.configuration?.data.workflow_ref ||
-              "",
-          );
-          setBindings(
-            (instanceBindings ? JSON.parse(instanceBindings) : undefined) ||
-              data.configuration?.data.role_agent_bindings ||
-              defaults.configuration?.data.role_agent_bindings ||
-              {},
-          );
-          setPermission(
-            instance?.data.plan.harness_permission_ref ||
-              data.configuration?.data.harness_permission_ref ||
-              defaults.configuration?.data.harness_permission_ref ||
-              "",
-          );
-        }
+        if (!active) return;
+        setSelected(
+          instance?.data.plan.standard_ref ||
+            data.configuration?.data.standard_ref ||
+            "",
+        );
+        setWorkflow(
+          instance?.data.workflow_ref ||
+            data.configuration?.data.workflow_ref ||
+            "",
+        );
+        setBindings(
+          (instanceBindings ? JSON.parse(instanceBindings) : undefined) ||
+            data.configuration?.data.role_agent_bindings ||
+            defaults.configuration?.data.role_agent_bindings ||
+            {},
+        );
+        setPermission(
+          instance?.data.plan.harness_permission_ref ||
+            data.configuration?.data.harness_permission_ref ||
+            defaults.configuration?.data.harness_permission_ref ||
+            "",
+        );
       })
       .catch((e) => {
         if (active) setError(String(e));
@@ -206,7 +200,6 @@ function WorkStandardEditor({
     owner.id,
     owner.revision,
     instance?.data.active_plan_revision_id,
-    selectionVersion,
     instance?.data.plan.standard_ref,
     instance?.data.plan.harness_permission_ref,
     instance?.data.workflow_ref,
@@ -247,151 +240,146 @@ function WorkStandardEditor({
   const ended = runtime && ["completed", "cancelled"].includes(runtime.status);
   return (
     <>
-      {activeStandard ? (
-        <p>
-          <a
-            href={`?tab=workflows&config_tab=standard&project_id=${encodeURIComponent(projectId)}&standard_id=${encodeURIComponent(activeStandard)}`}
-          >
-            {displayText(activeStandard)}
-          </a>{" "}
-          · 入口{" "}
-          {displayText(
-            runtime?.workflow_ref || configuration?.data.workflow_ref,
-          )}
-        </p>
-      ) : null}
-      <p className="muted">
-        快照标识所用规范；检查结果以本次执行和评审证据为准。
-      </p>
       {error ? (
         <p role="alert" className="error">
           {displayText(error)}
         </p>
       ) : null}
-      {!ended ? (
-        <>
-          <RevisionSelect
-            label="采用 Standard"
-            records={records.filter(
-              (r) =>
-                r.type === "standard" &&
-                (!r.archived || r.id === activeStandard),
+      <section
+        id={`${panelId}-standard`}
+        className="work-standard-content"
+        hidden={!panels.standard}
+        aria-label="采用的规范内容"
+      >
+        {activeStandard ? (
+          <p>
+            <a
+              href={`?tab=workflows&config_tab=standard&project_id=${encodeURIComponent(projectId)}&standard_id=${encodeURIComponent(activeStandard)}`}
+            >
+              {displayText(activeStandard)}
+            </a>
+            {" · 入口 "}
+            {displayText(
+              runtime?.workflow_ref || configuration?.data.workflow_ref,
             )}
-            value={selected}
-            onChange={(value) => {
-              setSelected(value);
-              setWorkflow(
-                records.find((r) => r.id === value)?.data
-                  .root_workflow_refs[0] || "",
-              );
-              setPreview(undefined);
-            }}
-          />
-          <RevisionSelect
-            label="采用的入口 Workflow"
-            records={records.filter((r) => roots.includes(r.id))}
-            value={workflow}
-            onChange={(value) => {
-              setWorkflow(value);
-              setPreview(undefined);
-            }}
-          />
-          <details>
-            <summary>执行者与授权</summary>
-            {(requirements?.roles || []).map((role: Row) => (
-              <RevisionSelect
-                key={role.role_id}
-                label={`${role.role?.name || role.role_id} 的 Agent`}
-                records={records.filter(
-                  (r) => r.type === "agent" && r.role_ref === role.role_id,
-                )}
-                value={bindings[role.role_id] || ""}
-                onChange={(value) => {
-                  setBindings((old) => ({ ...old, [role.role_id]: value }));
-                  setPreview(undefined);
-                }}
-              />
-            ))}
+          </p>
+        ) : null}
+        <p className="muted">
+          快照标识所用规范；检查结果以本次执行和评审证据为准。
+        </p>
+        {!ended ? (
+          <fieldset
+            className="work-standard-fields"
+            disabled={!instance || busy}
+          >
             <RevisionSelect
-              label="Harness Profile"
+              label="采用 Standard"
               records={records.filter(
                 (r) =>
-                  r.type === "permission_profile" &&
-                  r.data.target_kind === "harness",
+                  r.type === "standard" &&
+                  (!r.archived || r.id === activeStandard),
               )}
-              value={permission}
+              value={selected}
               onChange={(value) => {
-                setPermission(value);
+                setSelected(value);
+                setWorkflow(
+                  records.find((r) => r.id === value)?.data
+                    .root_workflow_refs[0] || "",
+                );
                 setPreview(undefined);
               }}
             />
-          </details>
-          {instance ? (
-            <label>
-              规范切换原因
-              <input
-                value={reason}
-                onChange={(e) => {
-                  setReason(e.target.value);
-                  setPreview(undefined);
-                }}
-              />
-            </label>
-          ) : null}
+            <RevisionSelect
+              label="采用的入口 Workflow"
+              records={records.filter((r) => roots.includes(r.id))}
+              value={workflow}
+              onChange={(value) => {
+                setWorkflow(value);
+                setPreview(undefined);
+              }}
+            />
+          </fieldset>
+        ) : null}
+      </section>
+      <section
+        id={`${panelId}-authorization`}
+        className="work-standard-content"
+        hidden={!panels.authorization}
+        aria-label="执行者与授权内容"
+      >
+        <fieldset
+          className="work-standard-fields"
+          disabled={!instance || ended || busy}
+        >
+          {(requirements?.roles || []).map((role: Row) => (
+            <RevisionSelect
+              key={role.role_id}
+              label={`${role.role?.name || role.role_id} 的 Agent`}
+              records={records.filter(
+                (r) => r.type === "agent" && r.role_ref === role.role_id,
+              )}
+              value={bindings[role.role_id] || ""}
+              onChange={(value) => {
+                setBindings((old) => ({ ...old, [role.role_id]: value }));
+                setPreview(undefined);
+              }}
+            />
+          ))}
+          <RevisionSelect
+            label="Harness Profile"
+            records={records.filter(
+              (r) =>
+                r.type === "permission_profile" &&
+                r.data.target_kind === "harness",
+            )}
+            value={permission}
+            onChange={(value) => {
+              setPermission(value);
+              setPreview(undefined);
+            }}
+          />
+        </fieldset>
+      </section>
+      {instance && !ended ? (
+        <div className="work-standard-actions">
+          <label>
+            规范切换原因
+            <input
+              value={reason}
+              onChange={(e) => {
+                setReason(e.target.value);
+                setPreview(undefined);
+              }}
+            />
+          </label>
           <ActionButton
-            disabled={
-              busy || !selected || !workflow || (!!instance && !reason.trim())
-            }
+            disabled={busy || !selected || !workflow || !reason.trim()}
             onClick={() =>
               void run(async () => {
-                if (instance) {
-                  const changeset = {
-                    plan_revision_id: runtime.active_plan_revision_id,
-                    reason,
-                    operations: [
-                      {
-                        type: "adopt_standard",
-                        standard_ref: selected,
-                        workflow_ref: workflow,
-                        harness_permission_ref: permission || undefined,
-                      },
-                      { type: "set_bindings", bindings },
-                    ],
-                  };
-                  setPreview(
-                    await request("query.workflow_change_preview", {
-                      project_id: projectId,
-                      id: instance.id,
-                      changeset,
-                    }),
-                  );
-                } else {
-                  await request("work.configuration.update", {
-                    project_id: projectId,
-                    command_id: commandId({
-                      owner: owner.id,
-                      revision: owner.revision,
-                      selected,
-                      workflow,
-                      bindings,
-                      permission,
-                    }),
-                    target: owner.id,
-                    expected_revision: owner.revision,
-                    payload: {
+                const changeset = {
+                  plan_revision_id: runtime.active_plan_revision_id,
+                  reason,
+                  operations: [
+                    {
+                      type: "adopt_standard",
                       standard_ref: selected,
                       workflow_ref: workflow,
-                      role_agent_bindings: bindings,
                       harness_permission_ref: permission || undefined,
                     },
-                  });
-                  await refresh();
-                  setSelectionVersion((version) => version + 1);
-                }
+                    { type: "set_bindings", bindings },
+                  ],
+                };
+                setPreview(
+                  await request("query.workflow_change_preview", {
+                    project_id: projectId,
+                    id: instance.id,
+                    changeset,
+                  }),
+                );
               })
             }
           >
-            {displayText(instance ? "预演规范切换" : "保存采用的规范")}
+            预演规范切换
           </ActionButton>
           {preview ? (
             <>
@@ -406,12 +394,12 @@ function WorkStandardEditor({
                     await request("workflow.change.apply", {
                       project_id: projectId,
                       command_id: commandId({
-                        instance: instance!.id,
-                        revision: instance!.revision,
+                        instance: instance.id,
+                        revision: instance.revision,
                         preview,
                       }),
-                      target: instance!.id,
-                      expected_revision: instance!.revision,
+                      target: instance.id,
+                      expected_revision: instance.revision,
                       payload: {
                         plan_revision_id: runtime.active_plan_revision_id,
                         changeset: preview.changeset,
@@ -427,156 +415,8 @@ function WorkStandardEditor({
               </ActionButton>
             </>
           ) : null}
-        </>
+        </div>
       ) : null}
-      <details
-        onToggle={(event) => {
-          if (event.currentTarget.open && !compareChoices.length)
-            void run(async () => {
-              const value = await request("query.work_standard_choices", {
-                project_id: projectId,
-                limit: 100,
-              });
-              setCompareChoices(value.records);
-              setChoiceTotal(value.total);
-            });
-        }}
-      >
-        <summary>与其他工作比较规范</summary>
-        <label>
-          比较工作
-          <select
-            aria-label="比较工作"
-            value={compareOwner}
-            onChange={(event) => {
-              comparisonGeneration.current++;
-              setCompareOwner(event.target.value);
-              setWorkComparison(undefined);
-            }}
-          >
-            <option value="">请选择工作</option>
-            {compareChoices
-              .filter((row) => row.id !== owner.id)
-              .map((row) => (
-                <option key={row.id} value={row.id}>
-                  {displayText(row.project_title)} /{" "}
-                  {displayText(
-                    row.work.kind === "project"
-                      ? "Project"
-                      : row.work.kind === "feature"
-                        ? "Feature"
-                        : "Task",
-                  )}{" "}
-                  · {displayText(row.title)}
-                </option>
-              ))}
-          </select>
-        </label>
-        {compareChoices.length < choiceTotal ? (
-          <ActionButton
-            disabled={busy}
-            onClick={() =>
-              void run(async () => {
-                const value = await request("query.work_standard_choices", {
-                  project_id: projectId,
-                  offset: compareChoices.length,
-                  limit: 100,
-                });
-                setCompareChoices((rows) => [...rows, ...value.records]);
-                setChoiceTotal(value.total);
-              })
-            }
-          >
-            加载更多工作
-          </ActionButton>
-        ) : null}
-        <ActionButton
-          disabled={busy || !compareOwner}
-          onClick={() =>
-            void run(async () => {
-              const generation = comparisonGeneration.current;
-              const comparison = await request("query.work_standard_diff", {
-                project_id: projectId,
-                before_owner_id: owner.id,
-                after_owner_id: compareOwner,
-              });
-              if (generation === comparisonGeneration.current)
-                setWorkComparison(comparison);
-            })
-          }
-        >
-          比较工作规范
-        </ActionButton>
-        {workComparison ? (
-          <>
-            <p>双方实际入口的规范差异</p>
-            <StandardDiff diff={workComparison.entry_diff} />
-            <details>
-              <summary>完整快照差异与采用依据</summary>
-              <StandardDiff diff={workComparison.diff} />
-              {[workComparison.before, workComparison.after].map(
-                (selection: Row, index: number) => (
-                  <section key={index}>
-                    <p>
-                      {displayText(index === 0 ? "当前工作" : "比较工作")} ·{" "}
-                      {displayText(selection.standard_ref)} ·{" "}
-                      {displayText(
-                        selection.basis === "execution"
-                          ? "实际运行计划"
-                          : "尚未执行的配置",
-                      )}
-                    </p>
-                    <p>
-                      子工作：{displayText(selection.children.length)} ·
-                      运行例外：
-                      {displayText(selection.exceptions.length)}
-                    </p>
-                    <ul>
-                      {selection.children.map((child: Row, index: number) => (
-                        <li key={index}>
-                          {displayText(child.owner_id)} ·{" "}
-                          {displayText(child.standard_ref)}
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-                ),
-              )}
-            </details>
-          </>
-        ) : null}
-      </details>
-      <details>
-        <summary>
-          规范采用历史（
-          {displayText(historyLoading ? "加载中" : history.length)}）
-        </summary>
-        <ul>
-          {history.map((plan: Row) => (
-            <li key={plan.id}>
-              {displayText(plan.data.standard_ref)} ·{" "}
-              {displayText(plan.data.reason)}
-              <ActionButton
-                disabled={busy || !activeStandard}
-                onClick={() =>
-                  void run(async () => {
-                    setHistoryDiff(
-                      await request("query.standard_diff", {
-                        project_id: projectId,
-                        before_ref: plan.data.standard_ref,
-                        after_ref: activeStandard,
-                      }),
-                    );
-                  })
-                }
-              >
-                与当前规范比较
-              </ActionButton>
-            </li>
-          ))}
-        </ul>
-        {historyDiff ? <StandardDiff diff={historyDiff} /> : null}
-      </details>
     </>
   );
 }

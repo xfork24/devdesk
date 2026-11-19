@@ -110,13 +110,14 @@ impl WorkflowResources {
                     .into_iter()
                     .next()
                     .ok_or_else(|| err("storage", "任务来源步骤事实缺失"))?;
-                require(
-                    selected
-                        .value
-                        .as_ref()
-                        .is_some_and(|s| s["outputs"] == json!(upstream.outputs)),
-                    "任务来源产物在准备期间变化",
-                )?;
+                if !selected
+                    .value
+                    .as_ref()
+                    .is_some_and(|s| s["outputs"] == json!(upstream.outputs))
+                {
+                    return Err(err("revision_conflict", "任务来源产物在准备期间变化")
+                        .with_context("WorkflowResources::read", json!({"workflow_instance_id":record.id,"execution_id":execution.id,"upstream_execution_id":upstream.id,"expected_outputs":upstream.outputs,"actual_outputs":selected.value.as_ref().map(|v|&v["outputs"]),"actual_resource_revision":selected.revision})));
+                }
                 reads = reads.merge([version(&selected)])?;
             }
         }
@@ -148,7 +149,28 @@ impl WorkflowResources {
         let step = store.read_resources(std::slice::from_ref(&key))?.remove(0);
         let original = store.encode_runtime_value(&json!(execution))?;
         if step.value.as_ref() != Some(&original) {
-            return Err(err("revision_conflict", "原步骤在准备期间已变化"));
+            let mut changed = serde_json::Map::new();
+            let keys: std::collections::BTreeSet<_> = original
+                .as_object()
+                .into_iter()
+                .flat_map(|v| v.keys())
+                .chain(
+                    step.value
+                        .as_ref()
+                        .and_then(Value::as_object)
+                        .into_iter()
+                        .flat_map(|v| v.keys()),
+                )
+                .collect();
+            for key in keys {
+                let expected = original.get(key);
+                let actual = step.value.as_ref().and_then(|v| v.get(key));
+                if expected != actual {
+                    changed.insert(key.clone(), json!({"expected":expected,"actual":actual}));
+                }
+            }
+            return Err(err("revision_conflict", "原步骤在准备期间已变化")
+                .with_context("WorkflowResources::from_header", json!({"project_id":store.project_id(),"workflow_instance_id":record.id,"execution_id":id,"step":execution.step,"node_id":execution.node_id,"plan_revision_id":execution.plan_revision_id,"snapshot_revision":record.revision,"header_revision":header.revision,"actual_step_revision":step.revision,"actual_step_exists":step.value.is_some(),"changed_fields":changed})));
         }
         let mut reads = ReadSet::new(vec![version(header), version(&step)])?;
         let definition = instance
@@ -176,12 +198,14 @@ impl WorkflowResources {
                         json!([record.id, upstream.id]).to_string(),
                     )])?
                     .remove(0);
-                require(
-                    row.value
-                        .as_ref()
-                        .is_some_and(|v| v["outputs"] == json!(upstream.outputs)),
-                    "原输入产物已变化",
-                )?;
+                if !row
+                    .value
+                    .as_ref()
+                    .is_some_and(|v| v["outputs"] == json!(upstream.outputs))
+                {
+                    return Err(err("revision_conflict", "原输入产物已变化")
+                        .with_context("WorkflowResources::from_header", json!({"workflow_instance_id":record.id,"execution_id":id,"upstream_execution_id":upstream.id,"expected_outputs":upstream.outputs,"actual_outputs":row.value.as_ref().map(|v|&v["outputs"]),"actual_resource_revision":row.revision})));
+                }
                 reads = reads.merge([version(&row)])?;
             }
         }

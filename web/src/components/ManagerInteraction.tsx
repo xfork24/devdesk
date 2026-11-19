@@ -17,6 +17,10 @@ type Props = {
   awaitingInput?: boolean;
 };
 
+function ManagerMarkdown({ text }: { text: string }) {
+  return <MarkdownPreview text={text} linkGithubRevisions />;
+}
+
 export function ManagerInteraction({
   interaction: latestInteraction,
   basis,
@@ -112,11 +116,11 @@ export function ManagerInteraction({
               所属流程与步骤：{displayText(interaction.source_label)}
             </p>
           )}
-          <MarkdownPreview text={interaction.background || ""} />
+          <ManagerMarkdown text={interaction.background || ""} />
           {interaction.signed_reason ? (
             <>
               <h5>用户签署意见</h5>
-              <MarkdownPreview text={interaction.signed_reason} />
+              <ManagerMarkdown text={interaction.signed_reason} />
             </>
           ) : null}
           {(interaction.rework_budgets || []).map((budget: Row) => (
@@ -126,7 +130,7 @@ export function ManagerInteraction({
             </p>
           ))}
           <h5>需要你做什么</h5>
-          <MarkdownPreview
+          <ManagerMarkdown
             text={
               interaction.requested_action ||
               "请等待项目经理补齐本次说明和材料。"
@@ -189,19 +193,19 @@ export function ManagerInteraction({
             </p>
           )}
           <h5>项目经理已做的工作</h5>
-          <MarkdownPreview text={interaction.completed_work || "尚未记录"} />
+          <ManagerMarkdown text={interaction.completed_work || "尚未记录"} />
           <h5>初审与验证结果</h5>
-          <MarkdownPreview text={interaction.review_summary || "尚未记录"} />
+          <ManagerMarkdown text={interaction.review_summary || "尚未记录"} />
           {!!interaction.issues && (
             <>
               <h5>待解决问题</h5>
-              <MarkdownPreview text={interaction.issues} />
+              <ManagerMarkdown text={interaction.issues} />
             </>
           )}
           {!!interaction.recommendation && (
             <>
               <h5>项目经理建议</h5>
-              <MarkdownPreview text={interaction.recommendation} />
+              <ManagerMarkdown text={interaction.recommendation} />
             </>
           )}
           {!!interaction.evidence?.length && (

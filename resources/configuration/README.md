@@ -56,6 +56,12 @@ Codex 的六类业务 Agent Capability 包含 spec.lint 与“交付草稿自检
 
 ## 两套流程与默认升级
 
-实际默认引用为 `simplified-workflow-feature:2`、`simplified-workflow-task:1`、`simplified-standard-engineering:2`，六个业务角色绑定精简版 Agent，Sandbox 使用 `simplified-sandbox-project-tests:1`。精简版专用 JSON、正文文件名及配置 identity 统一使用 `simplified-` 前缀，中文显示名称保留“精简版”；通用 Role、协议与未改变的 Spec/Delivery 共享。详细版入口为 `builtin-workflow-feature-sol-high:11`、`builtin-workflow-task-sol-high:10`、`builtin-standard-engineering:9`，显式采用并保留原 Agent/环境绑定。
+实际默认引用为 `simplified-workflow-feature:3`、`simplified-workflow-task:2`、`simplified-standard-engineering:3`，六个业务角色绑定精简版 Agent，Sandbox 使用 `builtin-sandbox-docker:2`。精简版专用 JSON、正文文件名及配置 identity 统一使用 `simplified-` 前缀，中文显示名称保留“精简版”；通用 Role、协议与未改变的 Spec/Delivery 共享。详细版入口为 `builtin-workflow-feature-sol-high:12`、`builtin-workflow-task-sol-high:11`、`builtin-standard-engineering:10`，显式采用并保留原 Agent 绑定。两套流程共用包含 Node 与 Python 3 的 Docker Sandbox；历史运行继续使用原冻结环境。
 
 已有兼容数据集可在设置中“更新出厂默认并保留自定义”，使用 `configuration.templates.reset` 的 `preserve_custom:true` 及原目录预览前置条件。该动作追加缺少的不可变源和目录代次，选择新版出厂默认，保留自定义成员、项目选择和历史。相同源修订内容冲突时拒绝覆盖。新默认仅影响后续选择；已有项目须显式保存配置，已有工作继续按冻结引用运行。
+
+## 自动项目测试入口
+
+项目配置默认读取所选主分支的已提交配置，不执行仓库脚本。优先使用 `.devdesk/tests.json`（ProjectTestConfiguration），其次识别 `package.json` 的有效 `scripts.test`、具有测试的 Cargo/Go 项目、pytest 配置及 Python unittest 文件。没有回归配置时保存 `regression:null`，平台为对应代码版本记录未配置、直接通过；独立 Red/Green 不受影响。配置中不必填写 image，执行时使用冻结工具运行环境的实际镜像。已有入口失败、缺依赖、超时仍按失败处理。
+
+项目页展示识别结果，可重新识别；JSON 手动覆盖收在高级选项。入口与设置随新工作冻结，后续修改不改变既有运行。

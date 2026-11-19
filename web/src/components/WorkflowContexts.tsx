@@ -204,7 +204,6 @@ export function WorkflowContexts({
     },
     hasTarget,
   );
-  const [showHistory, setShowHistory] = useState(false);
   const turns: Row[] = [
     ...new Map<string, Row>(
       [
@@ -268,9 +267,7 @@ export function WorkflowContexts({
     entries.find(matches) ||
     entries.find((entry) => !entry.historical) ||
     entries[0];
-  const visible = groups.filter(
-    (group) => showHistory || !group.historical || group === selected,
-  );
+  const visible = groups;
   const instances = [
     ...new Set(visible.map((group) => group.instance_id || group.session_id)),
   ];
@@ -298,14 +295,6 @@ export function WorkflowContexts({
       </div>
       <ReadState {...state} />
       {hasTarget && <ReadState {...exactState} />}
-      <label>
-        <input
-          type="checkbox"
-          checked={showHistory}
-          onChange={(event) => setShowHistory(event.target.checked)}
-        />
-        显示历史执行
-      </label>
       <div className="reading-layout">
         <nav className="reading-directory" aria-label="流程步骤上下文目录">
           {instances.map((id) => (
@@ -344,7 +333,6 @@ export function WorkflowContexts({
                             .length,
                         )}{" "}
                         个会话轮次
-                        {displayText(group.historical ? " · 历史执行" : "")}
                       </small>
                     </button>
                   </div>

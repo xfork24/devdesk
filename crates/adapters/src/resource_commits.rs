@@ -993,6 +993,8 @@ fn sqlite_error(error: rusqlite::Error) -> Error {
         Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
     ) {
         err("storage_busy", "数据库短事务正在竞争")
+            .technical_not_applied()
+            .with_context("sqlite_error", json!({"cause":format!("{error:?}")}))
     } else {
         storage(error)
     }
@@ -1389,7 +1391,7 @@ pub(super) fn verify_read_set(conn: &Connection, read_set: &ReadSet) -> Result<(
                     "{} {} 的版本已变化：预期 {}，当前 {}",
                     expected.resource.kind, expected.resource.id, expected.revision, actual
                 ),
-            ));
+            ).technical_not_applied().with_context("verify_read_set",json!({"resource":expected.resource,"expected_revision":expected.revision,"actual_revision":actual})));
         }
     }
     Ok(())

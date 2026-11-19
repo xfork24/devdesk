@@ -688,10 +688,37 @@ async fn scheduler_loop(scheduler: Arc<App>) {
                 result
             })
             .await;
-        if let Ok(Err(e)) = result {
-            eprintln!("scheduler: {e}");
+        let failure = match result {
+            Ok(Err(error)) => Some(error),
+            Err(error) => {
+                let description = error.to_string();
+                let panic_message = if error.is_panic() {
+                    let payload = error.into_panic();
+                    payload
+                        .downcast_ref::<String>()
+                        .cloned()
+                        .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).into()))
+                } else {
+                    None
+                };
+                Some(err("scheduler_panic", description).with_context("scheduler_loop", json!({"panic_message":panic_message,"boundary_backtrace":std::backtrace::Backtrace::force_capture().to_string()})))
+            }
+            _ => None,
+        };
+        if let Some(error) = failure
+            && let Some(event) = scheduler_error_event(&error)
+        {
+            eprintln!("{event}");
         }
     }
+}
+fn scheduler_error_event(error: &Error) -> Option<Value> {
+    if error.retryable_conflict() {
+        return None;
+    }
+    Some(
+        json!({"type":"scheduler_error","level":"error","timestamp_unix_ms":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis(),"error":error,"scheduler_backtrace":std::backtrace::Backtrace::force_capture().to_string()}),
+    )
 }
 
 #[tokio::main]
@@ -899,4 +926,32 @@ mod loading_performance;
 fn performance_logging() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| std::env::var("DEVDESK_PERF_LOG").is_ok_and(|value| value == "1"))
+}
+
+#[cfg(test)]
+mod scheduler_diagnostic_tests {
+    use super::*;
+    #[test]
+    fn normal_conflicts_do_not_log_as_errors_and_real_faults_keep_full_context() {
+        assert!(scheduler_error_event(&err("revision_conflict", "stale step")).is_none());
+        assert!(scheduler_error_event(&err("storage_busy", "short transaction")).is_none());
+        assert!(
+            scheduler_error_event(&err("revision_conflict", "unknown effect").technical_unknown())
+                .is_some()
+        );
+        let error = err("storage", "SQL read failed").with_context("scheduler worker", json!({"project_id":"project","stage":"workflows","workflow_instance_id":"workflow","execution_id":"step","boundary_backtrace":"stack trace"}));
+        let event = scheduler_error_event(&error).unwrap();
+        assert_eq!(event["type"], "scheduler_error");
+        assert_eq!(event["error"]["message"], "SQL read failed");
+        assert!(event["error"]["location"].is_object());
+        assert_eq!(
+            event["error"]["context"][0]["details"]["execution_id"],
+            "step"
+        );
+        assert_eq!(
+            event["error"]["context"][0]["details"]["boundary_backtrace"],
+            "stack trace"
+        );
+        assert!(serde_json::from_str::<Value>(&event.to_string()).is_ok());
+    }
 }

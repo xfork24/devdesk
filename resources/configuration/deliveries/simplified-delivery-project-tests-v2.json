@@ -1,7 +1,7 @@
 {
   "type": "delivery_type",
   "identity": "simplified-delivery-project-tests",
-  "revision": 1,
+  "revision": 2,
   "name": "精简版冻结项目测试配置",
   "scope": "global",
   "data": {
@@ -30,12 +30,15 @@
           ]
         },
         "regression": {
-          "type": "object"
+          "type": [
+            "object",
+            "null"
+          ]
         }
       }
     }
   },
   "spec_refs": [
-    "simplified-spec-platform-evidence:1"
+    "simplified-spec-platform-evidence:2"
   ]
 }

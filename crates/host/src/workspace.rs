@@ -1206,7 +1206,30 @@ impl Workspace {
         let completed = self.background.poll();
         let maintain = self.background.maintenance_due()?;
         let opened: Vec<_> = self.opened.lock().unwrap().values().cloned().collect();
-        let mut failure = completed.err();
+        let mut failures = vec![];
+        let mut report = |project: Option<&str>, operation: &str, error: Error| {
+            let error = if error.retryable_conflict() {
+                match self.background.retry_conflict(
+                    &format!("{}:{operation}", project.unwrap_or("global")),
+                    &error,
+                ) {
+                    Ok(problem) => problem,
+                    Err(problem) => Some(problem),
+                }
+            } else {
+                Some(error)
+            };
+            if let Some(error) = error {
+                failures.push(json!({"project_id":project,"operation":operation,"error":error}));
+            }
+        };
+        let resolved = |project: Option<&str>, operation: &str| {
+            self.background
+                .clear_conflict(&format!("{}:{operation}", project.unwrap_or("global")))
+        };
+        if let Err(error) = completed {
+            report(None, "collect_background", error);
+        }
         // Repair directory summaries independently of pending workflow work.
         // The rotation includes idle projects; frontend queries never publish.
         if maintain && !opened.is_empty() {
@@ -1223,18 +1246,41 @@ impl Workspace {
                 if engine.store.project_id().is_some() {
                     match engine.store.project_metadata() {
                         Ok(project) => {
+                            resolved(
+                                engine.store.project_id().as_deref(),
+                                "read_project_metadata",
+                            )?;
                             if let Err(error) = self.global.publish_project(&project) {
-                                failure.get_or_insert(error);
+                                report(
+                                    engine.store.project_id().as_deref(),
+                                    "publish_project",
+                                    error,
+                                );
+                            } else {
+                                resolved(engine.store.project_id().as_deref(), "publish_project")?;
                             }
                         }
                         Err(error) if error.code == "not_found" => {}
                         Err(error) => {
-                            failure.get_or_insert(error);
+                            report(
+                                engine.store.project_id().as_deref(),
+                                "read_project_metadata",
+                                error,
+                            );
                         }
                     }
                 }
                 if let Err(error) = engine.publish_experience_index(self.global.as_ref()) {
-                    failure.get_or_insert(error);
+                    report(
+                        engine.store.project_id().as_deref(),
+                        "publish_experience_index",
+                        error,
+                    );
+                } else {
+                    resolved(
+                        engine.store.project_id().as_deref(),
+                        "publish_experience_index",
+                    )?;
                 }
             }
             self.directory_next.fetch_add(visited, Ordering::Relaxed);
@@ -1264,15 +1310,34 @@ impl Workspace {
         }
         let mut engines = vec![];
         let mut running = BTreeMap::new();
-        let mut total = 0;
+        let mut total: usize = 0;
         for engine in opened {
             if should_stop() {
                 self.background.stopped.store(true, Ordering::Release);
                 break;
             }
-            let hints = engine.scheduling_hints()?;
             let project = engine.store.project_id().unwrap_or_else(|| "global".into());
-            total += hints.running_conversations;
+            let hints = match engine.scheduling_hints() {
+                Ok(hints) => {
+                    resolved(Some(&project), "read_scheduling_hints")?;
+                    hints
+                }
+                Err(error) => {
+                    report(Some(&project), "read_scheduling_hints", error);
+                    // Unknown writer counts must not create extra global
+                    // capacity. Reserve this project's maximum until it can
+                    // be read again, while other stages keep making progress.
+                    let uncertain = engine
+                        .store
+                        .project_metadata()
+                        .map(|p| p.concurrency as usize)
+                        .unwrap_or_else(|_| self.global.concurrency().unwrap_or(usize::MAX));
+                    total = total.saturating_add(uncertain);
+                    running.insert(project, uncertain);
+                    continue;
+                }
+            };
+            total = total.saturating_add(hints.running_conversations);
             running.insert(project.clone(), hints.running_conversations);
             if hints.pending && hints.live {
                 let mut stages = vec![];
@@ -1284,7 +1349,16 @@ impl Workspace {
                             | devdesk_core::SchedulingStage::Workflows
                     )
                 }) {
-                    Some(engine.store.event_cursor()?)
+                    match engine.store.event_cursor() {
+                        Ok(cursor) => {
+                            resolved(Some(&project), "read_event_cursor")?;
+                            Some(cursor)
+                        }
+                        Err(error) => {
+                            report(Some(&project), "read_event_cursor", error);
+                            continue;
+                        }
+                    }
                 } else {
                     None
                 };
@@ -1312,7 +1386,16 @@ impl Workspace {
         }
         // Configuration callbacks share the worker bound, independently of any
         // project's potentially slow Git, Docker or runtime setup operation.
-        let global_tools = self.configuration.store.has_pending_tool_calls()?;
+        let global_tools = match self.configuration.store.has_pending_tool_calls() {
+            Ok(pending) => {
+                resolved(None, "read_global_tool_calls")?;
+                pending
+            }
+            Err(error) => {
+                report(None, "read_global_tool_calls", error);
+                false
+            }
+        };
         self.background
             .runnable
             .store(!engines.is_empty() || global_tools, Ordering::Release);
@@ -1334,7 +1417,16 @@ impl Workspace {
         let stages = devdesk_core::SchedulingStage::ALL;
         let stage_start =
             self.background.stage_next.fetch_add(1, Ordering::Relaxed) % (stages.len() + 2);
-        let global_limit = self.global.concurrency()?;
+        let global_limit = match self.global.concurrency() {
+            Ok(limit) => {
+                resolved(None, "read_global_concurrency")?;
+                limit
+            }
+            Err(error) => {
+                report(None, "read_global_concurrency", error);
+                0
+            }
+        };
         let mut reserved = self.background.reserve_count(&running)?;
         // Each pass offers one stage per project before offering another stage
         // to the same project. SQL OCC still arbitrates every business change.
@@ -1381,7 +1473,7 @@ impl Workspace {
                         .project_metadata()
                         .map(|p| p.concurrency as usize)
                         .unwrap_or(global_limit);
-                    let free = global_limit.saturating_sub(total + reserved);
+                    let free = global_limit.saturating_sub(total.saturating_add(reserved));
                     let new = free.min(project_limit.saturating_sub(actual));
                     allowance = actual + new;
                     reservation = Some(allowance);
@@ -1431,7 +1523,7 @@ impl Workspace {
                 }
             }
         }
-        failure.map_or(Ok(()), Err)
+        background::failures("Workspace::tick", failures)
     }
     pub fn stop_owned_runtime(&self) -> Result<()> {
         let drained = self.background.stop_and_drain();
@@ -1483,6 +1575,50 @@ mod tests {
         ] {
             assert!(report["spans"][stage].is_null(), "{report}");
         }
+    }
+    #[test]
+    fn a_project_with_broken_scheduling_reads_does_not_starve_other_projects() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace =
+            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
+        workspace.global.set_concurrency(2).unwrap();
+        let mut projects = [
+            create(&workspace, "Broken scheduler fixture"),
+            create(&workspace, "Healthy scheduler fixture"),
+        ];
+        projects.sort();
+        let healthy = workspace.project_engine(Some(&projects[1])).unwrap();
+        crate::test_runtime::queue_conversation(&healthy, &projects[1]);
+        // Fault injection is confined to the disposable project database. It
+        // sorts first, so an early-returning hints read would starve the other project.
+        let path = devdesk_adapters::SqliteStore::project_path(root.path(), &projects[0])
+            .unwrap()
+            .join("engineering.sqlite3");
+        let broken = rusqlite::Connection::open(path).unwrap();
+        broken.execute_batch("DROP TABLE turns;").unwrap();
+        // Until the broken project's count is known, its two writer slots
+        // remain reserved; the scheduler must not over-admit globally.
+        for _ in 0..3 {
+            let _ = workspace.tick(|| false);
+            let _ = workspace.background.drain(|| false);
+        }
+        assert_eq!(healthy.conversation_running().unwrap(), 0);
+        workspace.global.set_concurrency(4).unwrap();
+        let mut diagnostics = None;
+        for _ in 0..16 {
+            if let Err(error) = workspace.tick(|| false) {
+                diagnostics = Some(serde_json::to_value(error).unwrap());
+            }
+            let _ = workspace.background.drain(|| false);
+            if healthy.conversation_running().unwrap() == 1 {
+                break;
+            }
+        }
+        assert_eq!(healthy.conversation_running().unwrap(), 1);
+        let diagnostics = diagnostics.expect("the real SQL fault must still be reported");
+        assert!(diagnostics.to_string().contains(&projects[0]));
+        assert!(diagnostics.to_string().contains("read_scheduling_hints"));
+        assert!(diagnostics.to_string().contains("turns"));
     }
     #[test]
     fn scheduler_polls_each_writer_once_and_shares_available_quota() {

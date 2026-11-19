@@ -1,4 +1,4 @@
-//! Frozen source publication, PR preparation, protected merge and local sync.
+//! Frozen source publication, PR preparation, observed merge and local sync.
 //! Every physical stage retains its own grant and raw observation.
 use crate::{
     concurrency::*,
@@ -8,6 +8,8 @@ use crate::{
     workflow_resources::{WorkflowResources, version},
     *,
 };
+#[path = "workflow_delivery_migration.rs"]
+mod migration;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) enum DeliveryAction {
     Target {
@@ -22,6 +24,15 @@ pub(crate) enum DeliveryAction {
         operation: Id,
     },
     Open {
+        context: GitContext,
+        source: String,
+        target: String,
+        workspace: Id,
+        operation: Id,
+        delivery: Id,
+        state: ResourceSnapshot,
+    },
+    OpenSource {
         context: GitContext,
         source: String,
         target: String,
@@ -61,11 +72,13 @@ pub(crate) fn delivery_merge_request(
                 .into(),
             head_branch: publication.pull_request.head_branch.clone(),
             base_branch: context.target.branch.clone(),
-            candidate: publication.revision.clone(),
+            candidate: publication.pull_request.head.clone(),
             expected_target: publication.target_revision.clone(),
             number: Some(publication.pull_request.number),
         },
         tree: publication.tree.clone(),
+        merge_revision: (publication.pull_request.head_branch == publication.source_branch)
+            .then(|| publication.revision.clone()),
     })
 }
 fn operation(id: &str, context: &GitContext, action: RepositoryAction) -> RepositoryOperation {
@@ -131,6 +144,19 @@ impl Engine {
         let handler=if resources.instance.plan.document.steps.iter().find(|s|s.key==key)
             .is_some_and(|s|matches!(&s.executor, StepExecutor::Tool{tool_ref,..}
                 if resources.instance.plan.definitions.values().any(|r|r.id==*tool_ref && r.data["qualified_name"]=="tests.project"))) { "tests.project" } else { "tests.run" };
+        if result["skipped"] == true {
+            require(
+                handler == "tests.project"
+                    && result["reason"] == "no_regression_configured"
+                    && resources
+                        .instance
+                        .inputs
+                        .get("test_configuration")
+                        .and_then(|c| c.get("regression"))
+                        .is_some_and(Value::is_null),
+                "仅未配置项目回归时允许直接通过；已配置回归和独立测试不能跳过",
+            )?;
+        }
         plan.basis = plan.basis.merge([self.platform_receipt_proof(
             &resources.instance.root_instance_id,
             handler,
@@ -268,7 +294,7 @@ impl Engine {
                         )
                     })?;
                 plan.basis = plan.basis.merge([proof])?;
-                DeliveryAction::Open {
+                DeliveryAction::OpenSource {
                     context,
                     source,
                     target: text(target, "revision")?,
@@ -427,7 +453,7 @@ impl Engine {
         receipt: &Value,
     ) -> Result<Option<ResourceChange>> {
         let (state, data) = match action {
-            DeliveryAction::Open { state, .. } => {
+            DeliveryAction::Open { state, .. } | DeliveryAction::OpenSource { state, .. } => {
                 (state, json!({"publication":receipt,"synchronized":false}))
             }
             DeliveryAction::Merge {
@@ -444,11 +470,13 @@ impl Engine {
             let mut row = record(
                 "workflow_delivery",
                 match action {
-                    DeliveryAction::Open { delivery, .. } => delivery.clone(),
+                    DeliveryAction::Open { delivery, .. }
+                    | DeliveryAction::OpenSource { delivery, .. } => delivery.clone(),
                     _ => String::new(),
                 },
                 Scope::project(match action {
                     DeliveryAction::Open { context, .. }
+                    | DeliveryAction::OpenSource { context, .. }
                     | DeliveryAction::Merge { context, .. } => &context.project,
                     _ => unreachable!(),
                 }),
@@ -472,12 +500,80 @@ impl Engine {
             value: row.to_storage(),
         }))
     }
+    pub(crate) fn legacy_unapplied_pr_preflight(
+        &self,
+        effect: &ConfigurationRecord,
+        context: &GitContext,
+    ) -> Result<Option<(ReadSet, Error)>> {
+        if context.target.owner != context.project {
+            return Ok(None);
+        }
+        let protection = one(
+            self.store.as_ref(),
+            "governance",
+            &format!("platform-publish-stage:{}:protection", effect.id),
+        )?;
+        if protection.value.is_none() {
+            return Ok(None);
+        }
+        let stage = restored(self, &protection)?;
+        if stage.r#type != "platform_publish_stage"
+            || !stage.immutable
+            || stage.definition_id != effect.id
+            || stage.data["action"]
+                != json!(PublishAction::DeliveryTarget {
+                    context: context.clone()
+                })
+        {
+            return Ok(None);
+        }
+        let Some((observed, Err(error))) = self.platform_observed(&stage, "result")? else {
+            return Ok(None);
+        };
+        if error.code != "blocked"
+            || error.message != "项目主分支必须预先配置支持的严格保护，平台不能降低或绕过规则"
+        {
+            return Ok(None);
+        }
+        let candidate = one(
+            self.store.as_ref(),
+            "governance",
+            &format!("platform-publish-stage:{}:candidate", effect.id),
+        )?;
+        let pr = one(
+            self.store.as_ref(),
+            "governance",
+            &format!("platform-publish-stage:{}:pr", effect.id),
+        )?;
+        if candidate.value.is_some() || pr.value.is_some() {
+            return Ok(None);
+        }
+        Ok(Some((
+            ReadSet::new(vec![
+                version(&protection),
+                observed,
+                version(&candidate),
+                version(&pr),
+            ])?,
+            error,
+        )))
+    }
     pub(crate) fn drive_delivery(
         &self,
         effect: &ConfigurationRecord,
         action: &DeliveryAction,
         inspect: bool,
     ) -> Result<Option<Value>> {
+        // Classify only the exact old read-only failure, with proof that no
+        // candidate/PR write was granted. Unknown writes still need inspection.
+        if inspect
+            && let DeliveryAction::Open { context, .. } = action
+            && let Some((_, original_error)) =
+                self.legacy_unapplied_pr_preflight(effect, context)?
+        {
+            return Err(err("obsolete_protection_preflight","旧版保护检查在创建 PR 前终止；已核对未授予候选或 PR 写入，可按原流程重试")
+                .technical_not_applied().with_context("legacy PR preflight recovery",json!({"effect_id":effect.id,"project_id":context.project,"original_error":original_error})));
+        }
         let stage = |name: &str, action: PublishAction| {
             self.platform_publish_stage(effect, name, action, inspect)
         };
@@ -703,6 +799,107 @@ impl Engine {
                     pull_request
                 })))
             }
+            DeliveryAction::OpenSource {
+                context,
+                source,
+                target,
+                workspace,
+                operation: op,
+                delivery,
+                state,
+            } => {
+                if context.target.owner != context.project {
+                    let id = crate::material_commands::stable_object_id(
+                        self.store.as_ref(),
+                        op,
+                        "base",
+                    )?;
+                    let action = operation(
+                        &id,
+                        context,
+                        RepositoryAction::PublishRef {
+                            merge: op.clone(),
+                            context: context.clone(),
+                            branch: context.target.branch.clone(),
+                            revision: target.clone(),
+                            expected: None,
+                            stage: PublishStage::DeliveryBase,
+                        },
+                    );
+                    if stage("parent-ref", PublishAction::Repository(Box::new(action)))?.is_none() {
+                        return Ok(None);
+                    }
+                }
+                let previous = state
+                    .value
+                    .as_ref()
+                    .map(|_| restored(self, state))
+                    .transpose()?;
+                let previous = previous.as_ref().map(|row| &row.data["publication"]);
+                let request = PullRequestRequest {
+                    repository: context.workspace.repository.clone(),
+                    project: context.project.clone(),
+                    merge: delivery.clone(),
+                    head_branch: context.source.branch.clone(),
+                    base_branch: context.target.branch.clone(),
+                    candidate: source.clone(),
+                    expected_target: target.clone(),
+                    number: previous
+                        .filter(|p| p["pull_request"]["head_branch"] == context.source.branch)
+                        .and_then(|p| p["pull_request"]["number"].as_u64()),
+                };
+                let Some(value) = stage(
+                    "source-pr",
+                    PublishAction::DeliveryPullRequest(request.clone()),
+                )?
+                else {
+                    return Ok(None);
+                };
+                let pull_request: PullRequestReceipt = serde_json::from_value(value)
+                    .map_err(|e| err("adapter_contract", e.to_string()))?;
+                require(
+                    pull_request.head == *source
+                        && pull_request.head_branch == context.source.branch
+                        && pull_request.base_branch == context.target.branch
+                        && pull_request.repository == context.workspace.repository
+                        && pull_request.marker == request.marker(),
+                    "源分支 PR 回执与冻结版本不符",
+                )?;
+                let request = PullRequestRequest {
+                    number: Some(pull_request.number),
+                    ..request
+                };
+                let Some(value) =
+                    stage("pr-test-merge", PublishAction::DeliveryCandidate(request))?
+                else {
+                    return Ok(None);
+                };
+                let candidate: PullRequestMergeCandidate = serde_json::from_value(value)
+                    .map_err(|e| err("adapter_contract", e.to_string()))?;
+                require(
+                    candidate.source_revision == *source && candidate.target_revision == *target,
+                    "PR 候选源或目标版本已变化",
+                )?;
+                self.git
+                    .fetch_delivery_commit(context, &candidate.revision)?;
+                require(
+                    self.git.commit_parents(context, &candidate.revision)?
+                        == vec![target.clone(), source.clone()]
+                        && self.git.commit_tree(context, &candidate.revision)? == candidate.tree,
+                    "PR 候选父提交或 tree 不符",
+                )?;
+                Ok(Some(json!(DeliveryPublication {
+                    source_revision: source.clone(),
+                    source_branch: context.source.branch.clone(),
+                    target_revision: target.clone(),
+                    revision: candidate.revision,
+                    tree: candidate.tree,
+                    workspace_id: workspace.clone(),
+                    owner_id: context.source.owner.clone(),
+                    operation_id: op.clone(),
+                    pull_request
+                })))
+            }
             DeliveryAction::Merge {
                 context,
                 publication,
@@ -737,7 +934,7 @@ impl Engine {
                 require(
                     receipt.merged
                         && receipt.repository == context.workspace.repository
-                        && receipt.head == publication.revision
+                        && receipt.head == publication.pull_request.head
                         && receipt.number == publication.pull_request.number
                         && receipt.base_branch == context.target.branch
                         && receipt.marker == publication.pull_request.marker,

@@ -5,9 +5,9 @@ pub const DEFAULT_MODEL_ID: &str = "builtin-model-gpt-6-1-sol-high:1";
 
 pub const DEFAULT_HARNESS_ID: &str = "builtin-harness-codex-managed:1";
 
-pub const DEFAULT_SANDBOX_ID: &str = "simplified-sandbox-project-tests:1";
+pub const DEFAULT_SANDBOX_ID: &str = "builtin-sandbox-docker:2";
 
-pub const DEFAULT_STANDARD_ID: &str = "builtin-standard-engineering:9";
+pub const DEFAULT_STANDARD_ID: &str = "builtin-standard-engineering:10";
 
 pub const DEFAULT_DSH_NATIVE_TOOL_ID: &str = "builtin-tool-dsh-native:1";
 
@@ -34,7 +34,7 @@ pub fn default_configured_agent_id(role: &str) -> String {
     )
 }
 
-pub const DEFAULT_PERMISSION_SANDBOX: &str = "simplified-sandbox-project-tests:1";
+pub const DEFAULT_PERMISSION_SANDBOX: &str = "builtin-sandbox-docker:2";
 pub fn default_permission_selection() -> ExecutionPermissionSelection {
     ExecutionPermissionSelection {
         sandbox_ref: DEFAULT_PERMISSION_SANDBOX.into(),
@@ -52,10 +52,10 @@ pub fn fixture_test_configuration() -> serde_json::Value {
 /// Compatibility scenarios opt into the detailed suite explicitly. Tests of
 /// actual defaults must continue to use Engine::configuration_defaults directly.
 pub fn detailed_selection(mut selection: serde_json::Value) -> serde_json::Value {
-    selection["workflow_ref"] = serde_json::json!("builtin-workflow-feature-sol-high:11");
-    selection["task_workflow_ref"] = serde_json::json!("builtin-workflow-task-sol-high:10");
-    selection["standard_ref"] = serde_json::json!("builtin-standard-engineering:9");
-    selection["sandbox_ref"] = serde_json::json!("builtin-sandbox-docker:1");
+    selection["workflow_ref"] = serde_json::json!("builtin-workflow-feature-sol-high:12");
+    selection["task_workflow_ref"] = serde_json::json!("builtin-workflow-task-sol-high:11");
+    selection["standard_ref"] = serde_json::json!("builtin-standard-engineering:10");
+    selection["sandbox_ref"] = serde_json::json!("builtin-sandbox-docker:2");
     selection["role_agent_bindings"] = serde_json::json!({});
     for role in [
         "analyst",

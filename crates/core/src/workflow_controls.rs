@@ -18,6 +18,11 @@ impl Engine {
         fingerprint: &str,
         context: &InvocationContext,
     ) -> Result<Option<Value>> {
+        if method == "workflow.delivery.republish" {
+            return self
+                .native_delivery_republish(c, fingerprint, context)
+                .map(Some);
+        }
         if method == "workflow.segment.dispatch" {
             return self
                 .native_segment_dispatch(c, fingerprint, context)

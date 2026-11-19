@@ -226,6 +226,19 @@ pub enum SchedulingStage {
     Drivers,
 }
 impl SchedulingStage {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Controllers => "controllers",
+            Self::Tools => "tools",
+            Self::Platform => "platform",
+            Self::Repositories => "repositories",
+            Self::Conversations => "conversations",
+            Self::Workflows => "workflows",
+            Self::PlanChanges => "plan_changes",
+            Self::Segments => "segments",
+            Self::Drivers => "drivers",
+        }
+    }
     pub const ALL: &'static [Self] = &[
         Self::Conversations,
         Self::Workflows,
@@ -498,7 +511,7 @@ impl Engine {
         if should_stop() {
             return Ok(());
         }
-        match stage {
+        let result = match stage {
             SchedulingStage::Controllers => self.drive_controllers(),
             SchedulingStage::Tools => self.drive_tool_calls(),
             SchedulingStage::Platform => self.drive_platform_tools(),
@@ -510,7 +523,13 @@ impl Engine {
             SchedulingStage::PlanChanges => self.drive_workflow_changes(),
             SchedulingStage::Segments => self.drive_workflow_segments(),
             SchedulingStage::Drivers => self.drive_rust_workflows(),
-        }
+        };
+        result.map_err(|error| {
+            error.with_context(
+                "Engine::run_scheduling_stage",
+                json!({"project_id":self.store.project_id(),"stage":stage.name()}),
+            )
+        })
     }
     pub fn tick(&self, global_limit: usize) -> Result<()> {
         self.tick_until(global_limit, &|| false)
@@ -545,6 +564,9 @@ impl Engine {
         Ok(())
     }
     pub fn query(&self, method: &str, p: &Value, global_limit: usize) -> Result<Value> {
+        if method == "query.project_test_configuration" {
+            return Ok(json!(self.discover_project_tests()?));
+        }
         if [
             "query.repository",
             "query.runtimes",
