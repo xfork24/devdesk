@@ -64,9 +64,10 @@ impl Engine {
                 .find(|s| s.node_id == e.execution.node_id)
                 .ok_or_else(|| err("not_found", "委托步骤合同缺失"))?;
             require(
-                step.confirmation == ConfirmationPolicy::Automatic
+                (step.confirmation == ConfirmationPolicy::Automatic
+                    || c.payload["include_human"] == true)
                     && nodes.insert(step.node_id.clone()),
-                "委托节点重复或要求人类确认",
+                "委托节点重复或未显式允许人审节点执行",
             )?;
             commit.witness(e.reads.versions().iter().cloned())?;
         }
@@ -82,7 +83,7 @@ impl Engine {
             "当前经理不持有根 Agent 驱动",
         )?;
         commit.witness([version(&driver)])?;
-        let id=commit.new_record(record("workflow_segment",root.record.id.clone(),root.record.scope.clone(),text(&c.payload,"reason")?,1,None,json!({"status":"active","plan_revision_id":root.instance.active_plan_revision_id,"node_ids":nodes,"actor":context.actor(),"driver_id":actual.map(|d|&d["id"]),"driver_epoch":actual.map(|d|&d["data"]["epoch"]),"driver_mode":actual.map(|d|&d["data"]["mode"]),"max_operations":64,"operations":0}),false),"workflow-segment")?;
+        let id=commit.new_record(record("workflow_segment",root.record.id.clone(),root.record.scope.clone(),text(&c.payload,"reason")?,1,None,json!({"status":"active","plan_revision_id":root.instance.active_plan_revision_id,"node_ids":nodes,"include_human":c.payload["include_human"]==true,"actor":context.actor(),"driver_id":actual.map(|d|&d["id"]),"driver_epoch":actual.map(|d|&d["data"]["epoch"]),"driver_mode":actual.map(|d|&d["data"]["mode"]),"max_operations":64,"operations":0}),false),"workflow-segment")?;
         commit.finish(fingerprint, json!({"id":id,"status":"active"}))
     }
     pub fn drive_workflow_segments(&self) -> Result<()> {
@@ -203,14 +204,16 @@ impl Engine {
                             | StepExecutionStatus::Cancelled
                             | StepExecutionStatus::NeedsReconciliation
                             | StepExecutionStatus::WaitingInput
-                            | StepExecutionStatus::WaitingConfirmation
                     ) {
                         status = Some(("stopped", e.reason.clone()));
                         break;
                     }
                     let ready = self.native_step_readiness(&root, &resources)?;
-                    if e.status == StepExecutionStatus::AwaitingAcceptance
-                        && ready["completion_satisfied"] == false
+                    if matches!(
+                        e.status,
+                        StepExecutionStatus::AwaitingAcceptance
+                            | StepExecutionStatus::WaitingConfirmation
+                    ) && ready["completion_satisfied"] == false
                         && ready["completion_overridden"] != true
                     {
                         status = Some((
@@ -221,6 +224,14 @@ impl Engine {
                                 .to_owned(),
                         ));
                         break;
+                    }
+                    if e.status == StepExecutionStatus::WaitingConfirmation
+                        && ready["human_satisfied"] != true
+                    {
+                        // Dispatch delegation never supplies a Human signature.
+                        // Keep the grant durable while unrelated nodes advance;
+                        // acceptance still repeats the exact signature checks.
+                        continue;
                     }
                     let method = if ready["dispatchable"] == true {
                         Some("workflow.step.dispatch")

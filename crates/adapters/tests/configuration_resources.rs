@@ -868,10 +868,8 @@ fn dsh_agents_cannot_be_bound_as_the_orchestrator() {
         error.message.contains("编排"),
         "expected orchestration harness rejection, got: {error}"
     );
-    // The factory workflows grant platform tools (workflow.outputs.read, codex-native) on
-    // nearly every agent step, so rebinding a worker role to a dsh agent cannot compile the
-    // factory selection either — dsh agents serve standalone conversations until the tool
-    // bridge (dsh-tool-bridge plan) lands.
+    // The streamlined author pins its own method. Merely sharing the role does
+    // not give an alternative Agent the required Skill or native tool grants.
     let mut workers = defaults["role_agent_bindings"].clone();
     workers["builtin-role-analyst:1"] = json!("builtin-agent-glm-analyst:2");
     let boundary = command(
@@ -882,6 +880,34 @@ fn dsh_agents_cannot_be_bound_as_the_orchestrator() {
             "workflow_ref": defaults["workflow_ref"],
             "role_agent_bindings": workers,
         }),
+    )
+    .unwrap_err();
+    assert!(boundary.message.contains("缺少必需 Skill"));
+    let state = e.store.snapshot().unwrap();
+    let dsh = state.configuration("builtin-agent-glm-analyst:2").unwrap();
+    let capability = state
+        .configuration(dsh.refs["capability_ref"].as_str().unwrap())
+        .unwrap();
+    let mut skills = capability.refs["skills"].as_array().unwrap().clone();
+    skills.push(json!("simplified-skill-prd:1"));
+    let compatible_method = command(
+        &e,
+        "capability.create",
+        None,
+        json!({
+            "name":"DSH with the required author method", "model_ref":capability.refs["model_ref"],
+            "harness_ref":capability.refs["harness_ref"], "skills":skills,
+            "tools":capability.refs["tools"], "spec_refs":capability.refs["spec_refs"], "data":{}
+        }),
+    )
+    .unwrap();
+    let worker = command(&e, "agent.create", None, json!({"name":"DSH author with exact Skill", "role_ref":"builtin-role-analyst:1","capability_ref":compatible_method["id"],"data":{}})).unwrap();
+    workers["builtin-role-analyst:1"] = worker["id"].clone();
+    let boundary = command(
+        &e,
+        "project.configuration.update",
+        Some(project_id),
+        json!({"workflow_ref":defaults["workflow_ref"],"role_agent_bindings":workers}),
     )
     .unwrap_err();
     assert!(

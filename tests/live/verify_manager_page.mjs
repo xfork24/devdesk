@@ -87,14 +87,14 @@ try {
         const call = response.request().postDataJSON();
         return call?.method === method && call.params?.owner_id === linkedOwner &&
           call.params?.execution_id === evidence.execution_id;
-      });
+      }).then(async (response) => ({ request: response.request().postDataJSON(), value: await response.json() }));
       await openLink(link);
       const observedResponse = await observed;
-      const response = await observedResponse.json();
+      const response = observedResponse.value;
       assert(!response.error, JSON.stringify(response.error));
       if (detail === "context") {
         assert(response.result.agents.some((agent) => agent.entries.some((entry) =>
-          entry.execution_id === evidence.execution_id && entry.turn_id === evidence.turn_id)), JSON.stringify({evidence, call: observedResponse.request().postDataJSON(), response}).slice(0, 6000));
+          entry.execution_id === evidence.execution_id && entry.turn_id === evidence.turn_id)), JSON.stringify({evidence, call: observedResponse.request, response}).slice(0, 6000));
       } else {
         assert.equal(response.result.record.id, evidence.execution_id);
       }

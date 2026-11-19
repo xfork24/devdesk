@@ -87,7 +87,7 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
   ).toBeVisible();
   const defaults = await rpc(page, "query.configuration_defaults");
   expect(Object.keys(defaults.role_agent_bindings)).toHaveLength(6);
-  expect(defaults.capability_ref).toBe("simplified-capability-developer:4");
+  expect(defaults.capability_ref).toBe("simplified-capability-developer:8");
   const completeTools = await rpc(page, "query.configuration_records", {
     refs: ["builtin-tool-codex-native:1", "builtin-tool-dsh-native:1"],
   });
@@ -113,7 +113,7 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
   );
   expect(
     defaults.records.find((r: any) => r.id === manager.capability_ref).tools,
-  ).toContain("builtin-tool-workflow-inspect:1");
+  ).toContain("builtin-tool-workflow-inspect:2");
   await page.getByRole("button", { name: "基础组件", exact: true }).click();
   await page.getByRole("tab", { name: "Harness原生工具", exact: true }).click();
   await expect(page.getByText("AgentID 经验检索", { exact: true })).toHaveCount(

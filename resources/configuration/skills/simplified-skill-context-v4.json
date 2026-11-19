@@ -1,11 +1,11 @@
 {
   "type": "skill",
   "identity": "simplified-skill-context",
-  "revision": 2,
+  "revision": 4,
   "name": "精简版工程上下文",
   "scope": "global",
   "data": {
-    "body_file": "simplified-context-v2.md",
+    "body_file": "simplified-context-v4.md",
     "rules": []
   }
 }

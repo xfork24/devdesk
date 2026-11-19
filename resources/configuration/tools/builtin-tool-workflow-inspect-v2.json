@@ -1,7 +1,7 @@
 {
   "type": "tool",
   "identity": "builtin-tool-workflow-inspect",
-  "revision": 1,
+  "revision": 2,
   "name": "查看当前计划与缺口",
   "scope": "global",
   "data": {
@@ -44,11 +44,19 @@
         },
         "value_digest": {
           "type": "string"
+        },
+        "view": {
+          "type": "string",
+          "enum": [
+            "summary",
+            "full"
+          ],
+          "description": "Use summary for healthy control/readiness; full retains complete frozen contracts for deliberate plan changes. Summary intentionally reports document_complete=false; read exact contracts with execution.inspect part=contract when needed."
         }
       },
       "required": [],
       "additionalProperties": false,
-      "description": "Read a bounded plan/status page. Check page.document_complete and children_page. With decision_ref, read immutable human-request arguments in chunks."
+      "description": "Read bounded workflow control facts. Prefer view=summary: exact versions, readiness/actions, dependencies, output refs and Human gates without repeating full task/contracts or Delivery schemas. Use view=full when the full contract is actually needed. With decision_ref, read immutable Human arguments in chunks."
     },
     "output_schema": {
       "type": "object"

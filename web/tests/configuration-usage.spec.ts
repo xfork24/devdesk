@@ -326,7 +326,7 @@ test("Skill、HTTP 工具和原生工具显示 Capability 引用，提交后同�
   ).toHaveCount(0);
   await expect(usage).toContainText("当前没有配置引用此修订。");
   await page.goto(
-    "/?tab=actors&config_tab=capability&config_object=simplified-capability-reviewer%3A4",
+    "/?tab=actors&config_tab=capability&config_object=simplified-capability-reviewer%3A8",
   );
   await page
     .getByRole("link", {

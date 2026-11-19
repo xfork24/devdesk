@@ -78,7 +78,7 @@ pub fn queue_conversation_with(
     project: &str,
     configure: impl Fn(&EngineeringState, &mut RuntimeBinding) -> Result<()>,
 ) -> (Id, Id) {
-    queue_conversation_for_agent(e, project, "simplified-agent-analyst:4", configure)
+    queue_conversation_for_agent(e, project, "simplified-agent-analyst:8", configure)
 }
 pub fn queue_conversation_for_agent(
     e: &Engine,

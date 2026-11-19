@@ -271,6 +271,12 @@ impl Engine {
                 source_state.governance.push(source.clone());
             }
         }
+        // Source membership belongs to this publication. Deferring it to Host
+        // catalog synchronization races the durable activation's clock guard.
+        register_template_members(
+            &mut source_state,
+            template_catalog_generation(&facts.catalog.state),
+        );
         let candidate = ConfigurationCatalogSnapshot::new(
             source_state,
             facts.catalog.revision,
@@ -278,10 +284,14 @@ impl Engine {
         )?;
         let publication =
             prepare_configuration_publication(self.store.as_ref(), &facts.catalog, &candidate)?;
-        let own_source_inserts = publication
+        let own_catalog_inserts = publication
             .changes
             .iter()
-            .filter(|c| c.resource.kind == "source")
+            .filter(|c| {
+                c.resource.kind == "source"
+                    || (c.resource.kind == "governance"
+                        && c.value["type"] == "template_catalog_member")
+            })
             .count() as u64;
         let activation_reads = self.workflow_change_activation_basis(context, &commit.reads)?;
         // Verify the stable token in the prepare transaction as well, before
@@ -300,7 +310,7 @@ impl Engine {
                 .cloned()
                 .map(|mut v| {
                     if v.resource.kind == "catalog_clock" {
-                        v.revision += own_source_inserts;
+                        v.revision += own_catalog_inserts;
                     }
                     v
                 })
@@ -721,6 +731,7 @@ impl Engine {
         }
         frozen.data["plan"] = json!(next.plan);
         frozen.content_hash = content_digest(&frozen.refs, &frozen.data);
+        register_template_members(&mut catalog, template_catalog_generation(&before.state));
         let candidate =
             ConfigurationCatalogSnapshot::new(catalog, before.revision, before.repository_ready)?;
         let publication =

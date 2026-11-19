@@ -146,7 +146,7 @@
     "tools": [
       "builtin-tool-codex-native:1",
       "builtin-tool-workflow-start:3",
-      "builtin-tool-workflow-inspect:1",
+      "builtin-tool-workflow-inspect:2",
       "builtin-tool-workflow-events-read:1",
       "builtin-tool-workflow-outputs-read:2",
       "builtin-tool-workflow-execution-inspect:1",
@@ -165,7 +165,7 @@
       "builtin-tool-workflow-decision-request:4",
       "builtin-tool-workflow-execution-reconcile:2",
       "builtin-tool-workflow-complete:2",
-      "builtin-tool-workflow-segment-dispatch:2",
+      "builtin-tool-workflow-segment-dispatch:3",
       "builtin-tool-project-overview:1",
       "builtin-tool-project-records-list:1",
       "builtin-tool-project-record-read:1",

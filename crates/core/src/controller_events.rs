@@ -276,6 +276,7 @@ pub(crate) fn native_events(
     engine: &Engine,
     root: &str,
     cursor: u64,
+    controller: Option<(&str, u64)>,
 ) -> Result<(Vec<Value>, crate::concurrency::ResourceSnapshot, u64)> {
     let selected = crate::platform_facts::one(
         engine.store.as_ref(),
@@ -288,11 +289,37 @@ pub(crate) fn native_events(
         .as_ref()
         .and_then(|v| v["events"].as_array())
         .unwrap_or(&empty);
-    let (items, consumed) = native_event_items(events, root, cursor)?;
+    let (items, consumed) = native_event_items(events, root, cursor, controller)?;
     Ok((items, selected, consumed))
 }
 
-fn native_event_items(events: &[Value], root: &str, cursor: u64) -> Result<(Vec<Value>, u64)> {
+fn native_event_items(
+    events: &[Value],
+    root: &str,
+    cursor: u64,
+    controller: Option<(&str, u64)>,
+) -> Result<(Vec<Value>, u64)> {
+    native_event_items_at(events, root, cursor, controller, now())
+}
+
+fn native_event_items_at(
+    events: &[Value],
+    root: &str,
+    cursor: u64,
+    controller: Option<(&str, u64)>,
+    observed_at: u64,
+) -> Result<(Vec<Value>, u64)> {
+    let delegated = |change: &Value| {
+        controller.is_some_and(|(id, epoch)| {
+            change["kind"] == "execution"
+                && change["delegated_progress"]["controller_id"] == id
+                && change["delegated_progress"]["epoch"] == epoch
+                && matches!(
+                    change["execution"]["status"].as_str(),
+                    Some("running" | "awaiting_acceptance" | "completed")
+                )
+        })
+    };
     let mut items = Vec::new();
     let mut bytes = 2;
     let mut consumed = cursor;
@@ -306,15 +333,65 @@ fn native_event_items(events: &[Value], root: &str, cursor: u64) -> Result<(Vec<
         // Keep every event for SSE/audit. The manager need not run another model
         // turn solely because an already-running step gained session/turn IDs.
         // Never advance past a meaningful event the manager has not received.
-        if data["change"]["kind"] == "workflow.changed"
-            && data["change"]["changes"].as_array().is_some_and(|changes| {
-                !changes.is_empty()
-                    && changes.iter().all(|change| {
-                        change["kind"] == "execution"
-                            && change["metadata_only"] == true
-                            && change["execution"]["status"] == "running"
+        let stop_result = data["change"]["kind"] == "execution.stopped"
+            && data["change"]["turn_id"].is_string()
+            && events.iter().any(|later| {
+                if later["id"].as_u64() <= event["id"].as_u64() {
+                    return false;
+                }
+                let Some(raw) = later["detail"].as_str() else {
+                    return false;
+                };
+                let Ok(next) = serde_json::from_str::<Value>(raw) else {
+                    return false;
+                };
+                next["root_instance_id"] == root
+                    && next["instance_id"] == data["instance_id"]
+                    && next["change"]["kind"] == "workflow.changed"
+                    && next["change"]["changes"].as_array().is_some_and(|changes| {
+                        changes.iter().any(|change| {
+                            let e = &change["execution"];
+                            change["kind"] == "execution"
+                                && e["session_id"] == data["change"]["session_id"]
+                                && e["turn_id"] == data["change"]["turn_id"]
+                                && matches!(
+                                    e["status"].as_str(),
+                                    Some(
+                                        "awaiting_acceptance"
+                                            | "waiting_confirmation"
+                                            | "completed"
+                                    )
+                                )
+                        })
                     })
-            })
+            });
+        // Give the immediately following terminal/result commit a bounded
+        // chance to join this page. Never consume an unpaired stop or hold a
+        // later attention event behind it. SSE/audit keep the original event.
+        if !stop_result
+            && data["change"]["kind"] == "execution.stopped"
+            && data["change"]["turn_id"].is_string()
+            && event["id"] == events.last().unwrap()["id"]
+            && event["time"]
+                .as_u64()
+                .is_some_and(|time| observed_at >= time && observed_at < time.saturating_add(400))
+        {
+            break;
+        }
+        if stop_result
+            || (data["change"]["kind"] == "workflow.changed"
+                && data["change"]["changes"].as_array().is_some_and(|changes| {
+                    !changes.is_empty()
+                        && changes.iter().all(|change| {
+                            (change["kind"] == "execution"
+                                && ((change["metadata_only"] == true
+                                    && change["execution"]["status"] == "running")
+                                    || delegated(change)))
+                                || (change["kind"] == "status"
+                                    && change["value"] == "running"
+                                    && changes.iter().any(delegated))
+                        })
+                }))
         {
             if items.is_empty() {
                 consumed = event["id"]
@@ -361,7 +438,7 @@ fn manager_metadata_coalescing_keeps_boundaries_and_advances_bounded_pages() {
     };
     let mut cursor = 0;
     for page in (1..=70).map(metadata).collect::<Vec<_>>().chunks(32) {
-        let (items, consumed) = native_event_items(page, "root", cursor).unwrap();
+        let (items, consumed) = native_event_items(page, "root", cursor, None).unwrap();
         assert!(items.is_empty());
         assert!(consumed > cursor);
         cursor = consumed;
@@ -371,13 +448,20 @@ fn manager_metadata_coalescing_keeps_boundaries_and_advances_bounded_pages() {
         72,
         json!({"kind":"human.confirmed","confirmation_ref":"actual"}),
     );
-    let (items, consumed) =
-        native_event_items(&[metadata(71), human.clone(), metadata(73)], "root", cursor).unwrap();
+    let (items, consumed) = native_event_items(
+        &[metadata(71), human.clone(), metadata(73)],
+        "root",
+        cursor,
+        None,
+    )
+    .unwrap();
     assert_eq!(consumed, 71);
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["id"], 72);
     assert_eq!(
-        native_event_items(&[metadata(73)], "root", 72).unwrap().1,
+        native_event_items(&[metadata(73)], "root", 72, None)
+            .unwrap()
+            .1,
         73
     );
     for change in [
@@ -387,9 +471,168 @@ fn manager_metadata_coalescing_keeps_boundaries_and_advances_bounded_pages() {
         json!({"kind":"workflow.changed","changes":[{"kind":"execution","metadata_only":true,"execution":{"status":"running"}},{"kind":"paused","value":true}]}),
         json!({"kind":"workflow.changed","changes":[{"kind":"execution","execution":{"status":"running"}}]}),
     ] {
-        let (items, consumed) = native_event_items(&[event(74, change)], "root", 73).unwrap();
+        let (items, consumed) = native_event_items(&[event(74, change)], "root", 73, None).unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(consumed, 73);
     }
-    assert!(native_event_items(&[human], "foreign", 0).is_err());
+    assert!(native_event_items(&[human], "foreign", 0, None).is_err());
+}
+
+#[cfg(test)]
+#[test]
+fn delegated_notifications_keep_foreign_epochs_and_every_attention_boundary() {
+    let progress = |status: &str| json!({"kind":"execution","execution":{"status":status},"delegated_progress":{"controller_id":"manager","epoch":2,"segment_id":"grant"}});
+    let event = |id, changes: Value| json!({"id":id,"detail":json!({"root_instance_id":"root","change":{"kind":"workflow.changed","changes":changes}}).to_string()});
+    for status in ["running", "awaiting_acceptance", "completed"] {
+        let raw = event(1, json!([progress(status)]));
+        let (items, cursor) =
+            native_event_items(std::slice::from_ref(&raw), "root", 0, Some(("manager", 2)))
+                .unwrap();
+        assert!(items.is_empty());
+        assert_eq!(cursor, 1);
+        for actor in [None, Some(("manager", 1)), Some(("other", 2))] {
+            assert_eq!(
+                native_event_items(std::slice::from_ref(&raw), "root", 0, actor)
+                    .unwrap()
+                    .0
+                    .len(),
+                1
+            );
+        }
+    }
+    for status in [
+        "failed",
+        "waiting_input",
+        "waiting_confirmation",
+        "cancelled",
+        "needs_reconciliation",
+    ] {
+        assert_eq!(
+            native_event_items(
+                &[event(2, json!([progress(status)]))],
+                "root",
+                0,
+                Some(("manager", 2))
+            )
+            .unwrap()
+            .0
+            .len(),
+            1
+        );
+    }
+    for boundary in [
+        json!({"kind":"paused"}),
+        json!({"kind":"active_plan_revision_id"}),
+        json!({"kind":"control_version"}),
+        json!({"kind":"execution","execution":{"status":"completed"}}),
+    ] {
+        let (items, cursor) = native_event_items(
+            &[event(2, json!([progress("running"), boundary]))],
+            "root",
+            0,
+            Some(("manager", 2)),
+        )
+        .unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(cursor, 0);
+    }
+    for kind in [
+        "human.confirmed",
+        "decision.changed",
+        "segment.changed",
+        "execution.stopped",
+    ] {
+        let raw = json!({"id":2,"detail":json!({"root_instance_id":"root","change":{"kind":kind}}).to_string()});
+        assert_eq!(
+            native_event_items(&[raw], "root", 0, Some(("manager", 2)))
+                .unwrap()
+                .0
+                .len(),
+            1
+        );
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn stop_result_batching_is_exact_and_an_unpaired_stop_always_expires() {
+    let event = |id, change: Value| json!({"id":id,"time":1000,"detail":json!({"root_instance_id":"root","instance_id":"instance","change":change}).to_string()});
+    let stop = event(
+        1,
+        json!({"kind":"execution.stopped","session_id":"session","turn_id":"turn","operation_id":"worker"}),
+    );
+    let result = |status: &str, turn: &str| {
+        event(
+            2,
+            json!({"kind":"workflow.changed","changes":[{"kind":"execution","execution":{"status":status,"session_id":"session","turn_id":turn}}]}),
+        )
+    };
+    let (items, cursor) =
+        native_event_items_at(std::slice::from_ref(&stop), "root", 0, None, 1399).unwrap();
+    assert!(items.is_empty());
+    assert_eq!(cursor, 0, "a deferred stop must not be acknowledged");
+    assert_eq!(
+        native_event_items_at(std::slice::from_ref(&stop), "root", 0, None, 1400)
+            .unwrap()
+            .0
+            .len(),
+        1
+    );
+    for status in ["awaiting_acceptance", "waiting_confirmation", "completed"] {
+        let (items, cursor) = native_event_items_at(
+            &[stop.clone(), result(status, "turn")],
+            "root",
+            0,
+            None,
+            1050,
+        )
+        .unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["id"], 2);
+        assert_eq!(cursor, 1);
+    }
+    for status in [
+        "failed",
+        "waiting_input",
+        "cancelled",
+        "needs_reconciliation",
+    ] {
+        assert_eq!(
+            native_event_items_at(
+                &[stop.clone(), result(status, "turn")],
+                "root",
+                0,
+                None,
+                1050
+            )
+            .unwrap()
+            .0
+            .len(),
+            2
+        );
+    }
+    assert_eq!(
+        native_event_items_at(
+            &[stop.clone(), result("completed", "other-turn")],
+            "root",
+            0,
+            None,
+            1050
+        )
+        .unwrap()
+        .0
+        .len(),
+        2
+    );
+    let control = event(
+        2,
+        json!({"kind":"workflow.changed","changes":[{"kind":"paused","value":true}]}),
+    );
+    assert_eq!(
+        native_event_items_at(&[stop, control], "root", 0, None, 1050)
+            .unwrap()
+            .0
+            .len(),
+        2
+    );
 }

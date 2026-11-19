@@ -1,0 +1,11 @@
+{
+  "type": "skill",
+  "identity": "simplified-skill-design",
+  "revision": 1,
+  "name": "精简版架构设计",
+  "scope": "global",
+  "data": {
+    "body_file": "simplified-design-v1.md",
+    "rules": []
+  }
+}

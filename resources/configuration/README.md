@@ -52,13 +52,13 @@ Role / Skill / Spec 正文通过各自的 `instructions_file` 或 `body_file` �
 
 ## 默认交付自检
 
-默认精简版 Agent/Capability 为第 4 修订，自检 Skill 为第 3 修订。带定位的 content_checks 报告必须先调用本步骤 spec.lint，通过 structure_valid 与 content_report_valid 后才最终提交。lint 返回实际冻结文本边界和有界章节定位，允许在同一轮修正草稿；不能删除必需证据、改摘要或放宽越界检查。简单 Markdown 文档仍可直接按冻结合同自检。
+默认精简版经理 Agent/Capability 为第 10 修订、测试为第 9 修订、其他业务角色为第 8 修订，自检 Skill 为第 4 修订。默认模型为 `builtin-model-gpt-6-1-sol-low:1`（gpt-6.1-sol、low 推理档位）；High 源继续保留，已冻结工作不替换。带定位的 content_checks 报告必须先调用本步骤 spec.lint，通过 structure_valid 与 content_report_valid 后才最终提交。lint 返回实际冻结文本边界和有界章节定位，允许在同一轮修正草稿；不能删除必需证据、改摘要或放宽越界检查。简单 Markdown 文档仍可直接按冻结合同自检。
 
 Codex 的六类业务 Agent Capability 包含 spec.lint 与“交付草稿自检与冻结证据定位” Skill；精简版 Agent 步骤通过所选 Profile 允许该只读工具。它只检查当前步骤冻结的输入/输出 Delivery 与内容，不获得经理配置写权限。默认 PRD/Design Spec 检查实际必需章节，默认关键评审要求冻结输入的精确位置；语义质量、真实测试、独立评审和最终接纳仍按原流程判定。所有依赖通过后继精确引用发布，旧工作继续使用已冻结修订。
 
 ## 默认流程与出厂升级
 
-实际默认引用为 `simplified-workflow-feature:4`、`simplified-workflow-task:3`、`simplified-standard-engineering:4`，六个业务角色绑定精简版 Agent，Sandbox 使用 `builtin-sandbox-docker:2`。精简版专用 JSON、正文文件名及配置 identity 统一使用 `simplified-` 前缀，中文显示名称保留“精简版”；通用 Role、协议与未改变的 Spec/Delivery 共享。出厂目录仅发布精简版 Standard、Feature、Task 及其专属配置；其他 Agent 栈仍引用的共享 Skill、Spec 和工具继续发布。历史数据集中的详细版源修订、项目选择和运行冻结不删除。兼容性回归使用 tests/fixtures/configuration 中的显式测试夹具，不随生产程序打包。
+实际默认引用为 `simplified-workflow-feature:7`、`simplified-workflow-task:3`、`simplified-standard-engineering:7`，六个业务角色绑定精简版 Agent，Sandbox 使用 `builtin-sandbox-docker:2`。精简版专用 JSON、正文文件名及配置 identity 统一使用 `simplified-` 前缀，中文显示名称保留“精简版”；通用 Role、协议与未改变的 Spec/Delivery 共享。出厂目录仅发布精简版 Standard、Feature、Task 及其专属配置；其他 Agent 栈仍引用的共享 Skill、Spec 和工具继续发布。历史数据集中的详细版源修订、项目选择和运行冻结不删除。兼容性回归使用 tests/fixtures/configuration 中的显式测试夹具，不随生产程序打包。
 
 已有兼容数据集可在设置中“更新出厂默认并保留自定义”，使用 `configuration.templates.reset` 的 `preserve_custom:true` 及原目录预览前置条件。该动作追加缺少的不可变源和目录代次，选择新版出厂默认，保留自定义成员、项目选择和历史。相同源修订内容冲突时拒绝覆盖。新默认仅影响后续选择；已有项目须显式保存配置，已有工作继续按冻结引用运行。
 
@@ -67,3 +67,5 @@ Codex 的六类业务 Agent Capability 包含 spec.lint 与“交付草稿自检
 项目配置默认读取所选主分支的已提交配置，不执行仓库脚本。优先使用 `.devdesk/tests.json`（ProjectTestConfiguration），其次识别 `package.json` 的有效 `scripts.test`、具有测试的 Cargo/Go 项目、pytest 配置及 Python unittest 文件。没有回归配置时保存 `regression:null`，平台为对应代码版本记录未配置、直接通过；独立 Red/Green 不受影响。配置中不必填写 image，执行时使用冻结工具运行环境的实际镜像。已有入口失败、缺依赖、超时仍按失败处理。
 
 项目页展示识别结果，可重新识别；JSON 手动覆盖收在高级选项。入口与设置随新工作冻结，后续修改不改变既有运行。
+
+精简版经理当前采用 Agent/Capability 第 10 修订、编排 Skill7、原生检查 Tool2 与有界委托 Tool3；测试 Agent/Capability 为第 9 修订，其他业务角色为第 8 修订。经理可显式委托人审节点执行，实际人审签署仍是独立权威事实。Feature9/Task4/Standard9 的全部业务门禁保持。

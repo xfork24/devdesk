@@ -226,7 +226,22 @@ export function ResourceEditor({
         ? loadIntegrationRecords(request, project?.id)
         : Promise.resolve([]),
     ]);
-    setRecords(records);
+    // Index refreshes can finish after a targeted detail read. Immutable source
+    // details with the same hash remain valid; do not replace them with an
+    // index-only row and lose a completed hydration effect.
+    setRecords((current) =>
+      records.map((row) => {
+        const detail = current.find(
+          (item) =>
+            item.id === row.id &&
+            !item._index &&
+            item.content_hash === row.content_hash,
+        );
+        return row._index && detail
+          ? { ...detail, ...row, data: detail.data, _index: undefined }
+          : row;
+      }),
+    );
     setIntegrations(integrationResources);
     setProviders(modelProviders.providers || []);
     if (kind === "tool")
@@ -344,6 +359,17 @@ export function ResourceEditor({
           project?.id,
           controller.signal,
         );
+        // A legacy instance URL may not be in the bounded source index. Resolve
+        // its definition after the targeted read rather than retaining a draft
+        // for an unrelated Agent from the previous page.
+        if (kind === "agent" && row.type === "agent_instance") {
+          row = await loadConfigurationRecord(
+            request,
+            { id: row.data.agent_revision_id, type: "agent", _index: true },
+            project?.id,
+            controller.signal,
+          );
+        }
         if (controller.signal.aborted || row.type !== kind) return;
         setRecords((rows) => mergeConfigurationRecords(rows, [row]));
         setShowAdditionalEditor(false);

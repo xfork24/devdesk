@@ -686,6 +686,33 @@ fn custom_agent_executes_actual_task_through_ports_and_persists_typed_artifact()
         .unwrap();
     assert_eq!(row.data["status"], "completed", "{}", row.data);
     let output_id = row.data["steps"][0]["outputs"]["risks"].as_str().unwrap();
+    let stop = state
+        .events
+        .iter()
+        .find(|e| {
+            e.kind == "workflow.runtime"
+                && serde_json::from_str::<Value>(&e.detail).is_ok_and(|v| {
+                    v["instance_id"] == instance["id"]
+                        && v["change"]["kind"] == "execution.stopped"
+                        && v["change"]["turn_id"] == row.data["steps"][0]["turn_id"]
+                })
+        })
+        .expect("the real SQLite stop event must identify its exact producer Turn");
+    assert!(
+        state.events.iter().any(|e| {
+            e.id > stop.id
+                && e.kind == "workflow.runtime"
+                && serde_json::from_str::<Value>(&e.detail).is_ok_and(|v| {
+                    v["instance_id"] == instance["id"]
+                        && v["change"]["changes"].as_array().is_some_and(|changes| {
+                            changes
+                                .iter()
+                                .any(|c| c["execution"]["outputs"]["risks"] == output_id)
+                        })
+                })
+        }),
+        "the actionable output event must remain durable after the coalesced stop"
+    );
     let output = state.configuration(output_id).unwrap();
     assert_eq!(output.data["value"], json!({"risks":["权限隔离"]}));
     let artifact = state
@@ -1128,7 +1155,7 @@ fn unsealed_workspace_at_clock(legacy: bool, clock: &std::sync::atomic::AtomicU6
             "workflow.execution.reconcile".into(),
             json!({"instance_id":run["id"],"step":"writer","execution_id":timed_step["id"],"expected_revision":view["record"]["revision"],"expected_step_revision":waiting["step_revision"],"plan_revision_id":view["runtime"]["active_plan_revision_id"],"control_version":view["runtime"]["control_version"],"reason":"核对原始拒绝时间并恢复原执行，不申请 Human 判定"}),
         )];
-        command(&e,"orchestration.open",outer["id"].as_str(),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4"})).unwrap();
+        command(&e,"orchestration.open",outer["id"].as_str(),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
         command(
             &e,
             "workflow.driver.select",
@@ -2645,7 +2672,7 @@ fn platform_material_forwarding_case(mode: &str) {
         ..Default::default()
     });
     e.harness = relay.clone();
-    command(&e,"orchestration.open",Some(root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4"})).unwrap();
+    command(&e,"orchestration.open",Some(root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
     command(
         &e,
         "workflow.driver.select",
@@ -2911,7 +2938,7 @@ fn manager_input_decisions_are_current_and_only_exact_approved_content_can_be_re
             format!("人类决定：先修复环境再重跑，不放行失败结果。引用原报告：{value}");
         let mut arguments = json!({"instance_id":root,"plan_revision_id":view["runtime"]["active_plan_revision_id"],"expected_revision":view["record"]["revision"],"control_version":view["runtime"]["control_version"],"expected_step_revision":waiting["step_revision"],"execution_id":waiting["execution_id"],"step":"repair","input":approved_input});
         let pending = command(&e,"workflow.decision.request",Some(&root),json!({"operation":"workflow.step.input","reason":"请确认原样转交此报告","arguments":arguments,"interaction":{"title":"转交原失败报告","background":"步骤等待原报告","requested_action":"确认确切补充输入","completed_work":"已核对需转交的报告正文","review_summary":"本次只请求转交，未宣称验收通过","materials":[],"evidence":[{"instance_id":root,"execution_id":waiting["execution_id"],"label":"等待输入的执行","purpose":"核对确切问题和补充输入范围"}]}})).unwrap();
-        command(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4"})).unwrap();
+        command(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
         let manager = e
             .query("query.orchestration", &json!({"root_instance_id":root}), 4)
             .unwrap();
@@ -4911,6 +4938,13 @@ impl ports::Harness for PlatformCallingAgent {
         if self.repair_locations {
             assert!(receipt.success);
             let report = receipt.structured_content.as_ref().unwrap();
+            assert_eq!(report["content_report_required_checks"][0]["key"], "source");
+            assert!(
+                report["content_report_instructions"]
+                    .as_str()
+                    .unwrap()
+                    .contains("exactly {delivery_ref, value}")
+            );
             let source = &report["content_report_sources"][0];
             assert_eq!(source["line_count"], 63);
             let corrected = grounded_review(source, source["sections"][0]["locator"].clone());
@@ -6720,11 +6754,11 @@ fn actual_defaults_compile_the_streamlined_suite_and_freeze_project_tests() {
     let dir = tempfile::tempdir().unwrap();
     let e = engine(dir.path());
     let defaults = e.configuration_defaults(None).unwrap();
-    assert_eq!(defaults["workflow_ref"], "simplified-workflow-feature:4");
-    assert_eq!(defaults["task_workflow_ref"], "simplified-workflow-task:3");
+    assert_eq!(defaults["workflow_ref"], "simplified-workflow-feature:9");
+    assert_eq!(defaults["task_workflow_ref"], "simplified-workflow-task:4");
     assert_eq!(
         defaults["standard_ref"],
-        "simplified-standard-engineering:4"
+        "simplified-standard-engineering:9"
     );
     let state = e.store.snapshot().unwrap();
     let bindings = serde_json::from_value(defaults["role_agent_bindings"].clone()).unwrap();
@@ -6835,7 +6869,7 @@ fn actual_defaults_compile_the_streamlined_suite_and_freeze_project_tests() {
         .unwrap();
     assert!(
         matches!(&tasks.executor,StepExecutor::Workflow{workflow_ref,foreach:Some(collection),..}
-        if workflow_ref=="simplified-workflow-task:3" && collection.max_concurrency==4)
+        if workflow_ref=="simplified-workflow-task:4" && collection.max_concurrency==4)
     );
     assert!(
         tasks.budget.timeout_seconds >= 7200,

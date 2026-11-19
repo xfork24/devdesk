@@ -513,6 +513,26 @@ impl Engine {
                 .map(|(key, value)| (key.clone(), value.clone()))
                 .collect(),
         );
+        if p["view"] == "summary" {
+            for item in &mut steps {
+                let execution = item["execution"].as_object_mut().unwrap();
+                execution.remove("inputs");
+                execution.remove("runtime_context");
+            }
+            runtime["steps"] = json!(steps.iter().map(|s| &s["execution"]).collect::<Vec<_>>());
+            let contracts = root.instance.plan.document.steps.iter().skip(offset).take(limit).map(|s| json!({"key":s.key,"node_id":s.node_id,"name":s.name,"dependencies":s.dependencies,"executor":s.executor,"confirmation":s.confirmation})).collect::<Vec<_>>();
+            runtime["plan"] = json!({"workflow_revision_id":root.instance.plan.workflow_revision_id,"standard_ref":root.instance.plan.standard_ref,"document":{"steps":contracts},"summary":true,"contract_parts":"workflow.execution.inspect: part=contract"});
+            let detail = self
+                .store
+                .workflow_detail(&crate::read_models::WorkflowDetailQuery::parse(
+                    &json!({"id":root.record.id,"view":"status","child_offset":offset}),
+                )?)?
+                .ok_or_else(|| err("not_found", "流程摘要缺失"))?;
+            let total = root.instance.steps.len();
+            return Ok(
+                json!({"record":{"id":root.record.id,"revision":root.record.revision},"runtime":runtime,"steps":steps,"allowed_actions":allowed,"human_gates":self.controller_human_gates(&root.instance.root_instance_id)?,"page":{"offset":offset,"limit":limit,"total":total,"next_offset":if offset+limit<total{Some(offset+limit)}else{None},"document_complete":false,"summary":true},"children":detail.children,"children_page":{"offset":offset,"more":detail.children_more,"next_offset":detail.next_child_offset}}),
+            );
+        }
         let mut document = Value::Object(
             root.record.data["plan"]["document"]
                 .as_object()

@@ -19,6 +19,71 @@ pub struct NativeTools {
     root: PathBuf,
     jobs: Mutex<HashMap<String, Job>>,
 }
+fn argument_schema_message(schema: &Value, instance: &str, location: &str) -> String {
+    let mut message = format!("数据不符合契约: {instance}");
+    if location.ends_with("/oneOf")
+        && let Some(choices) = schema.pointer(location).and_then(Value::as_array)
+    {
+        let variants = choices
+            .iter()
+            .take(16)
+            .filter_map(|choice| {
+                let properties = choice["properties"].as_object()?;
+                let (key, value) = properties
+                    .iter()
+                    .find_map(|(key, rule)| rule["const"].as_str().map(|value| (key, value)))?;
+                let required = choice["required"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .take(8)
+                    .map(|name| name.chars().take(40).collect::<String>())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                Some(format!(
+                    "{}={} requires [{}]",
+                    key.chars().take(40).collect::<String>(),
+                    value.chars().take(64).collect::<String>(),
+                    required
+                ))
+            })
+            .collect::<Vec<_>>();
+        if !variants.is_empty() {
+            message.push_str("; schema alternatives: ");
+            message.push_str(&variants.join("; "));
+        }
+    }
+    // Hints come only from the declared schema, never from argument values.
+    message.chars().take(1536).collect()
+}
+
+#[cfg(test)]
+#[test]
+fn operation_schema_errors_explain_real_variants_without_echoing_arguments() {
+    let directory = tempfile::tempdir().unwrap();
+    let tools = NativeTools::new(directory.path()).unwrap();
+    let schema = json!({"type":"object","properties":{"operations":{"type":"array","items":{"oneOf":[{"type":"object","properties":{"type":{"const":"upsert_step"},"step":{"type":"object"}},"required":["type","step"],"additionalProperties":false},{"type":"object","properties":{"type":{"const":"remove_step"},"node_id":{"type":"string"}},"required":["type","node_id"],"additionalProperties":false}]}}}});
+    let invalid = json!({"operations":[{"op":"restart_step","secret":"never echo this argument"}]});
+    let error = tools.validate_arguments(&schema, &invalid).unwrap_err();
+    assert_eq!(error.code, "schema_validation");
+    assert!(error.message.contains("/operations/0"));
+    assert!(
+        error
+            .message
+            .contains("type=upsert_step requires [type,step]")
+    );
+    assert!(error.message.contains("type=remove_step"));
+    assert!(!error.message.contains("never echo this argument"));
+    assert!(error.message.chars().count() <= 1536);
+    tools
+        .validate_arguments(
+            &schema,
+            &json!({"operations":[{"type":"upsert_step","step":{}}]}),
+        )
+        .unwrap();
+}
+
 fn operation(id: &str) -> String {
     let bytes = Sha256::digest(id.as_bytes());
     uuid::Uuid::from_slice(&bytes[..16]).unwrap().to_string()
@@ -545,7 +610,11 @@ impl ports::ToolExecutor for NativeTools {
         validator(schema)?.validate(value).map_err(|e| {
             err(
                 "schema_validation",
-                format!("数据不符合契约: {}", e.instance_path()),
+                argument_schema_message(
+                    schema,
+                    &e.instance_path().to_string(),
+                    &e.schema_path().to_string(),
+                ),
             )
         })
     }

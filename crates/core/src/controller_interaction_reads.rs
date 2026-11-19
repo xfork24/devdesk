@@ -301,7 +301,12 @@ impl Engine {
             .filter(|a| a["human_required"] == true)
             .collect::<Vec<_>>();
         Ok(
-            json!({"total":gates.len(),"items":gates.iter().take(16).map(|a|json!({"instance_id":a["instance_id"],"instance_name":a["instance_name"],"owner_id":a["owner_id"],"step":a["arguments"]["step"],"step_name":a["step_name"],"execution_id":a["arguments"]["execution_id"],"plan_revision_id":a["arguments"]["plan_revision_id"],"title":a["interaction"]["title"],"confirmation_policy":"human","human_satisfied":false})).collect::<Vec<_>>()}),
+            json!({"total":gates.len(),"items":gates.iter().take(16).map(|a| {
+                let mut arguments = a["arguments"].clone();
+                arguments["instance_id"] = a["instance_id"].clone();
+                arguments["expected_revision"] = a["revision"].clone();
+                json!({"instance_id":a["instance_id"],"instance_name":a["instance_name"],"owner_id":a["owner_id"],"step":arguments["step"],"step_name":a["step_name"],"execution_id":arguments["execution_id"],"plan_revision_id":arguments["plan_revision_id"],"title":a["interaction"]["title"],"confirmation_policy":"human","human_satisfied":false,"operation":a["operation"],"arguments":arguments,"interaction":a["interaction"]})
+            }).collect::<Vec<_>>()}),
         )
     }
     pub(crate) fn validate_controller_interaction(

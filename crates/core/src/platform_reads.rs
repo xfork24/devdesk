@@ -138,6 +138,11 @@ impl Engine {
                 .transpose()?;
             reads = reads.merge([version(&selected)])?;
             let targets = input_evidence_from_manifest(execution, manifest.as_ref())?;
+            report["content_report_required_checks"] =
+                json!(crate::spec_lint::step_content_checks(instance, step)?);
+            report["content_report_instructions"] = json!(
+                "Call spec.lint with exactly {delivery_ref, value}; delivery_ref is this exact Delivery revision and value is the complete report. Report checks must match content_report_required_checks, not the Delivery's generic checks above. Correct the draft in this same Turn; do not substitute a port name or add spec_ref/output_port arguments."
+            );
             report["content_report_sources"] = json!(
                 targets
                     .iter()

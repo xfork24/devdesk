@@ -4,10 +4,10 @@
     "builtin-delivery-checked-markdown:1": [],
     "builtin-delivery-prd:3": [
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/0/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -22,10 +22,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/1/inputs/work",
         "kind": "step_input",
@@ -40,10 +40,10 @@
         "port": "work"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/11/inputs/requirements",
         "kind": "step_input",
@@ -58,10 +58,10 @@
         "port": "requirements"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/3/inputs/requirements",
         "kind": "step_input",
@@ -76,10 +76,10 @@
         "port": "requirements"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/4/inputs/requirements",
         "kind": "step_input",
@@ -94,10 +94,10 @@
         "port": "requirements"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/5/inputs/requirements",
         "kind": "step_input",
@@ -112,10 +112,10 @@
         "port": "requirements"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/6/inputs/requirements",
         "kind": "step_input",
@@ -132,10 +132,10 @@
     ],
     "builtin-delivery-review:2": [
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/1/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -150,10 +150,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/11/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -168,10 +168,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/17/executor/arguments/review",
         "kind": "step_argument",
@@ -186,10 +186,10 @@
         "port": "review"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/17/inputs/review",
         "kind": "step_input",
@@ -204,10 +204,10 @@
         "port": "review"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/4/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -222,10 +222,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/6/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -240,10 +240,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/7/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -260,10 +260,10 @@
     ],
     "builtin-delivery-task-creation-report:1": [
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/7/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -278,10 +278,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/8/executor/foreach/source",
         "kind": "step_collection",
@@ -297,20 +297,20 @@
     ],
     "builtin-delivery-task-record:1": [
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/inputs/item/delivery_ref",
         "kind": "workflow_input",
         "port": "item"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/0/executor/arguments/owner_id",
         "kind": "step_argument",
@@ -325,10 +325,10 @@
         "port": "owner_id"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/1/inputs/task",
         "kind": "step_input",
@@ -343,10 +343,10 @@
         "port": "task"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/4/inputs/task",
         "kind": "step_input",
@@ -361,10 +361,10 @@
         "port": "task"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/7/inputs/task",
         "kind": "step_input",
@@ -381,10 +381,10 @@
     ],
     "builtin-delivery-workspace-snapshot:1": [
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/10/executor/arguments/diff_base",
         "kind": "step_argument",
@@ -399,10 +399,10 @@
         "port": "diff_base"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/10/executor/arguments/workspace",
         "kind": "step_argument",
@@ -417,10 +417,10 @@
         "port": "workspace"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/11/inputs/baseline",
         "kind": "step_input",
@@ -435,10 +435,10 @@
         "port": "baseline"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/2/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -453,10 +453,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/3/inputs/workspace",
         "kind": "step_input",
@@ -471,10 +471,10 @@
         "port": "workspace"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/5/inputs/workspace",
         "kind": "step_input",
@@ -489,10 +489,10 @@
         "port": "workspace"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/9/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -507,10 +507,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/0/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -525,10 +525,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/1/inputs/workspace",
         "kind": "step_input",
@@ -543,10 +543,10 @@
         "port": "workspace"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/2/executor/arguments/workspace",
         "kind": "step_argument",
@@ -561,10 +561,10 @@
         "port": "workspace"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/5/executor/arguments/diff_base",
         "kind": "step_argument",
@@ -785,10 +785,10 @@
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-reviewer:4",
+        "reference": "simplified-capability-reviewer:8",
         "name": "精简版reviewer能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/skills/3",
         "kind": "reference"
@@ -811,15 +811,6 @@
         "version": 2,
         "scope": "global",
         "path": "/skills/1",
-        "kind": "reference"
-      },
-      {
-        "reference": "simplified-capability-analyst:4",
-        "name": "精简版analyst能力",
-        "type": "capability",
-        "version": 4,
-        "scope": "global",
-        "path": "/skills/2",
         "kind": "reference"
       }
     ],
@@ -845,10 +836,10 @@
     ],
     "builtin-skill-project-workbench:1": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/skills/4",
         "kind": "reference"
@@ -1179,55 +1170,55 @@
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-analyst:4",
+        "reference": "simplified-capability-analyst:8",
         "name": "精简版analyst能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/tools/0",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-architect:4",
+        "reference": "simplified-capability-architect:8",
         "name": "精简版architect能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/tools/0",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-developer:4",
+        "reference": "simplified-capability-developer:8",
         "name": "精简版developer能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/tools/0",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/0",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-reviewer:4",
+        "reference": "simplified-capability-reviewer:8",
         "name": "精简版reviewer能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/tools/0",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-tester:4",
+        "reference": "simplified-capability-tester:9",
         "name": "精简版tester能力",
         "type": "capability",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/tools/0",
         "kind": "reference"
@@ -1235,10 +1226,10 @@
     ],
     "builtin-tool-configuration-catalog:1": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/27",
         "kind": "reference"
@@ -1246,10 +1237,10 @@
     ],
     "builtin-tool-configuration-change-apply:1": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/31",
         "kind": "reference"
@@ -1257,10 +1248,10 @@
     ],
     "builtin-tool-configuration-change-preview:1": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/30",
         "kind": "reference"
@@ -1268,10 +1259,10 @@
     ],
     "builtin-tool-configuration-read:1": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/28",
         "kind": "reference"
@@ -1279,10 +1270,10 @@
     ],
     "builtin-tool-configuration-transfer-apply:2": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/33",
         "kind": "reference"
@@ -1290,10 +1281,10 @@
     ],
     "builtin-tool-configuration-transfer-cancel:2": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/34",
         "kind": "reference"
@@ -1301,10 +1292,10 @@
     ],
     "builtin-tool-configuration-transfer-stage:1": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/32",
         "kind": "reference"
@@ -1312,10 +1303,10 @@
     ],
     "builtin-tool-configuration-transfer-status:1": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/35",
         "kind": "reference"
@@ -1323,10 +1314,10 @@
     ],
     "builtin-tool-configuration-usage:1": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/29",
         "kind": "reference"
@@ -1463,10 +1454,10 @@
     "builtin-tool-materials-capture:1": [],
     "builtin-tool-project-artifact-read:1": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/25",
         "kind": "reference"
@@ -1474,10 +1465,10 @@
     ],
     "builtin-tool-project-overview:1": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/22",
         "kind": "reference"
@@ -1485,10 +1476,10 @@
     ],
     "builtin-tool-project-record-read:1": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/24",
         "kind": "reference"
@@ -1496,10 +1487,10 @@
     ],
     "builtin-tool-project-records-list:1": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/23",
         "kind": "reference"
@@ -1507,10 +1498,10 @@
     ],
     "builtin-tool-project-resources:1": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/26",
         "kind": "reference"
@@ -1518,55 +1509,55 @@
     ],
     "builtin-tool-spec-lint:1": [
       {
-        "reference": "simplified-capability-analyst:4",
+        "reference": "simplified-capability-analyst:8",
         "name": "精简版analyst能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/tools/2",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-architect:4",
+        "reference": "simplified-capability-architect:8",
         "name": "精简版architect能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/tools/2",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-developer:4",
+        "reference": "simplified-capability-developer:8",
         "name": "精简版developer能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/tools/2",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/36",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-reviewer:4",
+        "reference": "simplified-capability-reviewer:8",
         "name": "精简版reviewer能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/tools/2",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-tester:4",
+        "reference": "simplified-capability-tester:9",
         "name": "精简版tester能力",
         "type": "capability",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/tools/2",
         "kind": "reference"
@@ -1575,10 +1566,10 @@
     "builtin-tool-tasks-create:1": [],
     "builtin-tool-workflow-cancel:2": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/14",
         "kind": "reference"
@@ -1586,10 +1577,10 @@
     ],
     "builtin-tool-workflow-change-apply:4": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/16",
         "kind": "reference"
@@ -1597,10 +1588,10 @@
     ],
     "builtin-tool-workflow-change-preview:3": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/15",
         "kind": "reference"
@@ -1608,10 +1599,10 @@
     ],
     "builtin-tool-workflow-complete:2": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/20",
         "kind": "reference"
@@ -1619,10 +1610,10 @@
     ],
     "builtin-tool-workflow-controller-notify:1": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/38",
         "kind": "reference"
@@ -1630,10 +1621,10 @@
     ],
     "builtin-tool-workflow-controller-wait:1": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/37",
         "kind": "reference"
@@ -1641,10 +1632,10 @@
     ],
     "builtin-tool-workflow-decision-request:4": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/18",
         "kind": "reference"
@@ -1652,10 +1643,10 @@
     ],
     "builtin-tool-workflow-events-read:1": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/3",
         "kind": "reference"
@@ -1663,10 +1654,10 @@
     ],
     "builtin-tool-workflow-execution-inspect:1": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/5",
         "kind": "reference"
@@ -1674,10 +1665,10 @@
     ],
     "builtin-tool-workflow-execution-reconcile:2": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/19",
         "kind": "reference"
@@ -1685,21 +1676,21 @@
     ],
     "builtin-tool-workflow-execution-stop:2": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/11",
         "kind": "reference"
       }
     ],
-    "builtin-tool-workflow-inspect:1": [
+    "builtin-tool-workflow-inspect:2": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/2",
         "kind": "reference"
@@ -1707,10 +1698,10 @@
     ],
     "builtin-tool-workflow-materials-import:2": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/17",
         "kind": "reference"
@@ -1727,55 +1718,55 @@
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-analyst:4",
+        "reference": "simplified-capability-analyst:8",
         "name": "精简版analyst能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/tools/1",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-architect:4",
+        "reference": "simplified-capability-architect:8",
         "name": "精简版architect能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/tools/1",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-developer:4",
+        "reference": "simplified-capability-developer:8",
         "name": "精简版developer能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/tools/1",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/4",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-reviewer:4",
+        "reference": "simplified-capability-reviewer:8",
         "name": "精简版reviewer能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/tools/1",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-tester:4",
+        "reference": "simplified-capability-tester:9",
         "name": "精简版tester能力",
         "type": "capability",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/tools/1",
         "kind": "reference"
@@ -1783,10 +1774,10 @@
     ],
     "builtin-tool-workflow-pause:2": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/12",
         "kind": "reference"
@@ -1794,10 +1785,10 @@
     ],
     "builtin-tool-workflow-resume:2": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/13",
         "kind": "reference"
@@ -1805,21 +1796,21 @@
     ],
     "builtin-tool-workflow-rework-preview:1": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/39",
         "kind": "reference"
       }
     ],
-    "builtin-tool-workflow-segment-dispatch:2": [
+    "builtin-tool-workflow-segment-dispatch:3": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/21",
         "kind": "reference"
@@ -1827,10 +1818,10 @@
     ],
     "builtin-tool-workflow-start:3": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/1",
         "kind": "reference"
@@ -1838,10 +1829,10 @@
     ],
     "builtin-tool-workflow-step-accept:2": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/7",
         "kind": "reference"
@@ -1849,10 +1840,10 @@
     ],
     "builtin-tool-workflow-step-dispatch:2": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/6",
         "kind": "reference"
@@ -1860,10 +1851,10 @@
     ],
     "builtin-tool-workflow-step-input:2": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/8",
         "kind": "reference"
@@ -1871,10 +1862,10 @@
     ],
     "builtin-tool-workflow-step-retry:2": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/9",
         "kind": "reference"
@@ -1882,10 +1873,10 @@
     ],
     "builtin-tool-workflow-step-rework:3": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/tools/10",
         "kind": "reference"
@@ -1894,10 +1885,10 @@
     "builtin-tool-workspace-current:1": [],
     "simplified-delivery-checkpoint:2": [
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/10/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1912,10 +1903,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/11/inputs/workspace",
         "kind": "step_input",
@@ -1930,10 +1921,10 @@
         "port": "workspace"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/12/executor/arguments/workspace",
         "kind": "step_argument",
@@ -1948,10 +1939,10 @@
         "port": "workspace"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/13/executor/arguments/workspace",
         "kind": "step_argument",
@@ -1966,10 +1957,10 @@
         "port": "workspace"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/14/executor/arguments/workspace",
         "kind": "step_argument",
@@ -1984,10 +1975,10 @@
         "port": "workspace"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/15/executor/arguments/workspace",
         "kind": "step_argument",
@@ -2002,10 +1993,10 @@
         "port": "workspace"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/18/executor/arguments/workspace",
         "kind": "step_argument",
@@ -2020,10 +2011,10 @@
         "port": "workspace"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/10/executor/arguments/workspace",
         "kind": "step_argument",
@@ -2038,10 +2029,10 @@
         "port": "workspace"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/11/executor/arguments/workspace",
         "kind": "step_argument",
@@ -2056,10 +2047,10 @@
         "port": "workspace"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/13/executor/arguments/workspace",
         "kind": "step_argument",
@@ -2074,10 +2065,10 @@
         "port": "workspace"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/2/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2092,10 +2083,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/3/executor/arguments/workspace",
         "kind": "step_argument",
@@ -2110,10 +2101,10 @@
         "port": "workspace"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/4/inputs/workspace",
         "kind": "step_input",
@@ -2128,10 +2119,10 @@
         "port": "workspace"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/5/executor/arguments/workspace",
         "kind": "step_argument",
@@ -2146,10 +2137,10 @@
         "port": "workspace"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/5/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2164,10 +2155,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/6/executor/arguments/workspace",
         "kind": "step_argument",
@@ -2182,10 +2173,10 @@
         "port": "workspace"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/7/inputs/changes",
         "kind": "step_input",
@@ -2200,10 +2191,10 @@
         "port": "changes"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/7/inputs/workspace",
         "kind": "step_input",
@@ -2218,10 +2209,10 @@
         "port": "workspace"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/8/executor/arguments/workspace",
         "kind": "step_argument",
@@ -2236,10 +2227,10 @@
         "port": "workspace"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/9/executor/arguments/workspace",
         "kind": "step_argument",
@@ -2256,10 +2247,10 @@
     ],
     "simplified-delivery-design:1": [
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/11/inputs/design",
         "kind": "step_input",
@@ -2274,10 +2265,10 @@
         "port": "design"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/3/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2292,10 +2283,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/4/inputs/design",
         "kind": "step_input",
@@ -2310,10 +2301,10 @@
         "port": "design"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/5/inputs/design",
         "kind": "step_input",
@@ -2328,10 +2319,10 @@
         "port": "design"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/6/inputs/design",
         "kind": "step_input",
@@ -2346,10 +2337,10 @@
         "port": "design"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/8/inputs/design",
         "kind": "step_input",
@@ -2364,20 +2355,20 @@
         "port": "design"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/inputs/design/delivery_ref",
         "kind": "workflow_input",
         "port": "design"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/1/inputs/design",
         "kind": "step_input",
@@ -2392,10 +2383,10 @@
         "port": "design"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/4/inputs/design",
         "kind": "step_input",
@@ -2412,10 +2403,10 @@
     ],
     "simplified-delivery-diff:1": [
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/10/outputs/diff/delivery_ref",
         "kind": "step_output",
@@ -2430,10 +2421,10 @@
         "port": "diff"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/10/outputs/scope_diff/delivery_ref",
         "kind": "step_output",
@@ -2448,10 +2439,10 @@
         "port": "scope_diff"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/11/inputs/diff",
         "kind": "step_input",
@@ -2466,10 +2457,10 @@
         "port": "diff"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/2/outputs/diff/delivery_ref",
         "kind": "step_output",
@@ -2484,10 +2475,10 @@
         "port": "diff"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/5/outputs/diff/delivery_ref",
         "kind": "step_output",
@@ -2502,10 +2493,10 @@
         "port": "diff"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/5/outputs/scope_diff/delivery_ref",
         "kind": "step_output",
@@ -2520,10 +2511,10 @@
         "port": "scope_diff"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/7/inputs/diff",
         "kind": "step_input",
@@ -2540,10 +2531,10 @@
     ],
     "simplified-delivery-human-packet:2": [
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/17/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2560,10 +2551,10 @@
     ],
     "simplified-delivery-implementation:1": [
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/4/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2578,10 +2569,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/7/inputs/implementation",
         "kind": "step_input",
@@ -2598,20 +2589,20 @@
     ],
     "simplified-delivery-merge-sync:2": [
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/outputs/result",
         "kind": "workflow_output",
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/18/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2626,20 +2617,20 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/outputs/result",
         "kind": "workflow_output",
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/13/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2656,20 +2647,20 @@
     ],
     "simplified-delivery-project-tests:2": [
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/inputs/test_configuration/delivery_ref",
         "kind": "workflow_input",
         "port": "test_configuration"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/3/inputs/test_configuration",
         "kind": "step_input",
@@ -2684,10 +2675,10 @@
         "port": "test_configuration"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/4/inputs/test_configuration",
         "kind": "step_input",
@@ -2702,10 +2693,10 @@
         "port": "test_configuration"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/5/inputs/test_configuration",
         "kind": "step_input",
@@ -2720,10 +2711,10 @@
         "port": "test_configuration"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/6/inputs/test_configuration",
         "kind": "step_input",
@@ -2738,10 +2729,10 @@
         "port": "test_configuration"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/8/inputs/test_configuration",
         "kind": "step_input",
@@ -2756,20 +2747,20 @@
         "port": "test_configuration"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/inputs/test_configuration/delivery_ref",
         "kind": "workflow_input",
         "port": "test_configuration"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/1/inputs/test_configuration",
         "kind": "step_input",
@@ -2784,10 +2775,10 @@
         "port": "test_configuration"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/4/inputs/test_configuration",
         "kind": "step_input",
@@ -2804,10 +2795,10 @@
     ],
     "simplified-delivery-pull-request:2": [
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/15/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2822,10 +2813,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/16/executor/arguments/workspace",
         "kind": "step_argument",
@@ -2840,10 +2831,10 @@
         "port": "workspace"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/17/executor/arguments/publication",
         "kind": "step_argument",
@@ -2858,10 +2849,10 @@
         "port": "publication"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/17/inputs/publication",
         "kind": "step_input",
@@ -2876,10 +2867,10 @@
         "port": "publication"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/18/executor/arguments/publication",
         "kind": "step_argument",
@@ -2894,10 +2885,10 @@
         "port": "publication"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/11/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2912,10 +2903,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/12/executor/arguments/workspace",
         "kind": "step_argument",
@@ -2930,10 +2921,10 @@
         "port": "workspace"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/13/executor/arguments/publication",
         "kind": "step_argument",
@@ -2950,10 +2941,10 @@
     ],
     "simplified-delivery-regression:2": [
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/12/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2968,10 +2959,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/16/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2986,10 +2977,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/17/executor/arguments/merge_regression",
         "kind": "step_argument",
@@ -3004,10 +2995,10 @@
         "port": "merge_regression"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/17/executor/arguments/source_regression",
         "kind": "step_argument",
@@ -3022,10 +3013,10 @@
         "port": "source_regression"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/17/inputs/merge_regression",
         "kind": "step_input",
@@ -3040,10 +3031,10 @@
         "port": "merge_regression"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/17/inputs/source_regression",
         "kind": "step_input",
@@ -3058,10 +3049,10 @@
         "port": "source_regression"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/12/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -3076,10 +3067,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/8/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -3096,10 +3087,10 @@
     ],
     "simplified-delivery-source-publication:2": [
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/13/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -3114,10 +3105,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/9/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -3134,10 +3125,10 @@
     ],
     "simplified-delivery-target:2": [
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/14/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -3152,10 +3143,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/15/executor/arguments/target",
         "kind": "step_argument",
@@ -3170,10 +3161,10 @@
         "port": "target"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/10/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -3188,10 +3179,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/11/executor/arguments/target",
         "kind": "step_argument",
@@ -3208,10 +3199,10 @@
     ],
     "simplified-delivery-task-plan:1": [
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/5/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -3226,10 +3217,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/6/inputs/plan",
         "kind": "step_input",
@@ -3244,10 +3235,10 @@
         "port": "plan"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/7/executor/arguments/tasks",
         "kind": "step_argument",
@@ -3264,10 +3255,10 @@
     ],
     "simplified-delivery-task-reports:2": [
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/11/inputs/tasks",
         "kind": "step_input",
@@ -3282,10 +3273,10 @@
         "port": "tasks"
       },
       {
-        "reference": "simplified-workflow-feature:4",
+        "reference": "simplified-workflow-feature:9",
         "name": "精简版Feature开发流程",
         "type": "workflow",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/data/steps/8/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -3302,10 +3293,10 @@
     ],
     "simplified-delivery-test-recipe:1": [
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/1/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -3320,10 +3311,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/2/executor/arguments/interfaces",
         "kind": "step_argument",
@@ -3338,10 +3329,10 @@
         "port": "interfaces"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/3/executor/arguments/recipe",
         "kind": "step_argument",
@@ -3356,10 +3347,10 @@
         "port": "recipe"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/4/inputs/recipe",
         "kind": "step_input",
@@ -3374,10 +3365,10 @@
         "port": "recipe"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/6/executor/arguments/recipe",
         "kind": "step_argument",
@@ -3394,10 +3385,10 @@
     ],
     "simplified-delivery-test-report:1": [
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/3/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -3412,10 +3403,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/4/inputs/red",
         "kind": "step_input",
@@ -3430,10 +3421,10 @@
         "port": "red"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/6/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -3448,10 +3439,10 @@
         "port": "result"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/7/inputs/green",
         "kind": "step_input",
@@ -3466,10 +3457,10 @@
         "port": "green"
       },
       {
-        "reference": "simplified-workflow-task:3",
+        "reference": "simplified-workflow-task:4",
         "name": "精简版Task开发流程",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/7/inputs/red",
         "kind": "step_input",
@@ -3486,122 +3477,133 @@
     ],
     "simplified-skill-code-review:1": [
       {
-        "reference": "simplified-capability-reviewer:4",
+        "reference": "simplified-capability-reviewer:8",
         "name": "精简版reviewer能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/skills/1",
         "kind": "reference"
       }
     ],
-    "simplified-skill-context:2": [
+    "simplified-skill-context:4": [
       {
-        "reference": "simplified-capability-analyst:4",
+        "reference": "simplified-capability-analyst:8",
         "name": "精简版analyst能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/skills/0",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-architect:4",
+        "reference": "simplified-capability-architect:8",
         "name": "精简版architect能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/skills/0",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-developer:4",
+        "reference": "simplified-capability-developer:8",
         "name": "精简版developer能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/skills/0",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/skills/0",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-reviewer:4",
+        "reference": "simplified-capability-reviewer:8",
         "name": "精简版reviewer能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/skills/0",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-tester:4",
+        "reference": "simplified-capability-tester:9",
         "name": "精简版tester能力",
         "type": "capability",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/skills/0",
         "kind": "reference"
       }
     ],
-    "simplified-skill-delivery-self-check:3": [
+    "simplified-skill-delivery-self-check:4": [
       {
-        "reference": "simplified-capability-analyst:4",
+        "reference": "simplified-capability-analyst:8",
         "name": "精简版analyst能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/skills/1",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-architect:4",
+        "reference": "simplified-capability-architect:8",
         "name": "精简版architect能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/skills/1",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-developer:4",
+        "reference": "simplified-capability-developer:8",
         "name": "精简版developer能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/skills/2",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/skills/2",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-reviewer:4",
+        "reference": "simplified-capability-reviewer:8",
         "name": "精简版reviewer能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/skills/2",
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-tester:4",
+        "reference": "simplified-capability-tester:9",
         "name": "精简版tester能力",
         "type": "capability",
-        "version": 4,
+        "version": 9,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      }
+    ],
+    "simplified-skill-design:1": [
+      {
+        "reference": "simplified-capability-architect:8",
+        "name": "精简版architect能力",
+        "type": "capability",
+        "version": 8,
         "scope": "global",
         "path": "/skills/2",
         "kind": "reference"
@@ -3609,43 +3611,54 @@
     ],
     "simplified-skill-implementation:1": [
       {
-        "reference": "simplified-capability-developer:4",
+        "reference": "simplified-capability-developer:8",
         "name": "精简版developer能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/skills/1",
         "kind": "reference"
       }
     ],
-    "simplified-skill-project-planning:1": [
+    "simplified-skill-prd:1": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-analyst:8",
+        "name": "精简版analyst能力",
+        "type": "capability",
+        "version": 8,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      }
+    ],
+    "simplified-skill-project-planning:3": [
+      {
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/skills/1",
         "kind": "reference"
       }
     ],
-    "simplified-skill-test-design:1": [
+    "simplified-skill-test-design:2": [
       {
-        "reference": "simplified-capability-tester:4",
+        "reference": "simplified-capability-tester:9",
         "name": "精简版tester能力",
         "type": "capability",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/skills/1",
         "kind": "reference"
       }
     ],
-    "simplified-skill-workflow-orchestration:3": [
+    "simplified-skill-workflow-orchestration:7": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/skills/3",
         "kind": "reference"
@@ -3653,10 +3666,10 @@
     ],
     "simplified-spec-design:1": [
       {
-        "reference": "simplified-capability-architect:4",
+        "reference": "simplified-capability-architect:8",
         "name": "精简版architect能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/spec_refs/0",
         "kind": "reference"
@@ -3674,10 +3687,10 @@
     "simplified-spec-feature-code-review:1": [],
     "simplified-spec-implementation:1": [
       {
-        "reference": "simplified-capability-developer:4",
+        "reference": "simplified-capability-developer:8",
         "name": "精简版developer能力",
         "type": "capability",
-        "version": 4,
+        "version": 8,
         "scope": "global",
         "path": "/spec_refs/0",
         "kind": "reference"
@@ -3694,10 +3707,10 @@
     ],
     "simplified-spec-planning:1": [
       {
-        "reference": "simplified-capability-project-manager:4",
+        "reference": "simplified-capability-project-manager:10",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 4,
+        "version": 10,
         "scope": "global",
         "path": "/spec_refs/0",
         "kind": "reference"
@@ -3798,10 +3811,10 @@
     "simplified-spec-task-code-review:1": [],
     "simplified-spec-tests:1": [
       {
-        "reference": "simplified-capability-tester:4",
+        "reference": "simplified-capability-tester:9",
         "name": "精简版tester能力",
         "type": "capability",
-        "version": 4,
+        "version": 9,
         "scope": "global",
         "path": "/spec_refs/0",
         "kind": "reference"

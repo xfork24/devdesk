@@ -968,10 +968,81 @@ fn bounded_segment_requires_explicit_authorization_and_stops_at_plan_change() {
     );
 }
 
+#[test]
+fn plan_sources_publish_members_atomically_but_external_catalog_changes_still_conflict() {
+    for external_change in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let e = engine(directory.path());
+        let root = start(&e, document());
+        let before = runtime(&e, &root);
+        let shared = e.store.configuration_snapshot().unwrap();
+        let mut step = before["runtime"]["plan"]["document"]["steps"][1].clone();
+        step["key"] = json!("extra");
+        step["node_id"] = json!("");
+        let changes = json!({"plan_revision_id":before["runtime"]["active_plan_revision_id"],"reason":"Add a bounded handoff","operations":[{"type":"upsert_step","step":step}]});
+        let preview = e
+            .query(
+                "workflow.change.preview",
+                &json!({"id":root,"changeset":changes}),
+                4,
+            )
+            .unwrap();
+        let prepared = e.execute("workflow.change.apply", Command {
+            command_id:id(), target:Some(root.clone()), expected_revision:before["record"]["revision"].as_u64(),
+            payload:json!({"plan_revision_id":before["runtime"]["active_plan_revision_id"],"changeset":changes,"preview_hash":preview["preview_hash"]}),
+        }).unwrap();
+        let published = e.store.configuration_snapshot().unwrap();
+        let mut synchronized = published.state.as_ref().clone();
+        copy_template_catalog(&shared.state, &mut synchronized).unwrap();
+        let synchronized = ConfigurationCatalogSnapshot::new(
+            synchronized,
+            published.revision,
+            published.repository_ready,
+        )
+        .unwrap();
+        assert!(
+            prepare_configuration_publication(e.store.as_ref(), &published, &synchronized)
+                .unwrap()
+                .changes
+                .is_empty(),
+            "Host catalog synchronization must not insert missing members between preparation and activation"
+        );
+        if external_change {
+            cmd(
+                &e,
+                "workflow.create",
+                None,
+                json!({"name":"Concurrent actual catalog edit","document":document()}),
+            )
+            .unwrap();
+        }
+        e.drive_workflow_changes().unwrap();
+        let state = e.store.snapshot().unwrap();
+        let status = &state
+            .configuration(prepared["id"].as_str().unwrap())
+            .unwrap()
+            .data["status"];
+        assert_eq!(
+            status,
+            if external_change {
+                "conflicted"
+            } else {
+                "applied"
+            }
+        );
+        assert_eq!(
+            runtime(&e, &root)["runtime"]["active_plan_revision_id"]
+                == before["runtime"]["active_plan_revision_id"],
+            external_change
+        );
+    }
+}
+
 #[derive(Default)]
 struct NativeManager {
     plan_change: Option<Value>,
     segment: bool,
+    segment_wait: bool,
     human: bool,
     wait_for_execution: bool,
     wait_target: Option<String>,
@@ -982,6 +1053,122 @@ struct NativeManager {
         std::sync::Mutex<std::collections::HashMap<String, Vec<ports::ConversationObservation>>>,
     turns: std::sync::Mutex<std::collections::HashMap<String, String>>,
     replies: std::sync::Mutex<Vec<ToolReceipt>>,
+}
+
+#[test]
+fn signed_native_plan_change_survives_own_reply_but_not_controller_revocation() {
+    for revoke in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let mut e = engine(directory.path());
+        let root = start(&e, document());
+        let opened = cmd(&e, "orchestration.open", Some(&root), json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
+        cmd(
+            &e,
+            "workflow.driver.select",
+            Some(&root),
+            json!({"mode":"agent"}),
+        )
+        .unwrap();
+        let before = runtime(&e, &root);
+        let mut step = before["runtime"]["plan"]["document"]["steps"][1].clone();
+        step["name"] = json!("Changed by the native manager");
+        let changes = json!({"plan_revision_id":before["runtime"]["active_plan_revision_id"],"reason":"Update exact plan","operations":[{"type":"upsert_step","step":step}]});
+        let preview = e
+            .query(
+                "workflow.change.preview",
+                &json!({"id":root,"changeset":changes}),
+                1,
+            )
+            .unwrap();
+        let mut args = json!({"instance_id":root,"expected_revision":before["record"]["revision"],"plan_revision_id":before["runtime"]["active_plan_revision_id"],"control_version":before["runtime"]["control_version"],"changeset":changes,"preview_hash":preview["preview_hash"]});
+        let pending = cmd(&e, "workflow.decision.request", Some(&root), json!({"operation":"workflow.change.apply","arguments":args,"reason":"Review exact plan change"})).unwrap();
+        cmd(
+            &e,
+            "workflow.decision.resolve",
+            pending["id"].as_str(),
+            json!({"approved":true,"reason":"Approve exact fixture plan"}),
+        )
+        .unwrap();
+        args["decision_ref"] = e
+            .store
+            .snapshot()
+            .unwrap()
+            .configuration(pending["id"].as_str().unwrap())
+            .unwrap()
+            .data["decision_ref"]
+            .clone();
+        e.harness = Arc::new(NativeManager {
+            plan_change: Some(args),
+            ..Default::default()
+        });
+        for _ in 0..40 {
+            drive_manager_cycle(&e, true, false);
+            if e.store
+                .snapshot()
+                .unwrap()
+                .governance
+                .iter()
+                .any(|r| r.r#type == "controller_tool_reply" && r.data["status"] == "delivered")
+            {
+                break;
+            }
+        }
+        let state = e.store.snapshot().unwrap();
+        let change = state
+            .governance
+            .iter()
+            .find(|r| r.r#type == "workflow_change")
+            .unwrap_or_else(|| {
+                panic!(
+                    "real native apply must prepare the change: {:?}",
+                    state
+                        .governance
+                        .iter()
+                        .filter(|r| r.r#type == "controller_tool_call"
+                            || r.r#type == "controller_tool_reply")
+                        .map(|r| (&r.r#type, &r.data))
+                        .collect::<Vec<_>>()
+                )
+            });
+        assert_eq!(change.data["status"], "prepared");
+        assert!(
+            state
+                .governance
+                .iter()
+                .any(|r| r.r#type == "controller_tool_call"
+                    && r.data["method"] == "workflow.change.apply"
+                    && r.data["status"] == "succeeded")
+        );
+        let change_id = change.id.clone();
+        if revoke {
+            cmd(
+                &e,
+                "orchestration.takeover",
+                opened["id"].as_str(),
+                json!({"reason":"Revoke original manager"}),
+            )
+            .unwrap();
+        }
+        e.drive_workflow_changes().unwrap();
+        let state = e.store.snapshot().unwrap();
+        assert_eq!(
+            state.configuration(&change_id).unwrap().data["status"],
+            if revoke { "conflicted" } else { "applied" }
+        );
+        assert!(
+            state
+                .events
+                .iter()
+                .filter(|e| e.kind == "workflow.runtime")
+                .any(|e| {
+                    let value: Value = serde_json::from_str(&e.detail).unwrap();
+                    value["change"]["kind"] == "plan.change"
+                        && value["change"]["change_id"] == change_id
+                        && value["change"]["status"]
+                            == if revoke { "conflicted" } else { "applied" }
+                })
+        );
+    }
 }
 impl ports::Harness for NativeManager {
     fn identity(&self) -> String {
@@ -1031,6 +1218,14 @@ impl ports::Harness for NativeManager {
             if event["source"]["source_revision"].is_number() {
                 instance["revision"] = event["source"]["source_revision"].clone();
             }
+            if self.segment_wait
+                && event["source"]["change"]["kind"] == "segment.changed"
+                && event["source"]["change"]["status"] == "completed"
+            {
+                for step in instance["steps"].as_array_mut().unwrap() {
+                    step["status"] = json!("completed");
+                }
+            }
             if event["source"]["change"]["kind"] == "human.confirmed" {
                 for step in instance["steps"].as_array_mut().unwrap() {
                     if step["id"] == event["source"]["change"]["execution_id"] {
@@ -1072,7 +1267,7 @@ impl ports::Harness for NativeManager {
             .find(|s| s["status"] != "completed");
         let (method, mut args) = if let Some(change) = &self.plan_change {
             ("workflow_change_apply", change.clone())
-        } else if self.segment {
+        } else if self.segment && (!self.segment_wait || execution.is_some()) {
             (
                 "workflow_segment_dispatch",
                 json!({"instance_id":root,"plan_revision_id":plan,"steps":["one","two"],"reason":"明确委托两个自动节点"}),
@@ -1162,23 +1357,32 @@ impl ports::Harness for NativeManager {
         );
         self.replies.lock().unwrap().push(r.clone());
         let turn = self.turns.lock().unwrap()[&s.id].clone();
-        if self.human
+        let segment_wait = self.segment_wait
             && r.structured_content
                 .as_ref()
-                .is_some_and(|v| v["status"] == "pending")
+                .is_some_and(|v| v["status"] == "active");
+        if segment_wait
+            || (self.human
+                && r.structured_content
+                    .as_ref()
+                    .is_some_and(|v| v["status"] == "pending"))
         {
             let delivery = self.deliveries.lock().unwrap()[&s.id].clone();
             let instance = self.observed.lock().unwrap()[&s.id].clone();
-            let waiting_for = self.wait_target.as_ref().map_or_else(
-                || {
-                    if self.wait_for_execution {
-                        instance["steps"][0]["id"].clone()
-                    } else {
-                        instance["id"].clone()
-                    }
-                },
-                |target| json!(target),
-            );
+            let waiting_for = if segment_wait {
+                r.structured_content.as_ref().unwrap()["id"].clone()
+            } else {
+                self.wait_target.as_ref().map_or_else(
+                    || {
+                        if self.wait_for_execution {
+                            instance["steps"][0]["id"].clone()
+                        } else {
+                            instance["id"].clone()
+                        }
+                    },
+                    |target| json!(target),
+                )
+            };
             self.pending.lock().unwrap().insert(s.id.clone(),vec![ports::ConversationObservation::ToolCall {
                 turn:turn.clone(),request:json!(18),thread:s.external_session.clone().unwrap(),
                 external_turn:format!("native-turn-{turn}"),call:format!("wait-{turn}"),
@@ -1209,6 +1413,95 @@ impl ports::Harness for NativeManager {
     fn cleanup_worker(&self, _: &Session, _: &RuntimeExecution) -> Result<()> {
         Ok(())
     }
+}
+
+#[test]
+fn native_delegation_wait_batches_progress_and_survives_store_reopen() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut e = engine(directory.path());
+    let harness = Arc::new(NativeManager {
+        segment: true,
+        segment_wait: true,
+        ..Default::default()
+    });
+    e.harness = harness.clone();
+    let root = start(&e, document());
+    cmd(&e, "orchestration.open", Some(&root), json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
+    cmd(
+        &e,
+        "workflow.driver.select",
+        Some(&root),
+        json!({"mode":"agent"}),
+    )
+    .unwrap();
+    for _ in 0..30 {
+        drive_manager_cycle(&e, true, false);
+        if e.store
+            .snapshot()
+            .unwrap()
+            .governance
+            .iter()
+            .any(|r| r.r#type == "workflow_controller" && r.data["run_state"] == "waiting")
+        {
+            break;
+        }
+    }
+    let before = e.store.snapshot().unwrap();
+    assert!(
+        before
+            .governance
+            .iter()
+            .any(|r| r.r#type == "workflow_segment" && r.data["status"] == "active")
+    );
+    assert!(
+        before
+            .governance
+            .iter()
+            .any(|r| r.r#type == "controller_tool_call"
+                && r.data["method"] == "workflow.controller.wait"
+                && r.data["status"] == "succeeded")
+    );
+    drop(e);
+    let mut e = engine(directory.path());
+    e.harness = harness;
+    for _ in 0..60 {
+        drive_manager(&e);
+        if runtime(&e, &root)["runtime"]["status"] == "completed" {
+            break;
+        }
+    }
+    let state = e.store.snapshot().unwrap();
+    assert_eq!(runtime(&e, &root)["runtime"]["status"], "completed");
+    let controller = state
+        .governance
+        .iter()
+        .find(|r| r.r#type == "workflow_controller")
+        .unwrap();
+    let turns = state
+        .turns
+        .iter()
+        .filter(|t| json!(t.session_id) == controller.data["session_id"])
+        .count();
+    assert_eq!(
+        turns,
+        2,
+        "one grant turn and one terminal decision, with no per-step model wakeups: {:?}",
+        state.turns.iter().map(|t| &t.input).collect::<Vec<_>>()
+    );
+    assert!(
+        state
+            .events
+            .iter()
+            .filter(|e| e.kind == "workflow.runtime" && e.detail.contains("delegated_progress"))
+            .count()
+            >= 4
+    );
+    assert!(
+        !state
+            .governance
+            .iter()
+            .any(|r| r.r#type == "controller_tool_call" && r.data["status"] == "failed")
+    );
 }
 
 fn drive_manager(e: &Engine) {
@@ -1458,7 +1751,7 @@ fn native_plan_change_outlives_its_call_but_retains_takeover_and_control_fences(
             plan_change: Some(arguments),
             ..Default::default()
         });
-        let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4"})).unwrap();
+        let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
         cmd(
             &e,
             "workflow.driver.select",
@@ -1574,7 +1867,7 @@ fn manager_starts_without_extra_input_and_surfaces_rejected_startup_until_resume
     let mut e = engine(directory.path());
     e.harness = Arc::new(RejectedManager);
     let root = start(&e, document());
-    cmd(&e, "orchestration.open", Some(&root), json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4"})).unwrap();
+    cmd(&e, "orchestration.open", Some(&root), json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
     cmd(
         &e,
         "workflow.driver.select",
@@ -1691,7 +1984,7 @@ fn a_controller_does_not_inherit_a_live_owners_code_view() {
             Ok(Value::Null)
         })
         .unwrap();
-    let controller = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4","policy":WorkflowControlPolicy::default()})).unwrap();
+    let controller = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..50 {
         drive_manager(&e);
         if runtime(&e, &root)["runtime"]["status"] == "completed" {
@@ -1722,7 +2015,7 @@ fn a_native_manager_controls_without_a_running_step_and_persists_its_real_call_c
     let harness = Arc::new(NativeManager::default());
     e.harness = harness.clone();
     let id = start(&e, document());
-    cmd(&e,"orchestration.open",Some(&id),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&id),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..60 {
         drive_manager(&e);
         if runtime(&e, &id)["runtime"]["status"] == "completed" {
@@ -1806,7 +2099,7 @@ fn committed_native_action_recovers_its_receipt_after_host_interruption_and_take
     let mut e = engine(directory.path());
     e.harness = Arc::new(NativeManager::default());
     let root = start(&e, document());
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..20 {
         drive_manager_cycle(&e, true, false);
         if e.store
@@ -1897,7 +2190,7 @@ fn cancelling_manager_turn_revokes_prepared_calls_before_any_business_dispatch()
     let mut e = engine(directory.path());
     e.harness = Arc::new(NativeManager::default());
     let root = start(&e, document());
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..20 {
         drive_manager_cycle(&e, true, false);
         if e.store
@@ -1971,7 +2264,7 @@ fn native_result_is_delivered_in_the_same_drive_and_never_redispatched() {
     let mut e = engine(directory.path());
     e.harness = harness.clone();
     let root = start(&e, document());
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..20 {
         drive_manager_cycle(&e, true, false);
         if e.store
@@ -2059,7 +2352,7 @@ fn human_takeover_revokes_an_already_authorized_native_segment() {
         ..Default::default()
     });
     let root = start(&e, document());
-    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4","policy":WorkflowControlPolicy::default()})).unwrap();
+    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
     cmd(
         &e,
         "workflow.driver.select",
@@ -2478,6 +2771,232 @@ fn revising_one_child_preserves_its_sibling_and_parent_output_contract() {
 }
 
 #[test]
+fn delegated_human_execution_waits_for_an_exact_signature_across_reopen() {
+    let directory = tempfile::tempdir().unwrap();
+    let e = engine(directory.path());
+    let mut doc = document();
+    doc["steps"][0]["confirmation"] = json!("human");
+    doc["steps"].as_array_mut().unwrap().push(
+        json!({"key":"unrelated","name":"独立节点","stage":"work","executor":{"type":"control"}}),
+    );
+    let root = start(&e, doc);
+    assert!(
+        cmd(
+            &e,
+            "workflow.segment.dispatch",
+            Some(&root),
+            json!({"steps":["one","two"],"reason":"未显式允许 Human 执行"})
+        )
+        .is_err()
+    );
+    let grant = cmd(&e, "workflow.segment.dispatch", Some(&root), json!({"steps":["one","two","unrelated"],"include_human":true,"reason":"执行人审节点，但不授予签署权"})).unwrap();
+    for _ in 0..12 {
+        e.tick(1).unwrap();
+    }
+    let view = runtime(&e, &root);
+    assert_eq!(
+        view["runtime"]["steps"][0]["status"],
+        "waiting_confirmation"
+    );
+    assert_eq!(view["runtime"]["steps"][1]["status"], "queued");
+    assert_eq!(view["runtime"]["steps"][2]["status"], "completed");
+    let state = e.store.snapshot().unwrap();
+    assert_eq!(
+        state
+            .configuration(grant["id"].as_str().unwrap())
+            .unwrap()
+            .data["status"],
+        "active"
+    );
+    assert!(
+        !state
+            .governance
+            .iter()
+            .any(|r| r.r#type == "workflow_confirmation")
+    );
+    let mut arguments = json!({"step":"one","execution_id":view["runtime"]["steps"][0]["id"],"input_digest":view["runtime"]["steps"][0]["input_digest"],"outputs":view["runtime"]["steps"][0]["outputs"],"accept_result":false});
+    let signed_outputs = arguments["outputs"].clone();
+    arguments["outputs"] = json!({"forged":"output"});
+    assert!(cmd(&e, "workflow.step.confirm", Some(&root), arguments.clone()).is_err());
+    drop(e);
+    let e = engine(directory.path());
+    for _ in 0..3 {
+        e.tick(1).unwrap();
+    }
+    assert_eq!(
+        runtime(&e, &root)["runtime"]["steps"][1]["status"],
+        "queued"
+    );
+    arguments["outputs"] = signed_outputs;
+    cmd(&e, "workflow.step.confirm", Some(&root), arguments).unwrap();
+    for _ in 0..12 {
+        e.tick(1).unwrap();
+    }
+    let view = runtime(&e, &root);
+    assert!(
+        view["runtime"]["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|s| s["status"] == "completed")
+    );
+    assert_ne!(
+        view["runtime"]["status"], "completed",
+        "A finite step grant never completes its root"
+    );
+    let state = e.store.snapshot().unwrap();
+    let confirmation = state
+        .governance
+        .iter()
+        .find(|r| r.r#type == "workflow_confirmation")
+        .unwrap();
+    assert_eq!(confirmation.data["actor"]["kind"], "human");
+    assert_eq!(
+        state
+            .configuration(grant["id"].as_str().unwrap())
+            .unwrap()
+            .data["status"],
+        "completed"
+    );
+}
+
+#[test]
+fn a_waiting_human_grant_cannot_resume_after_driver_revocation() {
+    let directory = tempfile::tempdir().unwrap();
+    let e = engine(directory.path());
+    let mut doc = document();
+    doc["steps"][0]["confirmation"] = json!("human");
+    let root = start(&e, doc);
+    let grant = cmd(
+        &e,
+        "workflow.segment.dispatch",
+        Some(&root),
+        json!({"steps":["one","two"],"include_human":true,"reason":"显式执行授权"}),
+    )
+    .unwrap();
+    for _ in 0..5 {
+        e.tick(1).unwrap();
+    }
+    let view = runtime(&e, &root);
+    cmd(
+        &e,
+        "workflow.driver.select",
+        Some(&root),
+        json!({"mode":"manual"}),
+    )
+    .unwrap();
+    let s = &view["runtime"]["steps"][0];
+    cmd(&e,"workflow.step.confirm",Some(&root),json!({"step":"one","execution_id":s["id"],"input_digest":s["input_digest"],"outputs":s["outputs"],"accept_result":false})).unwrap();
+    for _ in 0..5 {
+        e.tick(1).unwrap();
+    }
+    assert_eq!(
+        runtime(&e, &root)["runtime"]["steps"][1]["status"],
+        "queued"
+    );
+    assert_eq!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .configuration(grant["id"].as_str().unwrap())
+            .unwrap()
+            .data["status"],
+        "stopped"
+    );
+}
+
+#[test]
+fn a_delegated_human_review_stops_when_completion_is_rejected() {
+    let directory = tempfile::tempdir().unwrap();
+    let e = engine(directory.path());
+    let mut doc = document();
+    doc["steps"][0]["confirmation"] = json!("human");
+    doc["steps"][0]["completion"] = json!({"op":"equals","source":{"step":"$input","port":"assessment","pointer":"/approve"},"value":true});
+    doc["inputs"] =
+        json!({"assessment":{"delivery_ref":"fixture-delivery-object:1","required":false}});
+    let root = start(&e, doc);
+    let grant = cmd(
+        &e,
+        "workflow.segment.dispatch",
+        Some(&root),
+        json!({"steps":["one","two"],"include_human":true,"reason":"失败条件不能因人审委托而绕过"}),
+    )
+    .unwrap();
+    for _ in 0..5 {
+        e.tick(1).unwrap();
+    }
+    assert_eq!(
+        runtime(&e, &root)["runtime"]["steps"][1]["status"],
+        "queued"
+    );
+    let state = e.store.snapshot().unwrap();
+    assert_eq!(
+        state
+            .configuration(grant["id"].as_str().unwrap())
+            .unwrap()
+            .data["status"],
+        "stopped"
+    );
+    assert!(
+        !state
+            .governance
+            .iter()
+            .any(|r| r.r#type == "workflow_confirmation")
+    );
+}
+
+#[test]
+fn native_summary_preserves_readiness_without_repeating_full_contracts() {
+    let directory = tempfile::tempdir().unwrap();
+    let e = engine(directory.path());
+    let mut doc = document();
+    doc["steps"][0]["executor"] = json!({"type":"agent","role_ref":"builtin-role-developer:1"});
+    let instructions = "exact contract details ".repeat(1000);
+    doc["steps"][0]["task_instructions"] = json!(instructions);
+    let root = start(&e, doc);
+    let full = runtime(&e, &root);
+    let brief = e
+        .query("workflow.inspect", &json!({"id":root,"view":"summary"}), 4)
+        .unwrap();
+    assert_eq!(brief["allowed_actions"], full["allowed_actions"]);
+    assert_eq!(brief["human_gates"], full["human_gates"]);
+    assert_eq!(brief["record"], full["record"]);
+    assert_eq!(
+        brief["runtime"]["active_plan_revision_id"],
+        full["runtime"]["active_plan_revision_id"]
+    );
+    assert!(!brief.to_string().contains("exact contract details"));
+    assert!(brief.to_string().len() * 2 < full.to_string().len());
+    assert_eq!(brief["page"]["document_complete"], false);
+    for (actual, expected) in brief["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .zip(full["steps"].as_array().unwrap())
+    {
+        for key in [
+            "actions",
+            "step_revision",
+            "completion_satisfied",
+            "human_satisfied",
+        ] {
+            assert_eq!(actual[key], expected[key]);
+        }
+        for key in ["id", "input_digest", "outputs", "plan_revision_id"] {
+            assert_eq!(actual["execution"][key], expected["execution"][key]);
+        }
+        assert!(actual["execution"].get("inputs").is_none());
+    }
+    let contract=e.query("workflow.execution.inspect",&json!({"id":root,"execution_id":full["steps"][0]["execution"]["id"],"part":"contract","max_bytes":65536}),4).unwrap();
+    assert!(contract.to_string().contains("exact contract details"));
+    assert_eq!(
+        runtime(&e, &root),
+        full,
+        "Summary reads cannot change authoritative facts"
+    );
+}
+
+#[test]
 fn delegated_segment_stops_on_a_rejected_condition_and_keeps_the_report() {
     let directory = tempfile::tempdir().unwrap();
     let e = engine(directory.path());
@@ -2770,7 +3289,7 @@ fn takeover_fences_a_late_native_command_without_advancing_the_next_node() {
     let harness = Arc::new(NativeManager::default());
     e.harness = harness;
     let root = start(&e, document());
-    let controller=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4","policy":WorkflowControlPolicy::default()})).unwrap()["id"].as_str().unwrap().to_owned();
+    let controller=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap()["id"].as_str().unwrap().to_owned();
     for _ in 0..8 {
         drive_manager(&e);
         if e.store
@@ -2874,7 +3393,7 @@ fn changes_before_send_admission_are_coalesced_into_one_pending_wakeup() {
     let mut e = engine(directory.path());
     e.harness = Arc::new(NativeManager::default());
     let root = start(&e, document());
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..3 {
         drive_manager_with_send(&e, false);
     }
@@ -2908,7 +3427,7 @@ fn manager_notices_show_original_human_feedback_after_consumption_and_restart() 
     let directory = tempfile::tempdir().unwrap();
     let e = engine(directory.path());
     let root = start(&e, document());
-    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4"})).unwrap();
+    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
     let controller = opened["id"].as_str().unwrap();
     let notify = |controller: &str, instance: &str, title: &str, execution: Option<&str>| {
         let notice_id = id();
@@ -2971,7 +3490,7 @@ fn manager_notices_show_original_human_feedback_after_consumption_and_restart() 
     {
         use devdesk_core::concurrency::*;
         let state = e.store.snapshot().unwrap();
-        let task = json!({"source":{"workflow_instance_id":root,"execution_id":"supplemental-step","plan_revision_id":state.configuration(&root).unwrap().data["active_plan_revision_id"]},"agent":{"id":"simplified-agent-analyst:4"},"inputs":{},"input_sources":{},"supplemental_input":"选择B\n保留七项断言"});
+        let task = json!({"source":{"workflow_instance_id":root,"execution_id":"supplemental-step","plan_revision_id":state.configuration(&root).unwrap().data["active_plan_revision_id"]},"agent":{"id":"simplified-agent-analyst:8"},"inputs":{},"input_sources":{},"supplemental_input":"选择B\n保留七项断言"});
         let mut changes = Vec::new();
         let mut guards = Vec::new();
         for (kind, definition, record_id, data) in [
@@ -3016,7 +3535,7 @@ fn manager_notices_show_original_human_feedback_after_consumption_and_restart() 
     }
 
     let foreign_root = start(&e, document());
-    let foreign = cmd(&e,"orchestration.open",Some(&foreign_root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4"})).unwrap();
+    let foreign = cmd(&e,"orchestration.open",Some(&foreign_root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
     let foreign_controller = foreign["id"].as_str().unwrap();
     notify(foreign_controller, &foreign_root, "其他流程的问题", None);
     cmd(
@@ -3080,7 +3599,7 @@ fn human_input_follows_the_controller_epoch_across_background_revision_updates()
     let mut e = engine(directory.path());
     e.harness = Arc::new(NativeManager::default());
     let root = start(&e, document());
-    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4","policy":WorkflowControlPolicy::default()})).unwrap();
+    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
     let controller = opened["id"].as_str().unwrap();
     let original = e
         .store
@@ -3167,7 +3686,7 @@ fn signing_an_unchanged_waiting_gate_wakes_the_idle_manager() {
         json!({"step":"one"}),
     )
     .unwrap();
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..20 {
         drive_manager(&e);
     }
@@ -3208,6 +3727,17 @@ fn signing_an_unchanged_waiting_gate_wakes_the_idle_manager() {
     );
     assert_eq!(projected["human_satisfied"], false);
     assert_eq!(projected["confirmation_status"], "pending");
+    let gate = &initial["human_gates"]["items"][0];
+    assert_eq!(gate["operation"], "workflow.step.confirm");
+    assert_eq!(gate["arguments"]["instance_id"], root);
+    assert_eq!(gate["arguments"]["execution_id"], projected["id"]);
+    assert_eq!(gate["arguments"]["outputs"], projected["outputs"]);
+    assert_eq!(gate["arguments"]["input_digest"], projected["input_digest"]);
+    assert!(gate["arguments"]["expected_revision"].as_u64().unwrap() > 0);
+    assert_eq!(
+        gate["interaction"]["evidence"][0]["execution_id"],
+        projected["id"]
+    );
     let view = runtime(&e, &root);
     let execution = view["runtime"]["steps"]
         .as_array()
@@ -3399,7 +3929,7 @@ fn manager_chat_signs_only_one_observed_gate_and_never_conditional_or_stale_appr
         json!({"step":"one"}),
     )
     .unwrap();
-    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4","policy":WorkflowControlPolicy::default()})).unwrap();
+    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
     let controller = opened["id"].as_str().unwrap();
     let pending = pending_business_gate(&e, &root);
     let context = json!([{"id":pending["id"],"revision":1}]);
@@ -3598,7 +4128,7 @@ fn manager_sees_and_signs_a_deep_child_gate_before_any_model_decision_request() 
         &e,
         json!({"schema_version":6,"stages":[{"key":"work","name":"Feature"}],"steps":[{"key":"call","name":"执行Task","stage":"work","executor":{"type":"workflow","workflow_ref":middle["id"]}}]}),
     );
-    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4","policy":WorkflowControlPolicy::default()})).unwrap();
+    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
     cmd(
         &e,
         "workflow.step.dispatch",
@@ -3709,7 +4239,7 @@ fn manager_chat_does_not_approve_multiple_pending_requests() {
         json!({"step":"one"}),
     )
     .unwrap();
-    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4","policy":WorkflowControlPolicy::default()})).unwrap();
+    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
     let one = pending_business_gate(&e, &root);
     let two = pending_business_gate(&e, &root);
     let result = cmd(&e,"orchestration.input",opened["id"].as_str(),json!({"epoch":1,"input":"确认PRD，继续执行后续步骤","approval_context":[{"id":one["id"],"revision":1},{"id":two["id"],"revision":1}]})).unwrap();
@@ -3763,7 +4293,7 @@ fn source_control_policy_is_canonical_after_reload_without_changing_authorizatio
     let dir = tempfile::tempdir().unwrap();
     let e = engine(dir.path());
     let root = start(&e, document());
-    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4"})).unwrap();
+    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
     let controller = opened["id"].as_str().unwrap().to_owned();
     let before = e
         .store
@@ -3809,7 +4339,7 @@ fn human_adopts_root_manager_sources_only_after_the_old_writer_is_stopped() {
     let root = start(&e, document());
     let state = e.store.snapshot().unwrap();
     let original = state
-        .configuration("simplified-agent-project-manager:4")
+        .configuration("simplified-agent-project-manager:10")
         .unwrap();
     let mut successor = original.source();
     successor.identity = format!("selected-manager-{}", id());
@@ -4246,7 +4776,7 @@ fn switching_agent_to_rust_rejects_already_prepared_native_calls() {
     let harness = Arc::new(NativeManager::default());
     e.harness = harness;
     let root = start(&e, document());
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..20 {
         drive_manager_cycle(&e, true, false);
         if e.store
@@ -5083,7 +5613,7 @@ fn native_manager_cannot_wait_for_another_roots_platform_execution() {
     let mut doc = document();
     doc["steps"][0]["confirmation"] = json!("human");
     let root = start(&e, doc);
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4"})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
     cmd(
         &e,
         "workflow.driver.select",
@@ -5124,7 +5654,7 @@ fn assert_native_human_gate_with_platform(wait_for_execution: bool, platform: bo
         doc["steps"][0]["executor"] = json!({"type":"tool","tool_ref":"builtin-tool-materials-capture:1","arguments":{"material":{"type":"constant","value":{"data":"frozen input"}}}});
     }
     let root = start(&e, doc);
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4"})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
     cmd(
         &e,
         "workflow.driver.select",
@@ -5307,7 +5837,7 @@ fn wait_registration_rechecks_concurrent_events_without_replaying_business_actio
         let mut doc = document();
         doc["steps"][0]["confirmation"] = json!("human");
         let root = start(&e, doc);
-        cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4"})).unwrap();
+        cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
         cmd(
             &e,
             "workflow.driver.select",
@@ -5398,7 +5928,7 @@ fn managers_do_not_exhaust_wakeup_or_tool_call_counts_and_keep_human_gates() {
         let mut policy = serde_json::to_value(WorkflowControlPolicy::default()).unwrap();
         policy["max_turns_per_wakeup"] = json!(1);
         policy["max_tool_calls_per_turn"] = json!(1);
-        let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4","policy":policy})).unwrap();
+        let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":policy})).unwrap();
         let controller_id = opened["id"].as_str().unwrap().to_owned();
         cmd(
             &e,
@@ -5495,7 +6025,7 @@ fn a_legacy_manager_suspension_recovers_its_original_delegation_after_restart() 
     });
     e.harness = harness.clone();
     let root = start(&e, document());
-    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:4"})).unwrap();
+    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
     let controller_id = opened["id"].as_str().unwrap().to_owned();
     cmd(
         &e,

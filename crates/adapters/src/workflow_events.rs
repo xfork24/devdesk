@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(super) struct Observed {
     instances: BTreeMap<String, Value>,
     records: BTreeMap<String, Option<Value>>,
-    stopped: BTreeMap<String, (String, String)>,
+    stopped: BTreeMap<String, (String, String, Value)>,
 }
 fn row(conn: &Connection, id: &str) -> Result<Option<Value>> {
     Ok(load_table_filtered_params::<Value>(conn, "governance_records", "id=?1", &[&id])?.pop())
@@ -24,7 +24,7 @@ fn session_instances(conn: &Connection, session: &str) -> Result<Vec<String>> {
 fn record_instance(conn: &Connection, record: &Value) -> Result<Option<String>> {
     match record["type"].as_str() {
         Some("workflow_instance") => Ok(record["id"].as_str().map(str::to_owned)),
-        Some("workflow_pending_decision" | "workflow_segment") => Ok(record["definition_id"].as_str().map(str::to_owned)),
+        Some("workflow_pending_decision" | "workflow_segment" | "workflow_change") => Ok(record["definition_id"].as_str().map(str::to_owned)),
         Some("workflow_reconciliation") => Ok(record["data"]["instance_id"].as_str().map(str::to_owned)),
         Some("workflow_confirmation") => conn.query_row("SELECT i.id FROM governance_records i,json_each(i.data,'$.steps') s WHERE i.type='workflow_instance' AND json_extract(s.value,'$.id')=?1 LIMIT 1",[record["definition_id"].as_str().unwrap_or("")],|r|r.get(0)).optional().map_err(storage),
         _=>Ok(None),
@@ -52,6 +52,7 @@ pub(super) fn capture(conn: &Connection, prepared: &PreparedChangeSet) -> Result
                             | "workflow_confirmation"
                             | "workflow_segment"
                             | "workflow_reconciliation"
+                            | "workflow_change"
                     )
                 ) =>
             {
@@ -66,6 +67,17 @@ pub(super) fn capture(conn: &Connection, prepared: &PreparedChangeSet) -> Result
                         .pop();
                 if previous.is_some_and(|r| r["writer_revoked"] == false) {
                     let session = change.value["session_id"].as_str().unwrap_or("");
+                    let turn = prepared
+                        .changes
+                        .iter()
+                        .find(|c| {
+                            c.value["type"] == "worker_stop_intent"
+                                && c.value["data"]["worker_operation_id"]
+                                    == change.value["operation_id"]
+                                && c.value["data"]["session_id"] == session
+                        })
+                        .map(|c| c.value["data"]["turn_id"].clone())
+                        .unwrap_or(Value::Null);
                     for id in session_instances(conn, session)? {
                         ids.insert(id.clone());
                         seen.stopped.insert(
@@ -73,6 +85,7 @@ pub(super) fn capture(conn: &Connection, prepared: &PreparedChangeSet) -> Result
                             (
                                 session.into(),
                                 change.value["operation_id"].as_str().unwrap_or("").into(),
+                                turn.clone(),
                             ),
                         );
                     }
@@ -102,6 +115,160 @@ fn metadata_only(previous: &Value, current: &Value) -> bool {
         current.as_object_mut().unwrap().remove(key);
     }
     previous == current
+}
+
+// Advisory notification scope, sampled inside the event's transaction. The
+// original event remains available to SSE/audit; this never authorizes a step.
+fn delegated_progress(conn: &Connection, instance: &Value) -> Result<BTreeMap<String, Value>> {
+    let grants = load_table_filtered_params::<Value>(
+        conn,
+        "governance_records",
+        "id IN (SELECT id FROM governance_records WHERE type='workflow_segment' AND definition_id=?1 AND json_extract(data,'$.status')='active' ORDER BY id LIMIT 65)",
+        &[&instance["id"].as_str().unwrap_or("")],
+    )?;
+    if grants.is_empty()
+        || grants.len() > 64
+        || instance["data"]["paused"] == true
+        || instance["data"]["cancel_requested"] == true
+    {
+        return Ok(BTreeMap::new());
+    }
+    // Only the frozen graph is needed, never the expanded source closure.
+    let graph: Option<String> = conn.query_row(
+        "SELECT coalesce(json_extract(i.data,'$.plan.document.steps'),json_extract(w.data,'$.steps')) FROM governance_records i LEFT JOIN source_definitions w ON w.reference=coalesce(json_extract(i.data,'$.plan.workflow_ref'),json_extract(i.data,'$.plan.workflow_revision_id')) AND w.type='workflow' WHERE i.id=?1",
+        [instance["id"].as_str().unwrap_or("")], |r|r.get(0)).map_err(storage)?;
+    let Some(graph) = graph else {
+        return Ok(BTreeMap::new());
+    };
+    let graph: Vec<Value> = serde_json::from_str(&graph).map_err(storage)?;
+    let mut hints = BTreeMap::new();
+    for grant in grants {
+        let data = &grant["data"];
+        if data["actor"]["kind"] != "controller"
+            || data["plan_revision_id"] != instance["data"]["active_plan_revision_id"]
+        {
+            continue;
+        }
+        let controller = row(conn, data["actor"]["controller_id"].as_str().unwrap_or(""))?;
+        let driver = row(conn, data["driver_id"].as_str().unwrap_or(""))?;
+        if !controller.as_ref().is_some_and(|c| {
+            c["type"] == "workflow_controller"
+                && c["data"]["status"] == "active"
+                && c["data"]["epoch"] == data["actor"]["epoch"]
+        }) || !driver.as_ref().is_some_and(|d| {
+            d["type"] == "workflow_driver"
+                && d["definition_id"] == instance["data"]["root_instance_id"]
+                && d["data"]["mode"] == data["driver_mode"]
+                && d["data"]["epoch"] == data["driver_epoch"]
+        }) || data["operations"].as_u64().unwrap_or(u64::MAX)
+            >= data["max_operations"].as_u64().unwrap_or(0)
+        {
+            continue;
+        }
+        let nodes = data["node_ids"].as_array().cloned().unwrap_or_default();
+        let covered: BTreeSet<_> = instance["data"]["steps"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|e| nodes.contains(&e["node_id"]))
+            .filter_map(|e| e["step"].as_str())
+            .collect();
+        for execution in instance["data"]["steps"].as_array().into_iter().flatten() {
+            if (data["include_human"] == true
+                || !graph
+                    .iter()
+                    .any(|s| s["key"] == execution["step"] && s["confirmation"] == "human"))
+                && delegated_execution_progress(execution, &graph, &covered)
+            {
+                hints.insert(execution["id"].as_str().unwrap_or("").to_owned(),
+                    json!({"segment_id":grant["id"],"controller_id":data["actor"]["controller_id"],"epoch":data["actor"]["epoch"]}));
+            }
+        }
+    }
+    Ok(hints)
+}
+
+fn delegated_execution_progress(
+    execution: &Value,
+    graph: &[Value],
+    covered: &BTreeSet<&str>,
+) -> bool {
+    let Some(key) = execution["step"]
+        .as_str()
+        .filter(|key| covered.contains(key))
+    else {
+        return false;
+    };
+    if !graph.iter().any(|s| s["key"] == key) {
+        return false;
+    }
+    match execution["status"].as_str() {
+        Some("running" | "awaiting_acceptance") => true,
+        // An ungranted successor (including a Human step) needs the manager.
+        Some("completed") => !graph.iter().any(|s| {
+            !covered.contains(s["key"].as_str().unwrap_or(""))
+                && s["dependencies"]
+                    .as_array()
+                    .is_some_and(|deps| deps.iter().any(|d| d == key))
+        }),
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn delegation_batches_only_success_within_the_exact_granted_graph() {
+    let graph = vec![
+        json!({"key":"one"}),
+        json!({"key":"two","dependencies":["one"]}),
+        json!({"key":"human","confirmation":"human","dependencies":["two"]}),
+    ];
+    let covered = BTreeSet::from(["one", "two"]);
+    for status in ["running", "awaiting_acceptance", "completed"] {
+        assert!(delegated_execution_progress(
+            &json!({"step":"one","status":status}),
+            &graph,
+            &covered
+        ));
+    }
+    assert!(!delegated_execution_progress(
+        &json!({"step":"two","status":"completed"}),
+        &graph,
+        &covered
+    ));
+    assert!(!delegated_execution_progress(
+        &json!({"step":"one","status":"completed"}),
+        &graph,
+        &BTreeSet::from(["one"])
+    ));
+    assert!(!delegated_execution_progress(
+        &json!({"step":"unknown","status":"running"}),
+        &graph,
+        &BTreeSet::from(["unknown"])
+    ));
+    assert!(delegated_execution_progress(
+        &json!({"step":"human","status":"running"}),
+        &graph,
+        &BTreeSet::from(["human"])
+    ));
+    assert!(!delegated_execution_progress(
+        &json!({"step":"human","status":"waiting_confirmation"}),
+        &graph,
+        &BTreeSet::from(["human"])
+    ));
+    for status in [
+        "failed",
+        "waiting_input",
+        "waiting_confirmation",
+        "cancelled",
+        "needs_reconciliation",
+    ] {
+        assert!(!delegated_execution_progress(
+            &json!({"step":"one","status":status}),
+            &graph,
+            &covered
+        ));
+    }
 }
 
 #[cfg(test)]
@@ -171,6 +338,7 @@ pub(super) fn append(
             .flat_map(|r| r["data"]["steps"].as_array().into_iter().flatten())
             .filter_map(|s| s["id"].as_str().map(|id| (id, s)))
             .collect();
+        let delegated = delegated_progress(conn, &current)?;
         for execution in current["data"]["steps"].as_array().into_iter().flatten() {
             if old
                 .get(execution["id"].as_str().unwrap_or(""))
@@ -180,7 +348,11 @@ pub(super) fn append(
                 let resource = json!([id, execution["id"]]).to_string();
                 let revision:u64=conn.query_row("SELECT revision FROM resource_versions WHERE kind='workflow_step' AND resource_id=?1",[resource],|r|r.get(0)).map_err(storage)?;
                 fact["step_revision"] = json!(revision);
-                facts.push(json!({"kind":"execution","execution":fact,"metadata_only":old.get(execution["id"].as_str().unwrap_or("")).is_some_and(|previous|metadata_only(previous,execution))}));
+                let mut change = json!({"kind":"execution","execution":fact,"metadata_only":old.get(execution["id"].as_str().unwrap_or("")).is_some_and(|previous|metadata_only(previous,execution))});
+                if let Some(hint) = delegated.get(execution["id"].as_str().unwrap_or("")) {
+                    change["delegated_progress"] = hint.clone();
+                }
+                facts.push(change);
             }
         }
         for batch in facts.chunks(16) {
@@ -189,11 +361,8 @@ pub(super) fn append(
                 json!({"kind":"workflow.changed","changes":batch}),
             ));
         }
-        if let Some((session, operation)) = before.stopped.get(&id) {
-            changes.push((
-                current,
-                json!({"kind":"execution.stopped","session_id":session,"operation_id":operation}),
-            ));
+        if let Some((session, operation, turn)) = before.stopped.get(&id) {
+            changes.push((current, json!({"kind":"execution.stopped","session_id":session,"operation_id":operation,"turn_id":turn})));
         }
     }
     for change in &prepared.changes {
@@ -229,6 +398,12 @@ pub(super) fn append(
         {
             Some(
                 json!({"kind":"segment.changed","segment_id":next["id"],"status":next["data"]["status"],"reason":next["data"]["reason"],"plan_revision_id":next["data"]["plan_revision_id"],"operations":next["data"]["operations"],"max_operations":next["data"]["max_operations"]}),
+            )
+        } else if kind == "workflow_change"
+            && old.is_none_or(|r| r["data"]["status"] != next["data"]["status"])
+        {
+            Some(
+                json!({"kind":"plan.change","change_id":next["id"],"status":next["data"]["status"],"error":next["data"]["error"],"new_plan_revision_id":next["data"]["new_plan_revision_id"]}),
             )
         } else {
             None

@@ -258,6 +258,7 @@ impl Engine {
             &owner.scope,
             "initial",
         )?;
+        register_template_members(&mut catalog, template_catalog_generation(&before.state));
         let candidate =
             ConfigurationCatalogSnapshot::new(catalog, before.revision, before.repository_ready)?;
         let publication =

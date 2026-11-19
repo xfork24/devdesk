@@ -280,6 +280,7 @@ impl Engine {
                                 self,
                                 root,
                                 controller.source_cursor,
+                                Some((&row.id, controller.epoch)),
                             )?;
                             if !bootstrap {
                                 controller.source_cursor = consumed;
@@ -541,7 +542,32 @@ impl Engine {
                 })
                 .map(|e| json!({"id":e.id,"step":e.step}))
                 .collect::<Vec<_>>();
-            instances.push(json!({"id":instance.record.id,"revision":instance.record.revision,"owner_id":instance.instance.owner_id,"standard_ref":instance.instance.plan.standard_ref,"workflow_ref":instance.instance.workflow_ref,"plan":instance.instance.active_plan_revision_id,"status":instance.instance.status,"control_version":instance.instance.control_version,"paused":instance.instance.paused,"steps":shown,"automatic_steps":automatic_steps,"step_total":instance.instance.steps.len(),"step_selection":"attention_then_pending"}));
+            let delegable_steps = instance
+                .instance
+                .steps
+                .iter()
+                .filter(|e| {
+                    matches!(
+                        e.status,
+                        StepExecutionStatus::Queued
+                            | StepExecutionStatus::Running
+                            | StepExecutionStatus::AwaitingAcceptance
+                            | StepExecutionStatus::WaitingConfirmation
+                    )
+                })
+                .map(|e| {
+                    let policy = instance
+                        .instance
+                        .plan
+                        .document
+                        .steps
+                        .iter()
+                        .find(|s| s.node_id == e.node_id)
+                        .map(|s| s.confirmation.clone());
+                    json!({"id":e.id,"step":e.step,"confirmation_policy":policy})
+                })
+                .collect::<Vec<_>>();
+            instances.push(json!({"id":instance.record.id,"revision":instance.record.revision,"owner_id":instance.instance.owner_id,"standard_ref":instance.instance.plan.standard_ref,"workflow_ref":instance.instance.workflow_ref,"plan":instance.instance.active_plan_revision_id,"status":instance.instance.status,"control_version":instance.instance.control_version,"paused":instance.instance.paused,"steps":shown,"automatic_steps":automatic_steps,"delegable_steps":delegable_steps,"step_total":instance.instance.steps.len(),"step_selection":"attention_then_pending"}));
         }
         Ok((
             Some(root),

@@ -134,10 +134,18 @@ impl Engine {
                 require(
                     matches!(
                         object.r#type.as_str(),
-                        "workflow_instance" | "workflow_pending_decision"
+                        "workflow_instance" | "workflow_pending_decision" | "workflow_segment"
                     ),
                     "等待对象必须是本根的流程、步骤执行或待决定记录",
                 )?;
+                if object.r#type == "workflow_segment" {
+                    require(
+                        object.data["actor"]["kind"] == "controller"
+                            && object.data["actor"]["controller_id"] == row.id
+                            && object.data["actor"]["epoch"] == controller.epoch,
+                        "等待委托必须属于当前经理授权",
+                    )?;
+                }
                 commit.witness([version(&selected)])?;
                 if object.r#type == "workflow_instance" {
                     object.id
@@ -157,8 +165,12 @@ impl Engine {
             seconds.is_none_or(|s| s > 0 && s <= controller.policy.timeout_seconds),
             "等待期限超出预算",
         )?;
-        let (events, page, consumed) =
-            crate::controller_events::native_events(self, root, controller.source_cursor)?;
+        let (events, page, consumed) = crate::controller_events::native_events(
+            self,
+            root,
+            controller.source_cursor,
+            Some((&row.id, controller.epoch)),
+        )?;
         commit.witness([version(&page)])?;
         controller.source_cursor = consumed;
         let mut acknowledged = 0;
@@ -188,8 +200,12 @@ impl Engine {
         controller.acknowledged_cursor = controller.source_cursor;
         let mut pending = events.len() - acknowledged;
         if pending == 0 && page.revision > controller.source_cursor {
-            let (remaining, head, consumed) =
-                crate::controller_events::native_events(self, root, controller.source_cursor)?;
+            let (remaining, head, consumed) = crate::controller_events::native_events(
+                self,
+                root,
+                controller.source_cursor,
+                Some((&row.id, controller.epoch)),
+            )?;
             commit.witness([version(&head)])?;
             controller.source_cursor = consumed;
             pending = remaining.len();

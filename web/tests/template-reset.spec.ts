@@ -189,7 +189,21 @@ test("UI 编辑保存数据库副本，确认重置恢复默认并隔离旧草�
     false,
   );
   await page.getByRole("button", { name: "角色与代理", exact: true }).click();
-  await expect(page.getByLabel("Role 名称", { exact: true })).toHaveValue("");
+  await expect
+    .poll(() =>
+      current.records.some(
+        (role: any) =>
+          role.id === new URL(page.url()).searchParams.get("config_object"),
+      ),
+    )
+    .toBe(true);
+  const selected = current.records.find(
+    (role: any) =>
+      role.id === new URL(page.url()).searchParams.get("config_object"),
+  );
+  await expect(page.getByLabel("Role 名称", { exact: true })).toHaveValue(
+    selected.name,
+  );
   await expect(
     page.getByRole("button", { name: /需求分析师/ }).first(),
   ).toBeVisible();

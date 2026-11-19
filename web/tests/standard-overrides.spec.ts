@@ -72,10 +72,13 @@ test("项目中替换共享 Standard 的 Spec 后生成命名项目快照，采�
         longest +
         parseFloat(style.paddingLeft) +
         parseFloat(style.paddingRight),
+      // Native Chromium reserves an arrow gutter in addition to CSS padding.
+      // Bound that gutter in font units while still rejecting stretched fields.
+      nativeGutter: 3 * parseFloat(style.fontSize),
     };
   });
   expect(sizing.width).toBeGreaterThanOrEqual(sizing.content - 2);
-  expect(sizing.width).toBeLessThan(sizing.content + 32);
+  expect(sizing.width).toBeLessThan(sizing.content + sizing.nativeGutter);
   await item.getByRole("combobox").selectOption(replacement.id);
   await panel.getByLabel("快照名称", { exact: true }).fill("项目验收规范");
   await panel.getByRole("button", { name: "预览替换", exact: true }).click();

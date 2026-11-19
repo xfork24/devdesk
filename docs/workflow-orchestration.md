@@ -18,7 +18,7 @@ Workflow 是可发布的流程文档，当前出厂定义记录 schema_version=6
 | Rust 驱动 | 持久化 workflow_driver 按精确策略执行有界 tick | `orchestration.mode=rust`，参数来自 Workflow.scheduling，或 `workflow.driver.select` |
 | 项目经理 Agent | WorkflowController 持续会话通过原生控制工具 | `orchestration.mode=agent`，通过原生调用派发/接纳/完成 |
 
-`workflow.segment.dispatch` 是编排中的有界委托能力，可授权 1–32 个 automatic 节点，不是第四种根驱动。它遇到人工等待、拒绝、异常、预算或计划变化时停止，不自动完成根实例。项目级 `manager.open` 工作台与根驱动独立，存在经理对话不代表根实例由 Agent 调度。
+`workflow.segment.dispatch` 是编排中的有界委托能力，可授权 1–32 个确切节点，不是第四种根驱动。默认只允许 automatic 节点；显式 `include_human:true` 可委托人审节点执行，但不能签署、豁免或绕过实际 Human 决定。健康人审等待保持原委托，独立节点可继续；确切人审签署后由原委托重新校验并接纳，随后推进已授权后继。拒绝完成条件、输入、失败、预算、计划或驱动撤权仍停止，不自动完成根实例。项目级 `manager.open` 工作台与根驱动独立，存在经理对话不代表根实例由 Agent 调度。
 
 项目管理与流程编排仅允许出厂配置目录指定的项目经理角色及其精确修订；角色名称相同不构成授权。项目页统一配置编排角色、编排 Agent 与执行角色绑定，不提供独立经理工作台或启动入口。“新 Feature”保留在工作总览，只创建草稿；“执行与交付”页的“启动 Feature”按已保存的配置和输入启动流程。保存项目配置不会启动流程。
 
@@ -50,6 +50,10 @@ agent 模式启动时只交付一次冻结目标、根引用、当前摘要与�
 
 workflow.controller.wait 保存有界工作记录、等待对象、当前 delivery_id 和可选期限，在同一次事务中检查尚未交付的事件。结果先于等待登记到达时返回 pending_events，登记后到达则唤醒后续轮次。本方动作只有对应原生回复已经交付才能合并，不越过并发外部结果。正常租约维护、空轮询及保存工作记录不构成新的模型任务。
 
+等待对象也可引用同根、当前经理 epoch 自己授权的 segment，其他经理或代次的委托不能采用。授权仍有效时，委托内 running、awaiting_acceptance 和内部 completed 进度不逐节点唤醒原经理；与这些进度同批的初始 running 状态也合并。停止事件带确切 Turn；经理消费最多等待 400ms 收集随后同实例、Session/Turn 的 awaiting_acceptance、waiting_confirmation 或 completed 结果并合并重复停止通知。无配对结果到期仍投递原停止；已有后续失败或控制事件不被此短等待阻挡。未授权后继就绪、可操作人审、输入、失败、异常停止、计划/控制变化、新实例和委托终态保留通知。事件及其委托身份仍在同一提交中保存，SSE 和审计可读全部原件；继任经理不按旧 epoch 过滤进度。过滤只减少模型通知，不授予业务动作，也不完成根实例。
+
+每次投递的 human_gates 提供当前确认操作、完整版本参数及材料/证据引用，经理可以核对后直接组织决定请求，避免仅为复制同一参数反复读取。材料引用不复制业务正文，经理仍负责判断，决定与接纳继续分别执行。
+
 并发结果使等待登记的版本比较失败时，该技术操作最多尝试三次；每次重新核对原经理/worker、代次、投递、等待对象和事件头，不复用旧读集合。持续竞争仍明确拒绝，原代次撤销立即停止。该机制不重试派发、接纳、编辑或其他业务动作；追踪开启时用 controller.wait.attempt 记录尝试数与时间。
 
 source_cursor 是已投递或已核对的业务事件位置，acknowledged_cursor 是经理等待时确认的处理位置，event_cursor 只编号耐久投递。run_state 区分 running、runnable、waiting、needs_attention；它与 active/paused/failed 等控制授权状态分开。没有新事实且经理结束正常轮次却未登记等待时展示诊断，平台不补发后继动作指令。
@@ -60,7 +64,7 @@ source_cursor 是已投递或已核对的业务事件位置，acknowledged_curso
 
 经理的只读工具按原生流程归属检查根范围；产物及单个执行的输入/状态读取不展开无关冻结计划，原合同仍按确切计划分块读取。发布执行的 `workflow.execution.inspect` 与活动步骤检查可以返回 `publication`：原调用、确切候选、PR 创建回执及原观察身份/时间。该信息是有界历史观察，不代表当前远端状态、外部合入授权或最终发布接纳；经理可据此呈现需要人类审查的外部操作，平台仍不代为合入。
 
-项目经理页面直接展示这些说明和链接，审批按钮对应确切业务事项，可填写意见。审批改变材料或计划版本后，旧卡片不可签署；agent 模式中，批准只提交 Human 决定和确切步骤确认，不顺带接纳；批准或退回后由经理依据真实事件继续，无需额外发送“继续”。拒绝意见在待决定及 Human 决定两个引用下均可读取，不能以空 request 覆盖反馈。原始工具流水、参数和调度配置不在经理业务页面堆放，审计仍保存在相应执行记录。
+项目经理页面直接展示这些说明和链接，审批按钮对应确切业务事项，可填写意见。审批改变材料或计划版本后，旧卡片不可签署；agent 模式中，批准只提交 Human 决定和确切步骤确认，不顺带接纳；批准或退回后由经理依据真实事件继续；经理已显式委托的节点可在平台重新核验确切签名后接纳并推进原授权后继，无需额外发送“继续”。拒绝意见在待决定及 Human 决定两个引用下均可读取，不能以空 request 覆盖反馈。原始工具流水、参数和调度配置不在经理业务页面堆放，审计仍保存在相应执行记录。
 
 经理页与工作流程页共用步骤补充输入入口，绑定实际实例、计划、控制版本和原步骤版本；阻塞处也可直接回复经理。Agent 模式仍展示步骤自身的 Human 确认，自动校验失败先交经理研判。步骤输入、重试等请求按其操作和原执行版本判断是否仍有效，不套用产物验收状态。经理可原样转交本轮用户输入，或执行 Human 已签署的确切补充输入请求；签署只授权请求中原封不动的内容，拒绝、正文变化或执行变化均不能沿用批准。
 
@@ -153,9 +157,9 @@ Workflow 调用仅修改输出合同，且原调用尚无封存输出、未被�
 
 ## 默认流程概览
 
-实际默认为 `simplified-workflow-feature:4`、`simplified-workflow-task:3` 和 `simplified-standard-engineering:4`。Feature 为 5 阶段、14 个业务步骤、19 个实际节点；Task 为 5 阶段、10 个业务步骤、14 个实际节点。内部节点用于工作空间、快照、登记及目标读取，不增加模型交接。默认精简版 Agent/Capability 采用第 4 修订，以紧凑文档和精简版交付自检减少重复成文；结构检查仍由平台执行，独立评审与真实测试门禁不变。经理按实例将 automatic 节点一次交给有界 segment，包括 Agent、Tool 与子流程调用；Human 节点排除在委托之外，异常回到经理处理。
+实际默认为 `simplified-workflow-feature:9`、`simplified-workflow-task:4` 和 `simplified-standard-engineering:9`。Feature 为 5 阶段、14 个业务步骤、19 个实际节点；Task 为 5 阶段、10 个业务步骤、14 个实际节点。内部节点用于工作空间、快照、登记及目标读取，不增加模型交接。默认精简版经理 Agent/Capability 为第 10 修订、测试为第 9 修订、其他业务角色为第 8 修订，模型 gpt-6.1-sol/low；紧凑文档与精简版自检减少重复成文，结构检查仍由平台执行，独立评审与真实测试门禁不变。经理按实例自主选择有界委托范围，包括 Agent、Tool 与子流程调用；显式允许的人审节点只委托执行及真实签署后的接纳，实际签名始终由 Human 完成，异常回到经理处理。
 
-运行事件与业务事实同事务保存。仅同一 running 执行挂接会话/轮次标识、且状态、产物、输入摘要及原因不变的通知标记为 `metadata_only`；经理消费时合并此类通知并以版本守卫推进游标，SSE 和审计保留原事件。结果、失败、停止、Human、计划和控制变化继续处理；旧的无标记通知不被忽略。
+运行事件与业务事实同事务保存。仅同一 running 执行挂接会话/轮次标识、且状态、产物、输入摘要及原因不变的通知标记为 `metadata_only`；经理消费时合并此类通知并以版本守卫推进游标，SSE 和审计保留原事件。可操作结果、失败、异常停止、Human、计划和控制变化继续处理；旧的无标记通知不被忽略。
 
 - Feature：PRD 与独立评审 → Design 与独立评审 → Task DAG 与独立评审、登记 → 按依赖并发运行 Task → 整体代码评审、源回归、源分支推送、PR 创建、合并结果回归、Human 审核、PR 合入与本地同步。
 - Task：独立测试 → 固定空接口和测试快照、真实断言 Red → 实现、必要文档和开发者自测、受保护快照、独立 Green → 独立代码评审、源回归 → 源分支推送、PR 创建、合并结果回归、合入所属 Feature 与同步。
@@ -206,13 +210,19 @@ Agent 的实际任务包含冻结的 `runtime_context`：`runtime_context.bindin
 
 结果未知的执行继续保留根 worker 和 foreach 槽位，核对前不能把它视为空闲容量。
 
-默认精简版自检 Skill 第 3 修订要求 content_checks 评审报告先调用本步骤 spec.lint，通过 structure_valid 和 content_report_valid 后再最终提交；按实际冻结文本行数、Unicode 字符数及章节锚点修正定位，不猜测转义 JSON 的显示行号。普通简单 Markdown 文档仍可直接自检提交。
+默认精简版自检 Skill 第 4 修订要求 content_checks 评审报告先调用本步骤 spec.lint，通过 structure_valid 和 content_report_valid 后再最终提交；按实际冻结文本行数、Unicode 字符数及章节锚点修正定位，不猜测转义 JSON 的显示行号。普通简单 Markdown 文档仍可直接自检提交。
 
 默认 Codex 业务角色获得只读 spec.lint，通过步骤直接引用的 Profile 使用。Agent 从 outputs.<port>.definition.id 取得精确 Delivery 引用，在提交前检查草稿；关键评审的定位、摘要和引文仍由同一接纳检查器复算。默认 PRD/Design 后继 Spec 已声明必要章节，关键评审后继 Spec 要求真实冻结输入位置；既有工作不会随出厂选择改变而升级。自检报告明确区分结构、报告证据和语义判断，不替代独立评审或真实工具结果。
+
+spec.lint 的 content_report_required_checks 返回本步骤冻结检查集合，content_report_instructions 明确 delivery_ref/value 两个调用字段及其与通用 Delivery 检查的区别；错误草稿可在同一 Turn 依据原始来源和定位指导修正。canonical 任务渲染格式保持不变，既有冻结任务不会因新增 lint 诊断被重新计算成另一输入。
+
+原生动态工具目录按冻结 Harness Profile 的 tool_refs 裁剪平台工具，完整能力闭包与历史审计仍保留；Agent 经验读取工具保持原协议。目录展示不替代实际调用时的权限校验。规划步骤继承经理能力时也只展示该步骤获准的工具。
 
 Task 所属流程派发还要求该 Task 的业务依赖全部 completed。该条件与步骤依赖分别核对，通过共同资格入口向 inspect、Rust 及命令返回 task_dependencies；依赖等待不占用已派发工作额度，也不阻止其他合法 Task 推进。工作空间仍只在依赖完成后从当时父工作实际 HEAD 准备，完成时再次核对业务依赖。
 
 工作流评估在确认步骤需要推进后才创建回滚检查点；未派发、等待接纳/确认和已结束步骤不复制完整工程状态。外层 Host 不再次驱动 Engine 已处理的仓库及会话阶段；传入额度只扣除其他项目占用，本项目的占用由会话驱动自己核对。
+
+计划变更在准备提交时核对实时 Turn/worker、原经理与确切人审；后续耐久激活保留稳定的经理 epoch/租约、驱动、不可变调用授权与原业务/源版本，不依赖调用回复、会话消息追加或正常 Turn 释放的临时版本。经理撤权和外部修改仍阻止激活。plan.change 事件记录 prepared、waiting_quiescence、applied 和 conflicted 等真实状态，冲突也唤醒经理自主处理。
 
 经理原生动作先持久化结果，再在同一次驱动中回复。Host 在动作提交与回执登记之间中断时，按原调用身份、参数和旧 Actor 代次恢复耐久回执，即使经理随后撤权也不重做动作。取消经理 Turn 同事务暂停绑定控制器并提升 epoch；尚未提交的旧调用不能继续派发，已提交的动作保留其真实成功事实。回复传输失败保留待交付状态，已停止 worker 记录为 unavailable，不把未知消费输入重发给后继会话。
 
@@ -263,3 +273,7 @@ Rust 驱动与已授权委托的纯控制阶段若一轮未产生提交，Host �
 旧版主分支强制保护的只读预检失败，只有在原不可变阶段回执完全匹配、且候选和 PR 阶段均未授予时，核对才可确认为 `obsolete_protection_preflight/not_applied` 并释放原围栏，交由正常重试继续。已有 PR 写入授予或未知外部结果仍须按原 marker 核对，不自动重发。
 
 `workflow.delivery.republish` 由实际 Human 请求旧版未合入交付迁移，需携带原流程/步骤版本、PR number、head SHA、候选 SHA 与原因。它只替换 PR 发布及其后继平台验证/人工确认，归档原执行，保留源发布、源测试、独立评审和已完成子流程；不消耗业务返工额度，不迁移未知副作用或已合入交付。原审批因执行/输入变化失效，必须对新 PR 重新确认。历史 candidates PR 仍可只读核对和恢复。只有携带冻结材料路径与源/目标证明的新 Feature 交付投影可创建专用候选分支和 PR；旧的无投影候选创建请求仍拒绝重发。
+
+原生 `workflow.inspect` 支持 `view:summary`：保留确切版本、readiness/actions、依赖、执行与产物引用、人审请求，省略完整任务、输入和 Delivery Schema。其 `page.summary:true`、`document_complete:false` 明确标记摘要；需要完整合同仍可用 `view:full` 或 `workflow.execution.inspect` 的 `part:contract`。摘要不改变命令资格或冻结事实。bootstrap 的 `delegable_steps` 提供全部未完成节点及确认策略，原 `automatic_steps` 保持自动节点子集。
+
+原生参数的 oneOf 校验失败除原路径外，返回有界 schema 分支标签和必需字段，最多 1,536 字符；提示只来自声明的 Schema，不回显参数值。恢复调用仍须使用真实参数合同，诊断不放宽校验或自动重试。

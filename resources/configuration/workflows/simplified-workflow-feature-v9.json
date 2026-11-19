@@ -1,7 +1,7 @@
 {
   "type": "workflow",
   "identity": "simplified-workflow-feature",
-  "revision": 4,
+  "revision": 9,
   "name": "精简版Feature开发流程",
   "scope": "global",
   "data": {
@@ -61,7 +61,7 @@
         },
         "task_instructions": "基于 user_request 中用户以自然语言提供的初始需求，使用 PRD Skill 与所要求的 Spec 澄清本次 Feature 的目标、范围和验收。自行依据 Spec 判断是否缺少必要信息；需要澄清时返回 needs_input，在 summary 中提出明确问题并等待用户实际回答。信息充分时提交需求文档，不为提问而提问。不得自行编造用户需求或代替用户确认；独立 Spec 验收通过后仍须等待用户确认。",
         "required_skill_refs": [
-          "builtin-skill-prd:2"
+          "simplified-skill-prd:1"
         ],
         "spec_refs": [
           "builtin-spec-stage-prd:2"
@@ -202,7 +202,8 @@
         },
         "task_instructions": "读取冻结输入及 runtime_context，不自行执行 Git、替代平台测试回执或代签 Human。原始输出、内容版本与原生 commandExecution 由平台保存，按引用定位；说明只记录有助于下游的结论，不复制源码和日志全文。",
         "required_skill_refs": [
-          "simplified-skill-context:2"
+          "simplified-skill-context:4",
+          "simplified-skill-design:1"
         ],
         "budget": {
           "max_turns": 30,
@@ -345,7 +346,7 @@
         },
         "task_instructions": "读取冻结输入及 runtime_context，不自行执行 Git、替代平台测试回执或代签 Human。原始输出、内容版本与原生 commandExecution 由平台保存，按引用定位；说明只记录有助于下游的结论，不复制源码和日志全文。",
         "required_skill_refs": [
-          "simplified-skill-project-planning:1"
+          "simplified-skill-project-planning:3"
         ],
         "budget": {
           "max_turns": 30,
@@ -485,7 +486,7 @@
         ],
         "executor": {
           "type": "workflow",
-          "workflow_ref": "simplified-workflow-task:3",
+          "workflow_ref": "simplified-workflow-task:4",
           "foreach": {
             "source": {
               "step": "tasks",

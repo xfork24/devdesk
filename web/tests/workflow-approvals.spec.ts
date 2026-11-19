@@ -195,8 +195,20 @@ for (const nested of [false, true]) {
         );
       }
       await expect(
+        featureFrame
+          .getByRole("region", { name: "项目经理协作", exact: true })
+          .getByLabel("回复项目经理", { exact: true }),
+      ).toBeVisible();
+      if (nested)
+        await expect(
+          page
+            .locator(".manager-child-flow")
+            .getByRole("region", { name: "项目经理协作", exact: true })
+            .getByLabel("回复项目经理", { exact: true }),
+        ).toBeVisible();
+      await expect(
         page.getByLabel("回复项目经理", { exact: true }),
-      ).toHaveCount(0);
+      ).toHaveCount(nested ? 2 : 1);
       await card
         .getByRole("button", { name: "确认：确认需求", exact: true })
         .click();

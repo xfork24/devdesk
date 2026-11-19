@@ -75,9 +75,9 @@ try:
         runtime = client.rpc('runtime.prepare', {'provider': 'codex'})
         client.timeout = 180
         defaults = client.rpc('query.configuration_defaults')
-        assert defaults['workflow_ref'] == 'simplified-workflow-feature:4'
-        assert defaults['task_workflow_ref'] == 'simplified-workflow-task:3'
-        assert defaults['standard_ref'] == 'simplified-standard-engineering:4'
+        assert defaults['workflow_ref'] == 'simplified-workflow-feature:9'
+        assert defaults['task_workflow_ref'] == 'simplified-workflow-task:4'
+        assert defaults['standard_ref'] == 'simplified-standard-engineering:9'
         discovery = client.rpc('query.project_test_configuration')
         (out / 'test-discovery.json').write_text(json.dumps(discovery, ensure_ascii=False, indent=2))
         current = client.rpc('query.workspace')['active_project']
@@ -136,3 +136,5 @@ finally:
         except subprocess.TimeoutExpired:
             child.terminate()
             child.wait(timeout=15)
+    (attempt / 'observation-ended.json').write_text(json.dumps({'time_ms': round(time.time() * 1000)}))
+    (out / 'observation-ended.json').write_text((attempt / 'observation-ended.json').read_text())

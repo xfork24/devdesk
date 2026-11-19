@@ -94,8 +94,9 @@ def check_human_request(client, tree, request, expected_ancestors=None):
         require(isinstance(interaction.get(key), list) and len(interaction[key]) <= 32,
                 "Invalid bounded reference list: " + key)
     references = interaction["materials"] + interaction["evidence"]
+    plan_change = data["request"].get("operation") == "workflow.change.apply"
     require(any(r["instance_id"] == request["definition_id"] and
-                r["execution_id"] == arguments["execution_id"] for r in references),
+                (plan_change or r["execution_id"] == arguments["execution_id"]) for r in references),
             "Missing current execution")
     executions = {}
     def execution(instance, identity):
@@ -107,12 +108,13 @@ def check_human_request(client, tree, request, expected_ancestors=None):
             executions[key] = client.rpc("workflow.execution.inspect", {
                 "project_id": owner["project_id"], "id": instance, "execution_id": identity})
         return executions[key]
-    current = execution(request["definition_id"], arguments["execution_id"])
-    require(current["status"] in ("waiting_confirmation", "awaiting_acceptance"),
-            "Execution is not a current review gate")
-    require(any(s["id"] == current["id"] for s in owner["steps"]), "Replaced execution")
-    for key in ("input_digest", "outputs"):
-        require(arguments[key] == current[key], "Stale review " + key)
+    if not plan_change:
+        current = execution(request["definition_id"], arguments["execution_id"])
+        require(current["status"] in ("waiting_confirmation", "awaiting_acceptance"),
+                "Execution is not a current review gate")
+        require(any(s["id"] == current["id"] for s in owner["steps"]), "Replaced execution")
+        for key in ("input_digest", "outputs"):
+            require(arguments[key] == current[key], "Stale review " + key)
     linked_outputs = set()
     for reference in references:
         require(reference.get("label") and reference.get("purpose"), "Missing link explanation")
@@ -126,6 +128,14 @@ def check_human_request(client, tree, request, expected_ancestors=None):
             linked_outputs.add(reference["output_id"])
         else:
             require(reference in interaction["evidence"], "Material lacks output")
+    if plan_change:
+        require(arguments.get("instance_id") == request["definition_id"] and
+                arguments.get("control_version") == owner["control_version"], "Stale change authority")
+        preview = client.rpc("workflow.change.preview", {
+            "id": request["definition_id"], "changeset": arguments["changeset"]})
+        require(preview["preview_hash"] == arguments.get("preview_hash") and
+                preview["changeset"] == arguments["changeset"], "Stale or different change preview")
+        return
     require(set(current["outputs"].values()) <= linked_outputs, "Missing required output")
     # Frozen contract lookup is deliberately explicit and bounded, once per new
     # Human request rather than on the ordinary status polling path.

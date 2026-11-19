@@ -1,7 +1,7 @@
 {
   "type": "workflow",
   "identity": "simplified-workflow-task",
-  "revision": 3,
+  "revision": 4,
   "name": "精简版Task开发流程",
   "scope": "global",
   "data": {
@@ -127,7 +127,7 @@
         },
         "task_instructions": "读取冻结输入及 runtime_context，不自行执行 Git、替代平台测试回执或代签 Human。原始输出、内容版本与原生 commandExecution 由平台保存，按引用定位；说明只记录有助于下游的结论，不复制源码和日志全文。 本流程独立验收断言及辅助文件统一放在 tests/.devdesk/<本 Task 完整 UUID>/ 下；此目录仅用于流程验证，不属于项目正式测试代码，不写到 tests/ 的其他位置。",
         "required_skill_refs": [
-          "simplified-skill-test-design:1"
+          "simplified-skill-test-design:2"
         ],
         "budget": {
           "max_turns": 30,

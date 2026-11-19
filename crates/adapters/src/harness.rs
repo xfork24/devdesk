@@ -1653,6 +1653,24 @@ fn dynamic_tools(binding: &RuntimeBinding) -> Result<Vec<Value>> {
         dynamic.extend(lock.tools.iter().map(|t|json!({"type":"function","name":t.definition.qualified_name,"description":t.definition.description,"inputSchema":t.definition.input_schema})));
         dynamic.extend(lock.unbound_tools.iter().map(|t|json!({"type":"function","name":t.data["qualified_name"],"description":t.name,"inputSchema":t.data["input_schema"]})));
         for tool in &lock.platform_tools {
+            // Capability is the available catalog; the frozen step Profile is
+            // the actual scope. Do not advertise tools this execution cannot use.
+            if binding
+                .permissions
+                .as_ref()
+                .and_then(|p| p.binding_lock.as_ref())
+                .is_some_and(|permissions| {
+                    permissions
+                        .harness
+                        .profile
+                        .policy
+                        .tool_refs
+                        .as_ref()
+                        .is_some_and(|refs| !refs.contains(&tool.id))
+                })
+            {
+                continue;
+            }
             let definition: ToolDefinition = tool.decode()?;
             dynamic.push(json!({"type":"function","name":definition.call_name(),"description":tool.name,"inputSchema":definition.input_schema}));
         }

@@ -287,6 +287,7 @@ impl WorkflowCommit<'_> {
             records.push(row);
             children.push(child_id);
         }
+        register_template_members(&mut catalog, template_catalog_generation(&before.state));
         let candidate =
             ConfigurationCatalogSnapshot::new(catalog, before.revision, before.repository_ready)?;
         let publication =

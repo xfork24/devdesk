@@ -1,0 +1,18 @@
+{
+  "type": "model",
+  "identity": "builtin-model-gpt-6-1-sol-medium",
+  "revision": 1,
+  "name": "GPT-6.1 Sol Medium",
+  "scope": "global",
+  "data": {
+    "capabilities": [
+      "structured-output",
+      "tool-calling"
+    ],
+    "model": "gpt-6.1-sol",
+    "parameters": {
+      "reasoning_effort": "medium"
+    },
+    "provider": "openai"
+  }
+}

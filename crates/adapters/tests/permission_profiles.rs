@@ -684,7 +684,7 @@ fn prepared_discussion(e: &Engine) -> (Id, Id, RuntimeBinding) {
                 command_id: id(),
                 target: Some(project.clone()),
                 expected_revision: Some(revision),
-                payload: json!({"agent":"simplified-agent-analyst:4"}),
+                payload: json!({"agent":"simplified-agent-analyst:8"}),
             },
         )
         .unwrap()["id"]

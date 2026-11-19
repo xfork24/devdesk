@@ -4,6 +4,51 @@ import { useMockCodexCatalog } from "./support/model-catalog";
 
 useMockCodexCatalog();
 
+test("目录读取晚于 Role 详情时保留已加载的职责正文", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "devdesk:source-flat-v1:resource:global:agent",
+      JSON.stringify({
+        version: 2,
+        value: {
+          selected: "builtin-agent-glm-tester:2",
+          name: "测试 · GLM 5.3 Flash / DSH",
+          scope: "global",
+          data: {
+            role_ref: "builtin-role-tester:1",
+            capability_ref: "builtin-capability-tester-glm-dsh:2",
+          },
+        },
+      }),
+    );
+  });
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/rpc", async (route) => {
+    if (route.request().postDataJSON().method !== "query.model_providers")
+      return route.fallback();
+    await pending;
+    await route.fallback();
+  });
+  const role = page.locator(".actor-role-summary");
+  try {
+    await page.goto(
+      "/?tab=actors&config_tab=agent&config_object=builtin-agent-glm-tester%3A2",
+    );
+    await expect(
+      role.getByRole("heading", { name: "职责", exact: true }),
+    ).toBeVisible();
+  } finally {
+    release();
+  }
+  await expect(
+    page.locator(".configuration-list button:has(strong)").first(),
+  ).toBeVisible();
+  await expect(
+    role.getByRole("heading", { name: "职责", exact: true }),
+  ).toBeVisible();
+});
+
 async function expectUniformRows(container: Locator) {
   const rows = await container.evaluate((node) => {
     const rows: { top: number; bottom: number }[] = [];

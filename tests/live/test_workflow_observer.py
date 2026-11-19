@@ -79,6 +79,24 @@ class ReviewRequestTests(unittest.TestCase):
         packet['materials'] = [self.reference]
         self.check()
 
+    def test_plan_change_checks_exact_preview_without_a_step_gate(self):
+        from types import SimpleNamespace
+        from workflow_observer import ReviewBasisError
+        self.tree['root']['runtime']['control_version'] = 2
+        arguments = {'instance_id': 'root', 'plan_revision_id': 'plan', 'control_version': 2,
+                     'changeset': {'plan_revision_id': 'plan', 'reason': 'repair',
+                                   'operations': [{'type': 'remove_step', 'node_id': 'extra'}]},
+                     'preview_hash': 'exact-preview'}
+        self.request['data']['request'].update(operation='workflow.change.apply', arguments=arguments)
+        original = self.client.rpc
+        self.client = SimpleNamespace(rpc=lambda method, params:
+            {'preview_hash': 'exact-preview', 'changeset': arguments['changeset']}
+            if method == 'workflow.change.preview' else original(method, params))
+        self.check()
+        arguments['preview_hash'] = 'different-preview'
+        with self.assertRaises(ReviewBasisError):
+            self.check()
+
     def test_missing_current_execution_or_output_never_allows_review(self):
         from workflow_observer import ReviewBasisError
         packet = self.request['data']['request']['interaction']

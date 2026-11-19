@@ -1,8 +1,8 @@
 {
   "type": "tool",
   "identity": "builtin-tool-workflow-segment-dispatch",
-  "revision": 2,
-  "name": "有界委托自动步骤",
+  "revision": 3,
+  "name": "有界委托节点执行",
   "scope": "global",
   "data": {
     "qualified_name": "workflow.segment.dispatch",
@@ -31,7 +31,7 @@
         },
         "steps": {
           "type": "array",
-          "maxItems": 100,
+          "maxItems": 32,
           "items": {
             "type": "string"
           }
@@ -39,6 +39,10 @@
         "expected_revision": {
           "type": "integer",
           "minimum": 1
+        },
+        "include_human": {
+          "type": "boolean",
+          "description": "Explicitly include Human-gated execution. Never signs or waives a Human decision; waits for the exact real signature before accepting."
         }
       },
       "required": [
@@ -49,7 +53,7 @@
         "control_version"
       ],
       "additionalProperties": false,
-      "description": "Authorize 1-32 exact automatic step keys. Stops on rejection, human/input waits, failure, plan change or controller revocation. Does not complete the root. Preserve expected_revision from the original owner/instance read. For step writes preserve execution_id and expected_step_revision from that same read; do not refresh or retry conflicts with newer versions. Changes to control_version or plan_revision_id revoke the old request."
+      "description": "Authorize 1-32 exact current-plan nodes. Human-gated nodes require include_human=true; this only delegates execution and subsequent acceptance after an actual exact Human signature. Healthy Human waits retain the grant and still notify the manager. Rejection, input, failure, plan/driver/manager changes stop it. Never completes the root. Preserve the original expected_revision, plan_revision_id and control_version."
     },
     "output_schema": {
       "type": "object"

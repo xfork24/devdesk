@@ -1,11 +1,11 @@
 {
   "type": "skill",
   "identity": "simplified-skill-test-design",
-  "revision": 1,
+  "revision": 2,
   "name": "精简版独立行为测试",
   "scope": "global",
   "data": {
-    "body_file": "simplified-test-design.md",
+    "body_file": "simplified-test-design-v2.md",
     "rules": []
   }
 }
