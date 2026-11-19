@@ -4,46 +4,61 @@ import { useMockCodexCatalog } from "./support/model-catalog";
 
 useMockCodexCatalog();
 
-test("切换 Skill 导入取消尚未完成的条目选择并保留导入草稿", async ({
-  page,
-}) => {
-  let release!: () => void;
-  const pending = new Promise<void>((resolve) => (release = resolve));
-  let loading = false;
-  await page.route("**/rpc", async (route) => {
-    if (route.request().postDataJSON().method !== "query.configuration_records")
-      return route.fallback();
-    loading = true;
-    await pending;
-    await route.fallback();
-  });
-  try {
-    await page.goto("/?tab=components&config_tab=skills");
-    await expect.poll(() => loading).toBe(true);
-    const cancelled = page.waitForEvent("requestfailed", {
-      predicate: (request) =>
-        request.url().endsWith("/rpc") &&
-        request.postDataJSON().method === "query.configuration_records",
-      timeout: 15000,
+for (const phase of ["目录", "详情"] as const) {
+  test(`切换 Skill 导入时${phase}尚未载入，保留导入草稿并允许手动选择`, async ({
+    page,
+  }) => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => (release = resolve));
+    let loading = false;
+    const method =
+      phase === "目录"
+        ? "query.configuration_index"
+        : "query.configuration_records";
+    await page.route("**/rpc", async (route) => {
+      if (route.request().postDataJSON().method !== method)
+        return route.fallback();
+      loading = true;
+      await pending;
+      await route.fallback();
     });
-    await page
-      .getByRole("region", { name: "Skill 管理", exact: true })
-      .getByRole("button", { name: "导入 Skill 包", exact: true })
-      .click();
-    const importer = page.getByRole("region", { name: "Skill 包导入" });
-    await importer.getByLabel("导入 Skill 名称").fill("保留导入草稿");
-    await cancelled;
-    release();
-    await page.unrouteAll({ behavior: "wait" });
-    await expect(importer).toBeVisible();
-    await expect(importer.getByLabel("导入 Skill 名称")).toHaveValue(
-      "保留导入草稿",
-    );
-  } finally {
-    release();
-    await page.unrouteAll({ behavior: "wait" });
-  }
-});
+    try {
+      await page.goto("/?tab=components&config_tab=skills");
+      await expect.poll(() => loading).toBe(true);
+      const cancelled =
+        phase === "详情"
+          ? page.waitForEvent("requestfailed", {
+              predicate: (request) =>
+                request.url().endsWith("/rpc") &&
+                request.postDataJSON().method === "query.configuration_records",
+              timeout: 15000,
+            })
+          : Promise.resolve();
+      await page
+        .getByRole("region", { name: "Skill 管理", exact: true })
+        .getByRole("button", { name: "导入 Skill 包", exact: true })
+        .click();
+      const importer = page.getByRole("region", { name: "Skill 包导入" });
+      await importer.getByLabel("导入 Skill 名称").fill("保留导入草稿");
+      await cancelled;
+      release();
+      await page.unrouteAll({ behavior: "wait" });
+      await expect(importer).toBeVisible();
+      await expect(importer.getByLabel("导入 Skill 名称")).toHaveValue(
+        "保留导入草稿",
+      );
+      const entry = page
+        .locator(".configuration-list button:has(strong)")
+        .first();
+      await entry.click();
+      await expect(entry).toHaveAttribute("aria-pressed", "true");
+      await expect(importer).not.toBeVisible();
+    } finally {
+      release();
+      await page.unrouteAll({ behavior: "wait" });
+    }
+  });
+}
 
 test("旧 Sandbox 详情先于最新目录恢复时保留编辑器和未保存草稿", async ({
   page,

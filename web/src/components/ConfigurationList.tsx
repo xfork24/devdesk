@@ -36,7 +36,13 @@ export function ConfigurationList({
   }, [ready, autoSelectFirst, selectedId, rows, onSelect]);
 
   return (
-    <div className="configuration-list">
+    <div
+      className="configuration-list"
+      onClickCapture={(event) => {
+        if (event.target instanceof Element && event.target.closest("button"))
+          initialized.current = true;
+      }}
+    >
       {newAction && (
         <ActionButton
           type="button"
@@ -45,10 +51,7 @@ export function ConfigurationList({
           }
           aria-pressed={newAction.selected}
           disabled={disabled}
-          onClick={() => {
-            initialized.current = true;
-            newAction.onClick();
-          }}
+          onClick={newAction.onClick}
         >
           {displayText(newAction.label)}
         </ActionButton>
@@ -62,7 +65,6 @@ export function ConfigurationList({
           aria-pressed={selectedId === row.id}
           className={selectedId === row.id ? "selected" : ""}
           onClick={() => {
-            initialized.current = true;
             void onSelect(row);
           }}
         >
