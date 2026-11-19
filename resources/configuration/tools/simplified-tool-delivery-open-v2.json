@@ -1,7 +1,7 @@
 {
   "type": "tool",
   "identity": "simplified-tool-delivery-open",
-  "revision": 1,
+  "revision": 2,
   "name": "精简版创建或更新交付 PR",
   "scope": "global",
   "data": {
@@ -15,6 +15,14 @@
         },
         "target": {
           "type": "object"
+        },
+        "validation_paths": {
+          "type": "array",
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": [

@@ -76,9 +76,9 @@ try:
         client.timeout = 180
         image = runtime['artifact']['image_id']
         defaults = client.rpc('query.configuration_defaults')
-        assert defaults['workflow_ref'] == 'simplified-workflow-feature:3'
-        assert defaults['task_workflow_ref'] == 'simplified-workflow-task:2'
-        assert defaults['standard_ref'] == 'simplified-standard-engineering:3'
+        assert defaults['workflow_ref'] == 'simplified-workflow-feature:4'
+        assert defaults['task_workflow_ref'] == 'simplified-workflow-task:3'
+        assert defaults['standard_ref'] == 'simplified-standard-engineering:4'
         if args.suite == 'detailed':
             defaults.update({'workflow_ref': 'builtin-workflow-feature-sol-high:12', 'task_workflow_ref': 'builtin-workflow-task-sol-high:11', 'standard_ref': 'builtin-standard-engineering:10', 'role_agent_bindings': {f'builtin-role-{role}:1': f'builtin-agent-sol-high-{role}:{13 if role == "project-manager" else 6}' for role in ['analyst', 'architect', 'project-manager', 'developer', 'tester', 'reviewer']}})
         test_configuration = {'language': 'JavaScript ESM / Node 24', 'independent_runner': 'node_test', 'regression': {

@@ -10,6 +10,8 @@ use crate::{
 };
 #[path = "workflow_delivery_migration.rs"]
 mod migration;
+#[path = "platform_delivery_projection.rs"]
+mod projection;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) enum DeliveryAction {
     Target {
@@ -40,6 +42,8 @@ pub(crate) enum DeliveryAction {
         operation: Id,
         delivery: Id,
         state: ResourceSnapshot,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        projection: Option<DeliveryProjection>,
     },
     Merge {
         context: GitContext,
@@ -75,6 +79,7 @@ pub(crate) fn delivery_merge_request(
             candidate: publication.pull_request.head.clone(),
             expected_target: publication.target_revision.clone(),
             number: Some(publication.pull_request.number),
+            projection: publication.projection.clone(),
         },
         tree: publication.tree.clone(),
         merge_revision: (publication.pull_request.head_branch == publication.source_branch)
@@ -263,6 +268,9 @@ impl Engine {
                 }
             }
             "git.delivery.open" => {
+                if context.target.owner == context.project {
+                    self.delivery_children_gate(resources, plan)?;
+                }
                 let pushed =
                     self.delivery_step_result(resources, &policy.source_publication_step, plan)?;
                 require(
@@ -295,6 +303,24 @@ impl Engine {
                     })?;
                 plan.basis = plan.basis.merge([proof])?;
                 DeliveryAction::OpenSource {
+                    projection: if context.target.owner == context.project {
+                        let projection = DeliveryProjection {
+                            source_revision: source.clone(),
+                            target_revision: text(target, "revision")?,
+                            validation_paths: serde_json::from_value(
+                                request
+                                    .arguments
+                                    .get("validation_paths")
+                                    .cloned()
+                                    .unwrap_or(json!(["tests/.devdesk", "evidence/.devdesk"])),
+                            )
+                            .map_err(|e| err("invalid_params", e.to_string()))?,
+                        };
+                        projection.validate()?;
+                        Some(projection)
+                    } else {
+                        None
+                    },
                     context,
                     source,
                     target: text(target, "revision")?,
@@ -769,6 +795,7 @@ impl Engine {
                     candidate: revision.clone(),
                     expected_target: target.clone(),
                     number: previous.and_then(|v| v["pull_request"]["number"].as_u64()),
+                    projection: None,
                 };
                 let Some(value) = stage("pr", PublishAction::DeliveryPullRequest(request))? else {
                     return Ok(None);
@@ -796,7 +823,8 @@ impl Engine {
                     workspace_id: workspace.clone(),
                     owner_id: context.source.owner.clone(),
                     operation_id: op.clone(),
-                    pull_request
+                    pull_request,
+                    projection: None,
                 })))
             }
             DeliveryAction::OpenSource {
@@ -807,7 +835,11 @@ impl Engine {
                 operation: op,
                 delivery,
                 state,
+                projection,
             } => {
+                if projection.is_some() {
+                    return self.drive_delivery_projection(effect, action, inspect);
+                }
                 if context.target.owner != context.project {
                     let id = crate::material_commands::stable_object_id(
                         self.store.as_ref(),
@@ -847,6 +879,7 @@ impl Engine {
                     number: previous
                         .filter(|p| p["pull_request"]["head_branch"] == context.source.branch)
                         .and_then(|p| p["pull_request"]["number"].as_u64()),
+                    projection: None,
                 };
                 let Some(value) = stage(
                     "source-pr",
@@ -897,7 +930,8 @@ impl Engine {
                     workspace_id: workspace.clone(),
                     owner_id: context.source.owner.clone(),
                     operation_id: op.clone(),
-                    pull_request
+                    pull_request,
+                    projection: None,
                 })))
             }
             DeliveryAction::Merge {

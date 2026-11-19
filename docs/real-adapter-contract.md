@@ -26,7 +26,7 @@ TestRequest 固定操作 ID、候选、环境、GitContext、实际实例和 Tes
 
 目录来自明确授权，不要求 `tests/` 前缀。适配器校验路径规范化、symlink、受保护元数据、读写冲突和实际工作副本。只读根目录不生成重复的点路径挂载，局部只读覆盖不能被更宽的写授权突破。
 
-旧版 Git 候选为基于预期目标的单父提交；新交付直接使用开发分支 PR，以 GitHub 试合并的目标/源双父提交及 tree 作为测试候选。平台读取真实父提交和 diff，兼容历史单父候选，但不再新建远端 candidates 分支。接纳核对当前计划的 ActionPermit、本次运行的候选和对应测试/评审条件；human 策略或 Approved 条件才要求确切人类决定，automatic 不产生人工签名。授权内的 waiver 单独记录，不能伪造实际测试、候选或 CAS。本地 CAS、远端 lease、PR head / merged / merge_commit 分别核对；详细版平台只创建 PR，本地推进不能冒充远端交付。精简版 PR 创建无需额外保护配置，不修改已有规则；无保护分支以 GitHub updateRefs beforeOid 和 force=false 原子快进，已有保护分支按现有门禁以确切 head SHA 调用普通 PR merge，验证最终父提交/tree 后同步本地；Feature/main 还需绑定确切交付的 Human 决定，硬性测试不能豁免。
+Task 直接使用开发分支 PR，以 GitHub 试合并的目标/源双父提交及 tree 作为测试候选。Feature 在全部 Task 合入且源评审、测试完成后生成专用 candidates 分支：按冻结声明剔除流程验证材料，保留正式项目测试，以确切目标为单父提交；候选回归、Human 审批及合入绑定该代码投影的 SHA、tree、源和目标。平台读取真实父提交和 diff；兼容历史单父候选及 PR，禁止无投影证明的旧创建请求。接纳核对当前计划的 ActionPermit、本次运行的候选和对应测试/评审条件；human 策略或 Approved 条件才要求确切人类决定，automatic 不产生人工签名。授权内的 waiver 单独记录，不能伪造实际测试、候选或 CAS。本地 CAS、远端 lease、PR head / merged / merge_commit 分别核对；详细版平台只创建 PR，本地推进不能冒充远端交付。精简版 PR 创建无需额外保护配置，不修改已有规则；无保护分支以 GitHub updateRefs beforeOid 和 force=false 原子快进，已有保护分支按现有门禁以确切 head SHA 调用普通 PR merge，验证最终父提交/tree 后同步本地；Feature/main 还需绑定确切交付的 Human 决定，硬性测试不能豁免。
 
 取消等待真实停止，封存与清理分开确认。未知副作用进入核对，不盲目重试；技术重试使用新执行身份并保留原请求和结果。输出合同拒绝实际回执时保留观察证据并及时失败，不让步骤永久停留在运行状态。
 

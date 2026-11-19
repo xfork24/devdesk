@@ -1,11 +1,11 @@
 {
-  "workflow_ref": "simplified-workflow-feature:3",
-  "task_workflow_ref": "simplified-workflow-task:2",
+  "workflow_ref": "simplified-workflow-feature:4",
+  "task_workflow_ref": "simplified-workflow-task:3",
   "model_ref": "builtin-model-gpt-6-1-sol-high:1",
   "harness_ref": "builtin-harness-codex-managed:1",
   "sandbox_ref": "builtin-sandbox-docker:2",
   "capability_ref": "simplified-capability-developer:3",
-  "standard_ref": "simplified-standard-engineering:3",
+  "standard_ref": "simplified-standard-engineering:4",
   "role_agent_bindings": {
     "builtin-role-analyst:1": "simplified-agent-analyst:3",
     "builtin-role-architect:1": "simplified-agent-architect:3",

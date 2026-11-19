@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "bundle_version": "2026.11.19-project-test-discovery-v4",
+  "bundle_version": "2026.11.19-code-only-feature-delivery-v5",
   "usage_index": "reference-usage.json",
   "types": {
     "role": [
@@ -69,13 +69,13 @@
     ],
     "standard": [
       "standards/builtin-standard-engineering-v10.json",
-      "standards/simplified-standard-engineering-v3.json"
+      "standards/simplified-standard-engineering-v4.json"
     ],
     "workflow": [
       "workflows/builtin-workflow-task-sol-high-v11.json",
       "workflows/builtin-workflow-feature-sol-high-v12.json",
-      "workflows/simplified-workflow-task-v2.json",
-      "workflows/simplified-workflow-feature-v3.json"
+      "workflows/simplified-workflow-task-v3.json",
+      "workflows/simplified-workflow-feature-v4.json"
     ],
     "delivery_type": [
       "deliveries/builtin-delivery-prd-v3.json",
@@ -238,7 +238,7 @@
       "tools/simplified-tool-project-tests-v2.json",
       "tools/simplified-tool-checkpoint-v1.json",
       "tools/simplified-tool-source-publish-v1.json",
-      "tools/simplified-tool-delivery-open-v1.json",
+      "tools/simplified-tool-delivery-open-v2.json",
       "tools/simplified-tool-delivery-merge-v1.json",
       "tools/simplified-tool-target-v1.json"
     ],
@@ -263,8 +263,8 @@
       "permissions/profiles/builtin-permission-step-feature-sol-high-planning-v1.json",
       "permissions/profiles/builtin-permission-step-feature-sol-high-plan_review-v1.json",
       "permissions/profiles/simplified-permission-read-v1.json",
-      "permissions/profiles/simplified-permission-tests-v1.json",
-      "permissions/profiles/simplified-permission-implementation-v1.json"
+      "permissions/profiles/simplified-permission-tests-v2.json",
+      "permissions/profiles/simplified-permission-implementation-v2.json"
     ],
     "model_provider": [
       "model-providers/builtin-model-provider-openai-v1.json",

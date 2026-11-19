@@ -44,12 +44,12 @@ fn step_profiles_are_the_only_scope_and_do_not_share_a_lock_by_agent() {
     let scope = compile_permission_profiles(&state, test, None)
         .unwrap()
         .scope;
-    assert_eq!(scope.writable_paths, vec!["tests"]);
+    assert_eq!(scope.writable_paths, vec!["tests/.devdesk"]);
     let scope = compile_permission_profiles(&state, implementation, None)
         .unwrap()
         .scope;
     assert_eq!(scope.writable_paths, vec!["."]);
-    assert_eq!(scope.read_only_paths, vec!["tests"]);
+    assert_eq!(scope.read_only_paths, vec!["tests/.devdesk"]);
     assert_ne!(test.harness.profile.id, implementation.harness.profile.id);
     assert!(state.governance.iter().all(|r| {
         ![

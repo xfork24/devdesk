@@ -271,6 +271,7 @@ impl Engine {
             candidate: candidate.clone(),
             expected_target: expected.clone(),
             number: None,
+            projection: None,
         };
         let Some(value) = self.platform_publish_stage(
             effect,

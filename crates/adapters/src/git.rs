@@ -2,6 +2,8 @@
 use super::*;
 use crate::process::{Output, capture_command};
 use std::{process::Command, time::Duration};
+#[path = "git_delivery_projection.rs"]
+mod delivery_projection;
 #[path = "git_test_configuration.rs"]
 mod test_configuration;
 
@@ -812,7 +814,7 @@ impl CliGit {
                     && c.source.owner != c.project),
             "发布分支不属于冻结上下文",
         )?;
-        if branch.starts_with("devdesk/candidates/") {
+        if branch.starts_with("devdesk/candidates/") && stage != PublishStage::DeliveryProjection {
             let actual = self.remote_head(&repo, branch)?;
             if actual.as_deref() == Some(revision) {
                 return Ok(RepositoryReceipt::PublishedRef {
@@ -830,10 +832,24 @@ impl CliGit {
                 json!({"branch":branch,"requested":revision,"actual":actual}),
             ));
         }
+        if stage == PublishStage::DeliveryProjection {
+            require(
+                c.target.owner == c.project
+                    && c.target.branch == c.workspace.mainline
+                    && c.source.branch.starts_with("devdesk/features/")
+                    && branch
+                        .strip_prefix("devdesk/candidates/")
+                        .is_some_and(|id| uuid::Uuid::parse_str(id).is_ok()),
+                "只有 Feature 正式交付可发布专用 candidates 分支",
+            )?;
+        }
         self.inspect_unlocked(&c.project, &c.workspace.repository, &c.workspace.mainline)?;
         if matches!(
             stage,
-            PublishStage::Source | PublishStage::DeliveryBase | PublishStage::DeliveryCandidate
+            PublishStage::Source
+                | PublishStage::DeliveryBase
+                | PublishStage::DeliveryCandidate
+                | PublishStage::DeliveryProjection
         ) {
             require(
                 match stage {
@@ -842,6 +858,9 @@ impl CliGit {
                         branch == c.target.branch && c.target.owner != c.project
                     }
                     PublishStage::DeliveryCandidate => branch.starts_with("devdesk/candidates/"),
+                    PublishStage::DeliveryProjection => {
+                        c.target.owner == c.project && branch.starts_with("devdesk/candidates/")
+                    }
                     _ => false,
                 },
                 "精简发布不能直接写入正式目标",
@@ -1042,6 +1061,12 @@ impl CliGit {
             operation_id: op.id.clone(),
         };
         match &op.action {
+            RepositoryAction::ProjectDelivery {
+                context,
+                projection,
+            } => self
+                .project_delivery(context, projection, &op.id)
+                .map(|revision| RepositoryReceipt::Candidate { revision }),
             RepositoryAction::Checkpoint {
                 context,
                 expected,
@@ -1256,6 +1281,39 @@ impl CliGit {
             None
         };
         match &op.action {
+            RepositoryAction::ProjectDelivery {
+                context,
+                projection,
+            } => {
+                let repo = self.context(context)?;
+                let marker = self
+                    .project(&op.project_id)?
+                    .join("execution/git-operations")
+                    .join(format!("delivery_projection-{}.json", op.id));
+                reject_symlink(&marker)?;
+                if !marker.is_file() {
+                    return Ok(None);
+                }
+                let raw: Value =
+                    serde_json::from_slice(&fs::read(marker).map_err(storage)?).map_err(storage)?;
+                require(
+                    raw == json!({"kind":"delivery_projection","context":context,"projection":projection}),
+                    "原交付投影请求已变化",
+                )?;
+                let Some(revision) = self.existing_ref(
+                    &repo,
+                    &format!("refs/devdesk/delivery-projections/{}", op.id),
+                )?
+                else {
+                    return Ok(None);
+                };
+                require(
+                    self.commit_parents(context, &revision)?
+                        == vec![projection.target_revision.clone()],
+                    "交付投影父提交不符",
+                )?;
+                return Ok(Some(RepositoryReceipt::Candidate { revision }));
+            }
             RepositoryAction::Checkpoint { context, .. } => {
                 let repo = self.context(context)?;
                 let Some(revision) =

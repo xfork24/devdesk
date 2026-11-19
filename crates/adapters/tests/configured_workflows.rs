@@ -5392,11 +5392,11 @@ fn actual_defaults_compile_the_streamlined_suite_and_freeze_project_tests() {
     let dir = tempfile::tempdir().unwrap();
     let e = engine(dir.path());
     let defaults = e.configuration_defaults(None).unwrap();
-    assert_eq!(defaults["workflow_ref"], "simplified-workflow-feature:3");
-    assert_eq!(defaults["task_workflow_ref"], "simplified-workflow-task:2");
+    assert_eq!(defaults["workflow_ref"], "simplified-workflow-feature:4");
+    assert_eq!(defaults["task_workflow_ref"], "simplified-workflow-task:3");
     assert_eq!(
         defaults["standard_ref"],
-        "simplified-standard-engineering:3"
+        "simplified-standard-engineering:4"
     );
     let state = e.store.snapshot().unwrap();
     let bindings = serde_json::from_value(defaults["role_agent_bindings"].clone()).unwrap();
@@ -5507,7 +5507,7 @@ fn actual_defaults_compile_the_streamlined_suite_and_freeze_project_tests() {
         .unwrap();
     assert!(
         matches!(&tasks.executor,StepExecutor::Workflow{workflow_ref,foreach:Some(collection),..}
-        if workflow_ref=="simplified-workflow-task:2" && collection.max_concurrency==4)
+        if workflow_ref=="simplified-workflow-task:3" && collection.max_concurrency==4)
     );
     assert!(
         tasks.budget.timeout_seconds >= 7200,

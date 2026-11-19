@@ -326,6 +326,7 @@ mod tests {
             candidate: "a".repeat(40),
             expected_target: "b".repeat(40),
             number: None,
+            projection: None,
         };
         GitHubPullRequests.validate_request(&request).unwrap();
     }

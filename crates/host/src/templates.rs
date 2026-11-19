@@ -214,7 +214,7 @@ mod tests {
         assert_eq!(receipt["changed"], true);
         assert_eq!(
             current_template_defaults(&legacy).unwrap()["workflow_ref"],
-            "simplified-workflow-feature:3"
+            "simplified-workflow-feature:4"
         );
         for source in before.governance.iter().filter(|r| r.immutable) {
             assert_eq!(legacy.configuration(&source.id).unwrap(), source);

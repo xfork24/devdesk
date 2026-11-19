@@ -1,7 +1,7 @@
 {
   "type": "workflow",
   "identity": "simplified-workflow-feature",
-  "revision": 3,
+  "revision": 4,
   "name": "精简版Feature开发流程",
   "scope": "global",
   "data": {
@@ -485,7 +485,7 @@
         ],
         "executor": {
           "type": "workflow",
-          "workflow_ref": "simplified-workflow-task:2",
+          "workflow_ref": "simplified-workflow-task:3",
           "foreach": {
             "source": {
               "step": "tasks",
@@ -838,14 +838,14 @@
       },
       {
         "key": "publication",
-        "name": "F11 创建 Feature → 主分支 PR",
+        "name": "F11 验证汇合后生成纯代码候选并创建 PR",
         "stage": "delivery",
         "dependencies": [
           "target"
         ],
         "executor": {
           "type": "tool",
-          "tool_ref": "simplified-tool-delivery-open:1",
+          "tool_ref": "simplified-tool-delivery-open:2",
           "arguments": {
             "workspace": {
               "type": "source",
@@ -862,6 +862,13 @@
                 "port": "result",
                 "pointer": ""
               }
+            },
+            "validation_paths": {
+              "type": "constant",
+              "value": [
+                "tests/.devdesk",
+                "evidence/.devdesk"
+              ]
             }
           }
         },

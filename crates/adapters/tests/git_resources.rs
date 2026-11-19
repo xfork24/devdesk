@@ -28,6 +28,136 @@ fn git(path: &Path, args: &[&str]) -> String {
     String::from_utf8(output.stdout).unwrap().trim().into()
 }
 #[test]
+fn mainline_projection_keeps_real_tests_and_source_materials_without_advancing_any_branch() {
+    let root = tempfile::tempdir().unwrap();
+    let project = id();
+    let repo = root
+        .path()
+        .join("projects")
+        .join(&project)
+        .join("repository");
+    fs::create_dir_all(repo.join("tests")).unwrap();
+    fs::create_dir_all(repo.join("evidence")).unwrap();
+    git(&repo, &["init", "-b", "main"]);
+    fs::write(repo.join("index.html"), "baseline").unwrap();
+    fs::write(repo.join("tests/product.test.mjs"), "maintained test").unwrap();
+    fs::write(repo.join("evidence/domain.json"), "product evidence data").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-m", "baseline"]);
+    let base = git(&repo, &["rev-parse", "HEAD"]);
+    let adapter = CliGit::new(root.path()).unwrap();
+    let feature = id();
+    let work = adapter
+        .prepare_worktree(&project, &feature, "features", &base, &id())
+        .unwrap();
+    let context = GitContext {
+        project: project.clone(),
+        workspace: Workspace {
+            repository: "fixture/local".into(),
+            path: fs::canonicalize(&repo).unwrap().to_string_lossy().into(),
+            mainline: "main".into(),
+        },
+        source: CodeLocation {
+            owner: feature,
+            branch: work.branch,
+            worktree: work.path.clone(),
+        },
+        target: CodeLocation {
+            owner: project.clone(),
+            branch: "main".into(),
+            worktree: fs::canonicalize(&repo).unwrap().to_string_lossy().into(),
+        },
+        origin: Origin::External,
+    };
+    let path = Path::new(&work.path);
+    for dir in ["tests/.devdesk/task", "evidence/.devdesk/task"] {
+        fs::create_dir_all(path.join(dir)).unwrap();
+    }
+    fs::write(path.join("index.html"), "implemented code").unwrap();
+    fs::write(
+        path.join("tests/new-product.test.mjs"),
+        "new maintained regression test",
+    )
+    .unwrap();
+    fs::write(
+        path.join("tests/.devdesk/task/check.mjs"),
+        "workflow independent assertions",
+    )
+    .unwrap();
+    fs::write(
+        path.join("evidence/.devdesk/task/capture.bin"),
+        [0, 1, 255, 0],
+    )
+    .unwrap();
+    let source = adapter.snapshot_worktree(&context, &base, &id()).unwrap();
+    // Main changes independently, including an unrelated code file and a
+    // conflicting workflow capture. Only real code conflicts should matter.
+    fs::create_dir_all(repo.join("evidence/.devdesk/task")).unwrap();
+    fs::write(repo.join("evidence/.devdesk/task/capture.bin"), [0, 2, 255]).unwrap();
+    fs::write(repo.join("other-code.js"), "other work").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-m", "parallel work"]);
+    let target = git(&repo, &["rev-parse", "HEAD"]);
+    let projection = DeliveryProjection {
+        source_revision: source.clone(),
+        target_revision: target.clone(),
+        validation_paths: vec!["tests/.devdesk".into(), "evidence/.devdesk".into()],
+    };
+    let op = RepositoryOperation {
+        id: id(),
+        project_id: project,
+        action: RepositoryAction::ProjectDelivery {
+            context: context.clone(),
+            projection,
+        },
+        status: RepositoryOperationStatus::Dispatched,
+        receipt: None,
+        reason: String::new(),
+        revision: 1,
+    };
+    let RepositoryReceipt::Candidate { revision } = adapter.repository_operation(&op).unwrap()
+    else {
+        panic!("missing candidate");
+    };
+    assert_eq!(
+        adapter.commit_parents(&context, &revision).unwrap(),
+        vec![target.clone()]
+    );
+    let files = git(&repo, &["ls-tree", "-r", "--name-only", &revision]);
+    for file in [
+        "index.html",
+        "other-code.js",
+        "tests/product.test.mjs",
+        "tests/new-product.test.mjs",
+        "evidence/domain.json",
+    ] {
+        assert!(files.lines().any(|p| p == file), "lost {file}");
+    }
+    assert!(!files.contains(".devdesk"));
+    assert_eq!(
+        git(&repo, &["show", &format!("{revision}:index.html")]),
+        "implemented code"
+    );
+    assert_eq!(git(&repo, &["rev-parse", "main"]), target);
+    assert_eq!(git(path, &["rev-parse", "HEAD"]), source);
+    assert!(path.join("tests/.devdesk/task/check.mjs").is_file());
+    assert!(path.join("evidence/.devdesk/task/capture.bin").is_file());
+    assert!(git(path, &["status", "--porcelain"]).is_empty());
+    assert!(git(&repo, &["status", "--porcelain"]).is_empty());
+    assert!(git(&repo, &["for-each-ref", "refs/heads/devdesk/candidates"]).is_empty());
+    assert!(
+        matches!(adapter.inspect_repository_operation(&op).unwrap(), Some(RepositoryReceipt::Candidate { revision: r }) if r==revision)
+    );
+    assert!(
+        matches!(adapter.repository_operation(&op).unwrap(), RepositoryReceipt::Candidate { revision: r } if r==revision)
+    );
+    let mut changed = op.clone();
+    if let RepositoryAction::ProjectDelivery { projection, .. } = &mut changed.action {
+        projection.validation_paths.push("tests".into());
+    }
+    assert!(adapter.repository_operation(&changed).is_err());
+}
+#[test]
 fn actual_worktrees_single_parent_candidate_cas_and_recovery() {
     let root = tempfile::tempdir().unwrap();
     let project = id();
@@ -321,7 +451,7 @@ fn delivery_sync_preserves_dirty_worktrees_and_recovers_a_lost_checkout() {
         project: project.clone(),
         workspace: Workspace {
             repository: "fixture/local".into(),
-            path: repo.to_string_lossy().into(),
+            path: fs::canonicalize(&repo).unwrap().to_string_lossy().into(),
             mainline: "main".into(),
         },
         source: CodeLocation {

@@ -833,6 +833,7 @@ fn exact_control_reads_do_not_restore_an_unrelated_plan_and_expose_original_pr_c
         candidate: "candidate".into(),
         expected_target: "parent".into(),
         number: None,
+        projection: None,
     };
     let stage = "platform-publish-stage:effect:pull_request";
     record(

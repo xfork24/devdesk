@@ -139,7 +139,7 @@ Workflow 调用仅修改输出合同，且原调用尚无封存输出、未被�
 
 ## 默认流程概览
 
-实际默认为 `simplified-workflow-feature:3`、`simplified-workflow-task:2` 和 `simplified-standard-engineering:3`。Feature 为 5 阶段、14 个业务步骤、19 个实际节点；Task 为 5 阶段、10 个业务步骤、14 个实际节点。内部节点用于工作空间、快照、登记及目标读取，不增加模型交接。默认精简版 Agent/Capability 采用第 3 修订，以紧凑文档和精简版交付自检减少重复成文；结构检查仍由平台执行，独立评审与真实测试门禁不变。经理按实例将 automatic 节点一次交给有界 segment，包括 Agent、Tool 与子流程调用；Human 节点排除在委托之外，异常回到经理处理。
+实际默认为 `simplified-workflow-feature:4`、`simplified-workflow-task:3` 和 `simplified-standard-engineering:4`。Feature 为 5 阶段、14 个业务步骤、19 个实际节点；Task 为 5 阶段、10 个业务步骤、14 个实际节点。内部节点用于工作空间、快照、登记及目标读取，不增加模型交接。默认精简版 Agent/Capability 采用第 3 修订，以紧凑文档和精简版交付自检减少重复成文；结构检查仍由平台执行，独立评审与真实测试门禁不变。经理按实例将 automatic 节点一次交给有界 segment，包括 Agent、Tool 与子流程调用；Human 节点排除在委托之外，异常回到经理处理。
 
 运行事件与业务事实同事务保存。仅同一 running 执行挂接会话/轮次标识、且状态、产物、输入摘要及原因不变的通知标记为 `metadata_only`；经理消费时合并此类通知并以版本守卫推进游标，SSE 和审计保留原事件。结果、失败、停止、Human、计划和控制变化继续处理；旧的无标记通知不被忽略。
 
@@ -150,7 +150,7 @@ Workflow 调用仅修改输出合同，且原调用尚无封存输出、未被�
 
 PRD、Design、Tasks 评审及最终 Feature 合入使用 Human 确认。签署绑定本轮计划、输入摘要和输出，返工或目标刷新后须重新签署。经理 Agent 没有 Human 身份。Task 无独立 Human 确认，但真实测试、独立评审及精确版本条件不可豁免。
 
-精简版直接以开发分支创建 PR：Task → 所属 Feature，Feature → main。不再创建或更新远端 `devdesk/candidates/*` 分支。PR head 固定为已推送的源 SHA，目标为确切基线；平台读取 GitHub 的 PR 试合并提交，核对其两个父提交正好是目标 SHA 与源 SHA，并将该提交固定到本地 `refs/devdesk/pr-candidates/<SHA>`，合并回归和 Human 审批绑定这份完整交付对象及 tree。PR 创建不要求目标分支开启保护，也不新增、修改或删除保护规则。平台仅在候选回归通过后报告 `devdesk/merge-regression` 状态。无保护目标以 GitHub `updateRefs` 的 `beforeOid` 原子比较和 `force=false` 快进推进，目标竞争使原请求失败；已有保护的目标经普通 PR 合并路径遵守仓库现有检查和评审门禁，不使用管理员绕过或降级直推。核对最终父提交/tree 后才同步本地并登记完成。PR 创建或远端合入但尚未同步不算完成。原开发分支和全部失败记录保留。未知效果先核对，远端已合入后只恢复同步，脏 worktree 保留。
+Task 直接以已推送的开发分支向所属 Feature 创建 PR，平台冻结 GitHub 试合并的目标/源双父提交并固定到本地 `refs/devdesk/pr-candidates/<SHA>`。Feature 保留完整流程材料；只有全部 Task 完成实施、测试并合入和同步到 Feature，且 Feature 独立评审、源回归及源发布通过后，PR 发布步骤才生成 `devdesk/candidates/<workflow-id>`。该专用候选从确切 Feature 源和目标构造，剔除声明的流程验证路径，仅以目标 SHA 为父提交，合并回归及 Human 审批绑定此清理后提交和 tree。独立断言放在 `tests/.devdesk/<task-id>`，截图、日志、验收脚本等放在 `evidence/.devdesk/<task-id>`；普通项目测试、源代码和文档正常交付，不按整个 `tests/` 或 `evidence/` 目录过滤。生成候选不修改 Feature、Task 或 main；真实代码冲突仍须修复，验证材料冲突不影响代码合并。PR 创建不要求目标分支开启保护，也不新增、修改或删除保护规则。平台仅在候选回归通过后报告 `devdesk/merge-regression` 状态。无保护目标以 GitHub `updateRefs` 的 `beforeOid` 原子比较和 `force=false` 快进推进，目标竞争使原请求失败；已有保护的目标经普通 PR 合并路径遵守仓库现有检查和评审门禁，不使用管理员绕过或降级直推。核对最终父提交/tree 后才同步本地并登记完成。PR 创建或远端合入但尚未同步不算完成。原开发分支和全部失败记录保留。未知效果先核对，远端已合入后只恢复同步，脏 worktree 保留。
 
 `stale_target` 且已证明未应用的交付失败，可经 `workflow.step.retry` 重做目标读取及其下游 PR、合并回归和最终 Human 决定，保留未受影响的源回归和代码评审。平台按源版本累计刷新额度，业务返工不能重置该额度。
 
@@ -246,4 +246,4 @@ Rust 驱动与已授权委托的纯控制阶段若一轮未产生提交，Host �
 
 旧版主分支强制保护的只读预检失败，只有在原不可变阶段回执完全匹配、且候选和 PR 阶段均未授予时，核对才可确认为 `obsolete_protection_preflight/not_applied` 并释放原围栏，交由正常重试继续。已有 PR 写入授予或未知外部结果仍须按原 marker 核对，不自动重发。
 
-`workflow.delivery.republish` 由实际 Human 请求旧版未合入交付迁移，需携带原流程/步骤版本、PR number、head SHA、候选 SHA 与原因。它只替换 PR 发布及其后继平台验证/人工确认，归档原执行，保留源发布、源测试、独立评审和已完成子流程；不消耗业务返工额度，不迁移未知副作用或已合入交付。原审批因执行/输入变化失效，必须对新 PR 重新确认。历史 candidates PR 仍可只读核对和恢复，适配器不再新建对应远端分支或 PR。
+`workflow.delivery.republish` 由实际 Human 请求旧版未合入交付迁移，需携带原流程/步骤版本、PR number、head SHA、候选 SHA 与原因。它只替换 PR 发布及其后继平台验证/人工确认，归档原执行，保留源发布、源测试、独立评审和已完成子流程；不消耗业务返工额度，不迁移未知副作用或已合入交付。原审批因执行/输入变化失效，必须对新 PR 重新确认。历史 candidates PR 仍可只读核对和恢复。只有携带冻结材料路径与源/目标证明的新 Feature 交付投影可创建专用候选分支和 PR；旧的无投影候选创建请求仍拒绝重发。

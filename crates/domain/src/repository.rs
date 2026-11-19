@@ -30,6 +30,10 @@ pub enum RepositoryAction {
         target: String,
         session: Id,
     },
+    ProjectDelivery {
+        context: GitContext,
+        projection: DeliveryProjection,
+    },
     PublishRef {
         merge: Id,
         context: GitContext,
@@ -60,6 +64,31 @@ pub enum RepositoryAction {
         worktree_kind: WorktreeKind,
         base: String,
     },
+}
+/// Workflow-owned validation files, distinct from maintained project tests.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DeliveryProjection {
+    pub source_revision: String,
+    pub target_revision: String,
+    pub validation_paths: Vec<String>,
+}
+impl DeliveryProjection {
+    pub fn validate(&self) -> Result<()> {
+        require(
+            [&self.source_revision, &self.target_revision]
+                .iter()
+                .all(|sha| sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit()))
+                && self.validation_paths.len() <= 100
+                && self.validation_paths.iter().all(|path| {
+                    test_relative_path(path)
+                        && path != ".git"
+                        && !path.starts_with(".git/")
+                        && !path.contains(':')
+                }),
+            "交付投影需要固定源、目标及明确的流程验证材料路径",
+        )
+    }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitHubRepositoryPolicy {
@@ -228,6 +257,7 @@ impl EngineeringState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PublishStage {
+    DeliveryProjection,
     TargetBase,
     Candidate,
     RemoteAdvance,
@@ -247,6 +277,8 @@ pub struct DeliveryPublication {
     pub owner_id: Id,
     pub operation_id: Id,
     pub pull_request: PullRequestReceipt,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projection: Option<DeliveryProjection>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PullRequestMergeRequest {
@@ -274,6 +306,8 @@ pub struct PullRequestRequest {
     pub candidate: String,
     pub expected_target: String,
     pub number: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projection: Option<DeliveryProjection>,
 }
 impl PullRequestRequest {
     pub fn marker(&self) -> String {

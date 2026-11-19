@@ -195,6 +195,14 @@ impl DeliveryClient<'_> {
             "精简 PR 归属或版本无效",
         )?;
         GitHubPullRequests::validate_repository_branch(&r.repository, &r.base_branch)?;
+        if let Some(projection) = &r.projection {
+            projection.validate()?;
+            require(
+                r.head_branch == format!("devdesk/candidates/{}", r.merge)
+                    && projection.target_revision == r.expected_target,
+                "投影 PR 的候选分支或冻结目标不符",
+            )?;
+        }
         let commit = self.delivery_api(
             "GET",
             &format!("repos/{}/git/commits/{}", r.repository, r.candidate),
@@ -371,7 +379,7 @@ impl DeliveryClient<'_> {
             return Ok(None);
         } else {
             require(
-                !r.head_branch.starts_with("devdesk/candidates/"),
+                !r.head_branch.starts_with("devdesk/candidates/") || r.projection.is_some(),
                 "历史 candidates 发布不能新建 PR；请以原开发分支重新发布",
             )
             .map_err(|error| error.technical_not_applied())?;
@@ -394,8 +402,15 @@ impl DeliveryClient<'_> {
                 "源分支已变化，不能用旧版本创建 PR",
             )
             .map_err(|error| error.technical_not_applied())?;
+            let source = r
+                .projection
+                .as_ref()
+                .map_or(r.candidate.as_str(), |p| p.source_revision.as_str());
+            let publication = r.projection.as_ref().map_or_else(
+                || "The Task source branch is used directly; its exact PR test-merge commit is retained in the owning DevDesk workflow.".to_owned(),
+                |p| format!("A code-only Feature delivery is used. Workflow validation changes are excluded at: {}. The original Feature and Task branches retain their materials.", p.validation_paths.join(", ")));
             self.delivery_api("POST",&format!("repos/{}/pulls",r.repository),Some(json!({"title":format!("DevDesk delivery {}",r.merge),
-                "head":r.head_branch,"base":r.base_branch,"body":format!("{}\n\nSource revision: `{}`\nValidated target: `{}`\n\nThe source branch is used directly. The exact PR test-merge commit, original source, reviews, test receipts and final Human decision are retained in the owning DevDesk workflow. This PR can advance the target only after exact merge regression, the workflow approval, and the repository’s existing merge requirements pass.",r.marker(),r.candidate,r.expected_target)})))?
+                "head":r.head_branch,"base":r.base_branch,"body":format!("{}\n\nSource revision: `{source}`\nDelivery revision: `{}`\nValidated target: `{}`\n\n{publication}\n\nReviews, exact test receipts and the final Human decision remain bound to these versions. Existing repository merge requirements apply.",r.marker(),r.candidate,r.expected_target)})))?
         };
         self.receipt(r, &row).map(Some)
     }
@@ -580,6 +595,7 @@ mod tests {
             candidate: "a".repeat(40),
             expected_target: "b".repeat(40),
             number: Some(7),
+            projection: None,
         }
     }
     fn pr(request: &PullRequestRequest, merged: bool, state: &str) -> Value {
@@ -1024,6 +1040,51 @@ mod tests {
             error.execution_failure.unwrap().effect,
             ExecutionFailureEffect::NotApplied
         );
+    }
+    #[test]
+    fn reviewed_feature_projection_can_create_a_mainline_pr_with_its_original_source() {
+        let mut request = request();
+        request.number = None;
+        request.projection = Some(DeliveryProjection {
+            source_revision: "c".repeat(40),
+            target_revision: request.expected_target.clone(),
+            validation_paths: vec!["tests/.devdesk".into(), "evidence/.devdesk".into()],
+        });
+        let writes = Cell::new(0);
+        let api = |method: &str, endpoint: &str, body: Option<Value>| match (method, endpoint) {
+            ("GET", endpoint) if endpoint.contains("/git/commits/") => Ok(candidate(&request)),
+            ("GET", endpoint) if endpoint.contains("pulls?state=all") => Ok(json!([])),
+            ("GET", endpoint) if endpoint.contains("/branches/devdesk%2Fcandidates%2F") => {
+                Ok(json!({"commit":{"sha":request.candidate}}))
+            }
+            ("POST", "repos/owner/repo/pulls") => {
+                let body = body.unwrap();
+                assert_eq!(body["head"], request.head_branch);
+                assert_eq!(body["base"], "main");
+                let text = body["body"].as_str().unwrap();
+                assert!(text.contains(&"c".repeat(40)));
+                assert!(text.contains(&request.candidate));
+                assert!(text.contains("code-only Feature delivery"));
+                assert!(text.contains("tests/.devdesk"));
+                writes.set(writes.get() + 1);
+                Ok(pr(&request, false, "clean"))
+            }
+            _ => panic!("unexpected projection action: {method} {endpoint}"),
+        };
+        let client = DeliveryClient { api: &api };
+        assert_eq!(
+            client
+                .delivery_ensure(&request, false)
+                .unwrap()
+                .unwrap()
+                .head,
+            request.candidate
+        );
+        assert_eq!(writes.get(), 1);
+        let mut invalid = request.clone();
+        invalid.projection.as_mut().unwrap().target_revision = "d".repeat(40);
+        assert!(client.delivery_ensure(&invalid, false).is_err());
+        assert_eq!(writes.get(), 1);
     }
     #[test]
     fn changed_source_or_tested_tree_is_rejected_before_direct_merge() {
