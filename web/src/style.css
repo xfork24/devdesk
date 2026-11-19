@@ -2523,6 +2523,9 @@ pre {
   max-height: 32rem;
   overflow: auto;
 }
+.standard-detail > ul {
+  margin-block-end: 0;
+}
 .work-standard {
   margin-block: 12px;
 }
@@ -2599,9 +2602,6 @@ pre {
   font-weight: 600;
   padding: 0;
 }
-.standard-source {
-  padding: 12px 0;
-}
 .standard-source > details,
 .standard-source-override {
   min-width: 0;
@@ -2652,7 +2652,7 @@ pre {
   min-height: 41px;
 }
 .standard-manager > details,
-.standard-detail details {
+.standard-detail details details {
   margin: 10px 0;
 }
 /* Workflow outputs stay sealed; this is a second read-only presentation. */
