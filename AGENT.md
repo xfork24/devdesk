@@ -49,7 +49,7 @@
 
 ## 构建与验证
 
-Rust **1.99.1** 由工具链文件固定，前端使用 Node **24**。脚本需要 Python **3.10+** 与 C 工具链。macOS 签名/助手见 [系统凭据](docs/design/system-credentials.md)。
+Rust **1.99.1** 由工具链文件固定，前端使用 Node **24**。脚本需要 Python **3.10+** 与 C 工具链。macOS 签名/助手见 [签名与助手安装](docs/crates/devdesk-tools/signing-and-keychain.md)。
 
 ```bash
 python3 -m venv .venv
@@ -84,8 +84,8 @@ python3 scripts/py/check-docs.py
 ## 文档与交付
 
 - 行为变更同步更新当前文档、必要 Schema 与 README。参数、版本、默认值、能力和验证范围从代码/资源核对，不把目标写成现状。
-- crate 文件索引用 `python3 scripts/py/check-docs.py --write` 更新；检查入口核对索引和当前文档本地链接。源码符号链接需核对位置，避免保留失效的行号。
+- crate 文件索引独立放在各包手册的 `files.md`，用 `python3 scripts/py/check-docs.py --write` 更新；检查入口核对索引和当前文档本地链接。概览只保留模块地图和阅读路线。源码符号链接需核对位置，避免保留失效的行号。
 - 日志、JSON/JSONL、截图、临时脚本及测试输出写临时证据目录；不提交凭据、运行数据、构建产物或本地 `review/`。
 - 提交聚焦可评审主题，说明行为变化、验证及限制；涉及界面行为时保留相应证据。
 
-入口：[README](README.md) · [代码手册](docs/crates/overview.md) · [结构合同](docs/design/contracts.md) · [工作流](docs/design/workflow-orchestration.md) · [源配置](docs/design/source-configuration.md) · [协议](docs/design/protocol.md)。
+入口：[README](README.md) · [代码手册](docs/crates/overview.md) · [结构合同](docs/design/reference/contracts.md) · [工作流](docs/design/workflow.md) · [源配置](docs/design/configuration.md) · [协议](docs/design/reference/rpc.md)。

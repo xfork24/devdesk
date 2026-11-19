@@ -1,22 +1,31 @@
-# 运行计划修改、静止等待与有界委托
+# 返工、计划变更与恢复
 
-[代码手册总览](../overview.md) · [完整执行链](../execution-flows.md) · [本包概览](overview.md)
+这组模块处理已经存在的执行。重点是保留原输入、拒绝和外部操作身份，避免把新尝试与旧执行混在一起。
 
-修改运行中的图不能直接替换 JSON。预演先计算影响、合同与材料缺口，再停止受影响执行者，保留原执行历史并建立新计划。未受影响节点可携带旧回执继续；已完成根实例保持终态。
+## 先选择正确的操作
 
-## 当前实现
+| 情况 | 主要模块 | 处理原则 |
+|---|---|---|
+| 技术失败后再次尝试 | [workflow_retries.rs](../../../crates/core/src/workflow_retries.rs) | 保留原条件，检查允许重试与预算 |
+| 评审拒绝后修改结果 | [workflow_rework.rs](../../../crates/core/src/workflow_rework.rs) | 明确返工对象、范围、原因和前后关系 |
+| 变更后续计划 | [workflow_change_preview.rs](../../../crates/core/src/workflow_change_preview.rs)、[workflow_change_commit.rs](../../../crates/core/src/workflow_change_commit.rs) | 先预览影响和核对执行停止，再应用 |
+| 外部结果未知 | [workflow_reconciliation.rs](../../../crates/core/src/workflow_reconciliation.rs) | 先核对原操作，不创建盲目重复动作 |
+| 用户停止或继续 | [workflow_execution_controls.rs](../../../crates/core/src/workflow_execution_controls.rs) | 检查执行身份、当前状态与实际 worker 条件 |
 
-<a id="file-src-workflow-changes-rs"></a>
+## 计划变更为何要分阶段
 
-- [workflow_change_preview.rs](../../../crates/core/src/workflow_change_preview.rs) 读取完整配置目录与明确选择的运行事实，生成 `NativePreview`、影响集合、停止集合及预演摘要。
-- [workflow_change_commit.rs](../../../crates/core/src/workflow_change_commit.rs) 核对原预演与资源版本，持久化变更和静止意图，接纳停止证明并提交新计划。
-- [workflow_segments.rs](../../../crates/core/src/workflow_segments.rs) 保存有限 automatic 节点的委托，逐项调用现有控制命令。
-- [workflow_rework.rs](../../../crates/core/src/workflow_rework.rs) 与 [workflow_retries.rs](../../../crates/core/src/workflow_retries.rs) 分别处理返工影响和独立技术重试。
+预览计算受影响的步骤和输入，提供调用者能够审阅的结果。应用前需要使相关执行停止或失去写权限，再检查原计划和控制版本。否则旧容器可能在新计划启用后继续写入，迟到结果也可能错误覆盖新执行。
 
-运行计划修改使用 preview → quiesce → apply。预演固定原计划、源修订、输入、权限、Standard 及实际执行，不允许用另一份图沿用原摘要。停止确认后封存旧执行，受影响子实例按明确规则取消，未受影响回执显式沿用到新计划。
+应用成功后仍保留旧计划和历史结果。旧拒绝不能被改写成成功；后续执行通过关联解释它如何修正问题。
 
-回退仍产生新计划，保留原拒绝、执行历史和迟到回执；已完成根实例不重新打开。修改 Task 范围或依赖受控制策略限制。Segment 遇到拒绝、人工门禁、计划变化或预算边界即停止，不能自动签署人工决定或完成根流程。
+## 恢复从哪里读
 
----
+[bootstrap_recovery.rs](../../../crates/core/src/bootstrap_recovery.rs) 处理启动后的恢复条件，[worker_reconciliation.rs](../../../crates/core/src/worker_reconciliation.rs) 检查 worker，[platform_reconciliation.rs](../../../crates/core/src/platform_reconciliation.rs) 检查平台操作，[delivery_recovery.rs](../../../crates/core/src/delivery_recovery.rs) 处理工程交付恢复。
 
-[代码手册总览](../overview.md) · [完整执行链](../execution-flows.md) · [本包概览](overview.md)
+外部观察结果可能先于业务提交保存。再次处理时应该利用原结果和操作身份核对，不能因为业务状态尚未更新就重新发出副作用。
+
+## 修改与测试
+
+修改返工规则时检查：同一拒绝是否可重复消费、额度是否共享、执行范围是否扩大、人工决定是否匹配、旧回执是否被保留。修改恢复时覆盖“动作已发生但提交未完成”，不能只测动作尚未开始的情况。
+
+测试入口：[workflow_resource_concurrency.rs](../../../crates/adapters/tests/workflow_resource_concurrency.rs)、[publication_retry.rs](../../../crates/adapters/tests/publication_retry.rs)、[delivery_migration.rs](../../../crates/adapters/tests/delivery_migration.rs)，界面用例见 [review-rework.spec.ts](../../../web/tests/review-rework.spec.ts)。

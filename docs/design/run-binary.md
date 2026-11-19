@@ -1,69 +1,87 @@
-# DevDesk 0.2 本地运行包
+# DevDesk 运行指南
 
-## 启动与依赖
+本页可在独立运行包中阅读。Host 已嵌入 Web 工作台和出厂配置；启动工作台不需要 Rust、Node 或单独的数据库服务。
 
-解压与当前机器架构匹配的运行包，在包目录执行：
+## 启动
+
+解压与操作系统、CPU 架构匹配的包，在包目录运行：
 
 ```bash
 ./devdesk-host
 ```
 
-在浏览器打开终端显示的地址，默认是 `http://127.0.0.1:4317`。首次选择空目录或兼容的 DevDesk 数据集，也可显式指定：
+打开终端给出的地址，默认是 `http://127.0.0.1:4317`。首次选择空数据目录，也可直接指定：
 
 ```bash
 ./devdesk-host --data "/完整路径/DevDesk 数据" --port 4317
 ```
 
-路径可含中文和空格。Host 嵌入 Web 和出厂资源，运行工作台不需要 Rust、宿主 Node、数据库服务或源码。实际工程执行需要已启动的 Linux Docker Engine/Desktop、Git 与已登录的 GitHub CLI；模型认证在设置中完成。登录组件及 worker 执行安装按实际所选配置下载/校验、构建或拉取，不要求手工登记镜像。
+工程执行还需要可用的 Linux Docker Engine/Desktop、Git，以及按功能需要登录的 GitHub CLI。模型认证在设置中完成。执行安装由所选 Harness/Sandbox 配置准备，不必手工猜测镜像标签。
 
-本机运行包由 `scripts/release/package.sh` 构建，名称为 `devdesk-0.2.0-<rust-host-target>.tar.gz`，附 SHA-256 文件。macOS Apple Silicon 的 target 为 `aarch64-apple-darwin`；其他机器使用对应平台产物。macOS 包是带凭据助手的签名命令行程序，不是已公证的 `.app` 安装器。
+macOS 包是包含凭据助手的签名命令行程序，不是已公证的 App 安装器。
 
-## 数据集与恢复
+## 数据与退出
 
-数据集标记为 `devdesk-profile-runtime-v2`，SQLite 基线为 global 24 / project 60。兼容数据集可直接重开；旧协议/旧结构明确拒绝，不自动迁移、删除或重建。验证新代码使用独立空目录，不把清空现有数据当作恢复手段。
+同一数据集只能由一个 Host 管理。当前数据标记为 `devdesk-profile-runtime-v2`，布局为 `single-host-resource-v2`，数据库基线为 global 24 / project 60。程序打开兼容数据集或初始化空目录，不自动迁移、删库或覆盖非 DevDesk 目录。
 
-初始化先取得 `.devdesk.lock` 独占锁。同一数据集只能有一个可写 Host；非空非 DevDesk 目录不初始化。仅剩 `.devdesk-dataset`、`.devdesk.lock` 和 `.DS_Store` 的无数据目录可初始化当前结构，含数据库、认证或产物的目录不能按空目录处理。
+遇到不兼容错误时保留原数据。验证新版本请使用独立空目录，不以清空旧目录作为恢复步骤。切换数据目录需退出后重新启动。
 
-退出可用 Web 设置页或 Ctrl+C；Unix 上的 SIGTERM/SIGHUP 也进入同一停机路径：停止调度准入、关闭 SSE、等待当前阶段并核对所属 Harness writer 的停止。日志分别记录 shutdown_requested 与 runtime_stopped；退出不撤销已发生的外部副作用。重开时保留历史，未确认终态的副作用先进入核对，不能直接当作可重发的失败。切换项目或关闭浏览器不取消后台工作；更换数据路径需退出 Host 后重新启动，不隐式搬迁。
+退出可用工作台设置或 Ctrl+C。Host 停止新的调度工作，并核对它管理的 worker 是否停止。关闭浏览器、切换项目或退出 Host 都不会回滚已经发生的 Git/远端操作；重开后系统会核对未确认的执行。
 
-## 连接远程内核
+## 模型与运行准备
 
-设置、初始化页及连接失败页提供“连接内核”。输入 `http(s)://ip:port` 后先探测 `/connection`，确认产品与协议，再导航到目标内核的同源工作台。数据、凭据、Docker 和 Git 操作都位于目标内核机器。
+在设置中配置模型认证，选择 Agent、Harness、Sandbox 和权限。安装检查成功说明程序与协议准备完成，仍需实际会话验证模型连接和工具调用。
 
-远程监听须先通过进程环境设置 `DEVDESK_ACCESS_TOKEN`，值为 32–512 个非空白 ASCII 字符，再启动：
+当前 Codex 支持根经理编排。DSH 可以运行所支持的普通模型会话和步骤，不能仅凭工具桥存在就选择它承担需要根编排能力的会话。
 
-```bash
-./devdesk-host --host 192.168.1.10 --port 4317 --data "/完整路径/DevDesk 数据"
-```
+Ollama 可填写本机服务根地址。容器必须实际访问到该服务；Linux 的 host-gateway 不会自动开放只监听 loopback 的进程。更改地址后保存并采用新的 Model/Agent 组合，原会话继续使用原连接。
 
-客户端输入同一连接密钥，Host 建立 HttpOnly、SameSite=Strict 会话。密钥不进入 URL 或浏览器持久存储；Host 与有值的 Origin 必须匹配配置。默认仅监听 loopback，配置公开地址或非 loopback 监听时要求密钥。
+## 系统凭据
 
-HTTPS 可由反向代理提供，并设置 `--public-url https://desk.example`；代理须传递匹配的 Host/Origin。监听 `0.0.0.0` 或 `::` 时必须指定公开地址。HTTP 仅用于可信网络或隧道。
+macOS 通过固定签名的 `devdesk-credential-helper` 访问 Keychain。Host 检查助手协议、内容和签名；普通读取不会自动弹出授权窗口。需要授权时，在设置中执行明确的钥匙串授权操作。
 
-## 模型、权限与平台设置
-
-工程从“打开 GitHub 项目”接入仓库与分支，后台克隆并登记工作空间。项目选择 Workflow、Standard、Role→Agent、Sandbox、可选双层 Profile 及 manual/rust/agent 驱动。Codex 当前提供经理/编排原生工具桥；DSH 支持所配置的普通模型会话，不能承担需要该桥的控制会话。
-
-执行配方来自确切 Harness/Sandbox 源组合，以配方、实际镜像和 driver/权限资产核验；准备成功只证明协议探针通过，不证明模型推理或实际工具执行成功。已有运行和技术重试保留原冻结资源。
-
-macOS API key 和工具 token 由固定签名 `devdesk-credential-helper` 访问 Keychain。包提供一份助手，首次需要时安装到用户私有共享目录；当前要求协议 2、内容摘要及同证书签名。普通访问不自动弹窗，设置页提供显式钥匙串授权。兼容助手复用，不随 Host 构建替换；需要显式升级时使用包含对应助手的包执行：
+若运行包携带了需要升级的助手，显式执行：
 
 ```bash
 ./devdesk-host --update-credential-helper
 ```
 
-Linux 需要 `secret-tool`、可用且解锁的 Secret Service/D-Bus 会话，例如 `libsecret-tools` 与 GNOME Keyring；不使用 macOS 助手，不降级为明文 API key 文件。Codex OAuth 另用数据集私有认证文件。
+当前助手要求协议 2。普通构建和正常启动不会任意替换已授权安装。安装目录名称不代表协议版本。
 
-默认权限将当前 Harness 容器作为信任范围，步骤授权进一步限制文件与工具；宿主系统凭据库、其他项目和未挂载路径在容器外。包旁权限预设优先加载，未附带时由内嵌资源物化到数据集缓存。修改预设请使用自己的目录；生成缓存不是编辑源。
+Linux 需要 `secret-tool` 和已解锁的 Secret Service/D-Bus 会话，例如 libsecret-tools 与 GNOME Keyring。不降级为明文 API key 文件。Codex OAuth 使用数据集私有认证文件，Ollama 默认免密。
 
-Linux 启用 AppArmor 且选择受限嵌套权限时，需经审阅安装随包专用策略：
+## Linux 权限策略
+
+使用受限嵌套权限且启用 AppArmor 时，经审阅安装随包专用策略：
 
 ```bash
 sudo ./scripts/platform/linux/install-linux-sandbox-policy.sh --install
 ```
 
-安装器只加载 `devdesk-harness-v1`，Host 校验归属、权限与资产摘要；缺失或漂移明确阻塞。默认全权限绑定不要求该嵌套策略。
+安装器只加载 DevDesk 专用策略，Host 会校验资产和权限。默认全权限绑定不要求该嵌套策略。缺少必需后端时应修复环境或明确选择适合的权限配置，不能把启动失败视为已隔离运行。
 
-本页也复制为运行包根目录的 README。包根目录下 `docs/design/real-engineering.md`、`docs/design/system-credentials.md`、`docs/design/permissions.md`、`docs/design/storage.md` 和 `permissions/README.md` 提供详细操作与边界；`docs/plans/` 是历史记录，不代表当前机器已通过同样验收。
+## 远程连接
 
-开发源码依据：`crates/host/src/main.rs`、`crates/host/src/workspace.rs`、`crates/adapters/src/runtime_preparation.rs`、`crates/adapters/src/credentials_macos.rs`、`scripts/release/package.sh`。
+默认只监听 loopback。远程监听前设置 `DEVDESK_ACCESS_TOKEN`，要求 32–512 个非空白 ASCII 字符，再运行：
+
+```bash
+./devdesk-host --host 192.168.1.10 --port 4317 --data "/完整路径/DevDesk 数据"
+```
+
+客户端通过“连接内核”探测并打开目标工作台，输入同一连接密钥。数据、Docker、Git 和凭据均位于目标 Host 机器。
+
+反向代理提供 HTTPS 时配置 `--public-url https://desk.example`，并传递匹配的 Host/Origin。监听 `0.0.0.0` 或 `::` 必须指定公开地址。明文 HTTP 只用于可信网络或隧道。
+
+## 按症状排查
+
+| 症状 | 优先检查 |
+|---|---|
+| 数据集被占用 | 是否已有 Host 使用相同目录，避免并行启动 |
+| 安装或容器启动失败 | Docker 是否运行、挂载是否允许、镜像及权限策略是否可用 |
+| 模型连接失败 | 所选配置版本、系统凭据授权、容器网络及服务地址 |
+| 步骤等待而无进展 | 是等待输入、等待人工确认、预算阻止，还是外部结果待核对 |
+| 远程工作台拒绝连接 | 连接密钥、公开地址与 Host/Origin 是否匹配 |
+
+记录对应项目、执行、会话和错误信息后再处理。不要用反复创建新执行或删除数据掩盖原故障。
+
+包内 `docs/design/` 提供架构说明，`docs/crates/` 提供开发阅读路线。代码链接需要源码仓库；本页的运行步骤不依赖这些链接。

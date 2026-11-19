@@ -1,21 +1,47 @@
-# 父进程签名、固定安装与 Keychain 访问
+# 凭据助手的构建、签名与安装
 
-[代码手册总览](../overview.md) · [完整执行链](../execution-flows.md) · [本包概览](overview.md)
+助手需要稳定签名、受控内容和匹配的 Host 调用者。普通 Cargo 构建只证明代码可编译，不能证明它能够通过真实 Keychain 授权链。
 
-先读 [请求实现](request-protocol.md#file-src-bin-devdesk-credential-helper-rs)，再按本页连接 Host 侧安装与系统行为。Host 侧使用的 helper manifest 协议版本是 2，与本包 Cargo 版本 1.0.0 分别管理。
+## 开发构建
 
-## 两边各自核对身份
+在仓库根目录执行：
 
-Host 侧 [credentials_macos](../devdesk-adapters/credentials-and-permissions.md#file-src-credentials-macos-rs) 核对固定目录的用户所有权、权限、非符号链接、manifest 和内容 SHA，再核对 helper identifier `dev.devdesk.credentials` 与签名证书。helper 侧按 getppid 取得实际父进程，要求 identifier `dev.devdesk.host` 且 leaf certificate 等于编译时 DEVDESK_ALLOWED_HOST_CERTIFICATE；缺失或非法的证书 pin 直接拒绝，不能退回仅检查进程名。
+```bash
+cargo build --locked -p devdesk-tools --bin devdesk-credential-helper --release
+cargo test --locked -p devdesk-tools
+```
 
-构建/打包入口参见 [平台脚本目录](../../../scripts/platform)，操作说明见 [系统凭据说明](../../design/system-credentials.md)。固定助手由显式升级动作替换，普通 Host 重建不会顺手覆盖。更新后需要授权时，通过设置中的 authorize 操作完成。
+二进制输出在 target/release。macOS 正式使用还需要匹配的签名和安装流程，不能直接以未签名测试程序替代受信任 Host。
 
-## 交互和秘密的生命周期
+## 安装流程
 
-除 authorize 外，execute 通过 SecKeychain 的 RAII guard 禁止交互，返回时恢复原状态。status 只查属性是否存在；check 实际读取但不返回密钥；read 才把值通过私有管道交回 Host。store 和读取后的缓冲区在使用后清零；JSON/字符串仍经过进程内分配，因此这不是对内存所有副本的绝对清零保证。
+首次源码开发可先准备并导入本地开发签名身份，再安装助手：
 
-无匹配条目、需要交互和其他系统拒绝映射为受控错误，普通轮询不会因系统对话框阻塞。Linux 不执行此助手，凭据由 [CredentialVault](../devdesk-adapters/credentials-and-permissions.md#file-src-credentials-rs) 的平台实现处理。
+```bash
+./scripts/platform/macos/setup-macos-signing.sh --prepare
+./scripts/platform/macos/setup-macos-signing.sh --import
+./scripts/platform/macos/install-macos-credential-helper.sh
+```
 
----
+这些步骤由开发者在本机执行，导入只针对 DevDesk 开发证书及用户域的 code signing 信任。已有身份可通过 `DEVDESK_CODESIGN_IDENTITY` 指定，必要时同时设置 `DEVDESK_CODESIGN_CERTIFICATE_SHA1`。证书私钥不进入源码或发布包。
 
-[代码手册总览](../overview.md) · [完整执行链](../execution-flows.md) · [本包概览](overview.md)
+[install-macos-credential-helper.sh](../../../scripts/platform/macos/install-macos-credential-helper.sh) 提供 ensure、update 和 bundle 等入口。ensure 复用兼容安装；update 是明确升级；bundle 构建随运行包分发的助手，不替换本机共享安装。
+
+Host 的 [credentials_macos.rs](../../../crates/adapters/src/credentials_macos.rs) 核对当前要求的协议、内容摘要和证书；助手反向核对父 Host 的签名身份。目录名称 v1 不表示仍使用协议 1，当前协议要求为 2。
+
+共享安装位于 `~/Library/Application Support/DevDesk/credential-helper/v1/`。Host 使用 `dev.devdesk.host` 标识，助手使用 `dev.devdesk.credentials` 标识。普通 Host/Web/core 修改不重建这个已授权安装。
+
+开发启动使用 `scripts/dev/dev.sh` 或 [run-host.py](../../../scripts/dev/run-host.py) 创建私有签名副本，避免后续 Cargo 构建覆盖正在运行的二进制。直接运行 target 中的 Host 再覆盖文件，可能导致原进程的签名核验失败；应停止旧进程并通过稳定副本入口重启，不必因此重存密钥。
+
+修改助手源码、协议或允许的账户范围时，同时检查指纹脚本 [credential-helper-fingerprint.py](../../../scripts/py/credential-helper-fingerprint.py)、安装验证和 Host 兼容检查。不可通过放宽签名或忽略内容摘要让本机验证“通过”。
+
+## 平台验证范围
+
+| 验证 | 能证明什么 |
+|---|---|
+| Cargo build/test | 编译与参数规则 |
+| [credential_helper_startup.py](../../../tests/entrypoints/credential_helper_startup.py) | 启动及安装检查相关路径 |
+| [credential_helper_runtime.py](../../../tests/entrypoints/credential_helper_runtime.py) | 在具备前置条件的机器上验证运行边界 |
+| 设置页显式授权后的真实访问 | 当前签名和当前用户 Keychain 的授权结果 |
+
+缺少签名身份时报告该限制；编译成功不能写成凭据功能已完成实机验收。运行包操作见[运行指南](../../design/run-binary.md)。

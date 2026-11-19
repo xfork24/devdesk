@@ -1,33 +1,26 @@
-# 一次请求的协议、校验与错误
+# 凭据助手的请求协议
 
-[代码手册总览](../overview.md) · [完整执行链](../execution-flows.md) · [本包概览](overview.md)
+实现位于 [devdesk-credential-helper.rs](../../../crates/tools/src/bin/devdesk-credential-helper.rs)。助手一次从 stdin 读取一个 JSON 请求，向 stdout 写一个 JSON 结果并换行。
 
-助手每进程处理一个 JSON 请求并输出一行 JSON，不提供网络监听，也不接受任意 Keychain 查询。协议输入来自匹配签名的 Host；业务工具不会直接持有这个进程接口。
+## 请求结构
 
-## 本页文件
+| 字段 | 要求 |
+|---|---|
+| operation | status、store、read、check 或 authorize |
+| service | devdesk. 前缀加限定格式的数据集命名空间摘要 |
+| account | 支持的服务商或接入凭据前缀，加合法 UUID |
+| secret | 仅 store 接受；其他操作禁止携带 |
 
-- [src/bin/devdesk-credential-helper.rs](#file-src-bin-devdesk-credential-helper-rs)：严格命名空间、签名调用者和单次 Keychain 操作
+Request 使用 deny_unknown_fields，validate 检查命名空间、账户和内容限制。助手不是可以读取任意 Keychain 项目的通用接口。macOS 还会在读取请求前通过 authorized_parent 检查调用者签名。
 
-<a id="file-src-bin-devdesk-credential-helper-rs"></a>
+## 操作差别
 
-## src/bin/devdesk-credential-helper.rs：严格命名空间、签名调用者和单次 Keychain 操作
+status 检查是否配置；store 保存秘密；read 返回秘密；check 检查能否读取但不返回秘密；authorize 允许显式交互授权。除 authorize 外禁用 Keychain 用户交互，避免后台轮询不断弹窗。
 
-源码：[crates/tools/src/bin/devdesk-credential-helper.rs](../../../crates/tools/src/bin/devdesk-credential-helper.rs)。
+成功形状为 `{"ok":true,"result":...}`，失败形状为 `{"ok":false,"code":...}`。认证不足与凭据不存在分别使用 authentication_required 和 credentials_required 等代码。日志和错误不得包含秘密正文。
 
-Request 使用 deny_unknown_fields，字段为 operation、service、account 和可选 secret。service 必须为 devdesk. 加 64 位小写十六进制摘要；account 只接受 deepseek-api-key-、dsh-zai-coding-cn-api-key-、dsh-minimax-cn-api-key-、integration-key- 加 UUID 形状，不能指定任意系统账户。
+输入有大小上限；处理后主动清理持有秘密的可变缓冲区。非 macOS 构建返回 unsupported，不提供假凭据或明文回退。
 
-操作仅 status/store/read/check/authorize。store 必须带 secret：模型密钥为 8..4096 字节可见 ASCII，集成秘密为 1..65536 字节且不含换行、回车和 NUL；其他操作不能夹带 secret。macOS 先核对实际父进程签名，再读取最多 393216 字节 stdin，超过上限或 JSON/语义不合法返回 invalid_params。
+## 验证
 
-execute 对普通调用禁交互。status 返回 configured；store 写入 generic password 并返回 configured；read 返回 secret；check 与 authorize 实际读取并返回 authorized，只有后者允许系统 UI。每次 run 输出 `{ok:true,result:...}` 或 `{ok:false,code:...,message:...}`，main 写一行 JSON 后退出。
-
-Keychain 无条目映射 credentials_required，需要交互/认证或用户取消映射 authentication_required，其他错误为 credential_store；输出使用固定说明，避免泄露系统详情。非 macOS 返回 unsupported。输入/密钥缓冲区尽量清零，限制及身份检查不能由调用方跳过。
-
-包内测试核对账户白名单、外来 service、额外 secret 拒绝；macOS 另检查禁止交互 guard 的恢复行为。签名和安装两端的关系见 [签名与 Keychain](signing-and-keychain.md)。
-
-代码定位：[`Request`](../../../crates/tools/src/bin/devdesk-credential-helper.rs#L12)、[`valid_account`](../../../crates/tools/src/bin/devdesk-credential-helper.rs#L19)、[`validate`](../../../crates/tools/src/bin/devdesk-credential-helper.rs#L41)、[`authorized_parent`](../../../crates/tools/src/bin/devdesk-credential-helper.rs#L61)、[`execute`](../../../crates/tools/src/bin/devdesk-credential-helper.rs#L81)、[`run`](../../../crates/tools/src/bin/devdesk-credential-helper.rs#L132)。
-
-关联阅读：[adapters/src/credentials.rs](../devdesk-adapters/credentials-and-permissions.md#file-src-credentials-rs)、[adapters/src/credentials_macos.rs](../devdesk-adapters/credentials-and-permissions.md#file-src-credentials-macos-rs)。
-
----
-
-[代码手册总览](../overview.md) · [完整执行链](../execution-flows.md) · [本包概览](overview.md)
+文件内测试覆盖允许的账户 namespace、服务格式、秘密参数和边界。Host 端协议与内容检查在 [credentials_macos.rs](../../../crates/adapters/src/credentials_macos.rs)。纯参数测试不证明签名父进程或真实 Keychain 已获授权，后者见[平台验证](signing-and-keychain.md)。

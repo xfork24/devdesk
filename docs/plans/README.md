@@ -2,10 +2,11 @@
 
 每个计划使用 `docs/plans/<计划名>/PLAN.md`，同目录只保留 Markdown 契约、执行报告和验收说明。日志、JSON、截图、补丁和临时测试文件不保存为计划交付物；源码回归测试仍在 crates、tests、web/tests。
 
-待实施方案必须明确标注状态，不能作为已实现的 API 或已通过的验收；核心设计约束同时记录在 [架构设计](../design/design.md) 和 [仓库指南](../../AGENT.md)。
+待实施方案必须明确标注状态，不能作为已实现的 API 或已通过的验收；核心设计约束同时记录在 [架构设计](../design/overview.md) 和 [仓库指南](../../AGENT.md)。
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
+| [架构与代码文档重写](architecture-documentation-rewrite/PLAN.md) | [实施与验证](architecture-documentation-rewrite/EXECUTION.md) | 2026-11-19：P0–P5 完成；重写架构和代码手册，24 篇旧页合并删除，文件索引独立；文档/架构检查与 8 项检查器回归通过 |
 | [精简版性能基准与后续优化](streamlined-workflow-performance/PLAN.md) | [基准](streamlined-workflow-performance/BASELINE.md)、[执行](streamlined-workflow-performance/EXECUTION.md) | 2026-11-19：详细版出厂退役，精简版完整交付 22 分 54.790 秒；两项中断修复已回归，新性能计划待实施 |
 | [默认 Feature / Task 开发流程精简](default-workflow-simplification/PLAN.md) | [实施](default-workflow-simplification/EXECUTION.md)、[本轮验收](default-workflow-simplification/ACCEPTANCE.md)、[变基合入](default-workflow-simplification/MERGE.md)、[main 续验](default-workflow-simplification/FOLLOW-UP.md)、[性能](default-workflow-simplification/PERFORMANCE.md)、[退役清单](default-workflow-simplification/RETIREMENT.md) | 已合入本地 main；续验单 Task/Feature 完成真实交付，最终 Rust 627、浏览器 128 项覆盖通过。新默认及通知合并已定向验证；本轮原生含返工用时 29 分 18.6 秒，五分钟目标未达成 |
 | [工作流性能与可靠性修复](workflow-performance-remediation/PLAN.md) | [接续清单](workflow-performance-remediation/FOLLOW-UP.md)、[合入验证](workflow-performance-remediation/MERGE.md)、[阶段验收](workflow-performance-remediation/ACCEPTANCE.md)、[实施](workflow-performance-remediation/EXECUTION.md)、[第二批](workflow-performance-remediation/CONTINUATION.md)、[性能](workflow-performance-remediation/PERFORMANCE.md)、[存储诊断](workflow-performance-remediation/STORAGE-DIAGNOSTIC.md)、[预算边界](workflow-performance-remediation/BUDGET-DESIGN.md) | 两批局部修复已合入本地 main。S0 完成，S1–S7 剩余修复和验证见接续清单。完整 Feature 和正式容量矩阵暂缓 |
@@ -26,7 +27,7 @@
 | [现行系统文档补全](current-documentation/PLAN.md) | [实施与验收](current-documentation/EXECUTION.md) | 已完成；5 篇新文档（工作流与编排/运行时权限/存储/讨论与经验/Web 工作台）、8 处漂移修复与 --normalize-plan v6 化；host 32 项测试通过；版本锚点机制按用户决定撤回 |
 | [Standard 不可变规范快照](standard-snapshot/PLAN.md) | [实施与验收](standard-snapshot/EXECUTION.md) | 已完成；独立 worktree 合入 main 后统一验证，真实双 Task / Feature 62 节点闭环、切换历史与独立发布包通过 |
 | [Delivery 分类与内容规范](delivery-content-specs/PLAN.md) | [实施与验收](delivery-content-specs/EXECUTION.md) | 已合并 main；21 种 Delivery 全关联 Spec，真实 Diff 接入交付与评审；214 项 Rust、debug/release 各 44 项浏览器及真实 Docker 验收通过 |
-| [源配置与执行解析](../design/source-configuration.md) | [实施验收](source-configuration/EXECUTION.md) | 已合入本地 main；源协议 v2、权限独立、文档规范复用、按需视图；207 项 Rust、debug/release 各 43 项浏览器及独立 macOS 包通过；只支持新数据 |
+| [源配置与执行解析](../design/configuration.md) | [实施验收](source-configuration/EXECUTION.md) | 已合入本地 main；源协议 v2、权限独立、文档规范复用、按需视图；207 项 Rust、debug/release 各 43 项浏览器及独立 macOS 包通过；只支持新数据 |
 | [Harness 驱动工作流改造](harness-workflow-orchestration/PLAN.md) | [实施验收](harness-workflow-orchestration/EXECUTION.md)、[main 合并验收](harness-workflow-orchestration/MERGE.md)、[合同](harness-workflow-orchestration/CONTRACT.md) | P0—P8 已完成并合并 main；202 项 Rust、debug/release 各 43 项浏览器、实际 Git/Docker/权限、真实旧库升级及独立 macOS arm64 包通过；追加无人值守 Feature 22/Task 20、两轮 TDD 完整证据与 PR #35/#36 通过，0 人工 approve/旁路/豁免；编排当前支持 Codex |
 | [Workflow 通用步骤与业务配置改造](workflow-business-configuration/PLAN.md) | [执行记录](workflow-business-configuration/EXECUTION.md)、[合同](workflow-business-configuration/CONTRACT.md)、[硬编码审查](workflow-business-configuration/AUDIT.md) | 已实施；Ubuntu 当前合同仅 Codex 验收通过：154 项 Rust、debug/release 各 41 项浏览器、独立 Linux 包，真实 Feature 21 步 / Task 18 步及 PR #29/#30 完成；不迁移旧开发数据 |
 | [默认模板资源与重置模板定义](configuration-template-reset/PLAN.md) | [实施验收](configuration-template-reset/EXECUTION.md)、[合同](configuration-template-reset/CONTRACT.md) | 已实施；Ubuntu 当前 global 13 / project 44 合同通过完整检查与独立 Linux 包；重置、重启后真实 Codex 按归档项目绑定继续运行，旧任务、产物及凭据保留 |

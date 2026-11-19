@@ -11,7 +11,7 @@ umask 077
 identity="${DEVDESK_CODESIGN_IDENTITY:-}"
 identity_file="$HOME/Library/Application Support/DevDesk/signing/identity.txt"
 if [ -z "$identity" ] && [ -f "$identity_file" ]; then IFS= read -r identity < "$identity_file"; fi
-[ -n "$identity" ] || { echo 'Configure the stable signing identity first; see docs/design/system-credentials.md.' >&2; exit 1; }
+[ -n "$identity" ] || { echo 'Configure the stable signing identity first; see docs/crates/devdesk-tools/signing-and-keychain.md.' >&2; exit 1; }
 if [[ "$identity" =~ ^[A-Fa-f0-9]{40}$ ]]; then
   certificate="$identity"
 else

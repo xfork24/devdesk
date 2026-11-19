@@ -1,67 +1,36 @@
-# Harness、JSONL 与受管进程
+# Harness 协议与 Docker 容器
 
-[代码手册总览](../overview.md) · [完整执行链](../execution-flows.md) · [本包概览](overview.md)
+这里把 core 的 SessionStart、TurnDispatch 等请求转换成真实进程操作。理解顺序是 Harness 端口实现 → 协议连接 → Docker 资源，不要从一条 Docker 命令推断业务状态。
 
-Harness 将正式 Session/Turn 转成真实原生协议。此处同时处理操作归属、容器工作目录、流式事件、动态工具、停止和日志；协议流中的模型文本只能作为观察材料，不能自行改写权威业务终态。
+## 会话启动
 
-## 本页文件
+[harness.rs](../../../crates/adapters/src/harness.rs) 提供受管 Harness 和路由实现，[harness_startup.rs](../../../crates/adapters/src/harness_startup.rs) 处理启动阶段。请求携带确定的会话、运行安装、权限和连接信息。
 
-- [src/harness.rs](#file-src-harness-rs)：原生 worker、私有会话目录与真实停止证明
-- [src/jsonl.rs](#file-src-jsonl-rs)：有界 JSONL 通道、请求关联与事件日志
-- [src/process.rs](#file-src-process-rs)：受管进程组、私有 stdin 和输出边界
+适配器为会话准备私有目录及运行输入，使用 DockerSandbox 创建容器，再由 JsonlProcess 建立协议连接。安装镜像可共享，状态和连接按会话区分。
 
-<a id="file-src-harness-rs"></a>
+## 协议转换
 
-## src/harness.rs：原生 worker、私有会话目录与真实停止证明
+[jsonl.rs](../../../crates/adapters/src/jsonl.rs) 管理请求 ID、读写、等待和消息帧。Docker 的 attach_command 生成 `docker start --attach --interactive`，使 Host 经标准输入输出连接容器内程序。
 
-源码：[crates/adapters/src/harness.rs](../../../crates/adapters/src/harness.rs)。
+| core 操作 | 供应商转换 |
+|---|---|
+| 打开或恢复会话 | Codex thread/start 或 thread/resume；DSH 对应会话准备 |
+| dispatch_turn | Codex turn/start；DSH session/prompt |
+| poll_session | 将通知、响应、交互和终态转换成 ConversationObservation |
+| answer_tool_call | 回复原 item/tool/call 或 devdesk/tool/call 请求 |
 
-RoutingHarness 按冻结 provider 选择 Codex 或 DSH 实现。RuntimeWorkers 以 Session ID 为键持有独立加锁的 worker 槽位，open 还要求已有 worker 的 operation_id 与请求一致。不同步骤即使选择同一个 Agent，也以各自 Session 隔离，不能用 Agent ID 找“最近的执行者”。
+`provider_turn_text` 选择已经准备好的任务输入；供应商线程恢复时避免把同一历史正文再重复注入。协议日志和正式响应应分别处理。
 
-location 根据 SessionScope 将私有目录放到工程执行根或全局讨论执行根。Worker 保存原生 session、operation、容器、镜像和日志身份；Docker 再核对实际标签。SessionPath 只是内存 worker 已丢失时的项目日志查找助手，仅保存 Session ID，按 Session/operation 在 projects/* 下查找 journal；它不是存储全部归属的记录，也不覆盖全局讨论目录的日志查找。
+## Docker 原语
 
-任务代码使用受管 worktree 或固定只读导出，Skill、状态和认证挂载有各自边界。Codex app-server 与 DSH SDK 的协议分别处理初始化、输入派发、消费事件、文本全量/增量、工具调用、审批和用户问题。平台/编排动态桥只在实际驱动支持时开放；Codex 与 DSH 都支持动态工具、外部工具和平台工具桥；当前根编排仅由 Codex 驱动声明支持。
+[docker.rs](../../../crates/adapters/src/docker.rs) 定义 ContainerSpec、ContainerReceipt 和 DockerSandbox。ContainerSpec 包含项目、会话、操作身份、镜像、挂载、网络和命令。operation_id 同时帮助识别同一操作的容器。
 
-观察结果包含原生输入是否已消费、真实终态、等待交互及日志事实。结束 Turn 与撤销写入者要分别核对；stop 定位原会话和容器，保存实际停止证据后才允许 core 释放执行边界。后台清理不能成为提前宣告业务成功的理由。
+create/inspect/start/attach 完成启动，logs/logs_split 读取输出，stop 核对不再运行，remove 在停止后删除并核对结果。移除容器不删除共享镜像。Agent 不获得 Docker socket。
 
-错误带可信失败分类：供应商超时是技术失败但效果未知；明确拒绝且没有执行的请求可标记 Technical/NotApplied。core 再结合输入消费与其他证据决定能否自动重试，模型文本中的“超时”不产生同等分类。
+权限在实际挂载和进程环境中落实。路径检查、敏感错误脱敏和资源身份核验是适配器责任，但“是否允许派发这个步骤”已经由 core 判断。
 
-代码定位：[`RuntimeWorkers`](../../../crates/adapters/src/harness.rs#L192)、[`RoutingHarness`](../../../crates/adapters/src/harness.rs#L1788)、[`SessionPath`](../../../crates/adapters/src/harness.rs#L1604)、[`managed_adapter_identity`](../../../crates/adapters/src/harness.rs#L16)。
+## 中断时看什么
 
-关联阅读：[adapters/src/jsonl.rs](harness-and-protocols.md#file-src-jsonl-rs)、[adapters/src/docker.rs](engineering-resources.md#file-src-docker-rs)、[core/src/conversation_runtime.rs](../devdesk-core/conversations-and-history.md#file-src-conversation-runtime-rs)、[core/src/workflow_failure.rs](../devdesk-core/workflow-execution.md#file-src-workflow-failure-rs)。
+连接断开、进程退出和工作流完成是不同事件。适配器返回观察结果，core 决定是否需要核对、失败或接纳。stop/cleanup 接口应提供实际停止与移除信息，不能仅返回“已发送停止命令”。
 
-<a id="file-src-jsonl-rs"></a>
-
-## src/jsonl.rs：有界 JSONL 通道、请求关联与事件日志
-
-源码：[crates/adapters/src/jsonl.rs](../../../crates/adapters/src/jsonl.rs)。
-
-JsonlProcess 管理子进程管道、读取线程、请求 ID 和待回复集合，使同步请求与异步事件共用一条原生连接。Codex 与 DSH 的消息封装不同，初始化和 RPC 版本按实际协议分支处理。
-
-读写都有大小边界，恢复历史使用单独的受控大帧路径。AgentMessageBatch 合并文本时保留原消息身份与非文本事件，不让工具调用、消费或状态帧消失在拼接文字里。日志写入私有 journal，并对敏感片段做跨文本增量的遮蔽。
-
-超时、EOF、非法帧和迟到回复需要保留各自语义。Drop 负责清理归属明确的进程；它不能证明容器内或供应商侧工作已停止，完整停止仍由 Harness/Docker 回执负责。
-
-代码定位：[`JsonlProcess`](../../../crates/adapters/src/jsonl.rs#L216)、[`Journal`](../../../crates/adapters/src/jsonl.rs#L24)、[`AgentMessageBatch`](../../../crates/adapters/src/jsonl.rs#L183)、[`sanitize`](../../../crates/adapters/src/jsonl.rs#L33)。
-
-关联阅读：[adapters/src/process.rs](harness-and-protocols.md#file-src-process-rs)、[adapters/src/harness.rs](harness-and-protocols.md#file-src-harness-rs)、[domain/src/conversation.rs](../devdesk-domain/agents-and-conversations.md#file-src-conversation-rs)。
-
-<a id="file-src-process-rs"></a>
-
-## src/process.rs：受管进程组、私有 stdin 和输出边界
-
-源码：[crates/adapters/src/process.rs](../../../crates/adapters/src/process.rs)。
-
-capture_command 系列创建自己的进程组，支持将敏感输入通过 stdin 传入，并并行排空 stdout/stderr，避免某条管道填满导致死锁。输出上限和超时有明确处理；普通 capture 不随意暴露 stderr，只有需要原始证据的 capture_split 分别返回两路内容。
-
-超时会终止受管进程组并回收子进程，但返回 needs_reconciliation：终止本机 CLI 不等于远端操作完全没生效。调用方必须结合稳定操作身份继续检查 Docker、GitHub 或其他实际对象。
-
-该工具不负责业务错误分类，也不替调用方决定命令是否可重发。新增 CLI 调用应先检查参数、环境、工作目录和密钥传输方式，再选择合适的捕获入口。
-
-代码定位：[`Output`](../../../crates/adapters/src/process.rs#L10)、[`capture`](../../../crates/adapters/src/process.rs#L32)、[`capture_split`](../../../crates/adapters/src/process.rs#L37)、[`capture_command`](../../../crates/adapters/src/process.rs#L42)、[`capture_command_limited`](../../../crates/adapters/src/process.rs#L49)。
-
-关联阅读：[adapters/src/git.rs](engineering-resources.md#file-src-git-rs)、[adapters/src/integrations.rs](external-integrations.md#file-src-integrations-rs)、[adapters/src/credentials_macos.rs](credentials-and-permissions.md#file-src-credentials-macos-rs)。
-
----
-
-[代码手册总览](../overview.md) · [完整执行链](../execution-flows.md) · [本包概览](overview.md)
+验证入口：harness.rs 中的协议转换测试、[docker_resources.rs](../../../crates/adapters/tests/docker_resources.rs)、[原生验收脚本](../../../tests/entrypoints/native_acceptance.py)。原生协议检查不等于真实模型推理成功。

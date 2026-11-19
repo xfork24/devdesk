@@ -14,7 +14,7 @@ DevDesk 使用 Rust 内核管理配置与工程事实，React 提供 Web 工作�
 - **保留执行依据**：会话冻结模型、权限、输入和环境；历史执行保留原引用，未知副作用先核对，运行计划变更经过预演与停止确认。
 - **按项目协作**：每个浏览器标签页独立选择项目，读取并发执行，写入通过资源版本校验防止覆盖。
 
-当前支持 macOS 和 Linux Host，工程 worker 在 Linux Docker 容器执行。Codex 与 DSH 都提供动态工具和经验访问桥；当前根编排驱动支持 Codex。100 个活跃前端是持续容量目标，正式联合验收状态见[并发与性能约束](docs/design/design.md#单-host-并发与性能设计约束)。
+当前支持 macOS 和 Linux Host，工程 worker 在 Linux Docker 容器执行。Codex 与 DSH 都提供动态工具和经验访问桥；当前根编排驱动支持 Codex。100 个活跃前端是持续容量目标，正式联合验收状态见[并发与性能约束](docs/design/quality-and-limits.md#支持范围与容量)。
 
 ## 快速开始
 
@@ -27,7 +27,7 @@ DevDesk 使用 Rust 内核管理配置与工程事实，React 提供 Web 工作�
 | 本机凭据 | macOS 固定签名 Keychain 助手；Linux Secret Service 和可访问的用户 D-Bus |
 | 完整回归 | Python Schema 校验依赖、Chromium、Docker 与镜像/包源网络 |
 
-macOS 首次构建先按[系统凭据说明](docs/design/system-credentials.md)设置固定签名身份。Python 依赖建议安装到虚拟环境：
+macOS 首次构建先按[签名与助手安装说明](docs/crates/devdesk-tools/signing-and-keychain.md)设置固定签名身份。Python 依赖建议安装到虚拟环境：
 
 ```bash
 python3 -m venv .venv
@@ -47,7 +47,7 @@ python3 scripts/dev/run-host.py target/release/devdesk-host --data ./data --port
 4. 创建 Feature 并填写需求。在执行页查看当前输入、步骤产物、测试和评审；需要人工决定时，核对确切版本后签署。
 5. 确认 PR、合入结果和本地同步回执，再判断工程交付是否完成。
 
-默认出厂目录发布精简版 Feature/Task 流程，保留独立 Red/Green、代码评审、源版本与合并结果两类项目回归。PRD、Design、Tasks 和最终 Feature 合入要求 Human 决定。配置组成及流程详见[默认配置](configurations/README.md)与[工作流和编排](docs/design/workflow-orchestration.md)。
+默认出厂目录发布精简版 Feature/Task 流程，保留独立 Red/Green、代码评审、源版本与合并结果两类项目回归。PRD、Design、Tasks 和最终 Feature 合入要求 Human 决定。配置组成及流程详见[默认配置](configurations/README.md)与[工作流和编排](docs/design/workflow.md)。
 
 ### 运行包
 
@@ -106,18 +106,18 @@ python3 scripts/py/check-docs.py
 
 当前数据标记为 `devdesk-profile-runtime-v2`，布局为 `single-host-resource-v2`，SQLite 基线为 **global 24 / project 60**。不兼容数据集会被拒绝，不自动迁移、清空或重建；验证新代码使用独立空目录。
 
-配置唯一保存于不可变的 `source_definitions`。Agent 的能力与 Profile 的授权分别校验，Harness/Sandbox 两层权限共同约束实际执行；无法落实的策略明确拒绝。具体边界见[存储布局](docs/design/storage.md)和[权限说明](docs/design/permissions.md)。
+配置唯一保存于不可变的 `source_definitions`。Agent 的能力与 Profile 的授权分别校验，Harness/Sandbox 两层权限共同约束实际执行；无法落实的策略明确拒绝。具体边界见[存储布局](docs/design/data-and-recovery.md)和[权限说明](docs/design/security.md)。
 
 ## 文档
 
 | 主题 | 入口 |
 |---|---|
-| 系统设计总览 | [设计文档索引与阅读路线](docs/design/README.md) |
-| 使用与部署 | [Web 工作台](docs/design/web-workbench.md)、[运行包](docs/design/run-binary.md)、[系统凭据](docs/design/system-credentials.md) |
-| 工程方法 | [工作流与编排](docs/design/workflow-orchestration.md)、[源配置](docs/design/source-configuration.md)、[真实工程接入](docs/design/real-engineering.md) |
-| 代码与架构 | [crates 索引](docs/crates/overview.md)、[执行链](docs/crates/execution-flows.md)、[架构](docs/design/design.md)、[领域](docs/design/domain.md) |
-| 合同与接入 | [结构合同](docs/design/contracts.md)、[协议](docs/design/protocol.md)、[适配器](docs/design/real-adapter-contract.md)、[工具与技能](docs/design/tool-skill-integrations.md)、[模型服务商](docs/design/model-providers.md) |
-| 开发参考 | [Rust 规范](docs/design/code-standards-rust.md)、[Web 规范](docs/design/code-standards-web.md)、[测试](tests/README.md)、[脚本](scripts/README.md)、[Schema](schemas/README.md) |
+| 架构入门 | [阅读路线](docs/design/README.md)、[系统总览](docs/design/overview.md)、[分层](docs/design/layers.md)、[核心概念](docs/design/domain-model.md) |
+| 执行机制 | [工作流](docs/design/workflow.md)、[Agent 通信与 PRD 交接](docs/design/agent-runtime.md)、[配置生效](docs/design/configuration.md)、[工程交付](docs/design/engineering-delivery.md) |
+| 数据与运行 | [数据和恢复](docs/design/data-and-recovery.md)、[权限与凭据](docs/design/security.md)、[质量与限制](docs/design/quality-and-limits.md)、[运行指南](docs/design/run-binary.md) |
+| 代码阅读 | [代码手册入口](docs/crates/README.md)、[跨模块调用链](docs/crates/execution-flows.md)、[Web 与 Host](docs/crates/web-integration.md)、[测试与扩展](docs/crates/testing-and-extension.md) |
+| 接口参考 | [RPC](docs/design/reference/rpc.md)、[工具与调度原语](docs/design/reference/tools-and-primitives.md)、[外部接入](docs/design/reference/integrations.md)、[数据格式](docs/design/reference/contracts.md) |
+| 开发参考 | [Rust 规范](docs/crates/standards/rust.md)、[Web 规范](docs/crates/standards/web.md)、[测试](tests/README.md)、[脚本](scripts/README.md)、[Schema](schemas/README.md) |
 
 `docs/design/` 和 `docs/crates/` 描述当前实现；[docs/plans/](docs/plans/README.md)保存方案与历史验收，其结果只对应当时的代码、环境和输入。
 

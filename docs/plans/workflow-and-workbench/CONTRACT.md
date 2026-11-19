@@ -63,4 +63,4 @@ AgentInstance 正文为 `{"agent_revision_id":"agent-revision-id","scope":{"kind
 
 工作流程页面按“版本列表 → 阶段及步骤预览 → 所选步骤表单”组织；发布版只读，Project 绑定位于独立表单。运行视图在执行与交付，显示进度、等待理由、证据引用及 core 给出的允许动作。组合管理在规范与身份；角色讨论显示完整组合，历史按 AgentID 展开。
 
-API 字段、筛选、幂等及运行控制详见 [协议](../../design/protocol.md)。定义管理不依赖 GitHub 或 Docker；真正运行才核对原生安装及组合能力。当前有限 DSL、五种规范 slot 和 Feature→Task 子流程边界见 EXECUTION.md。
+API 字段、筛选、幂等及运行控制详见 [协议](../../design/reference/rpc.md)。定义管理不依赖 GitHub 或 Docker；真正运行才核对原生安装及组合能力。当前有限 DSL、五种规范 slot 和 Feature→Task 子流程边界见 EXECUTION.md。

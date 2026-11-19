@@ -2,7 +2,7 @@
 
 日期：2026-11-08。状态：R0–R8 在 macOS Web 上验收通过（2026-11-08）。Ubuntu 宿主与 Keychain 改善按用户后续要求继续。用户已授权实施及独立 GitHub 测试仓库；阶段证据见 [实施报告目录](./)。以下原调研基线保留为计划输入，实际通过项以阶段报告和验收产物为准。
 
-基线：[原始设计 v0.2](../devdesk-v0.2/PLAN.md)、[原型实施计划](../devdesk-prototype/PLAN.md)、[领域补强计划](../domain-hardening/PLAN.md)、[当前架构](../../design/design.md)、[真实适配器契约](../../design/real-adapter-contract.md)。本计划授权实施时，取代原型计划中“真实 Harness/Git/Docker 延期”的本轮停止线；原有领域不变量继续有效。存储采用已实现的全局配置库与每项目工程库，SQL 位于 `sql/`，计划及所属报告统一位于 `docs/plans/<计划名>/`。
+基线：[原始设计 v0.2](../devdesk-v0.2/PLAN.md)、[原型实施计划](../devdesk-prototype/PLAN.md)、[领域补强计划](../domain-hardening/PLAN.md)、[当前架构](../../design/overview.md)、[真实适配器契约](../../design/layers.md)。本计划授权实施时，取代原型计划中“真实 Harness/Git/Docker 延期”的本轮停止线；原有领域不变量继续有效。存储采用已实现的全局配置库与每项目工程库，SQL 位于 `sql/`，计划及所属报告统一位于 `docs/plans/<计划名>/`。
 
 ## 1. 用户已确认的目标
 

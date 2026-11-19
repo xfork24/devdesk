@@ -1,70 +1,32 @@
-# 模型路由、外部工具与 OAuth
+# HTTP、MCP、OAuth 与 Skill 接入
 
-[代码手册总览](../overview.md) · [完整执行链](../execution-flows.md) · [本包概览](overview.md)
+接入代码将用户采用的来源和工具定义转换成受管调用。Rust 层负责准备、权限、凭据、进程及结果管理；工具进程负责具体 HTTP/MCP 协议。
 
-模型目录发现、冻结模型连接和实际推理是不同能力。HTTP/MCP 工具与 OAuth 使用持久化操作和凭据引用，离线 Schema 校验不会发起外部请求。
+## 运行路径
 
-## 本页文件
+[integrations.rs](../../../crates/adapters/src/integrations.rs) 的 NativeTools 实现 core 的 ToolExecutor。输入是已准备的 ToolInvocation，调用前检查 Schema、参数、绑定、权限和运行资源；然后启动 Docker 中的 worker，并在后续 poll/inspect 中取得结果。
 
-- [src/model_providers.rs](#file-src-model-providers-rs)：冻结模型连接与只读模型目录
-- [src/integrations.rs](#file-src-integrations-rs)：离线合同校验和持久化 HTTP/MCP 执行
-- [runtime/tool-worker.mjs](../../../crates/adapters/runtime/tool-worker.mjs)：容器内的 HTTP、MCP 和 OAuth 协议执行
-- [src/integration_oauth.rs](#file-src-integration-oauth-rs)：PKCE、固定账户和未知交换结果
+实际 worker 位于 [runtime/tool-worker.mjs](../../../crates/adapters/runtime/tool-worker.mjs)。这是适配器运行资产，与业务配置目录分开；新增协议逻辑应在这里及对应 Rust 准备/校验层实现，不能放进配置 JSON 作为任意脚本执行。
 
-<a id="file-src-model-providers-rs"></a>
+## 协议与认证
 
-## src/model_providers.rs：冻结模型连接与只读模型目录
+| 部分 | 执行责任 |
+|---|---|
+| HTTP/OpenAPI | 固定来源、输入映射、认证 Header 注入、结果结构及文件完整性 |
+| MCP | 固定协议版本、目录发现、请求 ID、工具调用及未支持交互的拒绝 |
+| OAuth | [integration_oauth.rs](../../../crates/adapters/src/integration_oauth.rs) 处理 PKCE、交换、刷新、撤销与原操作核对 |
+| Skill | 校验 Markdown/ZIP/固定 Git commit 材料，保留来源与依赖，准备只读挂载 |
 
-源码：[crates/adapters/src/model_providers.rs](../../../crates/adapters/src/model_providers.rs)。
+外部地址、私网解析和重定向都要满足绑定规则。工具参数不能覆盖认证 Header。发现目录变化时需要重新发布，不能在原工具身份下静默采用新的远端描述。
 
-binding_model_connection 从冻结 Session 解析模型连接，核对 provider、连接快照和 profile 摘要，防止当前设置覆盖旧会话。dsh_model_patch 按确切路由生成 DSH 配置：原生 DeepSeek 路径与 pi-ai 云/本地连接各自设置，并关闭冲突的默认 provider。
+## 结果与失败
 
-生成配置使用凭据环境引用，不把密钥值写进可展示的 profile。Ollama 目录发现通过受限本机 HTTP 请求获取元数据，禁止代理/重定向并限制输出，返回 container_verified=false、inference_verified=false；宿主能列模型不等于容器能调用。
+调用结果包括原调用身份、结构化内容、可能的文件和远端效果信息。写请求超时不能直接视为未执行；原操作的 inspect/reconcile 路径用于保留并核对未知结果。
 
-DeepSeek 账户/模型查询使用固定地址和私有输入传递密钥，也不执行推理。模型目录、实际网络可达和付费推理应分别验证。
+Schema 错误应返回定位和有界说明，避免把敏感参数正文写入错误信息。原始调用、平台结果和人类核对的来源要保持可区分。
 
-代码定位：[`binding_model_connection`](../../../crates/adapters/src/model_providers.rs#L6)、[`dsh_model_patch`](../../../crates/adapters/src/model_providers.rs#L37)、[`discover_ollama_models`](../../../crates/adapters/src/model_providers.rs#L65)、[`discover_deepseek_models`](../../../crates/adapters/src/model_providers.rs#L109)。
+## 修改与验证
 
-关联阅读：[domain/src/model_provider.rs](../devdesk-domain/runtime-and-permissions.md#file-src-model-provider-rs)、[core/src/session_assembly.rs](../devdesk-core/session-resources-and-permissions.md#file-src-session-assembly-rs)、[host/src/model_providers.rs](../devdesk-host/rpc-and-configuration.md#file-src-model-providers-rs)、[adapters/tests/model_providers.rs](testing.md#file-tests-model-providers-rs)。
+新增协议或认证方式时同步检查 domain 类型、Schema、导入/发现、运行 worker 和权限限制。只实现工具列表返回，不代表实际调用、取消和恢复已经完成。
 
-<a id="file-src-integrations-rs"></a>
-
-## src/integrations.rs：离线合同校验和持久化 HTTP/MCP 执行
-
-源码：[crates/adapters/src/integrations.rs](../../../crates/adapters/src/integrations.rs)。
-
-NativeTools 实现 ToolExecutor。离线部分验证 JSON Schema、参数、OpenAPI 和 Skill 包，限制深度、展开量和数据规模，不在校验时抓取外部引用。Schema 只支持明确集合；关键字检查发生在 Schema 位置，不把 examples 或普通属性名误判为执行规则。
-
-执行部分以原 operation UUID 和冻结请求摘要建立私有作业，记录启动、poll、取消与结果。凭据在最后授权边界注入，目标 origin、网络权限、私网地址及重定向都需检查；HTTP/MCP 不接受任意宿主命令。OAuth 请求使用受管容器路径。
-
-容器入口位于 `crates/adapters/runtime/tool-worker.mjs`，属于 adapters 的运行时代码。Rust 在编译时嵌入脚本，调用时将其写入状态目录，在 Docker 内执行 `node /state/tool-worker.mjs -`，通过标准输入传入请求并从标准输出读取 JSON 结果。脚本负责 HTTP 参数映射、MCP 发现与调用、OAuth 请求以及传输约束；Rust 负责凭据获取、容器生命周期和结果保存。源码位置变化不改变容器内路径。
-
-execute 在远端返回成功时检查声明的 output_schema；不匹配就改为失败，但保留原 remote_effect，因为远端动作可能已执行。二进制文件结果写入该调用目录的 result.bin，回执换成 devdesk-tool-artifact:调用ID 的资源链接，带 MIME、SHA 和大小；read_artifact 再核对调用身份、链接、摘要与大小。它与 FileArtifacts 的领域 Artifact 是两套结果表示，不能混为同一张材料记录。
-
-OpenAPI 3.1 JSON/YAML 导入保留安全方案的替代关系，不把 AND 授权静默删成可执行的弱规则。Skill ZIP 拒绝非法路径、符号链接、非 UTF-8 和超限内容，Git 来源固定 40 位 commit；导入不运行安装脚本。
-
-失败结果保存完整 Error，包括可信 execution_failure 分类，而非仅错误文本。core 将它与真实工具回执、消费事实和业务拒绝一起判断，不能从供应商返回的文字推断安全重试。
-
-代码定位：[`NativeTools`](../../../crates/adapters/src/integrations.rs#L18)、[`validate_schema_tree`](../../../crates/adapters/src/integrations.rs#L91)、[`schema_budget`](../../../crates/adapters/src/integrations.rs#L168)、[`data_budget`](../../../crates/adapters/src/integrations.rs#L244)。
-
-关联阅读：[core/src/integrations.rs](../devdesk-core/integrations-and-repositories.md#file-src-integrations-rs)、[adapters/src/integration_oauth.rs](external-integrations.md#file-src-integration-oauth-rs)、[adapters/tests/tool_integrations.rs](testing.md#file-tests-tool-integrations-rs)、[core/src/workflow_failure.rs](../devdesk-core/workflow-execution.md#file-src-workflow-failure-rs)。
-
-<a id="file-src-integration-oauth-rs"></a>
-
-## src/integration_oauth.rs：PKCE、固定账户和未知交换结果
-
-源码：[crates/adapters/src/integration_oauth.rs](../../../crates/adapters/src/integration_oauth.rs)。
-
-OAuthFlow 保存授权操作、PKCE verifier/state、callback 与来源绑定。只实现 public client 的 authorization code + S256 路径，避免把 client secret、implicit 等未支持方案当作可用授权。
-
-IntegrationSecrets 隔离秘密的创建/读取/更新；持久化状态保存引用。callback 必须匹配原 state、origin、工具来源和账户，刷新保持同一账户与 scope，撤销和并发 grant 也有独立边界。
-
-token exchange 或 refresh 的结果未知时不能盲目重发：远端可能已经消费一次性 code 或旋转 token。恢复保留原操作与账户事实，向上层报告需核对的状态，而不是删掉失败记录重新登录。
-
-代码定位：[`IntegrationSecrets`](../../../crates/adapters/src/integration_oauth.rs#L6)、[`OAuthFlow`](../../../crates/adapters/src/integration_oauth.rs#L23)、[`create`](../../../crates/adapters/src/integration_oauth.rs)、[`read`](../../../crates/adapters/src/integration_oauth.rs)、[`write`](../../../crates/adapters/src/integration_oauth.rs)。
-
-关联阅读：[adapters/src/credentials.rs](credentials-and-permissions.md#file-src-credentials-rs)、[host/src/integrations.rs](../devdesk-host/rpc-and-configuration.md#file-src-integrations-rs)、[adapters/tests/tool_integrations.rs](testing.md#file-tests-tool-integrations-rs)。
-
----
-
-[代码手册总览](../overview.md) · [完整执行链](../execution-flows.md) · [本包概览](overview.md)
+测试入口：[tool_integrations.rs](../../../crates/adapters/tests/tool_integrations.rs)、[integration_operations.rs](../../../crates/adapters/tests/integration_operations.rs)，支持范围见[接入参考](../../design/reference/integrations.md)。Docker 夹具验证协议行为，真实账户和系统凭据授权另行验证。

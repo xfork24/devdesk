@@ -1,84 +1,29 @@
-# Git、GitHub、Docker 与测试执行
+# Git、测试和 GitHub 适配器
 
-[代码手册总览](../overview.md) · [完整执行链](../execution-flows.md) · [本包概览](overview.md)
+工程适配器接收已经确定的工作区、代码版本和操作身份，执行真实命令，再返回可以核对的结果。它们不替工作流决定批准或完成。
 
-这些端口面对真实仓库、容器和测试结果，必须核对当前对象的归属、冻结内容、操作身份和原始回执。工程路径、候选提交、远端引用与测试代码快照分别有自己的边界。
+## Git 工作区
 
-## 本页文件
+[git.rs](../../../crates/adapters/src/git.rs) 的 CliGit 管理仓库克隆、worktree、快照、提交关系、diff 和 Git 端口操作。`prepare_worktree`、`snapshot_worktree_scoped`、`commit_parents`、`diff` 是重要阅读点。
 
-- [src/git.rs](#file-src-git-rs)：受管仓库、候选提交与精确引用推进
-- [src/github.rs](#file-src-github-rs)：稳定 PR 身份、仓库政策与回执核验
-- [src/docker.rs](#file-src-docker-rs)：归属明确的容器与不扩权的挂载
-- [src/tests.rs](#file-src-tests-rs)：持久化测试作业与结构化 Node 结果
+[repository_contexts.rs](../../../crates/adapters/src/repository_contexts.rs) 处理仓库上下文，[git_workspace_continuation.rs](../../../crates/adapters/src/git_workspace_continuation.rs) 处理工作区继续执行。输入应绑定项目和原版本，不能接受模型任意选择宿主目录。
 
-<a id="file-src-git-rs"></a>
+版本推进需要核对候选提交、父提交、diff 和目标是否仍为预期值。命令退出码正常，不足以证明返回的仓库就是原请求的工作区。
 
-## src/git.rs：受管仓库、候选提交与精确引用推进
+## 真实测试
 
-源码：[crates/adapters/src/git.rs](../../../crates/adapters/src/git.rs)。
+[tests.rs](../../../crates/adapters/src/tests.rs) 是生产 CommandTests 实现。它在 Docker 中运行 TestRequest 指定的测试，提供 poll、stop、cleanup、inspect/reconcile 等能力。测试报告关联候选版本、环境和实际运行。
 
-CliGit 总是接收明确 GitContext 并核对规范化工程仓库，不依赖宿主当前目录。运行 Git 时清除环境注入的 GIT 配置，限制 hooks、filters、fsmonitor 和 shell transport，防止受测仓库借普通查询执行宿主命令。
+[git_test_configuration.rs](../../../crates/adapters/src/git_test_configuration.rs) 读取项目测试配置。测试安装、命令、代码输入和产物都要关联原请求；不能让模型返回一段“测试通过”替代运行结果。
 
-clone 与 worktree 以稳定操作文件记录归属、分支、路径和回执。恢复 clone 要核对原 origin；恢复 worktree 要匹配登记的工程/执行身份。冻结代码导出逐项检查文件、符号链接和内容摘要，不能覆盖已经漂移的导出。
+## 远端交付
 
-候选提交要求实际父提交、预期 target 和完整 diff 符合约束；写入范围、保护路径与初始脏状态也参与核对。本地推进以 CAS 检查当前 HEAD/目标，远端推进使用精确 lease；未知结果返回 Applied/NotApplied/Unknown 供上层恢复，不能把 CLI 超时等同于未推送。
+[github.rs](../../../crates/adapters/src/github.rs) 的 GitHubPullRequests 实现远端操作，[github_delivery.rs](../../../crates/adapters/src/github_delivery.rs) 处理交付状态和合入，[git_delivery_projection.rs](../../../crates/adapters/src/git_delivery_projection.rs) 处理本地交付结果。
 
-Git 端口不决定业务评审是否通过。core 汇集测试、独立评审、候选与发布合同后，才会派发相应操作。
+合入要核对确切源、目标和试合并结果。无保护目标通过 beforeOid 与 force=false 限定快进；有保护目标遵守 PR 门禁。操作后读取实际提交关系与 tree，不能只因为 PR 存在就报告本次交付完成。
 
-代码定位：[`CliGit`](../../../crates/adapters/src/git.rs#L29)、[`RepositoryFacts`](../../../crates/adapters/src/git.rs#L13)、[`WorktreeReceipt`](../../../crates/adapters/src/git.rs#L21)、[`valid_oid`](../../../crates/adapters/src/git.rs#L32)、[`valid_repository`](../../../crates/adapters/src/git.rs#L38)。
+## 失败后的检查
 
-关联阅读：[core/src/repository_runtime.rs](../devdesk-core/integrations-and-repositories.md#file-src-repositories-rs)、[core/src/platform_tools.rs](../devdesk-core/manager-and-platform-tools.md#file-src-platform-tools-rs)、[adapters/src/github.rs](engineering-resources.md#file-src-github-rs)、[adapters/tests/git_resources.rs](testing.md#file-tests-git-resources-rs)。
+网络中断时远端可能已经发生修改。inspect/reconcile 读取原操作对应的状态，帮助 core 决定如何接纳。已发生的推送不会因取消本地工作流而回滚。
 
-<a id="file-src-github-rs"></a>
-
-## src/github.rs：稳定 PR 身份、仓库政策与回执核验
-
-源码：[crates/adapters/src/github.rs](../../../crates/adapters/src/github.rs)。
-
-GitHubPullRequests 使用 gh API 读取仓库身份、权限、保护分支和 rulesets，分页读取完整规则；无法落实的政策保守阻断，管理员身份不是绕过分支保护的授权。
-
-创建 PR 使用稳定 request marker、确切 head/base 和候选分支身份。若创建后丢失本地回执，ensure 先查找原 marker 对应 PR，避免再建一个。读取回执核对仓库、候选、分支、编号和合入 SHA，不能仅凭 PR 标题认领。
-
-适配器不调用 GitHub merge API，也不提供管理员 bypass。发布用例中的候选推送、PR 创建/读取、目标引用推进由不同端口步骤组成；GitHub 的 merged 事实仍需独立读取并匹配，PR 已创建不等于交付已完成。
-
-代码定位：[`GitHubPullRequests`](../../../crates/adapters/src/github.rs#L6)、[`diagnose`](../../../crates/adapters/src/github.rs#L25)、[`policy`](../../../crates/adapters/src/github.rs#L50)。
-
-关联阅读：[core/src/platform_tools.rs](../devdesk-core/manager-and-platform-tools.md#file-src-platform-tools-rs)、[adapters/src/git.rs](engineering-resources.md#file-src-git-rs)、[adapters/tests/github_resources.rs](testing.md#file-tests-github-resources-rs)、[host/src/github_projects.rs](../devdesk-host/workspace-and-lifecycle.md#file-src-github-projects-rs)。
-
-<a id="file-src-docker-rs"></a>
-
-## src/docker.rs：归属明确的容器与不扩权的挂载
-
-源码：[crates/adapters/src/docker.rs](../../../crates/adapters/src/docker.rs)。
-
-ContainerSpec 固定用途、数据集/工程/会话/操作、不可变镜像、代码与状态路径、权限及资源预算。DockerSandbox 用确定的操作身份找到容器，再核对 devdesk.root/spec/project/session 等标签；同名但不属于当前操作的容器不会被接管。
-
-路径、符号链接、挂载重叠和宿主目录边界在调用 Docker 前检查。容器初始参数包含只读根、cap drop、no-new-privileges、tmpfs、网络和资源限制；冻结策略允许可写根时会移除 --read-only，executable_tmp 也可将 /tmp 改为可执行。因此 full access 不能解释为容器内部仍全面只读。挂载的可写范围与根文件系统策略分别检查；模型凭据只进入授权的 Harness 路径，不交给普通测试容器。
-
-嵌套 bwrap、固定 seccomp 和适用环境中的 AppArmor 另有边界。检测到 Docker 启用 AppArmor 时，核对 Linux 主机 root 所有、不可被普通用户改写的专用策略内容；不能由容器内文件自称可信，也不使用 unconfined 兜底。
-
-start、inspect、stop、remove 是独立动作。回执使用 Docker 实际纳秒时间戳计算运行时间和超限情况，迟到观察不能把超时变成合规。清理只处理当前归属资源，不删除其他会话或共享镜像。
-
-代码定位：[`ContainerPurpose`](../../../crates/adapters/src/docker.rs#L8)、[`ContainerSpec`](../../../crates/adapters/src/docker.rs#L57)、[`ContainerReceipt`](../../../crates/adapters/src/docker.rs#L97)、[`DockerSandbox`](../../../crates/adapters/src/docker.rs#L136)、[`container_timestamp`](../../../crates/adapters/src/docker.rs#L111)、[`runtime_millis`](../../../crates/adapters/src/docker.rs#L121)。
-
-关联阅读：[adapters/src/harness.rs](harness-and-protocols.md#file-src-harness-rs)、[adapters/src/tests.rs](engineering-resources.md#file-src-tests-rs)、[adapters/src/permissions.rs](credentials-and-permissions.md#file-src-permissions-rs)、[adapters/tests/docker_resources.rs](testing.md#file-tests-docker-resources-rs)。
-
-<a id="file-src-tests-rs"></a>
-
-## src/tests.rs：持久化测试作业与结构化 Node 结果
-
-源码：[crates/adapters/src/tests.rs](../../../crates/adapters/src/tests.rs)。
-
-CommandTests 是生产 Tests 端口。它以 operation UUID、请求摘要和冻结 Git 导出建立私有作业目录，原子保存请求和结果；后续 poll、stop、cleanup 与 reconcile 都找回原操作。
-
-当前 NodeTest 配方使用固定镜像和内嵌 Node reporter，容器禁网、无模型凭据、代码只读，并保存有界 stdout/stderr。测试断言失败与运行环境失败根据实际结构化报告区分，不能从任意 stdout 中伪造一段“通过”就获得成功。
-
-停止需要实际容器/写入撤销证明，结果终态与资源清理分别记录。Host 重启后若结果未知，先检查原容器和持久化文件，不用同一业务请求自动再跑一次。executor 和 reporter 的实际内容身份也进入回执，便于解释历史结果。
-
-代码定位：[`CommandTests`](../../../crates/adapters/src/tests.rs#L18)、[`Job`](../../../crates/adapters/src/tests.rs#L13)、[`recipe`](../../../crates/adapters/src/tests.rs#L90)、[`write`](../../../crates/adapters/src/tests.rs#L98)。
-
-关联阅读：[core/src/platform_tools.rs](../devdesk-core/manager-and-platform-tools.md#file-src-platform-tools-rs)、[domain/src/testing.rs](../devdesk-domain/work-and-materials.md#file-src-testing-rs)、[adapters/src/docker.rs](engineering-resources.md#file-src-docker-rs)、[adapters/tests/command_tests.rs](testing.md#file-tests-command-tests-rs)。
-
----
-
-[代码手册总览](../overview.md) · [完整执行链](../execution-flows.md) · [本包概览](overview.md)
+验证入口：[git_resources.rs](../../../crates/adapters/tests/git_resources.rs)、[github_resources.rs](../../../crates/adapters/tests/github_resources.rs)、[command_tests.rs](../../../crates/adapters/tests/command_tests.rs)、[worktree_receipt_concurrency.rs](../../../crates/adapters/tests/worktree_receipt_concurrency.rs)。真实 GitHub 验收需专用仓库和授权，不能从协议夹具推断账号实际可用。

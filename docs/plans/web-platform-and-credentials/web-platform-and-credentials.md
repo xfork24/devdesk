@@ -11,7 +11,7 @@
 - `scripts/dev.sh`、`scripts/build.sh` 和运行包构建在 macOS 使用已配置证书签名，并复用同一份不可变凭据助手；`setup-macos-signing.sh` 可重复执行，不改其他身份或钥匙串 ACL。证书私钥只在用户私有目录，不进入源码或发行包。
 - Linux 通过 Secret Service/secret-tool 私有 stdin 保存 API key；普通状态页不读取/解锁秘密，缺依赖明确阻塞，无明文文件降级。Codex 继续使用独立 OAuth 文件。
 - 真实资源测试从本机固定版本镜像解析并冻结不可变 ID/CPU，不再把 macOS Docker 的 arm64 image ID 写死用于 Ubuntu。
-- 新增宿主预检、[系统凭据说明](../../design/system-credentials.md)、[Ubuntu Web 验收步骤](../../ubuntu-web-acceptance.md)，并准备不含运行数据/密钥的工作树源码快照，便于不提交当前改动也能搬到 Ubuntu 构建。
+- 新增宿主预检、[系统凭据说明](../../design/security.md)、[Ubuntu Web 验收步骤](../../ubuntu-web-acceptance.md)，并准备不含运行数据/密钥的工作树源码快照，便于不提交当前改动也能搬到 Ubuntu 构建。
 
 ## 验证命令
 

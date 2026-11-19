@@ -2,6 +2,7 @@
 """Check current documentation links and regenerate crate file inventories."""
 import argparse
 import re
+import subprocess
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -10,20 +11,36 @@ START = '<!-- crate-files:start -->'
 END = '<!-- crate-files:end -->'
 
 
-def inventory(crate: Path, overview: Path) -> str:
-    text = overview.read_text()
+def source_files(crate: Path) -> list[Path]:
+    """Include tracked and new source assets, but not ignored local build output."""
+    if (ROOT / '.git').exists():
+        result = subprocess.run(
+            ['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z',
+             '--', crate.relative_to(ROOT).as_posix()],
+            cwd=ROOT, check=True, stdout=subprocess.PIPE,
+        )
+        return sorted({ROOT / p.decode() for p in result.stdout.split(b'\0')
+                       if p and (ROOT / p.decode()).is_file()})
+    # Source archives have no Git metadata. Do not decode binary assets below.
+    return sorted(p for p in crate.rglob('*') if p.is_file()
+                  and not any(part.startswith('.') or part in {'target', 'node_modules', '__pycache__'}
+                              for part in p.relative_to(crate).parts))
+
+
+def inventory(crate: Path, index: Path) -> str:
+    text = index.read_text()
     # Keep the curated topic links for files already explained in the handbook.
     topics = dict(re.findall(r'\| \[([^\]]+)\]\(../../../crates/[^)]+\) \| (.+) \|', text))
     rows = ['| 文件 | 阅读入口或源码职责 |', '|---|---|']
-    files = sorted(
-        p for p in crate.rglob('*')
-        if p.is_file() and not any(part.startswith('.') for part in p.relative_to(crate).parts)
-    )
-    for path in files:
+    for path in source_files(crate):
         relative = path.relative_to(crate).as_posix()
         topic = topics.get(relative)
         if topic is None:
-            lines = path.read_text().splitlines()
+            try:
+                content = path.read_text()
+            except UnicodeDecodeError:
+                content = ''
+            lines = content.splitlines()
             comments = []
             for line in lines:
                 if not line.startswith('//!') or not line[3:].strip():
@@ -32,7 +49,7 @@ def inventory(crate: Path, overview: Path) -> str:
             if comments:
                 topic = ' '.join(comments)
             else:
-                symbols = re.findall(r'\b(?:fn|struct|enum|trait|type|const)\s+(\w+)', path.read_text())
+                symbols = re.findall(r'\b(?:fn|struct|enum|trait|type|const)\s+(\w+)', content)
                 topic = '、'.join(f'`{s}`' for s in dict.fromkeys(symbols[:3])) or relative
         rows.append(f'| [{relative}](../../../{path.relative_to(ROOT).as_posix()}) | {topic.replace(chr(124), "&#124;")} |')
     return START + '\n\n' + '\n'.join(rows) + '\n\n' + END
@@ -64,29 +81,31 @@ def anchors(document: Path) -> set[str]:
     return result
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--write', action='store_true', help='regenerate crate inventory blocks')
-    args = parser.parse_args()
+def check_inventory(crate: Path, write: bool = False) -> list[str]:
+    index = ROOT / 'docs/crates' / f'devdesk-{crate.name}' / 'files.md'
+    if not index.is_file():
+        return [f'{index.relative_to(ROOT)}: missing crate file index']
+    text = index.read_text()
+    if text.count(START) != 1 or text.count(END) != 1 or text.index(START) > text.index(END):
+        return [f'{index.relative_to(ROOT)}: invalid crate-files inventory markers']
+    expected = inventory(crate, index)
+    before, rest = text.split(START, 1)
+    _, after = rest.split(END, 1)
+    updated = before + expected + after
+    if updated != text:
+        if write:
+            index.write_text(updated)
+        else:
+            return [f'{index.relative_to(ROOT)}: file inventory is stale; run with --write']
+    return []
+
+
+def check_links(documents: list[Path]) -> list[str]:
     errors = []
-    for crate in sorted((ROOT / 'crates').iterdir()):
-        if not crate.is_dir():
+    for document in documents:
+        if not document.is_file():
+            errors.append(f'{document.relative_to(ROOT)}: missing document')
             continue
-        overview = ROOT / 'docs/crates' / f'devdesk-{crate.name}' / 'overview.md'
-        text = overview.read_text()
-        expected = inventory(crate, overview)
-        if START not in text or END not in text:
-            errors.append(f'{overview.relative_to(ROOT)}: missing crate-files inventory markers')
-            continue
-        before, rest = text.split(START, 1)
-        _, after = rest.split(END, 1)
-        updated = before + expected + after
-        if updated != text:
-            if args.write:
-                overview.write_text(updated)
-            else:
-                errors.append(f'{overview.relative_to(ROOT)}: file inventory is stale; run with --write')
-    for document in current_documents():
         for target in re.findall(r'\]\(([^)\s]+)\)', document.read_text()):
             url = urlsplit(target)
             if url.scheme or url.netloc or url.path.startswith('/'):
@@ -96,6 +115,18 @@ def main() -> None:
                 errors.append(f'{document.relative_to(ROOT)}: missing link target {target}')
             elif path.suffix == '.md' and url.fragment and unquote(url.fragment) not in anchors(path):
                 errors.append(f'{document.relative_to(ROOT)}: missing heading or anchor {target}')
+    return errors
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--write', action='store_true', help='regenerate crate inventory blocks')
+    args = parser.parse_args()
+    errors = []
+    for crate in sorted((ROOT / 'crates').iterdir()):
+        if crate.is_dir():
+            errors.extend(check_inventory(crate, args.write))
+    errors.extend(check_links(current_documents()))
     if errors:
         raise SystemExit('\n'.join(errors))
     print(f'docs: OK — {len(current_documents())} current documents, crate inventories and local links')
