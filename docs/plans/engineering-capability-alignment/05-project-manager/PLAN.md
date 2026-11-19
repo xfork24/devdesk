@@ -61,7 +61,7 @@
 | M02 全项目查询工具 | 现有查询服务的有界外观 | 多 Feature/Task、分页目录/产物/历史无遗漏冒充完整 |
 | M03 配置批量工具与实例操作 | S2/S1 用例外观、状态查询 | 五个场景均有真实 preview/apply/查询回执 |
 | M04 授权决定与自改配置 | 共同授权、后继会话/控制交接 | 不能自举权限、代签人类、接受过期会话调用 |
-| M05 项目经理 UI 和出厂配置 | Web、resources/configuration | UI 与 Agent 变更得到同一诊断；新出厂配置无 Rust ID 特判 |
+| M05 项目经理 UI 和出厂配置 | Web、configurations | UI 与 Agent 变更得到同一诊断；新出厂配置无 Rust ID 特判 |
 | M06 真实验收与文档 | conversations/web-workbench/protocol、EXECUTION | 下面的故障/并发与真实对话证据完整 |
 
 先用可控 Harness 测试工具参数/拒绝/幂等，再以真实已支持 Harness 完成五个对话场景。至少包含 UI 与经理同时编辑同一配置、预演后被他人停用依赖、跨库应用中断、经理会话失效后迟到调用、未授权全局修改。

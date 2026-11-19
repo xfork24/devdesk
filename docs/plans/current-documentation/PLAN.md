@@ -29,7 +29,7 @@ v2 修订要点：按最新要求，计划重心从"漂移校验"扩展为**补�
 | **存储与数据布局**（数据集结构、三库分工、source_definitions 唯一存储、governance_records/operations/events、execution/ 目录族、artifacts、模板目录 generation/reset、无迁移策略） | 根 README 一小节；sql/README.md（表清单，位于 sql/ 目录）；source-configuration.md §存储编码 | **缺失整合文档**：排查数据问题、理解幂等/恢复、做备份与迁移决策时无 docs/ 内入口 |
 | **Web 工作台**（9 大导航、初始化与连接内核、SSE+定向轮询刷新模型、各页面操作入口、典型操作旅程） | 无（UI 变更史散落在各 plan 的 REPORT.md） | **完全缺失**。真实用户面对的第一界面没有任何现行文档 |
 | **讨论与经验域**（自由讨论 vs 工作流会话的边界、交互审批/澄清、Proposal adopt 语义、permission_status 状态机、经验快照与 restore 边界） | protocol.md 命令级；domain.md 概念级 | **缺失操作语义文档**：formal session 禁止自由输入、提案防陈旧、经验只读等关键边界规则不成文 |
-| 默认配置目录全景 | resources/configuration/README.md（清单，位于 resources/ 内） | 部分覆盖；docs/ 内缺一篇入口说明（并入新文档 workflow-orchestration 的一节 + 链接清单） |
+| 默认配置目录全景 | configurations/README.md（清单，位于仓库根目录） | 部分覆盖；docs/ 内缺一篇入口说明（并入新文档 workflow-orchestration 的一节 + 链接清单） |
 | 部署/远程/安全 | run-binary.md + protocol.md §监听与内核连接 | 已覆盖（run-binary 仅版本漂移） |
 | 测试体系 | tests/README.md（位于 tests/ 内，根 README 已链接） | 已覆盖，新文档中以链接引用 |
 | 架构/领域/协议/源配置/适配器契约/模型/凭据/工具接入 | design / domain / protocol / source-configuration / real-adapter-contract / model-providers / system-credentials / tool-skill-integrations | 已覆盖（个别漂移，见 §三） |
@@ -48,7 +48,7 @@ v2 修订要点：按最新要求，计划重心从"漂移校验"扩展为**补�
 5. 完成规则树与四层批准语义（确认 / step.approve 例外 / decision 人工决定 / waiver 豁免；Independent 身份根）
 6. 运行中计划修改：ChangeSet 12 类操作、preview_hash、静止等待、原子切换、受限 revert
 7. TDD 证据链与 ActionPermit：action_requirements、tests.run 冻结配方、git.candidate→tests→advance→publish
-8. 默认流程概览：Feature 22 步/7 阶段、Task 20 步/7 阶段的阶段级摘要表 + 全量步骤清单链接（resources/configuration/README.md）；步骤授权与 Permission 的叠加关系一句话 + 链接 permissions.md
+8. 默认流程概览：Feature 22 步/7 阶段、Task 20 步/7 阶段的阶段级摘要表 + 全量步骤清单链接（configurations/README.md）；步骤授权与 Permission 的叠加关系一句话 + 链接 permissions.md
 9. 预算与并发（authoring 默认与默认流程实际值、foreach 并发、全局额度公式）
 
 ### W02 `docs/design/permissions.md` · 运行时权限
@@ -146,7 +146,7 @@ v2 修订要点：按最新要求，计划重心从"漂移校验"扩展为**补�
 
 ## 风险与兼容
 
-- 新文档与代码的二次漂移风险：靠 A04 门禁 + W12 规范条目约束；新文档避免罗列易变细节（如完整步骤表链接 resources/configuration/README.md 而非复制）。
+- 新文档与代码的二次漂移风险：靠 A04 门禁 + W12 规范条目约束；新文档避免罗列易变细节（如完整步骤表链接 configurations/README.md 而非复制）。
 - 校验器误报必须为零（宁可白名单）；漏报可接受、后续迭代。
 - 纯文档与脚本改动 + host CLI 小修（--normalize-plan），无协议/数据影响。
 - 实施顺序建议：W08 锚点提取器先行 → W06 漂移修复（立刻消除矛盾）→ W01–W05 新文档（最大工作量，可并行）→ W09–W11 门禁收口 → W12。

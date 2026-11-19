@@ -398,7 +398,7 @@ impl NativeTools {
         fs::create_dir_all(&empty).map_err(storage)?;
         fs::write(
             state.join("tool-worker.mjs"),
-            include_str!("../../../resources/integrations/tool-worker.mjs"),
+            include_str!("../runtime/tool-worker.mjs"),
         )
         .map_err(storage)?;
         let work = if worktree.is_empty() {

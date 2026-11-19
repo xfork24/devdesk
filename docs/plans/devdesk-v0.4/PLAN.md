@@ -124,7 +124,7 @@ Capability 固定 Model、Harness、Skills 和 Tools，Agent 引用精确 Role �
 
 默认采用 GPT-6.1 Sol High（`gpt-6.1-sol`、`reasoning_effort=high`）及固定 Codex `0.167.0`，提供六个 Role：需求分析师、架构师、项目经理、开发、测试、独立评审。项目经理独立使用规划 Skill/Capability，底层执行职责复用 architect；五种底层执行职责继续服务 TDD 和独立评审门禁。
 
-默认资源以普通不可变定义播种，项目页可直接采用并保存；Role 编辑不自动生成其他资源。Skill、阶段 Spec、任务及权限的具体目录见 [默认配置说明](../../../resources/configuration/README.md)。
+默认资源以普通不可变定义播种，项目页可直接采用并保存；Role 编辑不自动生成其他资源。Skill、阶段 Spec、任务及权限的具体目录见 [默认配置说明](../../../configurations/README.md)。
 
 ### HTTP、MCP 与静态 Skill
 
@@ -262,7 +262,7 @@ Task 子流程依次包含：独立测试作者 → 协调器实际断言 Red �
 
 内容判断位置与可配置任务对应如下；讨论产物由其后正式阶段统一验证，不为每种讨论虚构额外独立校验节点。
 
-| 产物或检查 | 任务资源（`resources/configuration/tasks/`） |
+| 产物或检查 | 任务资源（`configurations/tasks/`） |
 |---|---|
 | PRD、Design、TaskPlan、TestPlan、Feature 讨论 | `prd`、`design`、`planning`、`discussion-tests`、`feature` |
 | 需求正式校验 | `attempt-requirement`、`validate-requirement` |

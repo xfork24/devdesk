@@ -31,9 +31,7 @@ pub fn managed_adapter_identity(provider: HarnessProvider) -> String {
     ));
     hash.update(include_bytes!("jsonl.rs"));
     hash.update(include_bytes!("docker.rs"));
-    hash.update(include_bytes!(
-        "../../../resources/integrations/tool-worker.mjs"
-    ));
+    hash.update(include_bytes!("../runtime/tool-worker.mjs"));
     hash.update(include_bytes!("../../../schemas/rpc.schema.json"));
     hash.update(include_bytes!(
         "../../../permissions/backends/dsh/bwrap-runner.sh"

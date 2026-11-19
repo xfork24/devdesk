@@ -4,7 +4,7 @@
 
 ## 背景与目标
 
-`resources/configuration` 的 151 个出厂源文件与整个运行时共用信封 `{kind, identity, revision, name, scope:{kind}, data}`，引用字段埋在 `data` 内。目标是一次性把 wire 格式与 Rust 内部表示统一对齐为新形状，不做边界翻译：
+`configurations` 的 151 个出厂源文件与整个运行时共用信封 `{kind, identity, revision, name, scope:{kind}, data}`，引用字段埋在 `data` 内。目标是一次性把 wire 格式与 Rust 内部表示统一对齐为新形状，不做边界翻译：
 
 ```json
 {

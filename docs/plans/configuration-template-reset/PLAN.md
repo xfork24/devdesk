@@ -4,7 +4,7 @@
 
 日期：2026-11-10。状态：已实施，已 rebase 到 main `8a16686` 并完成复验，以快进方式整合本地 main。实现合同见 [CONTRACT.md](CONTRACT.md)，结果见 [EXECUTION.md](EXECUTION.md)。
 
-将 `resources/configuration` 建立为随应用发布的默认定义来源。首次初始化从这份资源生成数据库中的可编辑副本；UI 始终通过 API 使用数据库记录。设置页增加“重置模板定义”，确认后将当前定义目录恢复为随当前应用发布的默认内容。
+将 `configurations` 建立为随应用发布的默认定义来源。首次初始化从这份资源生成数据库中的可编辑副本；UI 始终通过 API 使用数据库记录。设置页增加“重置模板定义”，确认后将当前定义目录恢复为随当前应用发布的默认内容。
 
 本方案将“所有定义恢复默认”解释为：当前数据集内，全局及项目范围的模板定义都退出原来的当前目录，重新提供完整的默认定义。用户新增和修改过的定义保留为历史；项目已保存的绑定、执行锁和运行事实继续引用原来的精确修订。这样，重置后的可选目录与默认资源一致，已有工程仍可恢复和继续。
 
@@ -44,7 +44,7 @@ MCP 默认清单可以为空，表示默认未配置服务。需要提供内置�
 沿用已有 Markdown，增加结构化 JSON；现有 Schema 用于验证实体内容，新增模板清单 Schema 描述文件组合和模板间引用。
 
 ```text
-resources/configuration/
+configurations/
   README.md
   manifest.json
   roles/                 # JSON 元数据与现有职责 Markdown
@@ -78,7 +78,7 @@ Rust 保留加载、校验、引用解析和执行协议。默认 Workflow 业�
 
 ```mermaid
 flowchart LR
-  A[resources/configuration] --> B[构建校验并嵌入应用]
+  A[configurations] --> B[构建校验并嵌入应用]
   B --> C[首次初始化或确认重置]
   C --> D[数据库当前定义目录]
   D --> E[API 查询与 UI]
@@ -173,12 +173,12 @@ flowchart LR
 | P4 设置与配置 UI | 新增 TemplateSettings，接入 main.tsx；更新 configuration-ui、Role/Agent/Workflow/Integrations 编辑器和 ProjectManager | 预览、确认、错误与成功反馈完整；旧草稿失效；目录、下拉框和预填值一致。 |
 | P5 验收与文档 | Rust、Schema、HTTP、浏览器及发布包验证；更新资源说明、协议和计划索引 | 下列验收通过，完成 EXECUTION.md 并记录真实检查结果。 |
 
-主要代码边界是 `crates/domain/src/configuration.rs`、core 的配置/默认/Workflow/接入模块、`crates/adapters/src/catalog.rs` 与项目存储、`crates/host/src/workspace.rs` 及对应 API，以及 Web 配置编辑器与设置页。同步更新 `schemas/rpc.schema.json`、模板 Schema、`docs/design/protocol.md` 和 `resources/configuration/README.md`。
+主要代码边界是 `crates/domain/src/configuration.rs`、core 的配置/默认/Workflow/接入模块、`crates/adapters/src/catalog.rs` 与项目存储、`crates/host/src/workspace.rs` 及对应 API，以及 Web 配置编辑器与设置页。同步更新 `schemas/rpc.schema.json`、模板 Schema、`docs/design/protocol.md` 和 `configurations/README.md`。
 
 ## 9 验收标准
 
 1. **默认来源完整**：列出的每种定义都有清单入口；Workflow 的阶段、Step、任务与引用均来自资源。缺文件、重复 key、路径越界、错误类型、悬空依赖、引用环及不合法领域组合被拒绝。
-2. **编辑只写数据库**：分别修改正文、组合、Workflow、MCP 与工具，保存并重启仍能读取修改；`resources/configuration` 内容及摘要保持不变。使用只读资源/无源码目录的发布包也能编辑和重置。
+2. **编辑只写数据库**：分别修改正文、组合、Workflow、MCP 与工具，保存并重启仍能读取修改；`configurations` 内容及摘要保持不变。使用只读资源/无源码目录的发布包也能编辑和重置。
 3. **恢复内容完整**：修改每类内置定义，新增全局和项目自建定义、删除默认项、创建 Workflow 草稿后重置；当前目录仅包含本次资源默认，依赖全部指向本次正确修订，归一化内容与默认一致。
 4. **历史可继续**：重置前创建项目绑定、Feature 锁、AgentInstance、会话、经验及真实交付记录；重置后内容摘要和引用不变。已有项目仍按原配置启动后续执行；旧 Feature 可恢复，原有禁用/权限约束仍有效。
 5. **跨项目一致**：覆盖全局/项目局部定义、多个已打开项目、未打开项目、全局 Role 目录和延迟同步。重置成功后的查询不能再列出旧代次，重新启动和切换项目不会回填旧默认。

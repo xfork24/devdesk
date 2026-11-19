@@ -2,7 +2,7 @@
 
 ## 资源与数据库
 
-`resources/configuration/manifest.json` 是发布默认的入口，显式列出各类型文件。MCP 与 HTTP 当前为空清单；用户接入的服务属于数据库工作副本。`defaults.json` 声明项目预填引用，所有引用在生成实体时解析为确切数据库 ID。
+`configurations/manifest.json` 是发布默认的入口，显式列出各类型文件。MCP 与 HTTP 当前为空清单；用户接入的服务属于数据库工作副本。`defaults.json` 声明项目预填引用，所有引用在生成实体时解析为确切数据库 ID。
 
 模板文件包含 `template_key`、`storage`、`record`、`text_files`、`references`、`initial_only`。`storage` 只允许 governance、definitions、harnesses、sandboxes。`text_files` 用 JSON Pointer 声明正文位置；`references` 用 JSON Pointer 声明目标模板 key 及 revision/identity 类型。只替换这些已声明的位置，不递归替换正文或工具参数字符串。
 

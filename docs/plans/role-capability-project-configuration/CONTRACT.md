@@ -44,7 +44,7 @@ ProjectConfiguration v2={schema_version:2,workflow_ref,standard_ref:null|baselin
 
 ## 用户补充后的默认目录
 
-新项目页提供可一键采用的已存在默认配置；仍显式保存项目修订，已有项目/Feature 不追随默认变化。默认 Feature 分为需求、架构、任务规划、测试设计、方案交付、Task 开发、Feature 收尾和候选交付八阶段。Stage.description 为可选 Markdown；执行 Role/Spec 仍绑定在实际 Step。六个默认职责含独立项目经理 Role；其 Capability 与架构师不同，底层执行职责复用 architect。七个 Markdown Skill、八个阶段 Spec 嵌入二进制，目录见 resources/configuration。当前真实模型验收只调用 Codex，DSH 不调用。
+新项目页提供可一键采用的已存在默认配置；仍显式保存项目修订，已有项目/Feature 不追随默认变化。默认 Feature 分为需求、架构、任务规划、测试设计、方案交付、Task 开发、Feature 收尾和候选交付八阶段。Stage.description 为可选 Markdown；执行 Role/Spec 仍绑定在实际 Step。六个默认职责含独立项目经理 Role；其 Capability 与架构师不同，底层执行职责复用 architect。七个 Markdown Skill、八个阶段 Spec 嵌入二进制，目录见 configurations。当前真实模型验收只调用 Codex，DSH 不调用。
 
 ## AgentID 经验上下文的归属修正
 

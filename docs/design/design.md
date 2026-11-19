@@ -34,7 +34,7 @@ core 不再包含出厂资源 build.rs，外层 loader 注入 `ConfigurationBund
 
 Role 是自由身份，Skill 定义方法，Step 保存本次任务，Spec 定义检查，Standard 冻结 Workflow、Delivery、Spec 及关联。阶段、节点 key、内置 ID 或文档标题不选择执行器。编译器只识别 Agent、工具、子流程和控制，冻结完整依赖、权限、输入关系和完成规则。
 
-出厂资源使用现有 `resources/configuration` 目录；空库建立数据库副本，UI 编辑写入数据库，发布形成修订。模板重置切换当前目录代次，不回写已有运行。默认 TDD、评审和人工确认使用同一套配置机制，不是内核专用分支。
+出厂资源使用现有 `configurations` 目录；空库建立数据库副本，UI 编辑写入数据库，发布形成修订。模板重置切换当前目录代次，不回写已有运行。默认 TDD、评审和人工确认使用同一套配置机制，不是内核专用分支。
 
 ```mermaid
 flowchart LR

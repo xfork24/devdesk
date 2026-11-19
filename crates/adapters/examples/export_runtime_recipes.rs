@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 use std::{collections::BTreeMap, fs, path::Path};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../resources/configuration");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../configurations");
     let read = |path: &Path| -> Result<Value, Box<dyn std::error::Error>> {
         Ok(serde_json::from_slice(&fs::read(path)?)?)
     };

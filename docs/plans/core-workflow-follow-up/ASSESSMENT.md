@@ -55,7 +55,7 @@
 
 - [workflow_driver.rs](../../../crates/core/src/workflow_driver.rs) 约 484–493 行只通过 tool_call_id 获取 error.code，并用 execution.sequence 比较策略 max_retries。
 - [configured_runtime.rs](../../../crates/core/src/configured_runtime.rs) 约 1628 行补充输入会增加同一个 sequence，约 1672 行又用它比较步骤 retry_limit；Agent 建会话/派发失败主要落为 reason 文本。
-- [workflow_driver.rs 领域策略](../../../crates/domain/src/workflow_driver.rs) 已公开 retry_error_codes/max_retries；[默认策略](../../../resources/configuration/orchestration-policies/builtin-balanced-v1.json) 则明确关闭自动重试。
+- [workflow_driver.rs 领域策略](../../../crates/domain/src/workflow_driver.rs) 已公开 retry_error_codes/max_retries；[默认策略](../../../configurations/orchestration-policies/builtin-balanced-v1.json) 则明确关闭自动重试。
 
 因此“有可配置重试”还不等于各执行方式都能按可信技术错误重试，补充输入轮次也可能消耗名义上的重试次数。这里是静态确认的表达和消费边界，尚未进行完整故障注入；实施先写行为回归，再决定最小的失败事实与计数表达。不能从中文 reason 或模型报告猜 retryable，也不能为了通过测试打开默认重试。
 
@@ -64,7 +64,7 @@
 代码位置：
 
 - [spec_checks.rs](../../../crates/domain/src/spec_checks.rs) 已提供 TextLength、RequiredSections、RequiredPointers 和精确 EvidenceLocation；[spec_lint.rs](../../../crates/core/src/spec_lint.rs) 共用机器检查；输出接纳已调用 enforce_delivery_value。
-- [默认 PRD Spec](../../../resources/configuration/specs/builtin-spec-stage-prd-v1.json)、[设计 Spec](../../../resources/configuration/specs/builtin-spec-stage-architecture-v1.json) 等仍只有语义检查；带 assertion/evidence_required 的是 checked-markdown、located-review 示例资源。出厂共有 22 类 Delivery，但数量本身不是验收目标。
+- [默认 PRD Spec](../../../configurations/specs/builtin-spec-stage-prd-v1.json)、[设计 Spec](../../../configurations/specs/builtin-spec-stage-architecture-v1.json) 等仍只有语义检查；带 assertion/evidence_required 的是 checked-markdown、located-review 示例资源。出厂共有 22 类 Delivery，但数量本身不是验收目标。
 - [manager_workspace.rs](../../../crates/core/src/manager_workspace.rs) 有 spec.lint 分支，[platform_tools.rs](../../../crates/core/src/platform_tools.rs) 把它登记为平台工具，却未在普通 poll_platform_tool 中实现该分支，后者会落入 unsupported。默认也只有经理 Capability 挂载该工具。
 - [standards.rs](../../../crates/domain/src/standards.rs) 当前 Standard 是精确 Workflow 源闭包的不可变快照，已没有旧 baseline_rules 数据模型。
 

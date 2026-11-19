@@ -47,7 +47,7 @@ python3 scripts/dev/run-host.py target/release/devdesk-host --data ./data --port
 4. 创建 Feature 并填写需求。在执行页查看当前输入、步骤产物、测试和评审；需要人工决定时，核对确切版本后签署。
 5. 确认 PR、合入结果和本地同步回执，再判断工程交付是否完成。
 
-默认出厂目录发布精简版 Feature/Task 流程，保留独立 Red/Green、代码评审、源版本与合并结果两类项目回归。PRD、Design、Tasks 和最终 Feature 合入要求 Human 决定。配置组成及流程详见[默认配置](resources/configuration/README.md)与[工作流和编排](docs/design/workflow-orchestration.md)。
+默认出厂目录发布精简版 Feature/Task 流程，保留独立 Red/Green、代码评审、源版本与合并结果两类项目回归。PRD、Design、Tasks 和最终 Feature 合入要求 Human 决定。配置组成及流程详见[默认配置](configurations/README.md)与[工作流和编排](docs/design/workflow-orchestration.md)。
 
 ### 运行包
 

@@ -59,7 +59,7 @@ flowchart TD
 | Capability/Agent | 角色绑定到哪个技术组合？ | [Agent 组合](devdesk-domain/configuration-and-sources.md#file-src-governance-rs) |
 | Permission Profile | 本次允许什么，后端怎样落实？ | [权限 Profile](devdesk-domain/runtime-and-permissions.md#file-src-permission-profile-rs)、[实际编译](devdesk-adapters/credentials-and-permissions.md#file-src-permissions-rs) |
 
-业务 key、标题和角色名不应成为选择隐藏执行器的开关。代码只解释 Agent/Tool/Workflow/Control 等通用原语；具体方法、默认流程和发行 pin 来自 [资源 manifest](../../resources/configuration/manifest.json) 与 [默认映射](../../resources/configuration/defaults.json)。实际驱动能力来自 [受管能力注册](devdesk-core/session-resources-and-permissions.md#file-src-driver-capabilities-rs)，Codex 与 DSH 都提供动态工具、外部工具和平台工具桥；当前仅 Codex 声明根编排能力，配置不能越过实际驱动注册。
+业务 key、标题和角色名不应成为选择隐藏执行器的开关。代码只解释 Agent/Tool/Workflow/Control 等通用原语；具体方法、默认流程和发行 pin 来自 [资源 manifest](../../configurations/manifest.json) 与 [默认映射](../../configurations/defaults.json)。实际驱动能力来自 [受管能力注册](devdesk-core/session-resources-and-permissions.md#file-src-driver-capabilities-rs)，Codex 与 DSH 都提供动态工具、外部工具和平台工具桥；当前仅 Codex 声明根编排能力，配置不能越过实际驱动注册。
 
 ### 执行完成、业务接纳与人工决定分别保存
 

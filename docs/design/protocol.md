@@ -152,7 +152,7 @@ Web 连接其他内核时，先以无凭据请求探测 `/connection`，确认�
 
 ## 默认模板目录与恢复
 
-`resources/configuration/manifest.json` 声明应用发布的完整默认资源。空库初始化生成数据库副本，所有 UI 编辑继续写入数据库修订或草稿；应用升级不改写已有当前目录。`query.configuration_defaults` 从当前目录保存的映射提供新项目预填配置。
+`configurations/manifest.json` 声明应用发布的完整默认资源。空库初始化生成数据库副本，所有 UI 编辑继续写入数据库修订或草稿；应用升级不改写已有当前目录。`query.configuration_defaults` 从当前目录保存的映射提供新项目预填配置。
 
 | 接口 | 参数和结果 |
 |---|---|

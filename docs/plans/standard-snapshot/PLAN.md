@@ -371,7 +371,7 @@ Agent 和编排任务的来源若增加 Standard、工作与调用引用，分�
 | Host 与工具 | `crates/host/src/governance.rs`、模板/源导入入口、平台工具合同；处理 capture、查询、工作配置和实际调用选择。 |
 | Web | 新增 `StandardManager`、`StandardDetail`、`StandardDiff` 和共享采用组件；改造 `WorkflowSpecifications`、`AgentCatalog`、`ProjectManager`、Workflow 编辑器与实例工作台。 |
 | Schema | `standard.schema.json`、`workflow.schema.json`、`rpc.schema.json`、`orchestration.schema.json`、项目配置；用通用工作配置 Schema 替代 Feature 专用采用合同；任务来源与工具 Schema 同步。 |
-| 默认资源 | `resources/configuration/standards/`、`workflows/`、`tools/`、`defaults.json`、`manifest.json` 和实际 Permission Context 资源。 |
+| 默认资源 | `configurations/standards/`、`workflows/`、`tools/`、`defaults.json`、`manifest.json` 和实际 Permission Context 资源。 |
 | 回归 | `configuration_resources.rs`、`configured_workflows.rs`、`orchestration.rs`、`schema_contracts.rs`、Host 模板测试、HTTP/运行准备入口和 Web E2E。 |
 
 删除旧实现前列出所有 `standard_ref`、`baseline_*`、`specification_snapshot` 和 `coverage` 消费点；以职责判断移除或重写，不用机械字符串替换代替领域收敛。

@@ -76,7 +76,7 @@ DevDesk 由 Rust 内核管理配置和工程事实，React 工作台通过 HTTP 
 |---|---|
 | [crates 代码手册](../crates/overview.md) | 按 crate、源码文件和调用路径解释实现，与本目录的系统专题互补。 |
 | [Schema](../../schemas/README.md) / [SQL](../../sql/README.md) | 结构字段与数据库基线的详细依据。 |
-| [默认配置](../../resources/configuration/README.md) | 出厂目录、默认工作流和资源组合。 |
+| [默认配置](../../configurations/README.md) | 出厂目录、默认工作流和资源组合。 |
 | [权限后端](../../permissions/README.md) | 平台权限资产、后端支持矩阵及执行边界。 |
 | [测试](../../tests/README.md) / [脚本](../../scripts/README.md) | 验证分层、实际执行入口、构建与打包工具。 |
 | [计划与验收](../plans/README.md) | 待实施方案和历史记录；结论仅对应记录中的代码、环境与输入。 |

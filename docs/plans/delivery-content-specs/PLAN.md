@@ -15,7 +15,7 @@
 5. **Diff 已生成但没有成为独立交付。** `workspace.snapshot` 的 `changes.diff` 和 `git.candidate` 的 `diff` 已来自真实 Git 比较，却仍包含在“结构化材料”里。需要独立输出、持久化、传递和展示，且明确比较端点。
 6. **关联 Spec 需要成为规则。** 当前只有 PRD、Design Doc 在 Delivery 上关联了 Spec。仅补齐默认 JSON，仍可通过 API 创建无规范的 Delivery；创建、导入、发布和执行解析应使用一致校验。
 
-当前内置目录有 10 种 Delivery。两个默认流程共 43 个步骤输出端口，其中 25 个使用“结构化材料”；Diff 和 Test Report 均未被声明为步骤输出。数据依据见 [Delivery 发布清单](../../../resources/configuration/manifest.json)、[Feature 流程](../../../resources/configuration/workflows/builtin-workflow-feature-sol-high-v5.json)、[Task 流程](../../../resources/configuration/workflows/builtin-workflow-task-sol-high-v5.json)。
+当前内置目录有 10 种 Delivery。两个默认流程共 43 个步骤输出端口，其中 25 个使用“结构化材料”；Diff 和 Test Report 均未被声明为步骤输出。数据依据见 [Delivery 发布清单](../../../configurations/manifest.json)、[Feature 流程](../../../configurations/workflows/builtin-workflow-feature-sol-high-v5.json)、[Task 流程](../../../configurations/workflows/builtin-workflow-task-sol-high-v5.json)。
 
 ## 二 命名和交付目录
 

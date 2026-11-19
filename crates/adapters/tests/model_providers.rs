@@ -65,7 +65,7 @@ fn docker_dsh_agent_context_bridge_reads_detached_history_with_real_sdk() {
     assert_eq!(report["detached_history_read"], true);
 }
 
-/// The published provider facts, mirrored from resources/configuration sources.
+/// The published provider facts, mirrored from configurations sources.
 fn facts(provider: &str) -> ProviderFacts {
     let (kind, endpoint, route, protocol, api_key_env, key, native, min, max, account) =
         match provider {

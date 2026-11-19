@@ -36,6 +36,6 @@ Harness Profile 的 `policy.platform` 包含 allowed_operations、human_operatio
 
 基础组件的 Permission 管理 Profile 创建、修订、导入导出、预设目录和历史；Harness/Sandbox 详情管理目标默认绑定与兼容性预检。实际范围预览从两层 Profile 自动推导，无需手填另一份执行范围。保存 Profile 或重新加载预设不会自动改绑已有目标。
 
-预设优先使用发行包旁的 resources/configuration/permissions/profiles；无外部目录时从包内资源恢复到数据集的 packaged-permission-presets。自定义来源目录可持久化选择，旧代际与历史修订保留。
+预设优先使用发行包旁的 configurations/permissions/profiles；无外部目录时从包内资源恢复到数据集的 packaged-permission-presets。自定义来源目录可持久化选择，旧代际与历史修订保留。
 
-实现依据：[Profile 与选择](../../crates/domain/src/permission_profile.rs)、[默认步骤 Profile](../../resources/configuration/permissions/profiles)、[双层编译](../../crates/adapters/src/permission_profiles.rs)、[冻结 codec](../../crates/adapters/src/source_views.rs)、[权限切换](../../crates/core/src/permission_switch.rs)。
+实现依据：[Profile 与选择](../../crates/domain/src/permission_profile.rs)、[默认步骤 Profile](../../configurations/permissions/profiles)、[双层编译](../../crates/adapters/src/permission_profiles.rs)、[冻结 codec](../../crates/adapters/src/source_views.rs)、[权限切换](../../crates/core/src/permission_switch.rs)。

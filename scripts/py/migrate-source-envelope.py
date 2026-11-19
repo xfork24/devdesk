@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""One-time migration of resources/configuration to the flattened envelope:
+"""One-time migration of configurations to the flattened envelope:
 kind -> type, scope object -> scope string, whitelisted data refs hoisted to root."""
 import json
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2] / "resources" / "configuration"
+ROOT = Path(__file__).resolve().parents[2] / "configurations"
 
 REFERENCE_FIELDS = {
     "capability": ["harness_ref", "model_ref", "skills", "tools"],

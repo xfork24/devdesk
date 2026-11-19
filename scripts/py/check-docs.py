@@ -15,7 +15,10 @@ def inventory(crate: Path, overview: Path) -> str:
     # Keep the curated topic links for files already explained in the handbook.
     topics = dict(re.findall(r'\| \[([^\]]+)\]\(../../../crates/[^)]+\) \| (.+) \|', text))
     rows = ['| 文件 | 阅读入口或源码职责 |', '|---|---|']
-    files = sorted(p for p in crate.rglob('*') if p.is_file())
+    files = sorted(
+        p for p in crate.rglob('*')
+        if p.is_file() and not any(part.startswith('.') for part in p.relative_to(crate).parts)
+    )
     for path in files:
         relative = path.relative_to(crate).as_posix()
         topic = topics.get(relative)
@@ -43,7 +46,7 @@ def current_documents() -> list[Path]:
         *sorted((ROOT / 'docs/crates').rglob('*.md')),
         *(ROOT / path for path in (
             'containers/README.md', 'permissions/README.md', 'schemas/README.md',
-            'resources/configuration/README.md', 'scripts/README.md', 'tests/README.md',
+            'configurations/README.md', 'scripts/README.md', 'tests/README.md',
             'tests/fixtures/README.md',
         )),
     ]

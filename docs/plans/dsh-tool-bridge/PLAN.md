@@ -44,7 +44,7 @@
 | W01 | SDK 协议扩展（tools 注册 + `tools/execute` 请求）与新版本发布 | deepseek-harness（跨仓库） |
 | W02 | `DEFAULT_DSH_VERSION`/catalog runtime_version/Dockerfile/recipe digest 联动升级 | domain、adapters、containers/dsh |
 | W03 | harness.rs DSH 工具拦截分支 + schema 传递 + DSH 形状应答 | crates/adapters/src/harness.rs |
-| W04 | dsh harness 修订声明 `dynamic-tools`；dsh PM capability 修订补控制工具；权限边界放行桥接工具 | resources/configuration、permissions/backends/dsh |
+| W04 | dsh harness 修订声明 `dynamic-tools`；dsh PM capability 修订补控制工具；权限边界放行桥接工具 | configurations、permissions/backends/dsh |
 | W05 | 回归：dsh 栈端到端编排验收（controller 绑定 dsh PM → workflow 全流程） | scripts/check/check-live.sh |
 
 ## 3. 风险与兼容

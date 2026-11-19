@@ -240,7 +240,7 @@ manual/rust/agent 执行方式选择继续表达运行方式；并发和实际�
 | W07 | 讨论投影与原始事件页 | W01 的读取合同 | 增量合并只显示消息、技术状态移出正文、按轮关联最终内容和停止回执、新标签深链接与隔离校验。 |
 | W08 | 完整验证与当前文档同步 | W02—W07 | 下列验收矩阵、相关自动化检查、真实协议与用户界面验证及 Markdown 实施报告。 |
 
-主要代码影响范围为 `crates/domain` 的 source/permission/workflow/runtime 类型与配置图，`crates/core` 的配置编译、权限装配/切换、平台工具、控制器与工作流驱动，`crates/adapters` 的权限编译、安装缓存、认证、镜像准备及实际驱动，`crates/host` 的端口装配与 API，`web/src/components` 的配置、设置、工作流、讨论和只读页面，以及 `resources/configuration`、`schemas`、`sql` 和对应测试。具体拆分应保持 host → adapters → core → domain 的依赖方向。
+主要代码影响范围为 `crates/domain` 的 source/permission/workflow/runtime 类型与配置图，`crates/core` 的配置编译、权限装配/切换、平台工具、控制器与工作流驱动，`crates/adapters` 的权限编译、安装缓存、认证、镜像准备及实际驱动，`crates/host` 的端口装配与 API，`web/src/components` 的配置、设置、工作流、讨论和只读页面，以及 `configurations`、`schemas`、`sql` 和对应测试。具体拆分应保持 host → adapters → core → domain 的依赖方向。
 
 ## 12 验收矩阵
 

@@ -39,7 +39,7 @@
 | `WorkflowController.tsx` | agent 模式隐藏兜底步骤审批卡片；真实决定、通知又按实例筛选 | 根经理页汇总子实例的真实待审批请求；通知和待审批不能混为一谈 |
 | 阻塞点链接 | `ReadingLink` 的 detail 固定为 records | 改为 overview，携带实际项目、Feature、Task、实例和执行定位信息 |
 
-相关实现依据：[返工](../../../crates/core/src/workflow_retries.rs)、[人工决定](../../../crates/core/src/workflow_controls.rs)、[调用授权](../../../crates/core/src/workflow_authorization.rs)、[经理界面](../../../web/src/components/WorkflowController.tsx)、[编排方法](../../../resources/configuration/skills/workflow-orchestration-v4.md)。
+相关实现依据：[返工](../../../crates/core/src/workflow_retries.rs)、[人工决定](../../../crates/core/src/workflow_controls.rs)、[调用授权](../../../crates/core/src/workflow_authorization.rs)、[经理界面](../../../web/src/components/WorkflowController.tsx)、[编排方法](../../../configurations/skills/workflow-orchestration-v4.md)。
 
 ## 3. 拟定的 Workflow 配置
 

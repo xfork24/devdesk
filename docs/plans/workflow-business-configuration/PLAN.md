@@ -63,7 +63,7 @@
 | H20 | [模型服务商描述](../../../crates/domain/src/model_provider.rs)、[模型入口](../../../crates/host/src/model_providers.rs) | 名称、默认服务商和默认端点与 SDK 路由、协议绑定在同一代码分支。 | 可变展示和选择元数据归入现有配置；实际协议、SDK 路由支持、认证与端点安全校验留在适配层。 |
 | H21 | [共享 Status](../../../crates/domain/src/lib.rs)、[工程状态推进](../../../crates/core/src/lib.rs) | Planning、Developing、Validating 等业务阶段与运行、排队、资源释放状态混在同一枚举。 | 业务进度由 Workflow/Stage 投影；技术对象使用明确生命周期，不用业务阶段驱动调度。 |
 
-已有 [resources/configuration](../../../resources/configuration/README.md) 是正确的默认来源。此次继续使用其资源嵌入、数据库可编辑副本和重置机制，清理残留的默认身份回退和重复派生，不另建第二套配置文件系统。
+已有 [configurations](../../../configurations/README.md) 是正确的默认来源。此次继续使用其资源嵌入、数据库可编辑副本和重置机制，清理残留的默认身份回退和重复派生，不另建第二套配置文件系统。
 
 ## 4 目标概念与配置归属
 
@@ -272,7 +272,7 @@ P2 开始使用独立临时空数据集验证，P7 才切换日常开发数据�
 | Domain | `agents.rs`、`governance.rs`、`configuration.rs`、`agent_task.rs`、`conversation.rs`、`deliverable.rs`、`stage_answer.rs`、`lib.rs`：移除业务枚举和分支，定义通用执行、材料与规则。 |
 | Core | `workflow_definition.rs`、`workflow_runtime.rs`、`agent_tasks.rs`、`workflow_prompts.rs`、`live_runs.rs`、`live_merges.rs`、`model_approvals.rs`、`proposals.rs`、`project_configuration.rs`、`repositories.rs`、`lib.rs`：按显式配置推进，复用实际执行端口。 |
 | Host 与适配器 | `crates/host/src/workspace.rs` 及治理/工具/模板入口；`crates/adapters/src` 的存储、Harness 和工具实现：取消内置身份回退，接入通用运行与工具身份。 |
-| 配置与发布 | `resources/configuration`、模板加载与构建校验、`schemas`、`sql/global/schema.sql`、`sql/project/schema.sql`：采用唯一新合同，移除旧定义。 |
+| 配置与发布 | `configurations`、模板加载与构建校验、`schemas`、`sql/global/schema.sql`、`sql/project/schema.sql`：采用唯一新合同，移除旧定义。 |
 | Web | Workflow/Delivery/Role/Agent/Project 编辑器、任务预览、实例视图和 `main.tsx`：选项来自定义，按通用执行机制与实际状态展示。 |
 | 验证与文档 | Rust/HTTP/浏览器/真实探针、独立包；更新 `docs/design/domain.md`、`docs/design/design.md`、`docs/design/protocol.md`、运行说明和 Schema 索引。历史计划保留其历史属性。 |
 

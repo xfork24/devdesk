@@ -37,7 +37,7 @@ DevDesk 将由运行在 Harness 中的项目经理 Agent 决定工作流如何�
 | [Host 工作区调度](../../../crates/host/src/workspace.rs)、[Engine tick](../../../crates/core/src/lib.rs) | 多处调用自动工作流评估，与会话、仓库和工具轮询交织 | 所有入口统一切换；观察回执和调度已授权意图继续执行 |
 | [Harness 端口](../../../crates/core/src/ports.rs)、[Harness 适配器](../../../crates/adapters/src/harness.rs) | 已有持久 Session、Turn、工具请求、回复、停止与恢复；Codex 注入 dynamicTools | 复用原生通道，不用 shell、日志或模型生成的命令 JSON 代替工具调用 |
 | [流程工作台](../../../web/src/components/WorkflowInstanceView.tsx)、[角色对话](../../../web/src/components/RoleConversation.tsx) | 工作流操作与角色讨论分开；当前进度取自实例 steps 和冻结 plan | 增加项目经理入口、计划修订视图及对话操作结果联动 |
-| [默认资源](../../../resources/configuration/README.md) | 出厂资源、数据库发布、项目采用、实例冻结相互独立 | 增加编排配置，并将实例修改和发布模板作为不同操作 |
+| [默认资源](../../../configurations/README.md) | 出厂资源、数据库发布、项目采用、实例冻结相互独立 | 增加编排配置，并将实例修改和发布模板作为不同操作 |
 | [数据库基线](../../../sql/README.md) | global 13 / project 44；启动只接受当前结构 | 新增显式转换入口和新结构版本，启动仍只执行当前合同 |
 
 已有的重试、返工、停止证明、子流程路径隔离、人工例外与 evidence 端口继续保留。当前返工按依赖祖先集合失效后继；新影响分析需同时覆盖依赖、实际输入消费、完成规则引用和平台授权引用。
@@ -332,7 +332,7 @@ Task 的 19 步按独立测试、Red 基线、实现与 Green、文档复验、�
 | `crates/adapters/src/harness.rs`、`integrations.rs` | Codex 工具桥复用、编排能力探测和供应商边界 |
 | `crates/adapters/src/lib.rs`、`catalog.rs`、`sql/` | 新数据版本、队列与租约持久化、索引及离线升级入口 |
 | `schemas/` | Workflow/任务/运行实例新合同、控制策略、ChangeSet、RPC、工具及迁移清单 |
-| `resources/configuration/` | 新默认 Workflow、项目经理 Skill/Capability/Agent、控制策略和工具资源；保持完整 manifest 引用图 |
+| `configurations/` | 新默认 Workflow、项目经理 Skill/Capability/Agent、控制策略和工具资源；保持完整 manifest 引用图 |
 | `web/src/components/WorkflowInstanceView.tsx`、`RoleConversation.tsx`、`WorkflowManager.tsx` | 项目经理入口、计划变更、阶段处置、历史及异常反馈 |
 | `crates/adapters/tests/`、`tests/entrypoints/`、`web/tests/` | 核心合同、跨进程恢复、原生工具桥、浏览器及真实工程回归 |
 | `docs/design/domain.md`、`protocol.md`、`sql/README.md` 等 | 更新当前合同，原历史计划报告保留其历史范围 |

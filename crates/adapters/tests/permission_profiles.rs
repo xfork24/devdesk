@@ -269,9 +269,7 @@ fn import_is_atomic_and_revision_export_round_trips_in_a_fresh_store() {
 fn runtime_directory_reload_is_idempotent_and_does_not_assign_targets() {
     let dir = tempfile::tempdir().unwrap();
     let (store, e) = global(dir.path());
-    let root = dir
-        .path()
-        .join("resources/configuration/permissions/profiles");
+    let root = dir.path().join("configurations/permissions/profiles");
     std::fs::create_dir_all(&root).unwrap();
     let mut p = profile(&e, "builtin-permission-harness-read-only:1");
     p.id = "runtime-added:1".into();
@@ -357,9 +355,7 @@ fn preset_source_is_single_persistent_and_recoverable_with_builtin_reload() {
     assert!(builtin.is_builtin);
     assert_eq!(builtin.path, builtin.builtin_path);
     // The former automatic dataset source no longer participates in loading.
-    let former = dir
-        .path()
-        .join("resources/configuration/permissions/profiles");
+    let former = dir.path().join("configurations/permissions/profiles");
     std::fs::create_dir_all(&former).unwrap();
     std::fs::write(former.join("invalid.json"), "invalid").unwrap();
     store

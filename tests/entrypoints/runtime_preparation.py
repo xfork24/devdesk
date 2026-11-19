@@ -137,7 +137,7 @@ sys.exit(3)
         defaults = rpc('query.configuration_defaults')['result']
         assert len(defaults['role_agent_bindings']) == 6
         model = next(row for row in defaults['records'] if row['id'] == defaults['model_ref'])
-        configuration = ROOT / 'resources/configuration'
+        configuration = ROOT / 'configurations'
         manifest = json.loads((configuration/'manifest.json').read_text())
         packaged_defaults = json.loads((configuration/manifest['defaults']).read_text())
         assert defaults['model_ref'] == packaged_defaults['model_ref']

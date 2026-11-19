@@ -370,7 +370,7 @@ impl GlobalStore {
         if let Ok(exe) = std::env::current_exe()
             && let Some(parent) = exe.parent()
         {
-            let path = parent.join("resources/configuration/permissions/profiles");
+            let path = parent.join("configurations/permissions/profiles");
             if path.is_dir() {
                 return permission_preset_directory(&path);
             }

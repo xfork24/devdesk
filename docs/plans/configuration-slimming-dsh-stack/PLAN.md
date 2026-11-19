@@ -1,6 +1,6 @@
 # P13 · 精简并补全出厂配置：清理历史修订 + 同步 dsh/minimax/glm 栈
 
-日期：2026-11-12。状态：**已完成（范围经一次调整：门禁能力化实施后按用户决定回滚）**。来源：用户需求——"精简并补全 resources/configuration 下面的所有配置：①同一对象配置身份仅保留最新版本，删除历史版本，代码中版本硬编码移除；②model/agent/capability 同步支持 dsh harness 与 minimax/glm 模型（minimax 用 MiniMax-M3.1-Flash，glm 用 glm-5.3-flash，采用推荐模型上下文设置）"。
+日期：2026-11-12。状态：**已完成（范围经一次调整：门禁能力化实施后按用户决定回滚）**。来源：用户需求——"精简并补全 configurations 下面的所有配置：①同一对象配置身份仅保留最新版本，删除历史版本，代码中版本硬编码移除；②model/agent/capability 同步支持 dsh harness 与 minimax/glm 模型（minimax 用 MiniMax-M3.1-Flash，glm 用 glm-5.3-flash，采用推荐模型上下文设置）"。
 
 ## 0. 范围演变（先读）
 

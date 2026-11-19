@@ -104,7 +104,7 @@ accept_configured_outputs 核对输出封套、端口、Schema/Spec、内容报�
 
 父子调用按精确实例和 execution 聚合，Task 完成才释放后置 Task 业务依赖。最终 workflow.complete 再核对每步已处置、整体完成规则和最终输出；“所有 worker 都停了”本身不构成完成。
 
-当前默认配置由 [defaults.json](../../resources/configuration/defaults.json) 选择 Feature Workflow 8、Task Workflow 7、Standard 6。Feature 22 步、Task 20 步；步骤 Profile 与调度配置随 Workflow 冻结。具体 Delivery/Spec 修订按精确源引用解析，默认变化不升级已有运行。
+当前默认配置由 [defaults.json](../../configurations/defaults.json) 选择 Feature Workflow 8、Task Workflow 7、Standard 6。Feature 22 步、Task 20 步；步骤 Profile 与调度配置随 Workflow 冻结。具体 Delivery/Spec 修订按精确源引用解析，默认变化不升级已有运行。
 
 <a id="engineering-evidence"></a>
 

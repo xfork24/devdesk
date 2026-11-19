@@ -27,7 +27,7 @@
 
 1. **实施（当日上午—下午）**：完成 W01-W03；并按用户当时"修改代码以支持 dsh 编排"的指示实施了 W4 门禁能力化（`dynamic-tools` 标记、codex harness 升 rev2、7 capability/6 agent/tests-run/workflows/standard/permission-context 级联升修订），期间发现并处理了计划外级联（tests-run 工具 runtime 钉 harness 引用 → 整条链升版）；全部测试通过。
 2. **回滚（当日晚间）**：用户核实 DSH SDK 无工具桥后决定**暂维持仅 codex 调度**，要求取消为 dsh 编排铺路的代码。回滚内容：`DYNAMIC_TOOLS_CAPABILITY`/`supports_dynamic_tools()` 删除、4 处门禁恢复原判断、harness/capability/agent/tests-run/workflows/standard/permission-context/defaults 全部还原为 main 原修订（删除级联新增的 19 个文件、git restore 20 个原文件、manifest 重建）；测试字面量与 web/live 同步回退。回滚后全量测试通过。
-3. **双检（同日）**：静态审计 5 组 grep 全干净；新增边界回归 4 个；发现并修正"dsh worker 可切换跑工厂流程"的过强表述（§2.3/2.4）；清理陈旧文档（resources/configuration/README 的 082c081 基线描述、p12 执行报告 W04 追记）。
+3. **双检（同日）**：静态审计 5 组 grep 全干净；新增边界回归 4 个；发现并修正"dsh worker 可切换跑工厂流程"的过强表述（§2.3/2.4）；清理陈旧文档（configurations/README 的 082c081 基线描述、p12 执行报告 W04 追记）。
 
 ## 4. 验收对照（最终）
 

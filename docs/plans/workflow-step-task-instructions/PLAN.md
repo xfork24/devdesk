@@ -24,7 +24,7 @@
 | Role/Agent 正文、Skill 在 Session 创建时进入原生指令，Spec 在 Turn 输入中携带 | 新任务组装需覆盖 Session 基础上下文与每轮任务，避免 Role 重复拼接或只在首轮生效 | [adapters/harness.rs](../../../crates/adapters/src/harness.rs) 的 worker 创建与 `dispatch_turn` |
 | 同一 Agent/owner 可以复用 Session；已有回归核对复用时每轮 Spec 冻结 | 任务必须按步骤实例和轮次定位，不能按 Session 最近一条记录推断 | [conversations.rs](../../../crates/core/src/conversations.rs)、[configuration_resources.rs](../../../crates/adapters/tests/configuration_resources.rs) |
 | Permission 切换创建后继 Session，保存原输入，但新 Session 创建参数未通用携带步骤任务绑定 | 新任务合同必须跨后继保留来源与 Spec，不能仅依靠历史摘要中的文字恢复 | [permission_switch.rs](../../../crates/core/src/permission_switch.rs) |
-| 默认讨论 goal 会拼入整段 Spec 正文；阶段 description 也引用阶段 Spec | 新默认应分清任务、阶段背景与验收规范，减少重复；旧文本不做猜测式去重 | default_catalog.rs（历史路径：`../../../crates/core/src/default_catalog.rs`）、`resources/configuration/` |
+| 默认讨论 goal 会拼入整段 Spec 正文；阶段 description 也引用阶段 Spec | 新默认应分清任务、阶段背景与验收规范，减少重复；旧文本不做猜测式去重 | default_catalog.rs（历史路径：`../../../crates/core/src/default_catalog.rs`）、`configurations/` |
 
 审核结论：需要同时改造声明、动作能力描述、编译冻结、任务组装、两条派发路径、UI、默认资源和兼容读取。不能只把现有大字符串挪到文件，或在 UI 新增一个未进入派发的文本框。
 
@@ -177,7 +177,7 @@ Workflow 编辑器在需要任务的 Step 下显示必填的“任务指令（Ma
 
 ## 九 默认任务与硬编码清理
 
-在 `resources/configuration/tasks/` 保存默认任务 Markdown，按动作、阶段和 Agent 配方节点组织。默认 Workflow 播种时将正文写进具体 Step/节点；发布包嵌入资源，UI 从已导入修订读写，不依赖运行时源码路径。
+在 `configurations/tasks/` 保存默认任务 Markdown，按动作、阶段和 Agent 配方节点组织。默认 Workflow 播种时将正文写进具体 Step/节点；发布包嵌入资源，UI 从已导入修订读写，不依赖运行时源码路径。
 
 建立现有提示词迁移清单，至少包含：讨论任务、三个规划验证节点、Task 测试编写、Feature 收尾测试编写、实现、文档、交付评审、候选评审。每段明确拆分任务正文、Skill 方法、Spec 判准和系统输出合同，逐项核对调用点；不能删掉旧字符串后用一句笼统默认任务补空。
 
@@ -277,7 +277,7 @@ Workflow 编辑器在需要任务的 Step 下显示必填的“任务指令（Ma
 | 任务组装与运行 | 新共享任务模块；`workflow_runtime.rs`、`live_runs.rs`、`conversations.rs`、`conversation_runtime.rs`、`ports.rs` |
 | 后继与恢复 | `permission_switch.rs`、Host 权限发送入口、Session 关联与历史校验 |
 | 原生协议 | `adapters/harness.rs`、DSH persona/Codex 原生指令与输入编码；保留新模型路由合同 |
-| 默认与 UI | `resources/configuration/tasks/`、`default_catalog.rs`、`WorkflowManager.tsx`、`configuration-ui.tsx`、审计与执行记录 |
+| 默认与 UI | `configurations/tasks/`、`default_catalog.rs`、`WorkflowManager.tsx`、`configuration-ui.tsx`、审计与执行记录 |
 | 数据和契约 | 按需追加项目 SQL；RPC、Workflow、manifest Schema 与协议文档 |
 | 回归 | 配置/工作流/权限切换 Rust 测试、原生协议夹具、HTTP、浏览器、真实验收探针及独立包 |
 

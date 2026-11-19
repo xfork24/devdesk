@@ -65,7 +65,7 @@ async function rpc(page: Page, url: string, method: string, params = {}) {
   return value.result;
 }
 function resourceDigest() {
-  const root = resolve("../resources/configuration"),
+  const root = resolve("../configurations"),
     hash = createHash("sha256");
   function visit(path: string) {
     for (const entry of readdirSync(path, { withFileTypes: true }).sort(

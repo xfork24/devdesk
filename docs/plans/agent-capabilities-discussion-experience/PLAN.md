@@ -150,7 +150,7 @@ Agent 详情显示完整 Skills、Tools、Agent Spec 和通用经验访问接口
 | W3 通用工具执行 | 平台调用者与 Workflow Step 解耦；按工具解析上下文并执行授权，错误作为工具回执返回。 | `platform_tools.rs`、`spec_lint.rs`、控制器及经理用例、Host 装配。 | 自由讨论可实际检查草稿和读取指定历史产物；控制与写入授权回归保持成立。 |
 | W4 经验上下文服务 | 抽取只读端口，复用索引与快照，补足工作流来源、分页分块及引用记录，注册通用上下文接口。 | `adapters/src/experience.rs`、`core/src/governance.rs`、`catalog_sync.rs`、Host 经验分发。 | 同一请求通过 UI 和 Agent 得到一致可见结果；无项目对话可读取自身历史。 |
 | W5 绑定与恢复 | 修复创建和发送比较及后继校验，覆盖旧 Session 采用完整能力、重启、幂等与停止回执。 | `permission_resources.rs`、`permission_switch.rs`、`source_views.rs`、会话生命周期。 | 原始报错复现用例通过；旧锁、原消息和来源均可追溯，重放不重复提交输入。 |
-| W6 驱动与界面 | Codex 和 DSH 接入统一上下文协议，补齐必要驱动通道；更新 Agent 配置、讨论和经验 UI，发布需要的新默认源修订。 | `adapters/src/harness.rs`、DSH 驱动与权限资产、`AgentCatalog.tsx`、`RoleConversation.tsx`、`AgentExperience.tsx`、`resources/configuration`。 | 用户可从无项目入口完成对话、检索和读取经验；实际调用与页面状态一致。 |
+| W6 驱动与界面 | Codex 和 DSH 接入统一上下文协议，补齐必要驱动通道；更新 Agent 配置、讨论和经验 UI，发布需要的新默认源修订。 | `adapters/src/harness.rs`、DSH 驱动与权限资产、`AgentCatalog.tsx`、`RoleConversation.tsx`、`AgentExperience.tsx`、`configurations`。 | 用户可从无项目入口完成对话、检索和读取经验；实际调用与页面状态一致。 |
 | W7 回归与验收 | 执行下列验收矩阵、HTTP 与浏览器回归、真实运行验证，更新现行文档并保存报告。 | `crates/adapters/tests`、`tests/entrypoints`、`web/tests`、`docs`。 | 自动化及供应商实机结果分别记录，全部范围通过后才标记计划完成。 |
 
 W1 先固定共同合同，W2 是 W3 与 W5 的基础；W4 接入 W3 的统一调用链；W6 在相关端口稳定后完成；W7 验收全部路径。实施范围包含完整行为，不以“发送不再报错”作为全部完成条件。

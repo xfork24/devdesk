@@ -17,7 +17,7 @@
 | `crates/host` | HTTP/SSE、认证、显式项目路由、跨项目调度与端口装配；不直接写业务事实。 |
 | `crates/tools` | 独立工具程序，按 `src/bin/` 组织；当前包含 macOS 固定签名 Keychain 助手。 |
 | `web/src` / `web/tests` | React/TypeScript 工作台与浏览器回归；界面不裁定业务终态。 |
-| `resources/configuration` | manifest 管理的源修订、默认选择、正文、Harness/Sandbox 安装输入及权限预设。 |
+| `configurations` | manifest 管理的源修订、默认选择、正文、Harness/Sandbox 安装输入及权限预设。 |
 | `permissions` / `containers` | 权限后端资产与项目测试 Dockerfile；执行配方由 Harness/Sandbox 组合生成。 |
 | `schemas` / `sql` / `tests` | JSON 合同、当前 SQLite 基线、跨进程/原生探针、协议夹具与共享支持。 |
 

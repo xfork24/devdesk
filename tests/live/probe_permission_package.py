@@ -45,7 +45,7 @@ try:
             assert hashlib.sha256(body).hexdigest() == entry['sha256']
         for name in ['permission.schema.json', 'permission-profile.schema.json', 'permission-binding.schema.json', 'sandbox.schema.json', 'permission-backend.schema.json', 'rpc.schema.json', 'agent-task.schema.json']:
             assert (package / 'schemas' / name).read_bytes() == (source / 'schemas' / name).read_bytes()
-        presets = list((package / 'resources/configuration/permissions/profiles').glob('*.json'))
+        presets = list((package / 'configurations/permissions/profiles').glob('*.json'))
         assert len(presets) == 3
         assert all(json.loads(p.read_text())["data"]["schema_version"] == 2 for p in presets)
         assert (package / 'schemas/orchestration.schema.json').read_bytes() == (source / 'schemas/orchestration.schema.json').read_bytes()
@@ -90,7 +90,7 @@ try:
         command('permission.profile.import', exported)
         report['v2_profiles_and_version_binding'] = True
         runtime_preset = {**exported['profiles'][0], 'identity': 'package-runtime-v2', 'name': 'Runtime package preset'}
-        preset_root = dataset / 'resources/configuration/permissions/profiles'
+        preset_root = dataset / 'configurations/permissions/profiles'
         preset_root.mkdir(parents=True)
         (preset_root / 'runtime.json').write_text(json.dumps(runtime_preset))
         command('permission.source.select', {'path': str(preset_root)})

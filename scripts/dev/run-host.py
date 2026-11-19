@@ -40,7 +40,7 @@ def main():
         shutil.copy2(binary, executable)
         executable.chmod(0o700)
         # These resources are resolved beside current_exe(), including in a source-free bundle.
-        for name in ("credential-helper", "permissions"):
+        for name in ("credential-helper", "permissions", "configurations"):
             resource = binary.parent / name
             if resource.is_dir():
                 shutil.copytree(resource, runtime / name)

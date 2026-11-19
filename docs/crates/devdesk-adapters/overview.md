@@ -30,6 +30,7 @@ adapters 实现 core 的端口：把工程状态写入 SQLite，把交付物封�
 | [Cargo.toml](../../../crates/adapters/Cargo.toml) | [外部实现所需依赖和测试边界](overview.md#file-cargo-toml) |
 | [build.rs](../../../crates/adapters/build.rs) | [编译时生成资源表与 Schema 校验器](factory-and-configuration.md#file-build-rs) |
 | [examples/export_runtime_recipes.rs](../../../crates/adapters/examples/export_runtime_recipes.rs) | Export current factory recipes for native acceptance without duplicating the compiler. |
+| [runtime/tool-worker.mjs](../../../crates/adapters/runtime/tool-worker.mjs) | [容器内的 HTTP、MCP 和 OAuth 协议执行](external-integrations.md#file-src-integrations-rs) |
 | [src/catalog.rs](../../../crates/adapters/src/catalog.rs) | [全局配置、项目目录与运行设置](storage-and-source-codecs.md#file-src-catalog-rs) |
 | [src/codex_auth.rs](../../../crates/adapters/src/codex_auth.rs) | [数据集私有的 Codex 登录生命周期](credentials-and-permissions.md#file-src-codex-auth-rs) |
 | [src/configuration_backend.rs](../../../crates/adapters/src/configuration_backend.rs) | [为配置预演提供实际后端事实](factory-and-configuration.md#file-src-configuration-backend-rs) |

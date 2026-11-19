@@ -1,6 +1,6 @@
 # 工程接入与通用流程
 
-DevDesk 使用配置驱动的 Workflow 执行工程工作。Role 是业务身份，Agent 组合 Role 与 Capability，后者选择 Model、Harness、Skill 和 Tool；Step 的 `task_instructions` 指定本次任务。运行语义见 [工作流与编排](workflow-orchestration.md)，出厂配置见 [默认目录](../../resources/configuration/README.md)。
+DevDesk 使用配置驱动的 Workflow 执行工程工作。Role 是业务身份，Agent 组合 Role 与 Capability，后者选择 Model、Harness、Skill 和 Tool；Step 的 `task_instructions` 指定本次任务。运行语义见 [工作流与编排](workflow-orchestration.md)，出厂配置见 [默认目录](../../configurations/README.md)。
 
 ## 操作流程
 

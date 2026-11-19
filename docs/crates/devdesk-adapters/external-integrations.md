@@ -8,6 +8,7 @@
 
 - [src/model_providers.rs](#file-src-model-providers-rs)：冻结模型连接与只读模型目录
 - [src/integrations.rs](#file-src-integrations-rs)：离线合同校验和持久化 HTTP/MCP 执行
+- [runtime/tool-worker.mjs](../../../crates/adapters/runtime/tool-worker.mjs)：容器内的 HTTP、MCP 和 OAuth 协议执行
 - [src/integration_oauth.rs](#file-src-integration-oauth-rs)：PKCE、固定账户和未知交换结果
 
 <a id="file-src-model-providers-rs"></a>
@@ -35,6 +36,8 @@ DeepSeek 账户/模型查询使用固定地址和私有输入传递密钥，也�
 NativeTools 实现 ToolExecutor。离线部分验证 JSON Schema、参数、OpenAPI 和 Skill 包，限制深度、展开量和数据规模，不在校验时抓取外部引用。Schema 只支持明确集合；关键字检查发生在 Schema 位置，不把 examples 或普通属性名误判为执行规则。
 
 执行部分以原 operation UUID 和冻结请求摘要建立私有作业，记录启动、poll、取消与结果。凭据在最后授权边界注入，目标 origin、网络权限、私网地址及重定向都需检查；HTTP/MCP 不接受任意宿主命令。OAuth 请求使用受管容器路径。
+
+容器入口位于 `crates/adapters/runtime/tool-worker.mjs`，属于 adapters 的运行时代码。Rust 在编译时嵌入脚本，调用时将其写入状态目录，在 Docker 内执行 `node /state/tool-worker.mjs -`，通过标准输入传入请求并从标准输出读取 JSON 结果。脚本负责 HTTP 参数映射、MCP 发现与调用、OAuth 请求以及传输约束；Rust 负责凭据获取、容器生命周期和结果保存。源码位置变化不改变容器内路径。
 
 execute 在远端返回成功时检查声明的 output_schema；不匹配就改为失败，但保留原 remote_effect，因为远端动作可能已执行。二进制文件结果写入该调用目录的 result.bin，回执换成 devdesk-tool-artifact:调用ID 的资源链接，带 MIME、SHA 和大小；read_artifact 再核对调用身份、链接、摘要与大小。它与 FileArtifacts 的领域 Artifact 是两套结果表示，不能混为同一张材料记录。
 

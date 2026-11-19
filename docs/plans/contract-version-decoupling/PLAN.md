@@ -153,7 +153,7 @@ impl Contract { pub fn accepts(self, v: u64) -> bool; pub fn current(self) -> u6
 | W01 | 全部 `== N` 断言迁移为结构识别（约 25 处；初版注册表方案已按用户修正删除） | domain、core | src 中版本断言零残留；数据合法性由结构决定 |
 | W02 | source_views 任务形状结构识别 + renderer 去判据 | adapters/source_views.rs | 伪造 renderer 字符串不影响 pack/restore 正确性 |
 | W03 | 实例/草稿查询过滤去版本化（6 处） | core/configured_runtime.rs、configured_workflows.rs | 按 kind+结构判定，行为等价 |
-| W04 | Harness 能力字段 + 替换 provider 字符串比较（7 处）+ enforcement 常量统一 | domain、core、adapters/permission_profiles.rs、resources/configuration/harnesses | 假想供应商（测试替身）声明能力即可通过组合校验 |
+| W04 | Harness 能力字段 + 替换 provider 字符串比较（7 处）+ enforcement 常量统一 | domain、core、adapters/permission_profiles.rs、configurations/harnesses | 假想供应商（测试替身）声明能力即可通过组合校验 |
 | W05 | 读取机制外置（read_tool/32KiB 集中为注册表常量） | core/configured_runtime.rs | 合同正文不再内嵌散落参数 |
 | W06 | 测试解耦：hash 门禁→manifest 自洽脚本；默认流程断言→内联夹具 + 编译级校验 | crates/adapters/tests、scripts/check | 修改默认 Skill 正文后 `cargo test` 全绿 |
 | W07 | Web 去断言（8 处）改后端校验 | web/src 三个组件 | 前端 grep 不到 `schema_version ===` / `agent-task/v` |
@@ -165,7 +165,7 @@ impl Contract { pub fn accepts(self, v: u64) -> bool; pub fn current(self) -> u6
 - A01 **演进演练（按方向修正重写）**：给 `WorkflowDefinition` 增加一个可选字段并发布含该字段的新 workflow——不改任何版本断言/注册表（已无此物），存量 v6 文档与新文档同时可读可发布；带未知字段的文档被 serde 结构边界拒绝。
 - A02 演进演练后 `source_views` pack：v7 任务记录正确识别为任务形状（结构识别），restore 全等。
 - A03 测试替身 harness 声明 `external_tools=true` → Capability 引用外部工具的编译与冻结通过，core 无厂商字符串可改。
-- A04 修改 `resources/configuration/skills/*.md` 任一正文 → `cargo test --workspace --locked` 全绿（当前会被 hash 门禁打破）；`check-defaults` 脚本捕获真正的目录篡改。
+- A04 修改 `configurations/skills/*.md` 任一正文 → `cargo test --workspace --locked` 全绿（当前会被 hash 门禁打破）；`check-defaults` 脚本捕获真正的目录篡改。
 - A05 web 导入 v7 草稿 → 后端返回结构化错误；前端代码中无版本常量。
 - A06 `grep -rnE 'schema_version.*== *[0-9]|== *"agent-task/v' crates/*/src web/src` 零命中（既无散落断言，也无注册表）。
 - A07 全量既有回归（cargo workspace + Playwright 双档）不回归。

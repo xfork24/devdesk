@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from configuration_usage import usage_index
 
-ROOT = Path(__file__).resolve().parents[2] / "resources" / "configuration"
+ROOT = Path(__file__).resolve().parents[2] / "configurations"
 
 REFERENCE_FIELDS = (
     "capability_ref",

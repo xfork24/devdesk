@@ -18,12 +18,11 @@ fn collect(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) {
     }
 }
 fn main() {
-    let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
-        .join("../../resources/configuration");
+    let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("../../configurations");
     println!("cargo:rerun-if-changed={}", root.display());
     println!(
         "cargo:rerun-if-changed={}",
-        root.join("../../schemas").display()
+        root.join("../schemas").display()
     );
     let manifest: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(root.join("manifest.json")).unwrap()).unwrap();

@@ -23,7 +23,7 @@
 | 当前事实 | 对应入口 | 改造要求 |
 |---|---|---|
 | Controller 对实例、决定和用户输入计算状态摘要；变化后重新发送固定 instructions 和实例快照 | [controllers.rs](../../../crates/core/src/controllers.rs) 的 drive_controllers | 用持久化业务事件驱动有界投递，停止依靠全图摘要变化触发模型轮次 |
-| 经理已经通过原生工具派发、接纳和完成，编排 Skill 已定义大部分方法 | [编排 Skill](../../../resources/configuration/skills/workflow-orchestration-v3.md) | 保留共同控制内核，统一配置中的职责和方法，删除运行时重复下达的业务方法 |
+| 经理已经通过原生工具派发、接纳和完成，编排 Skill 已定义大部分方法 | [编排 Skill](../../../configurations/skills/workflow-orchestration-v3.md) | 保留共同控制内核，统一配置中的职责和方法，删除运行时重复下达的业务方法 |
 | Controller 的 event_cursor 当前主要用于生成唤醒序号，last_state_digest 与 last_result_digest 参与调度和预算 | [领域类型](../../../crates/domain/src/orchestration.rs) | 区分业务事件消费位置、投递身份、经理检查点和有因预算，不能直接把现有序号当成源事件游标 |
 | 项目 events 已有递增 ID、SQL 游标读取和提交后通知 | [store_changes.rs](../../../crates/adapters/src/store_changes.rs)、[存储端口](../../../crates/core/src/ports.rs) | 复用这套耐久日志与通知，补齐结构化业务事件和根范围索引，不另建事件总线 |
 | 默认 Feature 探针先以 manual 配置准备实例，再打开经理并补发长篇执行指导，还给首节点额外绑定 business_facts | [默认工程探针](../../../tests/live/probe_default_engineering_workflow.py) | 自主验收走真实 agent 启动入口，只使用初始业务需求，移除测试专用的调度提示和输入补丁 |
