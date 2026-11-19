@@ -129,6 +129,7 @@ function WorkStandardEditor({
   const [preview, setPreview] = useState<Row>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [ready, setReady] = useState(false);
   const [bindings, setBindings] = useState<Row>({});
   const [permission, setPermission] = useState("");
   const [requirements, setRequirements] = useState<Row>();
@@ -145,6 +146,7 @@ function WorkStandardEditor({
     runtime?.plan.standard_ref || configuration?.data.standard_ref;
   useEffect(() => {
     let active = true;
+    setReady(false);
     void loadCatalog(request, projectId, true)
       .then((rows) => {
         if (active) setRecords(rows);
@@ -187,6 +189,7 @@ function WorkStandardEditor({
             defaults.configuration?.data.harness_permission_ref ||
             "",
         );
+        setReady(true);
       })
       .catch((e) => {
         if (active) setError(String(e));
@@ -245,6 +248,7 @@ function WorkStandardEditor({
           {displayText(error)}
         </p>
       ) : null}
+      {!ready && !error ? <p role="status">正在读取规范与授权…</p> : null}
       <section
         id={`${panelId}-standard`}
         className="work-standard-content"
@@ -270,7 +274,7 @@ function WorkStandardEditor({
         {!ended ? (
           <fieldset
             className="work-standard-fields"
-            disabled={!instance || busy}
+            disabled={!ready || !instance || busy}
           >
             <RevisionSelect
               label="采用 Standard"
@@ -282,9 +286,10 @@ function WorkStandardEditor({
               value={selected}
               onChange={(value) => {
                 setSelected(value);
+                const standard = records.find((r) => r.id === value);
                 setWorkflow(
-                  records.find((r) => r.id === value)?.data
-                    .root_workflow_refs[0] || "",
+                  (standard?.workflow_refs ||
+                    standard?.root_workflow_refs)?.[0] || "",
                 );
                 setPreview(undefined);
               }}
@@ -309,7 +314,7 @@ function WorkStandardEditor({
       >
         <fieldset
           className="work-standard-fields"
-          disabled={!instance || ended || busy}
+          disabled={!ready || !instance || ended || busy}
         >
           {(requirements?.roles || []).map((role: Row) => (
             <RevisionSelect
@@ -353,7 +358,9 @@ function WorkStandardEditor({
             />
           </label>
           <ActionButton
-            disabled={busy || !selected || !workflow || !reason.trim()}
+            disabled={
+              !ready || busy || !selected || !workflow || !reason.trim()
+            }
             onClick={() =>
               void run(async () => {
                 const changeset = {

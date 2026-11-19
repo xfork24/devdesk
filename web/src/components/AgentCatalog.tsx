@@ -577,6 +577,7 @@ export function ResourceEditor({
                 className={showAdditionalEditor ? "selected" : ""}
                 onClick={() => {
                   routeConsumed.current = true;
+                  choice.current?.abort();
                   setShowAdditionalEditor(true);
                   setError("");
                   setMessage("");

@@ -2788,10 +2788,17 @@ test("folded work configuration is lazy and Standard apply keeps its original re
   let fullReads = 0;
   let revision = 1;
   const submissions: any[] = [];
+  let releaseDefaults!: () => void;
+  const defaults = new Promise<void>((resolve) => (releaseDefaults = resolve));
+  let defaultsLoading = false;
   await page.route("**/rpc", async (route) => {
     const call = route.request().postDataJSON();
     let result: any;
-    if (call.method === "query.work_configuration") {
+    if (call.method === "query.project_configuration") {
+      defaultsLoading = true;
+      await defaults;
+      return route.fallback();
+    } else if (call.method === "query.work_configuration") {
       workReads++;
       return route.fallback();
     } else if (call.method === "query.workflow_instance") {
@@ -2823,8 +2830,14 @@ test("folded work configuration is lazy and Standard apply keeps its original re
             data: { default_workflow_ref: "workflow-current:1" },
             workflow_refs: ["workflow-current:1"],
           },
+          {
+            id: "standard-next:1",
+            type: "standard",
+            name: "Next Standard",
+            root_workflow_refs: ["workflow-next:1"],
+          },
         ],
-        total: 1,
+        total: 2,
       };
     } else if (call.method === "query.workflow_change_preview") {
       result = {
@@ -2861,6 +2874,26 @@ test("folded work configuration is lazy and Standard apply keeps its original re
     .getByRole("button", { name: "采用的规范", exact: true })
     .click();
   await expect.poll(() => workReads).toBe(1);
+  try {
+    await expect.poll(() => defaultsLoading).toBe(true);
+    await expect(
+      standard.getByLabel("采用 Standard", { exact: true }),
+    ).toBeDisabled();
+  } finally {
+    releaseDefaults();
+  }
+  await expect(
+    standard.getByLabel("采用的入口 Workflow", { exact: true }),
+  ).toHaveValue("workflow-current:1");
+  await standard
+    .getByLabel("采用 Standard", { exact: true })
+    .selectOption("standard-next:1");
+  await expect(
+    standard.getByLabel("采用的入口 Workflow", { exact: true }),
+  ).toHaveValue("workflow-next:1");
+  await standard
+    .getByLabel("采用 Standard", { exact: true })
+    .selectOption("standard-current:1");
   await expect(
     standard.getByLabel("采用的入口 Workflow", { exact: true }),
   ).toHaveValue("workflow-current:1");
