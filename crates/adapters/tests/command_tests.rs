@@ -330,6 +330,7 @@ fn actual_read_only_observation_preserves_fast_test_completion() {
 }
 
 #[test]
+#[ignore = "requires explicit Codex/project images and actual Docker daemon"]
 fn python_assertions_environment_errors_and_project_commands_have_real_receipts() {
     let root = tempfile::tempdir().unwrap();
     let tests = CommandTests::new(root.path()).unwrap();
