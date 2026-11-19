@@ -39,7 +39,7 @@
 
 “模型说完成”“收到原生终态”“实际 writer 已停止”是三个观察；core 需要按端口结果组合它们，不能只看最后一句回复。快照恢复只提供历史背景，不重新执行旧 Turn。
 
-代码定位：[`RuntimeBinding`](../../../crates/domain/src/conversation.rs#L25)、[`ConversationTurn`](../../../crates/domain/src/conversation.rs#L85)、[`ConversationEvent`](../../../crates/domain/src/conversation.rs#L127)、[`PendingInteraction`](../../../crates/domain/src/conversation.rs#L194)、[`RuntimeExecution`](../../../crates/domain/src/conversation.rs#L253)、[`validate_conversations`](../../../crates/domain/src/conversation.rs#L285)。
+代码定位：[`RuntimeBinding`](../../../crates/domain/src/conversation.rs#L25)、[`ConversationTurn`](../../../crates/domain/src/conversation.rs#L85)、[`ConversationEvent`](../../../crates/domain/src/conversation.rs#L127)、[`PendingInteraction`](../../../crates/domain/src/conversation.rs#L194)、[`RuntimeExecution`](../../../crates/domain/src/conversation.rs#L301)、[`validate_conversations`](../../../crates/domain/src/conversation.rs#L320)。
 
 关联阅读：[core/src/conversations.rs](../devdesk-core/conversations-and-history.md#file-src-conversations-rs)、[core/src/conversation_runtime.rs](../devdesk-core/conversations-and-history.md#file-src-conversation-runtime-rs)、[adapters/src/harness.rs](../devdesk-adapters/harness-and-protocols.md#file-src-harness-rs)、[core/src/permission_switch.rs](../devdesk-core/session-resources-and-permissions.md#file-src-permission-switch-rs)。
 

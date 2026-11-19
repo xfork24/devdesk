@@ -418,11 +418,9 @@ test("项目与 Global 历史合并事件和工具调用，统一排序分页并
   await page.unrouteAll({ behavior: "wait" });
 });
 
-test("角色页仅保留 Agent 定义，旧入口兼容且可在讨论内创建身份", async ({
-  page,
-}) => {
+test("角色页使用 Agent 入口且可在讨论内创建身份", async ({ page }) => {
   await setup(page);
-  await page.goto("/?tab=actors&config_tab=agent_instance");
+  await page.goto("/?tab=actors&config_tab=agent");
   await expect(
     page.getByRole("tab", { name: "Agent", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
@@ -466,7 +464,7 @@ test("角色页仅保留 Agent 定义，旧入口兼容且可在讨论内创建�
     instance.getByRole("option", { name: "新建Agent实例", exact: true }),
   ).toHaveCount(1);
   await page.goto(
-    `/?tab=actors&config_tab=agent_instance&config_object=${result.result.id}`,
+    `/?tab=actors&config_tab=agent&config_object=${result.result.id}`,
   );
   await expect(
     page.getByRole("tab", { name: "Agent", exact: true }),

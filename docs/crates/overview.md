@@ -6,15 +6,15 @@ DevDesk 把“描述工作”“决定能否推进”和“实际执行”分在
 
 ## 包与文件导航
 
-这里覆盖 `crates/` 当前全部 **132 个受版本管理文件**：104 个 src 文件、22 个集成测试/支持文件、5 个 Cargo.toml 和 1 个 build.rs。每个包的 overview 都有完整文件表；每个文件只有一个主要讲解位置，相关实现通过精确章节链接相连。共 37 篇文档，包含本页、执行链和 35 篇包内概览/专题。
+各包概览的文件索引从当前源码目录生成，覆盖源文件、合同清单、示例与测试；专题解释主要合同及执行路径。更新索引用 `python3 scripts/py/check-docs.py --write`，普通检查会拒绝遗漏或过时的条目。
 
-| 包 | 文件数 | 主要内容 | 建议先读 |
-|---|---:|---|---|
-| [devdesk-domain](devdesk-domain/overview.md) | 27 | 业务对象、不可变源、Workflow/Spec、执行/权限/集成合同与纯校验 | [领域入口](devdesk-domain/work-and-materials.md#file-src-lib-rs)、[工作流原语](devdesk-domain/workflows-and-checks.md#file-src-workflow-rs) |
-| [devdesk-core](devdesk-core/overview.md) | 42 | 命令/查询、配置编译、冻结会话、执行状态机、控制和恢复 | [Engine](devdesk-core/engine-and-ports.md#file-src-lib-rs)、[端口](devdesk-core/engine-and-ports.md#file-src-ports-rs)、[步骤执行](devdesk-core/workflow-execution.md#file-src-configured-runtime-rs) |
-| [devdesk-adapters](devdesk-adapters/overview.md) | 50 | SQLite/Artifact、出厂资源、Docker/Harness、Git/GitHub、工具/凭据和集成测试 | [存储与装配](devdesk-adapters/storage-and-source-codecs.md#file-src-lib-rs)、[原生 Harness](devdesk-adapters/harness-and-protocols.md#file-src-harness-rs) |
-| [devdesk-host](devdesk-host/overview.md) | 11 | HTTP/SSE、连接认证、多项目调度、资源和 RPC 装配 | [HTTP 入口](devdesk-host/http-and-security.md#file-src-main-rs)、[Workspace](devdesk-host/workspace-and-lifecycle.md#file-src-workspace-rs) |
-| [devdesk-credential-helper](devdesk-credential-helper/overview.md) | 2 | 严格命名空间、签名父进程与单次 Keychain 操作 | [协议](devdesk-credential-helper/request-protocol.md)、[签名与系统访问](devdesk-credential-helper/signing-and-keychain.md) |
+| 包 | 主要内容 | 建议先读 |
+|---|---|---|
+| [devdesk-domain](devdesk-domain/overview.md) | 业务对象、不可变源、Workflow/Spec、执行/权限/集成合同与纯校验 | [领域入口](devdesk-domain/work-and-materials.md#file-src-lib-rs)、[工作流原语](devdesk-domain/workflows-and-checks.md#file-src-workflow-rs) |
+| [devdesk-core](devdesk-core/overview.md) | 命令/查询、配置编译、冻结会话、执行状态机、控制和恢复 | [Engine](devdesk-core/engine-and-ports.md#file-src-lib-rs)、[端口](devdesk-core/engine-and-ports.md#file-src-ports-rs)、[步骤执行](devdesk-core/workflow-execution.md#file-src-configured-runtime-rs) |
+| [devdesk-adapters](devdesk-adapters/overview.md) | SQLite/Artifact、出厂资源、Docker/Harness、Git/GitHub、工具/凭据和集成测试 | [存储与装配](devdesk-adapters/storage-and-source-codecs.md#file-src-lib-rs)、[原生 Harness](devdesk-adapters/harness-and-protocols.md#file-src-harness-rs) |
+| [devdesk-host](devdesk-host/overview.md) | HTTP/SSE、连接认证、多项目调度、资源和 RPC 装配 | [HTTP 入口](devdesk-host/http-and-security.md#file-src-main-rs)、[Workspace](devdesk-host/workspace-and-lifecycle.md#file-src-workspace-rs) |
+| [devdesk-credential-helper](devdesk-credential-helper/overview.md) | 严格命名空间、签名父进程与单次 Keychain 操作 | [协议](devdesk-credential-helper/request-protocol.md)、[签名与系统访问](devdesk-credential-helper/signing-and-keychain.md) |
 
 ## 编译依赖与实际交互
 
@@ -59,7 +59,7 @@ flowchart TD
 | Capability/Agent | 角色绑定到哪个技术组合？ | [Agent 组合](devdesk-domain/configuration-and-sources.md#file-src-governance-rs) |
 | Permission Profile | 本次允许什么，后端怎样落实？ | [权限 Profile](devdesk-domain/runtime-and-permissions.md#file-src-permission-profile-rs)、[实际编译](devdesk-adapters/credentials-and-permissions.md#file-src-permissions-rs) |
 
-业务 key、标题和角色名不应成为选择隐藏执行器的开关。代码只解释 Agent/Tool/Workflow/Control 等通用原语；具体方法、默认流程和发行 pin 来自 [资源 manifest](../../resources/configuration/manifest.json) 与 [默认映射](../../resources/configuration/defaults.json)。实际驱动能力来自 [受管能力注册](devdesk-core/session-resources-and-permissions.md#file-src-driver-capabilities-rs)，配置声明不能让 DSH 获得当前未实现的 Codex 动态桥。
+业务 key、标题和角色名不应成为选择隐藏执行器的开关。代码只解释 Agent/Tool/Workflow/Control 等通用原语；具体方法、默认流程和发行 pin 来自 [资源 manifest](../../resources/configuration/manifest.json) 与 [默认映射](../../resources/configuration/defaults.json)。实际驱动能力来自 [受管能力注册](devdesk-core/session-resources-and-permissions.md#file-src-driver-capabilities-rs)，Codex 与 DSH 都提供动态工具、外部工具和平台工具桥；当前仅 Codex 声明根编排能力，配置不能越过实际驱动注册。
 
 ### 执行完成、业务接纳与人工决定分别保存
 
@@ -91,4 +91,4 @@ Session/Turn 记录原生输入和执行，WorkflowOutput/Artifact 记录封存�
 | 权限/模型/密钥如何进入一次任务 | [会话与权限](devdesk-core/session-resources-and-permissions.md) → [运行准备](devdesk-adapters/runtime-preparation.md) → [凭据](devdesk-adapters/credentials-and-permissions.md) |
 | 如何新增工具或协议能力 | [合同](devdesk-domain/integrations.md#file-src-integrations-rs) → [用例](devdesk-core/integrations-and-repositories.md#file-src-integrations-rs) → [执行](devdesk-adapters/external-integrations.md#file-src-integrations-rs) → [路由](devdesk-host/rpc-and-configuration.md#file-src-integrations-rs) |
 
-改动代码时，命名沿用 Rust snake_case/PascalCase，状态变化放在合适层，参数使用明确领域类型。源码、Schema、资源和对应说明同步；文档直接描述当前行为，不写修订日志。仓库完整约束见 [AGENT.md](../../AGENT.md)，本目录不复制所有操作指南；HTTP、存储、权限和真实工程的产品说明仍从 [README 文档表](../../README.md#当前文档) 进入。
+改动代码时，命名沿用 Rust snake_case/PascalCase，状态变化放在合适层，参数使用明确领域类型。源码、Schema、资源和对应说明同步；文档直接描述当前行为，不写修订日志。仓库完整约束见 [AGENT.md](../../AGENT.md)，本目录不复制所有操作指南；HTTP、存储、权限和真实工程的产品说明仍从 [README 文档表](../../README.md#文档) 进入。

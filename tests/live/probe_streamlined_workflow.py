@@ -10,7 +10,7 @@ import signal
 import subprocess
 import time
 from client import Client
-from workflow_observer import read_workflow_tree, observe_human_request, check_human_request
+from workflow_observer import read_workflow_tree, observe_human_request, check_human_request, workflow_settled
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--binary', type=Path, required=True)
@@ -123,8 +123,8 @@ try:
                 history.write(json.dumps({'time': time.time(), 'statuses': statuses, 'instances': [{'id': key, 'status': value['runtime']['status'], 'owner_id': value['runtime']['owner_id']} for key, value in tree.items()]}, ensure_ascii=False) + '\n')
             print(json.dumps(statuses, ensure_ascii=False), flush=True)
             seen.add(status_digest)
-        if tree[context['root']]['record']['data']['status'] == 'completed':
-            (out / 'completed.json').write_text(json.dumps({'time': time.time(), 'root': context['root'], 'human_decisions_by_probe': 0}))
+        if workflow_settled(tree, manager, context['root']):
+            (out / 'completed.json').write_text(json.dumps({'time': time.time(), 'root': context['root'], 'controller_status': 'closed', 'human_decisions_by_probe': 0}))
             print('Real default workflow completed; evidence audit still required.', flush=True)
             break
         time.sleep(3)
@@ -136,5 +136,9 @@ finally:
         except subprocess.TimeoutExpired:
             child.terminate()
             child.wait(timeout=15)
+        private_auth_files = list((out / 'data/credentials').rglob('auth.json'))
+        private_auth_files.extend((out / 'data/projects').glob('*/execution/sessions/*/state/codex/auth.json'))
+        for private_auth in private_auth_files:
+            private_auth.unlink(missing_ok=True)
     (attempt / 'observation-ended.json').write_text(json.dumps({'time_ms': round(time.time() * 1000)}))
     (out / 'observation-ended.json').write_text((attempt / 'observation-ended.json').read_text())

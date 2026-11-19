@@ -23,7 +23,7 @@
 
 已有绑定不会被默认值覆盖；ensure_default_permissions 在存储事务内应用。reset_factory_catalog 把目录重置与新目录所需默认绑定放在同一事务，核对 generation、原请求指纹和 pristine 状态，避免目录切完却缺必要权限。
 
-代码定位：[`template_permission_defaults`](../../../crates/core/src/default_permissions.rs#L2)、[`ensure_default_permissions`](../../../crates/core/src/default_permissions.rs#L61)、[`reset_factory_catalog`](../../../crates/core/src/default_permissions.rs#L74)。
+代码定位：[`template_permission_defaults`](../../../crates/core/src/default_permissions.rs#L2)、[`ensure_default_permissions`](../../../crates/core/src/default_permissions.rs#L71)、[`reset_factory_catalog`](../../../crates/core/src/default_permissions.rs#L108)。
 
 关联阅读：[core/src/templates.rs](configuration-and-catalog.md#file-src-templates-rs)、[core/src/permission_resources.rs](session-resources-and-permissions.md#file-src-permission-resources-rs)、[adapters/src/permission_profiles.rs](../devdesk-adapters/credentials-and-permissions.md#file-src-permission-profiles-rs)。
 
@@ -37,7 +37,7 @@
 
 permission_resource_command 处理 Profile 的创建/修订等应用命令，`apply_permission_bindings` 检查目标完整内容身份、权限修订、enforcement_contract 和 expected_revision，形成新 binding/assignment。批次同一状态事务提交，重放先于 CAS；它不启动 worker，也不改变旧执行锁。实际策略是否能落实由注入后端预检。
 
-代码定位：[`insert_permission_profiles`](../../../crates/core/src/permission_resources.rs#L5)、[`permission_profile_export`](../../../crates/core/src/permission_resources.rs#L127)、[`permission_resource_command`](../../../crates/core/src/permission_resources.rs#L146)、[`apply_permission_bindings`](../../../crates/core/src/permission_resources.rs#L226)。
+代码定位：[`insert_permission_profiles`](../../../crates/core/src/permission_resources.rs#L5)、[`permission_profile_export`](../../../crates/core/src/permission_resources.rs#L137)、[`permission_resource_command`](../../../crates/core/src/permission_resources.rs#L156)、[`apply_permission_bindings`](../../../crates/core/src/permission_resources.rs#L239)。
 
 关联阅读：[domain/src/permission_profile.rs](../devdesk-domain/runtime-and-permissions.md#file-src-permission-profile-rs)、[adapters/src/permission_profiles.rs](../devdesk-adapters/credentials-and-permissions.md#file-src-permission-profiles-rs)、[host/src/permission_resources.rs](../devdesk-host/rpc-and-configuration.md#file-src-permission-resources-rs)。
 
@@ -53,9 +53,9 @@ permission_resource_command 处理 Profile 的创建/修订等应用命令，`ap
 
 权限改绑通过后继 Session 生效，旧 RuntimeBinding 不原地修改。允许的差异仅为 permissions 与 configuration_digest，Agent、安装、模型和接入锁等其他字段必须一致；这不是任意配置升级入口。普通 Task 讨论不允许走此切换，已有 configured_session 关联的正式任务则可在静止边界迁移到后继，Controller 关联也有专门迁移规则。活动或结果未知时仍拒绝切换，不能在未知边界直接提权。
 
-代码定位：[`permission_switch_id`](../../../crates/core/src/permission_switch.rs#L4)、[`send_with_permission_binding`](../../../crates/core/src/permission_switch.rs#L10)、[`replay_successor_input`](../../../crates/core/src/permission_switch.rs#L223)。
+代码定位：[`permission_switch_id`](../../../crates/core/src/permission_switch.rs#L12)、[`send_with_permission_binding`](../../../crates/core/src/permission_switch.rs#L70)、[`replay_successor_input`](../../../crates/core/src/permission_switch.rs#L638)。
 
-关联阅读：[core/src/session_assembly.rs](session-resources-and-permissions.md#file-src-session-assembly-rs)、[core/src/agent_tasks.rs](workflow-compilation.md#file-src-agent-tasks-rs)、[host/src/permission_resources.rs](../devdesk-host/rpc-and-configuration.md#file-src-permission-resources-rs)、[adapters/tests/permission_profiles.rs](../devdesk-adapters/testing.md#file-tests-permission-profiles-rs)。
+关联阅读：[core/src/session_assembly.rs](session-resources-and-permissions.md#file-src-session-assembly-rs)、[core/src/formal_sessions.rs](workflow-compilation.md#file-src-agent-tasks-rs)、[host/src/permission_resources.rs](../devdesk-host/rpc-and-configuration.md#file-src-permission-resources-rs)、[adapters/tests/permission_profiles.rs](../devdesk-adapters/testing.md#file-tests-permission-profiles-rs)。
 
 <a id="file-src-session-assembly-rs"></a>
 
@@ -69,7 +69,7 @@ permission_resource_command 处理 Profile 的创建/修订等应用命令，`ap
 
 `open_prepared_session` 在环境准备前检查原请求重放，保存原参数指纹，再通过允许的 resolved 入口提交装配结果。外部资源访问经 SessionResources，已存在物化/冻结选择不能被同版本标签的新镜像替换。
 
-代码定位：[`resolve_session_composition`](../../../crates/core/src/session_assembly.rs#L4)、[`open_prepared_session`](../../../crates/core/src/session_assembly.rs#L151)。
+代码定位：[`resolve_session_composition`](../../../crates/core/src/session_assembly.rs#L83)、[`open_prepared_session`](../../../crates/core/src/session_assembly.rs#L255)。
 
 关联阅读：[core/src/resource_receipts.rs](session-resources-and-permissions.md#file-src-resource-receipts-rs)、[core/src/ports.rs](engine-and-ports.md#file-src-ports-rs)、[adapters/src/session_resources.rs](../devdesk-adapters/runtime-preparation.md#file-src-session-resources-rs)、[core/src/conversations.rs](conversations-and-history.md#file-src-conversations-rs)。
 
@@ -85,7 +85,7 @@ permission_resource_command 处理 Profile 的创建/修订等应用命令，`ap
 
 因此安装操作在适配器，采用与物化身份由 core 裁定。相同源若已对应另一安装不能偷偷替换，需要明确的后继配置或核对。
 
-代码定位：[`import_experience`](../../../crates/core/src/resource_receipts.rs#L3)、[`record_harness_materialization`](../../../crates/core/src/resource_receipts.rs#L75)、[`materialize_harness`](../../../crates/core/src/resource_receipts.rs#L109)。
+代码定位：[`import_experience`](../../../crates/core/src/resource_receipts.rs#L26)、[`record_harness_materialization`](../../../crates/core/src/resource_receipts.rs#L125)、[`materialize_harness`](../../../crates/core/src/resource_receipts.rs#L189)。
 
 关联阅读：[adapters/src/session_resources.rs](../devdesk-adapters/runtime-preparation.md#file-src-session-resources-rs)、[domain/src/execution_recipe.rs](../devdesk-domain/runtime-and-permissions.md#file-src-execution-recipe-rs)、[adapters/src/experience.rs](../devdesk-adapters/storage-and-source-codecs.md#file-src-experience-rs)、[core/src/session_assembly.rs](session-resources-and-permissions.md#file-src-session-assembly-rs)。
 

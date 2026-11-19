@@ -20,11 +20,13 @@
 
 `Engine` 保存工程存储、Artifact、Harness、Git、Tests、PR 及可选工具/经理/配置后端端口。`Command` 包含 command_id、target、expected_revision 和 payload；`command_fingerprint` 将方法、目标、版本和载荷绑定为重放身份。
 
-`execute_internal` 在带幂等键的存储事务内依次检查跨库配置围栏、当前目录成员，分派应用命令，记录后处理事实、可信 command_context 和目录成员。返回的是已提交结果或 durable 操作身份；长操作由后台执行。`execute_resolved` 只允许明确的装配命令复用原请求指纹，防止内部补全参数破坏调用者幂等。
+`execute_internal` 先分派会话控制、工具控制、工作空间、仓库、配置传输和工作流等原生用例。业务用例读取有限资源，形成 `ReadSet` / `PreparedChangeSet`，以版本见证、领域约束及幂等回执原子提交。剩余源配置命令使用目录事务；普通业务写入不会恢复完整工程状态再逐表比较。
 
-`bootstrap` 将已派发却未知结果的工具、仓库、Turn/Session 标为需核对，并使未终结实例重新评估；它不假设外部没执行。`tick` 汇合后台管线，`query` 汇合只读视图。这里还保留基本 Project/Feature/Task/材料命令，所以阅读总分派时应继续追踪到相应专题，不能只按 HTTP 方法名理解状态变化。
+`execute_resolved` 仅允许明确的装配命令复用原请求指纹，防止内部补全参数改变重放身份。`bootstrap` 核对重启后的原操作并保留未知效果。`run_scheduling_stage` 提供分阶段后台推进；查询通过只读端口加载摘要或确切事实，不隐式提交业务状态。
 
-代码定位：[`Engine`](../../../crates/core/src/lib.rs#L99)、[`Command`](../../../crates/core/src/lib.rs#L89)、[`command_fingerprint`](../../../crates/core/src/lib.rs#L96)、[`execute_internal`](../../../crates/core/src/lib.rs#L455)、[`bootstrap`](../../../crates/core/src/lib.rs#L321)、[`tick`](../../../crates/core/src/lib.rs#L732)、[`query`](../../../crates/core/src/lib.rs#L744)。
+资源合同见 [concurrency.rs](../../../crates/core/src/concurrency.rs)，各业务模块的完整列表见[本包索引](overview.md)。
+
+代码定位：[`Engine`](../../../crates/core/src/lib.rs#L256)、[`Command`](../../../crates/core/src/lib.rs#L207)、[`command_fingerprint`](../../../crates/core/src/lib.rs#L214)、[`execute_internal`](../../../crates/core/src/lib.rs#L399)、[`bootstrap`](../../../crates/core/src/bootstrap_recovery.rs#L7)、[`tick`](../../../crates/core/src/lib.rs#L536)、[`query`](../../../crates/core/src/lib.rs#L568)。
 
 关联阅读：[core/src/ports.rs](engine-and-ports.md#file-src-ports-rs)、[core/src/invocation.rs](engine-and-ports.md#file-src-invocation-rs)、[adapters/src/lib.rs](../devdesk-adapters/storage-and-source-codecs.md#file-src-lib-rs)、[host/src/workspace.rs](../devdesk-host/workspace-and-lifecycle.md#file-src-workspace-rs)。
 
@@ -34,7 +36,7 @@
 
 源码：[crates/core/src/ports.rs](../../../crates/core/src/ports.rs)。
 
-此文件是 core 与外层的连接面。EngineeringStore 提供带重放键的事务、快照与项目根；ArtifactStore 提供封存和校验读取。Harness 提供会话打开、Turn 派发、观察、交互回答、工具回复、日志、停止和清理；观察类型把消费、终态和停止证据分开。
+此文件是 core 与外层的连接面。EngineeringStore 提供有限资源读取、带读集合见证的原子提交、配置目录事务与项目根；ArtifactStore 提供封存和校验读取。Harness 提供会话打开、Turn 派发、观察、交互回答、工具回复、日志、停止和清理；观察类型把消费、终态和停止证据分开。
 
 Harness 的 begin_session 可返回尚未完成，poll_session_start 只查询已预约原 execution 的启动；真实适配器在后台创建并初始化，默认测试适配器可同步返回。核心先持久化额度占位和操作身份，接纳实际回执后才 dispatch_turn；丢失原任务、取消及未知效果不能靠再次 begin 重发恢复。EngineeringStore 的 workflow_runtime_pending/native_platform_tool_prepared 仅为调度提示，observe_native_call 仅为无参数阶段观测，均不授予业务执行权。
 
@@ -44,7 +46,7 @@ SessionResources 将安装准备、完整性/协议验证、权限编译、模�
 
 实现者必须返回真实、归属一致且可核对的事实；core 负责接纳业务状态。新增 trait 方法要同时核对生产实现、测试替身和所有失败/取消语义。
 
-代码定位：[`EngineeringStore`](../../../crates/core/src/ports.rs#L329)、[`ArtifactStore`](../../../crates/core/src/ports.rs#L354)、[`Harness`](../../../crates/core/src/ports.rs#L15)、[`Git`](../../../crates/core/src/ports.rs#L194)、[`Tests`](../../../crates/core/src/ports.rs#L278)、[`ToolExecutor`](../../../crates/core/src/ports.rs#L169)、[`SessionResources`](../../../crates/core/src/ports.rs#L375)、[`ExecutionAdapters`](../../../crates/core/src/ports.rs#L309)。
+代码定位：[`EngineeringStore`](../../../crates/core/src/ports.rs#L551)、[`ArtifactStore`](../../../crates/core/src/ports.rs#L993)、[`Harness`](../../../crates/core/src/ports.rs#L33)、[`Git`](../../../crates/core/src/ports.rs#L279)、[`Tests`](../../../crates/core/src/ports.rs#L436)、[`ToolExecutor`](../../../crates/core/src/ports.rs#L247)、[`SessionResources`](../../../crates/core/src/ports.rs#L1022)、[`ExecutionAdapters`](../../../crates/core/src/ports.rs#L474)。
 
 关联阅读：[adapters/src/lib.rs](../devdesk-adapters/storage-and-source-codecs.md#file-src-lib-rs)、[adapters/src/harness.rs](../devdesk-adapters/harness-and-protocols.md#file-src-harness-rs)、[adapters/src/session_resources.rs](../devdesk-adapters/runtime-preparation.md#file-src-session-resources-rs)、[adapters/src/configuration_backend.rs](../devdesk-adapters/factory-and-configuration.md#file-src-configuration-backend-rs)、[adapters/tests/support/mod.rs](../devdesk-adapters/testing.md#file-tests-support-mod-rs)。
 
@@ -56,9 +58,9 @@ SessionResources 将安装准备、完整性/协议验证、权限编译、模�
 
 `InvocationContext` 只实现 Serialize，字段私有，没有让客户端反序列化 Actor 的入口。人类请求由可信应用边界构造；Controller、Driver、Segment 来源由内部协调器建立。
 
-`record` 检查固定项目，把 actor、项目、目标与原请求指纹写入 command_context。相同 command_id 再出现时，来源和参数必须相同。这层记录提供审计依据，但不替代原生 worker/Turn/epoch 的实际核验。
+命令用例核对固定项目及可信 Actor，将调用来源与原请求指纹纳入幂等和资源级提交。相同 command_id 不能改参数或冒用其他调用者。Controller 仍须通过原生 worker、Turn 和 epoch 校验。
 
-代码定位：[`InvocationContext`](../../../crates/core/src/invocation.rs#L4)、[`human`](../../../crates/core/src/invocation.rs#L9)、[`workflow`](../../../crates/core/src/invocation.rs#L15)、[`record`](../../../crates/core/src/invocation.rs#L21)。
+代码定位：[`InvocationContext`](../../../crates/core/src/invocation.rs#L4)、[`human`](../../../crates/core/src/invocation.rs#L142)、[`workflow`](../../../crates/core/src/invocation.rs#L149)。
 
 关联阅读：[core/src/lib.rs](engine-and-ports.md#file-src-lib-rs)、[core/src/controllers.rs](orchestration-and-drivers.md#file-src-controllers-rs)、[core/src/workflow_driver.rs](orchestration-and-drivers.md#file-src-workflow-driver-rs)。
 

@@ -25,7 +25,7 @@
 
 Model Provider、Model Catalog 与 Harness 校验检查服务商、容量目录、执行安装及实际驱动组合。`project_configuration_references` 读取项目的确切选择；`retired` 将配置停用事实纳入后续选择。这里不安装镜像、不取得系统密钥，能解析的组合还要经过执行装配和授权。
 
-代码定位：[`role_record`](../../../crates/core/src/configuration.rs#L5)、[`visible`](../../../crates/core/src/configuration.rs#L15)、[`validate_capability`](../../../crates/core/src/configuration.rs#L63)、[`reference_users`](../../../crates/core/src/configuration.rs#L172)、[`project_configuration_references`](../../../crates/core/src/configuration.rs#L265)、[`validate_harness`](../../../crates/core/src/configuration.rs#L329)。
+代码定位：[`role_record`](../../../crates/core/src/configuration.rs#L5)、[`visible`](../../../crates/core/src/configuration.rs#L29)、[`validate_capability`](../../../crates/core/src/configuration.rs#L77)、[`reference_users`](../../../crates/core/src/configuration.rs#L193)、[`project_configuration_references`](../../../crates/core/src/configuration.rs#L286)、[`validate_harness`](../../../crates/core/src/configuration.rs#L350)。
 
 关联阅读：[domain/src/source.rs](../devdesk-domain/configuration-and-sources.md#file-src-source-rs)、[core/src/configuration_changes.rs](configuration-and-catalog.md#file-src-configuration-changes-rs)、[core/src/governance.rs](configuration-and-catalog.md#file-src-governance-rs)、[core/src/driver_capabilities.rs](session-resources-and-permissions.md#file-src-driver-capabilities-rs)。
 
@@ -37,11 +37,11 @@ Model Provider、Model Catalog 与 Harness 校验检查服务商、容量目录�
 
 这是源与治理记录的基础用例集合。`record/record_with_refs/update_record` 构造和更新不同性质的记录；`validate_source_payload` 按类型复用领域校验，检查平台处理器、Harness、权限、Delivery 等组合。`validate_composition` 检查 Agent 实际拥有的 Role/Model/Harness/Skill/Tool。
 
-`governance_command` 分派 Role、Model、Harness、Skill、Capability、Agent 等定义操作、停用、实例创建及项目配置采用；它不会因为创建 Role 就顺便生成 Agent 或 Skill。`freeze_feature_configuration` 在开始工作时固定当时的确切依赖，后续默认修改不会替换它。
+`governance_command` 分派 Role、Model、Harness、Skill、Capability、Agent 等定义操作、停用、实例创建及项目配置采用；它不会因为创建 Role 就顺便生成 Agent 或 Skill。工作启动由 [workflow_start.rs](../../../crates/core/src/workflow_start.rs) 固定当时的配置与规范依赖，后续默认修改不替换原引用。
 
-`governance_after_command` 保存需要的快照/经验和关联事实，`governance_query` 返回按可见性与当前目录过滤的视图。这里的 ConfigurationRecord 包含源与执行治理两类记录，落盘时 source_store 会分开处理，不能认为所有记录都在同一张源表中。
+配置查询按可见性与当前目录过滤；运行快照、经验和关联事实由各自用例保存。这里的 ConfigurationRecord 包含源与执行治理两类记录，落盘时 source_store 会分开处理，不能认为所有记录都在同一张源表中。
 
-代码定位：[`validate_source_payload`](../../../crates/core/src/governance.rs#L4)、[`record_with_refs`](../../../crates/core/src/governance.rs#L155)、[`validate_composition`](../../../crates/core/src/governance.rs#L264)、[`governance_command`](../../../crates/core/src/governance.rs#L508)、[`freeze_feature_configuration`](../../../crates/core/src/governance.rs#L475)、[`governance_after_command`](../../../crates/core/src/governance.rs#L401)。
+代码定位：[`validate_source_payload`](../../../crates/core/src/governance.rs#L4)、[`record_with_refs`](../../../crates/core/src/governance.rs#L129)、[`validate_composition`](../../../crates/core/src/governance.rs#L237)、[`governance_command`](../../../crates/core/src/governance.rs#L361)。
 
 关联阅读：[core/src/configuration.rs](configuration-and-catalog.md#file-src-configuration-rs)、[core/src/configuration_changes.rs](configuration-and-catalog.md#file-src-configuration-changes-rs)、[core/src/catalog_sync.rs](configuration-and-catalog.md#file-src-catalog-sync-rs)、[adapters/src/source_store.rs](../devdesk-adapters/storage-and-source-codecs.md#file-src-source-store-rs)。
 
@@ -57,7 +57,7 @@ Model Provider、Model Catalog 与 Harness 校验检查服务商、容量目录�
 
 实际 apply 重新核对候选、Actor 和基准，以单库事务提交。预演中的时间不参与语义指纹；预演不运行 Skill、模型或外部工具。权限绑定可经注入后端做纯可行性检查。共享修改还需经理授权，不允许通过同一候选给当前会话自提权。
 
-代码定位：[`ConfigurationOperation`](../../../crates/core/src/configuration_changes.rs#L6)、[`ConfigurationChangeSet`](../../../crates/core/src/configuration_changes.rs#L53)、[`configuration_fingerprint`](../../../crates/core/src/configuration_changes.rs#L78)、[`configuration_candidate`](../../../crates/core/src/configuration_changes.rs#L190)、[`configuration_preview_in`](../../../crates/core/src/configuration_changes.rs#L481)、[`configuration_change_command`](../../../crates/core/src/configuration_changes.rs#L510)。
+代码定位：[`ConfigurationOperation`](../../../crates/core/src/configuration_changes.rs#L6)、[`ConfigurationChangeSet`](../../../crates/core/src/configuration_changes.rs#L53)、[`configuration_fingerprint`](../../../crates/core/src/configuration_changes.rs#L78)、[`configuration_candidate`](../../../crates/core/src/configuration_changes.rs#L190)、[`configuration_preview_in`](../../../crates/core/src/configuration_changes.rs#L535)、[`configuration_change_command`](../../../crates/core/src/configuration_changes.rs#L577)。
 
 关联阅读：[domain/src/configuration_graph.rs](../devdesk-domain/configuration-and-sources.md#file-src-configuration-graph-rs)、[core/src/configuration_transfers.rs](configuration-and-catalog.md#file-src-configuration-transfers-rs)、[core/src/manager_workspace.rs](manager-and-platform-tools.md#file-src-manager-workspace-rs)、[adapters/tests/configuration_changes.rs](../devdesk-adapters/testing.md#file-tests-configuration-changes-rs)。
 
@@ -73,7 +73,7 @@ apply 先持久化 applying，再在项目事务里复制所需源、采用选�
 
 这是一条可收敛协议，不是分布式原子事务。任一阶段都按同一操作 ID 和指纹核对；恢复仍使用原 Actor，不能把经理发起的共享修改改记为 Human。
 
-代码定位：[`stage_configuration_transfer_as`](../../../crates/core/src/configuration_transfers.rs#L45)、[`apply_configuration_transfer`](../../../crates/core/src/configuration_transfers.rs#L99)、[`cancel_configuration_transfer`](../../../crates/core/src/configuration_transfers.rs#L188)、[`recover_configuration_transfers`](../../../crates/core/src/configuration_transfers.rs#L201)、[`configuration_transfer_guard`](../../../crates/core/src/configuration_transfers.rs#L23)。
+代码定位：[`stage_configuration_transfer_as`](../../../crates/core/src/configuration_transfers.rs#L80)、[`apply_configuration_transfer`](../../../crates/core/src/configuration_transfers.rs#L232)、[`configuration_transfer_command_as`](../../../crates/core/src/configuration_transfers.rs)、[`recover_configuration_transfers`](../../../crates/core/src/configuration_transfers.rs#L537)、[`configuration_transfer_guard`](../../../crates/core/src/configuration_transfers.rs#L23)。
 
 关联阅读：[core/src/configuration_changes.rs](configuration-and-catalog.md#file-src-configuration-changes-rs)、[host/src/governance.rs](../devdesk-host/rpc-and-configuration.md#file-src-governance-rs)、[core/src/manager_workspace.rs](manager-and-platform-tools.md#file-src-manager-workspace-rs)、[adapters/tests/configuration_changes.rs](../devdesk-adapters/testing.md#file-tests-configuration-changes-rs)。
 
@@ -91,7 +91,7 @@ apply 先持久化 applying，再在项目事务里复制所需源、采用选�
 
 全局 bundle 使用一次性安装，不能在同进程悄悄换成另一套产品资源。包内测试用外部构造的小 bundle 证明 core 不依赖 resources 文件树；adapter factory_bundle 才负责实际内嵌加载。
 
-代码定位：[`ConfigurationBundle`](../../../crates/core/src/templates.rs#L12)、[`install_configuration_bundle`](../../../crates/core/src/templates.rs#L20)、[`materialize`](../../../crates/core/src/templates.rs#L45)、[`initialize_template_catalog`](../../../crates/core/src/templates.rs#L188)、[`restore_template_catalog`](../../../crates/core/src/templates.rs#L287)、[`current_template_defaults`](../../../crates/core/src/templates.rs#L425)。
+代码定位：[`ConfigurationBundle`](../../../crates/core/src/templates.rs)、[`install_configuration_bundle`](../../../crates/core/src/templates.rs#L21)、[`materialize`](../../../crates/core/src/templates.rs#L61)、[`initialize_template_catalog`](../../../crates/core/src/templates.rs#L208)、[`restore_template_catalog`](../../../crates/core/src/templates.rs#L359)、[`current_template_defaults`](../../../crates/core/src/templates.rs#L559)。
 
 关联阅读：[adapters/src/factory_bundle.rs](../devdesk-adapters/factory-and-configuration.md#file-src-factory-bundle-rs)、[core/src/default_permissions.rs](session-resources-and-permissions.md#file-src-default-permissions-rs)、[host/src/templates.rs](../devdesk-host/rpc-and-configuration.md#file-src-templates-rs)。
 
@@ -121,7 +121,7 @@ apply 先持久化 applying，再在项目事务里复制所需源、采用选�
 
 `publish_experience_index` 把项目经验条目发布到全局治理目录，已有同 ID 条目须完全一致。这里复制的是可定位的经验索引；完整会话/文档和 Artifact 仍在原项目，由 experience 适配器只读加载。
 
-代码定位：[`sync_shared_configuration`](../../../crates/core/src/catalog_sync.rs#L3)、[`publish_experience_index`](../../../crates/core/src/catalog_sync.rs#L101)。
+代码定位：[`sync_shared_configuration`](../../../crates/core/src/catalog_sync.rs#L44)、[`publish_experience_index`](../../../crates/core/src/experience_directory.rs#L147)。
 
 关联阅读：[host/src/workspace.rs](../devdesk-host/workspace-and-lifecycle.md#file-src-workspace-rs)、[adapters/src/experience.rs](../devdesk-adapters/storage-and-source-codecs.md#file-src-experience-rs)、[core/src/resource_receipts.rs](session-resources-and-permissions.md#file-src-resource-receipts-rs)、[adapters/src/source_store.rs](../devdesk-adapters/storage-and-source-codecs.md#file-src-source-store-rs)。
 
@@ -137,9 +137,9 @@ apply 先持久化 applying，再在项目事务里复制所需源、采用选�
 
 `check_invocation_contract` 核对子工作入口和父调用端口兼容性；work_standard_selection、compare_work_standards、work_standard_choices 分别展示真实采用、差异和可访问选择。跨项目比较读取各自源上下文，不切换活动项目。
 
-代码定位：[`capture_standard`](../../../crates/core/src/standards.rs#L27)、[`select_work_configuration`](../../../crates/core/src/standards.rs#L85)、[`check_invocation_contract`](../../../crates/core/src/standards.rs#L447)、[`work_standard_selection`](../../../crates/core/src/standards.rs#L518)、[`compare_work_standards`](../../../crates/core/src/standards.rs#L577)、[`work_standard_choices`](../../../crates/core/src/standards.rs#L607)。
+代码定位：[`capture_standard`](../../../crates/core/src/standards.rs#L27)、[`select_work_configuration`](../../../crates/core/src/standards.rs#L91)、[`check_invocation_contract`](../../../crates/core/src/standards.rs#L634)、[`work_standard_selection`](../../../crates/core/src/standards.rs#L705)、[`compare_work_standards`](../../../crates/core/src/standards.rs#L764)、[`work_standard_choices`](../../../crates/core/src/standards.rs#L794)。
 
-关联阅读：[domain/src/standards.rs](../devdesk-domain/configuration-and-sources.md#file-src-standards-rs)、[core/src/configured_workflows.rs](workflow-compilation.md#file-src-configured-workflows-rs)、[core/src/workflow_changes.rs](workflow-changes.md#file-src-workflow-changes-rs)、[adapters/tests/standard_snapshots.rs](../devdesk-adapters/testing.md#file-tests-standard-snapshots-rs)。
+关联阅读：[domain/src/standards.rs](../devdesk-domain/configuration-and-sources.md#file-src-standards-rs)、[core/src/configured_workflows.rs](workflow-compilation.md#file-src-configured-workflows-rs)、[core/src/workflow_change_commit.rs](workflow-changes.md#file-src-workflow-changes-rs)、[adapters/tests/standard_snapshots.rs](../devdesk-adapters/testing.md#file-tests-standard-snapshots-rs)。
 
 ---
 

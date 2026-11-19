@@ -480,11 +480,7 @@ pub struct ExecutionAdapters {
 
 /// PR API facts are separate from Git refs and model output; no protection bypass.
 pub trait PullRequests: Send + Sync {
-    fn delivery_target(
-        &self,
-        _context: &GitContext,
-        _legacy_create_protection: bool,
-    ) -> Result<Value> {
+    fn delivery_target(&self, _context: &GitContext) -> Result<Value> {
         Err(err("unsupported", "PR 适配器未实现目标分支只读观察"))
     }
     fn ensure_delivery(

@@ -20,7 +20,7 @@ OAuth 配置、认证引用、静态 Skill 文件/包及 BoundTool、Integration
 
 调用失败或取消不表示远端回滚。core 需要在 unknown 时核对，HTTP/MCP 真正运行及认证注入则由 adapters 实现；本文件不发请求、不读取凭据。
 
-代码定位：[`IntegrationSource`](../../../crates/domain/src/integrations.rs#L16)、[`IntegrationBinding`](../../../crates/domain/src/integrations.rs#L176)、[`ExternalTool`](../../../crates/domain/src/integrations.rs#L222)、[`SkillPackage`](../../../crates/domain/src/integrations.rs#L278)、[`IntegrationLock`](../../../crates/domain/src/integrations.rs#L302)、[`ToolReceipt`](../../../crates/domain/src/integrations.rs#L330)。
+代码定位：[`IntegrationSource`](../../../crates/domain/src/integrations.rs#L16)、[`IntegrationBinding`](../../../crates/domain/src/integrations.rs#L172)、[`ExternalTool`](../../../crates/domain/src/integrations.rs#L218)、[`SkillPackage`](../../../crates/domain/src/integrations.rs#L274)、[`IntegrationLock`](../../../crates/domain/src/integrations.rs#L298)、[`ToolReceipt`](../../../crates/domain/src/integrations.rs#L330)。
 
 关联阅读：[core/src/integrations.rs](../devdesk-core/integrations-and-repositories.md#file-src-integrations-rs)、[adapters/src/integrations.rs](../devdesk-adapters/external-integrations.md#file-src-integrations-rs)、[adapters/src/integration_oauth.rs](../devdesk-adapters/external-integrations.md#file-src-integration-oauth-rs)。
 

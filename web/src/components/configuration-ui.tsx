@@ -7,7 +7,7 @@ import {
   compareConfigurationRecords,
   loadCatalog,
 } from "./configuration-state";
-import { ActionButton, ActionSelect } from "./ActionFeedback";
+import { ActionSelect } from "./ActionFeedback";
 import {
   lazy,
   Suspense,
@@ -297,61 +297,6 @@ export function MarkdownField({
             <p className="muted">点击填写内容</p>
           )}
         </div>
-      )}
-    </div>
-  );
-}
-
-export function MarkdownTopicsField({
-  value,
-  onChange,
-  readOnly = false,
-}: {
-  value: string[];
-  onChange: (value: string[]) => void;
-  readOnly?: boolean;
-}) {
-  return (
-    <div
-      className="markdown-field full-width"
-      role="group"
-      aria-label="必须讨论的主题"
-    >
-      <div className="markdown-field-heading">
-        <span>必须讨论的主题</span>
-      </div>
-      {value.length ? (
-        <ol className="markdown-topics">
-          {value.map((topic, index) => (
-            <li key={index}>
-              <MarkdownField
-                label={`讨论主题 ${index + 1}`}
-                value={topic}
-                readOnly={readOnly}
-                rows={4}
-                onChange={(next) =>
-                  onChange(value.map((item, i) => (i === index ? next : item)))
-                }
-              />
-              {!readOnly && (
-                <ActionButton
-                  type="button"
-                  aria-label={displayText(`删除讨论主题 ${index + 1}`)}
-                  onClick={() => onChange(value.filter((_, i) => i !== index))}
-                >
-                  删除主题
-                </ActionButton>
-              )}
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <p className="muted">暂无主题</p>
-      )}
-      {!readOnly && (
-        <ActionButton type="button" onClick={() => onChange([...value, ""])}>
-          添加讨论主题
-        </ActionButton>
       )}
     </div>
   );

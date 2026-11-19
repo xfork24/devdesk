@@ -318,26 +318,54 @@ pub struct AgentExecutionConfiguration {
 }
 
 pub fn topological(nodes: &[(String, Vec<String>)]) -> Result<Vec<String>> {
-    valid_dag(nodes)?;
-    let mut done = Vec::new();
-    while done.len() < nodes.len() {
-        let next = nodes
-            .iter()
-            .find(|(key, deps)| !done.contains(key) && deps.iter().all(|d| done.contains(d)))
-            .ok_or_else(|| err("invalid_workflow", "流程含环或缺失依赖"))?;
-        done.push(next.0.clone());
+    require(
+        nodes.len() <= WORKFLOW_STEP_LIMIT
+            && nodes.iter().all(|(key, deps)| {
+                !key.trim().is_empty()
+                    && deps.len() <= WORKFLOW_STEP_LIMIT
+                    && deps.iter().collect::<BTreeSet<_>>().len() == deps.len()
+                    && !deps.contains(key)
+            }),
+        "DAG 含空节点、自依赖、重复边或超出预算",
+    )?;
+    let indices: BTreeMap<_, _> = nodes
+        .iter()
+        .enumerate()
+        .map(|(index, (key, _))| (key.as_str(), index))
+        .collect();
+    require(indices.len() == nodes.len(), "DAG 节点重复")?;
+    let mut remaining = Vec::with_capacity(nodes.len());
+    let mut dependents = vec![Vec::new(); nodes.len()];
+    let mut ready = BTreeSet::new();
+    for (index, (_, deps)) in nodes.iter().enumerate() {
+        remaining.push(deps.len());
+        if deps.is_empty() {
+            ready.insert(index);
+        }
+        for dependency in deps {
+            let parent = indices
+                .get(dependency.as_str())
+                .ok_or_else(|| err("blocked", "DAG 有环或引用不存在的节点"))?;
+            dependents[*parent].push(index);
+        }
     }
+    let mut done = Vec::with_capacity(nodes.len());
+    // The lowest input index preserves the original first-ready-node order,
+    // including nodes that become ready before an already queued sibling.
+    while let Some(index) = ready.pop_first() {
+        done.push(nodes[index].0.clone());
+        for &dependent in &dependents[index] {
+            remaining[dependent] -= 1;
+            if remaining[dependent] == 0 {
+                ready.insert(dependent);
+            }
+        }
+    }
+    require(done.len() == nodes.len(), "DAG 有环或引用不存在的节点")?;
     Ok(done)
 }
 
 impl EngineeringState {
-    pub fn workflow_paused(&self, owner: &str) -> bool {
-        self.governance.iter().any(|r| {
-            r.r#type == "workflow_instance"
-                && r.data["paused"] == true
-                && r.data["owner_id"] == owner
-        })
-    }
     pub fn configuration(&self, id: &str) -> Result<&ConfigurationRecord> {
         self.governance
             .iter()

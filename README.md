@@ -1,85 +1,129 @@
 # DevDesk
 
-DevDesk 是本地软件工程工作台：Rust 内核管理配置、工作流和权威执行事实，React Web 提供操作入口，SQLite 按项目保存工程数据与历史。它通过 GitHub 仓库、Git worktree、Linux Docker worker 和 Codex / DeepSeek Harness 执行实际工作；精简版在版本、回归及保护门禁通过后自动合入 Task PR，Feature PR 另须 Human 确认。
+**把需求、AI 执行、真实测试和代码交付放进同一个本地工程工作台。**
 
-核心性能约束是单 Host 在工作流运行时支撑至少 100 个活跃并发前端：各前端独立选择项目，读取并发执行，写入用乐观版本校验保护，显示允许最终一致。SQLite 底层并发重构已合入 main 并通过初步专项验证，尚未完成正式容量与联合验收，见 [设计约束](docs/design.md#单-host-并发与性能设计约束)、[合入与基本验证记录](docs/plans/single-host-concurrency/MERGE.md)、[实施计划](docs/plans/single-host-concurrency/PLAN.md) 和 [100 前端验收标准](docs/plans/single-host-concurrency/ACCEPTANCE.md)。
+DevDesk 使用 Rust 内核管理配置与工程事实，React 提供 Web 工作台，SQLite 按项目保存执行历史。它通过 Git worktree、Linux Docker worker、Codex / DeepSeek Harness 和 GitHub 执行实际工程工作。
 
-工作方法由不可变配置源组合：Role 定义职责，Skill 定义方法，Step 定义任务，Spec 定义检查，Delivery 定义交付合同，Standard 固定规范闭包。项目和具体工作显式采用确切修订，运行冻结输入、权限、资源与接入选择；修改默认配置不会覆写已有运行。
+[快速开始](#快速开始) · [工作方式](#创建第一项工作) · [开发与验证](#开发与验证) · [文档](#文档) · [贡献](#贡献)
 
-## 启动
+## 能做什么
 
-源码构建需要 Rust **1.99.1**（由 `rust-toolchain.toml` 指定）、Node **24**、npm、Python 3 与 C 编译工具链。macOS 首次构建先按 [系统凭据](docs/system-credentials.md) 配置签名身份。运行工程还需已启动的 Docker、Git 和已登录的 GitHub CLI。
+- **配置工程方法**：组合 Role、Skill、Workflow、Spec、Delivery 和 Standard，发布不可变修订，预览后明确采用。
+- **执行并跟踪工作**：选择人工逐步、Rust 有界调度或项目经理 Agent；查看步骤、原始产物、实际测试与独立评审。
+- **核对代码交付**：绑定确切源版本、目标和测试候选，检查 PR、合入结果与本地同步。默认 Task 自动合入所属 Feature，Feature 合入主分支需要 Human 决定。
+- **保留执行依据**：会话冻结模型、权限、输入和环境；历史执行保留原引用，未知副作用先核对，运行计划变更经过预演与停止确认。
+- **按项目协作**：每个浏览器标签页独立选择项目，读取并发执行，写入通过资源版本校验防止覆盖。
+
+当前支持 macOS 和 Linux Host，工程 worker 在 Linux Docker 容器执行。Codex 与 DSH 都提供动态工具和经验访问桥；当前根编排驱动支持 Codex。100 个活跃前端是持续容量目标，正式联合验收状态见[并发与性能约束](docs/design.md#单-host-并发与性能设计约束)。
+
+## 快速开始
+
+### 环境要求
+
+| 用途 | 依赖 |
+|---|---|
+| 源码构建 | Rust **1.99.1**（`rust-toolchain.toml`）、Node **24**、npm、Python **3.10+**、C 编译工具链 |
+| 工程执行 | 运行中的 Docker、Git、已认证的 GitHub CLI，以及选定模型服务商的认证 |
+| 本机凭据 | macOS 固定签名 Keychain 助手；Linux Secret Service 和可访问的用户 D-Bus |
+| 完整回归 | Python Schema 校验依赖、Chromium、Docker 与镜像/包源网络 |
+
+macOS 首次构建先按[系统凭据说明](docs/system-credentials.md)设置固定签名身份。Python 依赖建议安装到虚拟环境：
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r scripts/check/requirements.txt
 ./scripts/dev/build.sh
 python3 scripts/dev/run-host.py target/release/devdesk-host --data ./data --port 4317
 ```
 
-在浏览器打开终端显示的地址，默认 `http://127.0.0.1:4317`。省略 `--data` 时由初始化页选择数据目录。开发入口会构建 Web 与 debug Host，并在 macOS 使用独立签名副本运行：
+打开终端显示的地址，默认是 `http://127.0.0.1:4317`。省略 `--data` 时，由初始化页选择数据目录。构建脚本会安装前端依赖、构建 Web 和 release Host。
 
-```bash
-./scripts/dev/dev.sh --data ./data --port 4317
-```
+### 创建第一项工作
 
-Web 和出厂资源嵌入 Host，界面更新后重新构建并重启。发行包由以下命令生成，解压后运行 `./devdesk-host`，无需 Rust、宿主 Node 或源码：
+1. 在 Web 中“打开 GitHub 项目”，选择专用仓库与主分支，等待克隆和工作空间登记完成。
+2. 在设置中完成模型认证；为项目选择 Workflow、Standard、Role→Agent、Sandbox、权限 Profile 和驱动，并保存项目测试配置。
+3. 准备实际执行环境。Host 根据所选 Harness 与 Sandbox 组合配方，核验镜像、驱动与权限资产；准备探针不调用模型。
+4. 创建 Feature 并填写需求。在执行页查看当前输入、步骤产物、测试和评审；需要人工决定时，核对确切版本后签署。
+5. 确认 PR、合入结果和本地同步回执，再判断工程交付是否完成。
+
+默认出厂目录发布精简版 Feature/Task 流程，保留独立 Red/Green、代码评审、源版本与合并结果两类项目回归。PRD、Design、Tasks 和最终 Feature 合入要求 Human 决定。配置组成及流程详见[默认配置](resources/configuration/README.md)与[工作流和编排](docs/workflow-orchestration.md)。
+
+### 运行包
 
 ```bash
 ./scripts/release/package.sh
 ```
 
-输出为 `dist/devdesk-0.2.0-<rust-host-target>.tar.gz` 及 SHA-256 文件。远程内核连接、访问密钥、Linux 凭据与 AppArmor 设置见 [运行包说明](docs/run-binary.md)。源码分发入口为 `./scripts/release/package-source.sh`。
-
-## 工程流程
-
-1. 在 Web “打开 GitHub 项目”，填写仓库和主分支，等待克隆及工作空间登记完成。
-2. 在设置中完成模型认证；在项目管理采用 Workflow、Standard、Role→Agent、Sandbox、Profile 与驱动选择。执行镜像按确切 Harness/Sandbox 配置组合准备，准备探针不调用模型。
-3. 创建 Feature，用自然语言填写初始需求，选择人工逐步、Rust 有界调度或项目经理 Agent 调度。三者使用相同的派发、接纳、完成及证据规则；调度参数在 Workflow 内发布并冻结。
-4. 在“执行与交付”查看步骤、原始产物、真实测试、独立评审及候选。运行计划变更经过预演、静止等待和原子应用；未知副作用先核对。
-5. 核对候选、测试、评审、业务接纳与远端发布回执，取得 PR。模型自述不能代替 Docker 测试、Git 事实或人类签署。
-
-默认精简版 Feature 为 5 阶段、14 个业务步骤（19 个实际节点），Task 为 5 阶段、10 个业务步骤（14 个实际节点）。独立测试与 Red/Green、独立评审、源版本及合并结果两类项目回归均保留；文档和自检在实现内完成。经理按 Task DAG 派发，默认并发上限 4；Task PR 合入并同步到所属 Feature 后才完成并解锁后继。PRD、Design、Tasks 和最终 Feature 合入要求确切版本的 Human 决定。项目必须先保存测试执行配置。出厂目录仅发布精简版；已有详细版工作按原冻结源继续追溯。完整流程、预算和授权见 [工作流与编排](docs/workflow-orchestration.md) 与 [默认配置](resources/configuration/README.md)。
-
-项目经理独立工作台可在创建 Feature 前查询资料、预演和创作配置；它与根实例调度权分开。Codex 与 DSH 提供动态工具和 Agent 经验访问桥；当前根编排驱动支持 Codex。DSH 可按源配置连接 DeepSeek、智谱国内编程订阅、MiniMax 国内订阅及本机 Ollama；目录结果不代表真实推理已验证。
-
-## 数据与执行边界
-
-```text
-<data>/global.sqlite3                              # 共享源配置、项目目录、运行安装与准备记录
-<data>/conversations/global/engineering.sqlite3    # 全局讨论，独立命名空间
-<data>/projects/<id>/engineering.sqlite3           # 单项目工程事实与执行历史
-<data>/projects/<id>/artifacts/                    # 摘要封存产物
-<data>/projects/<id>/repository/                   # 受管理仓库克隆
-<data>/projects/<id>/execution/                    # 会话、测试、工具、Git 意图与工作副本
-```
-
-数据集标记为 `devdesk-profile-runtime-v2`，当前 SQLite 基线为 **global 24 / project 59**，同一数据集只有一个可写 Host。不兼容旧数据集直接拒绝，不自动转换、删库或重建；兼容数据集可重开，验证新代码使用独立空目录。
-
-配置唯一存储在 `source_definitions`，执行视图按原源引用恢复，不存第二份展开闭包。权限与能力分开：Agent 只引用 Role/Capability，Profile 落实 Harness/Sandbox 策略，步骤直接引用所需 Profile，显式选择替换同层默认绑定。真实 worker 在 Linux 容器运行，宿主登录组件不作为工程执行环境。
+输出为 `dist/devdesk-0.2.0-<rust-host-target>.tar.gz` 及 SHA-256 文件。解压后运行 `./devdesk-host`，无需 Rust、宿主 Node 或源码；实际工程仍需 Docker、Git、GitHub CLI 及认证。远程连接、访问密钥和平台设置见[运行包说明](docs/run-binary.md)。
 
 ## 开发与验证
 
+开发入口构建 Web 和 debug Host，然后启动服务：
+
 ```bash
+./scripts/dev/dev.sh --data ./data --port 4317
+```
+
+Web 与出厂资源嵌入 Host；修改后需要重新构建并重启。macOS 启动器使用独立签名副本，避免后续编译覆盖正在运行的程序。
+
+```bash
+# 在已安装上述 Python 依赖的环境中执行。
 npm --prefix web ci
 (cd web && npx playwright install chromium)
 ./scripts/check/check.sh
 ```
 
-检查入口执行权限资产、出厂目录、架构、风格门禁（rustfmt、clippy、ESLint、Prettier）、Web 构建、Rust、HTTP/数据集合同及 debug/release Chromium。默认回归不调用真实付费模型或 GitHub。真实 Git/Docker、模型工程和 Standard 验收使用各自专用入口、独立数据集及明确指定的仓库，见 [测试索引](tests/README.md) 和 [真实工程接入](docs/real-engineering.md)。
+完整检查覆盖配置和权限资产、架构、文档、RPC 清单、代码风格、类型、Web 构建、Rust 测试，以及 debug/release 的 HTTP、数据集和 Chromium 回归。默认回归不调用付费模型或真实 GitHub；Docker 测试与模型工程验收有显式入口，见[测试索引](tests/README.md)。
 
-仓库职责与改动约束见 [AGENT.md](AGENT.md)，构建/检查/打包命令见 [脚本索引](scripts/README.md)。
+常用专项检查：
 
-## 当前文档
+```bash
+./scripts/check/check-style.sh
+cargo test --workspace --locked
+python3 scripts/py/check-docs.py
+```
 
-| 主题 | 文档 |
+## 项目结构
+
+| 路径 | 职责 |
 |---|---|
-| 代码规范 | [Rust 代码规范](docs/code-standards-rust.md)、[Web 代码规范](docs/code-standards-web.md) |
-| 代码阅读 | [crates 总览与文件索引](docs/crates/overview.md)、[完整执行链](docs/crates/execution-flows.md) |
-| 概念与结构 | [领域规范](docs/domain.md)、[结构合同](docs/contracts.md)、[架构设计](docs/design.md) |
-| 并发重构 | [合入与基本验证记录](docs/plans/single-host-concurrency/MERGE.md)、[SQLite 底层重构方案与阶段计划](docs/plans/single-host-concurrency/PLAN.md)、[工作流运行时 100 前端验收合同](docs/plans/single-host-concurrency/ACCEPTANCE.md)（代码已合入，正式容量与联合验收待执行） |
-| 流程与规范 | [工作流与编排](docs/workflow-orchestration.md)、[源配置与执行解析](docs/source-configuration.md) |
-| 操作与会话 | [Web 工作台](docs/web-workbench.md)、[讨论与经验](docs/conversations.md)、[真实工程接入](docs/real-engineering.md) |
-| 执行与接入 | [适配器契约](docs/real-adapter-contract.md)、[工具与技能](docs/tool-skill-integrations.md)、[模型服务商](docs/model-providers.md) |
-| 权限与部署 | [运行时权限](docs/permissions.md)、[系统凭据](docs/system-credentials.md)、[运行包说明](docs/run-binary.md) |
-| 协议与存储 | [本地协议](docs/protocol.md)、[存储布局](docs/storage.md)、[Schema](schemas/README.md)、[SQL](sql/README.md) |
+| `crates/domain` | 领域类型、纯规则与有界校验 |
+| `crates/core` | 配置编译、命令/查询、会话与工作流、权威回执接纳 |
+| `crates/adapters` | SQLite、产物存储、Git/GitHub、Docker、Harness 与凭据 |
+| `crates/host` | HTTP/SSE、认证、项目路由、调度与 Web 嵌入 |
+| `crates/credential-helper` | macOS 独立签名 Keychain 助手 |
+| `web` / `tests` | Web 工作台、浏览器回归及跨进程/原生测试入口 |
+| `resources` / `permissions` / `containers` | 出厂配置、权限后端资产与项目测试容器 |
+| `schemas` / `sql` | JSON 结构合同与 SQLite 初始化基线 |
+| `docs` / `scripts` | 当前说明、实施计划与构建/检查/打包工具 |
 
-`docs/` 根目录 Markdown 描述当前实现和明确标记的设计约束；[docs/plans/](docs/plans/README.md) 保存待实施方案、合同和历史验收，未实施内容不代表当前能力，原始路径、SHA、测试结果只属于当时执行，不保证临时产物仍存在。
+依赖方向为 `host → adapters → core → domain`，外部能力通过 core 端口注入。详见[代码手册](docs/crates/overview.md)。
+
+## 数据与权限
+
+数据目录包括共享的 `global.sqlite3`、独立全局讨论库，以及 `projects/<id>/` 下的工程库、产物、仓库和执行目录。一个数据集由一个 Host 管理。
+
+当前数据标记为 `devdesk-profile-runtime-v2`，布局为 `single-host-resource-v2`，SQLite 基线为 **global 24 / project 60**。不兼容数据集会被拒绝，不自动迁移、清空或重建；验证新代码使用独立空目录。
+
+配置唯一保存于不可变的 `source_definitions`。Agent 的能力与 Profile 的授权分别校验，Harness/Sandbox 两层权限共同约束实际执行；无法落实的策略明确拒绝。具体边界见[存储布局](docs/storage.md)和[权限说明](docs/permissions.md)。
+
+## 文档
+
+| 主题 | 入口 |
+|---|---|
+| 使用与部署 | [Web 工作台](docs/web-workbench.md)、[运行包](docs/run-binary.md)、[系统凭据](docs/system-credentials.md) |
+| 工程方法 | [工作流与编排](docs/workflow-orchestration.md)、[源配置](docs/source-configuration.md)、[真实工程接入](docs/real-engineering.md) |
+| 代码与架构 | [crates 索引](docs/crates/overview.md)、[执行链](docs/crates/execution-flows.md)、[架构](docs/design.md)、[领域](docs/domain.md) |
+| 合同与接入 | [结构合同](docs/contracts.md)、[协议](docs/protocol.md)、[适配器](docs/real-adapter-contract.md)、[工具与技能](docs/tool-skill-integrations.md)、[模型服务商](docs/model-providers.md) |
+| 开发参考 | [Rust 规范](docs/code-standards-rust.md)、[Web 规范](docs/code-standards-web.md)、[测试](tests/README.md)、[脚本](scripts/README.md)、[Schema](schemas/README.md) |
+
+`docs/` 根目录和 `docs/crates/` 描述当前实现；[docs/plans/](docs/plans/README.md)保存方案与历史验收，其结果只对应当时的代码、环境和输入。
+
+## 贡献
+
+修改前阅读 [AGENT.md](AGENT.md)，保持领域、应用、适配器与 Host 的边界。行为变更同步更新合同、必要的 Schema 和当前文档；提交前运行相关检查，说明验证结果与尚未验证的范围。日志、凭据、运行数据和构建产物不进入版本库。
+
+## 许可证
+
+仓库目前未提供根级 `LICENSE` 文件。第三方组件及权限资产的许可证分别随依赖、安装元数据和 `permissions/backends/docker/upstream/` 保留。

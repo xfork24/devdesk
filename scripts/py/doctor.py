@@ -2,13 +2,13 @@
 """Read-only Web/live host preflight. Never reads credential contents."""
 import argparse,json,os,platform,shutil,subprocess,sys
 from pathlib import Path
-p=argparse.ArgumentParser();p.add_argument('--permission-backend',choices=['docker-default-v1','docker-nested-v1'],default='docker-default-v1');p.add_argument('--output',type=Path);p.add_argument('--binary',type=Path);a=p.parse_args();r={'platform':platform.system(),'architecture':platform.machine(),'client':'web','checks':[]}
+p=argparse.ArgumentParser();p.add_argument('--permission-backend',choices=['docker-default-v1','docker-nested-v1'],default='docker-default-v1');p.add_argument('--output',type=Path);p.add_argument('--binary',type=Path);p.add_argument('--codex-image');p.add_argument('--dsh-image');a=p.parse_args();r={'platform':platform.system(),'architecture':platform.machine(),'client':'web','checks':[]}
 def check(name,passed,detail):r['checks'].append({'name':name,'passed':bool(passed),'detail':detail})
 def executes(argv):
  try:return subprocess.run(argv,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=12).returncode==0
  except (OSError,subprocess.TimeoutExpired):return False
 check('host_platform',platform.system() in ['Darwin','Linux'],'macOS/Linux Web Host')
-for command in ['git','gh','docker','codex']:
+for command in ['git','gh','docker']:
  found=shutil.which(command);check(command,found is not None,'found' if found else 'install '+command)
 check('docker_daemon',executes(['docker','info']),'Docker Engine/Desktop must be running')
 try:
@@ -22,7 +22,10 @@ if apparmor and a.permission_backend=='docker-nested-v1':
  except OSError:matches=False
  check('nested_apparmor_policy',matches,'review and install the fixed DevDesk profile on the Docker host; root file integrity only, actual sandbox execution still requires live tests')
 check('github_authentication',executes(['gh','auth','status']),'gh account configured; no token is read or printed')
-for provider,version in [('codex','0.167.0'),('dsh','0.2.2-rc.1')]:check(provider+'_linux_image',executes(['docker','image','inspect','devdesk/'+provider+':'+version]),'build the fixed runtime image on this Docker platform')
+# Runtime images come from selected Harness/Sandbox recipes, not release tags.
+# Check a particular image only when the caller explicitly selects it.
+for provider,reference in [('codex',a.codex_image),('dsh',a.dsh_image)]:
+ if reference:check(provider+'_linux_image',executes(['docker','image','inspect',reference]),'selected image exists; use Host runtime preparation for recipe and protocol verification')
 if platform.system()=='Linux':
  check('secret_tool',shutil.which('secret-tool') is not None,'Ubuntu: install libsecret-tools')
  check('desktop_session',bool(os.environ.get('DBUS_SESSION_BUS_ADDRESS')),'Secret Service requires a desktop/user D-Bus session; credential contents are not read')

@@ -15,16 +15,16 @@ import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[2]
-SUITES = {
-    'command_tests': 1,
-    'delivery_acceptance': 1,
-    'docker_resources': 3,
-    'model_providers': 1,
-    'permission_profiles': 1,
-    'permissions': 3,
-    'runtime_resources': 2,
-    'tool_integrations': 4,
-}
+SUITES = (
+    'command_tests',
+    'delivery_acceptance',
+    'docker_resources',
+    'model_providers',
+    'permission_profiles',
+    'permissions',
+    'runtime_resources',
+    'tool_integrations',
+)
 
 
 def source_fingerprint():
@@ -41,8 +41,8 @@ def source_fingerprint():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     scope = parser.add_mutually_exclusive_group(required=True)
-    scope.add_argument('--docker-only', action='store_true', help='run the 16 Docker tests; no GitHub credentials required')
-    scope.add_argument('--github-request', type=Path, help='existing dedicated PR request; run all 17 tests')
+    scope.add_argument('--docker-only', action='store_true', help='run the Docker tests; no GitHub credentials required')
+    scope.add_argument('--github-request', type=Path, help='existing dedicated PR request; include GitHub acceptance')
     parser.add_argument('--github-repo', help='dedicated acceptance repository, required with --github-request')
     parser.add_argument('--prepare', action='store_true', help='build the selected packaged Codex and DSH recipes')
     parser.add_argument('--reports', type=Path)
@@ -56,7 +56,7 @@ def main():
             parser.error('GitHub acceptance requires a known existing PR in a dedicated repository')
     reports = (args.reports or Path(tempfile.mkdtemp(prefix='devdesk-native-'))).resolve()
     reports.mkdir(parents=True, exist_ok=True)
-    report = {'passed': False, 'scope': 'all-17' if args.github_request else 'docker-16', 'started': time.time(), 'images': {}, 'steps': [], 'source': {
+    report = {'passed': False, 'scope': 'docker-and-github' if args.github_request else 'docker', 'expected_tests': 0, 'tests': {}, 'started': time.time(), 'images': {}, 'steps': [], 'source': {
         'git_head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
         'inputs_sha256': source_fingerprint(),
     }}
@@ -84,14 +84,9 @@ def main():
 
     try:
         if args.prepare:
-            configuration = ROOT / 'resources/configuration'
-            manifest = json.loads((configuration / 'manifest.json').read_text())
-            defaults = json.loads((configuration / manifest['defaults']).read_text())
-            sources = [json.loads((configuration / name).read_text()) for name in manifest['types']['runtime_resource']]
+            recipes = json.loads(run('recipes', ['cargo', 'run', '--quiet', '--locked', '-p', 'devdesk-adapters', '--example', 'export_runtime_recipes']))
             for provider in ['codex', 'dsh']:
-                reference = defaults['runtime_resources'][provider]
-                source = next(row for row in sources if f"{row['identity']}:{row['revision']}" == reference)
-                resource = source['data']
+                resource = recipes[provider]
                 tag = f'devdesk/native-acceptance:{provider}'
                 if resource.get('image'):
                     run(f'pull-{provider}', ['docker', 'pull', resource['image']])
@@ -119,13 +114,22 @@ def main():
             if not re.fullmatch(r'sha256:[0-9a-f]{64}', reference):
                 raise RuntimeError(f'set immutable {variable} or use --prepare')
             report['images'][variable] = inspect(reference)
-        suites = dict(SUITES)
+        env['DEVDESK_DSH_TEST_IMAGE'] = env['DEVDESK_TEST_DSH_IMAGE']
+        env['DEVDESK_TEST_PROJECT_IMAGE'] = env['DEVDESK_TEST_CODEX_IMAGE']
+        suites = list(SUITES)
         if args.github_request:
             env['DEVDESK_LIVE_PR_REQUEST'] = str(args.github_request)
             env['DEVDESK_LIVE_GITHUB_REPO'] = args.github_repo
-            suites['github_resources'] = 1
-        for suite, expected in suites.items():
-            output = run(suite, ['cargo', 'test', '--locked', '-p', 'devdesk-adapters', '--test', suite, '--', '--ignored', '--test-threads=1'])
+            suites.append('github_resources')
+        for suite in suites:
+            listing = run(suite + '-list', ['cargo', 'test', '--locked', '-p', 'devdesk-adapters', '--features', 'test-fixtures', '--test', suite, '--', '--ignored', '--list'])
+            tests = re.findall(r'^(.+): test$', listing, re.MULTILINE)
+            if not tests:
+                raise RuntimeError(f'{suite} did not enumerate any external tests')
+            expected = len(tests)
+            report['tests'][suite] = tests
+            report['expected_tests'] += expected
+            output = run(suite, ['cargo', 'test', '--locked', '-p', 'devdesk-adapters', '--features', 'test-fixtures', '--test', suite, '--', '--ignored', '--test-threads=1'])
             if not re.search(rf'test result: ok\. {expected} passed; 0 failed; 0 ignored;', output):
                 raise RuntimeError(f'{suite} did not execute the expected {expected} external tests')
         if source_fingerprint() != report['source']['inputs_sha256']:

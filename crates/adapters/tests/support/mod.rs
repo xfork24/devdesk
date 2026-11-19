@@ -21,11 +21,14 @@ pub fn platform(provider: &str) -> String {
 }
 fn load(provider: &str) -> (String, String) {
     let variable = format!("DEVDESK_TEST_{}_IMAGE", provider.to_ascii_uppercase());
-    let reference = std::env::var(&variable).unwrap_or_else(|_| match provider {
-        "codex" => "devdesk/codex:0.167.0".into(),
-        "dsh" => "devdesk/dsh:0.2.2-rc.1".into(),
-        "project" => "devdesk/project-tests:1".into(),
-        _ => panic!("unknown test provider"),
+    let reference = std::env::var(&variable).unwrap_or_else(|_| {
+        if provider == "project" {
+            "devdesk/project-tests:1".into()
+        } else {
+            panic!(
+                "set {variable} to an explicitly prepared image; use native_acceptance.py --prepare"
+            )
+        }
     });
     let output = std::process::Command::new("docker")
         .args(["image", "inspect", &reference])
@@ -33,7 +36,7 @@ fn load(provider: &str) -> (String, String) {
         .expect("Docker must be installed");
     assert!(
         output.status.success(),
-        "build the fixed {provider} image or set {variable}; images are never silently pulled"
+        "prepare the selected {provider} recipe and set {variable}; images are never silently pulled"
     );
     let rows: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(rows[0]["Os"], "linux");

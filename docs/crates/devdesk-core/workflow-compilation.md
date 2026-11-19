@@ -8,7 +8,7 @@
 
 - [src/configured_workflows.rs](#file-src-configured-workflows-rs)：发布完整配置闭包并生成内存执行计划
 - [src/frozen_views.rs](#file-src-frozen-views-rs)：从历史源选择纯重建 Plan 与任务
-- [src/agent_tasks.rs](#file-src-agent-tasks-rs)：正式会话与具体执行的唯一关联
+- [src/formal_sessions.rs](#file-src-agent-tasks-rs)：正式会话与具体执行的唯一关联
 
 <a id="file-src-configured-workflows-rs"></a>
 
@@ -22,7 +22,7 @@ compile_workflow_sources 递归访问确切子流程，核对 DAG、深度/展�
 
 同一文件处理 Workflow/Spec 草稿与发布、项目配置选择和纯预览查询。草稿可不完整，发布与采用要形成完整可执行闭包；项目 ready 状态返回实际缺口，不补内置角色。编译不会启动 Docker、Git 或模型，正式执行还需资源物化与会话装配。
 
-代码定位：[`ConfiguredWorkflowPlan`](../../../crates/core/src/configured_workflows.rs#L7)、[`compile_workflow_sources`](../../../crates/core/src/configured_workflows.rs#L616)、[`compile_configured_workflow`](../../../crates/core/src/configured_workflows.rs#L63)、[`configured_workflow_command`](../../../crates/core/src/configured_workflows.rs#L79)、[`project_configuration_status`](../../../crates/core/src/configured_workflows.rs#L27)。
+代码定位：[`ConfiguredWorkflowPlan`](../../../crates/core/src/configured_workflows.rs#L7)、[`compile_workflow_sources`](../../../crates/core/src/configured_workflows.rs#L719)、[`compile_configured_workflow`](../../../crates/core/src/configured_workflows.rs#L72)、[`configured_workflow_command`](../../../crates/core/src/configured_workflows.rs#L89)、[`project_configuration_status`](../../../crates/core/src/configured_workflows.rs#L36)。
 
 关联阅读：[domain/src/workflow.rs](../devdesk-domain/workflows-and-checks.md#file-src-workflow-rs)、[domain/src/source.rs](../devdesk-domain/configuration-and-sources.md#file-src-source-rs)、[core/src/configured_runtime.rs](workflow-execution.md#file-src-configured-runtime-rs)、[core/src/frozen_views.rs](workflow-compilation.md#file-src-frozen-views-rs)、[adapters/tests/configured_workflows.rs](../devdesk-adapters/testing.md#file-tests-configured-workflows-rs)。
 
@@ -38,23 +38,19 @@ compile_workflow_sources 递归访问确切子流程，核对 DAG、深度/展�
 
 adapter codec 对已经发送的任务优先核对 User 事件中的实际 JSON 与正式任务记录的摘要，匹配后直接恢复；缺少该账本正文时才调用这里的纯重建。因而 restore_task 是恢复的一条后备路径，不是每次读取历史都先重跑的渲染步骤。源缺失或不一致是存储错误，而不是自动采用新版的理由。
 
-代码定位：[`source_closure`](../../../crates/core/src/frozen_views.rs#L16)、[`restore_plan`](../../../crates/core/src/frozen_views.rs#L125)、[`restore_task`](../../../crates/core/src/frozen_views.rs#L80)。
+代码定位：[`source_closure`](../../../crates/core/src/frozen_views.rs#L12)、[`restore_plan`](../../../crates/core/src/frozen_views.rs#L212)、[`restore_task`](../../../crates/core/src/frozen_views.rs#L122)。
 
 关联阅读：[adapters/src/source_views.rs](../devdesk-adapters/storage-and-source-codecs.md#file-src-source-views-rs)、[core/src/configured_workflows.rs](workflow-compilation.md#file-src-configured-workflows-rs)、[core/src/configured_runtime.rs](workflow-execution.md#file-src-configured-runtime-rs)。
 
 <a id="file-src-agent-tasks-rs"></a>
 
-## src/agent_tasks.rs：正式会话与具体执行的唯一关联
+## src/formal_sessions.rs：正式会话的准备与接纳
 
-源码：[crates/core/src/agent_tasks.rs](../../../crates/core/src/agent_tasks.rs)。
+源码：[formal_sessions.rs](../../../crates/core/src/formal_sessions.rs)、[session_assembly.rs](../../../crates/core/src/session_assembly.rs)。
 
-configured_session 记录把 Session 指向精确 workflow_instance、step 和 execution。`formal_session` 与 session_matches_context 供会话输入校验使用，阻止把普通自由对话伪装成正式任务，或把一次 Turn 归给“最近的同名步骤”。
+`prepare_formal_session` 从明确的步骤执行或控制器事实准备会话，保存可恢复的准备记录和资源版本见证。`admit_formal_session` 在提交时重新核对当前计划、执行、权限和运行绑定，建立 `configured_session` 及会话关联。会话不能借用其他步骤、最近一次同名执行或模型自填的归属。
 
-`inherit_task_binding` 为权限/运行接续把关联迁往后继 Session：业务步骤必须确实仍引用原会话，并刷新公开运行上下文；Controller 后继则核对当前会话、提高 epoch、更新 lease 并保存新 controller_session。原记录保留，旧会话不能继续作为当前执行者控制后续工作。
-
-代码定位：[`session_binding`](../../../crates/core/src/agent_tasks.rs#L4)、[`session_workflow_context`](../../../crates/core/src/agent_tasks.rs#L13)、[`formal_session`](../../../crates/core/src/agent_tasks.rs#L26)、[`inherit_task_binding`](../../../crates/core/src/agent_tasks.rs#L30)。
-
-关联阅读：[core/src/conversations.rs](conversations-and-history.md#file-src-conversations-rs)、[core/src/permission_switch.rs](session-resources-and-permissions.md#file-src-permission-switch-rs)、[core/src/controllers.rs](orchestration-and-drivers.md#file-src-controllers-rs)、[core/src/workflow_runtime_facts.rs](workflow-execution.md#file-src-workflow-runtime-facts-rs)。
+`session_assembly` 通过 `SessionResources` 在事务外准备实际安装、凭据及权限，再提交冻结绑定。权限后继由 [permission_switch.rs](../../../crates/core/src/permission_switch.rs) 协调，保留原会话及旧执行依据。
 
 ---
 

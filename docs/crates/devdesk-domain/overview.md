@@ -19,18 +19,24 @@
 
 ## 完整文件索引
 
-每个文件只有一个主要讲解位置；相关专题通过链接引用它。
+由 `python3 scripts/py/check-docs.py --write` 更新。专题解释主要合同，表格覆盖当前全部文件。
 
-| 文件 | 职责与实现说明 |
+<!-- crate-files:start -->
+
+| 文件 | 阅读入口或源码职责 |
 |---|---|
 | [Cargo.toml](../../../crates/domain/Cargo.toml) | [纯领域包的依赖边界](overview.md#file-cargo-toml) |
+| [src/agent_context.rs](../../../crates/domain/src/agent_context.rs) | Versioned, read-only context access shared by every Agent identity. |
 | [src/agent_task.rs](../../../crates/domain/src/agent_task.rs) | [任务正文及大输入协议的技术边界](workflows-and-checks.md#file-src-agent-task-rs) |
 | [src/agents.rs](../../../crates/domain/src/agents.rs) | [工作类型与工具能力上限](agents-and-conversations.md#file-src-agents-rs) |
+| [src/artifact.rs](../../../crates/domain/src/artifact.rs) | Exact identity and immutable bytes for a prepared local file seal. |
 | [src/configuration.rs](../../../crates/domain/src/configuration.rs) | [Role 定义的额外可见范围](configuration-and-sources.md#file-src-configuration-rs) |
 | [src/configuration_graph.rs](../../../crates/domain/src/configuration_graph.rs) | [只从有类型字段提取依赖](configuration-and-sources.md#file-src-configuration-graph-rs) |
+| [src/configuration_usages.rs](../../../crates/domain/src/configuration_usages.rs) | Read-only reverse references derived from exact source revisions. |
 | [src/conversation.rs](../../../crates/domain/src/conversation.rs) | [冻结绑定、输入消费、交互及真实停止](agents-and-conversations.md#file-src-conversation-rs) |
 | [src/deliverable.rs](../../../crates/domain/src/deliverable.rs) | [交付类型的格式、结构与产出来源](work-and-materials.md#file-src-deliverable-rs) |
 | [src/execution.rs](../../../crates/domain/src/execution.rs) | [执行环境与精确 Git 路由](work-and-materials.md#file-src-execution-rs) |
+| [src/execution_recipe.rs](../../../crates/domain/src/execution_recipe.rs) | [配置决定运行配方，摘要决定实际来源](runtime-and-permissions.md#file-src-execution-recipe-rs) |
 | [src/governance.rs](../../../crates/domain/src/governance.rs) | [源记录信封、Scope 与执行组合类型](configuration-and-sources.md#file-src-governance-rs) |
 | [src/integrations.rs](../../../crates/domain/src/integrations.rs) | [外部来源、工具合同、账户锁与执行回执](integrations.md#file-src-integrations-rs) |
 | [src/lib.rs](../../../crates/domain/src/lib.rs) | [项目、任务、材料与聚合状态](work-and-materials.md#file-src-lib-rs) |
@@ -40,7 +46,6 @@
 | [src/permission_profile.rs](../../../crates/domain/src/permission_profile.rs) | [Profile、目标绑定和双端权限锁](runtime-and-permissions.md#file-src-permission-profile-rs) |
 | [src/repository.rs](../../../crates/domain/src/repository.rs) | [仓库操作、工作副本与 PR 回执](work-and-materials.md#file-src-repository-rs) |
 | [src/runtime.rs](../../../crates/domain/src/runtime.rs) | [驱动、安装产物和完整性结果](runtime-and-permissions.md#file-src-runtime-rs) |
-| [src/execution_recipe.rs](../../../crates/domain/src/execution_recipe.rs) | [配置决定运行配方，摘要决定实际来源](runtime-and-permissions.md#file-src-execution-recipe-rs) |
 | [src/source.rs](../../../crates/domain/src/source.rs) | [规范源引用与纯解析入口](configuration-and-sources.md#file-src-source-rs) |
 | [src/spec_checks.rs](../../../crates/domain/src/spec_checks.rs) | [机器断言与冻结输入位置证明](workflows-and-checks.md#file-src-spec-checks-rs) |
 | [src/standards.rs](../../../crates/domain/src/standards.rs) | [规范闭包、稳定摘要与结构差异](configuration-and-sources.md#file-src-standards-rs) |
@@ -50,6 +55,9 @@
 | [src/workflow_change.rs](../../../crates/domain/src/workflow_change.rs) | [类型化变更与保守影响图](workflows-and-checks.md#file-src-workflow-change-rs) |
 | [src/workflow_driver.rs](../../../crates/domain/src/workflow_driver.rs) | [有界自动调度的可配置参数](workflows-and-checks.md#file-src-workflow-driver-rs) |
 | [src/workflow_failure.rs](../../../crates/domain/src/workflow_failure.rs) | [失败类别、副作用结论与安全重试前提](workflows-and-checks.md#file-src-workflow-failure-rs) |
+| [src/workflow_time.rs](../../../crates/domain/src/workflow_time.rs) | Explicit v1 limits for logical execution wall time and Human waiting. Legacy activity time remains a separate budget. No clock or environment I/O. |
+
+<!-- crate-files:end -->
 
 <a id="file-cargo-toml"></a>
 

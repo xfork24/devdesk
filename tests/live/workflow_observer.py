@@ -187,6 +187,12 @@ def manager_activity(view):
     return record.get("revision"), data.get("session_id"), data.get("status"), calls
 
 
+def workflow_settled(tree, manager, root_id):
+    """A completed root must also release its native manager before Host shutdown."""
+    return (tree[root_id]["runtime"]["status"] == "completed" and
+            (manager.get("record") or {}).get("data", {}).get("status") == "closed")
+
+
 def read_workflow_tree(client, root_id):
     pending = [root_id]
     views = {}

@@ -46,9 +46,8 @@ sudo ./scripts/platform/linux/install-linux-sandbox-policy.sh --install
 
 ```bash
 ./scripts/check/check-permissions.sh
-docker build -f containers/dsh/Dockerfile -t devdesk/dsh:0.2.2-rc.1-permissions-v1 .
 ```
 
-根目录 `.dockerignore` 只将 DSH Dockerfile 和权限后端复制进构建上下文。新镜像以新的不可变 image ID 登记；已有冻结镜像继续使用原身份。运行包携带 `permissions/` 和相关 Schema，运行时策略也编译嵌入 Host，无需源码目录。
+执行 Dockerfile 由选定 Harness 与 Sandbox 源组合生成，准备使用独立的临时构建目录；不从仓库根目录复制上下文。可在 Web 中准备所选运行环境，或用 `python3 tests/entrypoints/native_acceptance.py --docker-only --prepare` 准备并执行专用协议验收。新镜像以新的不可变 image ID 登记；已有冻结镜像继续使用原身份。运行包携带 `permissions/` 和相关 Schema，运行时策略也编译嵌入 Host，无需源码目录。
 
 实施与平台证据见 [执行报告](../docs/plans/permission-standardization/EXECUTION.md)。

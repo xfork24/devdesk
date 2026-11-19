@@ -30,7 +30,7 @@ Workflow 是可解释的数据图：步骤声明执行方式、任务、端口�
 
 StepExecution 的 failure 保存可信失败事实，retry_of 指向本技术尝试的前次执行。sequence 只描述本次执行的输入轮次，独立技术尝试数从历史记录推导，业务返工用 round 区分。字段有 serde default，旧可读记录没有失败证据时不补造安全重试结论。
 
-代码定位：[`WorkflowDefinition`](../../../crates/domain/src/workflow.rs#L14)、[`StepExecutor`](../../../crates/domain/src/workflow.rs#L81)、[`CompletionRule`](../../../crates/domain/src/workflow.rs#L193)、[`ContentCheckReport`](../../../crates/domain/src/workflow.rs#L274)、[`StepExecution`](../../../crates/domain/src/workflow.rs#L795)、[`ConfiguredAgentTask`](../../../crates/domain/src/workflow.rs#L839)。
+代码定位：[`WorkflowDefinition`](../../../crates/domain/src/workflow.rs#L14)、[`StepExecutor`](../../../crates/domain/src/workflow.rs#L135)、[`CompletionRule`](../../../crates/domain/src/workflow.rs#L250)、[`ContentCheckReport`](../../../crates/domain/src/workflow.rs#L331)、[`StepExecution`](../../../crates/domain/src/workflow.rs#L913)、[`ConfiguredAgentTask`](../../../crates/domain/src/workflow.rs#L959)。
 
 关联阅读：[core/src/configured_workflows.rs](../devdesk-core/workflow-compilation.md#file-src-configured-workflows-rs)、[core/src/configured_runtime.rs](../devdesk-core/workflow-execution.md#file-src-configured-runtime-rs)、[domain/src/spec_checks.rs](workflows-and-checks.md#file-src-spec-checks-rs)、[adapters/tests/configured_workflows.rs](../devdesk-adapters/testing.md#file-tests-configured-workflows-rs)。
 
@@ -46,7 +46,7 @@ StepExecution 的 failure 保存可信失败事实，retry_of 指向本技术尝
 
 单元测试覆盖围栏、Unicode、指针、摘要篡改、越界和报告与机器观察冲突。该检查证明定位和结构自洽，不自动证明内容在业务上正确。
 
-代码定位：[`MachineAssertion`](../../../crates/domain/src/spec_checks.rs#L9)、[`EvidenceLocator`](../../../crates/domain/src/spec_checks.rs#L109)、[`EvidenceLocation`](../../../crates/domain/src/spec_checks.rs#L116)、[`EvidenceTarget`](../../../crates/domain/src/spec_checks.rs#L125)、[`verify`](../../../crates/domain/src/spec_checks.rs#L141)。
+代码定位：[`MachineAssertion`](../../../crates/domain/src/spec_checks.rs#L9)、[`EvidenceLocator`](../../../crates/domain/src/spec_checks.rs#L127)、[`EvidenceLocation`](../../../crates/domain/src/spec_checks.rs#L134)、[`EvidenceTarget`](../../../crates/domain/src/spec_checks.rs#L143)、[`verify`](../../../crates/domain/src/spec_checks.rs#L193)。
 
 关联阅读：[core/src/spec_lint.rs](../devdesk-core/manager-and-platform-tools.md#file-src-spec-lint-rs)、[domain/src/workflow.rs](workflows-and-checks.md#file-src-workflow-rs)、[core/src/configured_runtime.rs](../devdesk-core/workflow-execution.md#file-src-configured-runtime-rs)。
 
@@ -56,13 +56,13 @@ StepExecution 的 failure 保存可信失败事实，retry_of 指向本技术尝
 
 源码：[crates/domain/src/agent_task.rs](../../../crates/domain/src/agent_task.rs)。
 
-本文件集中声明 canonical 任务的正文、Workflow、整体 payload 上限，renderer 身份以及大输入读取工具名和分页大小。`task_content_hash` 使用同一配置内容哈希，供任务落盘和恢复核对。
+本文件集中声明 canonical 任务的正文、Workflow、整体 payload 上限，renderer 身份以及大输入读取工具名和分页大小。任务摘要直接使用统一的 `configuration_hash`，不再保留别名函数。
 
 它不负责拼提示词；真正渲染在 core 的 task_input。把上限和工具名集中起来，使生产任务、输出引用与合同校验共享同一含义。超过内联阈值的输入保留原 Artifact，通过 outputs.read 显式续读，不可把摘要当作已交付全部内容。
 
-代码定位：[`AGENT_TASK_RENDERER`](../../../crates/domain/src/agent_task.rs#L13)、[`OUTPUT_READ_PAGE_BYTES`](../../../crates/domain/src/agent_task.rs#L10)、[`task_content_hash`](../../../crates/domain/src/agent_task.rs#L14)。
+代码定位：[`AGENT_TASK_RENDERER`](../../../crates/domain/src/agent_task.rs#L12)、[`OUTPUT_READ_PAGE_BYTES`](../../../crates/domain/src/agent_task.rs#L9)。
 
-关联阅读：[core/src/configured_runtime.rs](../devdesk-core/workflow-execution.md#file-src-configured-runtime-rs)、[core/src/agent_tasks.rs](../devdesk-core/workflow-compilation.md#file-src-agent-tasks-rs)、[core/src/orchestration.rs](../devdesk-core/orchestration-and-drivers.md#file-src-orchestration-rs)。
+关联阅读：[core/src/configured_runtime.rs](../devdesk-core/workflow-execution.md#file-src-configured-runtime-rs)、[core/src/formal_sessions.rs](../devdesk-core/workflow-compilation.md#file-src-agent-tasks-rs)、[core/src/orchestration.rs](../devdesk-core/orchestration-and-drivers.md#file-src-orchestration-rs)。
 
 <a id="file-src-workflow-change-rs"></a>
 
@@ -74,9 +74,9 @@ StepExecution 的 failure 保存可信失败事实，retry_of 指向本技术尝
 
 `assign_node_ids` 从源身份、节点种类和原 key 生成稳定 ID，明确已有 node_id 的节点继续保留身份。`impacted_nodes` 把依赖边与值/规则中的步骤引用一起传播，计算保守失效范围，不能只按执行先后关系寻找后继。它只计算变化，不停止 worker、不改实际实例；预演和应用在 core。
 
-代码定位：[`WorkflowChangeOperation`](../../../crates/domain/src/workflow_change.rs#L7)、[`WorkflowChangeSet`](../../../crates/domain/src/workflow_change.rs#L62)、[`assign_node_ids`](../../../crates/domain/src/workflow_change.rs#L80)、[`impacted_nodes`](../../../crates/domain/src/workflow_change.rs#L97)。
+代码定位：[`WorkflowChangeOperation`](../../../crates/domain/src/workflow_change.rs#L10)、[`WorkflowChangeSet`](../../../crates/domain/src/workflow_change.rs#L74)、[`assign_node_ids`](../../../crates/domain/src/workflow_change.rs#L92)、[`impacted_nodes`](../../../crates/domain/src/workflow_change.rs#L109)。
 
-关联阅读：[core/src/workflow_changes.rs](../devdesk-core/workflow-changes.md#file-src-workflow-changes-rs)、[domain/src/orchestration.rs](workflows-and-checks.md#file-src-orchestration-rs)。
+关联阅读：[core/src/workflow_change_commit.rs](../devdesk-core/workflow-changes.md#file-src-workflow-changes-rs)、[domain/src/orchestration.rs](workflows-and-checks.md#file-src-orchestration-rs)。
 
 <a id="file-src-workflow-driver-rs"></a>
 
@@ -88,7 +88,7 @@ StepExecution 的 failure 保存可信失败事实，retry_of 指向本技术尝
 
 校验限制并发 1–32、动作 1–64、租约 5–3600 秒、最多 8 次策略重试和 32 个错误码。策略定义本身不产生动作，也不证明所有失败都已有结构化错误来源；实际选择、预算解释和持久化围栏由 core 的驱动实现。
 
-代码定位：[`WorkflowScheduling`](../../../crates/domain/src/workflow_driver.rs#L6)、[`OrchestrationSelection`](../../../crates/domain/src/workflow_driver.rs#L29)、[`validate`](../../../crates/domain/src/workflow_driver.rs#L16)。
+代码定位：[`WorkflowScheduling`](../../../crates/domain/src/workflow_driver.rs#L6)、[`OrchestrationSelection`](../../../crates/domain/src/workflow_driver.rs#L32)、[`validate`](../../../crates/domain/src/workflow_driver.rs)。
 
 关联阅读：[core/src/workflow_driver.rs](../devdesk-core/orchestration-and-drivers.md#file-src-workflow-driver-rs)、[core/src/orchestration.rs](../devdesk-core/orchestration-and-drivers.md#file-src-orchestration-rs)。
 
@@ -104,7 +104,7 @@ StepExecution 的 failure 保存可信失败事实，retry_of 指向本技术尝
 
 `workflow_node_id` 为发布与后续修改提供可重复节点身份。这个包只描述和验证控制数据；原生调用真伪、停止证明和当前 epoch 仍要在用例中核验。
 
-代码定位：[`WorkflowControlPolicy`](../../../crates/domain/src/orchestration.rs#L10)、[`WorkflowController`](../../../crates/domain/src/orchestration.rs#L88)、[`WorkflowActor`](../../../crates/domain/src/orchestration.rs#L136)、[`WorkflowDecision`](../../../crates/domain/src/orchestration.rs#L155)、[`WorkflowActionPermit`](../../../crates/domain/src/orchestration.rs#L181)。
+代码定位：[`WorkflowControlPolicy`](../../../crates/domain/src/orchestration.rs#L65)、[`WorkflowController`](../../../crates/domain/src/orchestration.rs#L140)、[`WorkflowActor`](../../../crates/domain/src/orchestration.rs#L201)、[`WorkflowDecision`](../../../crates/domain/src/orchestration.rs#L225)、[`WorkflowActionPermit`](../../../crates/domain/src/orchestration.rs#L251)。
 
 关联阅读：[core/src/controllers.rs](../devdesk-core/orchestration-and-drivers.md#file-src-controllers-rs)、[core/src/orchestration.rs](../devdesk-core/orchestration-and-drivers.md#file-src-orchestration-rs)、[core/src/manager_workspace.rs](../devdesk-core/manager-and-platform-tools.md#file-src-manager-workspace-rs)、[core/src/workflow_driver.rs](../devdesk-core/orchestration-and-drivers.md#file-src-workflow-driver-rs)。
 

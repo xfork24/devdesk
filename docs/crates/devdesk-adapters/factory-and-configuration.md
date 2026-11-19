@@ -36,7 +36,7 @@ TEMPLATE_FILES 来自 build.rs。资源路径仅接受安全的普通相对路�
 
 加载器校验“包里是什么”，配置用例校验“当前允许怎样采用”。目录恢复不会让旧运行改用这份包的新默认，冻结引用仍保留自己的修订。
 
-代码定位：[`resource`](../../../crates/adapters/src/factory_bundle.rs#L5)、[`initialize`](../../../crates/adapters/src/factory_bundle.rs#L19)、[`load`](../../../crates/adapters/src/factory_bundle.rs#L28)、[`packaged_runtime`](../../../crates/adapters/src/factory_bundle.rs#L87)、[`packaged_permission_presets`](../../../crates/adapters/src/factory_bundle.rs#L108)。
+代码定位：[`resource`](../../../crates/adapters/src/factory_bundle.rs#L5)、[`initialize`](../../../crates/adapters/src/factory_bundle.rs#L19)、[`load`](../../../crates/adapters/src/factory_bundle.rs#L29)、[`packaged_runtime`](../../../crates/adapters/src/factory_bundle.rs#L111)、[`packaged_permission_presets`](../../../crates/adapters/src/factory_bundle.rs#L135)。
 
 关联阅读：[core/src/templates.rs](../devdesk-core/configuration-and-catalog.md#file-src-templates-rs)、[core/src/driver_capabilities.rs](../devdesk-core/session-resources-and-permissions.md#file-src-driver-capabilities-rs)、[adapters/src/runtime_preparation.rs](runtime-preparation.md#file-src-runtime-preparation-rs)。
 
@@ -50,7 +50,7 @@ ConfigurationBackend 实现 core 的配置后端：权限绑定预演先检查 P
 
 GlobalStore 的 ProjectInventory 实现汇集安装、协议报告与权限资产事实，并分页读取工程只读快照。它向 core 提供确切事实而非“环境大概可用”的布尔猜测；跨库发布、经理工作台和会话装配据此进行各自授权与提交校验。
 
-代码定位：[`ConfigurationBackend`](../../../crates/adapters/src/configuration_backend.rs#L2)、[`prepare_permission_binding`](../../../crates/adapters/src/configuration_backend.rs#L4)、[`runtime_facts`](../../../crates/adapters/src/configuration_backend.rs#L18)、[`snapshots`](../../../crates/adapters/src/configuration_backend.rs#L28)。
+代码定位：[`ConfigurationBackend`](../../../crates/adapters/src/configuration_backend.rs#L2)、[`prepare_permission_binding`](../../../crates/adapters/src/configuration_backend.rs#L4)、[`runtime_facts`](../../../crates/adapters/src/configuration_backend.rs#L18)。
 
 关联阅读：[core/src/ports.rs](../devdesk-core/engine-and-ports.md#file-src-ports-rs)、[adapters/src/permission_profiles.rs](credentials-and-permissions.md#file-src-permission-profiles-rs)、[core/src/configuration_changes.rs](../devdesk-core/configuration-and-catalog.md#file-src-configuration-changes-rs)。
 

@@ -488,9 +488,6 @@ impl CredentialVault {
         bytes.fill(0);
         Ok(())
     }
-    pub fn request_authorization(dataset: &Path, reference: &str) -> Result<()> {
-        Self::new(dataset)?.authorize_interactively(reference)
-    }
 }
 impl devdesk_core::credential_updates::CredentialCandidates for CredentialVault {
     fn ensure(

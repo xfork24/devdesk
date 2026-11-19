@@ -63,7 +63,7 @@ manual 来自可信 Human 请求；rust 由 [有界驱动](devdesk-core/orchestr
 
 [共同资格](devdesk-core/orchestration-and-drivers.md#file-src-workflow-eligibility-rs) 计算 dispatch/accept/retry 以及整体 complete 的 allowed/code/reason。派发不仅看流程图依赖，还看 Task 业务 dependencies、祖先暂停、foreach 容量、输入和计划变更；未知执行仍占配额。若 condition 为 false，dispatch 可记录配置的 skipped，不先要求被跳过步骤取得不需要的输入。
 
-[实际控制命令](devdesk-core/orchestration-and-drivers.md#file-src-orchestration-rs) 在当前事务继续核对 Actor、epoch/租约、revision/control_version、确切执行/输入/输出及人工权。旧 inspect 结果不能成为绕过当前门禁的许可。Rust 在每 tick 预算内跳过已拒绝候选并寻找独立工作，避免一个阻塞子流程让其他已就绪结果饥饿。
+[实际控制命令](devdesk-core/orchestration-and-drivers.md#file-src-orchestration-rs) 在资源级提交时继续核对 Actor、epoch/租约、revision/control_version、确切执行/输入/输出及人工权。旧 inspect 结果不能成为绕过当前门禁的许可。Rust 在每 tick 预算内跳过已拒绝候选并寻找独立工作，避免一个阻塞子流程让其他已就绪结果饥饿。
 
 驱动决定“下一步提交什么动作”，执行器决定“这一步怎样完成”。两者分别选择：人工、Rust 或经理都可以推进下表四种步骤，不是每种驱动对应一个专用 Harness。
 
@@ -80,9 +80,9 @@ manual 来自可信 Human 请求；rust 由 [有界驱动](devdesk-core/orchestr
 | Workflow | 建立子实例/foreach 成员及 workflow_children，不经原生模型 | 对应子实例完成后，按子流程 outputs 映射回父调用 |
 | Control | 不启动外部进程，直接等待确认/接纳 | 当前配置规则及明确处置，不伪造工具输出 |
 
-四条分支均由 [advance_configured_step](devdesk-core/workflow-execution.md#file-src-configured-runtime-rs) 推进。work_binding 可以让子实例绑定真实 Task 并采用该工作自己的配置；子流程 ID、父 execution 和 root ID 保持可追溯。
+四条分支均由[工作流评估](devdesk-core/workflow-execution.md#file-src-configured-runtime-rs) 推进。work_binding 可以让子实例绑定真实 Task 并采用该工作自己的配置；子流程 ID、父 execution 和 root ID 保持可追溯。
 
-Engine 事务保存 workflow_intent，[待执行接口](devdesk-core/workflow-execution.md#file-src-workflow-runtime-rs) 领取 prepared 意图。[tick_workflow_engine](devdesk-host/rpc-and-configuration.md#file-src-governance-rs) 在事务外准备 session.open、执行 workflow.tool.execute 或应用命令，再登记完成/完整 Error；迟到回执不能改写已固定的意图终态。
+应用命令原子保存 workflow_intent，[待执行接口](devdesk-core/workflow-execution.md#file-src-workflow-runtime-rs) 领取 prepared 意图。[tick_workflow_engine](devdesk-host/rpc-and-configuration.md#file-src-governance-rs) 在事务外准备 session.open、执行 workflow.tool.execute 或应用命令，再登记完成/完整 Error；迟到回执不能改写已固定的意图终态。
 
 Agent 路径经 [conversation.send](devdesk-core/conversations-and-history.md#file-src-conversations-rs) 排队输入，[原生会话管线](devdesk-core/conversations-and-history.md#file-src-conversation-runtime-rs) 派发并观察。[RoutingHarness](devdesk-adapters/harness-and-protocols.md#file-src-harness-rs) 建立归属明确的容器/worker，用 [JSONL](devdesk-adapters/harness-and-protocols.md#file-src-jsonl-rs) 处理消费、文本、工具、审批和终态。代码、私有 state、Skill 和凭据挂载分别受 [Docker 合同](devdesk-adapters/engineering-resources.md#file-src-docker-rs) 约束。
 

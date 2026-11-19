@@ -18,15 +18,17 @@
 
 源码：[crates/adapters/src/lib.rs](../../../crates/adapters/src/lib.rs)。
 
-`SqliteStore` 打开工程目录，核对 `devdesk-profile-runtime-v2` 数据标记、数据库版本和独占锁；全局库与工程库使用各自 SQL 基线，当前版本分别为 18 和 48。非空的不兼容目录不会自动迁移或清空。只读工程快照用于跨项目查询，不取得执行控制权。
+`SqliteStore` 打开工程目录，核对 `devdesk-profile-runtime-v2` 数据标记、数据库版本和独占锁；全局库与工程库使用各自 SQL 基线，当前版本为 global 24 / project 60。非空的不兼容目录不会自动迁移或清空。只读工程快照用于跨项目查询，不取得执行控制权。
 
-EngineeringStore 的 transact 先取得 writer 锁，核对 command_id 与请求指纹并载入状态；运行业务闭包前释放数据库连接锁。闭包成功且状态发生变化时校验差异，再打开短 SQLite 事务提交状态和操作回执；这期间 writer 锁仍在，其他只读查询可取得连接。重放已提交操作恢复原结果，不再次执行闭包。`has_pending_work` 用数据库投影判断是否值得调度，避免每次 tick 为闲置工程加载全部历史。
+普通查询由 [connection_pool.rs](../../../crates/adapters/src/connection_pool.rs) 提供独立已提交快照；资源读取与提交分别落在 [resource_read_scope.rs](../../../crates/adapters/src/resource_read_scope.rs)、[resource_commits.rs](../../../crates/adapters/src/resource_commits.rs)。提交在同一短事务中校验读写资源、集合谓词、命令幂等及领域约束，冲突返回原始版本错误。
+
+配置目录事务与测试夹具仍有专用路径，不能据此将业务命令重新包入项目级 writer 锁。`has_pending_work` 使用有界调度提示，不为闲置项目恢复完整历史。
 
 `FileArtifacts` 在受管目录写临时文件，刷新后原子发布，返回包含随机 ID、relative_path、SHA-256 和 owner 字段的 `Artifact`。ID 不是内容摘要；读取校验安全相对路径、符号链接、Artifact 根边界和实际 SHA。读取者是否有权取得该 Artifact，由 core/Host 查询边界核对，文件适配器不单凭 owner 字段完成授权。数据库事实提交与文件发布也不是一个原子事务，业务接纳还需 core 核对来源并保存引用。
 
 `execution_adapters` 集中装配 RoutingHarness、CliGit、CommandTests 和 GitHubPullRequests。创建适配器不立即运行模型或 GitHub；实际调用由后续 durable 意图触发。
 
-代码定位：[`SqliteStore`](../../../crates/adapters/src/lib.rs#L51)、[`FileArtifacts`](../../../crates/adapters/src/lib.rs#L620)、[`open_project`](../../../crates/adapters/src/lib.rs#L85)、[`transact`](../../../crates/adapters/src/lib.rs#L537)、[`seal_scoped`](../../../crates/adapters/src/lib.rs#L649)、[`execution_adapters`](../../../crates/adapters/src/lib.rs#L745)。
+代码定位：[`SqliteStore`](../../../crates/adapters/src/lib.rs#L86)、[`FileArtifacts`](../../../crates/adapters/src/lib.rs#L1511)、[`open_project`](../../../crates/adapters/src/lib.rs#L140)[`seal_scoped`](../../../crates/adapters/src/lib.rs#L1546)、[`execution_adapters`](../../../crates/adapters/src/lib.rs#L1642)。
 
 关联阅读：[adapters/src/source_store.rs](storage-and-source-codecs.md#file-src-source-store-rs)、[adapters/src/catalog.rs](storage-and-source-codecs.md#file-src-catalog-rs)、[core/src/lib.rs](../devdesk-core/engine-and-ports.md#file-src-lib-rs)、[adapters/tests/workflows.rs](testing.md#file-tests-workflows-rs)。
 
@@ -36,13 +38,13 @@ EngineeringStore 的 transact 先取得 writer 锁，核对 command_id 与请求
 
 源码：[crates/adapters/src/catalog.rs](../../../crates/adapters/src/catalog.rs)。
 
-`GlobalStore` 管理 global.sqlite3、独占锁和共享配置状态。工程目录的 reserve 与 publish 分开：先固定稳定项目 ID，再完成工程初始化并公开，失败或重放不会生成另一项目身份。激活当前工程是目录设置，不会转移历史或执行者。
+`GlobalStore` 管理 global.sqlite3、独占锁和共享配置状态。工程目录的 reserve 与 publish 分开：先固定稳定项目 ID，再完成工程初始化并公开，失败或重放不会生成另一项目身份。项目选择保存在前端标签页 URL，目录不保存共享 active project。
 
 这里持久化模型凭据引用、运行安装、协议报告和并发设置；并发默认 4，合法范围 1..32。设置更新仍通过明确校验和事务提交。GlobalStore 也实现 EngineeringStore，以复用 core 的配置用例，但全局配置库不冒充某个业务工程运行库。
 
 项目列表只提供路径与目录事实。实际打开工程、恢复操作、调度多个项目由 Host 负责；跨项目读取则使用只读快照。
 
-代码定位：[`GlobalStore`](../../../crates/adapters/src/catalog.rs#L5)、[`open`](../../../crates/adapters/src/catalog.rs#L32)、[`concurrency`](../../../crates/adapters/src/catalog.rs#L67)、[`set_concurrency`](../../../crates/adapters/src/catalog.rs#L74)。
+代码定位：[`GlobalStore`](../../../crates/adapters/src/catalog.rs#L5)、[`open`](../../../crates/adapters/src/catalog.rs#L26)、[`concurrency`](../../../crates/adapters/src/catalog.rs#L69)、[`set_concurrency`](../../../crates/adapters/src/catalog.rs#L76)。
 
 关联阅读：[host/src/workspace.rs](../devdesk-host/workspace-and-lifecycle.md#file-src-workspace-rs)、[adapters/src/configuration_backend.rs](factory-and-configuration.md#file-src-configuration-backend-rs)、[adapters/tests/runtime_registry.rs](testing.md#file-tests-runtime-registry-rs)。
 
@@ -58,7 +60,7 @@ source_definitions 保存配置源，governance_records 保存实例、回执等
 
 这层 codec 不是另一套配置编译器：源类型和依赖仍由 domain/core 校验。增加配置类型时，应同时检查源分类、序列化形状和恢复路径，避免写入展开配置副本。
 
-代码定位：[`is_source`](../../../crates/adapters/src/source_store.rs#L4)、[`load_records`](../../../crates/adapters/src/source_store.rs#L14)、[`save_records`](../../../crates/adapters/src/source_store.rs#L80)、[`pack_record`](../../../crates/adapters/src/source_store.rs#L114)、[`restore_records`](../../../crates/adapters/src/source_store.rs#L133)。
+代码定位：[`is_source`](../../../crates/adapters/src/source_store.rs#L6)、[`load_records`](../../../crates/adapters/src/source_store.rs#L12)、[`save_records`](../../../crates/adapters/src/source_store.rs#L100)、[`pack_record`](../../../crates/adapters/src/source_store.rs#L159)、[`restore_records`](../../../crates/adapters/src/source_store.rs#L263)。
 
 关联阅读：[adapters/src/source_views.rs](storage-and-source-codecs.md#file-src-source-views-rs)、[domain/src/source.rs](../devdesk-domain/configuration-and-sources.md#file-src-source-rs)、[core/src/frozen_views.rs](../devdesk-core/workflow-compilation.md#file-src-frozen-views-rs)。
 
@@ -78,7 +80,7 @@ source_definitions 保存配置源，governance_records 保存实例、回执等
 
 包内测试覆盖伪造标记、嵌套恢复、文本转义及历史实际正文。修改任务渲染器时，必须同时考虑这里的往返相等和旧会话重放，而不只是新任务是否好看。
 
-代码定位：[`pack`](../../../crates/adapters/src/source_views.rs#L20)、[`restore`](../../../crates/adapters/src/source_views.rs#L257)、[`restore_reference`](../../../crates/adapters/src/source_views.rs#L316)、[`factual_field`](../../../crates/adapters/src/source_views.rs#L6)。
+代码定位：[`pack`](../../../crates/adapters/src/source_views.rs#L126)、[`restore`](../../../crates/adapters/src/source_views.rs#L321)、[`restore_reference`](../../../crates/adapters/src/source_views.rs#L380)、[`factual_field`](../../../crates/adapters/src/source_views.rs#L112)。
 
 关联阅读：[core/src/frozen_views.rs](../devdesk-core/workflow-compilation.md#file-src-frozen-views-rs)、[domain/src/runtime.rs](../devdesk-domain/runtime-and-permissions.md#file-src-runtime-rs)、[adapters/tests/configuration_resources.rs](testing.md#file-tests-configuration-resources-rs)。
 
@@ -94,7 +96,7 @@ source_definitions 保存配置源，governance_records 保存实例、回执等
 
 经验导入需要创建当前上下文的明确资源回执，应用用例在 core；这里负责来源读取，不把远端项目记录直接复制为当前工程成功。
 
-代码定位：[`query`](../../../crates/adapters/src/experience.rs#L47)、[`global_records`](../../../crates/adapters/src/experience.rs#L5)、[`projects`](../../../crates/adapters/src/experience.rs#L16)、[`instance`](../../../crates/adapters/src/experience.rs#L31)。
+代码定位：[`query`](../../../crates/adapters/src/experience.rs#L43)[`projects`](../../../crates/adapters/src/experience.rs#L4)、[`instance`](../../../crates/adapters/src/experience.rs#L15)。
 
 关联阅读：[core/src/resource_receipts.rs](../devdesk-core/session-resources-and-permissions.md#file-src-resource-receipts-rs)、[host/src/governance.rs](../devdesk-host/rpc-and-configuration.md#file-src-governance-rs)、[adapters/tests/governance.rs](testing.md#file-tests-governance-rs)。
 

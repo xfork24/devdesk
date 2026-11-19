@@ -504,24 +504,6 @@ impl Engine {
         })?;
         Ok(())
     }
-    pub fn cancel_configuration_transfer(&self, id: &str) -> Result<Value> {
-        let original = read_transfer(self.store.as_ref(), id)?;
-        let row = row_of(self.store.as_ref(), &original)?;
-        let actor: WorkflowActor = serde_json::from_value(row.data["actor"].clone())
-            .map_err(|e| err("storage", e.to_string()))?;
-        let command = Command {
-            command_id: format!("{id}:cancel:{}", original.revision),
-            target: Some(id.into()),
-            expected_revision: Some(original.revision),
-            payload: Value::Null,
-        };
-        self.cancel_transfer_original(
-            original,
-            &command,
-            &configuration_hash(&("configuration-transfer-cancel/v2", &command, &actor)),
-            &actor,
-        )
-    }
     fn cancel_transfer_original(
         &self,
         original: ResourceSnapshot,

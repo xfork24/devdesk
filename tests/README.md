@@ -65,14 +65,14 @@ cargo test -p devdesk-adapters --test configuration_catalog configuration_source
 
 真实 Docker 用例要求预先存在固定镜像，验证 Node Red/Green、环境故障、停止/清理、资源归属、嵌套权限和私有状态。Git 用例创建真实临时仓库，验证单父候选、CAS、过期目标、幂等与恢复；不需要 GitHub。
 
-完整 Docker 外部验收包含 16 项原本 `#[ignore]` 的测试：命令 Red/Green、Delivery、Docker 资源、DSH 服务商、权限、运行资源、HTTP/MCP/OAuth。它们保留显式入口以免便携单元测试隐含要求 Docker；E2E CI 实际执行这些测试，不只编译或列出它们。
+完整 Docker 外部验收覆盖原本 `#[ignore]` 的测试：命令 Red/Green、Delivery、Docker 资源、DSH 服务商、权限、运行资源、HTTP/MCP/OAuth。执行前从实际测试二进制枚举每个套件，并逐项核对执行数量；Codex/DSH 镜像须通过环境变量显式选择，不回退旧版固定标签。它们保留显式入口以免便携单元测试隐含要求 Docker；E2E CI 实际执行这些测试，不只编译或列出它们。
 
 ```bash
 # AppArmor Linux 宿主先加载已有的命名策略，不修改 docker-default 或全局限制。
 sudo ./scripts/platform/linux/install-linux-sandbox-policy.sh --install
-# 从 manifest 选定的不可变出厂资源准备镜像，检查并冻结本平台 image ID。
+# 从 manifest 选定的 Harness 与 Sandbox 用 Rust 组合器生成配方并准备镜像，检查并冻结本平台 image ID。
 python3 tests/entrypoints/native_acceptance.py --docker-only --prepare --reports /tmp/devdesk-native
-# 全部 17 项：恢复专用仓库的既有 PR；request 为 PullRequestRequest JSON。
+# 加入 GitHub 专项，恢复专用仓库的既有 PR；request 为 PullRequestRequest JSON。
 python3 tests/entrypoints/native_acceptance.py --prepare --github-request /专用/pr-request.json --github-repo owner/dedicated-test-repo --reports /tmp/devdesk-native-all
 ```
 
@@ -95,7 +95,7 @@ python3 tests/live/probe_streamlined_workflow.py --binary target/release/devdesk
 
 两者都可用 `--report-directory` 指定临时证据目录。完整工程推荐使用 `target/release/devdesk-host`；通过同一证据目录的 `--resume` 可接管原根实例，先核对中断执行，再以新执行身份重试，保留已接纳成果。工程探针默认最多等待三小时，可用 `--timeout-seconds` 调整验收入口的等待时限，不改变工作流本身的预算或门禁。运行程序先复制二进制，避免同时构建影响正在执行的程序。不要把登录文件或证据写入源码目录。
 
-工程结束后可运行 `python3 tests/live/verify_engineering_evidence.py /临时证据目录`，不调用模型地复核完整状态、无绕过/豁免、精确人工确认、实际测试回执、原始文件/Git blob 以及两个 PR 的确切发布版本。
+当前精简版验收应核对完整状态、无绕过/豁免、确切人工确认、真实 Red/Green 与两类回归、原始文件/Git blob，以及 Task/Feature 两个 PR 的确切合入和同步版本。`probe_streamlined_workflow.py` 等待根流程完成且经理关闭后才停止自己启动的 Host，并清理复制的认证。历史详细版的完整证据仍可使用 `python3 tests/live/verify_engineering_evidence.py /临时证据目录` 复核；该工具按其原详细版节点合同工作，不用于精简版。
 
 `probe_permission_package.py` 检查解包发布程序的权限资产、配置发布、当前任务预览、数据库结构及独立运行，不调用模型。其他有效的 `tests/live/` 探针分别覆盖凭据、供应商协议、安装、经验和外部接入，使用前阅读其参数和外部依赖。
 

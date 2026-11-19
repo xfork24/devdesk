@@ -1,6 +1,5 @@
 //! Stable factory identities used only by tests. Product selection reads catalog metadata.
 #![allow(dead_code)]
-use devdesk_domain::{ExecutionPermissionSelection, PermissionSelection};
 pub const DEFAULT_MODEL_ID: &str = "builtin-model-gpt-6-1-sol-low:1";
 
 pub const DEFAULT_HARNESS_ID: &str = "builtin-harness-codex-managed:1";
@@ -15,10 +14,6 @@ pub const DEFAULT_NATIVE_TOOL_ID: &str = "builtin-tool-codex-native:1";
 
 pub fn default_agent_id(role: &str) -> String {
     default_configured_agent_id(role)
-}
-
-pub fn default_agent_instance_id(role: &str) -> String {
-    format!("builtin-instance-sol-high-{role}-v1")
 }
 
 pub fn default_role_id(role: &str) -> String {
@@ -39,14 +34,6 @@ pub fn default_configured_agent_id(role: &str) -> String {
 }
 
 pub const DEFAULT_PERMISSION_SANDBOX: &str = "builtin-sandbox-docker:2";
-pub fn default_permission_selection() -> ExecutionPermissionSelection {
-    ExecutionPermissionSelection {
-        sandbox_ref: DEFAULT_PERMISSION_SANDBOX.into(),
-        harness: PermissionSelection::FollowTarget,
-        sandbox: PermissionSelection::FollowTarget,
-    }
-}
-
 /// Explicit project test input for protocol fixtures; no external execution claim.
 pub fn fixture_test_configuration() -> serde_json::Value {
     serde_json::json!({"language":"JavaScript","independent_runner":"node_test","regression":{

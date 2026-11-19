@@ -200,7 +200,7 @@ impl GitHubPullRequests {
     }
 }
 impl ports::PullRequests for GitHubPullRequests {
-    fn delivery_target(&self, c: &GitContext, _legacy_create_protection: bool) -> Result<Value> {
+    fn delivery_target(&self, c: &GitContext) -> Result<Value> {
         self.observe_delivery_target(c)
     }
     fn ensure_delivery(

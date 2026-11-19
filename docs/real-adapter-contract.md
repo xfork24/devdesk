@@ -20,7 +20,7 @@
 
 Harness 接收 canonical `agent-task/v6`，包括任务、职责、Skill、Spec、输入来源、逐端口输出 Schema、预算及授权。Codex 和 DSH 使用同一任务正文，协议编码由各适配器负责。原生准入、消费、终态和 writer 停止证明缺一不可；不确定输入不自动重发。
 
-Codex 的平台工具桥核对当前原生 worker、Session、Turn、请求和调用 ID，以及冻结 Capability / Step / Permission 的交集。业务步骤、根控制器和独立经理工作台分别校验所属执行、根/epoch 或固定项目，再共用对应平台处理器；请求、实际回执与回复交付分开记录。DSH 不支持该动态桥，配置时拒绝；普通讨论不提供需要 Workflow/Controller 授权的平台工具。
+Codex 的平台工具桥核对当前原生 worker、Session、Turn、请求和调用 ID，以及冻结 Capability / Step / Permission 的交集。业务步骤、根控制器和独立经理工作台分别校验所属执行、根/epoch 或固定项目，再共用对应平台处理器；请求、实际回执与回复交付分开记录。DSH 同样提供动态工具及经验访问桥；根编排能力仍仅由 Codex 声明。普通讨论不能调用需要 Workflow/Controller 授权的平台操作。
 
 TestRequest 固定操作 ID、候选、环境、GitContext、实际实例和 TestRecipe。回执须逐项对应；Node 报告器只接纳真实测试事件，区分断言与环境失败，不信任 stdout 伪造报告。测试环境不挂载模型凭据，代码只读且禁网。
 

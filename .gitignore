@@ -18,3 +18,5 @@ __pycache__/
 *.py[cod]
 
 /review/
+
+/.venv/

@@ -54,7 +54,7 @@
 
 `ModelConnection.validate` 再次核验冻结快照自身及参数边界，实际 profile 的摘要由适配器核对。单元测试覆盖未知模型、容量回填、OAuth 严格字段、地址规范化和篡改连接。读取目录与调用模型仍在外层执行。
 
-代码定位：[`ProviderFacts`](../../../crates/domain/src/model_provider.rs#L26)、[`ModelCatalogDefinition`](../../../crates/domain/src/model_provider.rs#L153)、[`ModelConnection`](../../../crates/domain/src/model_provider.rs#L278)、[`resolve_model_connection`](../../../crates/domain/src/model_provider.rs#L265)、[`ollama_endpoint`](../../../crates/domain/src/model_provider.rs#L302)、[`output_budget`](../../../crates/domain/src/model_provider.rs#L520)。
+代码定位：[`ProviderFacts`](../../../crates/domain/src/model_provider.rs#L26)、[`ModelCatalogDefinition`](../../../crates/domain/src/model_provider.rs#L153)、[`ModelConnection`](../../../crates/domain/src/model_provider.rs#L278)、[`resolve_model_connection`](../../../crates/domain/src/model_provider.rs)、[`ollama_endpoint`](../../../crates/domain/src/model_provider.rs#L302)、[`output_budget`](../../../crates/domain/src/model_provider.rs#L520)。
 
 关联阅读：[adapters/src/model_providers.rs](../devdesk-adapters/external-integrations.md#file-src-model-providers-rs)、[core/src/session_assembly.rs](../devdesk-core/session-resources-and-permissions.md#file-src-session-assembly-rs)、[host/src/model_providers.rs](../devdesk-host/rpc-and-configuration.md#file-src-model-providers-rs)。
 
@@ -68,9 +68,9 @@
 
 `ExecutionScope` 保存当前工作的写入/只读路径。`ExecutionPermissions` 结合双端策略、绑定锁、审批、Scope、资源限制和后端资产计划；`PermissionEnforcementPlan` 由编译器生成实际后端与资产摘要，调用方不能直接把自填原生参数当作授权。
 
-`file_access` 和 `tool_allowed` 是纯规则查询，`isolated_test_permissions` 为测试隔离建立明确范围。执行后端仍要检查 symlink、受保护元数据和实际挂载，无法落实时拒绝。
+`file_access` 是纯文件权限查询；工具授权由冻结 Profile 与实际执行后端核对，`isolated_test_permissions` 为测试隔离建立明确范围。执行后端仍要检查 symlink、受保护元数据和实际挂载，无法落实时拒绝。
 
-代码定位：[`PermissionPolicy`](../../../crates/domain/src/permission.rs#L48)、[`ExecutionScope`](../../../crates/domain/src/permission.rs#L69)、[`ExecutionPermissions`](../../../crates/domain/src/permission.rs#L139)、[`PermissionEnforcementPlan`](../../../crates/domain/src/permission.rs#L128)、[`file_access`](../../../crates/domain/src/permission.rs#L240)、[`tool_allowed`](../../../crates/domain/src/permission.rs#L232)。
+代码定位：[`PermissionPolicy`](../../../crates/domain/src/permission.rs#L48)、[`ExecutionScope`](../../../crates/domain/src/permission.rs#L69)、[`ExecutionPermissions`](../../../crates/domain/src/permission.rs#L139)、[`PermissionEnforcementPlan`](../../../crates/domain/src/permission.rs#L128)、[`file_access`](../../../crates/domain/src/permission.rs#L232)。
 
 关联阅读：[domain/src/permission_profile.rs](runtime-and-permissions.md#file-src-permission-profile-rs)、[adapters/src/permissions.rs](../devdesk-adapters/credentials-and-permissions.md#file-src-permissions-rs)、[adapters/src/docker.rs](../devdesk-adapters/engineering-resources.md#file-src-docker-rs)。
 
@@ -86,7 +86,7 @@ Profile 保存策略正文，`PermissionTargetRef` 固定 Harness/Sandbox 的具
 
 这里还定义 Sandbox 源的形状和从项目和步骤的 Profile 引用取得执行选择的方法。follow_target 只影响下一次解析，不能使已经冻结的运行自动追随新 assignment；自动检测和后继切换由 core 完成。
 
-代码定位：[`PermissionProfile`](../../../crates/domain/src/permission_profile.rs#L70)、[`ProfilePolicy`](../../../crates/domain/src/permission_profile.rs#L43)、[`PermissionSelection`](../../../crates/domain/src/permission_profile.rs#L126)、[`VersionedPermissionBinding`](../../../crates/domain/src/permission_profile.rs#L141)、[`VersionedPermissionLock`](../../../crates/domain/src/permission_profile.rs#L159)、[`resolve_permission_lock`](../../../crates/domain/src/permission_profile.rs#L258)。
+代码定位：[`PermissionProfile`](../../../crates/domain/src/permission_profile.rs#L84)、[`ProfilePolicy`](../../../crates/domain/src/permission_profile.rs#L45)、[`PermissionSelection`](../../../crates/domain/src/permission_profile.rs#L163)、[`VersionedPermissionBinding`](../../../crates/domain/src/permission_profile.rs#L179)、[`VersionedPermissionLock`](../../../crates/domain/src/permission_profile.rs#L197)、[`resolve_permission_lock`](../../../crates/domain/src/permission_profile.rs#L324)。
 
 关联阅读：[core/src/permission_resources.rs](../devdesk-core/session-resources-and-permissions.md#file-src-permission-resources-rs)、[core/src/permission_switch.rs](../devdesk-core/session-resources-and-permissions.md#file-src-permission-switch-rs)、[adapters/src/permission_profiles.rs](../devdesk-adapters/credentials-and-permissions.md#file-src-permission-profiles-rs)。
 

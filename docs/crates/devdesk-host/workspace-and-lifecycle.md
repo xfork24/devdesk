@@ -32,7 +32,7 @@ HTTP 退出、SIGINT 以及 Unix SIGTERM/SIGHUP 都停止调度准入并广播�
 
 文件末集成测试覆盖项目创建/选择失败、请求隔离、恢复、共享预算和关闭等行为。`workflow_live.rs` 提供显式、默认忽略的实际 Git/Docker 自动工作流，不使用模型或生产数据。新增入口应复用明确的 global/project 分派，避免 handler 直接操作 active 内部状态。
 
-代码定位：[`Workspace`](../../../crates/host/src/workspace.rs#L32)、[`open_with_adapters`](../../../crates/host/src/workspace.rs#L67)、[`active_engine`](../../../crates/host/src/workspace.rs#L121)、[`dispatch`](../../../crates/host/src/workspace.rs#L253)、[`event_engine`](../../../crates/host/src/workspace.rs#L786)、[`tick`](../../../crates/host/src/workspace.rs#L795)、[`stop_owned_runtime`](../../../crates/host/src/workspace.rs#L880)。
+代码定位：[`Workspace`](../../../crates/host/src/workspace.rs#L41)、[`open_with_adapters`](../../../crates/host/src/workspace.rs#L96)[`dispatch`](../../../crates/host/src/workspace.rs#L385)、[`event_engine`](../../../crates/host/src/workspace.rs#L1159)、[`tick`](../../../crates/host/src/workspace.rs#L1201)、[`stop_owned_runtime`](../../../crates/host/src/workspace.rs#L1528)。
 
 关联阅读：[adapters/src/catalog.rs](../devdesk-adapters/storage-and-source-codecs.md#file-src-catalog-rs)、[adapters/src/session_resources.rs](../devdesk-adapters/runtime-preparation.md#file-src-session-resources-rs)、[host/src/governance.rs](rpc-and-configuration.md#file-src-governance-rs)、[host/src/github_projects.rs](workspace-and-lifecycle.md#file-src-github-projects-rs)、[core/src/lib.rs](../devdesk-core/engine-and-ports.md#file-src-lib-rs)。
 
@@ -56,7 +56,7 @@ Host 负责把 gh 事实、目录和 Engine 命令接起来，实际 Git 执行�
 
 代码定位：[`repository_name`](../../../crates/host/src/github_projects.rs#L4)、[`open_github_project`](../../../crates/host/src/github_projects.rs#L27)。
 
-关联阅读：[adapters/src/github.rs](../devdesk-adapters/engineering-resources.md#file-src-github-rs)、[core/src/repositories.rs](../devdesk-core/integrations-and-repositories.md#file-src-repositories-rs)、[host/src/workspace.rs](workspace-and-lifecycle.md#file-src-workspace-rs)。
+关联阅读：[adapters/src/github.rs](../devdesk-adapters/engineering-resources.md#file-src-github-rs)、[core/src/repository_runtime.rs](../devdesk-core/integrations-and-repositories.md#file-src-repositories-rs)、[host/src/workspace.rs](workspace-and-lifecycle.md#file-src-workspace-rs)。
 
 <a id="file-src-runtime-setup-rs"></a>
 
@@ -68,7 +68,7 @@ Host 负责把 gh 事实、目录和 Engine 命令接起来，实际 Git 执行�
 
 策略、冻结选择和 durable 回执不在这里复制。新增准备能力应先归入 core 用例或 adapters 端口实现，再由 Host 组合，避免此小模块变成第二套运行状态机。
 
-代码定位：[`ensure_runtime`](../../../crates/host/src/runtime_setup.rs#L4)、[`ensure_codex_auth`](../../../crates/host/src/runtime_setup.rs#L11)、[`materialize_harness`](../../../crates/host/src/runtime_setup.rs#L14)。
+代码定位：[`ensure_runtime`](../../../crates/host/src/runtime_setup.rs#L19)、[`ensure_codex_auth`](../../../crates/host/src/runtime_setup.rs#L26)、[`materialize_harness`](../../../crates/host/src/runtime_setup.rs#L29)。
 
 关联阅读：[adapters/src/session_resources.rs](../devdesk-adapters/runtime-preparation.md#file-src-session-resources-rs)、[core/src/session_assembly.rs](../devdesk-core/session-resources-and-permissions.md#file-src-session-assembly-rs)、[host/src/governance.rs](rpc-and-configuration.md#file-src-governance-rs)。
 

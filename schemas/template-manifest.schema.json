@@ -21,6 +21,25 @@
     },
     "types": {
       "type": "object",
+      "propertyNames": {
+        "enum": [
+          "role",
+          "skill",
+          "spec",
+          "standard",
+          "workflow",
+          "delivery_type",
+          "capability",
+          "agent",
+          "model",
+          "model_provider",
+          "model_catalog",
+          "harness",
+          "sandbox",
+          "tool",
+          "permission_profile"
+        ]
+      },
       "required": [
         "role",
         "skill",

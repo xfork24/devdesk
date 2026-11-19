@@ -3,7 +3,22 @@ import copy
 import hashlib
 import unittest
 
-from workflow_observer import manager_activity
+from workflow_observer import manager_activity, workflow_settled
+
+
+class WorkflowSettlementTests(unittest.TestCase):
+    def test_completed_root_waits_for_native_manager_closure(self):
+        tree = {"root": {"runtime": {"status": "completed"}}}
+        for manager in [{}, {"record": {"data": {"status": "active"}}}]:
+            self.assertFalse(workflow_settled(tree, manager, "root"))
+        self.assertTrue(workflow_settled(
+            tree, {"record": {"data": {"status": "closed"}}}, "root"))
+
+    def test_closed_manager_does_not_complete_unfinished_work(self):
+        manager = {"record": {"data": {"status": "closed"}}}
+        for status in ["running", "failed", "cancelled", "needs_reconciliation"]:
+            self.assertFalse(workflow_settled(
+                {"root": {"runtime": {"status": status}}}, manager, "root"))
 
 
 class ManagerActivityTests(unittest.TestCase):

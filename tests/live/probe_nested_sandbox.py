@@ -5,9 +5,10 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 p=argparse.ArgumentParser();p.add_argument('--output',type=Path,required=True);p.add_argument('--apparmor-profile',choices=['devdesk-harness-v1']);args=p.parse_args()
 report={'passed':False,'inference_tested':False,'credential_canary_only':True,'seccomp':'moby-default + nested namespace/mount syscalls'}
-reference=os.environ.get('DEVDESK_TEST_CODEX_IMAGE','devdesk/codex:0.167.0')
+reference=os.environ.get('DEVDESK_TEST_CODEX_IMAGE')
 args.output.parent.mkdir(parents=True,exist_ok=True)
 try:
+ assert reference, 'set DEVDESK_TEST_CODEX_IMAGE to the explicitly prepared Codex image'
  inspected=subprocess.run(['docker','image','inspect',reference],capture_output=True,text=True,timeout=15)
  assert inspected.returncode==0
  image=json.loads(inspected.stdout)[0]

@@ -34,10 +34,6 @@
 | 原路径 | 当前路径 |
 |---|---|
 | `docs/plans/<计划名>.md` | `docs/plans/<计划名>/PLAN.md` |
-| `docs/reports/real-integration/<文件>` | `docs/plans/real-engineering-integration/<文件>` |
-| `docs/reports/F0–F5.md`、原型评审和早期 `macos-validation/measurements/package-validation` 文件 | `docs/plans/devdesk-prototype/` 中的同名文件 |
-| `docs/reports/domain-hardening*` | `docs/plans/domain-hardening/` 中的同名文件 |
-| `docs/reports/project-databases.md` | `docs/plans/project-databases/project-databases.md` |
 | 其余系统凭据、`credentials-*`、`macos-credentials*`、helper、preflight、runtime-base 与 Web package 文件 | `docs/plans/web-platform-and-credentials/` 中的同名文件 |
 | `fixtures/` | `tests/fixtures/` |
 | `scripts/doctor.py`、`scripts/credential-helper-fingerprint.py` | `scripts/py/` 中的同名文件；入口见 [脚本索引](../../scripts/README.md) |

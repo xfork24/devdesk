@@ -56,7 +56,7 @@ CodexAuthentication 持有共享 AuthWorker，处理登录开始、状态、取�
 
 并发与取消围绕实际进程管理，状态查询不发起新的推理。Host 把进度暴露给界面，正式 Session 仍需安装、协议、权限和完整绑定的共同校验。
 
-代码定位：[`CodexAuthentication`](../../../crates/adapters/src/codex_auth.rs#L45)、[`AuthWorker`](../../../crates/adapters/src/codex_auth.rs#L7)、[`start_login`](../../../crates/adapters/src/codex_auth.rs#L15)、[`credential_reference`](../../../crates/adapters/src/codex_auth.rs#L53)、[`models`](../../../crates/adapters/src/codex_auth.rs#L102)。
+代码定位：[`CodexAuthentication`](../../../crates/adapters/src/codex_auth.rs#L79)、[`AuthWorker`](../../../crates/adapters/src/codex_auth.rs#L7)、[`start_login`](../../../crates/adapters/src/codex_auth.rs#L47)、[`credential_reference`](../../../crates/adapters/src/codex_auth.rs#L107)、[`models`](../../../crates/adapters/src/codex_auth.rs#L156)。
 
 关联阅读：[adapters/src/session_resources.rs](runtime-preparation.md#file-src-session-resources-rs)、[adapters/src/runtime_preparation.rs](runtime-preparation.md#file-src-runtime-preparation-rs)、[host/src/runtime_setup.rs](../devdesk-host/workspace-and-lifecycle.md#file-src-runtime-setup-rs)。
 
@@ -72,7 +72,7 @@ CodexAuthentication 持有共享 AuthWorker，处理登录开始、状态、取�
 
 core 管谁可以修改哪个绑定和何时建立后继会话；这里负责策略可行性和实际文件安装。修改权限资产时需同时更新内容清单与相应的真实执行测试。
 
-代码定位：[`PermissionPresetSource`](../../../crates/adapters/src/permission_profiles.rs#L294)、[`permission_contract`](../../../crates/adapters/src/permission_profiles.rs#L4)、[`permission_semantics_digest`](../../../crates/adapters/src/permission_profiles.rs#L45)、[`compile_permission_profiles`](../../../crates/adapters/src/permission_profiles.rs#L54)、[`preflight_profile`](../../../crates/adapters/src/permission_profiles.rs#L164)、[`verify_permission_installation`](../../../crates/adapters/src/permission_profiles.rs#L265)。
+代码定位：[`PermissionPresetSource`](../../../crates/adapters/src/permission_profiles.rs#L298)、[`permission_contract`](../../../crates/adapters/src/permission_profiles.rs#L4)、[`permission_semantics_digest`](../../../crates/adapters/src/permission_profiles.rs#L45)、[`compile_permission_profiles`](../../../crates/adapters/src/permission_profiles.rs#L66)、[`preflight_profile`](../../../crates/adapters/src/permission_profiles.rs#L166)、[`verify_permission_installation`](../../../crates/adapters/src/permission_profiles.rs#L267)。
 
 关联阅读：[adapters/src/permissions.rs](credentials-and-permissions.md#file-src-permissions-rs)、[core/src/permission_resources.rs](../devdesk-core/session-resources-and-permissions.md#file-src-permission-resources-rs)、[host/src/permission_resources.rs](../devdesk-host/rpc-and-configuration.md#file-src-permission-resources-rs)、[adapters/tests/permission_profiles.rs](testing.md#file-tests-permission-profiles-rs)。
 
@@ -88,7 +88,7 @@ full、read-only、scoped 需要不同机制。后端无法表达的策略（例
 
 validate_runtime_version 的名字保留历史叫法，实际检查 recipe/内容身份，并非按发行版本字符串决定兼容。权限资产通过清单与摘要核对，已冻结计划再次验证实际安装和编译结果，防止文件变化绕开原授权。
 
-代码定位：[`capabilities`](../../../crates/adapters/src/permissions.rs#L5)、[`asset_digests`](../../../crates/adapters/src/permissions.rs#L40)、[`compile_resolved_permissions`](../../../crates/adapters/src/permissions.rs#L67)、[`validate_execution_permissions`](../../../crates/adapters/src/permissions.rs#L163)、[`codex_sandbox_policy`](../../../crates/adapters/src/permissions.rs#L293)。
+代码定位：[`capabilities`](../../../crates/adapters/src/permissions.rs#L5)、[`asset_digests`](../../../crates/adapters/src/permissions.rs#L39)、[`compile_resolved_permissions`](../../../crates/adapters/src/permissions.rs#L70)、[`validate_execution_permissions`](../../../crates/adapters/src/permissions.rs#L166)、[`codex_sandbox_policy`](../../../crates/adapters/src/permissions.rs#L290)。
 
 关联阅读：[domain/src/permission.rs](../devdesk-domain/runtime-and-permissions.md#file-src-permission-rs)、[adapters/src/docker.rs](engineering-resources.md#file-src-docker-rs)、[adapters/src/permission_profiles.rs](credentials-and-permissions.md#file-src-permission-profiles-rs)、[adapters/tests/permissions.rs](testing.md#file-tests-permissions-rs)。
 

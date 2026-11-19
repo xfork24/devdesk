@@ -41,7 +41,7 @@
 
 ignored 场景使用真实固定 Node 镜像验证 Red/Green、环境错误、运行中停止与恢复。断言核对结构化 reporter、容器实际终态及 cleanup，而不只看 stdout。它证明测试执行适配器的边界，不证明模型写出了正确业务代码。
 
-代码定位：[`git`](../../../crates/adapters/tests/command_tests.rs#L14)、[`git_fixture`](../../../crates/adapters/tests/command_tests.rs#L34)、[`fixture`](../../../crates/adapters/tests/command_tests.rs#L65)、[`finish`](../../../crates/adapters/tests/command_tests.rs#L116)。
+代码定位：[`git`](../../../crates/adapters/tests/command_tests.rs#L14)、[`git_fixture`](../../../crates/adapters/tests/command_tests.rs#L34)、[`fixture`](../../../crates/adapters/tests/command_tests.rs)、[`finish`](../../../crates/adapters/tests/command_tests.rs#L118)。
 
 关联阅读：[adapters/src/tests.rs](engineering-resources.md#file-src-tests-rs)、[adapters/src/git.rs](engineering-resources.md#file-src-git-rs)、[adapters/tests/support/mod.rs](testing.md#file-tests-support-mod-rs)。
 
@@ -55,7 +55,7 @@ ignored 场景使用真实固定 Node 镜像验证 Red/Green、环境错误、�
 
 跨库场景注入阶段故障，验证隐藏 stage、项目独立 receipt、恢复 Actor、重放身份和取消围栏。另有稳定工作选择、Agent→Capability→Skill 链及 typed reference 停用检查。测试关注持久化事实，不通过两个内存对象模拟所谓跨库事务。
 
-代码定位：[`Fault`](../../../crates/adapters/tests/configuration_changes.rs#L195)、[`engine`](../../../crates/adapters/tests/configuration_changes.rs#L11)、[`source`](../../../crates/adapters/tests/configuration_changes.rs#L18)、[`spec`](../../../crates/adapters/tests/configuration_changes.rs#L29)、[`apply`](../../../crates/adapters/tests/configuration_changes.rs#L37)。
+代码定位：[`Fault`](../../../crates/adapters/tests/configuration_changes.rs#L198)、[`engine`](../../../crates/adapters/tests/configuration_changes.rs#L14)、[`source`](../../../crates/adapters/tests/configuration_changes.rs#L21)、[`spec`](../../../crates/adapters/tests/configuration_changes.rs#L32)、[`apply`](../../../crates/adapters/tests/configuration_changes.rs#L40)。
 
 关联阅读：[core/src/configuration_changes.rs](../devdesk-core/configuration-and-catalog.md#file-src-configuration-changes-rs)、[core/src/configuration_transfers.rs](../devdesk-core/configuration-and-catalog.md#file-src-configuration-transfers-rs)、[domain/src/configuration_graph.rs](../devdesk-domain/configuration-and-sources.md#file-src-configuration-graph-rs)。
 
@@ -69,7 +69,7 @@ ignored 场景使用真实固定 Node 镜像验证 Red/Green、环境错误、�
 
 当前还核对默认 PRD、Design、TaskPlan 的具体结构、内容证据与受限自检 Skill/工具闭包。改变默认修订时，测试要求新图完整、旧确切引用可恢复；不能仅更新一个快照字符串让断言通过。
 
-代码定位：[`engine`](../../../crates/adapters/tests/configuration_resources.rs#L13)、[`command`](../../../crates/adapters/tests/configuration_resources.rs#L26)、[`current_defaults_exclude_experience_tools_and_reject_them_at_creation`](../../../crates/adapters/tests/configuration_resources.rs#L91)、[`role_crud_has_no_derived_agent_or_skill_side_effects`](../../../crates/adapters/tests/configuration_resources.rs#L106)。
+代码定位：[`engine`](../../../crates/adapters/tests/configuration_resources.rs#L13)、[`command`](../../../crates/adapters/tests/configuration_resources.rs#L32)、[`current_defaults_exclude_experience_tools_and_reject_them_at_creation`](../../../crates/adapters/tests/configuration_resources.rs#L111)、[`role_crud_has_no_derived_agent_or_skill_side_effects`](../../../crates/adapters/tests/configuration_resources.rs#L126)。
 
 关联阅读：[adapters/src/source_store.rs](storage-and-source-codecs.md#file-src-source-store-rs)、[adapters/src/factory_bundle.rs](factory-and-configuration.md#file-src-factory-bundle-rs)、[core/src/spec_lint.rs](../devdesk-core/manager-and-platform-tools.md#file-src-spec-lint-rs)。
 
@@ -85,7 +85,7 @@ ignored 场景使用真实固定 Node 镜像验证 Red/Green、环境错误、�
 
 当前失败场景区分可信的派发前技术拒绝与业务输出拒绝，证明补充 Turn 不花 retry 配额、重试保留原任务上下文且必须取得停止证明。自检场景证明普通 Agent 只能 lint 当前冻结输入/输出 Delivery，lint 与真实产物接纳共用结构和证据定位检查；lint 不封存草稿，也不允许查询其他交付类型。
 
-代码定位：[`spec_lint_and_output_admission_share_machine_checks_and_frozen_receipts`](../../../crates/adapters/tests/configured_workflows.rs#L3322)、[`supplemental_turns_do_not_spend_retry_quota_and_recovery_keeps_the_task_context`](../../../crates/adapters/tests/configured_workflows.rs#L3459)、[`native_rejection_retries_only_after_real_stop_proof_and_keeps_the_failure_event`](../../../crates/adapters/tests/configured_workflows.rs#L3591)、[`worker_self_lint_checks_the_same_frozen_report_locations_as_admission`](../../../crates/adapters/tests/configured_workflows.rs#L3871)。
+代码定位：[`spec_lint_and_output_admission_share_machine_checks_and_frozen_receipts`](../../../crates/adapters/tests/configured_workflows.rs#L5625)、[`supplemental_turns_do_not_spend_retry_quota_and_recovery_keeps_the_task_context`](../../../crates/adapters/tests/configured_workflows.rs#L5762)、[`native_rejection_retries_only_after_real_stop_proof_and_keeps_the_failure_event`](../../../crates/adapters/tests/configured_workflows.rs#L5895)、[`worker_self_lint_checks_the_same_frozen_report_locations_as_admission`](../../../crates/adapters/tests/configured_workflows.rs#L6179)。
 
 关联阅读：[core/src/configured_runtime.rs](../devdesk-core/workflow-execution.md#file-src-configured-runtime-rs)、[core/src/workflow_failure.rs](../devdesk-core/workflow-execution.md#file-src-workflow-failure-rs)、[core/src/spec_lint.rs](../devdesk-core/manager-and-platform-tools.md#file-src-spec-lint-rs)、[core/src/platform_tools.rs](../devdesk-core/manager-and-platform-tools.md#file-src-platform-tools-rs)。
 
@@ -99,9 +99,9 @@ ignored 场景使用真实固定 Node 镜像验证 Red/Green、环境错误、�
 
 终态场景分别提供 external session、输入消费和 writer release 证据，缺一不能完成。消息重放、后继会话和 Proposal 类型也有覆盖；未知结果不自动重发，global discussion 与工程会话保持不同命名空间。夹具产生原生观察，权威终态仍由 core 接纳。
 
-代码定位：[`ConversationFixture`](../../../crates/adapters/tests/conversations.rs#L647)、[`engine`](../../../crates/adapters/tests/conversations.rs#L14)、[`initialize`](../../../crates/adapters/tests/conversations.rs#L27)、[`discussion_before_feature_survives_restart_without_fabricating_runs`](../../../crates/adapters/tests/conversations.rs#L133)、[`enforce_busy_cross_project_immutable_binding_and_append_only_messages`](../../../crates/adapters/tests/conversations.rs#L194)。
+代码定位：[`ConversationFixture`](../../../crates/adapters/tests/conversations.rs#L787)、[`engine`](../../../crates/adapters/tests/conversations.rs#L17)、[`initialize`](../../../crates/adapters/tests/conversations.rs#L183)、[`discussion_before_feature_survives_restart_without_fabricating_runs`](../../../crates/adapters/tests/conversations.rs#L221)、[`enforce_busy_cross_project_immutable_binding_and_append_only_messages`](../../../crates/adapters/tests/conversations.rs#L285)。
 
-关联阅读：[core/src/conversations.rs](../devdesk-core/conversations-and-history.md#file-src-conversations-rs)、[core/src/conversation_runtime.rs](../devdesk-core/conversations-and-history.md#file-src-conversation-runtime-rs)、[core/src/proposals.rs](../devdesk-core/conversations-and-history.md#file-src-proposals-rs)。
+关联阅读：[core/src/conversations.rs](../devdesk-core/conversations-and-history.md#file-src-conversations-rs)、[core/src/conversation_runtime.rs](../devdesk-core/conversations-and-history.md#file-src-conversation-runtime-rs)、[core/src/proposal_commands.rs](../devdesk-core/conversations-and-history.md#file-src-proposals-rs)。
 
 <a id="file-tests-delivery-acceptance-rs"></a>
 
@@ -113,7 +113,7 @@ ignored 场景组合真实临时 Git、Docker Node 测试和候选提交，核�
 
 该文件是资源之间的验收连接点，运行前需要可用 Docker 与专用固定镜像。它不调用付费模型或替用户完成远端 PR；那些能力需要另外的真实服务验收。
 
-代码定位：[`run`](../../../crates/adapters/tests/delivery_acceptance.rs#L23)、[`git`](../../../crates/adapters/tests/delivery_acceptance.rs#L36)、[`test_request`](../../../crates/adapters/tests/delivery_acceptance.rs#L50)、[`execute`](../../../crates/adapters/tests/delivery_acceptance.rs#L101)。
+代码定位：[`run`](../../../crates/adapters/tests/delivery_acceptance.rs#L23)、[`git`](../../../crates/adapters/tests/delivery_acceptance.rs#L36)、[`test_request`](../../../crates/adapters/tests/delivery_acceptance.rs#L50)、[`execute`](../../../crates/adapters/tests/delivery_acceptance.rs#L103)。
 
 关联阅读：[adapters/src/tests.rs](engineering-resources.md#file-src-tests-rs)、[adapters/src/git.rs](engineering-resources.md#file-src-git-rs)、[domain/src/spec_checks.rs](../devdesk-domain/workflows-and-checks.md#file-src-spec-checks-rs)、[adapters/tests/support/mod.rs](testing.md#file-tests-support-mod-rs)。
 
@@ -127,7 +127,7 @@ ignored 场景组合真实临时 Git、Docker Node 测试和候选提交，核�
 
 嵌套沙箱场景确认内层不能扩大外层测试目录写权限；DSH runner 场景核对私有 state 与 proc 屏蔽，同时不增加容器特权。这里证明隔离机制与路径边界，不能单靠配置 JSON 断言已完成后端 enforcement。
 
-代码定位：[`reject_outside_mounts_before_touching_docker`](../../../crates/adapters/tests/docker_resources.rs#L10)、[`real_container_ownership_idempotence_stop_and_cleanup`](../../../crates/adapters/tests/docker_resources.rs#L49)、[`nested_sandbox_cannot_broaden_the_outer_test_directory_write_grant`](../../../crates/adapters/tests/docker_resources.rs#L95)、[`dsh_runner_masks_private_state_and_proc_without_expanding_docker_privileges`](../../../crates/adapters/tests/docker_resources.rs#L140)。
+代码定位：[`reject_outside_mounts_before_touching_docker`](../../../crates/adapters/tests/docker_resources.rs#L13)、[`real_container_ownership_idempotence_stop_and_cleanup`](../../../crates/adapters/tests/docker_resources.rs#L53)、[`nested_sandbox_cannot_broaden_the_outer_test_directory_write_grant`](../../../crates/adapters/tests/docker_resources.rs#L99)、[`dsh_runner_masks_private_state_and_proc_without_expanding_docker_privileges`](../../../crates/adapters/tests/docker_resources.rs#L175)。
 
 关联阅读：[adapters/src/docker.rs](engineering-resources.md#file-src-docker-rs)、[adapters/src/permissions.rs](credentials-and-permissions.md#file-src-permissions-rs)。
 
@@ -141,7 +141,7 @@ ignored 场景组合真实临时 Git、Docker Node 测试和候选提交，核�
 
 这些测试不依赖 GitHub，但并非 Git trait 的内存替身。它们适合定位 Git 内容和归属错误；远端保护规则、PR marker 与 GitHub 回执在另一个测试文件中验证。
 
-代码定位：[`git`](../../../crates/adapters/tests/git_resources.rs#L6)、[`actual_worktrees_single_parent_candidate_cas_and_recovery`](../../../crates/adapters/tests/git_resources.rs#L31)、[`dirty_targets_and_foreign_contexts_are_rejected_without_modifying_refs`](../../../crates/adapters/tests/git_resources.rs#L200)、[`interrupted_clone_rejects_foreign_origin_without_changing_repository`](../../../crates/adapters/tests/git_resources.rs#L256)。
+代码定位：[`git`](../../../crates/adapters/tests/git_resources.rs#L6)、[`actual_worktrees_single_parent_candidate_cas_and_recovery`](../../../crates/adapters/tests/git_resources.rs#L319)、[`dirty_targets_and_foreign_contexts_are_rejected_without_modifying_refs`](../../../crates/adapters/tests/git_resources.rs#L488)、[`interrupted_clone_rejects_foreign_origin_without_changing_repository`](../../../crates/adapters/tests/git_resources.rs#L544)。
 
 关联阅读：[adapters/src/git.rs](engineering-resources.md#file-src-git-rs)、[adapters/tests/github_resources.rs](testing.md#file-tests-github-resources-rs)。
 
@@ -169,7 +169,7 @@ ignored 场景在明确提供的 GitHub 测试仓库上，通过原 request mark
 
 主线刷新必须是显式操作，目录/实例变更不能暗中开始业务工作。这里将治理选择和已有执行事实分开验证，避免“改了默认”错误地重写历史。
 
-代码定位：[`engine`](../../../crates/adapters/tests/governance.rs#L14)、[`command`](../../../crates/adapters/tests/governance.rs#L25)、[`setup_agent`](../../../crates/adapters/tests/governance.rs#L70)、[`agent_instances_pin_composition_and_choose_independent_scope`](../../../crates/adapters/tests/governance.rs#L86)。
+代码定位：[`engine`](../../../crates/adapters/tests/governance.rs#L14)、[`command`](../../../crates/adapters/tests/governance.rs#L27)、[`setup_agent`](../../../crates/adapters/tests/governance.rs#L78)、[`agent_instances_pin_composition_and_choose_independent_scope`](../../../crates/adapters/tests/governance.rs#L108)。
 
 关联阅读：[core/src/governance.rs](../devdesk-core/configuration-and-catalog.md#file-src-governance-rs)、[adapters/src/experience.rs](storage-and-source-codecs.md#file-src-experience-rs)、[core/src/catalog_sync.rs](../devdesk-core/configuration-and-catalog.md#file-src-catalog-sync-rs)。
 
@@ -183,7 +183,7 @@ Scripted Harness 用确定的原生工具调用驱动经理工作台，验证查
 
 跨项目请求、过期 epoch、共享授权、自提权及跨库原 Actor 都有拒绝/恢复覆盖；实例重绑定只影响未来采用，不能替换已冻结工作。权限/Skill 批量变更还验证真实后端 preflight 的原子性。测试证明可控调用链，真实 Codex 模型桥需独立探针。
 
-代码定位：[`Scripted`](../../../crates/adapters/tests/manager_workspace.rs#L13)、[`next`](../../../crates/adapters/tests/manager_workspace.rs#L20)、[`change`](../../../crates/adapters/tests/manager_workspace.rs#L66)、[`open_session`](../../../crates/adapters/tests/manager_workspace.rs#L79)、[`dispatch_turn`](../../../crates/adapters/tests/manager_workspace.rs#L87)。
+代码定位：[`Scripted`](../../../crates/adapters/tests/manager_workspace.rs#L17)、[`next`](../../../crates/adapters/tests/manager_workspace.rs#L24)、[`change`](../../../crates/adapters/tests/manager_workspace.rs#L64)、[`open_session`](../../../crates/adapters/tests/manager_workspace.rs#L77)、[`dispatch_turn`](../../../crates/adapters/tests/manager_workspace.rs#L85)。
 
 关联阅读：[core/src/manager_workspace.rs](../devdesk-core/manager-and-platform-tools.md#file-src-manager-workspace-rs)、[core/src/controllers.rs](../devdesk-core/orchestration-and-drivers.md#file-src-controllers-rs)、[core/src/configuration_transfers.rs](../devdesk-core/configuration-and-catalog.md#file-src-configuration-transfers-rs)。
 
@@ -197,7 +197,7 @@ Scripted Harness 用确定的原生工具调用驱动经理工作台，验证查
 
 ignored 场景使用 DEVDESK_DSH_MOCK_IMAGE 指定的固定 DSH 镜像，在禁外网容器中验证原生 resume/工具协议。它验证协议兼容和配置路由，不能据此声称真实模型供应商可用。
 
-代码定位：[`facts`](../../../crates/adapters/tests/model_providers.rs#L11)、[`connection`](../../../crates/adapters/tests/model_providers.rs#L74)、[`generated_profiles_select_only_the_frozen_route_without_secret_values`](../../../crates/adapters/tests/model_providers.rs#L82)、[`new_providers_require_a_complete_snapshot_and_matching_profile_digest`](../../../crates/adapters/tests/model_providers.rs#L97)。
+代码定位：[`facts`](../../../crates/adapters/tests/model_providers.rs#L69)、[`connection`](../../../crates/adapters/tests/model_providers.rs#L132)、[`generated_profiles_select_only_the_frozen_route_without_secret_values`](../../../crates/adapters/tests/model_providers.rs#L140)、[`new_providers_require_a_complete_snapshot_and_matching_profile_digest`](../../../crates/adapters/tests/model_providers.rs#L170)。
 
 关联阅读：[adapters/src/model_providers.rs](external-integrations.md#file-src-model-providers-rs)、[domain/src/model_provider.rs](../devdesk-domain/runtime-and-permissions.md#file-src-model-provider-rs)、[adapters/src/harness.rs](harness-and-protocols.md#file-src-harness-rs)。
 
@@ -213,9 +213,9 @@ NativeManager 等端口夹具配合真实 Engine/SQLite，覆盖 manual/rust/age
 
 Task 场景覆盖真实业务 dependencies 与流程图 dependencies 的组合：必须等前置 Task Completed，才能启动后置 Task 的任何步骤。同一根实例下的三个绑定 Task 还分别制造等待人工确认、业务依赖阻塞和独立完成，核对 foreach 两个调用槽位与 Rust 单 worker 配额；受阻成员不占用就绪执行的槽位，人工确认后整个根及三个 Task 都能完成。失败/恢复矩阵另核对可信失败、独立 retry 配额、取消和停止证明，并保留完整生命周期断言。此处原生事件由夹具控制，不代表执行了付费模型验收。
 
-代码定位：[`NativeManager`](../../../crates/adapters/tests/orchestration.rs#L477)、[`engine`](../../../crates/adapters/tests/orchestration.rs#L11)、[`cmd`](../../../crates/adapters/tests/orchestration.rs#L22)、[`start`](../../../crates/adapters/tests/orchestration.rs#L69)、[`document`](../../../crates/adapters/tests/orchestration.rs#L96)。
+代码定位：[`NativeManager`](../../../crates/adapters/tests/orchestration.rs#L1042)、[`engine`](../../../crates/adapters/tests/orchestration.rs#L87)、[`cmd`](../../../crates/adapters/tests/orchestration.rs#L99)、[`start`](../../../crates/adapters/tests/orchestration.rs#L216)、[`document`](../../../crates/adapters/tests/orchestration.rs#L254)。
 
-关联阅读：[core/src/orchestration.rs](../devdesk-core/orchestration-and-drivers.md#file-src-orchestration-rs)、[core/src/workflow_eligibility.rs](../devdesk-core/orchestration-and-drivers.md#file-src-workflow-eligibility-rs)、[core/src/workflow_driver.rs](../devdesk-core/orchestration-and-drivers.md#file-src-workflow-driver-rs)、[core/src/workflow_changes.rs](../devdesk-core/workflow-changes.md#file-src-workflow-changes-rs)。
+关联阅读：[core/src/orchestration.rs](../devdesk-core/orchestration-and-drivers.md#file-src-orchestration-rs)、[core/src/workflow_eligibility.rs](../devdesk-core/orchestration-and-drivers.md#file-src-workflow-eligibility-rs)、[core/src/workflow_driver.rs](../devdesk-core/orchestration-and-drivers.md#file-src-workflow-driver-rs)、[core/src/workflow_change_commit.rs](../devdesk-core/workflow-changes.md#file-src-workflow-changes-rs)。
 
 <a id="file-tests-permission-profiles-rs"></a>
 
@@ -227,7 +227,7 @@ Task 场景覆盖真实业务 dependencies 与流程图 dependencies 的组合�
 
 会话权限切换用进程级边界制造中断，检查停止、快照和后继绑定不会拼接成一半旧一半新的执行。ignored 原生 Codex/DSH 场景验证后端权限落实，不调用模型。源合法、编译成功和真实隔离生效分别有证据。
 
-代码定位：[`global`](../../../crates/adapters/tests/permission_profiles.rs#L15)、[`command`](../../../crates/adapters/tests/permission_profiles.rs#L28)、[`execute`](../../../crates/adapters/tests/permission_profiles.rs#L44)、[`change`](../../../crates/adapters/tests/permission_profiles.rs#L55)。
+代码定位：[`global`](../../../crates/adapters/tests/permission_profiles.rs#L18)、[`command`](../../../crates/adapters/tests/permission_profiles.rs#L31)、[`execute`](../../../crates/adapters/tests/permission_profiles.rs#L56)、[`change`](../../../crates/adapters/tests/permission_profiles.rs#L67)。
 
 关联阅读：[adapters/src/permission_profiles.rs](credentials-and-permissions.md#file-src-permission-profiles-rs)、[core/src/permission_switch.rs](../devdesk-core/session-resources-and-permissions.md#file-src-permission-switch-rs)、[host/src/permission_resources.rs](../devdesk-host/rpc-and-configuration.md#file-src-permission-resources-rs)。
 
@@ -241,7 +241,7 @@ Task 场景覆盖真实业务 dependencies 与流程图 dependencies 的组合�
 
 这些测试针对实际文件和原生沙箱，不只比较配置字符串。运行前需满足对应固定镜像与平台资产条件；实际模型网络不在这些无模型权限探针的证明范围。
 
-代码定位：[`scope`](../../../crates/adapters/tests/permissions.rs#L6)、[`full_access_and_restricted_profiles_use_native_enforcement`](../../../crates/adapters/tests/permissions.rs#L14)、[`unsupported_grants_are_rejected_before_execution`](../../../crates/adapters/tests/permissions.rs#L45)、[`codex_compiled_profile_allows_scoped_writes_and_denies_other_worktree_writes`](../../../crates/adapters/tests/permissions.rs#L62)。
+代码定位：[`scope`](../../../crates/adapters/tests/permissions.rs#L7)、[`full_access_and_restricted_profiles_use_native_enforcement`](../../../crates/adapters/tests/permissions.rs#L71)、[`unsupported_grants_are_rejected_before_execution`](../../../crates/adapters/tests/permissions.rs#L102)、[`codex_compiled_profile_allows_scoped_writes_and_denies_other_worktree_writes`](../../../crates/adapters/tests/permissions.rs#L119)。
 
 关联阅读：[adapters/src/permissions.rs](credentials-and-permissions.md#file-src-permissions-rs)、[adapters/src/docker.rs](engineering-resources.md#file-src-docker-rs)、[adapters/tests/support/mod.rs](testing.md#file-tests-support-mod-rs)。
 
@@ -255,7 +255,7 @@ Task 场景覆盖真实业务 dependencies 与流程图 dependencies 的组合�
 
 当前设置和用户偏好更新也检查事务原子性。这些场景测试注册合同与持久化，不启动模型，也不替代容器协议验证。
 
-代码定位：[`native`](../../../crates/adapters/tests/runtime_registry.rs#L6)、[`registration_deduplicates_across_paths_and_threads_then_detects_drift`](../../../crates/adapters/tests/runtime_registry.rs#L35)、[`reject_wrong_platform_hash_scripts_and_mutable_images`](../../../crates/adapters/tests/runtime_registry.rs#L66)、[`current_settings_and_preference_updates_are_atomic`](../../../crates/adapters/tests/runtime_registry.rs#L101)。
+代码定位：[`native`](../../../crates/adapters/tests/runtime_registry.rs#L8)、[`registration_deduplicates_across_paths_and_threads_then_detects_drift`](../../../crates/adapters/tests/runtime_registry.rs#L265)、[`reject_wrong_platform_hash_scripts_and_mutable_images`](../../../crates/adapters/tests/runtime_registry.rs#L296)、[`current_settings_and_preference_updates_are_atomic`](../../../crates/adapters/tests/runtime_registry.rs#L331)。
 
 关联阅读：[adapters/src/runtime_registry.rs](runtime-preparation.md#file-src-runtime-registry-rs)、[adapters/src/catalog.rs](storage-and-source-codecs.md#file-src-catalog-rs)。
 
@@ -269,7 +269,7 @@ Task 场景覆盖真实业务 dependencies 与流程图 dependencies 的组合�
 
 ignored 场景准备两种真实 Docker 配方，只验证初始化协议，不执行推理；另检查已准备镜像在不同数据集中可按实际身份复用和保留。这样将配方兼容、协议兼容和模型可用性分开。
 
-代码定位：[`setup`](../../../crates/adapters/tests/runtime_resources.rs#L8)、[`source`](../../../crates/adapters/tests/runtime_resources.rs#L18)、[`labels_and_native_catalog_do_not_determine_recipe_identity`](../../../crates/adapters/tests/runtime_resources.rs#L23)、[`two_external_recipes_are_valid_and_forged_driver_capability_is_rejected`](../../../crates/adapters/tests/runtime_resources.rs#L36)。
+代码定位：[`setup`](../../../crates/adapters/tests/runtime_resources.rs#L9)、[`source`](../../../crates/adapters/tests/runtime_resources.rs#L19)、[`labels_and_native_catalog_do_not_determine_recipe_identity`](../../../crates/adapters/tests/runtime_resources.rs#L77)、[`two_external_recipes_are_valid_and_forged_driver_capability_is_rejected`](../../../crates/adapters/tests/runtime_resources.rs#L90)。
 
 关联阅读：[adapters/src/runtime_preparation.rs](runtime-preparation.md#file-src-runtime-preparation-rs)、[adapters/src/runtime_verification.rs](runtime-preparation.md#file-src-runtime-verification-rs)、[core/src/driver_capabilities.rs](../devdesk-core/session-resources-and-permissions.md#file-src-driver-capabilities-rs)。
 
@@ -283,7 +283,7 @@ ignored 场景准备两种真实 Docker 配方，只验证初始化协议，不�
 
 当前覆盖 WorkflowFailure 的 kind/effect、StepExecution 的 failure/retry_of、inspect 动作资格与 retry_count 等新字段。Schema 通过表示接口形状一致，不证明外部执行真的发生；运行事实还由集成用例和实际端口核对。
 
-代码定位：[`definition`](../../../crates/adapters/tests/schema_contracts.rs#L18)、[`round_trip`](../../../crates/adapters/tests/schema_contracts.rs#L21)、[`all_published_schemas_and_definitions_resolve_offline`](../../../crates/adapters/tests/schema_contracts.rs#L42)、[`published_configuration_wrappers_accept_current_builtin_revisions`](../../../crates/adapters/tests/schema_contracts.rs#L55)。
+代码定位：[`definition`](../../../crates/adapters/tests/schema_contracts.rs#L18)、[`round_trip`](../../../crates/adapters/tests/schema_contracts.rs#L21)、[`all_published_schemas_and_definitions_resolve_offline`](../../../crates/adapters/tests/schema_contracts.rs#L42)、[`published_configuration_wrappers_accept_current_builtin_revisions`](../../../crates/adapters/tests/schema_contracts.rs#L91)。
 
 关联阅读：[domain/src/workflow_failure.rs](../devdesk-domain/workflows-and-checks.md#file-src-workflow-failure-rs)、[core/src/workflow_eligibility.rs](../devdesk-core/orchestration-and-drivers.md#file-src-workflow-eligibility-rs)、[adapters/build.rs](factory-and-configuration.md#file-build-rs)。
 
@@ -297,7 +297,7 @@ ignored 场景准备两种真实 Docker 配方，只验证初始化协议，不�
 
 访问上下文和确切源引用是断言重点。测试使用可控端口重现执行，不将替身输出声称为真实模型完成了规范验收。
 
-代码定位：[`engine`](../../../crates/adapters/tests/standard_snapshots.rs#L10)、[`command`](../../../crates/adapters/tests/standard_snapshots.rs#L46)、[`publish`](../../../crates/adapters/tests/standard_snapshots.rs#L85)、[`capture`](../../../crates/adapters/tests/standard_snapshots.rs#L98)。
+代码定位：[`engine`](../../../crates/adapters/tests/standard_snapshots.rs#L10)、[`command`](../../../crates/adapters/tests/standard_snapshots.rs#L52)、[`publish`](../../../crates/adapters/tests/standard_snapshots.rs#L104)、[`capture`](../../../crates/adapters/tests/standard_snapshots.rs#L117)。
 
 关联阅读：[core/src/standards.rs](../devdesk-core/configuration-and-catalog.md#file-src-standards-rs)、[core/src/frozen_views.rs](../devdesk-core/workflow-compilation.md#file-src-frozen-views-rs)、[domain/src/standards.rs](../devdesk-domain/configuration-and-sources.md#file-src-standards-rs)。
 
@@ -311,7 +311,7 @@ support 提供集成测试共用的出厂初始化、平台身份、数据与权
 
 它本身不是独立测试目标。新增夹具应保留生产端口合同并明确哪些事件是注入的；真实镜像、无模型协议夹具与真实供应商推理不要共用模糊的“live”通过标记。
 
-代码定位：[`metadata`](../../../crates/adapters/tests/support/mod.rs#L2)、[`image`](../../../crates/adapters/tests/support/mod.rs#L13)、[`platform`](../../../crates/adapters/tests/support/mod.rs#L17)、[`load`](../../../crates/adapters/tests/support/mod.rs#L20)。
+代码定位：[`metadata`](../../../crates/adapters/tests/support/mod.rs#L2)、[`image`](../../../crates/adapters/tests/support/mod.rs#L15)、[`platform`](../../../crates/adapters/tests/support/mod.rs#L19)、[`load`](../../../crates/adapters/tests/support/mod.rs#L22)。
 
 关联阅读：[adapters/src/factory_bundle.rs](factory-and-configuration.md#file-src-factory-bundle-rs)、[adapters/src/runtime_registry.rs](runtime-preparation.md#file-src-runtime-registry-rs)、[adapters/tests/model_providers.rs](testing.md#file-tests-model-providers-rs)。
 
@@ -325,7 +325,7 @@ support 提供集成测试共用的出厂初始化、平台身份、数据与权
 
 ignored 场景实际在 Docker 中跑 HTTP/MCP 协议夹具，覆盖支持的协议版本/transport、私网与重定向限制、认证注入、超时和副作用计数。OAuth 场景核对 PKCE、账户、scope、刷新与未知结果不盲重发。禁外网夹具证明协议与隔离，真实第三方服务可用性需另行验收。
 
-代码定位：[`MemorySecrets`](../../../crates/adapters/tests/tool_integrations.rs#L500)、[`ObservedExecutor`](../../../crates/adapters/tests/tool_integrations.rs#L726)、[`engine`](../../../crates/adapters/tests/tool_integrations.rs#L16)、[`command`](../../../crates/adapters/tests/tool_integrations.rs#L27)、[`api_tool`](../../../crates/adapters/tests/tool_integrations.rs#L46)、[`resource_revisions_scope_and_actual_schema_validation_are_enforced`](../../../crates/adapters/tests/tool_integrations.rs#L50)。
+代码定位：[`MemorySecrets`](../../../crates/adapters/tests/tool_integrations.rs#L512)、[`ObservedExecutor`](../../../crates/adapters/tests/tool_integrations.rs#L738)、[`engine`](../../../crates/adapters/tests/tool_integrations.rs#L16)、[`command`](../../../crates/adapters/tests/tool_integrations.rs#L27)、[`api_tool`](../../../crates/adapters/tests/tool_integrations.rs#L46)、[`resource_revisions_scope_and_actual_schema_validation_are_enforced`](../../../crates/adapters/tests/tool_integrations.rs#L50)。
 
 关联阅读：[adapters/src/integrations.rs](external-integrations.md#file-src-integrations-rs)、[adapters/src/integration_oauth.rs](external-integrations.md#file-src-integration-oauth-rs)、[core/src/integrations.rs](../devdesk-core/integrations-and-repositories.md#file-src-integrations-rs)。
 

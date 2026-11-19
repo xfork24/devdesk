@@ -1,4 +1,4 @@
-import { displayText, truncateText } from "../display-text";
+import { displayText } from "../display-text";
 import {
   executionUrl,
   navigateReading,
@@ -265,56 +265,5 @@ export function LazyDetails({
       <summary>{displayText(summary)}</summary>
       {displayText(open && children)}
     </details>
-  );
-}
-
-function compactValue(value: unknown, depth = 0): unknown {
-  if (typeof value === "string") {
-    if (depth === 0 && /^[\s]*[[{]/.test(value)) {
-      try {
-        const parsed = JSON.parse(value);
-        if (parsed && typeof parsed === "object")
-          return compactValue(parsed, depth + 1);
-      } catch {
-        /* Original text remains available. */
-      }
-    }
-    return value.length > 400
-      ? truncateText(value, 400) +
-          "\n\n（预览已缩短，完整内容可展开或查看原始 JSON）"
-      : value;
-  }
-  if (!value || typeof value !== "object") return value;
-  if (depth >= 3)
-    return Array.isArray(value)
-      ? `集合 · ${value.length} 项，展开查看`
-      : `结构化内容 · ${Object.keys(value).length} 个字段，展开查看`;
-  if (Array.isArray(value))
-    return [
-      ...value.slice(0, 3).map((v) => compactValue(v, depth + 1)),
-      ...(value.length > 3 ? [`其余 ${value.length - 3} 项可展开查看`] : []),
-    ];
-  const entries = Object.entries(value);
-  return Object.fromEntries([
-    ...entries.slice(0, 10).map(([k, v]) => [k, compactValue(v, depth + 1)]),
-    ...(entries.length > 10
-      ? [["更多字段", `${entries.length - 10} 个字段可展开查看`]]
-      : []),
-  ]);
-}
-export function CompactValue({
-  value,
-  label,
-}: {
-  value: unknown;
-  label: string;
-}) {
-  return (
-    <>
-      <ReadableValue value={compactValue(value)} />
-      <LazyDetails summary={`展开完整${label}`}>
-        <ReadableValue value={value} />
-      </LazyDetails>
-    </>
   );
 }

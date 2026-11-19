@@ -26,7 +26,7 @@ governance_dispatch 把源、Agent 实例、工作流控制、驱动与 Spec 请
 
 模块内测试覆盖源修订后的实例/历史仍可查询等治理合同。增加方法时应同时核对 schema、Host 路由、core 命令和工具入口是否一致。
 
-代码定位：[`experience_dispatch`](../../../crates/host/src/governance.rs#L4)、[`tick_workflow_engine`](../../../crates/host/src/governance.rs#L43)、[`resolve_agent_composition`](../../../crates/host/src/governance.rs#L102)、[`governance_dispatch`](../../../crates/host/src/governance.rs#L110)。
+代码定位：[`experience_dispatch`](../../../crates/host/src/governance.rs#L4)、[`tick_workflow_engine`](../../../crates/host/src/governance.rs#L60)[`governance_dispatch`](../../../crates/host/src/governance.rs#L128)。
 
 关联阅读：[core/src/workflow_runtime.rs](../devdesk-core/workflow-execution.md#file-src-workflow-runtime-rs)、[core/src/configuration_transfers.rs](../devdesk-core/configuration-and-catalog.md#file-src-configuration-transfers-rs)、[adapters/src/experience.rs](../devdesk-adapters/storage-and-source-codecs.md#file-src-experience-rs)、[host/src/runtime_setup.rs](workspace-and-lifecycle.md#file-src-runtime-setup-rs)。
 
@@ -42,7 +42,7 @@ integration_permissions 将当前授权编译到工具网络和运行合同；�
 
 OpenAPI、MCP 发现和 Skill 获取是受管资源操作，不是任意 URL/宿主命令代理。长操作保留稳定 ID 与回执，未知结果按原操作恢复。测试夹具与错误路径分布在本模块和 adapters 的 tool_integrations 集成测试中。
 
-代码定位：[`execute_configured_tool`](../../../crates/host/src/integrations.rs#L13)、[`integration_permissions`](../../../crates/host/src/integrations.rs#L120)、[`integration_oauth_callback`](../../../crates/host/src/integrations.rs#L153)、[`integration_dispatch`](../../../crates/host/src/integrations.rs#L177)。
+代码定位：[`execute_configured_tool`](../../../crates/host/src/integrations.rs#L14)、[`integration_permissions`](../../../crates/host/src/integrations.rs#L138)、[`integration_oauth_callback`](../../../crates/host/src/integrations.rs#L171)、[`integration_dispatch`](../../../crates/host/src/integrations.rs#L240)。
 
 关联阅读：[core/src/integrations.rs](../devdesk-core/integrations-and-repositories.md#file-src-integrations-rs)、[core/src/platform_tools.rs](../devdesk-core/manager-and-platform-tools.md#file-src-platform-tools-rs)、[adapters/src/integrations.rs](../devdesk-adapters/external-integrations.md#file-src-integrations-rs)、[adapters/src/integration_oauth.rs](../devdesk-adapters/external-integrations.md#file-src-integration-oauth-rs)。
 
@@ -58,7 +58,7 @@ model_provider_facts 汇集当前可见模型 provider 源及设置事实，sele
 
 Ollama/DeepSeek 目录结果只描述发现能力，不把宿主可达当作容器推理通过。实际模型调用还需完整运行安装、权限、认证与 Session 绑定。
 
-代码定位：[`model_provider_facts`](../../../crates/host/src/model_providers.rs#L8)、[`selected_provider`](../../../crates/host/src/model_providers.rs#L38)。
+代码定位：[`model_provider_facts`](../../../crates/host/src/model_providers.rs#L8)、[`selected_provider`](../../../crates/host/src/model_providers.rs#L39)。
 
 关联阅读：[adapters/src/model_providers.rs](../devdesk-adapters/external-integrations.md#file-src-model-providers-rs)、[adapters/src/credentials.rs](../devdesk-adapters/credentials-and-permissions.md#file-src-credentials-rs)、[core/src/session_assembly.rs](../devdesk-core/session-resources-and-permissions.md#file-src-session-assembly-rs)。
 
@@ -78,7 +78,7 @@ permission_session_status 分别展示 desired 与已冻结 Session 权限。sen
 
 模块测试覆盖目录选择/恢复、权限切换重启、项目归属、原请求重放与不支持规则拒绝。后端是否实际落实策略，另见 adapters 的原生权限测试。
 
-代码定位：[`permission_runtime_digest`](../../../crates/host/src/permission_resources.rs#L7)、[`send_permission_conversation`](../../../crates/host/src/permission_resources.rs#L13)、[`permission_session_status`](../../../crates/host/src/permission_resources.rs#L134)、[`permission_resource_api`](../../../crates/host/src/permission_resources.rs#L177)。
+代码定位：[`permission_runtime_digest`](../../../crates/host/src/permission_resources.rs#L7)、[`send_permission_conversation`](../../../crates/host/src/permission_resources.rs#L13)、[`permission_session_status`](../../../crates/host/src/permission_resources.rs#L170)、[`permission_resource_api`](../../../crates/host/src/permission_resources.rs#L226)。
 
 关联阅读：[core/src/permission_switch.rs](../devdesk-core/session-resources-and-permissions.md#file-src-permission-switch-rs)、[core/src/permission_resources.rs](../devdesk-core/session-resources-and-permissions.md#file-src-permission-resources-rs)、[adapters/src/permission_profiles.rs](../devdesk-adapters/credentials-and-permissions.md#file-src-permission-profiles-rs)、[adapters/tests/permission_profiles.rs](../devdesk-adapters/testing.md#file-tests-permission-profiles-rs)。
 
@@ -94,7 +94,7 @@ template_snapshot_summary 在全局及各工程只读快照中统计当前代次
 
 模块测试检查只改名称的所有源类型、MCP 绑定、已固定引用、重放、stale preview 与失败事务回滚。默认修订断言跟随实际 manifest，不能仅更新一个硬编码 Agent ID 而漏掉整个源闭包。
 
-代码定位：[`template_snapshot_summary`](../../../crates/host/src/templates.rs#L6)、[`template_dispatch`](../../../crates/host/src/templates.rs#L79)。
+代码定位：[`template_snapshot_summary`](../../../crates/host/src/templates.rs#L21)、[`template_dispatch`](../../../crates/host/src/templates.rs#L96)。
 
 关联阅读：[core/src/templates.rs](../devdesk-core/configuration-and-catalog.md#file-src-templates-rs)、[core/src/command_catalog.rs](../devdesk-core/engine-and-ports.md#file-src-command-catalog-rs)、[adapters/src/factory_bundle.rs](../devdesk-adapters/factory-and-configuration.md#file-src-factory-bundle-rs)、[core/src/configuration_changes.rs](../devdesk-core/configuration-and-catalog.md#file-src-configuration-changes-rs)。
 

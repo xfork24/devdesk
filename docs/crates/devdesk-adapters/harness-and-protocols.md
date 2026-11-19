@@ -20,13 +20,13 @@ RoutingHarness 按冻结 provider 选择 Codex 或 DSH 实现。RuntimeWorkers �
 
 location 根据 SessionScope 将私有目录放到工程执行根或全局讨论执行根。Worker 保存原生 session、operation、容器、镜像和日志身份；Docker 再核对实际标签。SessionPath 只是内存 worker 已丢失时的项目日志查找助手，仅保存 Session ID，按 Session/operation 在 projects/* 下查找 journal；它不是存储全部归属的记录，也不覆盖全局讨论目录的日志查找。
 
-任务代码使用受管 worktree 或固定只读导出，Skill、状态和认证挂载有各自边界。Codex app-server 与 DSH SDK 的协议分别处理初始化、输入派发、消费事件、文本全量/增量、工具调用、审批和用户问题。平台/编排动态桥只在实际驱动支持时开放；当前 Codex 支持这类桥，DSH 不提供相同能力。
+任务代码使用受管 worktree 或固定只读导出，Skill、状态和认证挂载有各自边界。Codex app-server 与 DSH SDK 的协议分别处理初始化、输入派发、消费事件、文本全量/增量、工具调用、审批和用户问题。平台/编排动态桥只在实际驱动支持时开放；Codex 与 DSH 都支持动态工具、外部工具和平台工具桥；当前根编排仅由 Codex 驱动声明支持。
 
 观察结果包含原生输入是否已消费、真实终态、等待交互及日志事实。结束 Turn 与撤销写入者要分别核对；stop 定位原会话和容器，保存实际停止证据后才允许 core 释放执行边界。后台清理不能成为提前宣告业务成功的理由。
 
 错误带可信失败分类：供应商超时是技术失败但效果未知；明确拒绝且没有执行的请求可标记 Technical/NotApplied。core 再结合输入消费与其他证据决定能否自动重试，模型文本中的“超时”不产生同等分类。
 
-代码定位：[`RuntimeWorkers`](../../../crates/adapters/src/harness.rs#L147)、[`RoutingHarness`](../../../crates/adapters/src/harness.rs#L1459)、[`SessionPath`](../../../crates/adapters/src/harness.rs#L1406)、[`managed_adapter_identity`](../../../crates/adapters/src/harness.rs#L14)。
+代码定位：[`RuntimeWorkers`](../../../crates/adapters/src/harness.rs#L192)、[`RoutingHarness`](../../../crates/adapters/src/harness.rs#L1788)、[`SessionPath`](../../../crates/adapters/src/harness.rs#L1604)、[`managed_adapter_identity`](../../../crates/adapters/src/harness.rs#L16)。
 
 关联阅读：[adapters/src/jsonl.rs](harness-and-protocols.md#file-src-jsonl-rs)、[adapters/src/docker.rs](engineering-resources.md#file-src-docker-rs)、[core/src/conversation_runtime.rs](../devdesk-core/conversations-and-history.md#file-src-conversation-runtime-rs)、[core/src/workflow_failure.rs](../devdesk-core/workflow-execution.md#file-src-workflow-failure-rs)。
 
@@ -42,7 +42,7 @@ JsonlProcess 管理子进程管道、读取线程、请求 ID 和待回复集合
 
 超时、EOF、非法帧和迟到回复需要保留各自语义。Drop 负责清理归属明确的进程；它不能证明容器内或供应商侧工作已停止，完整停止仍由 Harness/Docker 回执负责。
 
-代码定位：[`JsonlProcess`](../../../crates/adapters/src/jsonl.rs#L212)、[`Journal`](../../../crates/adapters/src/jsonl.rs#L24)、[`AgentMessageBatch`](../../../crates/adapters/src/jsonl.rs#L178)、[`sanitize`](../../../crates/adapters/src/jsonl.rs#L31)。
+代码定位：[`JsonlProcess`](../../../crates/adapters/src/jsonl.rs#L216)、[`Journal`](../../../crates/adapters/src/jsonl.rs#L24)、[`AgentMessageBatch`](../../../crates/adapters/src/jsonl.rs#L183)、[`sanitize`](../../../crates/adapters/src/jsonl.rs#L33)。
 
 关联阅读：[adapters/src/process.rs](harness-and-protocols.md#file-src-process-rs)、[adapters/src/harness.rs](harness-and-protocols.md#file-src-harness-rs)、[domain/src/conversation.rs](../devdesk-domain/agents-and-conversations.md#file-src-conversation-rs)。
 

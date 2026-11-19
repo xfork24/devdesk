@@ -52,6 +52,21 @@ fn all_published_schemas_and_definitions_resolve_offline() {
 }
 
 #[test]
+fn template_manifest_rejects_unrecognized_source_categories() {
+    let mut manifest: Value = serde_json::from_str(include_str!(
+        "../../../resources/configuration/manifest.json"
+    ))
+    .unwrap();
+    SCHEMAS.assert_valid("template-manifest.schema.json", &manifest);
+    manifest["types"]["workfow"] = json!([]);
+    assert!(
+        !SCHEMAS
+            .validator("template-manifest.schema.json")
+            .is_valid(&manifest)
+    );
+}
+
+#[test]
 fn time_limits_are_opt_in_and_legacy_budget_serialization_stays_exact() {
     let legacy = json!({"max_turns":8,"timeout_seconds":300,"retry_limit":3});
     assert_eq!(

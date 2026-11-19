@@ -15,12 +15,16 @@
 
 ## 完整文件索引
 
-每个文件只有一个主要讲解位置；相关专题通过链接引用它。
+由 `python3 scripts/py/check-docs.py --write` 更新。专题解释主要合同，表格覆盖当前全部文件。
 
-| 文件 | 职责与实现说明 |
+<!-- crate-files:start -->
+
+| 文件 | 阅读入口或源码职责 |
 |---|---|
 | [Cargo.toml](../../../crates/credential-helper/Cargo.toml) | [独立助手版本与 macOS 条件依赖](overview.md#file-cargo-toml) |
 | [src/main.rs](../../../crates/credential-helper/src/main.rs) | [严格命名空间、签名调用者和单次 Keychain 操作](request-protocol.md#file-src-main-rs) |
+
+<!-- crate-files:end -->
 
 <a id="file-cargo-toml"></a>
 

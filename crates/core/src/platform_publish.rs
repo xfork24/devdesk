@@ -115,7 +115,7 @@ impl Engine {
                 .pull_requests
                 .as_ref()
                 .ok_or_else(|| err("unsupported", "未配置 PR 适配器"))?
-                .delivery_target(context, fresh)
+                .delivery_target(context)
                 .map(Some),
             PublishAction::DeliveryPullRequest(request) => self
                 .pull_requests

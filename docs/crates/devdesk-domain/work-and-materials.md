@@ -22,11 +22,11 @@ Project、Feature、Task 描述工作归属，Document、Snapshot、Artifact 描
 
 `EngineeringState` 汇集工作对象、会话、仓库记录、治理记录和事件。部分兼容执行视图字段标记为 serde skip：内存中可用，并不意味着应复制进数据库。`material_owner` 要求材料唯一归属于 Global、Project、Feature 或 Task；`document_in_feature` 还允许 Feature 显式采用项目材料，而不是开放整个项目的所有文档。
 
-`valid_dag` 检查重复节点、环和不存在的依赖；`Origin` 只区分 Human 与 External。单元测试覆盖并行 DAG、非法依赖及来源限制。错误统一使用 code/message，供 core、HTTP 和恢复逻辑保留可识别原因。
+`valid_dag` 复用 `topological` 的入度遍历，检查重复节点、自依赖、重复边、环、缺失依赖及节点预算；就绪节点按输入索引排序，保持既有首次就绪顺序，避免反复扫描已完成数组；`Origin` 只区分 Human 与 External。单元测试覆盖并行 DAG、非法依赖及来源限制。错误统一使用 code/message，供 core、HTTP 和恢复逻辑保留可识别原因。
 
 Error 还可携带 execution_failure（失败类别和副作用结论）。technical_not_applied/technical_unknown 只应由真正观察执行结果的边界调用；默认 err 不附带安全重试结论。源错误码和说明继续保留，完整失败来源在 WorkflowFailure 中表达。
 
-代码定位：[`EngineeringState`](../../../crates/domain/src/lib.rs#L288)、[`MaterialOwner`](../../../crates/domain/src/lib.rs#L52)、[`material_owner`](../../../crates/domain/src/lib.rs#L58)、[`valid_dag`](../../../crates/domain/src/lib.rs#L352)。
+代码定位：[`EngineeringState`](../../../crates/domain/src/lib.rs#L338)、[`MaterialOwner`](../../../crates/domain/src/lib.rs#L60)、[`material_owner`](../../../crates/domain/src/lib.rs#L66)、[`valid_dag`](../../../crates/domain/src/lib.rs#L402)。
 
 关联阅读：[core/src/lib.rs](../devdesk-core/engine-and-ports.md#file-src-lib-rs)、[adapters/src/lib.rs](../devdesk-adapters/storage-and-source-codecs.md#file-src-lib-rs)、[domain/src/conversation.rs](agents-and-conversations.md#file-src-conversation-rs)。
 
@@ -68,9 +68,9 @@ Error 还可携带 execution_failure（失败类别和副作用结论）。techn
 
 `validate_repositories` 检查归属、操作与回执一致性，以及既有事实不能被随意改写。PR 请求/回执另外保存候选、head、合并状态和 merge commit；`PublishStage` 区分发布过程，`marker` 生成可用于远端查找的稳定操作标记。平台创建 PR 与远端实际合入不是同一件事。
 
-代码定位：[`RepositoryAction`](../../../crates/domain/src/repository.rs#L13)、[`RepositoryOperation`](../../../crates/domain/src/repository.rs#L121)、[`RepositoryWorktree`](../../../crates/domain/src/repository.rs#L101)、[`PullRequestReceipt`](../../../crates/domain/src/repository.rs#L245)、[`validate_repositories`](../../../crates/domain/src/repository.rs#L131)。
+代码定位：[`RepositoryAction`](../../../crates/domain/src/repository.rs#L13)、[`RepositoryOperation`](../../../crates/domain/src/repository.rs#L160)、[`RepositoryWorktree`](../../../crates/domain/src/repository.rs#L140)、[`PullRequestReceipt`](../../../crates/domain/src/repository.rs#L321)、[`validate_repositories`](../../../crates/domain/src/repository.rs#L170)。
 
-关联阅读：[core/src/repositories.rs](../devdesk-core/integrations-and-repositories.md#file-src-repositories-rs)、[adapters/src/git.rs](../devdesk-adapters/engineering-resources.md#file-src-git-rs)、[adapters/src/github.rs](../devdesk-adapters/engineering-resources.md#file-src-github-rs)。
+关联阅读：[core/src/repository_runtime.rs](../devdesk-core/integrations-and-repositories.md#file-src-repositories-rs)、[adapters/src/git.rs](../devdesk-adapters/engineering-resources.md#file-src-git-rs)、[adapters/src/github.rs](../devdesk-adapters/engineering-resources.md#file-src-github-rs)。
 
 <a id="file-src-testing-rs"></a>
 
@@ -82,7 +82,7 @@ Error 还可携带 execution_failure（失败类别和副作用结论）。techn
 
 文件必须是安全相对路径，不能以 `/` 或 `-` 开头，不能有反斜线、换行、回车、NUL、空段、`.` 或 `..`。这里明确检查这些字符，并未笼统禁止所有控制字符。路径规则同时限制目录越界和被解释成命令选项的输入。合法配方只是执行输入，真实通过/失败仍由报告器与容器回执决定。
 
-代码定位：[`TestRunner`](../../../crates/domain/src/testing.rs#L5)、[`TestRecipe`](../../../crates/domain/src/testing.rs#L10)、[`validate`](../../../crates/domain/src/testing.rs#L17)。
+代码定位：[`TestRunner`](../../../crates/domain/src/testing.rs#L5)、[`TestRecipe`](../../../crates/domain/src/testing.rs#L161)、[`validate`](../../../crates/domain/src/testing.rs)。
 
 关联阅读：[core/src/ports.rs](../devdesk-core/engine-and-ports.md#file-src-ports-rs)、[adapters/src/tests.rs](../devdesk-adapters/engineering-resources.md#file-src-tests-rs)、[adapters/tests/command_tests.rs](../devdesk-adapters/testing.md#file-tests-command-tests-rs)。
 

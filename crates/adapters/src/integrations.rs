@@ -838,28 +838,6 @@ impl ports::ToolExecutor for NativeTools {
         )
     }
 }
-impl NativeTools {
-    pub fn discover_with_permissions(
-        &self,
-        source: &IntegrationDefinition,
-        binding: &IntegrationBinding,
-        image: &str,
-        permissions: &ExecutionPermissions,
-    ) -> Result<Value> {
-        self.run(
-            &id(),
-            source,
-            binding,
-            image,
-            permissions,
-            "",
-            "discover",
-            None,
-            json!({}),
-        )
-    }
-}
-
 /// Import supported OpenAPI 3.1 operations, without loading any external reference.
 pub fn import_openapi(
     value: &Value,

@@ -317,19 +317,6 @@ pub struct RuntimeExecution {
 }
 
 impl EngineeringState {
-    /// Every Step owns its Session and immutable runtime authority.
-    pub fn turn_runtime_binding(&self, turn: &ConversationTurn) -> Result<RuntimeBinding> {
-        self.sessions
-            .iter()
-            .find(|session| session.id == turn.session_id)
-            .ok_or_else(|| err("not_found", "Turn 的 Session 不存在"))?
-            .runtime_binding
-            .clone()
-            .ok_or_else(|| err("blocked", "Session 缺少运行锁"))
-    }
-}
-
-impl EngineeringState {
     pub fn validate_conversations(&self, before: &Self) -> Result<()> {
         self.validate_configured_tasks(before)?;
         self.validate_material_owners()?;

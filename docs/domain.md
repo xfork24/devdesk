@@ -81,7 +81,7 @@ Project、Feature、Task 不保存空的执行绑定；执行来源由 Workflow 
 
 ## Harness 编排
 
-独立 WorkflowController 通过项目配置的 orchestrator_role_ref、Role→Agent 绑定及 WorkflowControlPolicy 建立真实编排 Session。编排会话不属于业务 Step；ControllerSessionBinding、原生 Turn/worker 和 fencing epoch 共同决定控制权限。DSH 尚未提供原生编排工具桥，配置时明确拒绝。
+独立 WorkflowController 通过项目配置的 orchestrator_role_ref、Role→Agent 绑定及 WorkflowControlPolicy 建立真实编排 Session。编排会话不属于业务 Step；ControllerSessionBinding、原生 Turn/worker 和 fencing epoch 共同决定控制权限。DSH 提供动态工具和平台工具桥，当前驱动未声明根 orchestration 能力；需要该能力的控制器选择会被拒绝。
 
 core 观察实际事实。queued 节点只在 workflow.step.dispatch 后执行，产物变为 awaiting_acceptance 后由 workflow.step.accept 接纳；子实例及根实例分别通过 workflow.complete 完成。人类确认和业务接纳分开，模型不能伪造人的决定。用户可人工接管、停止并核对旧执行，然后恢复带 Snapshot 的后继会话。
 

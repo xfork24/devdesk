@@ -149,9 +149,6 @@ pre {
   padding: 18px;
   line-height: 1.8;
 }
-.decision-request {
-  max-height: 24rem;
-}
 .app {
   display: flex;
   min-height: 100vh;
@@ -2044,12 +2041,6 @@ pre {
   border: 1px dashed #dce2ec;
   border-radius: 8px;
   color: #68748a;
-}
-.markdown-topics {
-  padding-left: 24px;
-}
-.markdown-topics > li {
-  margin: 8px 0;
 }
 .markdown-topic-source {
   margin: 10px 0;

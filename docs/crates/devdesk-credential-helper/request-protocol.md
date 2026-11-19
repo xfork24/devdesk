@@ -24,7 +24,7 @@ Keychain 无条目映射 credentials_required，需要交互/认证或用户取�
 
 包内测试核对账户白名单、外来 service、额外 secret 拒绝；macOS 另检查禁止交互 guard 的恢复行为。签名和安装两端的关系见 [签名与 Keychain](signing-and-keychain.md)。
 
-代码定位：[`Request`](../../../crates/credential-helper/src/main.rs#L7)、[`valid_account`](../../../crates/credential-helper/src/main.rs#L13)、[`validate`](../../../crates/credential-helper/src/main.rs#L34)、[`authorized_parent`](../../../crates/credential-helper/src/main.rs#L54)、[`execute`](../../../crates/credential-helper/src/main.rs#L74)、[`run`](../../../crates/credential-helper/src/main.rs#L125)。
+代码定位：[`Request`](../../../crates/credential-helper/src/main.rs#L12)、[`valid_account`](../../../crates/credential-helper/src/main.rs#L19)、[`validate`](../../../crates/credential-helper/src/main.rs#L41)、[`authorized_parent`](../../../crates/credential-helper/src/main.rs#L61)、[`execute`](../../../crates/credential-helper/src/main.rs#L81)、[`run`](../../../crates/credential-helper/src/main.rs#L132)。
 
 关联阅读：[adapters/src/credentials.rs](../devdesk-adapters/credentials-and-permissions.md#file-src-credentials-rs)、[adapters/src/credentials_macos.rs](../devdesk-adapters/credentials-and-permissions.md#file-src-credentials-macos-rs)。
 

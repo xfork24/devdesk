@@ -1,79 +1,38 @@
-# 会话命令、原生观察、提案与历史
+# 会话命令、原生观察与只读历史
 
 [代码手册总览](../overview.md) · [完整执行链](../execution-flows.md) · [本包概览](overview.md)
 
-会话输入的排队、原生消费、真实终态、停止证明和上下文快照分别记录。Proposal 是讨论材料的提案，WorkflowOutput 是正式步骤的交付。历史查询只组合已有事实，不回填成功，也不重启来源执行者。
-
-## 本页文件
-
-- [src/conversations.rs](#file-src-conversations-rs)：会话打开、排队输入、交互与快照
-- [src/conversation_runtime.rs](#file-src-conversation-runtime-rs)：派发原生 Turn、批量观察与真实终态裁定
-- [src/proposals.rs](#file-src-proposals-rs)：讨论提案的提取、修订与显式采纳
-- [运行历史读取端口](#file-src-history-rs)：SQL 先过滤分页，再恢复当前页或确切详情
+会话的创建、排队、原生执行、业务投影与历史读取分别处理。命令固定原始身份和版本，外部端口返回实际观察，查询只读取已提交事实。
 
 <a id="file-src-conversations-rs"></a>
 
-## src/conversations.rs：会话打开、排队输入、交互与快照
+## 会话查询与命令入口
 
-源码：[crates/core/src/conversations.rs](../../../crates/core/src/conversations.rs)。
+[conversations.rs](../../../crates/core/src/conversations.rs) 只分派有界会话查询；[session_commands.rs](../../../crates/core/src/session_commands.rs) 准备会话变更，[conversation_start.rs](../../../crates/core/src/conversation_start.rs) 处理讨论命令，[conversation_controls.rs](../../../crates/core/src/conversation_controls.rs) 处理实际控制。
 
-`conversation_command` 管理 session.open、conversation.send/cancel、交互回答和清理重试等持久化命令。它检查 owner、Agent 实例、revision、单活跃 Turn、消息幂等与不可变绑定；实际原生调用交给 conversation_runtime。
-
-正式 Workflow 会话只能发送与当前冻结任务逐字节一致的输入，不能经 conversation.send 覆写 task/task_source 或任务指令；补充输入由对应步骤用例构造。普通讨论保存用户输入与冻结代码视图，等待问题/审批以类型化答案回答，已回答事实不撤回。
-
-`capture_conversation` 保存消息、文档、状态与运行绑定的快照，并建立经验索引；后继会话有明确 predecessor，恢复背景不恢复旧执行状态。conversation_query 提供按实例/范围的分页列表与详情，不把跨项目查询当成隐式项目切换。
-
-代码定位：[`conversation_command`](../../../crates/core/src/conversations.rs#L47)、[`capture_conversation`](../../../crates/core/src/conversations.rs#L543)、[`conversation_query`](../../../crates/core/src/conversations.rs#L635)、[`session_owner`](../../../crates/core/src/conversations.rs#L28)。
-
-关联阅读：[core/src/conversation_runtime.rs](conversations-and-history.md#file-src-conversation-runtime-rs)、[core/src/agent_tasks.rs](workflow-compilation.md#file-src-agent-tasks-rs)、[core/src/proposals.rs](conversations-and-history.md#file-src-proposals-rs)、[adapters/tests/conversations.rs](../devdesk-adapters/testing.md#file-tests-conversations-rs)。
+创建会话冻结完整 RuntimeBinding。输入由 [conversation_submission.rs](../../../crates/core/src/conversation_submission.rs) 排队，实际准入由 [conversation_admission.rs](../../../crates/core/src/conversation_admission.rs) 校验。正式步骤和控制器会话另须通过原执行/计划/epoch 的校验，不能从普通讨论获得工作流授权。
 
 <a id="file-src-conversation-runtime-rs"></a>
 
-## src/conversation_runtime.rs：派发原生 Turn、批量观察与真实终态裁定
+## 原生执行与回执接纳
 
-源码：[crates/core/src/conversation_runtime.rs](../../../crates/core/src/conversation_runtime.rs)。
+[conversation_runtime.rs](../../../crates/core/src/conversation_runtime.rs) 协调有界运行切片，保存原意图后在事务外调用 Harness。启动、发送、停止与清理分别需要持久化执行资格，重放不重新调用外部副作用。
 
-`tick_conversations` 在并发额度内处理 queued 输入和活动会话，持久化 dispatch 意图后在事务外打开/恢复 worker、发 Turn 并轮询。原生接纳、输入消费和终态分别投影为事件与执行事实，不能把模型普通文本中的“成功”当协议终态。
-
-真实启动采用 begin/poll：queued 先成为 Dispatching、execution 成为 Prepared 并占额度，适配器只后台启动原操作。核心轮询启动回执，重新核对当前 Turn 未取消、execution 未撤权及操作/镜像身份，提交后才发送输入；启动未完成也继续观察其他会话。取消仍须取得真实停止证明。没有新 queued 输入或没有剩余额度时，不额外恢复准入历史。
-
-并发额度限制新 queued Turn，已有活动 Turn 仍会被观察。可写 Turn 另按实际 code_view 的 source.worktree 排队：同一 worktree 有未撤销 writer 时不再启动第二个写者；只读 Turn 不进入该写者集合。这个工作副本边界与项目配额、Rust 根额度和 foreach 调用槽位分别判断。
-
-project_conversation 将端口观察转成领域消息、工具调用、交互及执行事实，commit_conversation_batch 以原身份接纳批量事件。正常 Terminal 路径先提交此前观察，再核对本 Turn、quiescent 和 consumed，然后调用 finish_conversation；取消或派发前失败则不要求输入已经消费。finish_conversation 对原 operation 调用 stop_session，核对 writer_revoked，封存可取得的协议日志，并更新 Turn、SessionLifecycle、RuntimeExecution 和停止事件。只有符合条件的成功会话才自动捕获经验快照；清理失败单独记为 CleanupFailed，不抹掉已接纳的 Turn 结果。
-
-派发阶段明确 Technical/NotApplied 的错误会在取得停止证明后结束为 Failed，其余派发错误进入 unknown_conversation。轮询阶段对 provider_timeout、provider_rejected 或明确 Technical/NotApplied 先停止并将 Turn 记为 Failed，其他错误进入 NeedsReconciliation；record_conversation_failure 保留完整 Error 的不可变状态事件。
-
-Turn 的失败终态与步骤的效果判断是两层：工作流随后从该事件恢复分类，Technical/Unknown 的超时仍使 Step 进入 needs_reconciliation；已消费输入的 Turn 失败也不会因此获得 NotApplied 结论。恢复只停止/封存原 worker，保留未知结果，不重新提交输入；没有可信分类的错误不会被默认当成安全重试。
-
-代码定位：[`tick_conversations`](../../../crates/core/src/conversation_runtime.rs#L74)、[`unknown_conversation`](../../../crates/core/src/conversation_runtime.rs#L461)、[`commit_conversation_batch`](../../../crates/core/src/conversation_runtime.rs#L488)、[`project_conversation`](../../../crates/core/src/conversation_runtime.rs#L505)、[`finish_conversation`](../../../crates/core/src/conversation_runtime.rs#L609)。
-
-关联阅读：[core/src/ports.rs](engine-and-ports.md#file-src-ports-rs)、[adapters/src/harness.rs](../devdesk-adapters/harness-and-protocols.md#file-src-harness-rs)、[core/src/platform_tools.rs](manager-and-platform-tools.md#file-src-platform-tools-rs)、[domain/src/conversation.rs](../devdesk-domain/agents-and-conversations.md#file-src-conversation-rs)、[core/src/workflow_failure.rs](workflow-execution.md#file-src-workflow-failure-rs)。
+[conversation_workers.rs](../../../crates/core/src/conversation_workers.rs)、[conversation_observations.rs](../../../crates/core/src/conversation_observations.rs) 和 [worker_reconciliation.rs](../../../crates/core/src/worker_reconciliation.rs) 核对真实 worker、Session、Turn、消费及停止证明。未知结果保持待核对；取消不等于已停止。完成快照由 [conversation_captures.rs](../../../crates/core/src/conversation_captures.rs) 独立派生，保留原始观察。
 
 <a id="file-src-proposals-rs"></a>
 
-## src/proposals.rs：讨论提案的提取、修订与显式采纳
+## 讨论提案
 
-源码：[crates/core/src/proposals.rs](../../../crates/core/src/proposals.rs)。
-
-`proposal_command` 处理 create/extract/revise/reject/adopt。extract 从已完成 Turn 的实际 Assistant 消息提取通用 ProposalContent，核对 delivery_ref、值、当前可见交付规范和 input_refs，不从未完成流中抢先建立正式材料。
-
-采纳固定目标、预期修订和来源，把交付值封存为该范围的类型化材料。它不隐式创建 Feature/Task，也不绕过 Workflow 步骤输出合同。修订与拒绝保留提案历史；同项目输入和材料 owner 必须一致，不能借讨论提案导入跨项目或伪造平台 provenance。
-
-代码定位：[`proposal_command`](../../../crates/core/src/proposals.rs#L4)。
-
-关联阅读：[domain/src/conversation.rs](../devdesk-domain/agents-and-conversations.md#file-src-conversation-rs)、[core/src/conversations.rs](conversations-and-history.md#file-src-conversations-rs)、[core/src/spec_lint.rs](manager-and-platform-tools.md#file-src-spec-lint-rs)、[adapters/tests/conversations.rs](../devdesk-adapters/testing.md#file-tests-conversations-rs)。
+[proposal_commands.rs](../../../crates/core/src/proposal_commands.rs) 处理创建、提取、修订、拒绝和采用。提案固定已完成讨论、确切目标及版本；仅可信 Human 来源可编辑和采用。读取原提案与后继断言后，用有限资源变更和幂等身份提交。提案不替代工作流输出、真实测试或平台回执。
 
 <a id="file-src-history-rs"></a>
 
-## 运行历史读取端口：先选页，再恢复确切记录
+## 按范围与页面读取历史
 
-源码：[core/src/ports.rs](../../../crates/core/src/ports.rs)、[adapters/src/operational_reads.rs](../../../crates/adapters/src/operational_reads.rs)。
+[ports.rs](../../../crates/core/src/ports.rs) 定义读取合同，[adapters/operational_reads.rs](../../../crates/adapters/src/operational_reads.rs) 与 [conversation_queries.rs](../../../crates/adapters/src/conversation_queries.rs) 执行查询。列表先过滤和分页，正文按确切 ID 读取；普通查询不恢复整个工程、不启动 worker、不回写业务事件。
 
-Engine.query 的 history、tool_calls、repository、runtimes 通过 Store 的 operational read 端口读取。history 在 SQL 内过滤、排序及分页，include_tool_calls 将当前库中的事件和工具/平台调用合并后选页；total 表示符合条件的总量，target 过滤在分页前进行。此路径不调用完整工程 snapshot，不通过恢复历史后截断实现分页。
-
-view=summary 的调用列表只恢复 metadata；确切调用用 id 再读，事件正文用 event_id 按需读取。分页及正文保持既有敏感字段处理和来源信息。普通查询不补写业务事件，也不编译历史 Workflow。Host 按显式项目或全局讨论作用域选择数据库，不依赖共享的活动项目。
-
-关联阅读：[host 历史隔离测试](../devdesk-host/testing.md#file-src-history-tests-rs)、[adapters 读取实现](../devdesk-adapters/storage-and-source-codecs.md)、[公开读取合同](../../protocol.md)。
+Host 使用显式项目或全局讨论作用域。Artifact 正文继续通过所属范围和内容摘要校验；跨项目经验访问使用独立来源读取端口，不改变当前标签页的项目。
 
 ---
 

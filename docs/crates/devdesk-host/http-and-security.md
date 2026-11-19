@@ -20,15 +20,15 @@ App 保存可选 Workspace、随机会话 cookie、规范 authority/origin、连
 
 connection_origin 只接受无凭据、路径、查询和 fragment 的 http(s) origin。非 loopback 或显式 public URL 要求 DEVDESK_ACCESS_TOKEN；值为 32..512 位非空白 ASCII，监听所有网卡还须指定客户端连接地址。
 
-RPC 使用有 id 的单请求 JSON-RPC，领域错误投影为统一错误形状；/rpc 请求体上限 4 MiB。Artifact 从当前活动工程的 query.artifact 取得记录后校验读取，不暴露任意文件路径；project_id 同样是活动项目校验值。这个 HTTP 下载入口不选择全局讨论库。
+RPC 使用有 id 的单请求 JSON-RPC，领域错误投影为统一错误形状；/rpc 请求体上限 4 MiB。Artifact 从显式 project_id 指定项目的 query.artifact 取得记录后校验读取，不暴露任意文件路径；未知或缺失的项目不会回退到其他项目。这个 HTTP 下载入口不选择全局讨论库。
 
-SSE 建立时通过 event_engine 固定当前工程 Engine；无活动工程时使用全局配置 Engine。事件 ID 为 scope:cursor，Last-Event-ID 只有 scope 相同才采用，随后才考虑查询参数 cursor；每 250ms 读取一批。项目切换不会让旧流混入新库，但它也不会自动转成新项目或全局讨论消息流。
+SSE 建立时通过显式项目 ID 固定 Engine；未指定项目时使用全局配置作用域。事件 ID 为 scope:cursor，Last-Event-ID 仅在 scope 一致时采用。前端使用 `tail=true` 的共享有界失效尾流，同作用域复用 [event_hub.rs](../../../crates/host/src/event_hub.rs) 的事件窗口；游标超出窗口时要求重新读取权威数据。完整历史流仍按明确游标分页读取。切换项目重新订阅，旧流不会混入其他库。
 
 /oauth/integrations/callback 不在 cookie 保护列表中，以原 OAuth flow/state 和授权码完成交换；guard 仍核对 Host 及请求中出现的 Origin。回调只说明交换结果，用户还需回到接入页保存新的绑定修订，不因收到 callback 就自动替换旧执行锁。
 
 启动处理 --data/--host/--port/--public-url、固定助手更新与显式凭据授权等入口，嵌入 web/dist。提交、原生收包与异步启动完成通知唤醒调度；活动工作以 75 ms 补扫，空闲以 1 s 补扫，目录维护另作限频。通知合并后仍从耐久待办核对资格，不赋予业务调度权。关闭先阻止新调度、等待当前调度阶段退出，再停止并封存已打开 Engine 的 Harness writer，保留未知结果与排队输入。文件末测试覆盖远程密钥、wildcard 和 origin 规范化；完整 HTTP 行为由跨进程测试补充。
 
-代码定位：[`App`](../../../crates/host/src/main.rs#L34)、[`guard`](../../../crates/host/src/main.rs#L67)、[`connection`](../../../crates/host/src/main.rs#L121)、[`session`](../../../crates/host/src/main.rs#L133)、[`connection_origin`](../../../crates/host/src/main.rs#L161)、[`connection_key`](../../../crates/host/src/main.rs#L185)、[`rpc`](../../../crates/host/src/main.rs#L237)、[`events`](../../../crates/host/src/main.rs#L355)、[`run`](../../../crates/host/src/main.rs#L422)。
+代码定位：[`App`](../../../crates/host/src/main.rs#L39)、[`guard`](../../../crates/host/src/main.rs#L73)、[`connection`](../../../crates/host/src/main.rs#L128)、[`session`](../../../crates/host/src/main.rs#L140)、[`connection_origin`](../../../crates/host/src/main.rs#L168)、[`connection_key`](../../../crates/host/src/main.rs#L192)、[`rpc`](../../../crates/host/src/main.rs#L290)、[`events`](../../../crates/host/src/main.rs#L498)、[`run`](../../../crates/host/src/main.rs#L731)。
 
 关联阅读：[host/src/workspace.rs](workspace-and-lifecycle.md#file-src-workspace-rs)、[运行历史读取端口](../devdesk-core/conversations-and-history.md#file-src-history-rs)、[adapters/src/lib.rs](../devdesk-adapters/storage-and-source-codecs.md#file-src-lib-rs)、[adapters/src/credentials_macos.rs](../devdesk-adapters/credentials-and-permissions.md#file-src-credentials-macos-rs)。
 

@@ -1,4 +1,7 @@
 use devdesk_core::id;
+use devdesk_domain::*;
+#[path = "../../../tests/support/permissions.rs"]
+mod permission_fixture;
 mod support;
 use devdesk_adapters::docker::*;
 use std::{
@@ -100,10 +103,41 @@ fn nested_sandbox_cannot_broaden_the_outer_test_directory_write_grant() {
     fs::create_dir_all(work.join("tests/allowed")).unwrap();
     fs::create_dir_all(work.join("src")).unwrap();
     fs::create_dir_all(state.join("codex")).unwrap();
-    fs::write(state.join("codex/config.toml"),"default_permissions=\"devdesk\"\n[permissions.devdesk.filesystem]\n\":root\"=\"deny\"\n\":minimal\"=\"read\"\n\"/work\"=\"read\"\n\"/work/tests/allowed\"=\"write\"\n\"/state\"=\"deny\"\n[permissions.devdesk.network]\nenabled=false\n").unwrap();
+    // Use the same compiled isolation contract as production. A hand-written
+    // profile alone omits the executable temporary mount required by bubblewrap.
+    let plan = permission_fixture::compile(
+        HarnessProvider::Codex,
+        ExecutionScope {
+            work_type: WorkType::Discussion,
+            writable_paths: vec!["tests/allowed".into()],
+            read_only_paths: vec![],
+        },
+        PermissionPolicy {
+            filesystem: FilesystemPermission::Scoped {
+                rules: vec![
+                    PathPermission {
+                        path: "/".into(),
+                        access: FileAccess::Read,
+                    },
+                    PathPermission {
+                        path: "/work/tests/allowed".into(),
+                        access: FileAccess::ReadWrite,
+                    },
+                ],
+            },
+            network: NetworkPermission::Disabled,
+            tools: ToolPermission::AllAvailable,
+        },
+    )
+    .unwrap();
+    fs::write(
+        state.join("codex/config.toml"),
+        devdesk_adapters::permissions::codex_config(&plan),
+    )
+    .unwrap();
     let operation = id();
     let sandbox = DockerSandbox::new(root.path()).unwrap();
-    let spec=ContainerSpec{ host_gateway:false, permissions: None,purpose:ContainerPurpose::Harness,project_id:id(),session_id:id(),operation_id:operation.clone(),image_id:support::image("codex"),worktree:work.clone(),state,writable:false,writable_subdirectories:vec!["tests/allowed".into()],read_only_subdirectories:vec![],network:false,nested_sandbox:true,credential_env_file:None,profile_file:None,runner_file:None,skill_directory:None,command_output_directory:None,sensitive_output:false,profile_target:None,command:vec!["codex".into(),"sandbox".into(),"--".into(),"/bin/sh".into(),"-c".into(),"printf scope-ok > /work/tests/allowed/proof && (! touch /work/src/forbidden 2>/dev/null) && (! touch /work/forbidden 2>/dev/null)".into()]};
+    let spec=ContainerSpec{ host_gateway:false, permissions: Some(plan),purpose:ContainerPurpose::Harness,project_id:id(),session_id:id(),operation_id:operation.clone(),image_id:support::image("codex"),worktree:work.clone(),state,writable:false,writable_subdirectories:vec!["tests/allowed".into()],read_only_subdirectories:vec![],network:true,nested_sandbox:true,credential_env_file:None,profile_file:None,runner_file:None,skill_directory:None,command_output_directory:None,sensitive_output:false,profile_target:None,command:vec!["codex".into(),"sandbox".into(),"--".into(),"/bin/sh".into(),"-c".into(),"printf scope-ok > /work/tests/allowed/proof && (! touch /work/src/forbidden 2>/dev/null) && (! touch /work/forbidden 2>/dev/null)".into()]};
     sandbox.create(&spec).unwrap();
     sandbox.start(&operation).unwrap();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);

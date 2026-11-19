@@ -400,42 +400,81 @@ impl EngineeringState {
     }
 }
 pub fn valid_dag(nodes: &[(String, Vec<String>)]) -> Result<()> {
-    require(
-        nodes.len() <= WORKFLOW_STEP_LIMIT
-            && nodes.iter().all(|(key, deps)| {
-                !key.trim().is_empty()
-                    && deps.len() <= WORKFLOW_STEP_LIMIT
-                    && deps.iter().collect::<std::collections::HashSet<_>>().len() == deps.len()
-                    && !deps.contains(key)
-            }),
-        "DAG 含空节点、自依赖、重复边或超出预算",
-    )?;
-    let mut done = vec![];
-    require(
-        nodes
-            .iter()
-            .map(|x| &x.0)
-            .collect::<std::collections::HashSet<_>>()
-            .len()
-            == nodes.len(),
-        "DAG 节点重复",
-    )?;
-    loop {
-        let next = nodes
-            .iter()
-            .filter(|(n, deps)| !done.contains(n) && deps.iter().all(|d| done.contains(d)))
-            .map(|x| x.0.clone())
-            .collect::<Vec<_>>();
-        if next.is_empty() {
-            break;
-        }
-        done.extend(next);
-    }
-    require(done.len() == nodes.len(), "DAG 有环或引用不存在的节点")
+    topological(nodes).map(|_| ())
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn topological_preserves_first_ready_input_order_for_every_small_graph() {
+        // All directed graphs on four nodes, including cycles and disconnected
+        // components, are compared with the original first-ready traversal.
+        let edges: Vec<_> = (0..4)
+            .flat_map(|from| {
+                (0..4)
+                    .filter(move |to| from != *to)
+                    .map(move |to| (from, to))
+            })
+            .collect();
+        for mask in 0_u32..1 << edges.len() {
+            let mut nodes: Vec<_> = (0..4).map(|i| (i.to_string(), Vec::new())).collect();
+            for (bit, &(from, to)) in edges.iter().enumerate() {
+                if mask & (1 << bit) != 0 {
+                    nodes[to].1.push(from.to_string());
+                }
+            }
+            let mut expected = Vec::new();
+            while let Some((key, _)) = nodes.iter().find(|(key, deps)| {
+                !expected.contains(key) && deps.iter().all(|dep| expected.contains(dep))
+            }) {
+                expected.push(key.clone());
+            }
+            match topological(&nodes) {
+                Ok(actual) => {
+                    assert_eq!(expected.len(), nodes.len(), "graph {mask}");
+                    assert_eq!(actual, expected, "graph {mask}");
+                }
+                Err(error) => {
+                    assert!(expected.len() < nodes.len(), "graph {mask}");
+                    assert_eq!(error.code, "blocked");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn topological_handles_a_reverse_chain_at_the_node_limit() {
+        let nodes: Vec<_> = (0..WORKFLOW_STEP_LIMIT)
+            .rev()
+            .map(|i| {
+                (
+                    i.to_string(),
+                    if i == 0 {
+                        vec![]
+                    } else {
+                        vec![(i - 1).to_string()]
+                    },
+                )
+            })
+            .collect();
+        assert_eq!(
+            topological(&nodes).unwrap(),
+            (0..WORKFLOW_STEP_LIMIT)
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+        );
+        for nodes in [
+            vec![("a".into(), vec![]), ("a".into(), vec![])],
+            vec![("a".into(), vec!["a".into()])],
+            vec![
+                ("a".into(), vec!["b".into(), "b".into()]),
+                ("b".into(), vec![]),
+            ],
+        ] {
+            assert_eq!(topological(&nodes).unwrap_err().code, "blocked");
+        }
+    }
+
     #[test]
     fn rejects_cycles_and_missing_dependencies() {
         assert!(

@@ -39,7 +39,7 @@
 
 文件还定义 Model、Harness、Tool、Role、Agent 实例和解析后 Agent 执行配置。`ToolDefinition.call_name` 将平台 qualified_name 转成可移植函数名，处理器身份保持原值。聚合状态的治理校验检查源与记录关系；它并不实际安装运行时或执行模型。
 
-代码定位：[`Scope`](../../../crates/domain/src/governance.rs#L9)、[`ConfigurationRecord`](../../../crates/domain/src/governance.rs#L135)、[`reference_fields`](../../../crates/domain/src/governance.rs#L92)、[`content_digest`](../../../crates/domain/src/governance.rs#L108)、[`AgentExecutionConfiguration`](../../../crates/domain/src/governance.rs#L305)、[`ToolDefinition`](../../../crates/domain/src/governance.rs#L246)。
+代码定位：[`Scope`](../../../crates/domain/src/governance.rs#L9)、[`ConfigurationRecord`](../../../crates/domain/src/governance.rs#L134)、[`reference_fields`](../../../crates/domain/src/governance.rs#L92)、[`content_digest`](../../../crates/domain/src/governance.rs#L107)、[`AgentExecutionConfiguration`](../../../crates/domain/src/governance.rs#L305)、[`ToolDefinition`](../../../crates/domain/src/governance.rs#L244)。
 
 关联阅读：[domain/src/source.rs](configuration-and-sources.md#file-src-source-rs)、[domain/src/configuration_graph.rs](configuration-and-sources.md#file-src-configuration-graph-rs)、[core/src/governance.rs](../devdesk-core/configuration-and-catalog.md#file-src-governance-rs)、[adapters/src/source_store.rs](../devdesk-adapters/storage-and-source-codecs.md#file-src-source-store-rs)。
 
@@ -55,7 +55,7 @@
 
 解析不会选择“最新同名配置”，也不执行外部操作。`refresh_configuration_views` 重建派生的内存视图，支持存储只保留原源引用。包内测试核对扁平引用、摘要和 Scope 编码。
 
-代码定位：[`SourceDefinition`](../../../crates/domain/src/source.rs#L5)、[`source_reference`](../../../crates/domain/src/source.rs#L16)、[`parse_source_reference`](../../../crates/domain/src/source.rs#L28)、[`validate_source_data`](../../../crates/domain/src/source.rs#L137)、[`resolve_agent`](../../../crates/domain/src/source.rs#L249)、[`resolve_workflow_source`](../../../crates/domain/src/source.rs#L340)。
+代码定位：[`SourceDefinition`](../../../crates/domain/src/source.rs#L5)、[`source_reference`](../../../crates/domain/src/source.rs#L16)、[`parse_source_reference`](../../../crates/domain/src/source.rs#L28)、[`validate_source_data`](../../../crates/domain/src/source.rs#L115)、[`resolve_agent`](../../../crates/domain/src/source.rs#L216)、[`resolve_workflow_source`](../../../crates/domain/src/source.rs#L313)。
 
 关联阅读：[domain/src/governance.rs](configuration-and-sources.md#file-src-governance-rs)、[domain/src/permission_profile.rs](runtime-and-permissions.md#file-src-permission-profile-rs)、[core/src/configured_workflows.rs](../devdesk-core/workflow-compilation.md#file-src-configured-workflows-rs)、[core/src/frozen_views.rs](../devdesk-core/workflow-compilation.md#file-src-frozen-views-rs)。
 
@@ -83,7 +83,7 @@
 
 Workflow 草稿按 workflow 成员归类。`template_projection_current` 为内存旧式定义视图提供相同目录过滤，`template_source_hash` 比较名称、Scope、引用和载荷，显示信息变化也会影响重置预演。停用事实另由 `template_record_disabled` 判断，归档、停用和删除历史不是同一个操作。
 
-代码定位：[`template_catalog_generation`](../../../crates/domain/src/template_catalog.rs#L10)、[`template_record_current`](../../../crates/domain/src/template_catalog.rs#L61)、[`template_projection_current`](../../../crates/domain/src/template_catalog.rs#L83)、[`template_source_hash`](../../../crates/domain/src/template_catalog.rs#L100)。
+代码定位：[`template_catalog_generation`](../../../crates/domain/src/template_catalog.rs#L10)、[`template_record_current`](../../../crates/domain/src/template_catalog.rs#L58)、[`template_projection_current`](../../../crates/domain/src/template_catalog.rs#L80)、[`template_source_hash`](../../../crates/domain/src/template_catalog.rs#L97)。
 
 关联阅读：[core/src/templates.rs](../devdesk-core/configuration-and-catalog.md#file-src-templates-rs)、[host/src/templates.rs](../devdesk-host/rpc-and-configuration.md#file-src-templates-rs)。
 
@@ -99,9 +99,9 @@ Standard 的根是精确 Workflow 源引用。解析器沿规范相关关系收�
 
 本文件只计算规范视图和差异；实际 capture、工作采用、运行中切换由 core 决定。历史计划仍能从原引用恢复旧规范。
 
-代码定位：[`StandardSnapshot`](../../../crates/domain/src/standards.rs#L79)、[`resolve_standard_sources`](../../../crates/domain/src/standards.rs#L115)、[`canonical_standard_content`](../../../crates/domain/src/standards.rs#L88)、[`standard_entry`](../../../crates/domain/src/standards.rs#L325)、[`diff_standard_snapshots`](../../../crates/domain/src/standards.rs#L345)。
+代码定位：[`StandardSnapshot`](../../../crates/domain/src/standards.rs#L79)、[`resolve_standard_sources`](../../../crates/domain/src/standards.rs#L114)、[`canonical_standard_content`](../../../crates/domain/src/standards.rs#L88)、[`standard_entry`](../../../crates/domain/src/standards.rs#L340)、[`diff_standard_snapshots`](../../../crates/domain/src/standards.rs#L383)。
 
-关联阅读：[core/src/standards.rs](../devdesk-core/configuration-and-catalog.md#file-src-standards-rs)、[core/src/workflow_changes.rs](../devdesk-core/workflow-changes.md#file-src-workflow-changes-rs)、[adapters/tests/standard_snapshots.rs](../devdesk-adapters/testing.md#file-tests-standard-snapshots-rs)。
+关联阅读：[core/src/standards.rs](../devdesk-core/configuration-and-catalog.md#file-src-standards-rs)、[core/src/workflow_change_commit.rs](../devdesk-core/workflow-changes.md#file-src-workflow-changes-rs)、[adapters/tests/standard_snapshots.rs](../devdesk-adapters/testing.md#file-tests-standard-snapshots-rs)。
 
 ---
 

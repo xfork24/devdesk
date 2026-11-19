@@ -101,9 +101,10 @@ if args[:2]==['image','rm']:
 if args[0]=='build':
     context=Path(args[-1]);label=args[args.index('--label')+1]
     assert (context/'Dockerfile').is_file()
-    if (context/'permissions/backends/dsh').exists():
-        for name in ['package.json','tool-policy.mjs','bwrap-runner.sh']:
-            assert (context/'permissions/backends/dsh'/name).is_file()
+    for line in (context/'Dockerfile').read_text().splitlines():
+        if line.startswith('COPY '):
+            source = json.JSONDecoder().raw_decode(line[5:])[0]
+            assert (context/source).is_file(), source
     time.sleep(.3)
     if (root/'fail-build').exists():sys.exit(2)
     digest='sha256:'+hashlib.sha256(label.encode()).hexdigest()
@@ -136,7 +137,13 @@ sys.exit(3)
         defaults = rpc('query.configuration_defaults')['result']
         assert len(defaults['role_agent_bindings']) == 6
         model = next(row for row in defaults['records'] if row['id'] == defaults['model_ref'])
-        assert model['data']['model'] == 'gpt-6.1-sol' and model['data']['parameters']['reasoning_effort'] == 'high'
+        configuration = ROOT / 'resources/configuration'
+        manifest = json.loads((configuration/'manifest.json').read_text())
+        packaged_defaults = json.loads((configuration/manifest['defaults']).read_text())
+        assert defaults['model_ref'] == packaged_defaults['model_ref']
+        packaged_models = [json.loads((configuration/name).read_text()) for name in manifest['types']['model']]
+        expected_model = next(source for source in packaged_models if f"{source['identity']}:{source['revision']}" == defaults['model_ref'])
+        assert model['data'] == expected_model['data']
         opened = rpc('project.open_github', {'command_id':'github-open-fixture', 'payload':{'repository':'https://github.com/fixture/repository.git'}})
         assert 'result' in opened, opened
         github_id = opened['result']['id']

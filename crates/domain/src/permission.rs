@@ -229,14 +229,6 @@ impl PermissionPolicy {
             allow.retain(|n| !deny.contains(n));
         }
     }
-    pub fn tool_allowed(&self, name: &str) -> bool {
-        match &self.tools {
-            ToolPermission::AllAvailable => true,
-            ToolPermission::Restricted { allow, deny } => {
-                allow.iter().any(|n| n == name) && !deny.iter().any(|n| n == name)
-            }
-        }
-    }
     pub fn file_access(&self, path: &str) -> FileAccess {
         match &self.filesystem {
             FilesystemPermission::FullAccess => FileAccess::ReadWrite,

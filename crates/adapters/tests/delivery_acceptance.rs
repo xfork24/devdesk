@@ -128,7 +128,7 @@ fn actual_docker_red_green_candidate_reports_and_git_diff_match_their_specs() {
     );
     assert_eq!(actual, image);
     let engine = Engine::new(
-        Arc::new(SqliteStore::open(root).unwrap()),
+        Arc::new(SqliteStore::open_fixture(root).unwrap()),
         Arc::new(FileArtifacts::new(root.into())),
         runtime::adapters(),
     );

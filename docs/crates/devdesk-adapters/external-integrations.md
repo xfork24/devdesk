@@ -22,7 +22,7 @@ binding_model_connection 从冻结 Session 解析模型连接，核对 provider�
 
 DeepSeek 账户/模型查询使用固定地址和私有输入传递密钥，也不执行推理。模型目录、实际网络可达和付费推理应分别验证。
 
-代码定位：[`binding_model_connection`](../../../crates/adapters/src/model_providers.rs#L6)、[`dsh_model_patch`](../../../crates/adapters/src/model_providers.rs#L37)、[`discover_ollama_models`](../../../crates/adapters/src/model_providers.rs#L56)、[`discover_deepseek_models`](../../../crates/adapters/src/model_providers.rs#L100)。
+代码定位：[`binding_model_connection`](../../../crates/adapters/src/model_providers.rs#L6)、[`dsh_model_patch`](../../../crates/adapters/src/model_providers.rs#L37)、[`discover_ollama_models`](../../../crates/adapters/src/model_providers.rs#L65)、[`discover_deepseek_models`](../../../crates/adapters/src/model_providers.rs#L109)。
 
 关联阅读：[domain/src/model_provider.rs](../devdesk-domain/runtime-and-permissions.md#file-src-model-provider-rs)、[core/src/session_assembly.rs](../devdesk-core/session-resources-and-permissions.md#file-src-session-assembly-rs)、[host/src/model_providers.rs](../devdesk-host/rpc-and-configuration.md#file-src-model-providers-rs)、[adapters/tests/model_providers.rs](testing.md#file-tests-model-providers-rs)。
 
@@ -42,7 +42,7 @@ OpenAPI 3.1 JSON/YAML 导入保留安全方案的替代关系，不把 AND 授�
 
 失败结果保存完整 Error，包括可信 execution_failure 分类，而非仅错误文本。core 将它与真实工具回执、消费事实和业务拒绝一起判断，不能从供应商返回的文字推断安全重试。
 
-代码定位：[`NativeTools`](../../../crates/adapters/src/integrations.rs#L14)、[`validate_schema_tree`](../../../crates/adapters/src/integrations.rs#L22)、[`schema_budget`](../../../crates/adapters/src/integrations.rs#L99)、[`data_budget`](../../../crates/adapters/src/integrations.rs#L175)。
+代码定位：[`NativeTools`](../../../crates/adapters/src/integrations.rs#L18)、[`validate_schema_tree`](../../../crates/adapters/src/integrations.rs#L91)、[`schema_budget`](../../../crates/adapters/src/integrations.rs#L168)、[`data_budget`](../../../crates/adapters/src/integrations.rs#L244)。
 
 关联阅读：[core/src/integrations.rs](../devdesk-core/integrations-and-repositories.md#file-src-integrations-rs)、[adapters/src/integration_oauth.rs](external-integrations.md#file-src-integration-oauth-rs)、[adapters/tests/tool_integrations.rs](testing.md#file-tests-tool-integrations-rs)、[core/src/workflow_failure.rs](../devdesk-core/workflow-execution.md#file-src-workflow-failure-rs)。
 
@@ -58,7 +58,7 @@ IntegrationSecrets 隔离秘密的创建/读取/更新；持久化状态保存�
 
 token exchange 或 refresh 的结果未知时不能盲目重发：远端可能已经消费一次性 code 或旋转 token。恢复保留原操作与账户事实，向上层报告需核对的状态，而不是删掉失败记录重新登录。
 
-代码定位：[`IntegrationSecrets`](../../../crates/adapters/src/integration_oauth.rs#L6)、[`OAuthFlow`](../../../crates/adapters/src/integration_oauth.rs#L23)、[`create`](../../../crates/adapters/src/integration_oauth.rs#L7)、[`read`](../../../crates/adapters/src/integration_oauth.rs#L8)、[`write`](../../../crates/adapters/src/integration_oauth.rs#L9)。
+代码定位：[`IntegrationSecrets`](../../../crates/adapters/src/integration_oauth.rs#L6)、[`OAuthFlow`](../../../crates/adapters/src/integration_oauth.rs#L23)、[`create`](../../../crates/adapters/src/integration_oauth.rs)、[`read`](../../../crates/adapters/src/integration_oauth.rs)、[`write`](../../../crates/adapters/src/integration_oauth.rs)。
 
 关联阅读：[adapters/src/credentials.rs](credentials-and-permissions.md#file-src-credentials-rs)、[host/src/integrations.rs](../devdesk-host/rpc-and-configuration.md#file-src-integrations-rs)、[adapters/tests/tool_integrations.rs](testing.md#file-tests-tool-integrations-rs)。
 

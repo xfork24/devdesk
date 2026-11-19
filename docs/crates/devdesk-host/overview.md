@@ -4,7 +4,7 @@
 
 Host 是可执行程序，提供 HTTP/JSON-RPC、SSE、嵌入式 Web 和数据集入口。Workspace 管理一个全局配置 Engine 与多个工程 Engine，把请求固定到正确数据库，并让各项目共享受管执行适配器和总并发预算。
 
-Host 负责连接认证、参数路由、资源准备与端口装配；业务状态、Actor 规则、配置发布和终态接纳仍调用 core。普通工程请求可携带预期 project_id，活动项目已改变时会被拒绝；选定 Engine 后固定本次范围。切换项目不终止后台其他工程，也不把它们的历史搬到新项目。全局讨论另有按需打开的独立 Engine，不与 global.sqlite3 的共享配置 Engine 混用。
+Host 负责连接认证、参数路由、资源准备与端口装配；业务状态、Actor 规则、配置发布和终态接纳仍调用 core。普通工程请求必须显式携带 project_id；缺失或未知 ID 会被拒绝，选定 Engine 后固定本次范围。切换项目不终止后台其他工程，也不把它们的历史搬到新项目。全局讨论另有按需打开的独立 Engine，不与 global.sqlite3 的共享配置 Engine 混用。
 
 本包没有独立 lib.rs。main.rs 引入 workspace.rs，后者用显式 path 挂载治理、权限、集成等文件，它们是同一个 Workspace 的扩展实现。单元测试分散在对应模块，history_tests.rs 是单独的测试模块；测试阅读入口见本包测试专题。
 
@@ -17,21 +17,35 @@ Host 负责连接认证、参数路由、资源准备与端口装配；业务状
 
 ## 完整文件索引
 
-每个文件只有一个主要讲解位置；相关专题通过链接引用它。
+由 `python3 scripts/py/check-docs.py --write` 更新。专题解释主要合同，表格覆盖当前全部文件。
 
-| 文件 | 职责与实现说明 |
+<!-- crate-files:start -->
+
+| 文件 | 阅读入口或源码职责 |
 |---|---|
 | [Cargo.toml](../../../crates/host/Cargo.toml) | [HTTP 可执行包与 Web 嵌入依赖](overview.md#file-cargo-toml) |
+| [src/active_frontend_performance.rs](../../../crates/host/src/active_frontend_performance.rs) | Opt-in local HTTP regression fixture, with real resource commits and scheduler. Control steps have no provider I/O. This is not the full browser/W2/P6 workload. |
+| [src/background.rs](../../../crates/host/src/background.rs) | Bounded scheduler workers. This registry deduplicates coordinator stages; requests and resource commits never acquire it to read or write business data. |
+| [src/configuration_read.rs](../../../crates/host/src/configuration_read.rs) | Capture committed configuration views once; never synchronize or restore engineering history on a directory read. |
+| [src/event_hub.rs](../../../crates/host/src/event_hub.rs) | Shared, bounded invalidation tails. Exact historical replay remains on the legacy stream. |
 | [src/github_projects.rs](../../../crates/host/src/github_projects.rs) | [GitHub 项目身份与异步仓库准备](workspace-and-lifecycle.md#file-src-github-projects-rs) |
 | [src/governance.rs](../../../crates/host/src/governance.rs) | [治理路由和步骤执行的事务外编排](rpc-and-configuration.md#file-src-governance-rs) |
 | [src/history_tests.rs](../../../crates/host/src/history_tests.rs) | [全局治理与多个工程的组合历史隔离](testing.md#file-src-history-tests-rs) |
 | [src/integrations.rs](../../../crates/host/src/integrations.rs) | [工具配置、实际调用和 OAuth callback 装配](rpc-and-configuration.md#file-src-integrations-rs) |
+| [src/lifecycle.rs](../../../crates/host/src/lifecycle.rs) | Instance-scoped optimistic lifecycle admission; locks cover bookkeeping only. |
+| [src/loading_performance.rs](../../../crates/host/src/loading_performance.rs) | Explicit, offline performance entrypoints. Only a copied, compatible dataset is accepted. |
 | [src/main.rs](../../../crates/host/src/main.rs) | [服务启动、请求围栏与固定作用域 SSE](http-and-security.md#file-src-main-rs) |
 | [src/model_providers.rs](../../../crates/host/src/model_providers.rs) | [当前模型目录、凭据设置和冻结选择的区别](rpc-and-configuration.md#file-src-model-providers-rs) |
+| [src/performance_history.rs](../../../crates/host/src/performance_history.rs) | Explicit, typed history for opt-in performance fixtures. No external effects or model completions are fabricated: discussion Turns were cancelled before dispatch, and their messages are labelled fixture inputs. |
+| [src/performance_repository.rs](../../../crates/host/src/performance_repository.rs) | Test-only seed of a private local repository from actual Git receipts. |
 | [src/permission_resources.rs](../../../crates/host/src/permission_resources.rs) | [权限目录、精确绑定与后继会话发送](rpc-and-configuration.md#file-src-permission-resources-rs) |
+| [src/runtime_reads.rs](../../../crates/host/src/runtime_reads.rs) | Bounded display cache. A cache miss always computes outside the structural mutex; simultaneous readers never queue behind another reader's SQL/decoding. |
 | [src/runtime_setup.rs](../../../crates/host/src/runtime_setup.rs) | [执行安装端口的薄装配层](workspace-and-lifecycle.md#file-src-runtime-setup-rs) |
 | [src/templates.rs](../../../crates/host/src/templates.rs) | [模板重置预演、目录代次与旧引用保留](rpc-and-configuration.md#file-src-templates-rs) |
+| [src/workflow_live.rs](../../../crates/host/src/workflow_live.rs) | Explicit local integration scene: real Host scheduler, Git, Docker, SQLite and artifacts. No model, credentials, network service or business Feature is used. |
 | [src/workspace.rs](../../../crates/host/src/workspace.rs) | [全局与工程 Engine 装配、请求选择和共享配额](workspace-and-lifecycle.md#file-src-workspace-rs) |
+
+<!-- crate-files:end -->
 
 <a id="file-cargo-toml"></a>
 

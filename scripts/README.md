@@ -36,3 +36,5 @@
 ```
 
 macOS 首次配置见 [系统凭据](../docs/system-credentials.md)，真实验收见 [工程接入](../docs/real-engineering.md)，测试分层见 [测试索引](../tests/README.md)。旧版 `scripts/<文件名>.sh` 已移动到上表目录，历史执行报告中的旧命令保留原样；运行新命令请使用当前路径。
+
+文档检查：`python3 scripts/py/check-docs.py` 验证当前说明的本地链接和 crate 文件索引；新增、删除或移动 crate 文件后运行 `python3 scripts/py/check-docs.py --write`。原生配方导出由 `cargo run --quiet --locked -p devdesk-adapters --example export_runtime_recipes` 调用领域组合器，不复制另一份 Python 配方编译逻辑。

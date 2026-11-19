@@ -113,7 +113,7 @@ Capability 可通过根级 `spec_refs` 引用 Agent 自身规范，业务能力�
 
 独立 Tool Step 通过冻结的工具定义、参数映射和执行身份调用。HTTP / MCP 工具使用明确接入及项目账户绑定。Codex Agent 平台工具还要求当前 Workflow、Capability、Step 与 Permission 的共同授权，绑定真实 Session / Turn / worker / 原生调用 ID；普通讨论不提供这些平台工具。
 
-平台处理器包括 workspace.current/snapshot、materials.capture、tasks.create/complete、tests.run、git.candidate/advance/publish，以及受管 `project.*`、`configuration.*`、`spec.lint` 和 `workflow.*` 工具；完整注册表在 core/platform_tools。函数桥使用可移植的 `devdesk_` 名称映射，处理器标识不变。业务步骤、经理工作台和根控制会话按各自归属与冻结授权调用。DSH 当前不支持动态平台工具桥；配置声明不能绕过驱动能力校验。
+平台处理器包括 workspace.current/snapshot、materials.capture、tasks.create/complete、tests.run、git.candidate/advance/publish，以及受管 `project.*`、`configuration.*`、`spec.lint` 和 `workflow.*` 工具；完整注册表在 core/platform_tools。函数桥使用可移植的 `devdesk_` 名称映射，处理器标识不变。业务步骤、经理工作台和根控制会话按各自归属与冻结授权调用。Codex 与 DSH 都支持动态平台工具桥和经验访问；当前根编排能力仅由 Codex 声明，配置不能绕过实际驱动能力校验。
 
 `query.tool_calls` 同时返回实际外部调用与平台调用，保留真实 caller 和平台回执；按 Session、Turn、AgentID 等来源筛选。平台请求和终态回执不可改写，原生回复交付另存记录。`tool.call.cancel` 请求停止尚未结束的调用，未知副作用仍需核对。
 

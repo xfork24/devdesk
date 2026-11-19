@@ -7,7 +7,7 @@
 ## 本页文件
 
 - [src/integrations.rs](#file-src-integrations-rs)：外部工具冻结、调用状态和接纳回执
-- [src/repositories.rs](#file-src-repositories-rs)：仓库接入、主干刷新与依赖就绪后的工作副本
+- [src/repository_runtime.rs](#file-src-repositories-rs)：仓库接入、主干刷新与依赖就绪后的工作副本
 
 <a id="file-src-integrations-rs"></a>
 
@@ -23,23 +23,21 @@
 
 prepare/finish_integration_operation 为发现、导入或授权相关的外部过程保存 durable 意图；recover_tool_receipts 在重启时读取已有回执，unknown 不重发。integration_query/records 生成有界、遮蔽的 UI/历史投影，回复交付与执行成功分开。
 
-代码定位：[`freeze_integrations`](../../../crates/core/src/integrations.rs#L27)、[`project_tool_request`](../../../crates/core/src/integrations.rs#L184)、[`drive_tool_calls`](../../../crates/core/src/integrations.rs#L524)、[`accept_tool_receipt`](../../../crates/core/src/integrations.rs#L668)、[`prepare_integration_operation`](../../../crates/core/src/integrations.rs#L450)、[`integration_records`](../../../crates/core/src/integrations.rs#L1275)。
+代码定位：[`freeze_integrations`](../../../crates/core/src/integrations.rs#L27)[`drive_tool_calls`](../../../crates/core/src/integrations.rs#L365)[`prepare_integration_operation`](../../../crates/core/src/integration_operations.rs#L242)、[`integration_records`](../../../crates/core/src/integrations.rs#L934)。
 
 关联阅读：[domain/src/integrations.rs](../devdesk-domain/integrations.md#file-src-integrations-rs)、[adapters/src/integrations.rs](../devdesk-adapters/external-integrations.md#file-src-integrations-rs)、[host/src/integrations.rs](../devdesk-host/rpc-and-configuration.md#file-src-integrations-rs)、[adapters/tests/tool_integrations.rs](../devdesk-adapters/testing.md#file-tests-tool-integrations-rs)。
 
 <a id="file-src-repositories-rs"></a>
 
-## src/repositories.rs：仓库接入、主干刷新与依赖就绪后的工作副本
+## src/repository_runtime.rs：仓库接入、主干刷新与依赖就绪后的工作副本
 
-源码：[crates/core/src/repositories.rs](../../../crates/core/src/repositories.rs)。
+源码：[crates/core/src/repository_runtime.rs](../../../crates/core/src/repository_runtime.rs)。
 
-repository_command 为 connect、refresh、reconcile 保存明确 RepositoryOperation。刷新要求当前真实项目、确切观察 SHA、没有未完成仓库/Git 平台动作；接入在尚未开始工程工作的项目上建立稳定仓库意图。命令事务不执行 git clone 或网络请求。
+[repository_updates.rs](../../../crates/core/src/repository_updates.rs) 准备有限的仓库更新；`native_repository_command` 将 connect、refresh、reconcile 路由到资源级提交。命令核对真实项目、目标版本和未完成操作，事务内只保存意图。
 
-`tick_repositories` 领取/核对操作，在事务外调用 Git 端口，接纳匹配的仓库、分支、worktree 和 head 回执。未知或重启中断保留需核对状态，不能把目录存在当作正确仓库，也不能默认重跑原 clone/push。
+`tick_repositories` 在事务外调用 Git 端口，再接纳与原操作匹配的分支、worktree 和 head。未知或重启中断保持待核对，不因目录存在就假定 clone/push 成功。
 
-`prepare_task_worktrees` 等任务依赖全部完成后，才以当时 Feature head 生成确切工作副本意图；这防止在前置任务完成前固定旧基线。enqueue_worktree 用稳定 owner 和来源把意图关联起来，不按 UI 当前目录路由。
-
-代码定位：[`repository_command`](../../../crates/core/src/repositories.rs#L4)、[`tick_repositories`](../../../crates/core/src/repositories.rs#L158)、[`prepare_task_worktrees`](../../../crates/core/src/repositories.rs#L458)、[`enqueue_worktree`](../../../crates/core/src/repositories.rs#L469)。
+`prepare_task_worktrees` 在 Task 依赖完成后才准备工作副本，防止提前固定旧 Feature 基线。[repository_dispatch.rs](../../../crates/core/src/repository_dispatch.rs) 负责有限派发合同，[repository_projection.rs](../../../crates/core/src/repository_projection.rs) 接纳外部事实。公开业务命令、实际执行和事实投影各有来源校验。
 
 关联阅读：[domain/src/repository.rs](../devdesk-domain/work-and-materials.md#file-src-repository-rs)、[adapters/src/git.rs](../devdesk-adapters/engineering-resources.md#file-src-git-rs)、[host/src/github_projects.rs](../devdesk-host/workspace-and-lifecycle.md#file-src-github-projects-rs)、[adapters/tests/git_resources.rs](../devdesk-adapters/testing.md#file-tests-git-resources-rs)。
 

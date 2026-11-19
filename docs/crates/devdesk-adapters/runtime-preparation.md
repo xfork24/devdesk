@@ -24,7 +24,7 @@
 
 Codex 认证组件与容器工作运行时分别发现和记录。发现本机认证程序不代表已经登录、容器具备模型连接或推理成功。
 
-代码定位：[`configuration_digest`](../../../crates/adapters/src/runtime_registry.rs#L6)、[`file_digest`](../../../crates/adapters/src/runtime_registry.rs#L13)、[`checked_artifact`](../../../crates/adapters/src/runtime_registry.rs#L36)、[`read_installation`](../../../crates/adapters/src/runtime_registry.rs#L139)、[`discover_docker_runtime`](../../../crates/adapters/src/runtime_registry.rs#L145)。
+代码定位：[`configuration_digest`](../../../crates/adapters/src/runtime_registry.rs#L5)、[`file_digest`](../../../crates/adapters/src/runtime_registry.rs#L12)、[`checked_artifact`](../../../crates/adapters/src/runtime_registry.rs#L35)、[`read_installation`](../../../crates/adapters/src/runtime_registry.rs#L167)、[`discover_docker_runtime`](../../../crates/adapters/src/runtime_registry.rs#L173)。
 
 关联阅读：[domain/src/agents.rs](../devdesk-domain/agents-and-conversations.md#file-src-agents-rs)、[adapters/src/runtime_verification.rs](runtime-preparation.md#file-src-runtime-verification-rs)、[adapters/tests/runtime_registry.rs](testing.md#file-tests-runtime-registry-rs)。
 
@@ -72,7 +72,7 @@ SessionResourceAdapter 实现 core 的 SessionResources，将 GlobalStore、Harn
 
 “已有默认”“已安装”“已授权”“可完成推理”是不同状态。返回资源状态时应保留区别，不能为了让按钮可用而合并为一个 ready 标志。
 
-代码定位：[`RuntimePreparation`](../../../crates/adapters/src/session_resources.rs#L7)、[`SessionResourceAdapter`](../../../crates/adapters/src/session_resources.rs#L41)、[`run`](../../../crates/adapters/src/session_resources.rs#L14)、[`status`](../../../crates/adapters/src/session_resources.rs#L36)、[`prepare_auth`](../../../crates/adapters/src/session_resources.rs#L47)。
+代码定位：[`RuntimePreparation`](../../../crates/adapters/src/session_resources.rs#L7)、[`SessionResourceAdapter`](../../../crates/adapters/src/session_resources.rs#L46)、[`run`](../../../crates/adapters/src/session_resources.rs#L15)、[`status`](../../../crates/adapters/src/session_resources.rs#L41)、[`prepare_auth`](../../../crates/adapters/src/session_resources.rs#L80)。
 
 关联阅读：[core/src/session_assembly.rs](../devdesk-core/session-resources-and-permissions.md#file-src-session-assembly-rs)、[core/src/ports.rs](../devdesk-core/engine-and-ports.md#file-src-ports-rs)、[host/src/runtime_setup.rs](../devdesk-host/workspace-and-lifecycle.md#file-src-runtime-setup-rs)、[adapters/src/credentials.rs](credentials-and-permissions.md#file-src-credentials-rs)。
 

@@ -195,24 +195,14 @@ export function useDraft<T>(key: string, initial: () => T) {
   }, [key, value]);
   return [value, setValue] as const;
 }
-export function selectConfigurationObject(id: string, key = "config_object") {
-  const params = new URLSearchParams(location.search);
-  if (id) params.set(key, id);
-  else params.delete(key);
-  history.replaceState(null, "", `?${params}`);
-}
 export function useGroupTab(group: string, allowed: string[]) {
   const allowedKey = JSON.stringify(allowed);
   const read = useCallback(() => {
     const allowed: string[] = JSON.parse(allowedKey);
-    const normalize = (value: string | null) =>
-      group === "actors" && value === "agent_instance" ? "agent" : value;
-    const url = normalize(
-      new URLSearchParams(location.search).get("config_tab"),
-    );
+    const url = new URLSearchParams(location.search).get("config_tab");
     let stored: string | null = null;
     try {
-      stored = normalize(localStorage.getItem(`devdesk:v2:tab:${group}`));
+      stored = localStorage.getItem(`devdesk:v2:tab:${group}`);
     } catch {}
     return allowed.includes(url || "")
       ? url!
@@ -222,17 +212,10 @@ export function useGroupTab(group: string, allowed: string[]) {
   }, [group, allowedKey]);
   const [tab, setTab] = useState(read);
   useEffect(() => {
-    if (group === "actors") {
-      const params = new URLSearchParams(location.search);
-      if (params.get("config_tab") === "agent_instance") {
-        params.set("config_tab", "agent");
-        history.replaceState(null, "", `?${params}`);
-      }
-    }
     const pop = () => setTab(read());
     window.addEventListener("popstate", pop);
     return () => window.removeEventListener("popstate", pop);
-  }, [read, group]);
+  }, [read]);
   const choose = (value: string) => {
     setTab(value);
     const params = new URLSearchParams(location.search);
