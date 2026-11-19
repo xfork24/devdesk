@@ -50,7 +50,7 @@
 | L04 迁移 Agent/会话/默认权限解析 | host/workspace.rs、governance.rs、core services | Host 只获取外部事实并调用 core；原绑定摘要和错误语义不回归 |
 | L05 拆分持久化 codec 与派生解释 | adapters/source_views.rs、source_store.rs、core | 读库不调用编译/任务渲染；重建是可独立测试的纯函数 |
 | L06 收敛其他 Host 业务写入及命令分类 | experience、templates、runtime receipts、domain/template_catalog.rs | 无 Host 直接改 Snapshot/业务 Event/配置/绑定终态；技术偏好/连接状态可仍在 Host |
-| L07 按用例整理模块与现行文档 | core、docs/design.md、storage.md、contracts.md | 稳定公开 API、架构门禁、相关回归与新增 EXECUTION.md |
+| L07 按用例整理模块与现行文档 | core、docs/design/design.md、storage.md、contracts.md | 稳定公开 API、架构门禁、相关回归与新增 EXECUTION.md |
 
 每次迁移一个用例族并切换唯一入口，不保留两套可写业务实现。新入口适配旧 RPC 方法名是正常路由，不是旧协议回退。
 

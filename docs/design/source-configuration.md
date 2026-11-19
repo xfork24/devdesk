@@ -89,8 +89,8 @@ Harness 的 `runtime_version` 是程序版本的唯一声明；`installation` �
 
 检查器有内容/数量/深度/工作量边界；JSON Schema 只接受有界的非递归本地引用展开，pattern 使用线性 regex 引擎及编译内存边界，不支持回溯式反向引用。规范不会执行任意命令；测试/Git/发布事实继续走实际平台用例和回执。
 
-实现依据：[源协议与引用白名单](../crates/domain/src/source.rs)、[安装组合](../crates/domain/src/execution_recipe.rs)、[配置变更](../crates/core/src/configuration_changes.rs)、[冻结视图](../crates/core/src/frozen_views.rs)、[运行准备](../crates/adapters/src/runtime_preparation.rs)、[镜像标签与保留](../crates/adapters/src/runtime_images.rs)、[机器检查](../crates/domain/src/spec_checks.rs)。
+实现依据：[源协议与引用白名单](../../crates/domain/src/source.rs)、[安装组合](../../crates/domain/src/execution_recipe.rs)、[配置变更](../../crates/core/src/configuration_changes.rs)、[冻结视图](../../crates/core/src/frozen_views.rs)、[运行准备](../../crates/adapters/src/runtime_preparation.rs)、[镜像标签与保留](../../crates/adapters/src/runtime_images.rs)、[机器检查](../../crates/domain/src/spec_checks.rs)。
 
-Workflow 的 review_policies 与 rework_policies 随源修订和 Standard 冻结；新 Workflow 可编辑共享业务额度、三种返工方式与人工例外开关。策略引用真实步骤和规则原语，发布及计划替换验证入口/评审依赖和端口。旧执行采用后续处置策略须显式预演和计划变更，保留旧步骤合同与拒绝报告；既有工作预算首次采用需用真实 Human 决定明确历史基准。实现见 [业务返工](../crates/core/src/workflow_rework.rs)。
+Workflow 的 review_policies 与 rework_policies 随源修订和 Standard 冻结；新 Workflow 可编辑共享业务额度、三种返工方式与人工例外开关。策略引用真实步骤和规则原语，发布及计划替换验证入口/评审依赖和端口。旧执行采用后续处置策略须显式预演和计划变更，保留旧步骤合同与拒绝报告；既有工作预算首次采用需用真实 Human 决定明确历史基准。实现见 [业务返工](../../crates/core/src/workflow_rework.rs)。
 
 运行中的流程使用 ChangeSet `set_review_policies{rework_policies,review_policies}` 只调整后续拒绝处置规则，保留原步骤合同、执行和报告；首次采用时同批提交 adopt_rework_baseline 明确历史额度。

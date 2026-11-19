@@ -1,6 +1,6 @@
 # S3/S4 后续实现设计输入
 
-状态：S3 已补离线调度成本统计；策略尚未改变。S4 已实现显式 time_limits v1 子集，接入 domain/core、Schema、SQLite 和调度；出厂默认仍不选择它。现行合同见[预算与并发](../../workflow-orchestration.md#预算与并发)，下文其余分段政策仍是后续设计。完整 Feature、付费经理链路与正式容量矩阵未启动。
+状态：S3 已补离线调度成本统计；策略尚未改变。S4 已实现显式 time_limits v1 子集，接入 domain/core、Schema、SQLite 和调度；出厂默认仍不选择它。现行合同见[预算与并发](../../design/workflow-orchestration.md#预算与并发)，下文其余分段政策仍是后续设计。完整 Feature、付费经理链路与正式容量矩阵未启动。
 
 ## 已实施的 v1 边界
 

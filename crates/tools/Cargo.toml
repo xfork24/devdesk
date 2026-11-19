@@ -1,5 +1,5 @@
 [package]
-name = "devdesk-credential-helper"
+name = "devdesk-tools"
 version = "1.0.0"
 edition.workspace = true
 [lints]

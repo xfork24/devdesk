@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Style gate: rustfmt + clippy (Rust) and eslint + prettier (web).
-# Findings and conventions live in docs/code-standards-rust.md and
-# docs/code-standards-web.md.
+# Findings and conventions live in docs/design/code-standards-rust.md and
+# docs/design/code-standards-web.md.
 set -euo pipefail
 if ! command -v cargo >/dev/null && [ -f "$HOME/.cargo/env" ]; then source "$HOME/.cargo/env"; fi
 cd "$(dirname "$0")/../.."

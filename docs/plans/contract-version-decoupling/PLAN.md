@@ -98,7 +98,7 @@
 
 ## 3. 方案设计
 
-> **方向修正（2026-11-12，用户指示）**：初版 3.1 采用"合同注册表"（集中声明各对象 current/supported 版本）。用户指出这仍是版本思维——把散落的硬编码集中化，没有消除"数据演进需要动代码"的根本问题。正确方向：**代码只定义原语与领域对象，数据合法性由结构识别决定**（详见 [docs/contracts.md](../../contracts.md)）。3.1 已按此重写；注册表实现已删除。
+> **方向修正（2026-11-12，用户指示）**：初版 3.1 采用"合同注册表"（集中声明各对象 current/supported 版本）。用户指出这仍是版本思维——把散落的硬编码集中化，没有消除"数据演进需要动代码"的根本问题。正确方向：**代码只定义原语与领域对象，数据合法性由结构识别决定**（详见 [docs/design/contracts.md](../../design/contracts.md)）。3.1 已按此重写；注册表实现已删除。
 
 ### 3.1 结构识别（替代合同注册表）
 
@@ -158,7 +158,7 @@ impl Contract { pub fn accepts(self, v: u64) -> bool; pub fn current(self) -> u6
 | W06 | 测试解耦：hash 门禁→manifest 自洽脚本；默认流程断言→内联夹具 + 编译级校验 | crates/adapters/tests、scripts/check | 修改默认 Skill 正文后 `cargo test` 全绿 |
 | W07 | Web 去断言（8 处）改后端校验 | web/src 三个组件 | 前端 grep 不到 `schema_version ===` / `agent-task/v` |
 | W08 | D1 决策执行：删除或注册表化 `--normalize-plan` | crates/host/main.rs | 若删除：help 与文档同步 |
-| W09 | 文档登记：数据合同（注册表管）vs 实现身份（vN 命名但非合同）vs 运行时锚（保留）三层清单 | docs/domain.md 或新节 | 三层边界成文 |
+| W09 | 文档登记：数据合同（注册表管）vs 实现身份（vN 命名但非合同）vs 运行时锚（保留）三层清单 | docs/design/domain.md 或新节 | 三层边界成文 |
 
 ## 5. 验收标准
 

@@ -66,7 +66,7 @@ Agent 身份用 AgentID（Agent 实例）表达：全局身份可跨项目积累
 
 项目重新采用经理 Agent 或 Harness Profile 时，先保存接续意图并停止、核对旧 writer，再以快照创建后继。旧 Controller、会话和工具回执保留，不靠重新打开工作台掩盖未知执行。工作台已有但尚未消费的用户输入按原身份处理，不把空闲工作台变成自动根调度器。
 
-实现依据：[会话与轮次](../crates/domain/src/conversation.rs)、[会话装配](../crates/core/src/session_assembly.rs)、[权限切换](../crates/core/src/permission_switch.rs)、[编排与后继](../crates/core/src/controllers.rs)、[经理资料与工具](../crates/core/src/manager_workspace.rs)。
+实现依据：[会话与轮次](../../crates/domain/src/conversation.rs)、[会话装配](../../crates/core/src/session_assembly.rs)、[权限切换](../../crates/core/src/permission_switch.rs)、[编排与后继](../../crates/core/src/controllers.rs)、[经理资料与工具](../../crates/core/src/manager_workspace.rs)。
 
 
 ## 回复与原始事件

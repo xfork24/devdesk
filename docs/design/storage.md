@@ -1,8 +1,8 @@
 # 存储与数据布局
 
-本文描述数据集结构、三库分工、幂等与恢复模型及升级策略。表结构清单见 [SQL 说明](../sql/README.md)，配置存储语义见 [源配置与执行解析](source-configuration.md)。
+本文描述数据集结构、三库分工、幂等与恢复模型及升级策略。表结构清单见 [SQL 说明](../../sql/README.md)，配置存储语义见 [源配置与执行解析](source-configuration.md)。
 
-当前实施分支继续使用 SQLite、独立读快照及资源级乐观提交。业务准备和外部 I/O 不持有全局/项目写锁，显示和跨库目录允许最终一致。分支修改与验收状态见 [实施记录](plans/single-host-concurrency/EXECUTION.md)，容量目标见 [100 前端验收合同](plans/single-host-concurrency/ACCEPTANCE.md)。
+当前实施分支继续使用 SQLite、独立读快照及资源级乐观提交。业务准备和外部 I/O 不持有全局/项目写锁，显示和跨库目录允许最终一致。分支修改与验收状态见 [实施记录](../plans/single-host-concurrency/EXECUTION.md)，容量目标见 [100 前端验收合同](../plans/single-host-concurrency/ACCEPTANCE.md)。
 
 ## 数据集总览
 
@@ -72,7 +72,7 @@ SSE 按事件主键和游标读取 `events`，提交后通知唤醒读取，低�
 | repository_operations / repository_worktrees | Git 动作-回执与工作副本登记 |
 | orchestration_wakeups / orchestration_leases | 编排唤醒队列与单写者租约 |
 
-完整表清单见 [SQL 说明](../sql/README.md)。
+完整表清单见 [SQL 说明](../../sql/README.md)。
 
 源描述的文件/SQL 编解码在 adapters；冻结计划与任务选择的纯重建在 core/frozen_views。两者共享精确源引用，不以当前目录最新版重选执行依赖。`command_context` 保留由可信入口构造的 Actor/项目归属与原请求指纹，不接受客户端提供的解析后身份。
 
@@ -108,7 +108,7 @@ SSE 按事件主键和游标读取 `events`，提交后通知唤醒读取，低�
 
 ## 升级策略
 
-系统只支持当前协议与当前 SQLite 基线（见 [SQL 说明](../sql/README.md)）：旧结构明确拒绝，不自动删除、不转换、不保留双版本执行器。升级前备份整个数据集目录；验证新版本使用独立空目录，不用既有数据目录试验。凭据引用绑定数据集与服务商，换机器后需重新配置本机凭据。
+系统只支持当前协议与当前 SQLite 基线（见 [SQL 说明](../../sql/README.md)）：旧结构明确拒绝，不自动删除、不转换、不保留双版本执行器。升级前备份整个数据集目录；验证新版本使用独立空目录，不用既有数据目录试验。凭据引用绑定数据集与服务商，换机器后需重新配置本机凭据。
 
 ## 配置发布恢复
 
@@ -118,7 +118,7 @@ SSE 按事件主键和游标读取 `events`，提交后通知唤醒读取，低�
 
 `tests/live/export_evidence.py` 使用 SQLite backup 生成一致快照，关闭快照后计算摘要，按项目登记核验 Artifact 的路径与实际内容，再生成逐文件 SHA-256 清单。记录投影遮蔽已知凭据字段；全局认证文件、进程环境和私有 worker 状态不导出。归档保留实际失败、未运行项、执行安装及原始来源，不用模型摘要替代证据。
 
-实现依据：[全局 SQL](../sql/global/schema.sql)、[项目 SQL](../sql/project/schema.sql)、[数据集与项目库](../crates/adapters/src/lib.rs)、[Git 目录](../crates/adapters/src/git.rs)、[证据导出](../tests/live/export_evidence.py)。
+实现依据：[全局 SQL](../../sql/global/schema.sql)、[项目 SQL](../../sql/project/schema.sql)、[数据集与项目库](../../crates/adapters/src/lib.rs)、[Git 目录](../../crates/adapters/src/git.rs)、[证据导出](../../tests/live/export_evidence.py)。
 
 调度器的待办、运行模式和活跃对话数通过单个已提交读快照直接查询，运行数按非 queued/终态 Turn 且存在未撤销 writer 计算；同一会话有多个执行记录时仍只计该 Turn 一次。项目库增加活跃 Turn、未撤销 writer、工作根归属和调用成员索引，不增加展开配置副本。查询结果为调度提示，派发仍须通过原领域授权和执行围栏。
 

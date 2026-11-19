@@ -8,11 +8,11 @@
 
 | 文档 | 行数 | 覆盖 |
 |---|---|---|
-| `docs/workflow-orchestration.md` | 69 | 定义与发布、三种推进模式、步骤生命周期与产物接纳、四层批准语义、运行中计划修改、TDD 证据链与 ActionPermit、默认流程概览、预算与并发 |
-| `docs/permissions.md` | 48 | 五层模型、Profile 职责矩阵与编译、step_grants 授权叠加、执行冻结与后继会话切换、默认绑定与收紧方向、Controller 操作策略 |
-| `docs/storage.md` | 57 | 数据集结构、三库分工、source_definitions 唯一存储、事实表族、幂等与恢复、模板目录代次、升级策略 |
-| `docs/web-workbench.md` | 43 | 初始化与连接内核、九大导航区、刷新模型、典型五步旅程、设置页导览 |
-| `docs/conversations.md` | 42 | 会话范围与工作类型、正式会话边界、运行时交互、提案防陈旧、权限改绑检测、经验只读语义 |
+| `docs/design/workflow-orchestration.md` | 69 | 定义与发布、三种推进模式、步骤生命周期与产物接纳、四层批准语义、运行中计划修改、TDD 证据链与 ActionPermit、默认流程概览、预算与并发 |
+| `docs/design/permissions.md` | 48 | 五层模型、Profile 职责矩阵与编译、step_grants 授权叠加、执行冻结与后继会话切换、默认绑定与收紧方向、Controller 操作策略 |
+| `docs/design/storage.md` | 57 | 数据集结构、三库分工、source_definitions 唯一存储、事实表族、幂等与恢复、模板目录代次、升级策略 |
+| `docs/design/web-workbench.md` | 43 | 初始化与连接内核、九大导航区、刷新模型、典型五步旅程、设置页导览 |
+| `docs/design/conversations.md` | 42 | 会话范围与工作类型、正式会话边界、运行时交互、提案防陈旧、权限改绑检测、经验只读语义 |
 
 ### 漂移修复（PLAN §三清单全部 8 项）
 

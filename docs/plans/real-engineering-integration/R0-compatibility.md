@@ -48,4 +48,4 @@ DSH 使用公开 sdk profile：initialize 选择 provider/model/cwd；session/pr
 - unsigned 开发构建的 Keychain 读取可能等待系统授权；状态查询改为仅查元数据，密钥读取通过有超时的系统工具。用户已授权，密钥未进入报告。
 - 首次正式写工具测试发现 code-mode host 未启用及 DSH proc 挂载失败；禁止越权的策略确实拒绝了重试。保留 R6-tool-boundary-failure.json（历史路径：`R6-tool-boundary-failure.json`），修复后采用新 Attempt，双 Task 的实际 Red/Green/Review 见 R6-implementation.json（历史路径：`R6-implementation.json`）。
 
-整轮完成状态以最终 A01–A22 报告为准，不能仅凭本阶段兼容路径宣称 R8 已通过。接入与当前限制见 [运行说明](../../real-engineering.md)。
+整轮完成状态以最终 A01–A22 报告为准，不能仅凭本阶段兼容路径宣称 R8 已通过。接入与当前限制见 [运行说明](../../design/real-engineering.md)。

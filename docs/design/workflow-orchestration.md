@@ -1,6 +1,6 @@
 # 工作流与编排
 
-本文描述工作流的**运行语义**：谁推进步骤、产物如何被接纳、什么条件下可以批准或豁免、运行中的计划如何修改。概念定义见 [领域规范](domain.md)，命令合同见 [本地协议](protocol.md)；出厂流程与默认配置清单见 [默认目录](../resources/configuration/README.md)。
+本文描述工作流的**运行语义**：谁推进步骤、产物如何被接纳、什么条件下可以批准或豁免、运行中的计划如何修改。概念定义见 [领域规范](domain.md)，命令合同见 [本地协议](protocol.md)；出厂流程与默认配置清单见 [默认目录](../../resources/configuration/README.md)。
 
 ## 定义与发布
 
@@ -200,7 +200,7 @@ Agent 的实际任务包含冻结的 `runtime_context`：`runtime_context.bindin
 
 完成规则为 false 的 `awaiting_acceptance` 步骤同样出现在驱动等待事项中，标明 `completion` 或 `human_confirmation` 门禁及父子实例路径。诊断不会批准报告、改写完成规则或自动补入缺失证据。
 
-实现依据：[业务返工与共享预算](../crates/core/src/workflow_rework.rs)、[确切人工例外](../crates/core/src/workflow_review.rs)、[领域原语](../crates/domain/src/workflow.rs)、[变更操作](../crates/domain/src/workflow_change.rs)、[Rust 驱动](../crates/core/src/workflow_driver.rs)、[控制工具](../crates/core/src/controllers.rs)、[公开运行事实](../crates/core/src/workflow_runtime_facts.rs)、[出厂流程](../resources/configuration/workflows/)。
+实现依据：[业务返工与共享预算](../../crates/core/src/workflow_rework.rs)、[确切人工例外](../../crates/core/src/workflow_review.rs)、[领域原语](../../crates/domain/src/workflow.rs)、[变更操作](../../crates/domain/src/workflow_change.rs)、[Rust 驱动](../../crates/core/src/workflow_driver.rs)、[控制工具](../../crates/core/src/controllers.rs)、[公开运行事实](../../crates/core/src/workflow_runtime_facts.rs)、[出厂流程](../../resources/configuration/workflows)。
 
 ## 共同动作资格
 

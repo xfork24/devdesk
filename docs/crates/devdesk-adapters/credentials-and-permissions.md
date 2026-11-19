@@ -26,7 +26,7 @@ macOS 委托固定签名助手，Linux 使用 secret-tool 并经私有 stdin 传
 
 代码定位：[`CredentialVault`](../../../crates/adapters/src/credentials.rs#L15)、[`CredentialStatus`](../../../crates/adapters/src/credentials.rs#L5)、[`integration_account`](../../../crates/adapters/src/credentials.rs#L35)、[`configure_integration`](../../../crates/adapters/src/credentials.rs#L42)。
 
-关联阅读：[adapters/src/credentials_macos.rs](credentials-and-permissions.md#file-src-credentials-macos-rs)、[credential-helper/src/main.rs](../devdesk-credential-helper/request-protocol.md#file-src-main-rs)、[adapters/src/integration_oauth.rs](external-integrations.md#file-src-integration-oauth-rs)、[host/src/model_providers.rs](../devdesk-host/rpc-and-configuration.md#file-src-model-providers-rs)。
+关联阅读：[adapters/src/credentials_macos.rs](credentials-and-permissions.md#file-src-credentials-macos-rs)、[tools/src/bin/devdesk-credential-helper.rs](../devdesk-tools/request-protocol.md#file-src-bin-devdesk-credential-helper-rs)、[adapters/src/integration_oauth.rs](external-integrations.md#file-src-integration-oauth-rs)、[host/src/model_providers.rs](../devdesk-host/rpc-and-configuration.md#file-src-model-providers-rs)。
 
 <a id="file-src-credentials-macos-rs"></a>
 
@@ -42,7 +42,7 @@ macOS 委托固定签名助手，Linux 使用 secret-tool 并经私有 stdin 传
 
 代码定位：[`verify`](../../../crates/adapters/src/credentials_macos.rs#L8)、[`verify_manifest`](../../../crates/adapters/src/credentials_macos.rs#L58)、[`directory`](../../../crates/adapters/src/credentials_macos.rs#L77)、[`helper_path`](../../../crates/adapters/src/credentials_macos.rs#L91)、[`update_bundled_helper`](../../../crates/adapters/src/credentials_macos.rs#L154)。
 
-关联阅读：[credential-helper/src/main.rs](../devdesk-credential-helper/request-protocol.md#file-src-main-rs)、[adapters/src/credentials.rs](credentials-and-permissions.md#file-src-credentials-rs)、[adapters/src/process.rs](harness-and-protocols.md#file-src-process-rs)。
+关联阅读：[tools/src/bin/devdesk-credential-helper.rs](../devdesk-tools/request-protocol.md#file-src-bin-devdesk-credential-helper-rs)、[adapters/src/credentials.rs](credentials-and-permissions.md#file-src-credentials-rs)、[adapters/src/process.rs](harness-and-protocols.md#file-src-process-rs)。
 
 <a id="file-src-codex-auth-rs"></a>
 

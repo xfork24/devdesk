@@ -6,7 +6,7 @@ identity="${DEVDESK_CODESIGN_IDENTITY:-}"
 identity_file="$HOME/Library/Application Support/DevDesk/signing/identity.txt"
 if [ -z "$identity" ] && [ -f "$identity_file" ]; then IFS= read -r identity < "$identity_file"; fi
 if [ -z "$identity" ]; then
-  echo 'No stable DevDesk signing identity configured; see docs/system-credentials.md.'
+  echo 'No stable DevDesk signing identity configured; see docs/design/system-credentials.md.'
   exit 0
 fi
 /usr/bin/codesign --force --sign "$identity" --identifier "${2:-dev.devdesk.host}" --timestamp=none "$binary"

@@ -47,4 +47,4 @@ DEVDESK_TOOL_TEST_IMAGE=sha256:<固定镜像完整摘要> cargo test --locked -p
 
 HTTP/MCP/OAuth 的本地协议夹具与真实模型、第三方账户验收分别报告。OAuth 夹具使用内存凭据替身，不代表真实第三方账户或本机 Keychain 已授权。Codex 与 DSH 均通过真实驱动注册动态工具和通用经验读取接口。DSH 使用受管 SDK 扩展转交 `devdesk/tool/call`，Host 校验当前实例、轮次、工具及权限并回传结果；根编排能力仍由各驱动的实际声明决定。
 
-实现依据：[接入执行器](../crates/adapters/src/integrations.rs)、[OAuth](../crates/adapters/src/integration_oauth.rs)、[平台工具注册表](../crates/core/src/platform_tools.rs)、[经理工具](../crates/core/src/manager_workspace.rs)、[原生驱动](../crates/adapters/src/harness.rs)。
+实现依据：[接入执行器](../../crates/adapters/src/integrations.rs)、[OAuth](../../crates/adapters/src/integration_oauth.rs)、[平台工具注册表](../../crates/core/src/platform_tools.rs)、[经理工具](../../crates/core/src/manager_workspace.rs)、[原生驱动](../../crates/adapters/src/harness.rs)。

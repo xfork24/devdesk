@@ -12,7 +12,7 @@
 
 性能优先，显示、缓存、目录和跨库投影允许最终一致。版本比较与提交、幂等回执、执行授权及单库领域约束保持原子；最终一致不允许丢失更新或把未提交状态作为事实。普通查询按需读取摘要和分页详情，不恢复整个工程历史，也不隐式同步或回写业务状态。
 
-当前实现已使用独立读取连接、资源级版本提交、显式项目路由及共享 SSE 尾流。工作空间、仓库、会话、工作流和平台调用按有限事实准备和接纳；配置目录保留专用事务。100 活跃前端属于持续容量要求，局部回归和初步性能结果不能作为正式联合验收结论。实施范围见 [并发重构记录](plans/single-host-concurrency/EXECUTION.md)，后续性能与预算工作见 [性能修复](plans/workflow-performance-remediation/CONTINUATION.md)，正式门禁见 [100 前端验收合同](plans/single-host-concurrency/ACCEPTANCE.md)。
+当前实现已使用独立读取连接、资源级版本提交、显式项目路由及共享 SSE 尾流。工作空间、仓库、会话、工作流和平台调用按有限事实准备和接纳；配置目录保留专用事务。100 活跃前端属于持续容量要求，局部回归和初步性能结果不能作为正式联合验收结论。实施范围见 [并发重构记录](../plans/single-host-concurrency/EXECUTION.md)，后续性能与预算工作见 [性能修复](../plans/workflow-performance-remediation/CONTINUATION.md)，正式门禁见 [100 前端验收合同](../plans/single-host-concurrency/ACCEPTANCE.md)。
 
 ## 模块与事实源
 
@@ -78,7 +78,7 @@ RuntimeInstallation 独立于 Agent、Session 和 RuntimeExecution；安装按�
 
 根实例可选择 manual、rust 或 agent 驱动，复用 core 派发、接纳与完成命令。调度参数属于 Workflow，不独立发布或选择；驱动固定实际 Workflow 调度快照、epoch 与租约。Agent 控制器和 Rust 驱动的平台操作权限来自 Harness Profile；项目经理工作台独立于根调度，不自动取得根控制权。
 
-Permission profile 与目标绑定分别版本化。两层权限、Scope、工具授权及操作系统隔离取交集，无法落实的策略明确拒绝。共享安装不因角色或权限复制。模型连接、工具网络、审批、隔离和资源额度分别表达。具体能力与限制见 [权限说明](../permissions/README.md) 和 [适配器合同](real-adapter-contract.md)。
+Permission profile 与目标绑定分别版本化。两层权限、Scope、工具授权及操作系统隔离取交集，无法落实的策略明确拒绝。共享安装不因角色或权限复制。模型连接、工具网络、审批、隔离和资源额度分别表达。具体能力与限制见 [权限说明](../../permissions/README.md) 和 [适配器合同](real-adapter-contract.md)。
 
 实际 SDK 路由和认证属于协议代码；显示名、默认选择及端点预填值属于配置。原生接口通过 `ExecutionAdapters` 注入，测试替身只编译进测试，产品没有模拟模式或回退执行器。
 
@@ -90,4 +90,4 @@ React Web 在 Rust 构建时嵌入，发布程序不依赖源码或宿主 Node�
 
 运行计划修订按新图实际引用的角色、资源和权限/集成锁计算影响；子流程重新编译时移除未使用的父级闭包资源，不会使已完成前缀失效。`workflow.change.preview/apply` 支持单独的 `revert_change {change_id}`：只可回退本实例最近应用的纯 `upsert_step` 变更，且全部受影响的替代执行仍未启动，不包含子流程调用。core 校验原冻结计划、输入和不可变执行历史，创建新的计划修订并逐字复用原回执；原始拒绝、原变更和被撤回的 queued 执行均保留。已启动、跨实例、混合操作或存在新外部作用时拒绝回退。
 
-实现依据：[应用端口](../crates/core/src/ports.rs)、[根实例驱动](../crates/core/src/workflow_driver.rs)、[经理工作台](../crates/core/src/manager_workspace.rs)、[执行安装物化](../crates/core/src/resource_receipts.rs)、[存储编解码](../crates/adapters/src/source_store.rs)。
+实现依据：[应用端口](../../crates/core/src/ports.rs)、[根实例驱动](../../crates/core/src/workflow_driver.rs)、[经理工作台](../../crates/core/src/manager_workspace.rs)、[执行安装物化](../../crates/core/src/resource_receipts.rs)、[存储编解码](../../crates/adapters/src/source_store.rs)。

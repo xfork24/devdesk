@@ -1,8 +1,8 @@
 # 本地协议
 
-JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 24 / project 60；出厂 Workflow、Spec、Standard 分别记录 schema_version 6、3、4，任务记录 `agent-task/v6`。业务源按实际结构与规则接纳；SQLite user_version、数据集标记和外部凭据助手协议则有独立兼容校验，不能混为版本展示元数据。精确字段见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。不升级或转换旧数据。
+JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 24 / project 60；出厂 Workflow、Spec、Standard 分别记录 schema_version 6、3、4，任务记录 `agent-task/v6`。业务源按实际结构与规则接纳；SQLite user_version、数据集标记和外部凭据助手协议则有独立兼容校验，不能混为版本展示元数据。精确字段见 [发布 Schema](../../schemas/README.md)，语义见 [领域规范](domain.md)。不升级或转换旧数据。
 
-本文记录实施分支的协议。项目路由采用显式作用域，修改入口使用原始版本前置条件、幂等和冲突响应；公开业务命令与后台回调均采用资源提交。接口盘点和设计见 [底层并发重构方案](plans/single-host-concurrency/PLAN.md)，已执行的初步验证及正式容量缺口见 [实施记录](plans/single-host-concurrency/EXECUTION.md)。
+本文记录实施分支的协议。项目路由采用显式作用域，修改入口使用原始版本前置条件、幂等和冲突响应；公开业务命令与后台回调均采用资源提交。接口盘点和设计见 [底层并发重构方案](../plans/single-host-concurrency/PLAN.md)，已执行的初步验证及正式容量缺口见 [实施记录](../plans/single-host-concurrency/EXECUTION.md)。
 
 ## HTTP 与命令
 
@@ -164,7 +164,7 @@ Web 连接其他内核时，先以无凭据请求探测 `/connection`，确认�
 
 定义写入 RPC 在 Command 顶层携带 expected_catalog_generation。首次重置后必须提供该字段，旧页面不能重新发布旧代次定义。相关目录查询返回 catalog_generation 与 template_sources；分页结果的代次变化时重新加载。include_history 只查询当前代次的修订，include_archived 包含尚存在的归档源；完全重置删除的源不再由这两个选项或精确 ID 查询返回。
 
-query.project_configuration 附带 pinned_records 与 uses_archived_templates，供项目页显示其固定的旧定义。归档不等于原有的禁用或撤销。具体存储与兼容合同见 [模板目录合同](plans/configuration-template-reset/CONTRACT.md)。
+query.project_configuration 附带 pinned_records 与 uses_archived_templates，供项目页显示其固定的旧定义。归档不等于原有的禁用或撤销。具体存储与兼容合同见 [模板目录合同](../plans/configuration-template-reset/CONTRACT.md)。
 
 
 ## 模型服务商接口
@@ -279,7 +279,7 @@ Standard 页展开 Workflow、Delivery、Spec 配置项后，在“替换为”�
 
 `query.spec_lint` 是只读结构预览；原生 `spec.lint` 受工作台的配置预演权限约束。新增 MachineAssertion/EvidenceLocation 契约见 RPC `$defs`；位置证明针对本次冻结输入，`workflow_output.spec_validation` 是内核生成的检查事实，模型不能通过输出同名字段替代它。
 
-实现依据：[HTTP 与认证](../crates/host/src/main.rs)、[项目及运行时路由](../crates/host/src/workspace.rs)、[配置路由](../crates/host/src/governance.rs)、[RPC Schema](../schemas/rpc.schema.json)、[控制工具](../crates/core/src/controllers.rs)、[经理工具](../crates/core/src/manager_workspace.rs)。
+实现依据：[HTTP 与认证](../../crates/host/src/main.rs)、[项目及运行时路由](../../crates/host/src/workspace.rs)、[配置路由](../../crates/host/src/governance.rs)、[RPC Schema](../../schemas/rpc.schema.json)、[控制工具](../../crates/core/src/controllers.rs)、[经理工具](../../crates/core/src/manager_workspace.rs)。
 
 `workflow.inspect` 每步附 `actions`，其 dispatch/accept/retry 使用 RPC `$defs/WorkflowActionEligibility`；`allowed_actions` 仅包含当前业务条件成立的动作，具体身份授权和 CAS 仍在命令入口检查。`query.workflow_driver.waiting` 返回相同动作资格与等待原因，查询不会派发或接纳。
 

@@ -153,7 +153,7 @@ Review 退回保留原事实，通过新 Attempt / 新业务轮次修复；质�
 
 JSON-RPC 协议保持 v1；命令携带 command_id、target、expected_revision、payload 及可选 project_id。相同 ID/参数重放返回原结果，不同参数复用被拒绝。项目指针变化产生 project_changed。
 
-新增配置接口覆盖 Model/Harness/Tool/Skill/Spec/Standard/Agent 修订、AgentID 注册、Workflow 草稿/发布/校验/预演/差异、Project 默认绑定、流程实例控制，以及实例经验查询和恢复。精确结构见 [领域规范](../../domain.md)、[协议](../../protocol.md)及 `schemas/rpc.schema.json`。
+新增配置接口覆盖 Model/Harness/Tool/Skill/Spec/Standard/Agent 修订、AgentID 注册、Workflow 草稿/发布/校验/预演/差异、Project 默认绑定、流程实例控制，以及实例经验查询和恢复。精确结构见 [领域规范](../../design/domain.md)、[协议](../../design/protocol.md)及 `schemas/rpc.schema.json`。
 
 SSE、查询及浏览器刷新使用同一事实源。工作流变化和治理命令写入历史事件；前端不维护第二套工程状态机。
 
@@ -221,7 +221,7 @@ Artifact 密封后保存 SHA256，读取验证路径和摘要。跨项目历史�
 
 保持可配置 data 根目录、进程锁、路径/符号链接约束、旧单库保留及多库迁移。选择数据目录不等于复制工程目录，不在程序启动时删除旧数据。
 
-凭据采用专用账户引用和平台凭据存储，遵循 [系统凭据说明](../../system-credentials.md)。不把密钥、运行数据、模型协议正文或构建产物提交到源码库。未知历史组合不猜测 Model、权限或 AgentID，不改写原 Artifact/hash。旧 live Feature 保存 legacy_feature_lock 及可证明的原 Binding/Session；不再用最新偏好分配新工作，缺少完整组合的新执行需创建后继 Feature，已有冻结执行和回执仍可读取、核对。
+凭据采用专用账户引用和平台凭据存储，遵循 [系统凭据说明](../../design/system-credentials.md)。不把密钥、运行数据、模型协议正文或构建产物提交到源码库。未知历史组合不猜测 Model、权限或 AgentID，不改写原 Artifact/hash。旧 live Feature 保存 legacy_feature_lock 及可证明的原 Binding/Session；不再用最新偏好分配新工作，缺少完整组合的新执行需创建后继 Feature，已有冻结执行和回执仍可读取、核对。
 
 ## 20 Archive 的真实现状
 

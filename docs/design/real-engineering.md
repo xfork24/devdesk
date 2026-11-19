@@ -1,6 +1,6 @@
 # 工程接入与通用流程
 
-DevDesk 使用配置驱动的 Workflow 执行工程工作。Role 是业务身份，Agent 组合 Role 与 Capability，后者选择 Model、Harness、Skill 和 Tool；Step 的 `task_instructions` 指定本次任务。运行语义见 [工作流与编排](workflow-orchestration.md)，出厂配置见 [默认目录](../resources/configuration/README.md)。
+DevDesk 使用配置驱动的 Workflow 执行工程工作。Role 是业务身份，Agent 组合 Role 与 Capability，后者选择 Model、Harness、Skill 和 Tool；Step 的 `task_instructions` 指定本次任务。运行语义见 [工作流与编排](workflow-orchestration.md)，出厂配置见 [默认目录](../../resources/configuration/README.md)。
 
 ## 操作流程
 
@@ -40,4 +40,4 @@ Task 直接以开发分支创建 PR，使用 GitHub 试合并的确切源/目标
 
 验收保留实际使用的 Host 与各辅助脚本的内容身份，历史执行不从当前 PATH 或当前源码补推。`runtime_context.binding` 表示运行选择，`runtime_context.inputs` 关联上游真实 Turn 的外层镜像和停止证明；它们不证明任意嵌套或远程命令的环境。
 
-实现依据：[工作流运行](../crates/core/src/workflow_runtime.rs)、[根驱动](../crates/core/src/workflow_driver.rs)、[平台动作](../crates/core/src/platform_tools.rs)、[工程探针](../tests/live/probe_streamlined_workflow.py)、[证据导出](../tests/live/export_evidence.py)。
+实现依据：[工作流运行](../../crates/core/src/workflow_runtime.rs)、[根驱动](../../crates/core/src/workflow_driver.rs)、[平台动作](../../crates/core/src/platform_tools.rs)、[工程探针](../../tests/live/probe_streamlined_workflow.py)、[证据导出](../../tests/live/export_evidence.py)。

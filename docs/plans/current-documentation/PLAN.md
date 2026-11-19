@@ -38,7 +38,7 @@ v2 修订要点：按最新要求，计划重心从"漂移校验"扩展为**补�
 
 > 撰写事实源：`review/docs/`（2026-11-11 全量核实过的评审文档 02/03/05）+ 代码与 `schemas/`。写作规范：与既有文档一致的中文短段风格；所有版本断言过锚点校验（§四）；每篇 ≤150 行，链接而非复制 domain/protocol 的内容。
 
-### W01 `docs/workflow-orchestration.md` · 工作流与编排（最优先）
+### W01 `docs/design/workflow-orchestration.md` · 工作流与编排（最优先）
 
 大纲：
 1. 定位与阅读路径（概念见 domain.md、命令见 protocol.md、本文讲**运行语义**）
@@ -51,7 +51,7 @@ v2 修订要点：按最新要求，计划重心从"漂移校验"扩展为**补�
 8. 默认流程概览：Feature 22 步/7 阶段、Task 20 步/7 阶段的阶段级摘要表 + 全量步骤清单链接（resources/configuration/README.md）；步骤授权与 Permission 的叠加关系一句话 + 链接 permissions.md
 9. 预算与并发（authoring 默认与默认流程实际值、foreach 并发、全局额度公式）
 
-### W02 `docs/permissions.md` · 运行时权限
+### W02 `docs/design/permissions.md` · 运行时权限
 
 大纲：
 1. 五层模型总览（Profile → Target → Binding/Assignment → 冻结 Lock → Context step_grants/ControlPolicy）与"Agent/Capability 不含权限"原则
@@ -61,7 +61,7 @@ v2 修订要点：按最新要求，计划重心从"漂移校验"扩展为**补�
 5. 权限切换 = 后继会话：三段式（静止校验→停止证明→快照+后继）、permission_status 五态、崩溃可恢复
 6. 默认绑定说明（harness/sandbox full-access-v2 + 容器边界）与收紧指引（受限 preset 的方向）
 
-### W03 `docs/storage.md` · 存储与数据布局
+### W03 `docs/design/storage.md` · 存储与数据布局
 
 大纲：
 1. 数据集总览（标记 devdesk-source-v2-standard-v1、独占写锁、目录树：global.sqlite3 / projects/<id>/ / conversations/global/ / artifacts/ / execution/{sessions,tests,git-operations,tool-executions} / repository/）
@@ -72,7 +72,7 @@ v2 修订要点：按最新要求，计划重心从"漂移校验"扩展为**补�
 6. 模板目录与默认配置：bundle、generation 代次、reset 语义（改目录选择不改源身份）、归档 vs 停用
 7. 升级策略：不做迁移、旧库拒绝、验证用独立空目录；备份建议
 
-### W04 `docs/web-workbench.md` · Web 工作台指南
+### W04 `docs/design/web-workbench.md` · Web 工作台指南
 
 大纲：
 1. 形态与初始化（嵌入式 SPA、/capabilities 探测→初始设置/密钥登录、连接内核）
@@ -81,7 +81,7 @@ v2 修订要点：按最新要求，计划重心从"漂移校验"扩展为**补�
 4. 典型旅程：接入 GitHub 项目 → 采用默认配置 → 建 Feature → 执行页推进/与项目经理协作 → 调整运行计划 → 候选接纳与发布（逐步列出所用页面与命令）
 5. 设置页导览（内核连接/凭据/权限/模板重置/运行时/并发）与安全边界（同源会话、密钥不落浏览器存储）
 
-### W05 `docs/conversations.md` · 讨论与经验
+### W05 `docs/design/conversations.md` · 讨论与经验
 
 大纲：
 1. 会话四种 scope 与工作类型（Workflow/Discussion/Orchestration）；RuntimeBinding 冻结含义
@@ -100,7 +100,7 @@ v2 修订要点：按最新要求，计划重心从"漂移校验"扩展为**补�
 | real-engineering.md | :3 | "使用 Workflow v5 驱动工作" | Workflow **v6** |
 | real-engineering.md | :17 | "canonical `agent-task/v5`" | `agent-task/v6` |
 | real-engineering.md | :31 | "数据库基线为 global 15 / project 46" | global **16** / project **47** |
-| real-engineering.md | :3 | "完整合同见 plans/harness-workflow-orchestration/CONTRACT.md"（把历史合同当现行合同引用） | 改指新增 `docs/workflow-orchestration.md`；CONTRACT.md 降为历史参照 |
+| real-engineering.md | :3 | "完整合同见 plans/harness-workflow-orchestration/CONTRACT.md"（把历史合同当现行合同引用） | 改指新增 `docs/design/workflow-orchestration.md`；CONTRACT.md 降为历史参照 |
 | real-adapter-contract.md | :21 | "canonical `agent-task/v5`" | `agent-task/v6` |
 | run-binary.md | :31 | "global 15 / project 46" | global 16 / project 47 |
 | system-credentials.md | :7 | "默认 `container-full-access` 将整个 Harness 容器视为信任范围…"（v1 旧预设名，已于 2026-11-10 v2 权限改造删除） | 默认为 v2 profile `builtin-permission-harness-full-access` / `builtin-permission-sandbox-full-access`（容器即信任范围的语义保留，名称与版本更正；链接 permissions.md） |
@@ -121,11 +121,11 @@ v2 修订要点：按最新要求，计划重心从"漂移校验"扩展为**补�
 
 | 编号 | 工作项 | 涉及 | 验收要点 |
 |---|---|---|---|
-| W01 | 新增 docs/workflow-orchestration.md（§二大纲 1–9） | docs | 与 review/docs/03 一致；锚点校验通过 |
-| W02 | 新增 docs/permissions.md | docs | 五层模型与默认绑定描述准确 |
-| W03 | 新增 docs/storage.md | docs | 目录树/表族与 sql、adapters 实测一致 |
-| W04 | 新增 docs/web-workbench.md | docs | 九区与命令清单与 web/src 一致 |
-| W05 | 新增 docs/conversations.md | docs | formal session 禁自由输入等边界成文 |
+| W01 | 新增 docs/design/workflow-orchestration.md（§二大纲 1–9） | docs | 与 review/docs/03 一致；锚点校验通过 |
+| W02 | 新增 docs/design/permissions.md | docs | 五层模型与默认绑定描述准确 |
+| W03 | 新增 docs/design/storage.md | docs | 目录树/表族与 sql、adapters 实测一致 |
+| W04 | 新增 docs/design/web-workbench.md | docs | 九区与命令清单与 web/src 一致 |
+| W05 | 新增 docs/design/conversations.md | docs | formal session 禁自由输入等边界成文 |
 | W06 | 漂移修复：§三 清单逐条（含 real-engineering 合同引用改指、system-credentials 预设名、tool-skill 导航） | docs | 人工复核 + 校验通过 |
 | W07 | 根 README 文档索引段更新：收录 5 篇新文档、移除指向 plans 历史合同的"现行合同"引用 | README.md | 链接全有效 |
 | W08 | version-anchors.py 提取器 | scripts/py | 全部锚点项可提取 |

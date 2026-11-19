@@ -11,7 +11,7 @@ umask 077
 identity="${DEVDESK_CODESIGN_IDENTITY:-}"
 identity_file="$HOME/Library/Application Support/DevDesk/signing/identity.txt"
 if [ -z "$identity" ] && [ -f "$identity_file" ]; then IFS= read -r identity < "$identity_file"; fi
-[ -n "$identity" ] || { echo 'Configure the stable signing identity first; see docs/system-credentials.md.' >&2; exit 1; }
+[ -n "$identity" ] || { echo 'Configure the stable signing identity first; see docs/design/system-credentials.md.' >&2; exit 1; }
 if [[ "$identity" =~ ^[A-Fa-f0-9]{40}$ ]]; then
   certificate="$identity"
 else
@@ -53,7 +53,7 @@ PYVERIFY
   fi
   [ "${1:-}" = --update ] || [ "${1:-}" = --bundle ] || { echo 'Credential helper implementation changed; explicit --update is required and may require one new OS authorization.' >&2; exit 1; }
 fi
-cargo build --release --locked -p devdesk-credential-helper
+cargo build --release --locked -p devdesk-tools --bin devdesk-credential-helper
 ./scripts/platform/macos/sign-macos.sh target/release/devdesk-credential-helper dev.devdesk.credentials
 cp target/release/devdesk-credential-helper "$helper_dir/.helper-pending"
 chmod 700 "$helper_dir/.helper-pending"

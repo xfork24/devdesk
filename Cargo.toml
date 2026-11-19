@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/domain", "crates/core", "crates/adapters", "crates/host", "crates/credential-helper"]
+members = ["crates/domain", "crates/core", "crates/adapters", "crates/host", "crates/tools"]
 resolver = "3"
 [workspace.package]
 version = "0.2.0"

@@ -14,7 +14,7 @@
 | W06 测试解耦（部分） | 新增 `scripts/py/check-defaults.py`（出厂领域对象集合完整性校验：manifest ↔ 文件 ↔ defaults 引用 ↔ 文件归属），入口 `scripts/check/check-defaults.sh` 接入 `check.sh`；删除 `factory_workflow_business_contracts…` 的 3 个十六进制 hash 常量断言（P13 的重锚方案按计划被取代） |
 | W07 Web 去断言（部分） | WorkflowManager 导入校验改调后端 `query.workflow_requirements`（本地仅 JSON parse + 数组形状检查）；WorkflowTaskPreview 删除 `agent-task/v6` renderer 过滤（后端仅返回已校验合同） |
 | W08 D1 执行 | 删除 `--normalize-plan` CLI、`normalize_plan_document` 及其 3 个测试；usage 文本同步 |
-| W09 文档 | 新增 `docs/contracts.md`：数据合同（注册表）/ 实现身份 / 外部运行时锚 / 概念词汇四层登记 + 演进流程 |
+| W09 文档 | 新增 `docs/design/contracts.md`：数据合同（注册表）/ 实现身份 / 外部运行时锚 / 概念词汇四层登记 + 演进流程 |
 
 ## 决策项执行
 
@@ -27,7 +27,7 @@
 1. **W06 余量**：`crates/adapters/tests/configured_workflows.rs`（约 2800 行、279 个断言）的"内联夹具 + 编译级校验"重构未做——按计划纪律（先建夹具层、逐段迁移、全程全量回归）需独立批次。
 2. **W07 余量**：展示性过滤仍在前端（WorkflowManager `:183/:332` 当前草稿过滤、ProjectManager `:152-153`、StandardManager `:297`、AgentCatalog `:612`、PermissionResources 编辑器 schema 2）——正确做法是后端 `query.*` 返回可用性标记后移除，需 Playwright 双档回归，未在本批盲改。
 3. `docker-worker/v1`（校验侧）与 `docker-worker/v2:{}`（生成侧）的 enforcement 常量统一未做。
-4. `workflow.outputs.read` 的 qualified_name 在 `platform_tools.rs`/`controllers.rs` 的多处全等匹配仍为字面量（已登记 docs/contracts.md §2 说明）。
+4. `workflow.outputs.read` 的 qualified_name 在 `platform_tools.rs`/`controllers.rs` 的多处全等匹配仍为字面量（已登记 docs/design/contracts.md §2 说明）。
 
 ## 验收对照
 
@@ -49,7 +49,7 @@
   - 存储与合同自洽：workflow 实例判定 = `steps` 数组存在（含完整性检查与全部查询过滤）；`ConfiguredAgentTask::validate` 改为记录自身一致性（外层/内层 renderer 一致 + 摘要 + 来源）。
   - `manifest` 不再断言协议版本（Manifest 结构反序列化即边界）；项目配置过时检查移除显式版本门禁（下游 decode 兜底）。
   - 元数据写入常量：`WORKFLOW_INSTANCE_SCHEMA`（domain/workflow.rs）、`AGENT_TASK_RENDERER`（domain/agent_task.rs）、`ORCHESTRATION_RENDERER`（domain/orchestration.rs 恢复）——只写不读。
-- `docs/contracts.md` 重写为"原语、领域对象与结构识别"（领域对象/原语/结构规则五条/实现身份/外部锚/出厂自洽）。
+- `docs/design/contracts.md` 重写为"原语、领域对象与结构识别"（领域对象/原语/结构规则五条/实现身份/外部锚/出厂自洽）。
 - 验证：`cargo test --workspace --locked` 26 套件全绿；`grep` 确认无 `Contract::` 残留、无版本全等断言、`schema_version` 仅剩测试夹具/字段透传/元数据写入。
 
 ## 2026-11-13 收尾

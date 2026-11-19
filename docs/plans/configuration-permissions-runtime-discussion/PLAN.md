@@ -223,7 +223,7 @@ manual/rust/agent 执行方式选择继续表达运行方式；并发和实际�
 
 删除旧活跃合同与入口，不用兼容别名继续接收新 `permission_context` / `runtime_resource` / `orchestration_policy` 写入。历史 Markdown 保留原文；旧链接可提供明确的新入口或不兼容说明，不偷偷选择新的默认配置。
 
-实施完成时同步更新 `AGENT.md`、`README.md`、`docs/source-configuration.md`、`docs/permissions.md`、`docs/workflow-orchestration.md`、`docs/conversations.md`、`docs/tool-skill-integrations.md`、`docs/web-workbench.md`、`docs/protocol.md`、`permissions/README.md` 及受影响安装/发行说明。特别修正现行指南中 Context 授权、Workflow 不含权限选择、运行资源来源等旧约束；用户已确认的新归属优先。
+实施完成时同步更新 `AGENT.md`、`README.md`、`docs/design/source-configuration.md`、`docs/design/permissions.md`、`docs/design/workflow-orchestration.md`、`docs/design/conversations.md`、`docs/design/tool-skill-integrations.md`、`docs/design/web-workbench.md`、`docs/design/protocol.md`、`permissions/README.md` 及受影响安装/发行说明。特别修正现行指南中 Context 授权、Workflow 不含权限选择、运行资源来源等旧约束；用户已确认的新归属优先。
 
 ## 11 实施步骤与依赖
 

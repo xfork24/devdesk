@@ -39,7 +39,7 @@
 
 本轮未执行真实智谱、MiniMax、DeepSeek 或 Ollama 推理，也未保存、读取或授权真实 DSH key。新服务商的实际订阅权限及 macOS 新助手的首次 Keychain 授权，需要用户按设置流程完成，不能由模拟调用或签名检查代替。Ubuntu 宿主与 Linux Secret Service 运行验证未在本机执行。现有 DSH 真实模型和跨平台待验矩阵继续保留，不影响本轮按用户指定范围完成实现与验证。
 
-用户配置入口及助手升级说明见 [模型服务商](../../model-providers.md)。
+用户配置入口及助手升级说明见 [模型服务商](../../design/model-providers.md)。
 
 ## 启动兼容修正
 

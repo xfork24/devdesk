@@ -1,6 +1,6 @@
 # 工程适配器接入契约
 
-产品执行原生 Codex / DSH、Git、Docker 测试和 GitHub 操作；测试替身不进入运行产品。当前业务编排见 [领域规范](domain.md)，字段见 [Schema](../schemas/README.md)。
+产品执行原生 Codex / DSH、Git、Docker 测试和 GitHub 操作；测试替身不进入运行产品。当前业务编排见 [领域规范](domain.md)，字段见 [Schema](../../schemas/README.md)。
 
 ## 接口与装配
 
@@ -38,11 +38,11 @@ Artifact 使用不可变 ID、相对路径和 SHA-256，先暂存、fsync、rena
 
 ## 验证
 
-默认回归、HTTP、浏览器、真实资源与模型入口见 [测试索引](../tests/README.md)。真实探针使用隔离数据集、二进制副本和专用测试仓库，退出后清理临时登录文件。接口替身、DSH 本地 SDK 夹具、协议准备探针与真实推理结果分开报告；历史报告不能替代当前执行器的验证。
+默认回归、HTTP、浏览器、真实资源与模型入口见 [测试索引](../../tests/README.md)。真实探针使用隔离数据集、二进制副本和专用测试仓库，退出后清理临时登录文件。接口替身、DSH 本地 SDK 夹具、协议准备探针与真实推理结果分开报告；历史报告不能替代当前执行器的验证。
 
 运行准备按源修订中的构建文件/OCI digest 执行，安装以配方摘要、实际镜像及驱动/权限资产验证报告绑定；版本标签不是兼容判据。Codex 的 prepare 探测初始化、会话与动态工具注册，DSH 只探测初始化，均不调用模型或执行工具。
 
-实现依据：[执行端口](../crates/core/src/ports.rs)、[Harness](../crates/adapters/src/harness.rs)、[真实测试](../crates/adapters/src/tests.rs)、[Git](../crates/adapters/src/git.rs)、[协议探针](../crates/adapters/src/runtime_verification.rs)。
+实现依据：[执行端口](../../crates/core/src/ports.rs)、[Harness](../../crates/adapters/src/harness.rs)、[真实测试](../../crates/adapters/src/tests.rs)、[Git](../../crates/adapters/src/git.rs)、[协议探针](../../crates/adapters/src/runtime_verification.rs)。
 
 PR 创建、目标观察和失败核对不会写入分支保护规则。GitHub 原子目标比较语义参见 [updateRefs](https://docs.github.com/en/graphql/reference/git#updaterefs)；现有 required checks 和评审规则由仓库配置与 GitHub 合并门禁执行。
 

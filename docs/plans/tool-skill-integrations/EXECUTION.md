@@ -36,7 +36,7 @@
 
 扫描非凭据运行文件未发现本次真实 OAuth token。验收探针结束时删除了测试中的 auth.json 副本；原始登录文件与共享 Keychain 助手保持原状。没有读取或调用真实 DSH 凭据和推理服务。
 
-可复验入口：`tests/live/probe_tool_integrations.py`，必须显式提供专用 Codex 登录文件。具体命令及接入操作见 [工具与技能接入](../../tool-skill-integrations.md)。
+可复验入口：`tests/live/probe_tool_integrations.py`，必须显式提供专用 Codex 登录文件。具体命令及接入操作见 [工具与技能接入](../../design/tool-skill-integrations.md)。
 
 ## 本机证据位置
 

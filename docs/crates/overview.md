@@ -1,8 +1,8 @@
 # crates 代码手册
 
-[完整执行链](execution-flows.md) · [项目 README](../../README.md) · [现行架构](../design.md) · [结构合同](../contracts.md)
+[完整执行链](execution-flows.md) · [项目 README](../../README.md) · [现行架构](../design/design.md) · [结构合同](../design/contracts.md)
 
-DevDesk 把“描述工作”“决定能否推进”和“实际执行”分在不同层。domain 定义合同，core 组织用例并接纳事实，adapters 落实数据库和外部操作，host 把浏览器、工程和端口接起来；credential-helper 是 macOS 独立签名的系统密钥入口。本手册解释每个文件怎样参与这个过程，具体字段和分支可沿源码定位继续阅读。
+DevDesk 把“描述工作”“决定能否推进”和“实际执行”分在不同层。domain 定义合同，core 组织用例并接纳事实，adapters 落实数据库和外部操作，host 把浏览器、工程和端口接起来；tools 存放独立工具程序，当前提供 macOS 独立签名的凭据助手。本手册解释每个文件怎样参与这个过程，具体字段和分支可沿源码定位继续阅读。
 
 ## 包与文件导航
 
@@ -14,7 +14,7 @@ DevDesk 把“描述工作”“决定能否推进”和“实际执行”分在
 | [devdesk-core](devdesk-core/overview.md) | 命令/查询、配置编译、冻结会话、执行状态机、控制和恢复 | [Engine](devdesk-core/engine-and-ports.md#file-src-lib-rs)、[端口](devdesk-core/engine-and-ports.md#file-src-ports-rs)、[步骤执行](devdesk-core/workflow-execution.md#file-src-configured-runtime-rs) |
 | [devdesk-adapters](devdesk-adapters/overview.md) | SQLite/Artifact、出厂资源、Docker/Harness、Git/GitHub、工具/凭据和集成测试 | [存储与装配](devdesk-adapters/storage-and-source-codecs.md#file-src-lib-rs)、[原生 Harness](devdesk-adapters/harness-and-protocols.md#file-src-harness-rs) |
 | [devdesk-host](devdesk-host/overview.md) | HTTP/SSE、连接认证、多项目调度、资源和 RPC 装配 | [HTTP 入口](devdesk-host/http-and-security.md#file-src-main-rs)、[Workspace](devdesk-host/workspace-and-lifecycle.md#file-src-workspace-rs) |
-| [devdesk-credential-helper](devdesk-credential-helper/overview.md) | 严格命名空间、签名父进程与单次 Keychain 操作 | [协议](devdesk-credential-helper/request-protocol.md)、[签名与系统访问](devdesk-credential-helper/signing-and-keychain.md) |
+| [devdesk-tools](devdesk-tools/overview.md) | 独立工具程序；当前凭据助手负责严格命名空间、签名父进程与单次 Keychain 操作 | [协议](devdesk-tools/request-protocol.md)、[签名与系统访问](devdesk-tools/signing-and-keychain.md) |
 
 ## 编译依赖与实际交互
 
@@ -28,7 +28,7 @@ flowchart TD
     A --> C
     A --> D
     C --> D
-    K[credential-helper: 独立进程]
+    K[tools: 独立工具进程]
 ```
 
 运行时方向还要看端口：core 调用 Harness/Git/Tests/EngineeringStore 等 trait，由 Host 注入的 adapters 完成实际操作并返回观察。helper 不在上述 Rust 库依赖链里，adapters 通过私有管道调用其独立进程。前端通过 HTTP/SSE 看应用事实，不直接访问 SQLite 或替内核裁定终态。

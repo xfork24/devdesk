@@ -51,4 +51,4 @@ EvidenceLocation 绑定冻结输入的 source_ref、value_digest 和定位器。
 
 `manifest.json` 声明发布资源，`defaults.json` 选择默认引用；Markdown 正文归属于对应源修订。构建校验结构，`check-defaults.py` 检查目录/manifest/默认引用/正文归属，应用和测试继续核对完整组合、权限与来源。目录自洽检查不能替代实际执行验证。
 
-实现依据：[源协议](../crates/domain/src/source.rs)、[Workflow 与任务校验](../crates/domain/src/workflow.rs)、[安装组合](../crates/domain/src/execution_recipe.rs)、[平台处理器](../crates/core/src/platform_tools.rs)、[协议验证](../crates/adapters/src/runtime_verification.rs)、[出厂目录检查](../scripts/py/check-defaults.py)。
+实现依据：[源协议](../../crates/domain/src/source.rs)、[Workflow 与任务校验](../../crates/domain/src/workflow.rs)、[安装组合](../../crates/domain/src/execution_recipe.rs)、[平台处理器](../../crates/core/src/platform_tools.rs)、[协议验证](../../crates/adapters/src/runtime_verification.rs)、[出厂目录检查](../../scripts/py/check-defaults.py)。

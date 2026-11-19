@@ -255,7 +255,7 @@ Codex 的 externalSandbox 是声明外层执行环境负责隔离，不能把其
 
 ## 依据
 
-- 仓库：[架构与 ADR](../../design.md)、[真实工程接入](../../real-engineering.md)、[协议](../../protocol.md)、[计划索引](../README.md)。
+- 仓库：[架构与 ADR](../../design/design.md)、[真实工程接入](../../design/real-engineering.md)、[协议](../../design/protocol.md)、[计划索引](../README.md)。
 - [OpenAI App Server](https://learn.chatgpt.com/docs/app-server)：externalSandbox、审批与轮次覆盖；[配置参考](https://learn.chatgpt.com/docs/config-file/config-reference)：原生权限 profile 与网络执行条件。
 - [DSH permission presets](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/interaction/permission-presets/README.md)、[DSH sandbox](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/sandbox/sandbox/README.md)：文件模式、审批组合及其能力范围。
 - [Docker 容器配置](https://docs.docker.com/engine/containers/run/)、[seccomp](https://docs.docker.com/engine/security/seccomp/)、[AppArmor](https://docs.docker.com/engine/security/apparmor/)。外部文档核对日期为 2026-11-08；实施使用固定版本的实际 Schema 和行为核验，不将上游 master 的新能力直接视为本项目已支持。

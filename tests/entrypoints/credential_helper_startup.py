@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Check compatible helper reuse and rejection without touching the installed principal or Keychain."""
+import argparse
 import hashlib
 import http.cookiejar
 import json
@@ -20,7 +21,11 @@ if sys.platform != 'darwin':
     print('SKIP macOS credential helper startup')
     raise SystemExit(0)
 
-installed = Path.home() / 'Library/Application Support/DevDesk/credential-helper/v1'
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--helper-dir', type=Path, default=Path.home() / 'Library/Application Support/DevDesk/credential-helper/v1')
+parser.add_argument('--launch', action='store_true')
+args = parser.parse_args()
+installed = args.helper_dir.resolve()
 binary = installed / 'devdesk-credential-helper'
 manifest = installed / 'manifest.json'
 assert binary.is_file() and manifest.is_file(), 'Install a signed helper before this platform check'
@@ -83,7 +88,7 @@ with tempfile.TemporaryDirectory(prefix='devdesk-helper-ensure-') as directory:
 assert before == {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in [binary, manifest]}
 print('PASS compatible startup reuse; strict update guard; protocol, content and signature rejection; installed helper unchanged')
 
-if '--launch' in sys.argv:
+if args.launch:
     process = subprocess.Popen([str(ROOT / 'scripts/dev/dev.sh'), '--port', '0'], cwd=ROOT,
                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     output = queue.Queue()

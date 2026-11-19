@@ -6,7 +6,7 @@ Standard 收敛为 Workflow、Delivery、Spec 及其声明关系的不可变快�
 
 Standard 只有一种领域类型，不按 Project、Feature、Task 分类，不存在 FeatureStandard、TaskStandard 或“Feature 专属 Standard”。Project、Feature、Task 是使用者，可以引用同一个 Standard，也可以显式采用不同 Standard。工作之间的包含关系不要求它们使用相同 Standard。
 
-本方案承接[源配置与执行解析](../../source-configuration.md)的当前存储边界：只支持新数据集，保留不可变源修订和真实执行选择，按需重建派生视图。此次直接切换当前合同，不增加旧基线 Standard 的转换器或兼容执行路径；既有数据目录不自动删除或重建。
+本方案承接[源配置与执行解析](../../design/source-configuration.md)的当前存储边界：只支持新数据集，保留不可变源修订和真实执行选择，按需重建派生视图。此次直接切换当前合同，不增加旧基线 Standard 的转换器或兼容执行路径；既有数据目录不自动删除或重建。
 
 ## 1 目标与领域边界
 
@@ -357,7 +357,7 @@ Agent 和编排任务的来源若增加 Standard、工作与调用引用，分�
 
 实施时核对并递增 global/project 数据基线，更新数据集兼容标记和浏览器草稿命名空间。只接受新合同数据集，不将旧 `baseline_rules` 重新解释为新快照。遇到旧库明确拒绝并保留原文件；不自动清空用户数据。新库、重启和模板重置都必须固定相同源引用和快照。
 
-旧计划和验收报告保留其历史结论；当前 `docs/domain.md`、`docs/design.md`、`docs/protocol.md`、`docs/source-configuration.md`、Schema 索引、README 和资源说明统一更新。
+旧计划和验收报告保留其历史结论；当前 `docs/design/domain.md`、`docs/design/design.md`、`docs/design/protocol.md`、`docs/design/source-configuration.md`、Schema 索引、README 和资源说明统一更新。
 
 ## 12 实施文件与职责
 

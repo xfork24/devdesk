@@ -4,7 +4,7 @@
 
 - 先运行 `git status --short`，保留用户已有改动。优先使用 `rg` 查找引用，确认调用与加载路径后再删除。
 - 当前行为以 `crates/`、`web/src/`、`schemas/`、`sql/` 和 manifest 发布的出厂资源为准。
-- `docs/` 根目录及 `docs/crates/` 是当前说明；`docs/plans/` 是方案与历史验收，不能以未实施设计覆盖代码事实。历史记录保持原文，明确要求的机械修正除外。
+- `docs/design/` 及 `docs/crates/` 是当前说明；`docs/plans/` 是方案与历史验收，不能以未实施设计覆盖代码事实。历史记录保持原文，明确要求的机械修正除外。
 - 生产只使用真实外部执行端口。接口替身、协议样本与测试夹具不能成为产品回退路径。
 
 ## 架构边界
@@ -15,7 +15,7 @@
 | `crates/core` | 配置编译、冻结选择、命令/查询、会话、工作流、驱动及权威终态；外部依赖通过 `ports.rs` 注入。 |
 | `crates/adapters` | SQLite/Artifact codec、出厂资源、Git/GitHub、Docker、Harness、安装、凭据及权限后端。 |
 | `crates/host` | HTTP/SSE、认证、显式项目路由、跨项目调度与端口装配；不直接写业务事实。 |
-| `crates/credential-helper` | macOS 固定签名 Keychain 助手。 |
+| `crates/tools` | 独立工具程序，按 `src/bin/` 组织；当前包含 macOS 固定签名 Keychain 助手。 |
 | `web/src` / `web/tests` | React/TypeScript 工作台与浏览器回归；界面不裁定业务终态。 |
 | `resources/configuration` | manifest 管理的源修订、默认选择、正文、Harness/Sandbox 安装输入及权限预设。 |
 | `permissions` / `containers` | 权限后端资产与项目测试 Dockerfile；执行配方由 Harness/Sandbox 组合生成。 |
@@ -49,7 +49,7 @@
 
 ## 构建与验证
 
-Rust **1.99.1** 由工具链文件固定，前端使用 Node **24**。脚本需要 Python **3.10+** 与 C 工具链。macOS 签名/助手见 [系统凭据](docs/system-credentials.md)。
+Rust **1.99.1** 由工具链文件固定，前端使用 Node **24**。脚本需要 Python **3.10+** 与 C 工具链。macOS 签名/助手见 [系统凭据](docs/design/system-credentials.md)。
 
 ```bash
 python3 -m venv .venv
@@ -88,4 +88,4 @@ python3 scripts/py/check-docs.py
 - 日志、JSON/JSONL、截图、临时脚本及测试输出写临时证据目录；不提交凭据、运行数据、构建产物或本地 `review/`。
 - 提交聚焦可评审主题，说明行为变化、验证及限制；涉及界面行为时保留相应证据。
 
-入口：[README](README.md) · [代码手册](docs/crates/overview.md) · [结构合同](docs/contracts.md) · [工作流](docs/workflow-orchestration.md) · [源配置](docs/source-configuration.md) · [协议](docs/protocol.md)。
+入口：[README](README.md) · [代码手册](docs/crates/overview.md) · [结构合同](docs/design/contracts.md) · [工作流](docs/design/workflow-orchestration.md) · [源配置](docs/design/source-configuration.md) · [协议](docs/design/protocol.md)。

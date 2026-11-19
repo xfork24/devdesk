@@ -118,7 +118,7 @@ Rust 返回 allowed_actions 与 blocked_reasons。数据库事务保存状态和
 
 ## 5. 领域规范：先明确语义，再实现流程
 
-F0 必须交付 `docs/domain.md`。每个对象至少说明：身份、所属对象、主要引用、可变/不可变内容、生命周期、命令、约束、领域事件、持久化方式和一个示例。下列对象无需都有独立顶层页面，但不能因 UI 简化而丢失语义。
+F0 必须交付 `docs/design/domain.md`。每个对象至少说明：身份、所属对象、主要引用、可变/不可变内容、生命周期、命令、约束、领域事件、持久化方式和一个示例。下列对象无需都有独立顶层页面，但不能因 UI 简化而丢失语义。
 
 | 领域组 | 对象 | 首版实施深度 |
 | --- | --- | --- |
@@ -266,9 +266,9 @@ Run:     queued → running → succeeded / failed / cancelled / interrupted
 
 交付：
 
-- `docs/domain.md`：对象、归属、状态/命令、规则、事件、版本与示例。
-- `docs/protocol.md`：命令/查询、幂等、revision、错误与事件。
-- `docs/design.md`：模块边界、ports、持久化与跨平台结构。
+- `docs/design/domain.md`：对象、归属、状态/命令、规则、事件、版本与示例。
+- `docs/design/protocol.md`：命令/查询、幂等、revision、错误与事件。
+- `docs/design/design.md`：模块边界、ports、持久化与跨平台结构。
 - ADR：完整 Web、跨平台、领域真执行/外部模拟、后续真实适配边界。
 - 工程骨架、工具链/lockfile、TDD 与阶段报告约定。
 

@@ -1,6 +1,6 @@
 # 工具与技能接入计划
 
-日期：2026-11-09。状态：已实施并完成分阶段验收。实现记录见 [EXECUTION.md](EXECUTION.md)，使用说明见 [工具与技能接入](../../tool-skill-integrations.md)。以下保留本次领域与交付合同。
+日期：2026-11-09。状态：已实施并完成分阶段验收。实现记录见 [EXECUTION.md](EXECUTION.md)，使用说明见 [工具与技能接入](../../design/tool-skill-integrations.md)。以下保留本次领域与交付合同。
 
 ## 1. 本轮立即修正的范围
 

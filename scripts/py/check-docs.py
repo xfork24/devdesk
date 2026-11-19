@@ -39,6 +39,7 @@ def current_documents() -> list[Path]:
     return [
         ROOT / 'README.md', ROOT / 'AGENT.md',
         *sorted((ROOT / 'docs').glob('*.md')),
+        *sorted((ROOT / 'docs/design').rglob('*.md')),
         *sorted((ROOT / 'docs/crates').rglob('*.md')),
         *(ROOT / path for path in (
             'containers/README.md', 'permissions/README.md', 'schemas/README.md',

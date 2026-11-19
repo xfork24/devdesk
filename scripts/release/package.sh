@@ -8,7 +8,7 @@ staging="$(mktemp -d "${TMPDIR:-/tmp}/devdesk-package.XXXXXX")"
 trap 'rm -rf "$staging"' EXIT
 mkdir -p "$staging/$package_name" dist
 cp target/release/devdesk-host "$staging/$package_name/"
-cp docs/run-binary.md "$staging/$package_name/README.md"
+cp docs/design/run-binary.md "$staging/$package_name/README.md"
 cp -R docs "$staging/$package_name/"
 cp -R containers "$staging/$package_name/"
 cp -R permissions "$staging/$package_name/"

@@ -14,4 +14,4 @@
 4. 旧库先建立一致性副本，再升级并按领域归属拆分；核对行、外键、事件、操作及 Artifact 哈希后发布，保留旧库与文件，失败可重试。
 5. 以 Rust 存储/恢复测试、debug/release HTTP、standalone Host 和 Web 项目切换/重载验证上述行为，分别记录实际平台与边界。
 
-设计依据见 [ADR-010](../../design.md#adr-010每项目数据库与全局配置库) 和 [协议](../../protocol.md)。本计划不包含 data 目录搬迁或后续真实适配器接入。
+设计依据见 [ADR-010](../../design/design.md#adr-010每项目数据库与全局配置库) 和 [协议](../../design/protocol.md)。本计划不包含 data 目录搬迁或后续真实适配器接入。

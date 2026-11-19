@@ -51,7 +51,7 @@ Agent 步骤需要 Session 时，[session assembly](devdesk-core/session-resourc
 - 安装缺失：[runtime_preparation](devdesk-adapters/runtime-preparation.md#file-src-runtime-preparation-rs) 按冻结 recipe/digest 下载或构建，保存阶段和实际安装。
 - 协议未验证：[runtime_verification](devdesk-adapters/runtime-preparation.md#file-src-runtime-verification-rs) 针对实际安装、驱动及权限资产运行无模型探针；这不是推理验收。
 - 权限：[Profile 编译](devdesk-adapters/credentials-and-permissions.md#file-src-permission-profiles-rs) 与 [后端 enforcement](devdesk-adapters/credentials-and-permissions.md#file-src-permissions-rs) 核对可落实范围；配置 capability 与实际授权分别检查。
-- 凭据：[CredentialVault](devdesk-adapters/credentials-and-permissions.md#file-src-credentials-rs) 给出不透明引用；macOS 经 [固定签名助手](devdesk-credential-helper/request-protocol.md#file-src-main-rs)，Codex 登录经 [私有认证 worker](devdesk-adapters/credentials-and-permissions.md#file-src-codex-auth-rs)。
+- 凭据：[CredentialVault](devdesk-adapters/credentials-and-permissions.md#file-src-credentials-rs) 给出不透明引用；macOS 经 [固定签名助手](devdesk-tools/request-protocol.md#file-src-bin-devdesk-credential-helper-rs)，Codex 登录经 [私有认证 worker](devdesk-adapters/credentials-and-permissions.md#file-src-codex-auth-rs)。
 
 安装/物化事实由 [资源回执用例](devdesk-core/session-resources-and-permissions.md#file-src-resource-receipts-rs) 保存。相同版本标签下换了实际内容也不能悄悄替换旧绑定。
 

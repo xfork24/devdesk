@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise signed caller checks across rebuilds without opening Keychain."""
+import argparse
 import hashlib
 import json
 from pathlib import Path
@@ -14,7 +15,10 @@ if sys.platform != "darwin":
     print("SKIP macOS credential helper runtime")
     raise SystemExit(0)
 
-installed = Path.home() / "Library/Application Support/DevDesk/credential-helper/v1"
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--helper-dir', type=Path, default=Path.home() / "Library/Application Support/DevDesk/credential-helper/v1")
+args = parser.parse_args()
+installed = args.helper_dir.resolve()
 helper = installed / "devdesk-credential-helper"
 manifest = installed / "manifest.json"
 before = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in (helper, manifest)}

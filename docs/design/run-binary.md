@@ -64,6 +64,6 @@ sudo ./scripts/platform/linux/install-linux-sandbox-policy.sh --install
 
 安装器只加载 `devdesk-harness-v1`，Host 校验归属、权限与资产摘要；缺失或漂移明确阻塞。默认全权限绑定不要求该嵌套策略。
 
-本页也复制为运行包根目录的 README。包根目录下 `docs/real-engineering.md`、`docs/system-credentials.md`、`docs/permissions.md`、`docs/storage.md` 和 `permissions/README.md` 提供详细操作与边界；`docs/plans/` 是历史记录，不代表当前机器已通过同样验收。
+本页也复制为运行包根目录的 README。包根目录下 `docs/design/real-engineering.md`、`docs/design/system-credentials.md`、`docs/design/permissions.md`、`docs/design/storage.md` 和 `permissions/README.md` 提供详细操作与边界；`docs/plans/` 是历史记录，不代表当前机器已通过同样验收。
 
 开发源码依据：`crates/host/src/main.rs`、`crates/host/src/workspace.rs`、`crates/adapters/src/runtime_preparation.rs`、`crates/adapters/src/credentials_macos.rs`、`scripts/release/package.sh`。

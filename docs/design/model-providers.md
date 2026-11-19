@@ -52,4 +52,4 @@ DevDesk 当前发布 OpenAI/Codex 及 DeepSeek Harness（DSH）的模型配置�
 
 `models.list` 的目录读取、执行安装协议探针和真实推理是不同检查。DSH 路由的本地流式夹具不证明某个真实订阅可用；Ollama 宿主目录读取不证明容器连通或推理成功。当前验收入口见 [真实工程接入](real-engineering.md)，历史结果按对应报告的版本和范围解释。
 
-实现依据：[服务商领域规则](../crates/domain/src/model_provider.rs)、[出厂服务商](../resources/configuration/model-providers/)、[目录查询](../crates/host/src/model_providers.rs)、[DSH 连接与 profile](../crates/adapters/src/model_providers.rs)、[凭据助手检查](../crates/adapters/src/credentials_macos.rs)。
+实现依据：[服务商领域规则](../../crates/domain/src/model_provider.rs)、[出厂服务商](../../resources/configuration/model-providers)、[目录查询](../../crates/host/src/model_providers.rs)、[DSH 连接与 profile](../../crates/adapters/src/model_providers.rs)、[凭据助手检查](../../crates/adapters/src/credentials_macos.rs)。

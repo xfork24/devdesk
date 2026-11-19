@@ -187,4 +187,4 @@ W1 先固定共同合同，W2 是 W3 与 W5 的基础；W4 接入 W3 的统一�
 
 沿用 `source_definitions` 的单一配置存储和既有治理记录，不为展开能力或历史正文增加第二份权威存储。优先使用可兼容的新增引用和记录字段；若实施确需变更 SQLite 基线，显式更新合同并拒绝不兼容数据，不自动迁移、删库或重建。用户当前运行数据和已有未提交改动保持可追溯。
 
-完成后更新 `docs/domain.md`、`docs/source-configuration.md`、`docs/conversations.md`、`docs/tool-skill-integrations.md`、`docs/permissions.md`、`docs/protocol.md` 及相关 Web 说明，使当前文档准确描述实际能力、调用与经验访问路径。
+完成后更新 `docs/design/domain.md`、`docs/design/source-configuration.md`、`docs/design/conversations.md`、`docs/design/tool-skill-integrations.md`、`docs/design/permissions.md`、`docs/design/protocol.md` 及相关 Web 说明，使当前文档准确描述实际能力、调用与经验访问路径。

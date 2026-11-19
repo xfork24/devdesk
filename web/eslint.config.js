@@ -1,7 +1,7 @@
 // Flat-config baseline follows the public Vite react-ts template:
 // @eslint/js recommended + typescript-eslint recommended + react-hooks +
 // react-refresh (src only), with Prettier owning formatting
-// (eslint-config-prettier). See docs/code-standards-web.md for the rules.
+// (eslint-config-prettier). See docs/design/code-standards-web.md for the rules.
 import js from "@eslint/js";
 import globals from "globals";
 import reactHooks from "eslint-plugin-react-hooks";

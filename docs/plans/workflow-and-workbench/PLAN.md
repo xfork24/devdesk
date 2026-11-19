@@ -8,7 +8,7 @@
 
 Scope 统一表达全局、Project 和 Feature 的边界。Workflow、Standard 等配置定义通过不可变修订独立演化，Project 可动态调整默认绑定；Feature 从创建时即冻结所采用的全部配置及依赖版本。Project 后续绑定变化只作用于之后创建的 Feature，已有 Feature 的未执行步骤、新 Task、新 Attempt 和新 Session 均沿用原配置。
 
-默认工作流依据 [架构设计第 14 章](../devdesk-v0.2/PLAN.md#14-典型-feature-开发流程)，结合现有正式交付、评审、TDD 和真实执行契约细化。本文中的目标类型、接口名称和阶段编号用于实施设计，最终协议同步更新到 `docs/domain.md`、`docs/design.md`、`docs/protocol.md` 和 `schemas/`。
+默认工作流依据 [架构设计第 14 章](../devdesk-v0.2/PLAN.md#14-典型-feature-开发流程)，结合现有正式交付、评审、TDD 和真实执行契约细化。本文中的目标类型、接口名称和阶段编号用于实施设计，最终协议同步更新到 `docs/design/domain.md`、`docs/design/design.md`、`docs/design/protocol.md` 和 `schemas/`。
 
 ## 一 已确定的产品行为
 

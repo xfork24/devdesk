@@ -1,6 +1,6 @@
 # 运行时权限
 
-Profile 是文件、网络、工具、审批与平台操作权限的唯一规则来源。Agent/Capability 表示具备的完整能力；实际调用仍须满足选定 Profile 与可信执行边界。Role、任务文字或工具需求不能扩大权限。后端资产与平台矩阵见 [权限后端](../permissions/README.md)。
+Profile 是文件、网络、工具、审批与平台操作权限的唯一规则来源。Agent/Capability 表示具备的完整能力；实际调用仍须满足选定 Profile 与可信执行边界。Role、任务文字或工具需求不能扩大权限。后端资产与平台矩阵见 [权限后端](../../permissions/README.md)。
 
 ## 选择与默认绑定
 
@@ -38,4 +38,4 @@ Harness Profile 的 `policy.platform` 包含 allowed_operations、human_operatio
 
 预设优先使用发行包旁的 resources/configuration/permissions/profiles；无外部目录时从包内资源恢复到数据集的 packaged-permission-presets。自定义来源目录可持久化选择，旧代际与历史修订保留。
 
-实现依据：[Profile 与选择](../crates/domain/src/permission_profile.rs)、[默认步骤 Profile](../resources/configuration/permissions/profiles)、[双层编译](../crates/adapters/src/permission_profiles.rs)、[冻结 codec](../crates/adapters/src/source_views.rs)、[权限切换](../crates/core/src/permission_switch.rs)。
+实现依据：[Profile 与选择](../../crates/domain/src/permission_profile.rs)、[默认步骤 Profile](../../resources/configuration/permissions/profiles)、[双层编译](../../crates/adapters/src/permission_profiles.rs)、[冻结 codec](../../crates/adapters/src/source_views.rs)、[权限切换](../../crates/core/src/permission_switch.rs)。

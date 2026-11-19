@@ -221,7 +221,7 @@ Session 查询可在分页前按 AgentID 过滤，保留历史关联元数据。
 
 HTTP 提供 `/capabilities`、同源会话、JSON-RPC、SSE 和受控 Artifact 访问。远程发现接口不授予会话，目标内核通过连接密钥完成鉴权，Cookie 使用独立端口名称；Host/Origin 保护继续执行。监听所有网卡时需要明确 `--public-url`，连接密钥通过 `DEVDESK_ACCESS_TOKEN` 配置。
 
-前端与直接 RPC 经过同一业务门禁。精确接口及字段见 [协议](../../protocol.md)、[RPC Schema](../../../schemas/rpc.schema.json)。
+前端与直接 RPC 经过同一业务门禁。精确接口及字段见 [协议](../../design/protocol.md)、[RPC Schema](../../../schemas/rpc.schema.json)。
 
 ## 12 Harness 兼容性与验证
 

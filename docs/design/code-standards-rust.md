@@ -13,7 +13,7 @@
 |---|---|
 | `crates/domain` 纯函数层 | 无 I/O、无时钟/随机数/环境读取；错误与合同在此定义 |
 | 依赖方向 | `host → adapters → core → domain`；core 只依赖 `ports.rs` trait，不导入具体适配器 |
-| unsafe 边界 | domain/core/host 源码入口 `#![forbid(unsafe_code)]`；libc 调用只出现在 adapters 与 credential-helper |
+| unsafe 边界 | domain/core/host 源码入口 `#![forbid(unsafe_code)]`；libc 调用只出现在 adapters 与 tools 中的凭据助手 |
 | 副作用协议 | "持久化意图 → 事务外执行 → 核对接纳回执"；不在数据库事务内等待模型/镜像/网络 |
 
 ## 命名
@@ -72,6 +72,6 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 ```
 
-或直接 `./scripts/check/check-style.sh`（见 [脚本索引](../scripts/README.md)）。
+或直接 `./scripts/check/check-style.sh`（见 [脚本索引](../../scripts/README.md)）。
 
-Docker 外部验收由 `tests/entrypoints/native_acceptance.py --docker-only --prepare` 显式执行当前 16 项，缺少镜像或断言失败会使入口失败；E2E CI 使用同一入口并加载已有的命名 Linux 沙箱策略。再传入 `--github-request` 与 `--github-repo`（替换 `--docker-only`）会执行全部 17 项，GitHub 项要求专用仓库的既有 PR 与授权凭据，不由默认 CI 令牌替代。具体参数和证据边界见 [测试索引](../tests/README.md)。
+Docker 外部验收由 `tests/entrypoints/native_acceptance.py --docker-only --prepare` 显式执行当前 16 项，缺少镜像或断言失败会使入口失败；E2E CI 使用同一入口并加载已有的命名 Linux 沙箱策略。再传入 `--github-request` 与 `--github-repo`（替换 `--docker-only`）会执行全部 17 项，GitHub 项要求专用仓库的既有 PR 与授权凭据，不由默认 CI 令牌替代。具体参数和证据边界见 [测试索引](../../tests/README.md)。

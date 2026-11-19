@@ -274,7 +274,7 @@ P2 开始使用独立临时空数据集验证，P7 才切换日常开发数据�
 | Host 与适配器 | `crates/host/src/workspace.rs` 及治理/工具/模板入口；`crates/adapters/src` 的存储、Harness 和工具实现：取消内置身份回退，接入通用运行与工具身份。 |
 | 配置与发布 | `resources/configuration`、模板加载与构建校验、`schemas`、`sql/global/schema.sql`、`sql/project/schema.sql`：采用唯一新合同，移除旧定义。 |
 | Web | Workflow/Delivery/Role/Agent/Project 编辑器、任务预览、实例视图和 `main.tsx`：选项来自定义，按通用执行机制与实际状态展示。 |
-| 验证与文档 | Rust/HTTP/浏览器/真实探针、独立包；更新 `docs/domain.md`、`docs/design.md`、`docs/protocol.md`、运行说明和 Schema 索引。历史计划保留其历史属性。 |
+| 验证与文档 | Rust/HTTP/浏览器/真实探针、独立包；更新 `docs/design/domain.md`、`docs/design/design.md`、`docs/design/protocol.md`、运行说明和 Schema 索引。历史计划保留其历史属性。 |
 
 ## 12 验收标准
 

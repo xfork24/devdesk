@@ -335,7 +335,7 @@ Task 原有 19 步按独立测试、Red 基线、实现与 Green、文档复验�
 | `resources/configuration/` | 新默认 Workflow、项目经理 Skill/Capability/Agent、控制策略和工具资源；保持完整 manifest 引用图 |
 | `web/src/components/WorkflowInstanceView.tsx`、`RoleConversation.tsx`、`WorkflowManager.tsx` | 项目经理入口、计划变更、阶段处置、历史及异常反馈 |
 | `crates/adapters/tests/`、`tests/entrypoints/`、`web/tests/` | 核心合同、跨进程恢复、原生工具桥、浏览器及真实工程回归 |
-| `docs/domain.md`、`protocol.md`、`sql/README.md` 等 | 更新当前合同，原历史计划报告保留其历史范围 |
+| `docs/design/domain.md`、`protocol.md`、`sql/README.md` 等 | 更新当前合同，原历史计划报告保留其历史范围 |
 
 ## 13 数据和协议升级
 

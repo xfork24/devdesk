@@ -1,6 +1,6 @@
 # DevDesk 领域规范
 
-当前 SQLite 基线为 global 24 / project 60。出厂 Workflow、Spec、Standard 的 schema_version 分别记录为 6、3、4，Agent 任务记录 `agent-task/v6`，普通 Proposal 记录 v2；这些记录标签不代替结构与业务校验。只接受当前扁平源结构，不升级旧数据集。完整字段见 [Schema](../schemas/README.md)，编排和运行计划约束见 [工作流与编排](workflow-orchestration.md)。
+当前 SQLite 基线为 global 24 / project 60。出厂 Workflow、Spec、Standard 的 schema_version 分别记录为 6、3、4，Agent 任务记录 `agent-task/v6`，普通 Proposal 记录 v2；这些记录标签不代替结构与业务校验。只接受当前扁平源结构，不升级旧数据集。完整字段见 [Schema](../../schemas/README.md)，编排和运行计划约束见 [工作流与编排](workflow-orchestration.md)。
 
 ## 配置概念
 
@@ -65,7 +65,7 @@ Task 工作副本在依赖完成后才冻结当时的 Feature 代码基线。并
 
 ## 权限与真实证据
 
-Permission 使用完整 v2 profile、确切目标绑定和 `follow_target` / `pinned` 选择。两层策略、执行范围、Tool 和运行后端共同限制实际访问，只能收窄授权；Role 或提示词不能扩大权限。实际运行保存策略、来源、作用域、后端与资产摘要。详见 [权限说明](../permissions/README.md)。
+Permission 使用完整 v2 profile、确切目标绑定和 `follow_target` / `pinned` 选择。两层策略、执行范围、Tool 和运行后端共同限制实际访问，只能收窄授权；Role 或提示词不能扩大权限。实际运行保存策略、来源、作用域、后端与资产摘要。详见 [权限说明](../../permissions/README.md)。
 
 代码输入绑定受管理工作副本、owner、修订、路径和分支。Feature 会话只有在当前冻结任务明确授权时，才可使用其 Task 工作副本。同项目不代表可以任意跨归属读取。目录授权支持安全相对路径，不内置 `tests/` 前缀。
 
@@ -73,7 +73,7 @@ Permission 使用完整 v2 profile、确切目标绑定和 `follow_target` / `pi
 
 ## 存储与经验
 
-全局目录和共享配置位于 `global.sqlite3`；每个项目使用独立 `engineering.sqlite3` 与 Artifact 根。配置的唯一存储为 `source_definitions`，内存中解析为 `ConfigurationRecord`；`governance_records` 保存计划采用、控制、变更、决定、意图和回执等事实。数据库和领域规则共同保护不可变修订、请求及终态回执。具体结构见 [SQL 说明](../sql/README.md)。
+全局目录和共享配置位于 `global.sqlite3`；每个项目使用独立 `engineering.sqlite3` 与 Artifact 根。配置的唯一存储为 `source_definitions`，内存中解析为 `ConfigurationRecord`；`governance_records` 保存计划采用、控制、变更、决定、意图和回执等事实。数据库和领域规则共同保护不可变修订、请求及终态回执。具体结构见 [SQL 说明](../../sql/README.md)。
 
 全局讨论单独保存于 `conversations/global/engineering.sqlite3`，不创建占位 Project。经验是带来源的只读历史材料，跨项目读取不切换活动工程、不启动源 worker，也不覆盖当前代码、配置或产物。
 
@@ -103,4 +103,4 @@ Project 默认、Feature 和 Task 通过通用采用关系引用它。同一 Fea
 
 运行计划固定当时的 Standard。规范变更通过同一 ChangeSet 预演并原子切换，旧执行、输入、产物、计划及原生任务仍引用原 Standard。快照相同只表示定义相同，实际检查、豁免、测试和 Git 回执继续作为运行事实记录。
 
-实现依据：[Workflow 与检查报告](../crates/domain/src/workflow.rs)、[源定义](../crates/domain/src/source.rs)、[Standard](../crates/domain/src/standards.rs)、[Workflow 调度配置](../crates/domain/src/workflow_driver.rs)、[编排身份](../crates/domain/src/orchestration.rs)。
+实现依据：[Workflow 与检查报告](../../crates/domain/src/workflow.rs)、[源定义](../../crates/domain/src/source.rs)、[Standard](../../crates/domain/src/standards.rs)、[Workflow 调度配置](../../crates/domain/src/workflow_driver.rs)、[编排身份](../../crates/domain/src/orchestration.rs)。

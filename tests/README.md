@@ -101,6 +101,8 @@ python3 tests/live/probe_streamlined_workflow.py --binary target/release/devdesk
 
 macOS 凭据助手专项入口为 `tests/entrypoints/credential_helper_startup.py` 与 `credential_helper_runtime.py`；它们使用隔离签名探针，不读取或保存模型凭据，不替换共享助手。Linux Secret Service 与权限后端须在 Linux 实机单独验证。
 
+两个入口均支持 `--helper-dir <目录>`，可验证 `scripts/platform/macos/install-macos-credential-helper.sh --bundle <目录>` 从 `devdesk-tools` 构建的签名助手及清单，省略时验证当前用户已安装的助手。
+
 日志、JSON/JSONL、截图和临时脚本写入临时目录；计划目录只保留 Markdown 计划、合同和执行报告。
 
 Harness 编排回归：`crates/adapters/tests/orchestration.rs` 验证显式驱动、版本、替代材料、绕过、有界委托和真实原生调用来源（Harness 端口夹具）。`tests/entrypoints/dataset_protocol.py` 验证拒绝旧数据协议且不改写源数据。

@@ -146,7 +146,7 @@ Rust 修改限于 core 查询、必要路由装配及协议文档；不修改业
 | P3：按 Agent 的上下文 | 实现当前范围只读索引、Agent 目录和选中任务/轮次详情；接入冻结任务及共享手工背景 | 同名实例不混淆，无关会话不混入；默认只读选中 Agent 的上下文；材料、讨论可精确定位 |
 | P4：收敛流程与检查 | 按单次执行建设记录阅读页；移走流程页内嵌正文和快照；保留管理操作，完成跨 tab 跳转及前端核对 | 工作流程两级均以管理为主，执行记录可追溯某一次执行；各页组织与正文归属清楚，状态、操作和权限规则保持 |
 
-预期文件落点：`web/src/main.tsx`、`RoleConversation.tsx`、`WorkflowTaskPreview.tsx`、`DeliveryContent.tsx`、`WorkflowMaterials.tsx`、`WorkflowInstanceView.tsx`、必要的 `WorkflowController.tsx` 展示部分及样式；新增上下文、执行记录和原始阅读组件。Rust 仅触及相关查询模块；实施后同步 `docs/protocol.md`、`docs/workflow-orchestration.md`、`docs/conversations.md` 的现行行为说明。
+预期文件落点：`web/src/main.tsx`、`RoleConversation.tsx`、`WorkflowTaskPreview.tsx`、`DeliveryContent.tsx`、`WorkflowMaterials.tsx`、`WorkflowInstanceView.tsx`、必要的 `WorkflowController.tsx` 展示部分及样式；新增上下文、执行记录和原始阅读组件。Rust 仅触及相关查询模块；实施后同步 `docs/design/protocol.md`、`docs/design/workflow-orchestration.md`、`docs/design/conversations.md` 的现行行为说明。
 
 不借此重写整套工作台，不修改配置编辑器的 JSON 编辑能力，不为 UI 显示增加模型摘要或更改任何业务确认条件。
 

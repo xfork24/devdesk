@@ -4,7 +4,7 @@ macOS 与 Linux 使用相同 Web/Rust 工程接口；没有依赖 macOS 原生�
 
 ## Permission 与凭据信任范围
 
-默认绑定使用 v2 权限档案 `builtin-permission-harness-full-access` 与 `builtin-permission-sandbox-full-access`（见 [运行时权限](permissions.md)），将整个 Harness 容器视为信任范围，同容器工具可以访问该执行的模型凭据和运行状态。宿主系统凭据库、其他项目和未挂载路径仍在容器外。Permission 审批与操作系统凭据授权分开：选择 `never` 不会授予 Keychain 或 Secret Service 权限。受限后端的状态隔离必须由实际执行器落实，能力和假凭据验证见 [权限后端](../permissions/README.md) 与 [执行报告](plans/permission-standardization/EXECUTION.md)。
+默认绑定使用 v2 权限档案 `builtin-permission-harness-full-access` 与 `builtin-permission-sandbox-full-access`（见 [运行时权限](permissions.md)），将整个 Harness 容器视为信任范围，同容器工具可以访问该执行的模型凭据和运行状态。宿主系统凭据库、其他项目和未挂载路径仍在容器外。Permission 审批与操作系统凭据授权分开：选择 `never` 不会授予 Keychain 或 Secret Service 权限。受限后端的状态隔离必须由实际执行器落实，能力和假凭据验证见 [权限后端](../../permissions/README.md) 与 [执行报告](../plans/permission-standardization/EXECUTION.md)。
 
 ## macOS：固定凭据助手
 
@@ -49,4 +49,4 @@ macOS 开发入口 `scripts/dev/dev.sh` 通过 `scripts/dev/run-host.py` 从私�
 
 DeepSeek、`zai-coding-cn`、`minimax-cn` 使用独立账号命名空间和当前引用，读取时校验数据集及服务商。DeepSeek 使用显式 UUID 凭据引用，未配置时不探测旧固定账号；换 key 不覆盖已冻结执行的引用。Ollama 本地服务免密，不创建 vault 条目。macOS 只接受协议版本 2 的助手，升级步骤见 [模型服务商](model-providers.md)；打包仅构建随包助手，不修改本机共享安装。
 
-实现依据：[凭据库](../crates/adapters/src/credentials.rs)、[macOS 助手校验](../crates/adapters/src/credentials_macos.rs)、[助手程序](../crates/credential-helper/src/main.rs)、[稳定运行副本](../scripts/dev/run-host.py)。
+实现依据：[凭据库](../../crates/adapters/src/credentials.rs)、[macOS 助手校验](../../crates/adapters/src/credentials_macos.rs)、[助手程序](../../crates/tools/src/bin/devdesk-credential-helper.rs)、[稳定运行副本](../../scripts/dev/run-host.py)。

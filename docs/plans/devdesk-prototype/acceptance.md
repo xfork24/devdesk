@@ -47,7 +47,7 @@
 
 ## 运行包
 
-`./scripts/release/package.sh` 从锁定依赖构建，生成本机目标的 `.tar.gz` 和 `.sha256`。本轮 macOS 交付为 `dist/devdesk-0.2.0-aarch64-apple-darwin.tar.gz`，含独立可执行程序、运行说明、演示及验收文档。构建后运行无需 Node/Rust 或源码；`otool -L` 只列出系统 libiconv 和 libSystem。详情见 [运行包说明](../../run-binary.md)。
+`./scripts/release/package.sh` 从锁定依赖构建，生成本机目标的 `.tar.gz` 和 `.sha256`。本轮 macOS 交付为 `dist/devdesk-0.2.0-aarch64-apple-darwin.tar.gz`，含独立可执行程序、运行说明、演示及验收文档。构建后运行无需 Node/Rust 或源码；`otool -L` 只列出系统 libiconv 和 libSystem。详情见 [运行包说明](../../design/run-binary.md)。
 
 ## 已知限制与下一轮边界
 

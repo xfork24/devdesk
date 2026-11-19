@@ -6,13 +6,13 @@
 
 ## 本页文件
 
-- [src/main.rs](#file-src-main-rs)：严格命名空间、签名调用者和单次 Keychain 操作
+- [src/bin/devdesk-credential-helper.rs](#file-src-bin-devdesk-credential-helper-rs)：严格命名空间、签名调用者和单次 Keychain 操作
 
-<a id="file-src-main-rs"></a>
+<a id="file-src-bin-devdesk-credential-helper-rs"></a>
 
-## src/main.rs：严格命名空间、签名调用者和单次 Keychain 操作
+## src/bin/devdesk-credential-helper.rs：严格命名空间、签名调用者和单次 Keychain 操作
 
-源码：[crates/credential-helper/src/main.rs](../../../crates/credential-helper/src/main.rs)。
+源码：[crates/tools/src/bin/devdesk-credential-helper.rs](../../../crates/tools/src/bin/devdesk-credential-helper.rs)。
 
 Request 使用 deny_unknown_fields，字段为 operation、service、account 和可选 secret。service 必须为 devdesk. 加 64 位小写十六进制摘要；account 只接受 deepseek-api-key-、dsh-zai-coding-cn-api-key-、dsh-minimax-cn-api-key-、integration-key- 加 UUID 形状，不能指定任意系统账户。
 
@@ -24,7 +24,7 @@ Keychain 无条目映射 credentials_required，需要交互/认证或用户取�
 
 包内测试核对账户白名单、外来 service、额外 secret 拒绝；macOS 另检查禁止交互 guard 的恢复行为。签名和安装两端的关系见 [签名与 Keychain](signing-and-keychain.md)。
 
-代码定位：[`Request`](../../../crates/credential-helper/src/main.rs#L12)、[`valid_account`](../../../crates/credential-helper/src/main.rs#L19)、[`validate`](../../../crates/credential-helper/src/main.rs#L41)、[`authorized_parent`](../../../crates/credential-helper/src/main.rs#L61)、[`execute`](../../../crates/credential-helper/src/main.rs#L81)、[`run`](../../../crates/credential-helper/src/main.rs#L132)。
+代码定位：[`Request`](../../../crates/tools/src/bin/devdesk-credential-helper.rs#L12)、[`valid_account`](../../../crates/tools/src/bin/devdesk-credential-helper.rs#L19)、[`validate`](../../../crates/tools/src/bin/devdesk-credential-helper.rs#L41)、[`authorized_parent`](../../../crates/tools/src/bin/devdesk-credential-helper.rs#L61)、[`execute`](../../../crates/tools/src/bin/devdesk-credential-helper.rs#L81)、[`run`](../../../crates/tools/src/bin/devdesk-credential-helper.rs#L132)。
 
 关联阅读：[adapters/src/credentials.rs](../devdesk-adapters/credentials-and-permissions.md#file-src-credentials-rs)、[adapters/src/credentials_macos.rs](../devdesk-adapters/credentials-and-permissions.md#file-src-credentials-macos-rs)。
 

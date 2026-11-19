@@ -56,8 +56,8 @@ main 补充实施与本地验收已完成：原报告包含未完成验收和未
 
 ## 四、代码规范文档（待办）
 
-- `docs/code-standards-rust.md`：基线（rustfmt 默认 = Rust Style Guide、clippy::all）；命名（引 Rust API Guidelines）；固化惯例——`//!` 单行英文模块契约、注释英文/用户文案中文、domain `Error(code,message)` 与 snake_case 错误码、serde 只用 snake_case + `deny_unknown_fields` + 显式 default、`ok_or_else`/`let-else`/crate 内 wildcard import、测试命名陈述不变量 + `#[ignore] "理由"`、domain/core/host 禁 unsafe、定点 allow + 理由注释的豁免协议
-- `docs/code-standards-web.md`：基线（ESLint flat + ts-eslint recommended + react-hooks + Prettier 默认，引 typescript-eslint/Prettier 官方文档）；命名（新组件 PascalCase、非组件工具 kebab-case，存量不改名）；函数组件 + 具名导出 + `type Props`；type alias 优先、禁 enum、`Row`/`Request` 唯一 any 豁免；hooks 模式（generation ref 防竞态、useSyncExternalStore）；全局 CSS + kebab 类名 + 禁 inline style；rpc() 统一请求、mutation busy/error 协议、`void` 浮动 promise、禁逗号运算符语句；测试中文标题 + flat 结构 + getByRole；警告（exhaustive-deps 等）为建议级，PR 审查应关注新增
+- `docs/design/code-standards-rust.md`：基线（rustfmt 默认 = Rust Style Guide、clippy::all）；命名（引 Rust API Guidelines）；固化惯例——`//!` 单行英文模块契约、注释英文/用户文案中文、domain `Error(code,message)` 与 snake_case 错误码、serde 只用 snake_case + `deny_unknown_fields` + 显式 default、`ok_or_else`/`let-else`/crate 内 wildcard import、测试命名陈述不变量 + `#[ignore] "理由"`、domain/core/host 禁 unsafe、定点 allow + 理由注释的豁免协议
+- `docs/design/code-standards-web.md`：基线（ESLint flat + ts-eslint recommended + react-hooks + Prettier 默认，引 typescript-eslint/Prettier 官方文档）；命名（新组件 PascalCase、非组件工具 kebab-case，存量不改名）；函数组件 + 具名导出 + `type Props`；type alias 优先、禁 enum、`Row`/`Request` 唯一 any 豁免；hooks 模式（generation ref 防竞态、useSyncExternalStore）；全局 CSS + kebab 类名 + 禁 inline style；rpc() 统一请求、mutation busy/error 协议、`void` 浮动 promise、禁逗号运算符语句；测试中文标题 + flat 结构 + getByRole；警告（exhaustive-deps 等）为建议级，PR 审查应关注新增
 
 ## 五、GitHub Actions（待办）
 
