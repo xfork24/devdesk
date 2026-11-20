@@ -10,11 +10,17 @@
 
 版本推进需要核对候选提交、父提交、diff 和目标是否仍为预期值。命令退出码正常，不足以证明返回的仓库就是原请求的工作区。
 
+[git_diff.rs](../../../crates/adapters/src/git_diff.rs) 在展开补丁前读取完整的 Git 文件清单与对象大小。超过内联预算时保留全部路径和对象身份，返回 `patch_complete: false` 的有界摘要；它不能被当作完整补丁。快照只处理当前仓库的可暂存内容，忽略规则和新增文件大小检查将运行依赖挡在提交前，已跟踪的文件不会被静默删除。
+
 ## 真实测试
 
 [tests.rs](../../../crates/adapters/src/tests.rs) 是生产 CommandTests 实现。它在 Docker 中运行 TestRequest 指定的测试，提供 poll、stop、cleanup、inspect/reconcile 等能力。测试报告关联候选版本、环境和实际运行。
 
 [git_test_configuration.rs](../../../crates/adapters/src/git_test_configuration.rs) 读取项目测试配置。测试安装、命令、代码输入和产物都要关联原请求；不能让模型返回一段“测试通过”替代运行结果。
+
+[verify_project_regression.py](../../../tests/live/verify_project_regression.py) 只读核对完整交付：冻结原合同、确切 Human 签核、独立 Red/Green、每个 Task/Feature 的源与合并候选回归、测试文件与 Git 内容一致、PR 合入和目标同步、原生 worker 回收。配置为空、测试跳过或零用例不能算回归通过。`--unassisted` 还拒绝额外维护输入、运行时计划修补和普通签核以外的人工控制；[workflow_benchmark.py](../../../tests/live/workflow_benchmark.py) 仅为满足该条件的已完成流程导出时序、执行、Token 和本地查询样本，不代签或推进流程。
+
+跨步骤补充证据须使用 `workflow.outputs.read` 返回的确切 `input_ref`，在接收步骤等待输入时作为 `workflow.step.input.input` 原样转交。把 ID 或引用字符串放进说明、常量 JSON 或引用列表不会授予读取原件的权限。授权按单个来源、字段、摘要及原执行绑定，不能用转交材料代替 Human 决定。
 
 ## 远端交付
 

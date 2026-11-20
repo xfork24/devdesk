@@ -807,6 +807,14 @@ impl Engine {
             ReconciliationFact::WorkspaceContinuation { .. } => unreachable!(),
         }
         if next.status != StepExecutionStatus::NeedsReconciliation {
+            if !matches!(
+                next.status,
+                StepExecutionStatus::Failed | StepExecutionStatus::Cancelled
+            ) {
+                // Positive, provenance-checked results resolve the old unknown
+                // effect. Retaining it would block rework after recovery.
+                next.failure = None;
+            }
             next.runtime_context
                 .as_object_mut()
                 .map(|o| o.remove("reconciliation_request_id"));

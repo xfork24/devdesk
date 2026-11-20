@@ -437,7 +437,17 @@ fn status(
     let mut steps = vec![];
     let mut step_revisions = BTreeMap::new();
     for (body, version) in raw {
-        let step: Value = serde_json::from_str(&body).map_err(storage)?;
+        let mut step: Value = serde_json::from_str(&body).map_err(storage)?;
+        if step["status"] == "needs_reconciliation" {
+            let latest: Option<String> = conn.query_row(
+                "SELECT json_object('id',id,'status',json_extract(data,'$.status'),'error',CASE WHEN json_type(data,'$.error')='object' THEN json_object('code',json_extract(data,'$.error.code'),'message',substr(json_extract(data,'$.error.message'),1,2048)) ELSE NULL END) FROM governance_records WHERE type='workflow_reconciliation' AND owner_project=?1 AND definition_id=?2 AND json_extract(data,'$.instance_id')=?3 ORDER BY rowid DESC LIMIT 1",
+                params![project, step["id"].as_str(), id],
+                |r| r.get(0),
+            ).optional().map_err(storage)?;
+            if let Some(latest) = latest {
+                step["reconciliation"] = serde_json::from_str(&latest).map_err(storage)?;
+            }
+        }
         step_revisions.insert(
             step["id"]
                 .as_str()

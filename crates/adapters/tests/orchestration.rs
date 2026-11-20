@@ -2771,6 +2771,277 @@ fn revising_one_child_preserves_its_sibling_and_parent_output_contract() {
 }
 
 #[test]
+fn accepting_a_proven_legacy_result_clears_the_resolved_unknown_effect() {
+    use devdesk_core::concurrency::*;
+    let directory = tempfile::tempdir().unwrap();
+    let e = engine(directory.path());
+    let mut doc = document();
+    doc["steps"].as_array_mut().unwrap().truncate(1);
+    let root = start(&e, doc);
+    cmd(
+        &e,
+        "workflow.step.dispatch",
+        Some(&root),
+        json!({"step":"one"}),
+    )
+    .unwrap();
+    let view = runtime(&e, &root);
+    let driver = e
+        .query("query.workflow_driver", &json!({"id":root}), 4)
+        .unwrap();
+    let waiting = driver["waiting"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["execution_id"] == view["runtime"]["steps"][0]["id"])
+        .unwrap();
+    assert_eq!(waiting["actions"]["accept"]["allowed"], true);
+    assert_eq!(
+        waiting["input_digest"],
+        view["runtime"]["steps"][0]["input_digest"]
+    );
+    assert_eq!(waiting["outputs"], view["runtime"]["steps"][0]["outputs"]);
+    let key = ResourceKey::new(
+        "workflow_step",
+        json!([root, view["runtime"]["steps"][0]["id"]]).to_string(),
+    );
+    let row = e
+        .store
+        .read_resources(std::slice::from_ref(&key))
+        .unwrap()
+        .remove(0);
+    let mut value = row.value.unwrap();
+    assert_eq!(value["status"], "awaiting_acceptance");
+    value["reason"] = json!("原工具副作用需要核对");
+    value["failure"] = json!({"code":"result_unknown","kind":"unknown","effect":"unknown","message":"原工具副作用需要核对","source_ref":"legacy"});
+    e.store
+        .commit_changes(&PreparedChangeSet {
+            command_id: id(),
+            fingerprint: id(),
+            read_set: ReadSet::new(vec![ResourceVersion {
+                resource: key.clone(),
+                revision: row.revision,
+            }])
+            .unwrap(),
+            changes: vec![ResourceChange {
+                resource: key,
+                value,
+            }],
+            result: Value::Null,
+            time: 1,
+        })
+        .unwrap();
+    accept(&e, &root, "one");
+    let state = e.store.snapshot().unwrap();
+    let step = &state.configuration(&root).unwrap().data["steps"][0];
+    assert_eq!(step["status"], "completed");
+    assert!(step["failure"].is_null());
+    assert_ne!(step["reason"], "原工具副作用需要核对");
+}
+
+#[test]
+fn workflow_status_includes_the_latest_exact_reconciliation_failure() {
+    use devdesk_core::concurrency::*;
+    let directory = tempfile::tempdir().unwrap();
+    let e = engine(directory.path());
+    let mut doc = document();
+    doc["steps"].as_array_mut().unwrap().truncate(1);
+    let root = start(&e, doc);
+    let state = e.store.snapshot().unwrap();
+    let record = state.configuration(&root).unwrap();
+    let execution = record.data["steps"][0]["id"].as_str().unwrap();
+    let key = ResourceKey::new("workflow_step", json!([root, execution]).to_string());
+    let selected = e
+        .store
+        .read_resources(std::slice::from_ref(&key))
+        .unwrap()
+        .remove(0);
+    let mut value = selected.value.unwrap();
+    value["status"] = json!("needs_reconciliation");
+    let mut reconciliation = record.clone();
+    reconciliation.id = id();
+    reconciliation.r#type = "workflow_reconciliation".into();
+    reconciliation.definition_id = execution.into();
+    reconciliation.revision = 1;
+    reconciliation.refs.clear();
+    reconciliation.data = json!({"instance_id":root,"execution_id":execution,"status":"unresolved","error":{"code":"git_output_limit","message":"Git diff 输出超过 1 MiB"}});
+    reconciliation.content_hash = content_digest(&reconciliation.refs, &reconciliation.data);
+    let request = ResourceKey::new("governance", &reconciliation.id);
+    e.store
+        .commit_changes(&PreparedChangeSet {
+            command_id: id(),
+            fingerprint: id(),
+            read_set: ReadSet::new(vec![
+                ResourceVersion {
+                    resource: key.clone(),
+                    revision: selected.revision,
+                },
+                ResourceVersion {
+                    resource: request.clone(),
+                    revision: 0,
+                },
+            ])
+            .unwrap(),
+            changes: vec![
+                ResourceChange {
+                    resource: key,
+                    value,
+                },
+                ResourceChange {
+                    resource: request,
+                    value: reconciliation.to_storage(),
+                },
+            ],
+            result: Value::Null,
+            time: 1,
+        })
+        .unwrap();
+    let view = e
+        .query(
+            "query.workflow_instance",
+            &json!({"id":root,"view":"status"}),
+            4,
+        )
+        .unwrap();
+    let latest = &view["runtime"]["steps"][0]["reconciliation"];
+    assert_eq!(latest["id"], reconciliation.id);
+    assert_eq!(latest["status"], "unresolved");
+    assert_eq!(latest["error"]["code"], "git_output_limit");
+    assert_eq!(latest["error"]["message"], "Git diff 输出超过 1 MiB");
+}
+
+#[test]
+fn delegated_progress_racing_with_rule_facts_is_retryable_and_completes_once() {
+    use devdesk_core::concurrency::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    // Commit real automatic progress precisely between the instance snapshot
+    // and its rule-fact read. No Human command or external effect runs here.
+    struct ProgressRace {
+        inner: Arc<dyn EngineeringStore>,
+        writer: Engine,
+        key: ResourceKey,
+        reads: AtomicUsize,
+    }
+    impl EngineeringStore for ProgressRace {
+        fn root(&self) -> String {
+            self.inner.root()
+        }
+        fn project_id(&self) -> Option<String> {
+            self.inner.project_id()
+        }
+        fn snapshot(&self) -> Result<EngineeringState> {
+            panic!("a scheduling stage must use bounded resource reads")
+        }
+        fn configuration_snapshot(&self) -> Result<Arc<ConfigurationCatalogSnapshot>> {
+            self.inner.configuration_snapshot()
+        }
+        fn runtime_record_page_at(
+            &self,
+            kind: &str,
+            status: &str,
+            after: Option<&str>,
+            clock: &ExecutionClockAnchor,
+        ) -> Result<devdesk_core::tool_calls::ToolCallPage> {
+            self.inner
+                .runtime_record_page_at(kind, status, after, clock)
+        }
+        fn restore_runtime_record(&self, value: &Value) -> Result<Value> {
+            self.inner.restore_runtime_record(value)
+        }
+        fn encode_runtime_value(&self, value: &Value) -> Result<Value> {
+            self.inner.encode_runtime_value(value)
+        }
+        fn read_resources(&self, keys: &[ResourceKey]) -> Result<Vec<ResourceSnapshot>> {
+            if keys == std::slice::from_ref(&self.key)
+                && self.reads.fetch_add(1, Ordering::SeqCst) == 1
+            {
+                self.writer
+                    .run_scheduling_stage(SchedulingStage::Segments, 0, &|| false)?;
+            }
+            self.inner.read_resources(keys)
+        }
+    }
+
+    let directory = tempfile::tempdir().unwrap();
+    let mut e = engine(directory.path());
+    let mut doc = document();
+    doc["steps"].as_array_mut().unwrap().truncate(1);
+    let root = start(&e, doc);
+    let grant = cmd(
+        &e,
+        "workflow.segment.dispatch",
+        Some(&root),
+        json!({"steps":["one"],"reason":"自动推进单个控制节点"}),
+    )
+    .unwrap();
+    let execution = runtime(&e, &root)["runtime"]["steps"][0]["id"].clone();
+    let inner = e.store.clone();
+    let writer = Engine::new(
+        inner.clone(),
+        Arc::new(FileArtifacts::new(directory.path().into())),
+        runtime::adapters(),
+    );
+    e.store = Arc::new(ProgressRace {
+        inner: inner.clone(),
+        writer,
+        key: ResourceKey::new("workflow_step", json!([root, execution]).to_string()),
+        reads: AtomicUsize::new(0),
+    });
+    let error = e
+        .run_scheduling_stage(SchedulingStage::Segments, 0, &|| false)
+        .unwrap_err();
+    assert!(error.retryable_conflict(), "{error:?}");
+    let details = &error.context[0].details;
+    assert_eq!(details["workflow_instance_id"], root);
+    assert_eq!(details["referenced_execution_id"], execution);
+    assert_eq!(details["changed_fields"]["status"]["expected"], "queued");
+    assert_eq!(
+        details["changed_fields"]["status"]["actual"],
+        "awaiting_acceptance"
+    );
+    assert_eq!(
+        inner
+            .snapshot()
+            .unwrap()
+            .configuration(grant["id"].as_str().unwrap())
+            .unwrap()
+            .data["status"],
+        "active"
+    );
+
+    // The next scheduling attempt rereads current facts. It keeps the same
+    // grant and execution and does not repeat the already committed dispatch.
+    e.store = inner;
+    for _ in 0..4 {
+        e.run_scheduling_stage(SchedulingStage::Segments, 0, &|| false)
+            .unwrap();
+    }
+    let state = e.store.snapshot().unwrap();
+    let instance = state.configuration(&root).unwrap();
+    assert_eq!(instance.data["steps"][0]["id"], execution);
+    assert_eq!(instance.data["steps"][0]["status"], "completed");
+    assert_eq!(
+        state
+            .configuration(grant["id"].as_str().unwrap())
+            .unwrap()
+            .data["status"],
+        "completed"
+    );
+    for kind in ["workflow.step.dispatch", "workflow.step.accept"] {
+        assert_eq!(
+            state
+                .events
+                .iter()
+                .filter(|event| event.kind == kind && event.target == root)
+                .count(),
+            1,
+            "automatic recovery must not duplicate {kind}"
+        );
+    }
+}
+
+#[test]
 fn delegated_human_execution_waits_for_an_exact_signature_across_reopen() {
     let directory = tempfile::tempdir().unwrap();
     let e = engine(directory.path());

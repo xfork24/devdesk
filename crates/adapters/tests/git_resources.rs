@@ -29,6 +29,148 @@ fn git(path: &Path, args: &[&str]) -> String {
 }
 
 #[test]
+fn snapshots_keep_source_and_evidence_ignore_runtime_dependencies_and_bound_large_diffs() {
+    let directory = tempfile::tempdir().unwrap();
+    let project = id();
+    let repo = directory
+        .path()
+        .join("projects")
+        .join(&project)
+        .join("repository");
+    fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-b", "main"]);
+    fs::write(repo.join("source.txt"), "original\n").unwrap();
+    fs::write(repo.join(".gitignore"), "local-cache/\n").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-m", "baseline"]);
+    let base = git(&repo, &["rev-parse", "HEAD"]);
+    let adapter = CliGit::new(directory.path()).unwrap();
+    let owner = id();
+    let work = adapter
+        .prepare_worktree(&project, &owner, "tasks", &base, &id())
+        .unwrap();
+    let context = GitContext {
+        project: project.clone(),
+        workspace: Workspace {
+            repository: "fixture/local".into(),
+            path: fs::canonicalize(&repo).unwrap().to_string_lossy().into(),
+            mainline: "main".into(),
+        },
+        source: CodeLocation {
+            owner,
+            branch: work.branch,
+            worktree: work.path.clone(),
+        },
+        target: CodeLocation {
+            owner: project,
+            branch: "main".into(),
+            worktree: repo.to_string_lossy().into(),
+        },
+        origin: Origin::External,
+    };
+    let path = Path::new(&work.path);
+    let evidence = path.join("evidence/.devdesk/task");
+    for subdir in [
+        "browsers",
+        "npm-cache",
+        "node_modules",
+        "sysroot",
+        "apt",
+        "deps",
+    ] {
+        fs::create_dir_all(evidence.join(subdir)).unwrap();
+        fs::write(
+            evidence.join(subdir).join("runtime.bin"),
+            vec![0; 1024 * 1024],
+        )
+        .unwrap();
+    }
+    fs::create_dir_all(path.join("local-cache")).unwrap();
+    fs::write(path.join("local-cache/runtime"), "ignored by project").unwrap();
+    #[cfg(unix)]
+    {
+        let runtime = directory.path().join("external-runtime");
+        fs::create_dir_all(&runtime).unwrap();
+        fs::write(runtime.join("package.js"), "external dependency").unwrap();
+        std::os::unix::fs::symlink(&runtime, path.join("node_modules")).unwrap();
+    }
+    fs::write(path.join("source.txt"), "updated source\n").unwrap();
+    fs::write(path.join("new-source.txt"), "new code\n").unwrap();
+    fs::write(
+        evidence.join("acceptance.md"),
+        "observed acceptance evidence\n",
+    )
+    .unwrap();
+    fs::write(evidence.join("screen.png"), [0, 1, 2, 3]).unwrap();
+    // A legitimate large tracked file stays in Git; only patch expansion is bounded.
+    fs::write(
+        path.join("large.txt"),
+        "large source line\n".repeat(150_000),
+    )
+    .unwrap();
+    let operation = id();
+    let head = adapter
+        .snapshot_worktree(&context, &base, &operation)
+        .unwrap();
+    let files = git(path, &["ls-tree", "-r", "--name-only", &head]);
+    for name in [
+        "source.txt",
+        "new-source.txt",
+        "acceptance.md",
+        "screen.png",
+        "large.txt",
+    ] {
+        assert!(files.contains(name), "{files}");
+    }
+    assert!(!files.contains("runtime.bin"));
+    assert!(!files.contains("local-cache"));
+    assert!(!files.lines().any(|name| name == "node_modules"));
+    assert!(
+        evidence.join("browsers/runtime.bin").is_file(),
+        "ignoring a cache must not delete it"
+    );
+    assert!(git(path, &["status", "--porcelain"]).is_empty());
+    let report = adapter.diff(&context, &base, &head).unwrap();
+    assert!(report.contains("patch_complete: false"));
+    assert!(report.contains("large.txt"));
+    assert!(report.contains("+updated source"));
+    assert!(report.contains("+new code"));
+    assert!(report.contains("+observed acceptance evidence"));
+    assert!(!report.contains("runtime.bin"));
+    assert!(report.len() < 1024 * 1024);
+    assert_eq!(
+        adapter
+            .snapshot_worktree(&context, &base, &operation)
+            .unwrap(),
+        head
+    );
+    adapter.validate_view(&context, &head).unwrap();
+    fs::write(path.join("intentional-asset.bin"), vec![0; 9 * 1024 * 1024]).unwrap();
+    let rejected = adapter
+        .snapshot_worktree(&context, &head, &id())
+        .unwrap_err();
+    assert_eq!(rejected.code, "snapshot_source_limit");
+    assert_eq!(
+        rejected.execution_failure.unwrap().effect,
+        ExecutionFailureEffect::NotApplied
+    );
+    assert_eq!(git(path, &["rev-parse", "HEAD"]), head);
+    assert!(git(path, &["diff", "--cached", "--name-only"]).is_empty());
+    let declared = adapter
+        .snapshot_worktree_scoped(
+            &context,
+            &head,
+            &id(),
+            &[".".into(), "intentional-asset.bin".into()],
+            &[],
+        )
+        .unwrap();
+    assert!(
+        git(path, &["ls-tree", "-r", "--name-only", &declared]).contains("intentional-asset.bin")
+    );
+}
+
+#[test]
 fn native_continuation_preserves_exact_pending_work_and_rejects_other_writers_or_content() {
     use serde_json::json;
     let root = tempfile::tempdir().unwrap();

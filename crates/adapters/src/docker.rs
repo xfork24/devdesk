@@ -11,6 +11,53 @@ pub enum ContainerPurpose {
     Tests,
 }
 
+fn runtime_environment() -> Vec<String> {
+    // A separate executable bind mount underneath /tmp is visible to native
+    // tool sandboxes, which deliberately hide /state and /run/devdesk.
+    let root = WORKSPACE_RUNTIME_DIRECTORY;
+    let mut values = vec![
+        "DEVDESK_SOURCE_DIR=/work".into(),
+        format!("DEVDESK_RUNTIME_DIR={root}"),
+        format!("DEVDESK_RUNTIME_CACHE={root}/shared"),
+    ];
+    for (name, directory) in [
+        ("XDG_CACHE_HOME", "cache/xdg"),
+        ("XDG_CONFIG_HOME", "config"),
+        ("XDG_DATA_HOME", "data"),
+        ("npm_config_cache", "cache/npm"),
+        ("npm_config_prefix", "node"),
+        ("NODE_PATH", "node/node_modules"),
+        ("PLAYWRIGHT_BROWSERS_PATH", "shared/browsers"),
+        ("PIP_CACHE_DIR", "cache/pip"),
+        ("PIP_TARGET", "python/site-packages"),
+        ("PYTHONPATH", "python/site-packages"),
+        ("UV_CACHE_DIR", "cache/uv"),
+        ("UV_PROJECT_ENVIRONMENT", "python/venv"),
+        ("WORKON_HOME", "virtualenvs"),
+        ("POETRY_CACHE_DIR", "poetry-cache"),
+        ("POETRY_VIRTUALENVS_PATH", "virtualenvs"),
+        ("CARGO_HOME", "cargo"),
+        ("CARGO_TARGET_DIR", "cargo-target"),
+        ("GOPATH", "go"),
+        ("GOMODCACHE", "cache/go-mod"),
+        ("GOCACHE", "cache/go-build"),
+        ("GRADLE_USER_HOME", "gradle"),
+        ("BUNDLE_PATH", "ruby/bundle"),
+        ("NUGET_PACKAGES", "shared/nuget"),
+        ("DOTNET_CLI_HOME", "dotnet"),
+        ("HF_HOME", "models"),
+        ("HF_HUB_CACHE", "cache/models/hub"),
+        ("HF_ASSETS_CACHE", "cache/models/assets"),
+        ("TORCH_HOME", "cache/torch"),
+    ] {
+        values.push(format!("{name}={root}/{directory}"));
+    }
+    values.push(format!("MAVEN_OPTS=-Dmaven.repo.local={root}/shared/maven"));
+    values.push("PIPENV_VENV_IN_PROJECT=false".into());
+    values.push(format!("TMPDIR={root}/tmp"));
+    values
+}
+
 fn is_false(value: &bool) -> bool {
     !value
 }
@@ -136,6 +183,8 @@ impl ContainerReceipt {
 pub struct DockerSandbox {
     root: PathBuf,
     user: String,
+    runtime_cache: Option<PathBuf>,
+    minimum_runtime_free_bytes: u64,
 }
 
 impl DockerSandbox {
@@ -259,7 +308,72 @@ impl DockerSandbox {
         Ok(Self {
             root: fs::canonicalize(root).map_err(storage)?,
             user,
+            // Cross-project sharing is an explicit opt-in, independent of the
+            // Host's installation/image cache configuration.
+            runtime_cache: std::env::var_os("DEVDESK_SHARED_DEPENDENCY_CACHE").map(PathBuf::from),
+            minimum_runtime_free_bytes: match std::env::var("DEVDESK_RUNTIME_MIN_FREE_BYTES") {
+                Ok(value) => value
+                    .parse::<u64>()
+                    .ok()
+                    .filter(|n| *n >= 4 * 1024 * 1024 * 1024)
+                    .ok_or_else(|| {
+                        err(
+                            "invalid_params",
+                            "运行时可用空间下限必须是至少 4 GiB 的字节数",
+                        )
+                    })?,
+                Err(std::env::VarError::NotPresent) => 4 * 1024 * 1024 * 1024,
+                Err(_) => return Err(err("invalid_params", "运行时可用空间下限无效")),
+            },
         })
+    }
+    pub fn with_runtime_cache(mut self, directory: PathBuf) -> Self {
+        self.runtime_cache = Some(directory);
+        self
+    }
+    fn runtime_cache_directory(&self, project: &str) -> PathBuf {
+        self.runtime_cache
+            .clone()
+            .unwrap_or_else(|| self.root.join("runtime-cache").join(project))
+    }
+    fn check_runtime_space(path: &Path, minimum: u64) -> Result<()> {
+        let available = fs2::available_space(path).map_err(|e| {
+            err(
+                "runtime_volume_unavailable",
+                format!("无法读取运行时目录的磁盘空间：{e}"),
+            )
+            .technical_not_applied()
+        })?;
+        if available < minimum {
+            return Err(err(
+                "runtime_space_insufficient",
+                format!("运行时目录可用空间不足：可用 {available} 字节，至少需要 {minimum} 字节"),
+            )
+            .technical_not_applied()
+            .with_context(
+                "DockerSandbox::check_runtime_space",
+                json!({"directory":path,"available_bytes":available,"required_bytes":minimum}),
+            ));
+        }
+        Ok(())
+    }
+    fn runtime_directory(&self, path: &Path) -> Result<()> {
+        reject_symlink(path)?;
+        fs::create_dir_all(path).map_err(|e| {
+            err(
+                "runtime_permission_denied",
+                format!("无法创建运行时目录 {}：{e}", path.display()),
+            )
+            .technical_not_applied()
+        })?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if self.user == "1000:1000" && fs::metadata(path).map_err(storage)?.uid() == 0 {
+                std::os::unix::fs::chown(path, Some(1000), Some(1000)).map_err(storage)?;
+            }
+        }
+        Ok(())
     }
     fn call(&self, args: Vec<String>) -> Result<Output> {
         capture("docker", &args, Duration::from_secs(30))
@@ -429,13 +543,23 @@ impl DockerSandbox {
         if let Some(digest) = &apparmor {
             identity["apparmor_policy"] = json!({"name":"devdesk-harness-v1","sha256":digest});
         }
+        let legacy_digest = format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_vec(&identity).map_err(storage)?)
+        );
+        let environment = runtime_environment();
+        identity["runtime_environment"] = json!(environment);
+        let runtime_cache = self.runtime_cache_directory(&spec.project_id);
+        identity["runtime_cache"] = json!(runtime_cache);
+        identity["minimum_runtime_free_bytes"] = json!(self.minimum_runtime_free_bytes);
         let digest = format!(
             "{:x}",
             Sha256::digest(serde_json::to_vec(&identity).map_err(storage)?)
         );
         if let Some((receipt, _)) = self.inspect_owned(&name)? {
             require(
-                receipt.specification_digest == digest,
+                receipt.specification_digest == digest
+                    || receipt.specification_digest == legacy_digest,
                 "操作 ID 被不同容器规格复用",
             )?;
             return Ok(receipt);
@@ -619,6 +743,97 @@ impl DockerSandbox {
         } else {
             args.extend(["--env".into(), "HOME=/tmp".into()]);
         }
+        let runtime = state.join("runtime");
+        self.runtime_directory(&runtime)?;
+        let temporary = runtime.join("tmp");
+        self.runtime_directory(&temporary)?;
+        require(runtime_cache.is_absolute(), "运行时缓存必须使用绝对路径")?;
+        reject_symlink(&runtime_cache)?;
+        self.runtime_directory(&runtime_cache)?;
+        let cache = fs::canonicalize(&runtime_cache).map_err(storage)?;
+        require(
+            !cache.starts_with(&work) && !work.starts_with(&cache) && !cache.starts_with(&state),
+            "运行时缓存必须位于源码和会话私有目录之外",
+        )?;
+        let downloads = cache.join("downloads");
+        let images = cache.join("images");
+        let installed = images.join(spec.image_id.trim_start_matches("sha256:"));
+        let cargo = runtime.join("cargo");
+        self.runtime_directory(&cargo)?;
+        let cargo_registry = downloads.join("cargo/registry");
+        let cargo_git = downloads.join("cargo/git");
+        for directory in [
+            &downloads,
+            &images,
+            &installed,
+            &runtime.join("cache"),
+            &runtime.join("shared"),
+            &cargo_registry,
+            &cargo_git,
+            &cargo.join("registry"),
+            &cargo.join("git"),
+        ] {
+            self.runtime_directory(directory)?;
+        }
+        let runtime_mounts = [
+            (&runtime, WORKSPACE_RUNTIME_DIRECTORY.to_owned()),
+            (&downloads, format!("{WORKSPACE_RUNTIME_DIRECTORY}/cache")),
+            (&installed, format!("{WORKSPACE_RUNTIME_DIRECTORY}/shared")),
+            (
+                &cargo_registry,
+                format!("{WORKSPACE_RUNTIME_DIRECTORY}/cargo/registry"),
+            ),
+            (
+                &cargo_git,
+                format!("{WORKSPACE_RUNTIME_DIRECTORY}/cargo/git"),
+            ),
+        ];
+        let mut probe_args = vec![
+            "run".into(),
+            "--rm".into(),
+            "--pull=never".into(),
+            "--network=none".into(),
+            "--cap-drop=ALL".into(),
+            "--security-opt=no-new-privileges".into(),
+            "--read-only".into(),
+            "--user".into(),
+            self.user.clone(),
+        ];
+        for (source, target) in &runtime_mounts {
+            Self::check_runtime_space(source, self.minimum_runtime_free_bytes)?;
+            let mount = format!("type=bind,source={},target={target}", source.display());
+            probe_args.extend(["--mount".into(), mount.clone()]);
+            args.extend(["--mount".into(), mount]);
+        }
+        // Test the real Docker mount and actual UID before starting any agent,
+        // test, or provider. Host stat/permission bits alone are insufficient
+        // for Docker Desktop shares, rootless daemons and mount quotas.
+        const PROBE: &str = r#"set -eu
+required="$1"; nonce="$2"; shift 2
+for directory do
+  df -Pk "$directory" | { read -r header; read -r filesystem blocks used available rest; test "$available" -ge "$required"; } || { printf 'insufficient_space:%s\n' "$directory" >&2; exit 75; }
+  probe="$directory/.devdesk-preflight-$nonce"
+  (umask 077; mkdir "$probe") || { printf 'not_writable:%s\n' "$directory" >&2; exit 73; }
+  trap 'rm -f "$probe/execute"; rmdir "$probe"' EXIT HUP INT TERM
+  printf '#!/bin/sh\nexit 0\n' > "$probe/execute"
+  chmod 700 "$probe/execute"
+  "$probe/execute" || { printf 'not_executable:%s\n' "$directory" >&2; exit 74; }
+  rm "$probe/execute"; rmdir "$probe"; trap - EXIT HUP INT TERM
+done"#;
+        probe_args.extend([
+            "--entrypoint=/bin/sh".into(),
+            spec.image_id.clone(),
+            "-c".into(),
+            PROBE.into(),
+            "devdesk-runtime-preflight".into(),
+            self.minimum_runtime_free_bytes.div_ceil(1024).to_string(),
+            uuid::Uuid::new_v4().to_string(),
+        ]);
+        probe_args.extend(runtime_mounts.iter().map(|(_, target)| target.clone()));
+        // Runtime downloads belong outside the source worktree and evidence.
+        for value in environment {
+            args.extend(["--env".into(), value]);
+        }
         if spec.purpose == ContainerPurpose::Tests {
             for name in [
                 "OPENAI_API_KEY",
@@ -793,6 +1008,24 @@ impl DockerSandbox {
             spec.image_id.clone(),
         ]);
         args.extend(spec.command[1..].iter().cloned());
+        let probe = self
+            .call(probe_args)
+            .map_err(|e| e.technical_not_applied())?;
+        if probe.code != 0 {
+            let (code, message) = match probe.code {
+                73 => (
+                    "runtime_permission_denied",
+                    "容器运行用户无法写入运行时挂载目录",
+                ),
+                74 => ("runtime_not_executable", "运行时挂载目录不允许执行依赖程序"),
+                75 => ("runtime_space_insufficient", "容器运行时挂载的可用空间不足"),
+                _ => (
+                    "runtime_volume_unavailable",
+                    "运行时 volume 验证失败，请检查 Docker 共享目录、用户权限及磁盘空间",
+                ),
+            };
+            return Err(err(code, message).technical_not_applied().with_context("DockerSandbox::runtime_preflight", json!({"exit_code":probe.code,"required_bytes":self.minimum_runtime_free_bytes,"diagnostic":String::from_utf8_lossy(&probe.stderr).chars().take(512).collect::<String>()})));
+        }
         let output = capture_split("docker", &args, Duration::from_secs(30))?;
         // Even a create error may be an ambiguous receipt; inspect the deterministic identity.
         let receipt = self
@@ -889,6 +1122,64 @@ impl DockerSandbox {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runtime_space_is_checked_and_project_caches_are_separate_by_default() {
+        let root = tempfile::tempdir().unwrap();
+        let mut sandbox = DockerSandbox::new(root.path()).unwrap();
+        sandbox.runtime_cache = None;
+        assert_ne!(
+            sandbox.runtime_cache_directory("first"),
+            sandbox.runtime_cache_directory("second")
+        );
+        assert!(
+            sandbox
+                .runtime_cache_directory("first")
+                .starts_with(fs::canonicalize(root.path()).unwrap())
+        );
+        let error = DockerSandbox::check_runtime_space(root.path(), u64::MAX).unwrap_err();
+        assert_eq!(error.code, "runtime_space_insufficient");
+        assert_eq!(
+            error.execution_failure.unwrap().effect,
+            ExecutionFailureEffect::NotApplied
+        );
+        DockerSandbox::check_runtime_space(root.path(), 0).unwrap();
+    }
+
+    #[test]
+    fn runtime_downloads_builds_and_temporary_files_are_outside_source_and_private_state() {
+        let environment = runtime_environment();
+        for value in &environment {
+            let (name, path) = value.split_once('=').unwrap();
+            if name == "DEVDESK_SOURCE_DIR" || name == "PIPENV_VENV_IN_PROJECT" {
+                continue;
+            }
+            assert!(
+                path.contains("/tmp/devdesk-runtime/") || path == "/tmp/devdesk-runtime",
+                "{value}"
+            );
+            assert!(!path.contains("/work"), "{value}");
+            assert!(
+                !path.contains("/state"),
+                "native tools cannot access private harness state: {value}"
+            );
+        }
+        for name in [
+            "npm_config_cache=",
+            "PIP_TARGET=",
+            "CARGO_TARGET_DIR=",
+            "GOMODCACHE=",
+            "GRADLE_USER_HOME=",
+            "NUGET_PACKAGES=",
+            "HF_HOME=",
+            "TMPDIR=",
+        ] {
+            assert!(
+                environment.iter().any(|value| value.starts_with(name)),
+                "{name}"
+            );
+        }
+    }
 
     #[test]
     fn rejected_create_reports_only_safe_causes_and_no_applied_input() {

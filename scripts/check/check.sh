@@ -11,6 +11,7 @@ python3 tests/entrypoints/test_docs_checker.py
 python3 tests/entrypoints/rpc_contract_inventory.py
 python3 tests/entrypoints/host_launcher.py
 node --test tests/entrypoints/ci_workflow_gate.mjs tests/entrypoints/configuration_query_cache.mjs
+python3 -m unittest discover -s tests/live -p 'test_*.py'
 ./scripts/check/check-style.sh
 python3 tests/entrypoints/prepare_project_test_runtime.py
 cargo test --workspace --locked

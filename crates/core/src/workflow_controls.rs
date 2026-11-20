@@ -215,6 +215,13 @@ impl Engine {
                     }
                     let mut next = resources.execution.clone();
                     next.status = StepExecutionStatus::Completed;
+                    // Also settle legacy reconciled results whose positive
+                    // outputs were admitted without clearing the old failure.
+                    if let Some(failure) = next.failure.take()
+                        && next.reason == failure.message
+                    {
+                        next.reason = "原执行结果已核对并接纳".into();
+                    }
                     commit.step(&resources, &mut next)?;
                     let decision =
                         commit.decision(&root, Some(&resources.execution), "accept", reason)?;

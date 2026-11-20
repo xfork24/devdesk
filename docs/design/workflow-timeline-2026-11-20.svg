@@ -1,0 +1,216 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1560" height="1255" viewBox="0 0 1560 1255" role="img" aria-labelledby="title desc">
+<title id="title">成功回归的 workflow 端到端时序</title>
+<desc id="desc">33 个步骤按开始时间排列。蓝色为生产者执行，浅蓝为内部接纳等待，橙色为代审批响应，灰色竖带为主机休眠。横轴为原始墙钟分钟；代审批和主机休眠从净耗时排除。</desc>
+<style>text{font:14px system-ui,sans-serif;fill:#202b3d}.small{font-size:12px}.grid{stroke:#d9dee5;stroke-width:1}</style>
+<rect width="1560" height="1255" fill="#fff"/>
+<text x="24" y="32" style="font-size:22px">Workflow 端到端时间线 · 2026-11-20</text>
+<text x="24" y="61">原始 36:12.075　− 代审批 06:08.584　− 主机休眠估算 15:01.111　= 净耗时约 15:02.380</text>
+<rect x="24" y="80" width="15" height="12" fill="#377eb8"/>
+<text x="47" y="91" class="small">生产者执行</text>
+<rect x="254" y="80" width="15" height="12" fill="#a9c9e2"/>
+<text x="277" y="91" class="small">内部接纳</text>
+<rect x="484" y="80" width="15" height="12" fill="#df8b27"/>
+<text x="507" y="91" class="small">代审批（排除）</text>
+<rect x="714" y="80" width="15" height="12" fill="#dfe2e6"/>
+<text x="737" y="91" class="small">主机休眠（排除）</text>
+<line class="grid" x1="480.00" x2="480.00" y1="130" y2="1175"/>
+<text x="480.00" y="121" text-anchor="middle" class="small">0 分</text>
+<line class="grid" x1="546.30" x2="546.30" y1="130" y2="1175"/>
+<text x="546.30" y="121" text-anchor="middle" class="small">3 分</text>
+<line class="grid" x1="612.59" x2="612.59" y1="130" y2="1175"/>
+<text x="612.59" y="121" text-anchor="middle" class="small">6 分</text>
+<line class="grid" x1="678.89" x2="678.89" y1="130" y2="1175"/>
+<text x="678.89" y="121" text-anchor="middle" class="small">9 分</text>
+<line class="grid" x1="745.18" x2="745.18" y1="130" y2="1175"/>
+<text x="745.18" y="121" text-anchor="middle" class="small">12 分</text>
+<line class="grid" x1="811.48" x2="811.48" y1="130" y2="1175"/>
+<text x="811.48" y="121" text-anchor="middle" class="small">15 分</text>
+<line class="grid" x1="877.78" x2="877.78" y1="130" y2="1175"/>
+<text x="877.78" y="121" text-anchor="middle" class="small">18 分</text>
+<line class="grid" x1="944.07" x2="944.07" y1="130" y2="1175"/>
+<text x="944.07" y="121" text-anchor="middle" class="small">21 分</text>
+<line class="grid" x1="1010.37" x2="1010.37" y1="130" y2="1175"/>
+<text x="1010.37" y="121" text-anchor="middle" class="small">24 分</text>
+<line class="grid" x1="1076.66" x2="1076.66" y1="130" y2="1175"/>
+<text x="1076.66" y="121" text-anchor="middle" class="small">27 分</text>
+<line class="grid" x1="1142.96" x2="1142.96" y1="130" y2="1175"/>
+<text x="1142.96" y="121" text-anchor="middle" class="small">30 分</text>
+<line class="grid" x1="1209.26" x2="1209.26" y1="130" y2="1175"/>
+<text x="1209.26" y="121" text-anchor="middle" class="small">33 分</text>
+<line class="grid" x1="1275.55" x2="1275.55" y1="130" y2="1175"/>
+<text x="1275.55" y="121" text-anchor="middle" class="small">36 分</text>
+<rect x="823.98" y="130" width="0.77" height="1045" fill="#dfe2e6" fill-opacity=".65"/>
+<rect x="842.03" y="130" width="331.12" height="1045" fill="#dfe2e6" fill-opacity=".65"/>
+<text x="1300" y="121" class="small">执行 / 结束至接纳</text>
+<g><title>Feature F01 澄清需求与 PRD | 2026-11-20T08:53:44.555+08:00 → 2026-11-20T08:54:22.898+08:00 | 接纳 2026-11-20T08:54:23.349+08:00</title><text x="24" y="160">01　Feature · F01 澄清需求与 PRD</text>
+<rect x="486.48" y="147" width="14.12" height="14" fill="#377eb8"/>
+<rect x="500.60" y="147" width="0.17" height="14" fill="#a9c9e2"/>
+<text x="1300" y="160" class="small">00:38.343 / 00:00.451</text>
+</g>
+<g><title>Feature F02 PRD 验收与人工确认 | 2026-11-20T08:54:23.581+08:00 → 2026-11-20T08:55:03.295+08:00 | 接纳 2026-11-20T08:57:13.079+08:00</title><text x="24" y="190">02　Feature · F02 PRD 验收与人工确认</text>
+<rect x="500.85" y="177" width="14.63" height="14" fill="#377eb8"/>
+<rect x="515.48" y="177" width="47.80" height="14" fill="#a9c9e2"/>
+<text x="1300" y="190" class="small">00:39.714 / 02:09.784</text>
+<rect x="522.90" y="177" width="40.31" height="14" fill="#df8b27"/>
+</g>
+<g><title>Feature 自动提供代码基线 | 2026-11-20T08:57:13.339+08:00 → 2026-11-20T08:57:13.521+08:00 | 接纳 2026-11-20T08:57:14.415+08:00</title><text x="24" y="220">03　Feature · 自动提供代码基线</text>
+<rect x="563.38" y="207" width="0.40" height="14" fill="#377eb8"/>
+<rect x="563.44" y="207" width="0.33" height="14" fill="#a9c9e2"/>
+<text x="1300" y="220" class="small">00:00.182 / 00:00.894</text>
+</g>
+<g><title>Feature F03 架构与接口设计 | 2026-11-20T08:57:14.665+08:00 → 2026-11-20T08:57:55.891+08:00 | 接纳 2026-11-20T08:57:56.201+08:00</title><text x="24" y="250">04　Feature · F03 架构与接口设计</text>
+<rect x="563.87" y="237" width="15.18" height="14" fill="#377eb8"/>
+<rect x="579.05" y="237" width="0.11" height="14" fill="#a9c9e2"/>
+<text x="1300" y="250" class="small">00:41.226 / 00:00.310</text>
+</g>
+<g><title>Feature F04 Design 评审与人工确认 | 2026-11-20T08:57:56.488+08:00 → 2026-11-20T08:58:32.383+08:00 | 接纳 2026-11-20T08:59:48.049+08:00</title><text x="24" y="280">05　Feature · F04 Design 评审与人工确认</text>
+<rect x="579.27" y="267" width="13.22" height="14" fill="#377eb8"/>
+<rect x="592.49" y="267" width="27.87" height="14" fill="#a9c9e2"/>
+<text x="1300" y="280" class="small">00:35.895 / 01:15.666</text>
+<rect x="598.29" y="267" width="22.00" height="14" fill="#df8b27"/>
+</g>
+<g><title>Feature F05 规划 Tasks 与依赖 DAG | 2026-11-20T08:59:48.333+08:00 → 2026-11-20T09:00:27.300+08:00 | 接纳 2026-11-20T09:00:27.584+08:00</title><text x="24" y="310">06　Feature · F05 规划 Tasks 与依赖 DAG</text>
+<rect x="620.46" y="297" width="14.35" height="14" fill="#377eb8"/>
+<rect x="634.82" y="297" width="0.10" height="14" fill="#a9c9e2"/>
+<text x="1300" y="310" class="small">00:38.967 / 00:00.284</text>
+</g>
+<g><title>Feature F06 Tasks 评审与人工确认 | 2026-11-20T09:00:27.783+08:00 → 2026-11-20T09:01:13.989+08:00 | 接纳 2026-11-20T09:03:08.178+08:00</title><text x="24" y="340">07　Feature · F06 Tasks 评审与人工确认</text>
+<rect x="634.99" y="327" width="17.02" height="14" fill="#377eb8"/>
+<rect x="652.01" y="327" width="42.06" height="14" fill="#a9c9e2"/>
+<text x="1300" y="340" class="small">00:46.206 / 01:54.189</text>
+<rect x="658.77" y="327" width="35.23" height="14" fill="#df8b27"/>
+</g>
+<g><title>Feature 自动登记已确认 Task 图 | 2026-11-20T09:03:08.472+08:00 → 2026-11-20T09:03:08.680+08:00 | 接纳 2026-11-20T09:03:09.454+08:00</title><text x="24" y="370">08　Feature · 自动登记已确认 Task 图</text>
+<rect x="694.18" y="357" width="0.40" height="14" fill="#377eb8"/>
+<rect x="694.25" y="357" width="0.29" height="14" fill="#a9c9e2"/>
+<text x="1300" y="370" class="small">00:00.208 / 00:00.774</text>
+</g>
+<g><title>Feature F07 按 DAG 并发开发 Tasks | 2026-11-20T09:03:09.798+08:00 → 2026-11-20T09:09:48.063+08:00 | 接纳 2026-11-20T09:25:09.787+08:00</title><text x="24" y="400">09　Feature · F07 按 DAG 并发开发 Tasks</text>
+<rect x="694.67" y="387" width="146.69" height="14" fill="#377eb8"/>
+<rect x="841.35" y="387" width="339.48" height="14" fill="#a9c9e2"/>
+<text x="1300" y="400" class="small">06:38.265 / 15:21.724</text>
+</g>
+<g><title>Task 准备 Task 基线 | 2026-11-20T09:03:44.125+08:00 → 2026-11-20T09:03:44.270+08:00 | 接纳 2026-11-20T09:03:47.008+08:00</title><text x="24" y="430">10　Task · 准备 Task 基线</text>
+<rect x="707.31" y="417" width="0.40" height="14" fill="#377eb8"/>
+<rect x="707.36" y="417" width="1.01" height="14" fill="#a9c9e2"/>
+<text x="1300" y="430" class="small">00:00.145 / 00:02.738</text>
+</g>
+<g><title>Task T01 编写独立行为测试 | 2026-11-20T09:03:48.386+08:00 → 2026-11-20T09:05:00.917+08:00 | 接纳 2026-11-20T09:05:01.931+08:00</title><text x="24" y="460">11　Task · T01 编写独立行为测试</text>
+<rect x="708.88" y="447" width="26.71" height="14" fill="#377eb8"/>
+<rect x="735.59" y="447" width="0.37" height="14" fill="#a9c9e2"/>
+<text x="1300" y="460" class="small">01:12.531 / 00:01.014</text>
+</g>
+<g><title>Task 自动固定测试及条件空接口 | 2026-11-20T09:05:02.760+08:00 → 2026-11-20T09:05:03.214+08:00 | 接纳 2026-11-20T09:05:03.763+08:00</title><text x="24" y="490">12　Task · 自动固定测试及条件空接口</text>
+<rect x="736.27" y="477" width="0.40" height="14" fill="#377eb8"/>
+<rect x="736.44" y="477" width="0.20" height="14" fill="#a9c9e2"/>
+<text x="1300" y="490" class="small">00:00.454 / 00:00.549</text>
+</g>
+<g><title>Task T02 执行真实 Red | 2026-11-20T09:05:04.625+08:00 → 2026-11-20T09:05:06.118+08:00 | 接纳 2026-11-20T09:05:06.743+08:00</title><text x="24" y="520">13　Task · T02 执行真实 Red</text>
+<rect x="736.96" y="507" width="0.55" height="14" fill="#377eb8"/>
+<rect x="737.51" y="507" width="0.23" height="14" fill="#a9c9e2"/>
+<text x="1300" y="520" class="small">00:01.493 / 00:00.625</text>
+</g>
+<g><title>Task T03 实现、测试及必要文档 | 2026-11-20T09:05:07.106+08:00 → 2026-11-20T09:07:09.737+08:00 | 接纳 2026-11-20T09:07:10.538+08:00</title><text x="24" y="550">14　Task · T03 实现、测试及必要文档</text>
+<rect x="737.87" y="537" width="45.17" height="14" fill="#377eb8"/>
+<rect x="783.04" y="537" width="0.30" height="14" fill="#a9c9e2"/>
+<text x="1300" y="550" class="small">02:02.631 / 00:00.801</text>
+</g>
+<g><title>Task 自动固定完整实现差异 | 2026-11-20T09:07:11.024+08:00 → 2026-11-20T09:07:11.716+08:00 | 接纳 2026-11-20T09:07:12.645+08:00</title><text x="24" y="580">15　Task · 自动固定完整实现差异</text>
+<rect x="783.51" y="567" width="0.40" height="14" fill="#377eb8"/>
+<rect x="783.77" y="567" width="0.34" height="14" fill="#a9c9e2"/>
+<text x="1300" y="580" class="small">00:00.692 / 00:00.929</text>
+</g>
+<g><title>Task T04 执行独立 Green | 2026-11-20T09:07:12.945+08:00 → 2026-11-20T09:07:15.055+08:00 | 接纳 2026-11-20T09:07:16.840+08:00</title><text x="24" y="610">16　Task · T04 执行独立 Green</text>
+<rect x="784.22" y="597" width="0.78" height="14" fill="#377eb8"/>
+<rect x="785.00" y="597" width="0.66" height="14" fill="#a9c9e2"/>
+<text x="1300" y="610" class="small">00:02.110 / 00:01.785</text>
+</g>
+<g><title>Task T05 独立 Code Review | 2026-11-20T09:07:17.272+08:00 → 2026-11-20T09:08:50.427+08:00 | 接纳 2026-11-20T09:08:52.747+08:00</title><text x="24" y="640">17　Task · T05 独立 Code Review</text>
+<rect x="785.81" y="627" width="34.31" height="14" fill="#377eb8"/>
+<rect x="820.12" y="627" width="0.85" height="14" fill="#a9c9e2"/>
+<text x="1300" y="640" class="small">01:33.155 / 00:02.320</text>
+</g>
+<g><title>Task T06 源分支项目回归 | 2026-11-20T09:08:53.266+08:00 → 2026-11-20T09:08:58.027+08:00 | 接纳 2026-11-20T09:08:58.887+08:00</title><text x="24" y="670">18　Task · T06 源分支项目回归</text>
+<rect x="821.17" y="657" width="1.75" height="14" fill="#377eb8"/>
+<rect x="822.92" y="657" width="0.32" height="14" fill="#a9c9e2"/>
+<text x="1300" y="670" class="small">00:04.761 / 00:00.860</text>
+</g>
+<g><title>Task T07 提交并推送 Task | 2026-11-20T09:08:59.297+08:00 → 2026-11-20T09:09:04.911+08:00 | 接纳 2026-11-20T09:09:06.550+08:00</title><text x="24" y="700">19　Task · T07 提交并推送 Task</text>
+<rect x="823.39" y="687" width="2.07" height="14" fill="#377eb8"/>
+<rect x="825.46" y="687" width="0.60" height="14" fill="#a9c9e2"/>
+<text x="1300" y="700" class="small">00:05.614 / 00:01.639</text>
+</g>
+<g><title>Task 读取最新 Feature 基线 | 2026-11-20T09:09:07.951+08:00 → 2026-11-20T09:09:09.326+08:00 | 接纳 2026-11-20T09:09:10.159+08:00</title><text x="24" y="730">20　Task · 读取最新 Feature 基线</text>
+<rect x="826.58" y="717" width="0.51" height="14" fill="#377eb8"/>
+<rect x="827.08" y="717" width="0.31" height="14" fill="#a9c9e2"/>
+<text x="1300" y="730" class="small">00:01.375 / 00:00.833</text>
+</g>
+<g><title>Task T08 创建 Task → Feature PR | 2026-11-20T09:09:10.545+08:00 → 2026-11-20T09:09:23.617+08:00 | 接纳 2026-11-20T09:09:24.489+08:00</title><text x="24" y="760">21　Task · T08 创建 Task → Feature PR</text>
+<rect x="827.53" y="747" width="4.81" height="14" fill="#377eb8"/>
+<rect x="832.35" y="747" width="0.32" height="14" fill="#a9c9e2"/>
+<text x="1300" y="760" class="small">00:13.072 / 00:00.872</text>
+</g>
+<g><title>Task T09 隔离合并结果项目回归 | 2026-11-20T09:09:24.799+08:00 → 2026-11-20T09:09:26.603+08:00 | 接纳 2026-11-20T09:09:27.300+08:00</title><text x="24" y="790">22　Task · T09 隔离合并结果项目回归</text>
+<rect x="832.78" y="777" width="0.66" height="14" fill="#377eb8"/>
+<rect x="833.45" y="777" width="0.26" height="14" fill="#a9c9e2"/>
+<text x="1300" y="790" class="small">00:01.804 / 00:00.697</text>
+</g>
+<g><title>Task T10 自动合入、同步及完成登记 | 2026-11-20T09:09:27.632+08:00 → 2026-11-20T09:09:48.063+08:00 | 接纳 2026-11-20T09:09:48.866+08:00</title><text x="24" y="820">23　Task · T10 自动合入、同步及完成登记</text>
+<rect x="833.83" y="807" width="7.52" height="14" fill="#377eb8"/>
+<rect x="841.35" y="807" width="0.30" height="14" fill="#a9c9e2"/>
+<text x="1300" y="820" class="small">00:20.431 / 00:00.803</text>
+</g>
+<g><title>Feature 自动读取已汇合 Feature | 2026-11-20T09:25:09.976+08:00 → 2026-11-20T09:25:10.157+08:00 | 接纳 2026-11-20T09:25:10.499+08:00</title><text x="24" y="850">24　Feature · 自动读取已汇合 Feature</text>
+<rect x="1180.90" y="837" width="0.40" height="14" fill="#377eb8"/>
+<rect x="1180.97" y="837" width="0.13" height="14" fill="#a9c9e2"/>
+<text x="1300" y="850" class="small">00:00.181 / 00:00.342</text>
+</g>
+<g><title>Feature 自动固定 Feature 完整差异 | 2026-11-20T09:25:10.749+08:00 → 2026-11-20T09:25:11.135+08:00 | 接纳 2026-11-20T09:25:11.588+08:00</title><text x="24" y="880">25　Feature · 自动固定 Feature 完整差异</text>
+<rect x="1181.19" y="867" width="0.40" height="14" fill="#377eb8"/>
+<rect x="1181.33" y="867" width="0.17" height="14" fill="#a9c9e2"/>
+<text x="1300" y="880" class="small">00:00.386 / 00:00.453</text>
+</g>
+<g><title>Feature F08 Feature Code Review | 2026-11-20T09:25:11.860+08:00 → 2026-11-20T09:26:29.465+08:00 | 接纳 2026-11-20T09:26:29.960+08:00</title><text x="24" y="910">26　Feature · F08 Feature Code Review</text>
+<rect x="1181.60" y="897" width="28.58" height="14" fill="#377eb8"/>
+<rect x="1210.18" y="897" width="0.18" height="14" fill="#a9c9e2"/>
+<text x="1300" y="910" class="small">01:17.605 / 00:00.495</text>
+</g>
+<g><title>Feature F09 Feature 源分支项目回归 | 2026-11-20T09:26:30.421+08:00 → 2026-11-20T09:26:32.605+08:00 | 接纳 2026-11-20T09:26:33.131+08:00</title><text x="24" y="940">27　Feature · F09 Feature 源分支项目回归</text>
+<rect x="1210.53" y="927" width="0.80" height="14" fill="#377eb8"/>
+<rect x="1211.34" y="927" width="0.19" height="14" fill="#a9c9e2"/>
+<text x="1300" y="940" class="small">00:02.184 / 00:00.526</text>
+</g>
+<g><title>Feature F10 提交并推送 Feature | 2026-11-20T09:26:33.364+08:00 → 2026-11-20T09:26:35.044+08:00 | 接纳 2026-11-20T09:26:35.331+08:00</title><text x="24" y="970">28　Feature · F10 提交并推送 Feature</text>
+<rect x="1211.61" y="957" width="0.62" height="14" fill="#377eb8"/>
+<rect x="1212.23" y="957" width="0.11" height="14" fill="#a9c9e2"/>
+<text x="1300" y="970" class="small">00:01.680 / 00:00.287</text>
+</g>
+<g><title>Feature 读取最新主分支 | 2026-11-20T09:26:35.614+08:00 → 2026-11-20T09:26:36.892+08:00 | 接纳 2026-11-20T09:26:37.146+08:00</title><text x="24" y="1000">29　Feature · 读取最新主分支</text>
+<rect x="1212.44" y="987" width="0.47" height="14" fill="#377eb8"/>
+<rect x="1212.91" y="987" width="0.09" height="14" fill="#a9c9e2"/>
+<text x="1300" y="1000" class="small">00:01.278 / 00:00.254</text>
+</g>
+<g><title>Feature F11 验证汇合后生成纯代码候选并创建 PR | 2026-11-20T09:26:37.457+08:00 → 2026-11-20T09:26:47.561+08:00 | 接纳 2026-11-20T09:26:47.828+08:00</title><text x="24" y="1030">30　Feature · F11 验证汇合后生成纯代码候选并创建 PR</text>
+<rect x="1213.12" y="1017" width="3.72" height="14" fill="#377eb8"/>
+<rect x="1216.84" y="1017" width="0.10" height="14" fill="#a9c9e2"/>
+<text x="1300" y="1030" class="small">00:10.104 / 00:00.267</text>
+</g>
+<g><title>Feature F12 隔离合并结果项目回归 | 2026-11-20T09:26:48.132+08:00 → 2026-11-20T09:26:50.071+08:00 | 接纳 2026-11-20T09:26:50.578+08:00</title><text x="24" y="1060">31　Feature · F12 隔离合并结果项目回归</text>
+<rect x="1217.05" y="1047" width="0.71" height="14" fill="#377eb8"/>
+<rect x="1217.77" y="1047" width="0.19" height="14" fill="#a9c9e2"/>
+<text x="1300" y="1060" class="small">00:01.939 / 00:00.507</text>
+</g>
+<g><title>Feature F13 主分支正式人工审核 | 2026-11-20T09:26:50.819+08:00 → 2026-11-20T09:26:51.108+08:00 | 接纳 2026-11-20T09:28:57.693+08:00</title><text x="24" y="1090">32　Feature · F13 主分支正式人工审核</text>
+<rect x="1218.04" y="1077" width="0.40" height="14" fill="#377eb8"/>
+<rect x="1218.15" y="1077" width="46.62" height="14" fill="#a9c9e2"/>
+<text x="1300" y="1090" class="small">00:00.289 / 02:06.585</text>
+<rect x="1226.48" y="1077" width="38.21" height="14" fill="#df8b27"/>
+</g>
+<g><title>Feature F14 合入主分支并同步 | 2026-11-20T09:28:58.033+08:00 → 2026-11-20T09:29:16.291+08:00 | 接纳 2026-11-20T09:29:16.991+08:00</title><text x="24" y="1120">33　Feature · F14 合入主分支并同步</text>
+<rect x="1264.90" y="1107" width="6.72" height="14" fill="#377eb8"/>
+<rect x="1271.62" y="1107" width="0.26" height="14" fill="#a9c9e2"/>
+<text x="1300" y="1120" class="small">00:18.258 / 00:00.700</text>
+</g>
+<text x="24" y="1210" class="small">Task 最后一步结束至显式完成：原始 15:20.986；扣除休眠后 00:21.963。Feature 实施行聚合 Task，不能与子步骤相加。</text>
+<text x="24" y="1235" class="small">细小平台步骤保持真实比例；精确时间和全部步骤间等待见同名基准文档及交互时序。结束时间取持久化完成与 worker 静止时间。</text>
+</svg>

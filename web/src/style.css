@@ -2275,7 +2275,11 @@ pre {
   overflow: hidden;
 }
 .workflow-stage-row.status-completed {
+  background: #eef7f2;
   border-left-color: #40866c;
+}
+.workflow-stage-row.status-queued {
+  background: #f8fafc;
 }
 .workflow-stage-row.status-failed,
 .workflow-stage-row.status-cancelled {
@@ -2286,6 +2290,7 @@ pre {
 .workflow-stage-row.status-waiting_confirmation,
 .workflow-stage-row.status-awaiting_acceptance,
 .workflow-stage-row.status-needs_reconciliation {
+  background: #fff7e9;
   border-left-color: #d79d3d;
 }
 .workflow-stage-toggle,

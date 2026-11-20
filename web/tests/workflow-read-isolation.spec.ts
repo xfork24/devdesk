@@ -3040,6 +3040,92 @@ test("阶段卡片跨页加载并展开对应步骤后滚动定位", async ({ pa
   await expect(delivery).toHaveCount(0);
 });
 
+test("reconciliation shows its asynchronous failure beside the original execution", async ({
+  page,
+}) => {
+  const url = (await fixture(page)).replace(
+    "detail=manager",
+    "detail=overview",
+  );
+  let reconciled = false;
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    if (call.method === "workflow.step.reconcile") {
+      reconciled = true;
+      return route.fulfill({
+        json: { jsonrpc: "2.0", id: call.id, result: { accepted: true } },
+      });
+    }
+    if (call.method !== "query.workflow_instance") return route.fallback();
+    const plan = {
+      stages: [{ key: "work", name: "实施" }],
+      steps: [
+        {
+          key: "snapshot",
+          name: "保存代码快照",
+          stage: "work",
+          executor: { type: "tool" },
+        },
+      ],
+    };
+    const runtime = {
+      owner_id: "read-feature",
+      status: "needs_reconciliation",
+      paused: false,
+      control_version: 1,
+      active_plan_revision_id: "plan-current",
+      steps: [
+        {
+          id: "snapshot-execution",
+          step: "snapshot",
+          round: 2,
+          status: "needs_reconciliation",
+          reconciliation: reconciled
+            ? {
+                id: "reconciliation",
+                status: "unresolved",
+                error: {
+                  code: "git_output_limit",
+                  message: "Git diff 输出超过 1 MiB；需使用有界差异读取",
+                },
+              }
+            : undefined,
+        },
+      ],
+    };
+    return route.fulfill({
+      json: {
+        jsonrpc: "2.0",
+        id: call.id,
+        result: {
+          record: {
+            id: "read-instance",
+            name: "核对流程",
+            revision: 4,
+            data: runtime,
+          },
+          runtime,
+          plan,
+          children: [],
+        },
+      },
+    });
+  });
+  await page.goto(url);
+  const execution = page.getByRole("article", {
+    name: "步骤 · 保存代码快照",
+    exact: true,
+  });
+  await execution.locator(".workflow-step-toggle").click();
+  await execution
+    .getByRole("button", { name: "核对执行结果", exact: true })
+    .click();
+  await expect(execution.getByRole("alert")).toContainText(
+    "核对未完成：Git diff 输出超过 1 MiB",
+  );
+  await expect(execution.getByRole("alert")).toContainText("git_output_limit");
+});
+
 test("workflow overview opens stage progress and bounded step actions together", async ({
   page,
 }, info) => {
@@ -3204,10 +3290,14 @@ test("manual background bodies load only for the selected disclosure", async ({
 test("经理待接纳产物与真正的人工确认分别展示", async ({ page }) => {
   const url = await fixture(page);
   let pendingHuman = false;
+  const accepted: any[] = [];
   await page.route("**/rpc", async (route) => {
     const call = route.request().postDataJSON();
     let result: any;
-    if (call.method === "query.orchestration") {
+    if (call.method === "workflow.step.accept") {
+      accepted.push(call.params);
+      result = { accepted: true };
+    } else if (call.method === "query.orchestration") {
       result = {
         record: {
           id: "manager",
@@ -3250,7 +3340,15 @@ test("经理待接纳产物与真正的人工确认分别展示", async ({ page 
             execution_id: "implementation-2",
             path: "/implementation/0/implementation",
             status: "awaiting_acceptance",
-            actions: {},
+            step: "implementation",
+            step_name: "本轮实施产物",
+            revision: 9,
+            step_revision: 4,
+            plan_revision_id: "plan-current",
+            control_version: 2,
+            input_digest: "original-input",
+            outputs: { result: "original-output" },
+            actions: { accept: { allowed: true } },
           },
         ],
       };
@@ -3260,7 +3358,7 @@ test("经理待接纳产物与真正的人工确认分别展示", async ({ page 
   await page.goto(url);
   await expect(
     page.getByText(
-      "产物已完成，等待项目经理研判并接纳；当前没有需要你确认的事项。",
+      "产物已完成，项目经理可自动接纳；你也可以在此核对并人工接纳。",
       { exact: true },
     ),
   ).toBeVisible();
@@ -3268,6 +3366,27 @@ test("经理待接纳产物与真正的人工确认分别展示", async ({ page 
   await expect(
     page.getByText("请确认本轮实施产物", { exact: true }),
   ).toHaveCount(0);
+  const acceptance = page.getByRole("article", {
+    name: "人工接纳：本轮实施产物",
+    exact: true,
+  });
+  await expect(acceptance).toBeVisible();
+  await acceptance
+    .getByRole("button", { name: "确认：人工接纳：本轮实施产物", exact: true })
+    .click();
+  expect(accepted).toHaveLength(1);
+  expect(accepted[0]).toMatchObject({
+    target: "read-instance",
+    expected_revision: 9,
+    payload: {
+      execution_id: "implementation-2",
+      expected_step_revision: 4,
+      plan_revision_id: "plan-current",
+      control_version: 2,
+      input_digest: "original-input",
+      outputs: { result: "original-output" },
+    },
+  });
   pendingHuman = true;
   await page.reload();
   await expect(
@@ -3275,7 +3394,7 @@ test("经理待接纳产物与真正的人工确认分别展示", async ({ page 
   ).toBeVisible();
   await expect(
     page.getByText(
-      "产物已完成，等待项目经理研判并接纳；当前没有需要你确认的事项。",
+      "产物已完成，项目经理可自动接纳；你也可以在此核对并人工接纳。",
       { exact: true },
     ),
   ).toHaveCount(0);

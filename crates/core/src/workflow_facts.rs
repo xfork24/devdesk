@@ -111,10 +111,31 @@ impl WorkflowResources {
                 json!([self.record.id, execution.id]).to_string(),
             );
             let actual = store.read_resources(std::slice::from_ref(&key))?.remove(0);
-            let raw = actual
-                .value
-                .as_ref()
-                .ok_or_else(|| err("not_found", "规则引用的原执行已替换"))?;
+            // Other scheduling stages may advance or replace this execution
+            // after the instance snapshot. No action has been admitted here:
+            // discard these facts and let the scheduler reread on retry.
+            let conflict = |changed_fields: Value| {
+                err(
+                    "revision_conflict",
+                    "规则事实在准备期间已变化，请保留原请求",
+                )
+                .with_context(
+                    "WorkflowResources::selected_facts",
+                    json!({
+                        "project_id":self.instance.project_id,
+                        "workflow_instance_id":self.record.id,
+                        "execution_id":self.execution.id,
+                        "referenced_execution_id":execution.id,
+                        "step":name,
+                        "snapshot_revision":self.record.revision,
+                        "actual_resource_revision":actual.revision,
+                        "actual_execution_exists":actual.value.is_some(),
+                        "changed_fields":changed_fields,
+                    }),
+                )
+            };
+            let raw = actual.value.as_ref().ok_or_else(|| conflict(Value::Null))?;
+            let mut changed = serde_json::Map::new();
             for (field, value) in [
                 ("id", json!(execution.id)),
                 ("status", json!(execution.status)),
@@ -124,10 +145,12 @@ impl WorkflowResources {
                 ("finished", json!(execution.finished)),
                 ("outputs", json!(execution.outputs)),
             ] {
-                require(
-                    raw[field] == value,
-                    "规则事实在准备期间已变化，请保留原请求",
-                )?;
+                if raw[field] != value {
+                    changed.insert(field.into(), json!({"expected":value,"actual":raw[field]}));
+                }
+            }
+            if !changed.is_empty() {
+                return Err(conflict(Value::Object(changed)));
             }
             reads = reads.merge([version(&actual)])?;
             if selected.executions.contains(&name)

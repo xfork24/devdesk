@@ -20,11 +20,12 @@ type Progress = {
 };
 
 function stageStatus(counts: Counts) {
-  if (counts.failed) return "需要处理";
-  if (counts.running) return "执行中";
-  if (counts.waiting) return "等待处理";
-  if (counts.total && counts.completed === counts.total) return "已完成";
-  return "等待前置";
+  if (counts.failed) return { key: "failed", label: "需要处理" };
+  if (counts.running) return { key: "running", label: "执行中" };
+  if (counts.waiting) return { key: "waiting_input", label: "等待处理" };
+  if (counts.total && counts.completed === counts.total)
+    return { key: "completed", label: "已完成" };
+  return { key: "queued", label: "等待前置" };
 }
 
 export function WorkflowStageProgress({
@@ -73,26 +74,31 @@ export function WorkflowStageProgress({
           : "正在读取阶段进度…"}
       </p>
       <ol className="workflow-progress-stages" aria-label="执行阶段进度">
-        {current?.stages.map((stage, index) => (
-          <li className="workflow-progress-stage" key={stage.key}>
-            <button
-              type="button"
-              className="workflow-stage-row workflow-stage-progress"
-              aria-controls={`workflow-stage-${record.id}-${stage.key}`}
-              aria-label={`跳转到阶段：${stage.name}`}
-              onClick={() => onStageSelect(stage.key, stage.counts.total)}
-            >
-              <strong>{stage.name}</strong>
-              <span>
-                {stage.counts.completed} / {stage.counts.total}{" "}
-                {stageStatus(stage.counts)}
-              </span>
-            </button>
-            {index < current.stages.length - 1 && (
-              <ArrowRight className="workflow-stage-arrow" aria-hidden="true" />
-            )}
-          </li>
-        ))}
+        {current?.stages.map((stage, index) => {
+          const status = stageStatus(stage.counts);
+          return (
+            <li className="workflow-progress-stage" key={stage.key}>
+              <button
+                type="button"
+                className={`workflow-stage-row workflow-stage-progress status-${status.key}`}
+                aria-controls={`workflow-stage-${record.id}-${stage.key}`}
+                aria-label={`跳转到阶段：${stage.name}`}
+                onClick={() => onStageSelect(stage.key, stage.counts.total)}
+              >
+                <strong>{stage.name}</strong>
+                <span>
+                  {stage.counts.completed} / {stage.counts.total} {status.label}
+                </span>
+              </button>
+              {index < current.stages.length - 1 && (
+                <ArrowRight
+                  className="workflow-stage-arrow"
+                  aria-hidden="true"
+                />
+              )}
+            </li>
+          );
+        })}
       </ol>
       {offset > 0 || current?.next_stage_offset != null ? (
         <div className="actions" aria-label="阶段分页">

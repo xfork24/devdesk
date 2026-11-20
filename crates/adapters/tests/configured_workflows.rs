@@ -4853,6 +4853,23 @@ fn failed_child_send_is_reported_and_retry_resumes_the_parent_invocation() {
             .contains("dispatch failure")
     );
     assert_eq!(instance(&engine, &run["id"])["status"], "failed");
+    // A retained child failure is an observation, not a new failure on each
+    // sweep. Rewriting its finish time creates conflict storms for recovery.
+    let parent_before = engine
+        .store
+        .snapshot()
+        .unwrap()
+        .configuration(run["id"].as_str().unwrap())
+        .unwrap()
+        .clone();
+    for _ in 0..8 {
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        control_fixture::evaluate(&engine).unwrap();
+    }
+    let stable = engine.store.snapshot().unwrap();
+    let parent_after = stable.configuration(run["id"].as_str().unwrap()).unwrap();
+    assert_eq!(parent_after.revision, parent_before.revision);
+    assert_eq!(parent_after.data["steps"], parent_before.data["steps"]);
     command(
         &engine,
         "workflow.step.retry",
@@ -4870,6 +4887,69 @@ fn failed_child_send_is_reported_and_retry_resumes_the_parent_invocation() {
     assert_eq!(instance(&engine, &run["id"])["status"], "completed");
 }
 
+#[test]
+fn repeated_unknown_child_failure_does_not_rewrite_the_parent_finish_time() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut engine = engine(dir.path());
+    engine.harness = Arc::new(RecordingAgent::default());
+    let (role, agent) = research_agent(&engine);
+    let child = publish(
+        &engine,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"子工作"}],"steps":[{"key":"study","name":"调查","stage":"work","executor":{"type":"agent","role_ref":role["id"]},"task_instructions":"调查当前任务","outputs":{"risks":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
+    );
+    let parent = publish(
+        &engine,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"父工作"}],"steps":[{"key":"child","name":"子调用","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]}}]}),
+    );
+    let project = command(
+        &engine,
+        "project.create",
+        None,
+        json!({"title":"保留未知失败"}),
+    )
+    .unwrap();
+    let run = command(&engine,"workflow.start",project["id"].as_str(),json!({"workflow_ref":parent["id"],"role_agent_bindings":{role["id"].as_str().unwrap():agent["id"]}})).unwrap();
+    for _ in 0..6 {
+        control_fixture::evaluate(&engine).unwrap();
+        for intent in engine.pending_workflow_intents().unwrap() {
+            let method = intent.data["method"].as_str().unwrap();
+            let mut cmd: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
+            let fingerprint = devdesk_core::command_fingerprint(method, &cmd);
+            let result = if method == "conversation.send" {
+                Err(err("dispatch_unknown", "原启动结果待核对"))
+            } else {
+                cmd.payload["binding"] = json!(fixture_binding());
+                workflow_intents::execute(&engine, method, cmd, &fingerprint)
+            };
+            engine.observe_workflow_intent(&intent, &result).unwrap();
+        }
+    }
+    engine.evaluate_workflows().unwrap();
+    let before = engine
+        .store
+        .snapshot()
+        .unwrap()
+        .configuration(run["id"].as_str().unwrap())
+        .unwrap()
+        .clone();
+    assert_eq!(
+        before.data["steps"][0]["failure"]["code"],
+        "child_execution_failed"
+    );
+    assert_eq!(before.data["steps"][0]["status"], "needs_reconciliation");
+    for _ in 0..12 {
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        engine.evaluate_workflows().unwrap();
+    }
+    let state = engine.store.snapshot().unwrap();
+    let after = state.configuration(run["id"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        after.data["steps"][0]["finished"],
+        before.data["steps"][0]["finished"]
+    );
+    assert_eq!(after.revision, before.revision);
+}
+
 #[derive(Default)]
 struct PlatformCallingAgent {
     base: RecordingAgent,
@@ -4878,6 +4958,101 @@ struct PlatformCallingAgent {
     call_arguments: Option<Value>,
     final_outputs: Option<Value>,
     repair_locations: bool,
+}
+
+#[test]
+fn retained_cancelled_child_does_not_create_a_parent_revision_storm() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine(dir.path());
+    let child = publish(
+        &engine,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"子工作"}],"steps":[{"key":"one","name":"等待签核","stage":"work","executor":{"type":"control"},"confirmation":"human"},{"key":"two","name":"后续","stage":"work","executor":{"type":"control"},"dependencies":["one"]}]}),
+    );
+    let parent = publish(
+        &engine,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"父工作"}],"steps":[{"key":"child","name":"子调用","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]}}]}),
+    );
+    let project = command(
+        &engine,
+        "project.create",
+        None,
+        json!({"title":"保留已停止子执行"}),
+    )
+    .unwrap();
+    let run = command(
+        &engine,
+        "workflow.start",
+        project["id"].as_str(),
+        json!({"workflow_ref":parent["id"]}),
+    )
+    .unwrap();
+    control_fixture::evaluate(&engine).unwrap();
+    let state = engine.store.snapshot().unwrap();
+    let child = state
+        .governance
+        .iter()
+        .find(|r| r.r#type == "workflow_instance" && r.data["parent_execution_id"].is_string())
+        .unwrap();
+    assert_eq!(child.data["steps"][0]["status"], "waiting_confirmation");
+    command(
+        &engine,
+        "workflow.execution.stop",
+        Some(&child.id),
+        json!({"step":"one","reason":"停留原取消结果等待恢复"}),
+    )
+    .unwrap();
+    for _ in 0..4 {
+        engine.evaluate_workflows().unwrap();
+    }
+    let before = engine
+        .store
+        .snapshot()
+        .unwrap()
+        .configuration(run["id"].as_str().unwrap())
+        .unwrap()
+        .clone();
+    assert_eq!(
+        before.data["steps"][0]["failure"]["code"],
+        "child_execution_failed"
+    );
+    for _ in 0..12 {
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        engine.evaluate_workflows().unwrap();
+    }
+    let state = engine.store.snapshot().unwrap();
+    let after = state.configuration(run["id"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        after.data["steps"][0]["finished"],
+        before.data["steps"][0]["finished"]
+    );
+    assert_eq!(after.revision, before.revision);
+    command(
+        &engine,
+        "workflow.step.retry",
+        Some(&child.id),
+        json!({"step":"one"}),
+    )
+    .unwrap();
+    control_fixture::evaluate(&engine).unwrap();
+    assert_eq!(
+        instance(&engine, &run["id"])["steps"][0]["status"],
+        "running"
+    );
+    command(
+        &engine,
+        "workflow.execution.stop",
+        Some(&child.id),
+        json!({"step":"one","reason":"恢复后的新一次取消"}),
+    )
+    .unwrap();
+    for _ in 0..4 {
+        engine.evaluate_workflows().unwrap();
+    }
+    let new_failure = instance(&engine, &run["id"]);
+    assert!(
+        new_failure["steps"][0]["finished"].as_u64().unwrap()
+            > before.data["steps"][0]["finished"].as_u64().unwrap()
+    );
 }
 fn grounded_review(source: &Value, locator: Value) -> Value {
     json!({"approve":true,"summary":"Reviewed frozen section","checks":[{"key":"source","passed":true,"evidence":"Reviewed the exact declared section","locations":[{"source_ref":source.get("source_ref").unwrap_or(&source["evidence_source_ref"]),"value_digest":source["value_digest"],"locator":locator}]}]})

@@ -4,6 +4,8 @@ use crate::process::{Output, capture_command};
 use std::{process::Command, time::Duration};
 #[path = "git_delivery_projection.rs"]
 mod delivery_projection;
+#[path = "git_diff.rs"]
+mod diff;
 #[path = "git_test_configuration.rs"]
 mod test_configuration;
 #[path = "git_workspace_continuation.rs"]
@@ -110,14 +112,36 @@ impl CliGit {
             ])
             .arg(path)
             .args(args);
-        capture_command(command, timeout, input)
+        capture_command(command, timeout, input).map_err(|mut error| {
+            error.message = format!(
+                "Git {}：{}",
+                args.first().copied().unwrap_or("操作"),
+                error.message
+            );
+            error
+        })
     }
     fn output(&self, path: &Path, args: &[&str]) -> Result<String> {
         let result = self.git(path, args, None)?;
-        require(
-            result.code == 0 && !result.truncated,
-            "Git 操作失败、冲突或输出过大；保留原资源供核对",
-        )?;
+        if result.truncated {
+            return Err(err(
+                "git_output_limit",
+                format!(
+                    "Git {} 输出超过 1 MiB；原资源已保留，需使用有界差异读取",
+                    args.first().copied().unwrap_or("操作")
+                ),
+            ));
+        }
+        if result.code != 0 {
+            return Err(err(
+                "git_command_failed",
+                format!(
+                    "Git {} 失败（退出码 {}）；原资源已保留供核对",
+                    args.first().copied().unwrap_or("操作"),
+                    result.code
+                ),
+            ));
+        }
         String::from_utf8(result.stdout)
             .map(|s| s.trim_end().into())
             .map_err(storage)
@@ -450,6 +474,7 @@ impl CliGit {
         self.verify_worktree(&repo, &path, &c.source.branch)?;
         require(valid_oid(expected), "必须冻结预期源版本")?;
         let reference = format!("refs/devdesk/snapshots/{operation}");
+        self.ensure_runtime_excludes(&repo)?;
         self.operation(
             &c.project,
             operation,
@@ -459,6 +484,7 @@ impl CliGit {
             return Ok(commit);
         }
         require(self.oid(&path, "HEAD")? == expected, "源分支已改变")?;
+        self.check_new_snapshot_files(&path, allowed_paths)?;
         self.output(&path, &["add", "--all", "--", "."])?;
         let changed = self.git(
             &path,
@@ -528,24 +554,6 @@ impl CliGit {
             "Git 父节点对象无效",
         )?;
         Ok(parents)
-    }
-    pub fn diff(&self, c: &GitContext, base: &str, head: &str) -> Result<String> {
-        let repo = self.context(c)?;
-        require(valid_oid(base) && valid_oid(head), "diff 必须使用固定对象")?;
-        self.output(
-            &repo,
-            &[
-                "diff",
-                "--no-ext-diff",
-                "--no-textconv",
-                "--binary",
-                "--full-index",
-                "--find-renames",
-                base,
-                head,
-                "--",
-            ],
-        )
     }
     pub fn validate_view(&self, c: &GitContext, revision: &str) -> Result<()> {
         self.validate_working_view(c, revision, true)

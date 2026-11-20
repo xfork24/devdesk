@@ -33,6 +33,7 @@
 | [src/factory_bundle.rs](../../../crates/adapters/src/factory_bundle.rs) | [适配器工厂与配置装载](factory-and-configuration.md) |
 | [src/git.rs](../../../crates/adapters/src/git.rs) | [Git、测试和 GitHub 适配器](engineering-resources.md) |
 | [src/git_delivery_projection.rs](../../../crates/adapters/src/git_delivery_projection.rs) | [Git、测试和 GitHub 适配器](engineering-resources.md) |
+| [src/git_diff.rs](../../../crates/adapters/src/git_diff.rs) | Compare committed Git objects, bounding patch expansion before reading blobs. Large objects remain addressable by their exact names and object identities. |
 | [src/git_test_configuration.rs](../../../crates/adapters/src/git_test_configuration.rs) | [Git、测试和 GitHub 适配器](engineering-resources.md) |
 | [src/git_workspace_continuation.rs](../../../crates/adapters/src/git_workspace_continuation.rs) | [Git、测试和 GitHub 适配器](engineering-resources.md) |
 | [src/github.rs](../../../crates/adapters/src/github.rs) | [Git、测试和 GitHub 适配器](engineering-resources.md) |

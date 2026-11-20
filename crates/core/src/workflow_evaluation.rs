@@ -509,14 +509,22 @@ impl Engine {
             )
         });
         let failure = WorkflowFailure::from_error(&error, source.into(), kind);
-        next.status = if failure.effect == ExecutionFailureEffect::Unknown {
+        let status = if failure.effect == ExecutionFailureEffect::Unknown {
             StepExecutionStatus::NeedsReconciliation
         } else {
             StepExecutionStatus::Failed
         };
+        // Child failures are re-observed so a recovered child can resume its
+        // parent. The same retained failure is not a new completion each tick.
+        if next.status != status
+            || next.failure.as_ref() != Some(&failure)
+            || next.finished.is_none()
+        {
+            next.finished = Some(now());
+        }
+        next.status = status;
         next.reason = error.message;
         next.failure = Some(failure);
-        next.finished = Some(now());
     }
     pub(crate) fn evaluate_native_workflows(&self) -> Result<()> {
         let _span = self.store.observe_query("runtime.evaluate_workflows");

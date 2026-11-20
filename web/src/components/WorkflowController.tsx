@@ -119,10 +119,9 @@ export function WorkflowController({
                 const needsDetails =
                   summary.runtime_approval_pending ||
                   summary.workflow_approval_pending ||
-                  ((summary.driver?.data.mode || "manual") === "manual" &&
-                    (summary.waiting || []).some(
-                      (step: Row) => step.status === "awaiting_acceptance",
-                    ));
+                  (summary.waiting || []).some(
+                    (step: Row) => step.status === "awaiting_acceptance",
+                  );
                 return needsDetails
                   ? request(
                       "query.workflow_driver",
@@ -578,7 +577,7 @@ export function WorkflowController({
                 decision.current !== false &&
                 decision.data.status === "pending",
             )
-              ? "产物已完成，等待项目经理研判并接纳；当前没有需要你确认的事项。"
+              ? "产物已完成，项目经理可自动接纳；你也可以在此核对并人工接纳。"
               : "在此补充步骤信息、确认产物，或回复项目经理讨论处理方案。"}
           </p>
           <ul aria-label="调度等待条件">
@@ -594,6 +593,7 @@ export function WorkflowController({
                       "waiting_input",
                       "failed",
                       "needs_reconciliation",
+                      "awaiting_acceptance",
                     ].includes(item.status)}
                   >
                     <summary>
@@ -637,6 +637,69 @@ export function WorkflowController({
                           }}
                         />
                       )}
+                      {item.status === "awaiting_acceptance" &&
+                        item.actions?.accept?.allowed === true &&
+                        typeof item.input_digest === "string" &&
+                        item.outputs &&
+                        !decisions.some(
+                          (decision: Row) =>
+                            decision.current !== false &&
+                            decision.data.status === "pending" &&
+                            decision.data.request.arguments.execution_id ===
+                              item.execution_id,
+                        ) && (
+                          <ManagerInteraction
+                            projectId={projectId}
+                            ownerId={
+                              item.owner_id ||
+                              instance.data.owner_id ||
+                              projectId
+                            }
+                            basis={`${item.instance_id}:${item.execution_id}:${item.step_revision}:${item.input_digest}:${JSON.stringify(item.outputs)}`}
+                            status="pending"
+                            busy={busy}
+                            interaction={{
+                              title: `人工接纳：${item.step_name || item.step || "当前产物"}`,
+                              background:
+                                "项目经理可自动接纳该结果，也可由你核对后人工接纳。",
+                              requested_action:
+                                "核对本轮材料后确认；需要修改时填写意见并退回。",
+                              completed_work:
+                                item.reason || "当前步骤已产出结果，等待接纳。",
+                              materials: Object.entries(item.outputs).map(
+                                ([label, output_id]) => ({
+                                  label,
+                                  purpose: "本轮原始产物",
+                                  output_id,
+                                  instance_id: item.instance_id,
+                                  execution_id: item.execution_id,
+                                  owner_id: item.owner_id,
+                                }),
+                              ),
+                              evidence: [],
+                            }}
+                            onDecide={(approved, opinion) =>
+                              confirmStep(
+                                {
+                                  instance_id: item.instance_id,
+                                  revision: item.revision,
+                                  operation: "workflow.step.accept",
+                                  arguments: {
+                                    plan_revision_id: item.plan_revision_id,
+                                    control_version: item.control_version,
+                                    step: item.step,
+                                    execution_id: item.execution_id,
+                                    expected_step_revision: item.step_revision,
+                                    input_digest: item.input_digest,
+                                    outputs: item.outputs,
+                                  },
+                                },
+                                approved,
+                                opinion,
+                              )
+                            }
+                          />
+                        )}
                       <ReadingLink
                         detail="overview"
                         projectId={projectId}

@@ -15,15 +15,36 @@ def frozen_document(connection, frozen):
 
 def verify_source_contract(source, plan, unattended=False):
  """A successful current graph cannot replace the original mandatory contract."""
+ if 'completion' in source:assert plan.get('completion')==source['completion'], 'A mandatory workflow completion was changed'
+ if 'delivery_policy' in source:
+  policy=lambda value:{k:v for k,v in (value or {}).items() if v is not None}
+  assert policy(plan.get('delivery_policy'))==policy(source['delivery_policy']), 'A mandatory workflow delivery_policy was changed'
+ for name,binding in source.get('outputs',{}).items():
+  port=lambda value:{'pointer':'',**(value or {})}
+  assert port(plan.get('outputs',{}).get(name))==port(binding),'A mandatory workflow output was changed'
  for action,requirements in source.get('action_requirements',{}).items():
   assert set(requirements)<=set(plan['action_requirements'].get(action,[]))
  current={s['key']:s for s in plan['steps']}
+ ordering={}
+ def prerequisites(key, visiting=None):
+  if key in ordering:return ordering[key]
+  visiting=set() if visiting is None else visiting
+  assert key not in visiting,'Dependency cycle in accepted plan'
+  assert key in current,'Missing dependency in accepted plan'
+  found=set()
+  for dependency in current[key]['dependencies']:
+   found.add(dependency)
+   found.update(prerequisites(dependency,visiting|{key}))
+  ordering[key]=found
+  return found
  for original in source['steps']:
   assert original['key'] in current,'A mandatory source node was removed'
   actual=current[original['key']]
   if unattended and original['key'].endswith('review'):
    assert actual['task_instructions']==original.get('task_instructions'), 'Autonomous run rewrote an independent review prompt'
-  assert set(original.get('dependencies',[]))<=set(actual['dependencies'])
+  # Inserting a mandatory producer between two nodes preserves the ordering;
+  # removing that prerequisite, directly or transitively, must still fail.
+  assert set(original.get('dependencies',[]))<=prerequisites(original['key']), 'A mandatory prerequisite was removed'
   assert original.get('completion',{'op':'always'})==actual['completion'], 'A mandatory completion rule was changed'
   assert original.get('confirmation','automatic')==actual['confirmation'], 'A mandatory Human confirmation was changed'
   assert not actual.get('allow_completion_override',False)

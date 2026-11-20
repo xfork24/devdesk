@@ -50,6 +50,145 @@ fn reject_outside_mounts_before_touching_docker() {
 /// Explicit live invocation; never counted as passed by the offline suite.
 #[test]
 #[ignore = "requires the real Docker daemon and the pinned acceptance image"]
+fn runtime_cache_is_executable_and_shared_across_projects_without_sharing_private_state() {
+    check_runtime_cache(true);
+}
+
+#[test]
+#[ignore = "requires the real Docker daemon and the pinned acceptance image"]
+fn project_runtime_cache_is_reused_within_one_project_and_isolated_from_other_projects() {
+    check_runtime_cache(false);
+}
+
+fn check_runtime_cache(shared: bool) {
+    let directory = tempfile::tempdir().unwrap();
+    let cache = directory.path().join("public-runtime-cache");
+    let first = id();
+    let second = id();
+    for index in 0..3 {
+        let project = if index == 1 { &second } else { &first };
+        let root = directory.path().join(project);
+        let work = root.join("work");
+        let state = root.join(format!("state-{index}"));
+        fs::create_dir_all(&work).unwrap();
+        fs::create_dir_all(&state).unwrap();
+        let sandbox = DockerSandbox::new(&root).unwrap();
+        let sandbox = if shared {
+            sandbox.with_runtime_cache(cache.clone())
+        } else {
+            sandbox
+        };
+        let operation = id();
+        let script = if index == 0 {
+            "set -eu; printf shared > \"$DEVDESK_RUNTIME_CACHE/proof\"; cp /bin/true \"$DEVDESK_RUNTIME_CACHE/tool\"; chmod +x \"$DEVDESK_RUNTIME_CACHE/tool\"; \"$DEVDESK_RUNTIME_CACHE/tool\"; printf private > \"$DEVDESK_RUNTIME_DIR/private\"; mkdir -p \"$npm_config_cache\"; printf package > \"$npm_config_cache/proof\"; truncate -s 268435456 \"$DEVDESK_RUNTIME_CACHE/large-cache\"; test ! -e /work/proof"
+        } else if shared || index == 2 {
+            "set -eu; test \"$(cat \"$DEVDESK_RUNTIME_CACHE/proof\")\" = shared; \"$DEVDESK_RUNTIME_CACHE/tool\"; test -s \"$npm_config_cache/proof\"; test ! -e \"$DEVDESK_RUNTIME_DIR/private\"; test ! -e /work/proof; test \"$(stat -c%s \"$DEVDESK_RUNTIME_CACHE/large-cache\")\" = 268435456"
+        } else {
+            "set -eu; test ! -e \"$DEVDESK_RUNTIME_CACHE/proof\"; test ! -e \"$npm_config_cache/proof\"; test ! -e \"$DEVDESK_RUNTIME_DIR/private\""
+        };
+        let spec = ContainerSpec {
+            host_gateway: false,
+            permissions: None,
+            purpose: ContainerPurpose::Tests,
+            nested_sandbox: false,
+            credential_env_file: None,
+            profile_file: None,
+            runner_file: None,
+            skill_directory: None,
+            command_output_directory: None,
+            sensitive_output: false,
+            profile_target: None,
+            project_id: project.clone(),
+            session_id: id(),
+            operation_id: operation.clone(),
+            image_id: support::image("codex"),
+            worktree: work.clone(),
+            state: state.clone(),
+            writable: false,
+            writable_subdirectories: vec![],
+            read_only_subdirectories: vec![],
+            network: false,
+            command: vec!["sh".into(), "-c".into(), script.into()],
+        };
+        sandbox.create(&spec).unwrap();
+        sandbox.start(&operation).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let receipt = loop {
+            let receipt = sandbox.inspect(&operation).unwrap().unwrap();
+            if !receipt.running {
+                break receipt;
+            }
+            assert!(Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(50));
+        };
+        let diagnostic = sandbox.logs(&operation).unwrap();
+        sandbox.stop(&operation).unwrap();
+        sandbox.remove(&operation).unwrap();
+        assert_eq!(
+            receipt.exit_code, 0,
+            "cache round {index}, shared={shared}: {diagnostic}"
+        );
+        assert!(!work.join("proof").exists());
+        if index == 0 {
+            // Independent containers can enter the shared project cache at
+            // once. Their probe shells all have PID 1; PID-based probe names
+            // would collide and misreport ordinary concurrency as permission
+            // failure before the business command even starts.
+            let barrier = std::sync::Barrier::new(3);
+            thread::scope(|scope| {
+                let handles = (0..3)
+                    .map(|_| {
+                        let mut parallel = spec.clone();
+                        parallel.operation_id = id();
+                        let sandbox = &sandbox;
+                        let barrier = &barrier;
+                        scope.spawn(move || {
+                            barrier.wait();
+                            sandbox.create(&parallel).unwrap();
+                            sandbox.remove(&parallel.operation_id).unwrap();
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                for handle in handles {
+                    handle.join().unwrap();
+                }
+            });
+        }
+        #[cfg(unix)]
+        if index == 0 {
+            use std::os::unix::fs::PermissionsExt;
+            let installed = if shared {
+                cache.clone()
+            } else {
+                root.join("runtime-cache").join(project)
+            }
+            .join("images")
+            .join(spec.image_id.trim_start_matches("sha256:"));
+            fs::set_permissions(&installed, fs::Permissions::from_mode(0o500)).unwrap();
+            let mut rejected = spec.clone();
+            rejected.operation_id = id();
+            rejected.command = vec![
+                "sh".into(),
+                "-c".into(),
+                "printf ran > \"$DEVDESK_RUNTIME_DIR/business-started\"".into(),
+            ];
+            let result = sandbox.create(&rejected);
+            fs::set_permissions(&installed, fs::Permissions::from_mode(0o700)).unwrap();
+            let error = result.unwrap_err();
+            assert_eq!(error.code, "runtime_permission_denied");
+            assert_eq!(
+                error.execution_failure.unwrap().effect,
+                ExecutionFailureEffect::NotApplied
+            );
+            assert!(sandbox.inspect(&rejected.operation_id).unwrap().is_none());
+            assert!(!state.join("runtime/business-started").exists());
+        }
+    }
+}
+
+/// Explicit live invocation; never counted as passed by the offline suite.
+#[test]
+#[ignore = "requires the real Docker daemon and the pinned acceptance image"]
 fn real_container_ownership_idempotence_stop_and_cleanup() {
     let root = tempfile::tempdir().unwrap();
     let work = root.path().join("work");
@@ -136,8 +275,41 @@ fn nested_sandbox_cannot_broaden_the_outer_test_directory_write_grant() {
     )
     .unwrap();
     let operation = id();
-    let sandbox = DockerSandbox::new(root.path()).unwrap();
-    let spec=ContainerSpec{ host_gateway:false, permissions: Some(plan),purpose:ContainerPurpose::Harness,project_id:id(),session_id:id(),operation_id:operation.clone(),image_id:support::image("codex"),worktree:work.clone(),state,writable:false,writable_subdirectories:vec!["tests/allowed".into()],read_only_subdirectories:vec![],network:true,nested_sandbox:true,credential_env_file:None,profile_file:None,runner_file:None,skill_directory:None,command_output_directory:None,sensitive_output:false,profile_target:None,command:vec!["codex".into(),"sandbox".into(),"--".into(),"/bin/sh".into(),"-c".into(),"printf scope-ok > /work/tests/allowed/proof && (! touch /work/src/forbidden 2>/dev/null) && (! touch /work/forbidden 2>/dev/null)".into()]};
+    let sandbox = DockerSandbox::new(root.path())
+        .unwrap()
+        .with_runtime_cache(root.path().join("runtime-cache"));
+    let script = "set -eu; printf scope-ok > /work/tests/allowed/proof; cp /bin/true \"$DEVDESK_RUNTIME_CACHE/native-tool\"; \"$DEVDESK_RUNTIME_CACHE/native-tool\"; printf runtime-ok > \"$DEVDESK_RUNTIME_DIR/native-proof\"; (! touch /work/src/forbidden 2>/dev/null); (! touch /work/forbidden 2>/dev/null)";
+    let spec = ContainerSpec {
+        host_gateway: false,
+        permissions: Some(plan),
+        purpose: ContainerPurpose::Harness,
+        project_id: id(),
+        session_id: id(),
+        operation_id: operation.clone(),
+        image_id: support::image("codex"),
+        worktree: work.clone(),
+        state: state.clone(),
+        writable: false,
+        writable_subdirectories: vec!["tests/allowed".into()],
+        read_only_subdirectories: vec![],
+        network: true,
+        nested_sandbox: true,
+        credential_env_file: None,
+        profile_file: None,
+        runner_file: None,
+        skill_directory: None,
+        command_output_directory: None,
+        sensitive_output: false,
+        profile_target: None,
+        command: vec![
+            "codex".into(),
+            "sandbox".into(),
+            "--".into(),
+            "/bin/sh".into(),
+            "-c".into(),
+            script.into(),
+        ],
+    };
     sandbox.create(&spec).unwrap();
     sandbox.start(&operation).unwrap();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
@@ -168,6 +340,10 @@ fn nested_sandbox_cannot_broaden_the_outer_test_directory_write_grant() {
     );
     assert!(!work.join("src/forbidden").exists());
     assert!(!work.join("forbidden").exists());
+    assert_eq!(
+        fs::read_to_string(state.join("runtime/native-proof")).unwrap(),
+        "runtime-ok"
+    );
 }
 
 #[test]

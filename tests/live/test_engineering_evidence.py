@@ -4,12 +4,13 @@ import copy
 import hashlib
 import sqlite3
 import unittest
+from contextlib import closing
 from engineering_evidence import frozen_document, verify_chunk_reads, verify_source_contract
 
 
 class FrozenDocumentTests(unittest.TestCase):
     def test_original_source_is_selected_even_after_a_new_revision_exists(self):
-        with sqlite3.connect(':memory:') as connection:
+        with closing(sqlite3.connect(':memory:')) as connection:
             connection.execute('CREATE TABLE source_definitions(reference TEXT, type TEXT, data TEXT)')
             original = {'steps': [{'key': 'required', 'confirmation': 'human'}]}
             changed = {'steps': []}
@@ -53,6 +54,38 @@ class PreservedContractTests(unittest.TestCase):
         self.plan['steps'][0]['completion'] = {'op': 'any', 'rules': []}
         with self.assertRaisesRegex(AssertionError, 'completion rule'):
             verify_source_contract(self.source, self.plan)
+
+    def test_inserted_producer_preserves_mandatory_ordering(self):
+        prepare = {**copy.deepcopy(self.source['steps'][0]), 'key': 'prepare', 'dependencies': []}
+        self.source['steps'].insert(0, prepare)
+        self.source['steps'][1]['dependencies'] = ['prepare']
+        self.plan = copy.deepcopy(self.source)
+        self.plan['steps'].append({'key': 'extra', 'dependencies': ['prepare']})
+        self.plan['steps'][1]['dependencies'] = ['extra']
+        verify_source_contract(self.source, self.plan)
+        self.plan['steps'][-1]['dependencies'] = []
+        with self.assertRaisesRegex(AssertionError, 'prerequisite'):
+            verify_source_contract(self.source, self.plan)
+
+    def test_prerequisite_cycle_cannot_substitute_for_ordering(self):
+        self.plan['steps'][0]['dependencies'] = ['review']
+        with self.assertRaisesRegex(AssertionError, 'cycle'):
+            verify_source_contract(self.source, self.plan)
+
+    def test_workflow_independence_and_delivery_requirements_cannot_be_removed(self):
+        for field, value in [('completion', {'op': 'independent', 'author': 'tests', 'reviewer': 'implementation'}),
+                             ('delivery_policy', {'independent_green_step': 'green'})]:
+            source = {**self.source, field: value}
+            plan = {**self.plan, field: None}
+            with self.subTest(field=field), self.assertRaisesRegex(AssertionError, 'mandatory workflow'):
+                verify_source_contract(source, plan)
+
+    def test_domain_defaults_do_not_look_like_a_changed_contract(self):
+        source = {**self.source, 'delivery_policy': {'code_review_step': 'review'},
+                  'outputs': {'result': {'step': 'review', 'port': 'result'}}}
+        plan = {**self.plan, 'delivery_policy': {'code_review_step': 'review', 'children_step': None},
+                'outputs': {'result': {'step': 'review', 'port': 'result', 'pointer': ''}}}
+        verify_source_contract(source, plan)
 
     def test_altering_an_independent_review_prompt_is_rejected(self):
         self.source['steps'][0]['task_instructions'] = '独立核对原始材料与证据'

@@ -295,7 +295,7 @@ pub fn codex_sandbox_policy(p: &ExecutionPermissions) -> Value {
     } else if p.harness.policy.filesystem == FilesystemPermission::ReadOnly {
         json!({"type":"readOnly","networkAccess":p.harness.policy.network==NetworkPermission::Enabled})
     } else {
-        let roots = match &p.harness.policy.filesystem {
+        let mut roots = match &p.harness.policy.filesystem {
             FilesystemPermission::Scoped { rules } => rules
                 .iter()
                 .filter(|r| r.access == FileAccess::ReadWrite)
@@ -303,6 +303,7 @@ pub fn codex_sandbox_policy(p: &ExecutionPermissions) -> Value {
                 .collect::<Vec<_>>(),
             _ => vec!["/work".into()],
         };
+        roots.push(WORKSPACE_RUNTIME_DIRECTORY.into());
         json!({"type":"workspaceWrite","writableRoots":roots,"networkAccess":p.harness.policy.network==NetworkPermission::Enabled})
     }
 }
@@ -346,6 +347,9 @@ pub fn codex_config(p: &ExecutionPermissions) -> String {
     if p.isolation.credential_boundary == "confined-tools" {
         rules.insert("/state".into(), "deny");
     }
+    if p.harness.policy.filesystem != FilesystemPermission::ReadOnly {
+        rules.insert(WORKSPACE_RUNTIME_DIRECTORY.into(), "write");
+    }
     let mut out = format!(
         "cli_auth_credentials_store=\"file\"\ndefault_permissions=\"devdesk\"\napproval_policy=\"{approval}\"\n[permissions.devdesk.filesystem]\n"
     );
@@ -376,7 +380,7 @@ pub fn dsh_profile(p: &ExecutionPermissions, instructions: &str, cwd: &str) -> R
     } else {
         "ask"
     };
-    let roots = match &p.harness.policy.filesystem {
+    let mut roots = match &p.harness.policy.filesystem {
         FilesystemPermission::Scoped { rules } => rules
             .iter()
             .filter(|r| r.access == FileAccess::ReadWrite)
@@ -384,6 +388,9 @@ pub fn dsh_profile(p: &ExecutionPermissions, instructions: &str, cwd: &str) -> R
             .collect::<Vec<_>>(),
         _ => vec![],
     };
+    if p.harness.policy.filesystem != FilesystemPermission::ReadOnly {
+        roots.push(WORKSPACE_RUNTIME_DIRECTORY.into());
+    }
     let persona = serde_json::to_string(instructions).map_err(storage)?;
     let cwd_yaml = serde_json::to_string(cwd).map_err(storage)?;
     let mut patch = format!(

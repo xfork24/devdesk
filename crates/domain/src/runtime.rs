@@ -1,6 +1,9 @@
 //! Shared runtime identities. Registering an artifact does not certify authentication or execution.
 use crate::*;
 
+/// Public runtime scratch/cache mount; source files remain under /work.
+pub const WORKSPACE_RUNTIME_DIRECTORY: &str = "/tmp/devdesk-runtime";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HarnessProvider {

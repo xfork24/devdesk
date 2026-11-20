@@ -164,12 +164,13 @@ impl Engine {
             let offset = p["step_offset"].as_u64().unwrap_or(0) as usize;
             for e in member.instance.steps.iter().skip(offset).take(16) {
                 let selected = self.native_step_readiness(&member, &member.step(self, &e.id)?)?;
-                if selected["actions"]["accept"]["allowed"] != true
-                    && selected["dispatchable"] != true
-                    && !matches!(
-                        e.status,
-                        StepExecutionStatus::Completed | StepExecutionStatus::Skipped
-                    )
+                if e.status == StepExecutionStatus::AwaitingAcceptance
+                    || (selected["actions"]["accept"]["allowed"] != true
+                        && selected["dispatchable"] != true
+                        && !matches!(
+                            e.status,
+                            StepExecutionStatus::Completed | StepExecutionStatus::Skipped
+                        ))
                 {
                     let mut waiting_for = Vec::<&str>::new();
                     if e.status == StepExecutionStatus::WaitingInput
@@ -194,7 +195,7 @@ impl Engine {
                     if e.status == StepExecutionStatus::NeedsReconciliation {
                         waiting_for.push("reconciliation");
                     }
-                    waiting.push(json!({"revision":member.record.revision,"plan_revision_id":member.instance.active_plan_revision_id,"control_version":member.instance.control_version,"step_name":member.instance.plan.document.steps.iter().find(|s|s.node_id==e.node_id).map(|s|&s.name),"ancestor_instance_ids":ancestors,"waiting_for":waiting_for,"instance_id":id,"owner_id":member.instance.owner_id,"execution_id":e.id,"step":e.step,"path":e.path,"status":e.status,"reason":e.reason,"actions":selected["actions"],"step_revision":selected["step_revision"]}));
+                    waiting.push(json!({"revision":member.record.revision,"plan_revision_id":member.instance.active_plan_revision_id,"control_version":member.instance.control_version,"step_name":member.instance.plan.document.steps.iter().find(|s|s.node_id==e.node_id).map(|s|&s.name),"ancestor_instance_ids":ancestors,"waiting_for":waiting_for,"instance_id":id,"owner_id":member.instance.owner_id,"execution_id":e.id,"step":e.step,"path":e.path,"status":e.status,"reason":e.reason,"actions":selected["actions"],"step_revision":selected["step_revision"],"input_digest":e.input_digest,"outputs":e.outputs}));
                 }
             }
         }

@@ -604,6 +604,26 @@ export function WorkflowInstanceView({
                           execution.reason ? ` · ${execution.reason}` : "",
                         )}
                       </p>
+                      {execution.reconciliation && (
+                        <p
+                          role={
+                            ["unresolved", "conflicted"].includes(
+                              execution.reconciliation.status,
+                            )
+                              ? "alert"
+                              : "status"
+                          }
+                          className="workflow-step-summary"
+                        >
+                          {["unresolved", "conflicted"].includes(
+                            execution.reconciliation.status,
+                          )
+                            ? `核对未完成：${execution.reconciliation.error?.message || "未取得可确认的执行结果"}${execution.reconciliation.error?.code ? `（${execution.reconciliation.error.code}）` : ""}`
+                            : execution.reconciliation.status === "completed"
+                              ? "原执行结果核对已完成"
+                              : "正在核对原执行结果…"}
+                        </p>
+                      )}
                       {stepOpen ? (
                         <div className="workflow-step-body">
                           {definition.confirmation === "human" &&

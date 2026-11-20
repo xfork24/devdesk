@@ -30,4 +30,6 @@ DevDesk 将需求、Agent 执行、工程验证和人工决定组织成可追踪
 
 [术语表](glossary.md) · [RPC 参考](reference/rpc.md) · [工具和调度原语](reference/tools-and-primitives.md) · [外部接入](reference/integrations.md) · [数据格式](reference/contracts.md)
 
+[2026-11-20 完整工作流回归与性能基准](workflow-benchmark-2026-11-20.md)：包含原始时序、审批和主机休眠排除口径、全部步骤及真实回归证据。
+
 这里描述当前实现。出厂流程示例以 [configurations/manifest.json](../../configurations/manifest.json) 发布的资源为准；历史方案和验收记录另见[计划索引](../plans/README.md)。某项历史测试通过，不代表当前机器已经通过相同验收。

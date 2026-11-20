@@ -210,7 +210,7 @@ impl Engine {
             out.push(raw);
         }
         Ok(
-            json!({"outputs":out,"material_transfer":{"tool":"workflow.step.input","input":"You may forward an output input_ref as existing platform evidence; the receiver can read that exact source field. Decide whether Human judgment is needed for the situation. An explicit decision.request remains a Human request and is never automatically bypassed."}}),
+            json!({"outputs":out,"material_transfer":{"tool":"workflow.step.input","input":"When the receiver is waiting_input, forward one returned input_ref verbatim as workflow.step.input's input string. This grants read access to that exact source field; previously granted references remain readable for the same execution. Copying IDs or input_ref strings into prose, constant JSON, or a list of step inputs does not grant source access. For additional sources, forward each exact reference when the receiver next requests input. Existing platform evidence is not a Human answer or approval. Decide separately whether Human judgment is needed; an explicit decision.request remains a Human request and is never automatically bypassed."}}),
         )
     }
 }
