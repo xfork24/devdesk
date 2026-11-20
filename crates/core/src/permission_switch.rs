@@ -372,7 +372,7 @@ impl Engine {
                 .is_some_and(Vec::is_empty),
             "原会话尚未静止或权限切换资格已改变",
         )?;
-        let facts = self.store.conversation_input_facts(&previous)?;
+        let facts = self.store.conversation_input_facts(&previous, None)?;
         let owner = self.permission_switch_owner(&previous)?;
         let mut reads = basis
             .merge(facts.read_set.versions().iter().cloned())?

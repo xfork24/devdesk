@@ -41,61 +41,7 @@ fn instance(root: &Path, current_project: &str, id: &str) -> Result<AgentInstanc
     Ok(i)
 }
 pub fn query(root: &Path, current_project: &str, params: &Value) -> Result<Value> {
-    let id = params["agent_instance_id"]
-        .as_str()
-        .ok_or_else(|| err("invalid_params", "需要 Agent"))?;
-    let i = instance(root, current_project, id)?;
-    let mut rows: Vec<Value> = experience_index::entries(root, None, id, false)?
-        .into_iter()
-        .filter(|r| {
-            i.scope
-                .project_id()
-                .is_none_or(|pid| r["project_id"] == pid)
-        })
-        .map(|mut data| {
-            data["availability"] = json!("unavailable");
-            data
-        })
-        .collect();
-    if let Ok(entries) =
-        experience_index::entries(root, Some(GLOBAL_DISCUSSION_NAMESPACE), id, false)
-    {
-        rows.extend(entries);
-    }
-    let mut unavailable = vec![];
-    for project in projects(root)? {
-        if i.scope.project_id().is_some_and(|pid| pid != project.id) {
-            continue;
-        }
-        match experience_index::entries(root,Some(&project.id),id,true){Ok(entries)=>{
-            rows.extend(entries);
-        },Err(_)=>unavailable.push(json!({"project_id":project.id,"project_name":project.title,"availability":"unavailable"}))}
-    }
-    let mut seen = std::collections::BTreeSet::new();
-    rows.reverse();
-    rows.retain(|r| {
-        seen.insert((
-            r["project_id"].to_string(),
-            r["snapshot_id"].to_string(),
-            r["session_id"].to_string(),
-        ))
-    });
-    // Historical snapshot references remain readable even though a Feature
-    // has one current experience entry for this Agent.
-    if let Some(snapshot) = params["snapshot_id"].as_str() {
-        let historical: Vec<_> = rows
-            .iter()
-            .flat_map(|row| {
-                row["history"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter(|entry| entry["snapshot_id"] == snapshot)
-                    .cloned()
-            })
-            .collect();
-        rows.extend(historical);
-    }
+    let (i, mut rows, unavailable) = visible_entries(root, current_project, params)?;
     rows.retain(|r| {
         ["feature_id", "task_id", "workflow_instance_id"]
             .iter()
@@ -160,67 +106,7 @@ pub fn query(root: &Path, current_project: &str, params: &Value) -> Result<Value
                         .is_none_or(|pid| r["project_id"] == pid)
             })
             .ok_or_else(|| err("not_found", "该 Agent 没有此快照"))?;
-        let pid = entry["project_id"].as_str().unwrap();
-        let global = pid == GLOBAL_DISCUSSION_NAMESPACE;
-        let s = if global {
-            SqliteStore::read_global_discussion_snapshot(root)?
-        } else {
-            SqliteStore::read_project_snapshot(root, pid)?
-        };
-        let snapshot = s
-            .snapshots
-            .iter()
-            .find(|snap| snap.id == snapshot_id)
-            .ok_or_else(|| err("not_found", "快照内容已不可用"))?;
-        // Snapshot manifests use artifact IDs in paths; find the matching sealed manifest by content.
-        let files = FileArtifacts::new(if global {
-            SqliteStore::global_discussion_path(root)?
-        } else {
-            SqliteStore::project_path(root, pid)?
-        });
-        let mut evidence = std::collections::BTreeSet::new();
-        for a in s.artifacts.iter().filter(|a| {
-            a.relative_path.contains("/snapshots/") && a.feature_id == snapshot.feature_id
-        }) {
-            if let Ok(body) = files.read(a)
-                && serde_json::from_slice::<Value>(&body)
-                    .ok()
-                    .and_then(|v| {
-                        serde_json::from_value::<Snapshot>(v.get("snapshot").unwrap_or(&v).clone())
-                            .ok()
-                    })
-                    .is_some_and(|sealed| {
-                        configuration_hash(&sealed) == configuration_hash(snapshot)
-                    })
-            {
-                evidence.insert(a.id.clone());
-                break;
-            }
-        }
-        require(!evidence.is_empty(), "快照密封清单缺失或哈希验证失败")?;
-        evidence.extend(
-            s.documents
-                .iter()
-                .filter(|d| snapshot.documents.contains(&d.id))
-                .filter_map(|d| d.artifact_id.clone()),
-        );
-        evidence.extend(
-            s.executions
-                .iter()
-                .filter(|e| snapshot.execution_instances.contains(&e.id))
-                .filter_map(|e| e.protocol_artifact.clone()),
-        );
-        let captured = serde_json::from_str::<Value>(&snapshot.content).unwrap_or(Value::Null);
-        if let Some(messages) = captured["messages"].as_array() {
-            evidence.extend(
-                messages
-                    .iter()
-                    .filter_map(|event| event["artifact_id"].as_str().map(str::to_owned)),
-            );
-        }
-        return Ok(
-            json!({"entry":entry,"snapshot":snapshot,"documents":s.documents.iter().filter(|d|snapshot.documents.contains(&d.id)).collect::<Vec<_>>(),"evidence":s.artifacts.iter().filter(|a|evidence.contains(&a.id)).map(|a|json!({"id":a.id,"path":a.relative_path,"hash":a.sha256})).collect::<Vec<_>>(),"integrity":"verified"}),
-        );
+        return read_snapshot(root, entry, snapshot_id);
     }
     let mut features = std::collections::BTreeSet::new();
     rows.retain(|row| {
@@ -240,6 +126,168 @@ pub fn query(root: &Path, current_project: &str, params: &Value) -> Result<Value
     let limit = params["limit"].as_u64().unwrap_or(50).clamp(1, 100) as usize;
     Ok(
         json!({"records":rows.iter().skip(offset).take(limit).collect::<Vec<_>>(),"total":rows.len(),"next_offset":if offset.saturating_add(limit)<rows.len(){Some(offset.saturating_add(limit))}else{None},"unavailable":unavailable,"scope":i.scope,"agent_revision_id":i.agent_revision_id}),
+    )
+}
+
+type VisibleEntries = (AgentInstance, Vec<Value>, Vec<Value>);
+
+fn visible_entries(root: &Path, current_project: &str, params: &Value) -> Result<VisibleEntries> {
+    let id = devdesk_core::read_models::identifier(params, "agent_instance_id")?;
+    let instance = instance(root, current_project, &id)?;
+    let snapshot = params["snapshot_id"].as_str();
+    let source = params["source_project_id"].as_str();
+    let visible = |project: &str| {
+        source.is_none_or(|expected| expected == project)
+            && (project == GLOBAL_DISCUSSION_NAMESPACE
+                || instance.scope.project_id().is_none_or(|pid| pid == project))
+    };
+    let cached = experience_index::entries(root, None, &id, false, snapshot)?;
+    let deleted = experience_index::deleted(root, &id)?;
+    let mut rows = cached
+        .into_iter()
+        .filter(|row| row["project_id"].as_str().is_some_and(visible))
+        .map(|mut row| {
+            row["availability"] = json!("unavailable");
+            row
+        })
+        .collect::<Vec<_>>();
+    let mut unavailable = Vec::new();
+    let mut add_source = |pid: &str, name: &str, enrich| {
+        if !visible(pid) {
+            return;
+        }
+        match experience_index::entries(root, Some(pid), &id, enrich, snapshot) {
+            Ok(entries) => {
+                // A reachable source supersedes its cached head, even if the
+                // projection has not caught up with the latest capture.
+                rows.retain(|row| row["project_id"] != pid);
+                rows.extend(entries);
+            }
+            Err(_) if pid != GLOBAL_DISCUSSION_NAMESPACE => unavailable
+                .push(json!({"project_id":pid,"project_name":name,"availability":"unavailable"})),
+            Err(_) => {}
+        }
+    };
+    add_source(GLOBAL_DISCUSSION_NAMESPACE, "全局 / 跨项目", false);
+    if source != Some(GLOBAL_DISCUSSION_NAMESPACE) {
+        for project in projects(root)? {
+            add_source(&project.id, &project.title, true);
+        }
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    rows.reverse();
+    rows.retain(|row| {
+        let pid = row["project_id"].as_str().unwrap_or_default();
+        let sid = row["snapshot_id"].as_str().unwrap_or_default();
+        !deleted.contains(&(pid.to_owned(), sid.to_owned()))
+            && seen.insert((
+                pid.to_owned(),
+                sid.to_owned(),
+                row["session_id"].to_string(),
+            ))
+    });
+    Ok((instance, rows, unavailable))
+}
+
+pub fn entry_visible(root: &Path, current_project: &str, params: &Value) -> Result<bool> {
+    let (_, rows, _) = visible_entries(root, current_project, params)?;
+    Ok(!rows.is_empty())
+}
+
+fn read_snapshot(root: &Path, entry: &Value, snapshot_id: &str) -> Result<Value> {
+    use rusqlite::OptionalExtension;
+
+    let pid = devdesk_core::read_models::identifier(entry, "project_id")?;
+    let path = experience_index::source_path(root, &pid)?;
+    let conn = connection_pool::ManagedConnection::read_only(&path.join("engineering.sqlite3"))?;
+    conn.execute_batch("BEGIN;").map_err(storage)?;
+    let raw: Value = load_table_filtered_params(&conn, "snapshots", "id=?1", &[&snapshot_id])?
+        .pop()
+        .ok_or_else(|| err("not_found", "快照内容已不可用"))?;
+    let mut state = EngineeringState {
+        governance: source_store::load_catalog_records(&conn)?,
+        ..Default::default()
+    };
+    state.refresh_configuration_views()?;
+    let snapshot: Snapshot = serde_json::from_value(source_views::restore_with(
+        &state,
+        &raw,
+        &mut Default::default(),
+    )?)
+    .map_err(storage)?;
+    let manifest: Option<(String, Option<String>)> = conn.query_row(
+        "SELECT json_extract(data,'$.artifact_id'),json_extract(data,'$.turn_id') FROM governance_records
+         WHERE type IN ('conversation_capture_intent','captured_experience_intent') AND json_extract(data,'$.snapshot.id')=?1 AND json_type(data,'$.artifact_id')='text' LIMIT 1",
+        [snapshot_id], |row| Ok((row.get(0)?, row.get(1)?)),
+    ).optional().map_err(storage)?;
+    let manifests: Vec<Artifact> = match &manifest {
+        Some((id, _)) => load_table_filtered_params(&conn, "artifacts", "id=?1", &[id])?,
+        None => load_table_filtered_params(
+            &conn,
+            "artifacts",
+            "feature_id IS ?1 AND relative_path LIKE '%/snapshots/%'",
+            &[&snapshot.feature_id],
+        )?,
+    };
+    let files = FileArtifacts::new(path);
+    let digest = configuration_hash(&snapshot);
+    let sealed = manifests
+        .into_iter()
+        .find(|artifact| {
+            files
+                .read(artifact)
+                .ok()
+                .and_then(|body| serde_json::from_slice::<Value>(&body).ok())
+                .and_then(|value| {
+                    serde_json::from_value::<Snapshot>(
+                        value.get("snapshot").unwrap_or(&value).clone(),
+                    )
+                    .ok()
+                })
+                .is_some_and(|sealed| configuration_hash(&sealed) == digest)
+        })
+        .ok_or_else(|| err("blocked", "快照密封清单缺失或哈希验证失败"))?;
+    let documents: Vec<Document> = load_table_filtered_params(
+        &conn,
+        "documents",
+        "id IN (SELECT value FROM json_each(?1))",
+        &[&json!(snapshot.documents).to_string()],
+    )?;
+    let mut evidence = std::collections::BTreeSet::from([sealed.id]);
+    evidence.extend(documents.iter().filter_map(|d| d.artifact_id.clone()));
+    let mut executions = conn.prepare(
+        "SELECT protocol_artifact FROM executions WHERE id IN (SELECT value FROM json_each(?1)) AND protocol_artifact IS NOT NULL"
+    ).map_err(storage)?;
+    evidence.extend(
+        executions
+            .query_map([json!(snapshot.execution_instances).to_string()], |row| {
+                row.get::<_, String>(0)
+            })
+            .map_err(storage)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(storage)?,
+    );
+    let captured = serde_json::from_str::<Value>(&snapshot.content).unwrap_or(Value::Null);
+    if let Some(messages) = captured["messages"].as_array() {
+        evidence.extend(
+            messages
+                .iter()
+                .filter_map(|event| event["artifact_id"].as_str().map(str::to_owned)),
+        );
+    }
+    let artifacts: Vec<Artifact> = load_table_filtered_params(
+        &conn,
+        "artifacts",
+        "id IN (SELECT value FROM json_each(?1))",
+        &[&json!(evidence).to_string()],
+    )?;
+    let mut entry = entry.clone();
+    if let Some((_, Some(turn))) = manifest {
+        entry["turn_id"] = json!(turn);
+    }
+    Ok(
+        json!({"entry":entry,"snapshot":snapshot,"documents":documents,
+        "evidence":artifacts.iter().map(|a|json!({"id":a.id,"path":a.relative_path,"hash":a.sha256})).collect::<Vec<_>>(),"integrity":"verified"}),
     )
 }
 
@@ -480,23 +528,14 @@ impl devdesk_core::ports::AgentContextReader for Reader {
             let project = detail["entry"]["project_id"]
                 .as_str()
                 .ok_or_else(|| err("storage", "经验来源缺失"))?;
-            let (state, path) = if project == GLOBAL_DISCUSSION_NAMESPACE {
-                (
-                    SqliteStore::read_global_discussion_snapshot(&self.root)?,
-                    SqliteStore::global_discussion_path(&self.root)?,
-                )
-            } else {
-                (
-                    SqliteStore::read_project_snapshot(&self.root, project)?,
-                    SqliteStore::project_path(&self.root, project)?,
-                )
-            };
-            let artifact = state
-                .artifacts
-                .iter()
-                .find(|r| r.id == artifact)
-                .ok_or_else(|| err("not_found", "历史证据不可用"))?;
-            let bytes = FileArtifacts::new(path).read(artifact)?;
+            let path = experience_index::source_path(&self.root, project)?;
+            let conn =
+                connection_pool::ManagedConnection::read_only(&path.join("engineering.sqlite3"))?;
+            let artifact: Artifact =
+                load_table_filtered_params(&conn, "artifacts", "id=?1", &[&artifact])?
+                    .pop()
+                    .ok_or_else(|| err("not_found", "历史证据不可用"))?;
+            let bytes = FileArtifacts::new(path).read(&artifact)?;
             let (content, encoding) = match String::from_utf8(bytes) {
                 Ok(text) => (text, "utf-8"),
                 Err(error) => {

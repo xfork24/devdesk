@@ -1202,8 +1202,9 @@ impl EngineeringStore for SqliteStore {
     fn conversation_input_facts(
         &self,
         session: &Session,
+        through_turn: Option<&str>,
     ) -> Result<devdesk_core::ConversationCaptureFacts> {
-        conversation_captures::input(&self.connection, session)
+        conversation_captures::input(&self.connection, session, through_turn)
     }
     fn conversation_page(
         &self,

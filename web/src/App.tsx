@@ -201,7 +201,11 @@ async function rpc(
               signal: AbortSignal.any([
                 signal,
                 AbortSignal.timeout(
-                  ["session.open", "runtime.prepare"].includes(method)
+                  [
+                    "session.open",
+                    "experience.restore",
+                    "runtime.prepare",
+                  ].includes(method)
                     ? 25 * 60 * 1000
                     : method === "codex.auth.start"
                       ? 5 * 60 * 1000
@@ -397,14 +401,20 @@ function App() {
       ? {
           id: route.get("session_id"),
           owner_id:
-            route.get("task_id") ||
-            route.get("feature_id") ||
-            route.get("project_id"),
-          project_id: route.get("project_id"),
+            route.get("session_scope") === "global"
+              ? "global"
+              : route.get("task_id") ||
+                route.get("feature_id") ||
+                route.get("project_id"),
+          project_id: route.get("project_id") || "",
           turn_id: route.get("turn_id"),
         }
       : undefined,
   );
+  const discussionFocus =
+    tab === "discussion" && focusedSession?.project_id === projectId
+      ? focusedSession
+      : undefined;
   const [taskFilter, setTaskFilter] = useState(route.get("task_id") || "");
   const [readingTarget, setReadingTarget] = useState<Row>(() => ({
     ...Object.fromEntries(
@@ -482,6 +492,14 @@ function App() {
     if (projectId) params.set("project_id", projectId);
     if (featureId) params.set("feature_id", featureId);
     if (taskFilter) params.set("task_id", taskFilter);
+    if (discussionFocus) {
+      params.set("session_id", discussionFocus.id);
+      if (discussionFocus.turn_id)
+        params.set("turn_id", discussionFocus.turn_id);
+      else params.delete("turn_id");
+      if (discussionFocus.owner_id === "global")
+        params.set("session_scope", "global");
+    }
     if (tab === "execution") params.set("detail", executionTab);
     if (tab === "history") params.set("history_scope", historyScope);
     if (workFilter) params.set("filter", workFilter);
@@ -506,6 +524,7 @@ function App() {
     workFilter,
     featurePage,
     historyScope,
+    discussionFocus,
   ]);
   useEffect(() => {
     const pop = () => {
@@ -532,13 +551,19 @@ function App() {
         _project: p.get("project_id") || "",
         _feature: p.get("feature_id") || "",
       });
-      if (p.get("tab") === "discussion" && p.get("session_id"))
-        setFocusedSession({
-          id: p.get("session_id"),
-          owner_id: p.get("task_id") || p.get("feature_id") || pid,
-          project_id: pid,
-          turn_id: p.get("turn_id"),
-        });
+      setFocusedSession(
+        p.get("tab") === "discussion" && p.get("session_id")
+          ? {
+              id: p.get("session_id"),
+              owner_id:
+                p.get("session_scope") === "global"
+                  ? "global"
+                  : p.get("task_id") || p.get("feature_id") || pid,
+              project_id: pid,
+              turn_id: p.get("turn_id"),
+            }
+          : undefined,
+      );
       setWorkFilter(p.get("filter") || "");
       setFeaturePage(Number(p.get("page") || 0));
     };
@@ -840,6 +865,7 @@ function App() {
     ++requestGeneration.current;
     ++projectGeneration.current;
     setProjectId(id);
+    setFocusedSession(undefined);
     setFeatureId("");
     setFeaturePage(0);
     setDetailPages({});
@@ -1551,39 +1577,46 @@ function App() {
           )}
           {data && tab === "discussion" && (
             <RoleConversation
-              key={
-                (project?.id || "global") +
-                (focusedSession && focusedSession.project_id === project?.id
-                  ? focusedSession.id
-                  : "")
-              }
-              initialOwner={
-                focusedSession && focusedSession.project_id === project?.id
-                  ? focusedSession.owner_id
-                  : featureId || undefined
-              }
-              initialSession={
-                focusedSession && focusedSession.project_id === project?.id
-                  ? focusedSession.id
-                  : undefined
-              }
-              initialTurn={focusedSession?.turn_id || undefined}
+              key={`${project?.id || "global"}:${discussionFocus?.id || ""}:${discussionFocus?.turn_id || ""}`}
+              initialOwner={discussionFocus?.owner_id || featureId || undefined}
+              initialSession={discussionFocus?.id}
+              initialTurn={discussionFocus?.turn_id || undefined}
               project={project}
               feature={f}
               tasks={detail?.tasks || []}
               agents={definitions}
               configurations={data.configurations || []}
-              onLocateExperience={async (entry) => {
-                if (entry.project_id === "00000000-0000-4000-8000-000000000000")
-                  return;
-                if (entry.project_id !== projectId)
-                  await openProject(entry.project_id);
-                setFeatureId(entry.feature_id);
-                setTaskFilter(entry.task_id || "");
-                setExecutionTab("context");
-                setTab("execution");
+              onLocateExperience={(entry) => {
+                const global =
+                  entry.project_id === "00000000-0000-4000-8000-000000000000";
+                const sourceProject = global ? projectId : entry.project_id;
+                if (sourceProject !== projectId) openProject(sourceProject);
+                if (!global) {
+                  setFeatureId(entry.feature_id || "");
+                  setTaskFilter(entry.task_id || "");
+                }
+                setFocusedSession({
+                  id: entry.session_id,
+                  owner_id: global
+                    ? "global"
+                    : entry.task_id || entry.feature_id || sourceProject,
+                  project_id: sourceProject,
+                  turn_id: entry.turn_id,
+                });
+                setReadingTarget({});
+                setTab("discussion");
               }}
-              request={configurationRequest}
+              onDiscussionDeleted={(session, turn) => {
+                if (discussionFocus?.id !== session) return;
+                if (!turn) {
+                  setFocusedSession(undefined);
+                  setReadingTarget({});
+                } else if (discussionFocus.turn_id === turn) {
+                  setFocusedSession({ ...discussionFocus, turn_id: undefined });
+                  setReadingTarget({});
+                }
+              }}
+              request={rpc}
               refresh={load}
             />
           )}

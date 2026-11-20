@@ -42,7 +42,7 @@ impl Engine {
         } else {
             (
                 session.clone(),
-                self.store.conversation_input_facts(session)?,
+                self.store.conversation_input_facts(session, None)?,
             )
         };
         require(

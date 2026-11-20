@@ -1,60 +1,49 @@
 use super::*;
 
 impl Workspace {
-    pub(super) fn experience_dispatch(
-        &self,
-        method: &str,
-        params: &Value,
-        e: &Engine,
-    ) -> Option<Result<Value>> {
-        if !["query.agent_experience", "experience.restore"].contains(&method) {
-            return None;
+    pub(super) fn experience_scope(&self, params: &Value, query: &Value) -> Result<String> {
+        if params["scope"] == "global" {
+            require(params["project_id"].is_null(), "全局讨论不能同时指定项目")?;
+            let instance = devdesk_core::read_models::identifier(query, "agent_instance_id")?;
+            let origin = experience::discussion_catalog(Path::new(&self.global.root()))?
+                .into_iter()
+                .find(|r| r.id == instance && r.r#type == "agent_instance")
+                .and_then(|r| r.scope.project_id().map(str::to_owned));
+            return Ok(origin.unwrap_or_else(|| GLOBAL_DISCUSSION_NAMESPACE.into()));
         }
-        Some((|| {
-            let pid = if params["scope"] == "global" {
-                GLOBAL_DISCUSSION_NAMESPACE.into()
-            } else {
-                e.store
-                    .project_id()
-                    .ok_or_else(|| err("project_required", "需要当前项目"))?
-            };
-            let root = PathBuf::from(self.global.root());
-            let p = if method == "experience.restore" {
-                &params["payload"]
-            } else {
-                params
-            };
-            let mut read_pid = pid.clone();
-            if params["scope"] == "global"
-                && let Some(instance) = p["agent_instance_id"].as_str()
-                && let Some(origin) = experience::discussion_catalog(&root)?
-                    .iter()
-                    .find(|r| r.id == instance && r.r#type == "agent_instance")
-                    .and_then(|r| r.scope.project_id())
-            {
-                read_pid = origin.to_owned();
-            }
-            let detail = experience::query(&root, &read_pid, p)?;
-            if method == "query.agent_experience" {
-                return Ok(detail);
-            }
-            require(p["snapshot_id"].is_string(), "恢复需要选择具体快照")?;
-            let command: Command = serde_json::from_value(params.clone())
-                .map_err(|e| err("invalid_params", e.to_string()))?;
-            let snapid = e.import_experience(
-                &command,
-                &pid,
-                &detail,
-                &InvocationContext::human(
-                    (pid != GLOBAL_DISCUSSION_NAMESPACE).then(|| pid.clone()),
-                ),
-            )?;
-            let mut opened = command;
-            opened.command_id = format!("{}:restore-session", opened.command_id);
-            opened.payload = json!({"agent_instance_id":p["agent_instance_id"],"snapshot_id":snapid,"work_type":"discussion","force_new":true});
-            // Use session.open's own idempotency key; the import is independently idempotent.
-            self.open_conversation(e, opened)
-        })())
+        let pid = params["project_id"]
+            .as_str()
+            .ok_or_else(|| err("project_required", "经验查询需要当前项目"))?
+            .to_owned();
+        if self.global.project(&pid)?.is_none() {
+            return Err(err("not_found", "经验查询需要已登记项目"));
+        }
+        Ok(pid)
+    }
+
+    pub(super) fn restore_experience(&self, params: &Value, e: &Engine) -> Result<Value> {
+        let p = &params["payload"];
+        let read_pid = self.experience_scope(params, p)?;
+        let pid = if params["scope"] == "global" {
+            GLOBAL_DISCUSSION_NAMESPACE.to_owned()
+        } else {
+            read_pid.clone()
+        };
+        require(p["snapshot_id"].is_string(), "恢复需要选择具体快照")?;
+        let detail = experience::query(Path::new(&self.global.root()), &read_pid, p)?;
+        let command: Command = serde_json::from_value(params.clone())
+            .map_err(|e| err("invalid_params", e.to_string()))?;
+        let snapid = e.import_experience(
+            &command,
+            &pid,
+            &detail,
+            &InvocationContext::human((pid != GLOBAL_DISCUSSION_NAMESPACE).then(|| pid.clone())),
+        )?;
+        let mut opened = command;
+        opened.command_id = format!("{}:restore-session", opened.command_id);
+        opened.payload = json!({"agent_instance_id":p["agent_instance_id"],"snapshot_id":snapid,"work_type":"discussion","force_new":true});
+        // Use session.open's own idempotency key; the import is independently idempotent.
+        self.open_conversation(e, opened)
     }
 
     pub(super) fn tick_workflow_engine(

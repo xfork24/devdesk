@@ -269,6 +269,16 @@ impl Engine {
         if let Some(previous) = e.store.replay(&command.command_id, &fingerprint)? {
             return Ok(previous);
         }
+        if let Some(source) = command.payload.get("continue_from") {
+            require(
+                source.is_object()
+                    && source["session_id"].is_string()
+                    && command.payload["configured_execution_id"].is_null()
+                    && command.payload["controller_id"].is_null()
+                    && command.payload["agent_instance_id"].is_string(),
+                "续聊需要明确来源和 Agent 实例，并作为独立讨论打开",
+            )?;
+        }
         let formal = e.prepare_formal_session(&command)?;
         let configured = formal.as_ref().map(|prepared| prepared.request.clone());
         e.resolve_session_composition_at(resources, &mut command, formal.as_ref())?;

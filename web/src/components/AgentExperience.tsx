@@ -1,9 +1,14 @@
 import { displayText, shortId } from "../display-text";
 import { ActionButton } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { MarkdownPreview } from "./configuration-ui";
 import { type Request, type Row } from "./rpc-types";
+import { experienceKey } from "./experience-reference";
+
+const pageSize = 10;
+const experienceReferenceLimit = 20;
+
 type Props = {
   revision?: string;
   request: Request;
@@ -12,7 +17,9 @@ type Props = {
   owner: Row;
   onRestored: (id: string) => void;
   onLocate?: (entry: Row) => void;
+  references: Row[];
   onReference?: (entry: Row) => void;
+  onDeleted: (entry: Row) => void;
 };
 export function AgentExperience({
   request,
@@ -22,7 +29,9 @@ export function AgentExperience({
   owner,
   onRestored,
   onLocate,
+  references,
   onReference,
+  onDeleted,
 }: Props) {
   const {
     error,
@@ -32,46 +41,56 @@ export function AgentExperience({
     endFeedback,
   } = useActionFeedback();
 
-  const [project, setProject] = useState(""),
-    [feature, setFeature] = useState(""),
-    [workflow, setWorkflow] = useState(""),
-    [from, setFrom] = useState(""),
-    [to, setTo] = useState(""),
-    [page, setPage] = useState(0),
-    [data, setData] = useState<Row>(),
-    [detail, setDetail] = useState<Row>(),
-    [busy, setBusy] = useState(false);
-  const generation = useRef(0);
-  const invalidate = useCallback(() => {
-    generation.current += 1;
-  }, []);
+  const [project, setProject] = useState("");
+  const [feature, setFeature] = useState("");
+  const [workflow, setWorkflow] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [page, setPage] = useState(0);
+  const [data, setData] = useState<Row>();
+  const [listRevision, reload] = useState(0);
+  const [expanded, setExpanded] = useState<Row>();
+  const [detailResult, setDetailResult] = useState<{
+    key: string;
+    value?: Row;
+    error?: string;
+  }>();
+  const [busy, setBusy] = useState(false);
+  const scoped =
+    projectId === "global" ? { scope: "global" } : { project_id: projectId };
+  const selected = new Set(references.map(experienceKey));
+
   useEffect(() => {
     if (!instanceId) return;
-    const g = ++generation.current;
-    setDetail(undefined);
-    setError("");
-    request("query.agent_experience", {
-      ...(projectId === "global"
-        ? { scope: "global" }
-        : { project_id: projectId }),
-      agent_instance_id: instanceId,
-      project_name: project,
-      feature_name: feature,
-      workflow_instance_id: workflow || undefined,
-      from: from ? new Date(from).getTime() : undefined,
-      to: to ? new Date(to).getTime() : undefined,
-      offset: page * 20,
-      limit: 20,
-    })
+    const controller = new AbortController();
+    const options = { signal: controller.signal };
+    request(
+      "query.agent_experience",
+      {
+        ...(projectId === "global"
+          ? { scope: "global" }
+          : { project_id: projectId }),
+        agent_instance_id: instanceId,
+        project_name: project,
+        feature_name: feature,
+        workflow_instance_id: workflow || undefined,
+        from: from ? new Date(from).getTime() : undefined,
+        to: to ? new Date(to).getTime() : undefined,
+        offset: page * pageSize,
+        limit: pageSize,
+      },
+      options,
+    )
       .then((result) => {
-        if (g === generation.current) setData(result);
+        if (controller.signal.aborted) return;
+        const lastPage = Math.max(0, Math.ceil(result.total / pageSize) - 1);
+        if (page > lastPage) setPage(lastPage);
+        setData(result);
       })
       .catch((e) => {
-        if (g === generation.current) setError(String(e));
+        if (!controller.signal.aborted) setError(String(e));
       });
-    return () => {
-      invalidate();
-    };
+    return () => controller.abort();
   }, [
     request,
     projectId,
@@ -83,9 +102,50 @@ export function AgentExperience({
     to,
     page,
     revision,
+    listRevision,
     setError,
-    invalidate,
   ]);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const key = experienceKey(expanded);
+    const controller = new AbortController();
+    request(
+      "query.agent_experience",
+      {
+        ...(projectId === "global"
+          ? { scope: "global" }
+          : { project_id: projectId }),
+        agent_instance_id: instanceId,
+        snapshot_id: expanded.snapshot_id,
+        source_project_id: expanded.project_id,
+      },
+      { signal: controller.signal },
+    )
+      .then((result) => {
+        if (!controller.signal.aborted) setDetailResult({ key, value: result });
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted)
+          setDetailResult({ key, error: String(e) });
+      });
+    return () => controller.abort();
+  }, [expanded, instanceId, projectId, request]);
+
+  async function change(work: () => Promise<void>) {
+    beginFeedback();
+    setError("");
+    setBusy(true);
+    try {
+      await work();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      endFeedback();
+      setBusy(false);
+    }
+  }
+
   const filters = (
     <div className="form-grid">
       <label>
@@ -164,156 +224,190 @@ export function AgentExperience({
               {displayText(data?.total || 0)} 条经验 · 同一 Feature
               持续更新一条记录 · 时间按当前时区显示
             </p>
-            {data?.records.map((entry: Row) => (
-              <article key={entry.snapshot_id + entry.session_id}>
-                <strong>
-                  {displayText(entry.project_name)} /{" "}
-                  {displayText(entry.feature_name)}
-                </strong>
-                <p>
-                  {displayText(new Date(entry.captured_at).toLocaleString())} ·{" "}
-                  {displayText(entry.kind)} ·{" "}
-                  {displayText(
-                    entry.task_id
-                      ? `Task ${shortId(entry.task_id)}`
-                      : "Feature",
-                  )}
-                </p>
-                {entry.availability === "unavailable" &&
-                entry.metadata_excerpt ? (
-                  <p className="notice">
-                    来源暂不可用，当前显示缓存的历史摘要。
+            {data?.records.map((entry: Row) => {
+              const key = experienceKey(entry);
+              const referenced = selected.has(key);
+              const open = expanded && experienceKey(expanded) === key;
+              const resolved =
+                open && detailResult?.key === key ? detailResult : undefined;
+              const detail = resolved?.value;
+              const detailError = resolved?.error;
+              const unavailable = entry.availability === "unavailable";
+              const title = `${entry.project_name} / ${entry.feature_name || "讨论"}`;
+              return (
+                <article
+                  key={key}
+                  className={
+                    referenced
+                      ? "experience-entry referenced"
+                      : "experience-entry"
+                  }
+                >
+                  <strong>{displayText(title)}</strong>
+                  <p>
+                    {displayText(new Date(entry.captured_at).toLocaleString())}{" "}
+                    · {displayText(entry.kind)} ·{" "}
+                    {displayText(
+                      entry.task_id
+                        ? `Task ${shortId(entry.task_id)}`
+                        : entry.feature_id
+                          ? "Feature"
+                          : "讨论",
+                    )}
                   </p>
-                ) : null}
-                <div className="actions">
-                  {onReference && (
-                    <ActionButton onClick={() => onReference(entry)}>
-                      引用到当前讨论
-                    </ActionButton>
+                  {unavailable && entry.metadata_excerpt && (
+                    <p className="notice">
+                      来源暂不可用，当前显示缓存的历史摘要。
+                    </p>
                   )}
-                  <ActionButton
-                    onClick={async () => {
-                      captureFeedback();
-
-                      setError("");
-                      const g = ++generation.current;
-                      try {
-                        const value = await request("query.agent_experience", {
-                          ...(projectId === "global"
-                            ? { scope: "global" }
-                            : { project_id: projectId }),
-                          agent_instance_id: instanceId,
-                          snapshot_id: entry.snapshot_id,
-                          source_project_id: entry.project_id,
-                        });
-                        if (g === generation.current) setDetail(value);
-                      } catch (e) {
-                        if (g === generation.current) setError(String(e));
-                      }
-                    }}
-                  >
-                    展开摘要与快照
-                  </ActionButton>
-                  {onLocate && (
+                  <div className="actions">
+                    {onReference && (
+                      <ActionButton
+                        aria-pressed={referenced}
+                        disabled={
+                          busy ||
+                          unavailable ||
+                          (!referenced &&
+                            references.length >= experienceReferenceLimit)
+                        }
+                        onClick={() => onReference(entry)}
+                      >
+                        {referenced ? "已引用" : "引用到当前讨论"}
+                      </ActionButton>
+                    )}
                     <ActionButton
+                      aria-expanded={!!open}
+                      disabled={unavailable}
                       onClick={() => {
-                        captureFeedback();
-                        return onLocate(entry);
+                        setDetailResult(undefined);
+                        setExpanded(open ? undefined : entry);
                       }}
                     >
-                      定位来源工作
+                      {open ? "收起摘要与快照" : "展开摘要与快照"}
                     </ActionButton>
+                    {onLocate && (
+                      <ActionButton
+                        disabled={busy || unavailable || !entry.session_id}
+                        onClick={() =>
+                          onLocate(open && detail ? detail.entry : entry)
+                        }
+                      >
+                        定位来源工作
+                      </ActionButton>
+                    )}
+                    <ActionButton
+                      disabled={busy}
+                      onClick={() => {
+                        if (!window.confirm(`删除经验「${title}」？`)) return;
+                        return change(async () => {
+                          await request("experience.delete", {
+                            ...scoped,
+                            command_id: crypto.randomUUID(),
+                            target: entry.snapshot_id,
+                            expected_revision: 0,
+                            payload: {
+                              agent_instance_id: instanceId,
+                              snapshot_id: entry.snapshot_id,
+                              source_project_id: entry.project_id,
+                            },
+                          });
+                          onDeleted(entry);
+                          if (open) setExpanded(undefined);
+                          reload((version) => version + 1);
+                        });
+                      }}
+                    >
+                      删除经验
+                    </ActionButton>
+                  </div>
+                  {open && (
+                    <section
+                      className="notice experience-detail"
+                      aria-label="快照摘要"
+                    >
+                      {detailError ? (
+                        <p role="alert" className="error">
+                          {displayText(detailError)}
+                        </p>
+                      ) : !detail ? (
+                        <p role="status">正在读取快照…</p>
+                      ) : (
+                        <>
+                          <h3>{displayText(title)} · 快照摘要</h3>
+                          <p>
+                            {detail.entry.workflow_name &&
+                              `工作流 ${detail.entry.workflow_name} · `}
+                            Model {displayText(detail.entry.binding?.model)} ·
+                            Harness{" "}
+                            {displayText(
+                              detail.entry.binding?.installation?.key?.provider,
+                            )}{" "}
+                            · 完整性 {displayText(detail.integrity)}
+                          </p>
+                          <MarkdownPreview
+                            text={snapshotSummary(detail.snapshot.content)}
+                          />
+                          <details>
+                            <summary>完整快照与证据引用</summary>
+                            <pre>
+                              {displayText(JSON.stringify(detail, null, 2))}
+                            </pre>
+                          </details>
+                          <ActionButton
+                            disabled={busy || owner.revision === undefined}
+                            onClick={() =>
+                              change(async () => {
+                                const result = await request(
+                                  "experience.restore",
+                                  {
+                                    ...scoped,
+                                    command_id: crypto.randomUUID(),
+                                    target: owner.id,
+                                    expected_revision: owner.revision,
+                                    payload: {
+                                      agent_instance_id: instanceId,
+                                      snapshot_id: entry.snapshot_id,
+                                      source_project_id: entry.project_id,
+                                    },
+                                  },
+                                );
+                                onRestored(result.id);
+                              })
+                            }
+                          >
+                            基于此快照开启新讨论
+                          </ActionButton>
+                        </>
+                      )}
+                    </section>
                   )}
-                </div>
-              </article>
-            ))}
+                </article>
+              );
+            })}
             {data?.unavailable.map((p: Row) => (
               <p key={p.project_id} className="notice">
                 {displayText(p.project_name)}：历史项目当前不可用
               </p>
             ))}
-            <div className="actions">
-              <ActionButton
-                disabled={!page}
-                onClick={() => {
-                  captureFeedback();
-                  return setPage((p) => p - 1);
-                }}
-              >
-                上一页
-              </ActionButton>
-              <ActionButton
-                disabled={(page + 1) * 20 >= (data?.total || 0)}
-                onClick={() => {
-                  captureFeedback();
-                  return setPage((p) => p + 1);
-                }}
-              >
-                下一页
-              </ActionButton>
-            </div>
-            {detail && (
-              <article className="notice">
-                <h3>{displayText(detail.entry.feature_name)} · 快照摘要</h3>
-                <p>
-                  {displayText(
-                    detail.entry.workflow_name
-                      ? `工作流 ${detail.entry.workflow_name} · `
-                      : "",
-                  )}
-                  Model {displayText(detail.entry.binding?.model)} · Harness{" "}
-                  {displayText(
-                    detail.entry.binding?.installation?.key.provider,
-                  )}{" "}
-                  · 完整性 {displayText(detail.integrity)}
-                </p>
-                <MarkdownPreview
-                  text={
-                    detail.snapshot.content ||
-                    "该快照没有附加文字上下文；文档与执行引用仍可读取。"
-                  }
-                />
-                <details>
-                  <summary>完整快照与证据引用</summary>
-                  <pre>{displayText(JSON.stringify(detail, null, 2))}</pre>
-                </details>
+            {(page > 0 || data?.total > pageSize) && (
+              <div className="actions" aria-label="经验分页">
                 <ActionButton
-                  disabled={busy}
-                  onClick={async () => {
-                    captureFeedback();
-
-                    beginFeedback();
-                    setBusy(true);
-                    setError("");
-                    try {
-                      const result = await request("experience.restore", {
-                        ...(projectId === "global"
-                          ? { scope: "global" }
-                          : { project_id: projectId }),
-                        command_id: crypto.randomUUID(),
-                        target: owner.id,
-                        expected_revision: owner.revision,
-                        payload: {
-                          agent_instance_id: instanceId,
-                          snapshot_id: detail.snapshot.id,
-                          source_project_id: detail.entry.project_id,
-                        },
-                      });
-                      onRestored(result.id);
-                    } catch (e) {
-                      setError(String(e));
-                    } finally {
-                      endFeedback();
-                      setBusy(false);
-                    }
-                  }}
+                  disabled={!page}
+                  onClick={() => setPage((p) => p - 1)}
                 >
-                  基于此快照开启新讨论
+                  上一页
                 </ActionButton>
-                <p>
-                  恢复保留来源引用，当前代码、文档和工作流配置保持各自版本。
-                </p>
-              </article>
+                <span>
+                  第 {page + 1} /{" "}
+                  {Math.max(1, Math.ceil((data?.total || 0) / pageSize))} 页
+                </span>
+                <ActionButton
+                  disabled={(page + 1) * pageSize >= (data?.total || 0)}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  下一页
+                </ActionButton>
+              </div>
             )}
           </>
         )}
@@ -325,4 +419,32 @@ export function AgentExperience({
       </div>
     </details>
   );
+}
+
+function snapshotSummary(content: string): string {
+  if (!content) return "该快照没有附加文字上下文。";
+  try {
+    const parsed = JSON.parse(content);
+    if (Array.isArray(parsed?.messages)) {
+      const messages = (parsed.messages as Row[])
+        .filter(
+          (event) =>
+            ["user", "assistant"].includes(event.kind) &&
+            event.mode !== "delta" &&
+            event.content,
+        )
+        .slice(-4);
+      if (messages.length)
+        return messages
+          .map(
+            (event) => `**${event.kind === "user" ? "用户" : "Agent"}**
+
+${event.content}`,
+          )
+          .join("\n\n");
+    }
+  } catch {
+    // Older snapshots may contain plain Markdown.
+  }
+  return content;
 }

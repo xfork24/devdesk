@@ -195,7 +195,11 @@ fn text_value(value: &Value, field: &str) -> String {
 
 /// Input captures a real committed window before admission. No fabricated Turn
 /// or terminal event is passed to the completed-capture rules.
-pub(super) fn input(pool: &ConnectionPool, session: &Session) -> Result<ConversationCaptureFacts> {
+pub(super) fn input(
+    pool: &ConnectionPool,
+    session: &Session,
+    through_turn: Option<&str>,
+) -> Result<ConversationCaptureFacts> {
     let conn = pool.read()?;
     conn.execute_batch("BEGIN;").map_err(storage)?;
     let mut keys = vec![ResourceKey::new("session", &session.id)];
@@ -226,60 +230,82 @@ pub(super) fn input(pool: &ConnectionPool, session: &Session) -> Result<Conversa
                 .is_some_and(|s| s["project_id"] == json!(session.project_id)),
         "输入快照不能替换原会话版本",
     )?;
-    let sequence: u64 = conn
-        .query_row(
-            "SELECT coalesce(max(sequence),0) FROM conversation_events WHERE session_id=?1",
-            [&session.id],
-            |r| r.get(0),
-        )
-        .map_err(storage)?;
+    let turn_boundary: i64 = conn.query_row(
+        "SELECT coalesce(max(rowid),0) FROM turns WHERE session_id=?1 AND (?2 IS NULL OR id=?2)",
+        params![session.id, through_turn],
+        |r| r.get(0),
+    ).map_err(storage)?;
+    // Hide deleted Turns from new context. Immutable captures and the original
+    // provider ledger stay available to audit readers.
+    let visible_turns = "SELECT id FROM turns WHERE session_id=?1 AND rowid<=?2 AND NOT EXISTS(SELECT 1 FROM governance_records WHERE id='discussion-turn-deleted:' || turns.id)";
     let mut messages: Vec<ConversationEvent> = load_table_filtered_params(
         &conn,
-        "conversation_events",
-        "id IN (SELECT id FROM (SELECT id,sum(bytes) OVER(ORDER BY sequence DESC) AS total FROM (SELECT id,sequence,length(CAST(content AS BLOB)) AS bytes FROM conversation_events WHERE session_id=?1 AND sequence<=?2 ORDER BY sequence DESC LIMIT 100)) WHERE total<=65536)",
-        &[&session.id, &sequence],
+        "conversation_events", &format!(
+            "id IN (SELECT id FROM (SELECT id,sum(bytes) OVER(ORDER BY sequence DESC) AS total FROM
+             (SELECT id,sequence,length(CAST(content AS BLOB)) AS bytes FROM conversation_events
+              WHERE session_id=?1 AND turn_id IN ({visible_turns}) ORDER BY sequence DESC LIMIT 100))
+             WHERE total<=65536)"
+        ),
+        &[&session.id, &turn_boundary],
     )?;
     messages.sort_by_key(|e| e.sequence);
-    let inherited=session.snapshot_id.as_ref().map(|id|conn.query_row("SELECT kind,substr(content,1,16384) FROM snapshots WHERE id=?1",[id],|r|Ok(json!({"snapshot_id":id,"kind":r.get::<_,String>(0)?,"content_excerpt":r.get::<_,String>(1)?}))).optional().map_err(storage)).transpose()?.flatten();
+    let inherited = session.snapshot_id.as_ref().map(|id|conn.query_row(
+        "SELECT kind,substr(content,1,16384) FROM snapshots WHERE id=?1",[id],
+        |r|Ok(json!({"snapshot_id":id,"kind":r.get::<_,String>(0)?,"content_excerpt":r.get::<_,String>(1)?}))
+    ).optional().map_err(storage)).transpose()?.flatten();
     let contexts = json_rows(
         &conn,
-        "SELECT json_object('turn_id',definition_id,'experience_refs',json_extract(data,'$.experience_refs')) FROM governance_records WHERE type='conversation_context' AND json_extract(data,'$.session_id')=?1 ORDER BY rowid DESC LIMIT 50",
-        &[&session.id],
+        &format!(
+            "SELECT json_object('turn_id',definition_id,'experience_refs',json_extract(data,'$.experience_refs')) FROM governance_records WHERE type='conversation_context' AND definition_id IN ({visible_turns}) ORDER BY rowid DESC LIMIT 50"
+        ),
+        &[&session.id, &turn_boundary],
     )?;
     let reads = json_rows(
         &conn,
-        "SELECT json_object('call_id',id,'turn_id',json_extract(data,'$.invocation.turn_id'),'source',json_extract(data,'$.result.entry'),'content_digest',json_extract(data,'$.result.content_digest')) FROM governance_records WHERE type='agent_context_call' AND json_extract(data,'$.invocation.session_id')=?1 AND json_extract(data,'$.status')='succeeded' ORDER BY rowid DESC LIMIT 100",
-        &[&session.id],
+        &format!(
+            "SELECT json_object('call_id',id,'turn_id',json_extract(data,'$.invocation.turn_id'),'source',json_extract(data,'$.result.entry'),'content_digest',json_extract(data,'$.result.content_digest')) FROM governance_records WHERE type='agent_context_call' AND json_extract(data,'$.status')='succeeded' AND json_extract(data,'$.invocation.turn_id') IN ({visible_turns}) ORDER BY rowid DESC LIMIT 100"
+        ),
+        &[&session.id, &turn_boundary],
     )?;
     let turns = json_rows(
         &conn,
-        "SELECT json_object('id',id,'status',status,'consumed',json(CASE WHEN consumed=1 THEN 'true' ELSE 'false' END),'cancel_requested',json(CASE WHEN cancel_requested=1 THEN 'true' ELSE 'false' END)) FROM turns WHERE session_id=?1 ORDER BY rowid DESC LIMIT 50",
-        &[&session.id],
+        &format!(
+            "SELECT json_object('id',id,'status',status,'consumed',json(CASE WHEN consumed=1 THEN 'true' ELSE 'false' END),'cancel_requested',json(CASE WHEN cancel_requested=1 THEN 'true' ELSE 'false' END)) FROM turns WHERE id IN ({visible_turns}) ORDER BY rowid DESC LIMIT 50"
+        ),
+        &[&session.id, &turn_boundary],
     )?;
-    let documents = match session
-        .scope
-        .ok_or_else(|| err("invalid_scope", "输入快照缺少归属"))?
-    {
-        SessionScope::Global => ids(
+    let documents = if let Some(turn) = through_turn {
+        ids(
             &conn,
-            "SELECT d.id FROM documents d WHERE project_id IS NULL AND feature_id IS NULL AND task_id IS NULL AND NOT EXISTS(SELECT 1 FROM documents n WHERE n.supersedes=d.id AND n.kind=d.kind) ORDER BY d.rowid LIMIT 2049",
-            &[],
-        )?,
-        SessionScope::Project => ids(
-            &conn,
-            "SELECT d.id FROM documents d WHERE project_id=?1 AND NOT EXISTS(SELECT 1 FROM documents n WHERE n.supersedes=d.id AND n.kind=d.kind) ORDER BY d.rowid LIMIT 2049",
-            &[&session.project_id],
-        )?,
-        SessionScope::Feature | SessionScope::Task => ids(
-            &conn,
-            "SELECT d.id FROM documents d WHERE (d.feature_id=?1 OR (d.project_id=?2 AND EXISTS(SELECT 1 FROM features f,json_each(f.source_materials) x WHERE f.id=?1 AND x.value=d.id))) AND (d.task_id IS NULL OR d.task_id=?3) AND NOT EXISTS(SELECT 1 FROM documents n WHERE n.supersedes=d.id AND n.kind=d.kind) ORDER BY d.rowid LIMIT 2049",
-            &[&session.feature_id, &session.project_id, &session.task_id],
-        )?,
+            "SELECT d.value FROM turns t JOIN snapshots s ON s.id=t.input_snapshot, json_each(s.documents) d WHERE t.id=?1 AND t.session_id=?2 ORDER BY d.key LIMIT 2049",
+            &[&turn, &session.id],
+        )?
+    } else {
+        match session
+            .scope
+            .ok_or_else(|| err("invalid_scope", "输入快照缺少归属"))?
+        {
+            SessionScope::Global => ids(
+                &conn,
+                "SELECT d.id FROM documents d WHERE project_id IS NULL AND feature_id IS NULL AND task_id IS NULL AND NOT EXISTS(SELECT 1 FROM documents n WHERE n.supersedes=d.id AND n.kind=d.kind) ORDER BY d.rowid LIMIT 2049",
+                &[],
+            )?,
+            SessionScope::Project => ids(
+                &conn,
+                "SELECT d.id FROM documents d WHERE project_id=?1 AND NOT EXISTS(SELECT 1 FROM documents n WHERE n.supersedes=d.id AND n.kind=d.kind) ORDER BY d.rowid LIMIT 2049",
+                &[&session.project_id],
+            )?,
+            SessionScope::Feature | SessionScope::Task => ids(
+                &conn,
+                "SELECT d.id FROM documents d WHERE (d.feature_id=?1 OR (d.project_id=?2 AND EXISTS(SELECT 1 FROM features f,json_each(f.source_materials) x WHERE f.id=?1 AND x.value=d.id))) AND (d.task_id IS NULL OR d.task_id=?3) AND NOT EXISTS(SELECT 1 FROM documents n WHERE n.supersedes=d.id AND n.kind=d.kind) ORDER BY d.rowid LIMIT 2049",
+                &[&session.feature_id, &session.project_id, &session.task_id],
+            )?,
+        }
     };
     let execution_ids = ids(
         &conn,
-        "SELECT id FROM (SELECT id,rowid AS boundary FROM executions WHERE session_id=?1 ORDER BY rowid DESC LIMIT 128) ORDER BY boundary",
-        &[&session.id],
+        "SELECT id FROM (SELECT id,rowid AS boundary FROM executions WHERE session_id=?1 AND (?2 IS NULL OR started<=(SELECT coalesce(finished,started) FROM turns WHERE id=?2)) ORDER BY rowid DESC LIMIT 128) ORDER BY boundary",
+        &[&session.id, &through_turn],
     )?;
     let link = rows
         .iter()
@@ -303,7 +329,7 @@ pub(super) fn input(pool: &ConnectionPool, session: &Session) -> Result<Conversa
         .iter()
         .find(|r| r.resource.kind == "feature")
         .and_then(|r| r.value.as_ref());
-    let result = ConversationCaptureFacts {
+    let mut result = ConversationCaptureFacts {
         read_set: ReadSet::new(
             rows.iter()
                 .map(|r| ResourceVersion {
@@ -323,6 +349,9 @@ pub(super) fn input(pool: &ConnectionPool, session: &Session) -> Result<Conversa
         feature_title: feature.map(|f| text_value(f, "title")),
         work_time: None,
     };
+    if let Some(through) = through_turn {
+        result.content["source_turn"] = json!(through);
+    }
     conn.execute_batch("COMMIT;").map_err(storage)?;
     Ok(result)
 }

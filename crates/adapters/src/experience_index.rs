@@ -1,19 +1,38 @@
 //! Read experience metadata and immutable snapshot text without rebuilding execution history.
 use super::*;
 use rusqlite::OptionalExtension;
+use std::collections::BTreeSet;
+
+pub(super) fn source_path(root: &Path, project: &str) -> Result<PathBuf> {
+    if project == GLOBAL_DISCUSSION_NAMESPACE {
+        SqliteStore::global_discussion_path(root)
+    } else {
+        SqliteStore::project_path(root, project)
+    }
+}
+
+pub(super) fn deleted(root: &Path, agent: &str) -> Result<BTreeSet<(String, String)>> {
+    let conn = connection_pool::ManagedConnection::read_only(&root.join("global.sqlite3"))?;
+    let mut query = conn.prepare(
+        "SELECT json_extract(data,'$.source_project_id'),json_extract(data,'$.snapshot_id') FROM governance_records WHERE type='experience_deleted' AND definition_id=?1",
+    ).map_err(storage)?;
+    query
+        .query_map([agent], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(storage)?
+        .collect::<rusqlite::Result<_>>()
+        .map_err(storage)
+}
 
 pub(super) fn entries(
     root: &Path,
     project: Option<&str>,
     agent: &str,
     enrich: bool,
+    snapshot: Option<&str>,
 ) -> Result<Vec<Value>> {
     let path = match project {
         None => root.join("global.sqlite3"),
-        Some(GLOBAL_DISCUSSION_NAMESPACE) => {
-            SqliteStore::global_discussion_path(root)?.join("engineering.sqlite3")
-        }
-        Some(id) => SqliteStore::project_path(root, id)?.join("engineering.sqlite3"),
+        Some(id) => source_path(root, id)?.join("engineering.sqlite3"),
     };
     let conn = connection_pool::ManagedConnection::read_only(&path)?;
     conn.execute_batch("BEGIN;").map_err(storage)?;
@@ -22,9 +41,17 @@ pub(super) fn entries(
     } else {
         "SELECT data FROM governance_records WHERE type='experience' AND json_extract(data,'$.agent_instance_id')=?1 ORDER BY rowid"
     };
-    let mut query = conn.prepare(sql).map_err(storage)?;
+    let sql = format!(
+        "WITH entries(data) AS ({sql})
+         SELECT json_remove(json_set(data,'$.history_count',coalesce(json_extract(data,'$.history_count'),json_array_length(data,'$.history'),0)),'$.history') FROM entries
+         WHERE ?2 IS NULL OR json_extract(data,'$.snapshot_id')=?2
+         UNION ALL
+         SELECT h.value FROM entries,json_each(entries.data,'$.history') h
+         WHERE ?2 IS NOT NULL AND json_extract(h.value,'$.snapshot_id')=?2"
+    );
+    let mut query = conn.prepare(&sql).map_err(storage)?;
     let mut rows = query
-        .query_map([agent], |r| r.get::<_, String>(0))
+        .query_map([Some(agent), snapshot], |r| r.get::<_, String>(0))
         .map_err(storage)?
         .map(|v| serde_json::from_str::<Value>(&v.map_err(storage)?).map_err(storage))
         .collect::<Result<Vec<_>>>()?;
@@ -48,14 +75,23 @@ pub(super) fn entries(
         let source:Option<String>=conn.query_row("SELECT data FROM governance_records WHERE type='configured_session' AND definition_id=?1 ORDER BY rowid LIMIT 1",[session],|r|r.get(0)).optional().map_err(storage)?;
         if let Some(source) = source {
             let source: Value = serde_json::from_str(&source).map_err(storage)?;
-            row["workflow_instance_id"] = source["instance_id"].clone();
-            row["step_execution_id"] = source["execution_id"].clone();
-            row["plan_revision_id"] = source["plan_revision_id"].clone();
-            let instance = source["instance_id"].as_str().unwrap_or("");
+            for (target, field) in [
+                ("workflow_instance_id", "instance_id"),
+                ("step_execution_id", "execution_id"),
+                ("plan_revision_id", "plan_revision_id"),
+            ] {
+                if row[target].is_null() {
+                    row[target] = source[field].clone();
+                }
+            }
+            let instance = row["workflow_instance_id"]
+                .as_str()
+                .unwrap_or("")
+                .to_owned();
             let workflow: Option<(String, String)> = conn
                 .query_row(
                     "SELECT name,data FROM governance_records WHERE id=?1",
-                    [instance],
+                    [&instance],
                     |r| Ok((r.get(0)?, r.get(1)?)),
                 )
                 .optional()
@@ -68,7 +104,7 @@ pub(super) fn entries(
                     .as_array()
                     .into_iter()
                     .flatten()
-                    .filter(|step| step["id"] == source["execution_id"])
+                    .filter(|step| step["id"] == row["step_execution_id"])
                 {
                     if let Some(plan) = step["plan_revision_id"].as_str() {
                         plans.insert(plan.to_owned());
@@ -79,7 +115,10 @@ pub(super) fn entries(
                 let mut query=conn.prepare("SELECT json_extract(data,'$.plan_revision_id') FROM governance_records WHERE type='workflow_execution_history' AND json_extract(data,'$.workflow_instance_id')=?1 AND json_extract(data,'$.id')=?2").map_err(storage)?;
                 for plan in query
                     .query_map(
-                        rusqlite::params![instance, source["execution_id"].as_str().unwrap_or("")],
+                        rusqlite::params![
+                            instance,
+                            row["step_execution_id"].as_str().unwrap_or("")
+                        ],
                         |r| r.get::<_, Option<String>>(0),
                     )
                     .map_err(storage)?

@@ -3074,3 +3074,29 @@ pre {
   flex-basis: 100%;
   margin: 0;
 }
+
+.experience-entry.referenced {
+  background: #e6e5f5;
+  border-color: #a9a3d0;
+}
+.experience-entry [aria-pressed="true"] {
+  background: #453c79;
+  color: #fff;
+}
+.experience-detail {
+  min-width: 0;
+  margin-top: 12px;
+}
+.experience-references ul {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.experience-references li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}

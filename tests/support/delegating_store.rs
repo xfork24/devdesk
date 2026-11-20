@@ -223,8 +223,9 @@ macro_rules! delegated_native_store {
         fn conversation_input_facts(
             &self,
             _session: &Session,
+            through_turn: Option<&str>,
         ) -> Result<devdesk_core::ConversationCaptureFacts> {
-            self.inner.conversation_input_facts(_session)
+            self.inner.conversation_input_facts(_session, through_turn)
         }
         fn conversation_page(
             &self,

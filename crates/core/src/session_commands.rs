@@ -15,6 +15,22 @@ fn version(row: &ResourceSnapshot) -> ResourceVersion {
     }
 }
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DiscussionSource {
+    session_id: Id,
+    turn_id: Option<Id>,
+    turn_revision: Option<u64>,
+}
+
+fn deleted_session(id: &str) -> ResourceKey {
+    ResourceKey::new("governance", format!("discussion-session-deleted:{id}"))
+}
+
+fn deleted_turn(id: &str) -> ResourceKey {
+    ResourceKey::new("governance", format!("discussion-turn-deleted:{id}"))
+}
+
 impl Engine {
     pub(crate) fn native_session_command(
         &self,
@@ -23,8 +39,27 @@ impl Engine {
         fingerprint: &str,
         context: &InvocationContext,
     ) -> Result<Option<Value>> {
+        if ["session.delete", "conversation.delete_turn"].contains(&method) {
+            return self
+                .delete_discussion(method, c, fingerprint, context)
+                .map(Some);
+        }
         if method != "session.open" {
             return Ok(None);
+        }
+        let continuation = c
+            .payload
+            .get("continue_from")
+            .map(|source| {
+                serde_json::from_value::<DiscussionSource>(source.clone())
+                    .map_err(|e| err("invalid_params", format!("无效续聊来源：{e}")))
+            })
+            .transpose()?;
+        if continuation.is_some() {
+            require(
+                c.payload.get("snapshot_id").is_none() && c.payload.get("predecessor").is_none(),
+                "续聊快照必须由原会话生成",
+            )?;
         }
         if c.payload["controller_id"].is_string()
             || c.payload["configured_execution_id"].is_string()
@@ -125,7 +160,9 @@ impl Engine {
             )
         } else {
             let owner = WorkOwnerFacts::read(self.store.as_ref(), target)?;
-            owner.require_revision(c.expected_revision)?;
+            if continuation.is_none() {
+                owner.require_revision(c.expected_revision)?;
+            }
             context.require_project(&owner.project)?;
             read_set = read_set.merge(owner.read_set.versions().iter().cloned())?;
             let (_, feature, task) = material_parts(&owner.material);
@@ -147,32 +184,36 @@ impl Engine {
                 && configuration_visible(&catalog.state, source, selection_scope.project_id()),
             "Agent 不适用于此讨论范围",
         )?;
-        let family = ResourceKey::new(
-            "session_open_candidate",
-            json!([
-                target,
-                source.definition_id,
-                configuration.agent_instance_id
-            ])
-            .to_string(),
-        );
-        let candidate = self
-            .store
-            .read_resources(std::slice::from_ref(&family))?
-            .into_iter()
-            .next()
-            .ok_or_else(|| err("storage", "会话候选读取不完整"))?;
-        read_set = read_set.merge([version(&candidate)])?;
-        let latest = candidate
-            .value
-            .as_ref()
-            .map(|raw| {
-                self.store.restore_runtime_value(raw).and_then(|value| {
-                    serde_json::from_value::<Session>(value)
-                        .map_err(|e| err("storage", e.to_string()))
+        let latest = if continuation.is_none() {
+            let family = ResourceKey::new(
+                "session_open_candidate",
+                json!([
+                    target,
+                    source.definition_id,
+                    configuration.agent_instance_id
+                ])
+                .to_string(),
+            );
+            let candidate = self
+                .store
+                .read_resources(std::slice::from_ref(&family))?
+                .into_iter()
+                .next()
+                .ok_or_else(|| err("storage", "会话候选读取不完整"))?;
+            read_set = read_set.merge([version(&candidate)])?;
+            candidate
+                .value
+                .as_ref()
+                .map(|raw| {
+                    self.store.restore_runtime_value(raw).and_then(|value| {
+                        serde_json::from_value::<Session>(value)
+                            .map_err(|e| err("storage", e.to_string()))
+                    })
                 })
-            })
-            .transpose()?;
+                .transpose()?
+        } else {
+            None
+        };
         let mut snapshot_id = opt(&c.payload, "snapshot_id");
         let mut predecessor = opt(&c.payload, "predecessor");
         let provenance = context.prepare_record(method, c);
@@ -183,7 +224,8 @@ impl Engine {
                     && latest.owner_id == target,
                 "会话候选跨范围",
             )?;
-            if c.payload["force_new"] != true
+            if continuation.is_none()
+                && c.payload["force_new"] != true
                 && latest.agent == agent
                 && latest.runtime_binding.as_ref() == Some(&binding)
                 && snapshot_id
@@ -220,6 +262,29 @@ impl Engine {
         }
         let mut changes = Vec::new();
         let mut handoff = None;
+        let branch = if let Some(source) = &continuation {
+            let (original, guards) = self.discussion_source(
+                &source.session_id,
+                c.expected_revision,
+                source.turn_id.as_deref(),
+                source.turn_revision,
+            )?;
+            require(
+                original.owner_id == target
+                    && original.project_id.as_deref() == Some(&project)
+                    && original.scope == Some(session_scope)
+                    && original
+                        .runtime_binding
+                        .as_ref()
+                        .and_then(|b| b.agent_configuration.as_ref())
+                        .is_some_and(|a| a.agent_instance_id == configuration.agent_instance_id),
+                "续聊需要原会话的归属和 Agent 实例",
+            )?;
+            read_set = read_set.merge(guards.versions().iter().cloned())?;
+            Some(original)
+        } else {
+            None
+        };
         if let Some(previous) = &predecessor {
             require(snapshot_id.is_some(), "显式后继会话需要继承快照")?;
             let key = ResourceKey::new("session", previous);
@@ -236,28 +301,38 @@ impl Engine {
                 "后继会话不能跨项目",
             )?;
             read_set = read_set.merge([version(&row)])?;
-        } else if let Some(previous) = &latest {
+        } else if let Some(previous) = branch.as_ref().or(latest.as_ref()) {
             let keys = [
                 ResourceKey::new("session_input_state", &previous.id),
                 ResourceKey::new("session_live_workers", &previous.id),
+                ResourceKey::new("discussion_live_turn", &previous.id),
             ];
             let rows = self.store.read_resources(&keys)?;
             require(
-                rows.len() == 2 && rows.iter().zip(&keys).all(|(r, k)| &r.resource == k),
+                rows.len() == keys.len() && rows.iter().zip(&keys).all(|(r, k)| &r.resource == k),
                 "原会话静止谓词读取不完整",
             )?;
             require(
-                rows[0].value.as_ref().is_some_and(|s| s["active"] == false)
-                    && rows[1]
-                        .value
-                        .as_ref()
-                        .and_then(Value::as_array)
-                        .is_some_and(Vec::is_empty),
+                rows[0].value.as_ref().is_some_and(|s| {
+                    if branch.is_some() {
+                        s["permission_switch_pending"] == false
+                            && rows[2].value == Some(json!(false))
+                    } else {
+                        s["active"] == false
+                    }
+                }) && rows[1]
+                    .value
+                    .as_ref()
+                    .and_then(Value::as_array)
+                    .is_some_and(Vec::is_empty),
                 "请先结束或核对原会话的活动工作",
             )?;
             read_set = read_set.merge(rows.iter().map(version))?;
             if snapshot_id.is_none() {
-                let facts = self.store.conversation_input_facts(previous)?;
+                let through = continuation
+                    .as_ref()
+                    .and_then(|source| source.turn_id.as_deref());
+                let facts = self.store.conversation_input_facts(previous, through)?;
                 read_set = read_set.merge(facts.read_set.versions().iter().cloned())?;
                 let sid = stable_object_id(
                     self.store.as_ref(),
@@ -270,7 +345,12 @@ impl Engine {
                     project_id,
                     feature_id,
                     task_id,
-                    kind: "conversation_handoff".into(),
+                    kind: if branch.is_some() {
+                        "discussion_continuation"
+                    } else {
+                        "conversation_handoff"
+                    }
+                    .into(),
                     content: serde_json::to_string(&facts.content)
                         .map_err(|e| err("serialization", e.to_string()))?,
                     documents: facts.documents.clone(),
@@ -279,7 +359,12 @@ impl Engine {
                         step_execution_ids: vec![],
                         sessions: vec![previous.id.clone()],
                         captured_at: Some(now()),
-                        reason: "Explicit successor after runtime/configuration change".into(),
+                        reason: if branch.is_some() {
+                            "Explicit continuation from a discussion"
+                        } else {
+                            "Explicit successor after runtime/configuration change"
+                        }
+                        .into(),
                     },
                     runtime_bindings: previous.runtime_binding.iter().cloned().collect(),
                     execution_instances: facts.execution_ids.clone(),
@@ -297,8 +382,9 @@ impl Engine {
                     &body,
                     Origin::External,
                 )?;
-                if let Some(projection) =
-                    self.captured_snapshot_experience(&facts, previous, &snapshot, &seal, None)?
+                if branch.is_none()
+                    && let Some(projection) =
+                        self.captured_snapshot_experience(&facts, previous, &snapshot, &seal, None)?
                 {
                     read_set = read_set.merge([ResourceVersion {
                         resource: projection.resource.clone(),
@@ -403,6 +489,177 @@ impl Engine {
         } else {
             self.store.commit_changes(&plan).map(|r| Some(r.result))
         }
+    }
+
+    fn discussion_source(
+        &self,
+        sid: &str,
+        expected_revision: Option<u64>,
+        turn: Option<&str>,
+        turn_revision: Option<u64>,
+    ) -> Result<(Session, ReadSet)> {
+        require(
+            turn.is_some() == turn_revision.is_some(),
+            "续聊或删除需要原轮次版本",
+        )?;
+        let mut keys = vec![ResourceKey::new("session", sid), deleted_session(sid)];
+        if let Some(tid) = turn {
+            keys.extend([ResourceKey::new("turn", tid), deleted_turn(tid)]);
+        }
+        let rows = self.store.read_resources(&keys)?;
+        require(
+            rows.len() == keys.len()
+                && rows
+                    .iter()
+                    .zip(&keys)
+                    .all(|(row, key)| &row.resource == key),
+            "讨论来源读取不完整",
+        )?;
+        let raw = rows[0]
+            .value
+            .as_ref()
+            .filter(|_| rows[1].value.is_none())
+            .ok_or_else(|| err("not_found", "原会话不存在或已删除"))?;
+        if expected_revision != Some(rows[0].revision) {
+            return Err(err("revision_conflict", "原会话已变化，请刷新后重试"));
+        }
+        if let Some(tid) = turn {
+            let value = rows[2]
+                .value
+                .as_ref()
+                .filter(|v| v["id"] == tid && v["session_id"] == sid && rows[3].value.is_none())
+                .ok_or_else(|| err("not_found", "该轮次不属于原会话或已删除"))?;
+            if turn_revision != Some(rows[2].revision) {
+                return Err(err("revision_conflict", "原轮次已变化，请刷新后重试"));
+            }
+            require(
+                matches!(
+                    value["status"].as_str(),
+                    Some("completed" | "failed" | "cancelled" | "needs_reconciliation")
+                ),
+                "请先结束原轮次",
+            )?;
+        }
+        let session = serde_json::from_value(self.store.restore_runtime_value(raw)?)
+            .map_err(|e| err("storage", e.to_string()))?;
+        Ok((session, ReadSet::new(rows.iter().map(version).collect())?))
+    }
+
+    fn delete_discussion(
+        &self,
+        method: &str,
+        c: &Command,
+        fingerprint: &str,
+        context: &InvocationContext,
+    ) -> Result<Value> {
+        require(
+            matches!(context.actor(), WorkflowActor::Human),
+            "删除讨论需要 Human 来源",
+        )?;
+        context.require_scope(self.store.project_id().as_deref())?;
+        if let Some(saved) = self.store.replay_commit(&c.command_id, fingerprint)? {
+            return Ok(saved.result);
+        }
+        let sid = c
+            .target
+            .as_deref()
+            .ok_or_else(|| err("invalid_params", "缺少原会话"))?;
+        let tid = (method == "conversation.delete_turn")
+            .then(|| text(&c.payload, "turn_id"))
+            .transpose()?;
+        let (source, mut guards) = self.discussion_source(
+            sid,
+            c.expected_revision,
+            tid.as_deref(),
+            c.payload["turn_revision"].as_u64(),
+        )?;
+        let global = source.scope == Some(SessionScope::Global);
+        require(
+            source.scope.is_some()
+                && source.project_id.as_deref()
+                    == Some(
+                        self.store
+                            .project_id()
+                            .as_deref()
+                            .unwrap_or(GLOBAL_DISCUSSION_NAMESPACE),
+                    )
+                && source
+                    .runtime_binding
+                    .as_ref()
+                    .is_some_and(|b| b.work_type == WorkType::Discussion),
+            "只有当前范围内的独立讨论可以删除",
+        )?;
+        let state = self.store.read_resources(&[
+            ResourceKey::new("session_input_state", sid),
+            ResourceKey::new("session_live_workers", sid),
+        ])?;
+        require(state.len() == 2, "删除讨论的运行状态读取不完整")?;
+        require(
+            state[0].value.as_ref().is_some_and(|s| {
+                s["active"] == false
+                    && s["permission_switch_pending"] == false
+                    && s["configured"] == false
+                    && s["controller"] == false
+            }) && state[1]
+                .value
+                .as_ref()
+                .and_then(Value::as_array)
+                .is_some_and(Vec::is_empty),
+            "请先结束活动轮次或核对未停止的运行，正式会话按原流程保留",
+        )?;
+        guards = guards.merge(state.iter().map(version))?;
+        let key = tid
+            .as_deref()
+            .map_or_else(|| deleted_session(sid), deleted_turn);
+        let scope = if global {
+            Scope::global()
+        } else {
+            Scope::project(source.project_id.as_deref().unwrap())
+        };
+        let mut marker = record(
+            "discussion_deleted",
+            tid.as_deref().unwrap_or(sid).into(),
+            scope,
+            "删除讨论记录".into(),
+            1,
+            None,
+            json!({"session_id":sid,"turn_id":tid}),
+            true,
+        );
+        marker.id = key.id.clone();
+        let mut next = source;
+        if tid.is_none() {
+            next.lifecycle = Some(SessionLifecycle::Closed);
+        } else if next.lifecycle != Some(SessionLifecycle::Closed) {
+            // A provider thread can still contain the deleted round.
+            next.lifecycle = Some(SessionLifecycle::RequiresSuccessor);
+        }
+        next.revision += 1;
+        let provenance = context.prepare_record(method, c);
+        let reads = guards.merge([ResourceVersion {
+            resource: provenance.resource.clone(),
+            revision: 0,
+        }])?;
+        self.store
+            .commit_changes(&PreparedChangeSet {
+                command_id: c.command_id.clone(),
+                fingerprint: fingerprint.into(),
+                read_set: reads,
+                changes: vec![
+                    ResourceChange {
+                        resource: key,
+                        value: marker.to_storage(),
+                    },
+                    ResourceChange {
+                        resource: ResourceKey::new("session", sid),
+                        value: self.store.encode_runtime_value(&json!(next))?,
+                    },
+                    provenance,
+                ],
+                result: json!({"id":sid,"turn_id":tid,"revision":next.revision}),
+                time: now() as i64,
+            })
+            .map(|receipt| receipt.result)
     }
 
     pub(crate) fn session_snapshot_scope(&self, id: &str, project: &str) -> Result<ReadSet> {

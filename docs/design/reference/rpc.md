@@ -42,13 +42,20 @@
 | 初次打开页面 | query.ui_bootstrap、query.project_directory、query.workspace | [workspace](../../../crates/host/src/workspace.rs) |
 | 配置目录、正文和发布 | configuration.*、对应定义创建/更新方法 | [配置服务](../../../crates/host/src/governance.rs) |
 | 运行安装与权限 | runtime.*、权限资源及绑定方法 | [运行准备](../../../crates/host/src/runtime_setup.rs)、[权限](../../../crates/host/src/permission_resources.rs) |
-| 会话输入与控制 | session.open、conversation.send、会话及交互方法 | [会话命令](../../../crates/core/src/session_commands.rs) |
+| 会话输入与控制 | session.open、session.delete、conversation.send、conversation.delete_turn、会话及交互方法 | [会话命令](../../../crates/core/src/session_commands.rs) |
+| Agent 经验 | query.agent_experience、experience.delete、experience.restore | [经验读写](../../../crates/host/src/governance.rs) |
 | 工作流与经理 | workflow.*、orchestration.*、manager.* | [控制入口](../../../crates/core/src/workflow_controls.rs) |
 | 执行显示 | query.workflow_progress、query.execution_workspace、流程详情查询 | [读取模型](../../../crates/core/src/read_models.rs) |
 | 历史与工具调用 | query.history、query.events、query.tool_calls、query.artifact | [运行读取](../../../crates/host/src/runtime_reads.rs) |
 | 模型服务与接入 | models.list、integration.*、skill.import_package | [模型目录](../../../crates/host/src/model_providers.rs)、[接入](../../../crates/host/src/integrations.rs) |
 
 方法完整清单及 access/scope/precondition 分类直接查登记表，工具的输入 Schema 查[工具参考](tools-and-primitives.md)。这样新增入口不需要手工复制一份容易遗漏的大全。
+
+`session.open` 的 `continue_from` 指定原 `session_id`，同时使用原 Session 的 `expected_revision`。指定历史轮次时同时提交 `turn_id` 和 `turn_revision`。后继 Session 从这个来源生成快照，并以独立讨论权限打开。
+
+`session.delete` 和 `conversation.delete_turn` 的 `target` 都是 Session ID，`expected_revision` 使用原 Session 版本。轮次删除在 payload 中同时传入 `turn_id` 和 `turn_revision`。删除会影响角色讨论中的可见记录，确切事件和诊断查询仍可核对原证据。
+
+`query.agent_experience` 接受 `offset` 和 `limit`。明细查询使用 `agent_instance_id`、`source_project_id` 和 `snapshot_id`。这三个字段也用于 `experience.delete` 的 payload，删除命令把 `snapshot_id` 作为 `target`，提交 `expected_revision: 0` 声明删除记录尚不存在。经验操作使用当前 `project_id` 或 `scope: "global"`，按选定 Agent 的可见范围核对来源。
 
 ## 生命周期与设置
 

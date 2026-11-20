@@ -345,8 +345,8 @@ impl Workspace {
             let sources = experience::discussion_catalog(Path::new(&self.global.root()))?;
             e.import_discussion_agent(&sources, instance)?;
         }
-        if let Some(result) = self.experience_dispatch(method, &params, &e) {
-            return result;
+        if method == "experience.restore" {
+            return self.restore_experience(&params, &e);
         }
         if method == "session.open" {
             require(params["target"] == "global", "全局讨论必须以 global 为目标")?;
@@ -432,6 +432,37 @@ impl Workspace {
                 &vault,
                 &command,
                 &InvocationContext::human(None),
+            )?;
+            return Ok(RpcOutcome {
+                value: receipt.result,
+                commit: Some(
+                    json!({"namespace":self.global.namespace(),"versions":receipt.versions,"cursor":receipt.cursor}),
+                ),
+            });
+        }
+        if method == "query.agent_experience" {
+            let pid = self.experience_scope(&params, &params)?;
+            return experience::query(Path::new(&self.global.root()), &pid, &params).map(|value| {
+                RpcOutcome {
+                    value,
+                    commit: None,
+                }
+            });
+        }
+        if method == "experience.delete" {
+            let command: Command = serde_json::from_value(params.clone())
+                .map_err(|e| err("invalid_params", e.to_string()))?;
+            let pid = self.experience_scope(&params, &command.payload)?;
+            let root = PathBuf::from(self.global.root());
+            let receipt = devdesk_core::experience_directory::delete(
+                self.global.as_ref(),
+                if params["scope"] == "global" {
+                    GLOBAL_DISCUSSION_NAMESPACE
+                } else {
+                    &pid
+                },
+                &command,
+                || experience::entry_visible(&root, &pid, &command.payload),
             )?;
             return Ok(RpcOutcome {
                 value: receipt.result,
@@ -765,9 +796,10 @@ impl Workspace {
                 "query.tool_calls",
                 "conversation.send",
                 "conversation.cancel",
+                "conversation.delete_turn",
+                "session.delete",
                 "execution.retry_cleanup",
                 "interaction.answer",
-                "query.agent_experience",
                 "experience.restore",
             ]
             .contains(&method)
@@ -1049,8 +1081,8 @@ impl Workspace {
             }
             return Err(err("adapter_contract", "讨论输入未由原生入口处理"));
         }
-        if let Some(result) = self.experience_dispatch(method, &params, &e) {
-            return result;
+        if method == "experience.restore" {
+            return self.restore_experience(&params, &e);
         }
         if method == "feature.create" {
             let mut params = params.clone();
@@ -1542,6 +1574,77 @@ impl Workspace {
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;
+    #[test]
+    fn experience_can_be_deleted_from_global_discussion_before_opening_a_session() {
+        let root = tempfile::tempdir().unwrap();
+        let w =
+            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
+        let pid = create(&w, "Experience source");
+        let instance = w.dispatch("agent.instance.create", json!({"command_id":id(),"payload":{
+            "name":"Experience Agent","agent_revision_id":"simplified-agent-analyst:8","scope":"global"
+        }})).unwrap();
+        let engine = w.project_engine(Some(&pid)).unwrap();
+        let snapshot = id();
+        let session = id();
+        engine
+            .store
+            .seed_fixture_state(None, &mut |state| {
+                let data = json!({"project_id":pid,"agent_instance_id":instance["id"],
+                "snapshot_id":snapshot,"session_id":session,"captured_at":1});
+                state.governance.push(ConfigurationRecord {
+                    id: id(),
+                    r#type: "experience".into(),
+                    definition_id: snapshot.clone(),
+                    scope: Scope::project(&pid),
+                    name: "Discussion experience".into(),
+                    version: 1,
+                    supersedes: None,
+                    content_hash: content_digest(&References::new(), &data),
+                    refs: References::new(),
+                    data,
+                    immutable: true,
+                    revision: 1,
+                    created_at: 1,
+                });
+                Ok(Value::Null)
+            })
+            .unwrap();
+        let query = json!({"scope":"global","agent_instance_id":instance["id"]});
+        assert_eq!(
+            w.dispatch("query.agent_experience", query.clone()).unwrap()["total"],
+            1
+        );
+        let command = json!({"scope":"global","command_id":id(),"target":snapshot,"expected_revision":0,
+            "payload":{"agent_instance_id":instance["id"],"source_project_id":pid,"snapshot_id":snapshot}});
+        let removed = w
+            .dispatch_with_receipt("experience.delete", command.clone())
+            .unwrap();
+        assert_eq!(removed.value["snapshot_id"], snapshot);
+        assert!(removed.commit.is_some());
+        assert_eq!(
+            w.dispatch("experience.delete", command).unwrap(),
+            removed.value
+        );
+        assert_eq!(
+            w.dispatch("query.agent_experience", query).unwrap()["total"],
+            0
+        );
+        assert!(
+            !SqliteStore::global_discussion_path(root.path())
+                .unwrap()
+                .exists()
+        );
+        assert!(
+            engine
+                .store
+                .snapshot()
+                .unwrap()
+                .governance
+                .iter()
+                .any(|row| row.r#type == "experience" && row.data["snapshot_id"] == snapshot)
+        );
+    }
+
     #[test]
     fn idle_rounds_publish_experience_metadata_without_restoring_project_history() {
         let root = tempfile::tempdir().unwrap();

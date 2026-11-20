@@ -35,11 +35,10 @@ pub(super) fn query(
         let anchor = p["workflow_session_id"]
             .as_str()
             .map(|id| {
-                selected(&conn, "sessions", "id=?1", &[&id]).and_then(|mut rows| {
-                    rows.pop().ok_or_else(|| err("not_found", "原会话锚点缺失"))
-                })
+                selected(&conn, "sessions", "id=?1 AND NOT EXISTS(SELECT 1 FROM governance_records WHERE id='discussion-session-deleted:' || sessions.id)", &[&id]).map(|mut rows| rows.pop())
             })
-            .transpose()?;
+            .transpose()?
+            .flatten();
         let task = anchor.as_ref().filter(|v| v["scope"] == "task");
         let owner = p["owner_id"]
             .as_str()
@@ -61,11 +60,12 @@ pub(super) fn query(
                 .as_ref()
                 .and_then(|v| v["step_instance_id"].as_str())
         });
-        let predicate = "scope IS NOT NULL AND (?1 IS NULL OR owner_id=?1) AND (?2 IS NULL OR agent=?2) AND (?3 IS NULL OR coalesce(json_extract(runtime_binding,'$.agent_configuration.instance_ref'),json_extract(runtime_binding,'$.agent_configuration.agent_instance_id'))=?3 OR EXISTS(SELECT 1 FROM governance_records a WHERE a.type='agent_session' AND a.definition_id=sessions.id AND json_extract(a.data,'$.agent_instance_id')=?3)) AND (?4 IS NULL OR EXISTS(SELECT 1 FROM governance_records g WHERE g.type='configured_session' AND g.definition_id=sessions.id AND json_extract(g.data,'$.execution_id')=?4))";
+        let anchor_id = anchor.as_ref().and_then(|row| row["id"].as_str());
+        let predicate = "scope IS NOT NULL AND NOT EXISTS(SELECT 1 FROM governance_records WHERE id='discussion-session-deleted:' || sessions.id) AND (id=?5 OR ((?1 IS NULL OR owner_id=?1) AND (?2 IS NULL OR agent=?2) AND (?3 IS NULL OR coalesce(json_extract(runtime_binding,'$.agent_configuration.instance_ref'),json_extract(runtime_binding,'$.agent_configuration.agent_instance_id'))=?3 OR EXISTS(SELECT 1 FROM governance_records a WHERE a.type='agent_session' AND a.definition_id=sessions.id AND json_extract(a.data,'$.agent_instance_id')=?3)) AND (?4 IS NULL OR EXISTS(SELECT 1 FROM governance_records g WHERE g.type='configured_session' AND g.definition_id=sessions.id AND json_extract(g.data,'$.execution_id')=?4))))";
         let total: u64 = conn
             .query_row(
                 &format!("SELECT count(*) FROM sessions WHERE {predicate}"),
-                params![owner, agent, agent_instance, step],
+                params![owner, agent, agent_instance, step, anchor_id],
                 |r| r.get(0),
             )
             .map_err(storage)?;
@@ -73,9 +73,17 @@ pub(super) fn query(
             &conn,
             "sessions",
             &format!(
-                "id IN (SELECT id FROM sessions WHERE {predicate} ORDER BY rowid DESC LIMIT ?5 OFFSET ?6)"
+                "id IN (SELECT id FROM sessions WHERE {predicate} ORDER BY (id IS ?5) DESC,rowid DESC LIMIT ?6 OFFSET ?7)"
             ),
-            &[&owner, &agent, &agent_instance, &step, &limit, &offset],
+            &[
+                &owner,
+                &agent,
+                &agent_instance,
+                &step,
+                &anchor_id,
+                &limit,
+                &offset,
+            ],
         )?;
         let mut sessions = vec![];
         for mut row in rows.into_iter().rev() {
@@ -135,30 +143,42 @@ pub(super) fn query(
             )?;
             json!({"session_id":sid,"turn":turn,"executions":executions,"stop_receipts":stops,"records":records,"offset":offset,"more":records.len() as u64==limit,"source":"persisted conversation records; streaming fragments omitted"})
         } else {
+            let hidden: bool = conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM governance_records WHERE id='discussion-session-deleted:' || ?1)",
+                [sid], |r| r.get(0),
+            ).map_err(storage)?;
+            if hidden {
+                return Err(err("not_found", "会话已删除"));
+            }
             let cursor = p["cursor"].as_u64().unwrap_or(0);
             let events = selected(
                 &conn,
                 "conversation_events",
-                "id IN (SELECT id FROM conversation_events WHERE session_id=?1 AND sequence>?2 ORDER BY sequence LIMIT ?3)",
+                "id IN (SELECT id FROM conversation_events WHERE session_id=?1 AND sequence>?2 AND NOT EXISTS(SELECT 1 FROM governance_records WHERE id='discussion-turn-deleted:' || conversation_events.turn_id) ORDER BY sequence LIMIT ?3)",
                 &[&sid, &cursor, &limit],
             )?;
             let next = events
                 .last()
                 .and_then(|r| r["sequence"].as_u64())
                 .unwrap_or(cursor);
-            let turns=selected(&conn,"turns","id IN (SELECT id FROM turns WHERE session_id=?1 ORDER BY rowid DESC LIMIT ?2 OFFSET ?3)",&[&sid,&limit,&offset])?.into_iter().rev().collect::<Vec<_>>();
+            let turn_filter = "session_id=?1 AND NOT EXISTS(SELECT 1 FROM governance_records WHERE id='discussion-turn-deleted:' || turns.id)";
+            let through = p["anchor_turn_id"].as_str();
+            let turns = selected(&conn, "turns",
+                &format!("id IN (SELECT id FROM turns WHERE {turn_filter} ORDER BY (id IS ?4) DESC,rowid DESC LIMIT ?2 OFFSET ?3)"),
+                &[&sid, &limit, &offset, &through],
+            )?.into_iter().rev().collect::<Vec<_>>();
             let total: u64 = conn
                 .query_row(
-                    "SELECT count(*) FROM turns WHERE session_id=?1",
+                    &format!("SELECT count(*) FROM turns WHERE {turn_filter}"),
                     [sid],
                     |r| r.get(0),
                 )
                 .map_err(storage)?;
-            let interactions=selected(&conn,"interactions","id IN (SELECT id FROM interactions WHERE session_id=?1 ORDER BY rowid DESC LIMIT ?2)",&[&sid,&limit])?.into_iter().rev().collect::<Vec<_>>();
+            let interactions=selected(&conn,"interactions","id IN (SELECT id FROM interactions WHERE session_id=?1 AND NOT EXISTS(SELECT 1 FROM governance_records WHERE id='discussion-turn-deleted:' || interactions.turn_id) ORDER BY rowid DESC LIMIT ?2)",&[&sid,&limit])?.into_iter().rev().collect::<Vec<_>>();
             let proposals = selected(
                 &conn,
                 "proposals",
-                "id IN (SELECT id FROM proposals WHERE session_id=?1 ORDER BY rowid DESC LIMIT ?2)",
+                "id IN (SELECT id FROM proposals WHERE session_id=?1 AND NOT EXISTS(SELECT 1 FROM governance_records WHERE id='discussion-turn-deleted:' || proposals.turn_id) ORDER BY rowid DESC LIMIT ?2)",
                 &[&sid, &limit],
             )?
             .into_iter()
@@ -173,9 +193,13 @@ pub(super) fn query(
             )?
             .pop();
             let controller=binding.as_ref().map(|b|selected(&conn,"governance_records","id=?1 AND type='workflow_controller' AND json_extract(data,'$.session_id')=?2",&[&b["data"]["controller_id"].as_str().unwrap_or(""),&sid])).transpose()?.and_then(|mut rows|rows.pop());
+            let predecessor_available = session["predecessor"].as_str().map(|id| conn.query_row(
+                "SELECT NOT EXISTS(SELECT 1 FROM governance_records WHERE id='discussion-session-deleted:' || ?1)",
+                [id], |r| r.get::<_, bool>(0),
+            ).map_err(storage)).transpose()?;
             let workflow = context(&conn, sid)?;
-            let experience=selected(&conn,"governance_records","id IN (SELECT id FROM governance_records WHERE type='agent_context_call' AND json_extract(data,'$.invocation.session_id')=?1 AND name LIKE 'agent.experience.%' ORDER BY rowid DESC LIMIT 50)",&[&sid])?.into_iter().rev().map(|r|json!({"id":r["id"],"method":r["name"],"status":r["data"]["status"],"source":r["data"]["result"]["entry"],"content_digest":r["data"]["result"]["content_digest"],"turn_id":r["data"]["invocation"]["turn_id"],"error":r["data"]["error"]})).collect::<Vec<_>>();
-            json!({"session":session,"controller":controller,"current_runtime_binding":session["runtime_binding"],"workflow_context":workflow,"formal_execution":binding.is_some()||workflow.is_some(),"output_contract":null,"agent_instance_id":instance(&session),"experience_reads":experience,"turns":turns,"total_turns":total,"events":events,"next_cursor":next,"interactions":interactions,"proposals":proposals,"executions":executions})
+            let experience=selected(&conn,"governance_records","id IN (SELECT id FROM governance_records WHERE type='agent_context_call' AND json_extract(data,'$.invocation.session_id')=?1 AND name LIKE 'agent.experience.%' AND NOT EXISTS(SELECT 1 FROM governance_records d WHERE d.id='discussion-turn-deleted:' || json_extract(governance_records.data,'$.invocation.turn_id')) ORDER BY rowid DESC LIMIT 50)",&[&sid])?.into_iter().rev().map(|r|json!({"id":r["id"],"method":r["name"],"status":r["data"]["status"],"source":r["data"]["result"]["entry"],"content_digest":r["data"]["result"]["content_digest"],"turn_id":r["data"]["invocation"]["turn_id"],"error":r["data"]["error"]})).collect::<Vec<_>>();
+            json!({"session":session,"predecessor_available":predecessor_available,"controller":controller,"current_runtime_binding":session["runtime_binding"],"workflow_context":workflow,"formal_execution":binding.is_some()||workflow.is_some(),"output_contract":null,"agent_instance_id":instance(&session),"experience_reads":experience,"turns":turns,"total_turns":total,"events":events,"next_cursor":next,"interactions":interactions,"proposals":proposals,"executions":executions})
         }
     };
     // Use only the original admitted user ledger to display compact task inputs.

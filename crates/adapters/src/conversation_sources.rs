@@ -163,11 +163,27 @@ pub(super) fn source(
             "恢复不能替换原任务或上下文引用",
         )?;
     }
+    // The first input of an explicit continuation uses the sealed source
+    // itself, including its documents and the entire bounded transcript.
+    let continuation_snapshot = if seed.is_none() && binding.is_none() && controller.is_none() {
+        conn.query_row(
+            "SELECT id FROM snapshots WHERE id=?1 AND kind='discussion_continuation'
+             AND NOT EXISTS(SELECT 1 FROM turns WHERE session_id=?2
+                 AND rowid<(SELECT rowid FROM turns WHERE id=?3))",
+            rusqlite::params![raw_session["snapshot_id"].as_str(), sid, tid],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(storage)?
+    } else {
+        None
+    };
     let snapshot_id = if let Some(seed) = seed {
         seed["data"]["specification_snapshot_id"].as_str()
     } else {
-        raw_turn["input_snapshot"]
-            .as_str()
+        continuation_snapshot
+            .as_deref()
+            .or_else(|| raw_turn["input_snapshot"].as_str())
             .or_else(|| raw_session["snapshot_id"].as_str())
     };
     let snapshot = snapshot_id

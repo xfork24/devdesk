@@ -20,6 +20,83 @@ fn project(namespace: &StoreNamespace) -> Result<&str> {
         _ => Err(err("invalid_scope", "经验来源必须为工程或讨论命名空间")),
     }
 }
+
+/// Suppress one exact snapshot in the Agent's experience directory. Captures
+/// and sealed evidence remain at the source, including in read-only projects.
+pub fn delete(
+    store: &dyn EngineeringStore,
+    current_project: &str,
+    command: &Command,
+    visible: impl Fn() -> Result<bool>,
+) -> Result<CommitReceipt> {
+    require(
+        store.namespace() == StoreNamespace::Configuration,
+        "经验删除需要全局目录",
+    )?;
+    let agent = text(&command.payload, "agent_instance_id")?;
+    let project = text(&command.payload, "source_project_id")?;
+    let snapshot = text(&command.payload, "snapshot_id")?;
+    require(
+        command.expected_revision == Some(0),
+        "经验删除需要声明删除记录尚不存在",
+    )?;
+    require(
+        command.target.as_deref() == Some(snapshot.as_str()),
+        "删除目标与快照不符",
+    )?;
+    let fingerprint = configuration_hash(&("experience.delete/v1", current_project, command));
+    if let Some(saved) = store.replay_commit(&command.command_id, &fingerprint)? {
+        return Ok(saved);
+    }
+    if !visible()? {
+        if let Some(saved) = store.replay_commit(&command.command_id, &fingerprint)? {
+            return Ok(saved);
+        }
+        return Err(err("not_found", "该经验已删除或不可见"));
+    }
+    let mut row = record(
+        "experience_deleted",
+        agent.clone(),
+        Scope::global(),
+        "删除经验".into(),
+        1,
+        None,
+        json!({"source_project_id":project,"snapshot_id":snapshot}),
+        true,
+    );
+    row.id = format!(
+        "experience-deleted:{}",
+        configuration_hash(&(&agent, &project, &snapshot))
+    );
+    let key = ResourceKey::new("governance", &row.id);
+    let context = InvocationContext::human(
+        (current_project != GLOBAL_DISCUSSION_NAMESPACE).then(|| current_project.to_owned()),
+    )
+    .prepare_record("experience.delete", command);
+    store.commit_changes(&PreparedChangeSet {
+        command_id: command.command_id.clone(),
+        fingerprint,
+        read_set: ReadSet::new(vec![
+            ResourceVersion {
+                resource: key.clone(),
+                revision: 0,
+            },
+            ResourceVersion {
+                resource: context.resource.clone(),
+                revision: 0,
+            },
+        ])?,
+        changes: vec![
+            ResourceChange {
+                resource: key,
+                value: row.to_storage(),
+            },
+            context,
+        ],
+        result: json!({"snapshot_id":snapshot,"source_project_id":project}),
+        time: now() as i64,
+    })
+}
 pub fn publish(
     store: &dyn EngineeringStore,
     namespace: &StoreNamespace,

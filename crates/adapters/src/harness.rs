@@ -984,7 +984,18 @@ impl Worker {
         incoming.append(&mut a.buffered);
         incoming.extend(frames);
         let mut incoming: std::collections::VecDeque<_> = incoming.into();
+        let mut terminal = None;
         while let Some(f) = incoming.pop_front() {
+            // Codex can flush the completed tool item after turn/completed.
+            // Keep that evidence in this drain before the terminal boundary.
+            if terminal.is_some()
+                && !(self.provider == HarnessProvider::Codex
+                    && f.get("id").is_none()
+                    && f["method"] == "item/completed"
+                    && f["params"]["turnId"].as_str() == a.external.as_deref())
+            {
+                continue;
+            }
             if f.get("method").is_none() && f["id"] == a.request {
                 if f.get("error").is_some() {
                     return Err(err(
@@ -1023,7 +1034,7 @@ impl Worker {
                 require(f.get("error").is_none(), "DSH 静止核对失败")?;
                 if let Some((outcome, reason)) = a.terminal.take() {
                     a.done = true;
-                    out.push(Obs::Terminal {
+                    terminal = Some(Obs::Terminal {
                         turn: a.turn.clone(),
                         outcome,
                         reason,
@@ -1185,7 +1196,7 @@ impl Worker {
                                 });
                             }
                             a.done = true;
-                            out.push(Obs::Terminal {
+                            terminal = Some(Obs::Terminal {
                                 turn: a.turn.clone(),
                                 outcome,
                                 reason: status.into(),
@@ -1275,6 +1286,7 @@ impl Worker {
                 _ => {}
             }
         }
+        out.extend(terminal);
         Ok(out)
     }
     fn interaction(&mut self, a: &Activity, f: &Value, out: &mut Vec<Obs>) -> Result<()> {
@@ -1402,9 +1414,13 @@ impl Worker {
         }
         let mut content:Vec<Value>=receipt.content.iter().map(|v|match v["type"].as_str(){Some("text")=>json!({"type":"inputText","text":v["text"]}),Some("image")=>json!({"type":"inputImage","imageUrl":format!("data:{};base64,{}",v["mimeType"].as_str().unwrap_or("image/png"),v["data"].as_str().unwrap_or(""))}),Some("audio")=>json!({"type":"inputAudio","audioUrl":format!("data:{};base64,{}",v["mimeType"].as_str().unwrap_or("audio/wav"),v["data"].as_str().unwrap_or(""))}),_=>json!({"type":"inputText","text":serde_json::to_string(v).unwrap()})}).collect();
         if let Some(value) = &receipt.structured_content {
-            content.push(
-                json!({"type":"inputText","text":serde_json::to_string(value).map_err(storage)?}),
-            );
+            let serialized = serde_json::to_string(value).map_err(storage)?;
+            if !content
+                .iter()
+                .any(|item| item["type"] == "inputText" && item["text"] == serialized)
+            {
+                content.push(json!({"type":"inputText","text":serialized}));
+            }
         }
         self.wire.send(
             &json!({"id":request,"result":{"success":receipt.success,"contentItems":content}}),
@@ -2009,6 +2025,97 @@ mod protocol_tests {
             };
             assert_eq!(reply["result"]["success"], false);
         }
+    }
+
+    #[test]
+    fn codex_flushes_late_experience_tool_evidence_before_terminal() {
+        let mut command = std::process::Command::new("/bin/cat");
+        command.arg("-u");
+        let mut worker = Worker {
+            worktree: PathBuf::new(),
+            permissions: None,
+            wire: JsonlProcess::spawn(command).unwrap(),
+            provider: HarnessProvider::Codex,
+            session: "thread".into(),
+            operation: id(),
+            container: "fixture".into(),
+            image: "fixture".into(),
+            log: PathBuf::new(),
+            activity: None,
+            requests: HashMap::new(),
+        };
+        let mut activity = Activity {
+            budget: Duration::from_secs(900),
+            deadline: std::time::Instant::now() + Duration::from_secs(900),
+            turn: "turn".into(),
+            request: 1,
+            external: Some("native-turn".into()),
+            consumed: true,
+            terminal: None,
+            wait: None,
+            done: false,
+            buffered: vec![],
+            serial: 0,
+        };
+        let request = json!(2);
+        let observed = worker.project(&mut activity, vec![json!({
+            "id":request,"method":"item/tool/call","params":{"threadId":"thread","turnId":"native-turn",
+            "callId":"experience-call","tool":"devdesk_agent_experience_read",
+            "arguments":{"source_project_id":"origin","snapshot_id":"historical-snapshot"}}
+        })]).unwrap();
+        assert!(
+            matches!(&observed[..], [Obs::ToolCall { arguments, .. }] if arguments["snapshot_id"] == "historical-snapshot")
+        );
+        let result = json!({"content_chunk":"verified historical work","next_offset":null});
+        worker
+            .answer_tool(
+                &request,
+                &ToolReceipt {
+                    invocation_id: "experience-call".into(),
+                    success: true,
+                    content: vec![json!({"type":"text","text":result.to_string()})],
+                    structured_content: Some(result.clone()),
+                    remote_effect: "not_applied".into(),
+                    error: None,
+                    origin: Origin::External,
+                },
+            )
+            .unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        let reply = loop {
+            if let Some(frame) = worker.wire.drain().unwrap().into_iter().next() {
+                break frame;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "missing experience tool reply"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        };
+        assert_eq!(reply["id"], request);
+        assert_eq!(
+            reply["result"],
+            json!({"success":true,"contentItems":[{"type":"inputText","text":result.to_string()}]})
+        );
+        let observations = worker.project(&mut activity, vec![
+            json!({"method":"turn/completed","params":{"threadId":"thread","turn":{"id":"native-turn","status":"completed"}}}),
+            json!({"method":"item/completed","params":{"threadId":"thread","turnId":"native-turn","item":{"type":"dynamicToolCall","id":"experience-call","tool":"devdesk_agent_experience_read","status":"completed"}}}),
+            json!({"method":"item/completed","params":{"threadId":"thread","turnId":"different-turn","item":{"type":"agentMessage","id":"foreign"}}}),
+            json!({"id":3,"method":"item/tool/call","params":{"threadId":"thread","turnId":"native-turn","callId":"late-request","tool":"devdesk_agent_experience_read","arguments":{}}}),
+        ]).unwrap();
+        assert_eq!(observations.len(), 2);
+        assert!(
+            matches!(&observations[0], Obs::Message { kind: ConversationEventKind::Tool, item, .. } if item == "experience-call")
+        );
+        assert!(matches!(
+            &observations[1],
+            Obs::Terminal {
+                outcome: ProviderTerminal::Completed,
+                quiescent: true,
+                ..
+            }
+        ));
+        assert_eq!(worker.requests.len(), 1);
     }
 
     #[test]

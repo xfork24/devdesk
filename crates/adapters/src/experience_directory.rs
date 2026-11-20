@@ -39,6 +39,7 @@ fn metadata(expr: &str) -> String {
         "agent_revision_id",
         "snapshot_id",
         "session_id",
+        "turn_id",
         "project_id",
         "feature_id",
         "task_id",

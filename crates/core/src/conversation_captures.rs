@@ -483,7 +483,11 @@ impl Engine {
         saved: &ResourceSnapshot,
         intent: &ConfigurationRecord,
     ) -> Result<()> {
-        let data = &intent.data["experience"];
+        let mut entry_data = intent.data["experience"].clone();
+        if let Some(turn_id) = intent.data["turn_id"].as_str() {
+            entry_data["turn_id"] = json!(turn_id);
+        }
+        let data = &entry_data;
         let snapshot_id = text(data, "snapshot_id")?;
         let feature = data["feature_id"].as_str();
         let identity = if let Some(feature) = feature {

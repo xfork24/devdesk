@@ -319,6 +319,16 @@
       ]
     },
     {
+      "method": "conversation.delete_turn",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/session_commands.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
       "method": "conversation.send",
       "access": "mutation",
       "scope": "explicit",
@@ -434,6 +444,16 @@
       "precondition": "resource_read_set",
       "sites": [
         "crates/core/src/conversations.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "experience.delete",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "absence_and_dependencies",
+      "sites": [
+        "crates/core/src/experience_directory.rs",
         "crates/host/src/workspace.rs"
       ]
     },
@@ -2036,6 +2056,16 @@
       "scope": "explicit",
       "precondition": "none",
       "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "session.delete",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/session_commands.rs",
         "crates/host/src/workspace.rs"
       ]
     },

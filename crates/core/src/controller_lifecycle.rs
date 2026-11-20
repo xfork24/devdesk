@@ -154,7 +154,7 @@ impl Engine {
             "请先停止并核对原经理 worker 和轮次",
         )?;
         commit.witness([version(&selected), version(&workers), version(&inputs)])?;
-        let facts = self.store.conversation_input_facts(&session)?;
+        let facts = self.store.conversation_input_facts(&session, None)?;
         commit.witness(facts.read_set.versions().iter().cloned())?;
         let owner = WorkOwnerFacts::read(self.store.as_ref(), &controller.owner_id)?;
         commit.witness(owner.read_set.versions().iter().cloned())?;

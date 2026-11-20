@@ -544,6 +544,53 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
         "verified"
     );
 
+    let delete = Command {
+        command_id: id(),
+        target: Some(next_snapshot.as_str().unwrap().to_owned()),
+        expected_revision: Some(0),
+        payload: json!({"agent_instance_id":instance,"source_project_id":pid,"snapshot_id":next_snapshot}),
+    };
+    let remove = || {
+        devdesk_core::experience_directory::delete(&*global, &pid, &delete, || {
+            experience::entry_visible(root.path(), &pid, &delete.payload)
+        })
+    };
+    assert_eq!(remove().unwrap().result, remove().unwrap().result);
+    assert_eq!(
+        lookup(&pid, &instance, json!({"feature_id":"feature-experience"})).unwrap()["total"],
+        0
+    );
+    assert!(
+        lookup(
+            &pid,
+            &instance,
+            json!({"snapshot_id":next_snapshot,"source_project_id":pid})
+        )
+        .is_err()
+    );
+    assert!(
+        lookup(
+            &pid,
+            &instance,
+            json!({"snapshot_id":sid,"source_project_id":pid})
+        )
+        .is_ok()
+    );
+    assert!(
+        source_engine
+            .store
+            .snapshot()
+            .unwrap()
+            .snapshots
+            .iter()
+            .any(|row| row.id == next_snapshot)
+    );
+    source_engine.publish_experience_index(&*global).unwrap();
+    assert_eq!(
+        lookup(&pid, &instance, json!({"feature_id":"feature-experience"})).unwrap()["total"],
+        0
+    );
+
     std::fs::write(
         SqliteStore::project_path(root.path(), &pid)
             .unwrap()
@@ -564,7 +611,7 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
         .join("engineering.sqlite3");
     std::fs::rename(&db, db.with_extension("offline")).unwrap();
     let offline = lookup(&projects[0], &instance, json!({})).unwrap();
-    assert_eq!(offline["total"], 3);
+    assert_eq!(offline["total"], 2);
     assert!(
         offline["records"]
             .as_array()

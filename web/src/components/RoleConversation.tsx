@@ -9,6 +9,7 @@ import { loadCatalog, decodeConfigurationIndex } from "./configuration-state";
 import { MarkdownField } from "./configuration-ui";
 import { type Request, type Row } from "./rpc-types";
 import { AgentExperience } from "./AgentExperience";
+import { experienceKey } from "./experience-reference";
 import { configurationHref } from "./configuration-links";
 import { ConfigurationLink } from "./ConfigurationLink";
 import { WorkflowReferences } from "./WorkflowReferences";
@@ -29,6 +30,7 @@ type Props = {
   agents: Row[];
   configurations?: Row[];
   onLocateExperience?: (entry: Row) => void;
+  onDiscussionDeleted?: (session: string, turn?: string) => void;
   initialOwner?: string;
   initialSession?: string;
   initialTurn?: string;
@@ -45,6 +47,7 @@ export function RoleConversation({
   agents,
   configurations = [],
   onLocateExperience,
+  onDiscussionDeleted,
   initialOwner,
   initialSession,
   initialTurn,
@@ -111,7 +114,6 @@ export function RoleConversation({
   const [proposalJson, setProposalJson] = useState("");
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [selections, setSelections] = useState<Record<string, string[]>>({});
-  const pendingFocus = useRef<{ owner: string; session: string } | null>(null);
   const manualSession = useRef(false);
   const [sessionAnchor, setSessionAnchor] = useState(initialSession || "");
   function clearSelectedSession() {
@@ -128,6 +130,8 @@ export function RoleConversation({
     cursor.current = 0;
   }
   const generation = useRef(0);
+  const composer = useRef<HTMLFormElement>(null);
+  const [historyRefresh, refreshHistory] = useState(0);
   const cursor = useRef(0);
   const listGeneration = useRef(0);
   const detailGeneration = useRef(0);
@@ -370,6 +374,21 @@ export function RoleConversation({
       detail.output_contract.id !== "proposal-content/v1"),
   );
   const controller = detail?.controller;
+  const acceptsExperience = !formalOutput && !controller;
+  const requiresContinuation =
+    detail?.permission_status?.requires_successor === true ||
+    ["requires_successor", "closed", "needs_reconciliation"].includes(
+      detail?.session.lifecycle,
+    );
+  const selectedTurn = detail?.turns.find((turn: Row) => turn.id === turnId);
+  const continuationAgent =
+    currentBinding?.agent_configuration?.agent_instance_id ||
+    detail?.agent_instance_id;
+  const continuationReady =
+    (!active || active.status === "needs_reconciliation") &&
+    Boolean(continuationAgent);
+  const canDeleteHistory = acceptsExperience && !active;
+  const anchoredTurn = sessionId === initialSession ? initialTurn : undefined;
   const messageKey = `${project.id}:${owner}:${sessionId}`;
   useEffect(() => {
     setInput(messageDrafts.current.get(messageKey)?.input ?? "");
@@ -414,57 +433,50 @@ export function RoleConversation({
       payload,
     });
   const recommendedStepId = recommendedExecution?.id;
-  const loadSessions = useCallback(async () => {
-    const current = ++listGeneration.current;
-    const result = await scopedRequest("query.sessions", {
-      owner_id: owner,
-      agent_instance_id: sessionAnchor ? undefined : instanceId || undefined,
-      workflow_session_id: sessionAnchor || undefined,
-      step_execution_id: sessionAnchor ? undefined : recommendedStepId,
-      agent: sessionAnchor ? undefined : agent || undefined,
-    });
-    if (current === listGeneration.current) {
-      setSessions(result.sessions);
-      // A deep link pins the requested session before role/instance discovery.
-      // Neither a recommended worker nor a newer session may replace it.
-      if (sessionAnchor) {
-        if (!manualSession.current) setSessionId(sessionAnchor);
-        return;
-      }
-      if (!manualSession.current && (instanceId || agent || sessionAnchor)) {
-        const latest = result.sessions.find((s: Row) =>
-          instanceId
-            ? (s.agent_instance_id ||
-                s.runtime_binding?.agent_configuration?.agent_instance_id) ===
-              instanceId
-            : agent
-              ? s.agent === agent
-              : !!sessionAnchor,
+  const loadSessions = useCallback(
+    async (anchor = sessionAnchor, removed?: string) => {
+      const current = ++listGeneration.current;
+      const result = await scopedRequest("query.sessions", {
+        owner_id: owner,
+        agent_instance_id: anchor ? undefined : instanceId || undefined,
+        workflow_session_id: anchor || undefined,
+        step_execution_id: anchor ? undefined : recommendedStepId,
+        agent: anchor ? undefined : agent || undefined,
+      });
+      if (current === listGeneration.current) {
+        const visible = (result.sessions as Row[]).filter(
+          (row) => row.id !== removed,
         );
-        setSessionId(latest?.id || "");
+        setSessions(visible);
+        // A deep link pins the requested session before role/instance discovery.
+        // Neither a recommended worker nor a newer session may replace it.
+        if (anchor) {
+          if (!manualSession.current) setSessionId(anchor);
+          return;
+        }
+        if (!manualSession.current && (instanceId || agent)) {
+          const latest = visible.find((s: Row) =>
+            instanceId
+              ? (s.agent_instance_id ||
+                  s.runtime_binding?.agent_configuration?.agent_instance_id) ===
+                instanceId
+              : agent
+                ? s.agent === agent
+                : false,
+          );
+          setSessionId(latest?.id || "");
+        }
       }
-    }
-  }, [
-    scopedRequest,
-    owner,
-    instanceId,
-    sessionAnchor,
-    agent,
-    recommendedStepId,
-  ]);
+    },
+    [scopedRequest, owner, instanceId, sessionAnchor, agent, recommendedStepId],
+  );
   useEffect(() => {
     ++generation.current;
     ++listGeneration.current;
-    const focus =
-      pendingFocus.current?.owner === owner ? pendingFocus.current : null;
-    pendingFocus.current = null;
     manualSession.current = false;
-    setSessionAnchor(
-      focus?.session || (owner === initialOwner ? initialSession || "" : ""),
-    );
-    setSessionId(
-      focus?.session || (owner === initialOwner ? initialSession || "" : ""),
-    );
+    const initial = owner === initialOwner ? initialSession || "" : "";
+    setSessionAnchor(initial);
+    setSessionId(initial);
     setDetail(undefined);
     setSessions([]);
     setEvents([]);
@@ -494,6 +506,7 @@ export function RoleConversation({
             id: sessionId,
             cursor: cursor.current,
             limit: 100,
+            anchor_turn_id: anchoredTurn,
           });
           if (stopped || current !== generation.current) return;
           detailGeneration.current = current;
@@ -519,7 +532,14 @@ export function RoleConversation({
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [sessionId, scopedRequest, captureFeedback, setError]);
+  }, [
+    sessionId,
+    scopedRequest,
+    captureFeedback,
+    setError,
+    historyRefresh,
+    anchoredTurn,
+  ]);
   async function action(work: () => Promise<void>) {
     captureFeedback();
 
@@ -584,9 +604,79 @@ export function RoleConversation({
         },
       );
       await loadSessions();
+      if (sessionId && result.id !== sessionId) setExperienceRefs([]);
       setSessionId(result.id);
     });
   }
+  function continueDiscussion(turn?: Row) {
+    if (!detail || !continuationReady) return;
+    if (!turn && !requiresContinuation && acceptsExperience) {
+      setTurnId("");
+      composer.current?.scrollIntoView({ block: "nearest" });
+      return;
+    }
+    const source = detail.session;
+    return action(async () => {
+      const result = await command(
+        "session.open",
+        source.owner_id,
+        source.revision,
+        {
+          agent_instance_id: continuationAgent,
+          continue_from: {
+            session_id: source.id,
+            ...(turn ? { turn_id: turn.id, turn_revision: turn.revision } : {}),
+          },
+        },
+      );
+      if (input.trim()) {
+        messageDrafts.current.set(`${project.id}:${owner}:${result.id}`, {
+          input,
+          revision: result.revision,
+          target: result.id,
+          commandId: crypto.randomUUID(),
+          clientId: crypto.randomUUID(),
+        });
+        messageDrafts.current.delete(messageKey);
+      }
+      manualSession.current = true;
+      setTurnId("");
+      setSessionAnchor(result.id);
+      setSessionId(result.id);
+    });
+  }
+
+  function deleteDiscussion(turn?: Row) {
+    if (!detail || !canDeleteHistory) return;
+    const source = detail.session;
+    const title = turn
+      ? `轮次 ${shortId(turn.id)}`
+      : `会话 ${shortId(source.id)}`;
+    if (!window.confirm(`从角色讨论中删除${title}？`)) return;
+    return action(async () => {
+      await command(
+        turn ? "conversation.delete_turn" : "session.delete",
+        source.id,
+        source.revision,
+        turn ? { turn_id: turn.id, turn_revision: turn.revision } : {},
+      );
+      generation.current += 1;
+      setTurnId("");
+      if (turn) {
+        refreshHistory((version) => version + 1);
+      } else {
+        messageDrafts.current.delete(messageKey);
+        manualSession.current = false;
+        setSessionId("");
+        setSessionAnchor("");
+        setSessions((rows) => rows.filter((row) => row.id !== source.id));
+        setExperienceRefs([]);
+        await loadSessions("", source.id);
+      }
+      onDiscussionDeleted?.(source.id, turn?.id);
+    });
+  }
+
   async function send(event: FormEvent) {
     captureFeedback();
 
@@ -605,7 +695,8 @@ export function RoleConversation({
       clientId: crypto.randomUUID(),
       sent: undefined as string | undefined,
     };
-    const fingerprint = JSON.stringify({ input, experienceRefs });
+    const references = acceptsExperience ? experienceRefs : [];
+    const fingerprint = JSON.stringify({ input, references });
     if (basis.sent && basis.sent !== fingerprint) {
       basis.commandId = crypto.randomUUID();
       basis.clientId = crypto.randomUUID();
@@ -642,9 +733,9 @@ export function RoleConversation({
         {
           client_message_id: basis.clientId,
           input,
-          ...(experienceRefs.length
+          ...(references.length
             ? {
-                experience_refs: experienceRefs.map((entry) => ({
+                experience_refs: references.map((entry) => ({
                   source_project_id: entry.project_id,
                   snapshot_id: entry.snapshot_id,
                 })),
@@ -662,9 +753,38 @@ export function RoleConversation({
       }
       messageDrafts.current.delete(messageKey);
       setInput("");
-      setExperienceRefs([]);
     });
   }
+  function removeReference(entry: Row) {
+    setExperienceRefs((old) =>
+      old.filter((row) => experienceKey(row) !== experienceKey(entry)),
+    );
+  }
+  const references = acceptsExperience && experienceRefs.length > 0 && (
+    <section
+      className="notice experience-references"
+      aria-label="当前讨论引用的经验"
+    >
+      <strong>当前讨论引用的经验</strong>
+      <ul>
+        {experienceRefs.map((entry) => {
+          const title = `${entry.project_name} / ${entry.feature_name || "讨论"}`;
+          return (
+            <li key={experienceKey(entry)}>
+              <span>{displayText(title)}</span>
+              <ActionButton
+                disabled={busy}
+                aria-label={`清除引用 ${title}`}
+                onClick={() => removeReference(entry)}
+              >
+                清除引用
+              </ActionButton>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
   const projected: Row[] = [];
   for (const event of events) {
     const previous = event.provider_item
@@ -731,7 +851,7 @@ export function RoleConversation({
             value={agent}
             onChange={(e) => {
               captureFeedback();
-
+              if (e.target.value === agent) return;
               clearSelectedSession();
               setAgent(e.target.value);
               setInstanceId("");
@@ -763,6 +883,7 @@ export function RoleConversation({
                 value={instanceId}
                 onChange={(e) => {
                   captureFeedback();
+                  if (e.target.value === instanceId) return;
                   if (e.target.value === createAgentInstanceOption) {
                     void createAgentInstance();
                     return;
@@ -909,7 +1030,7 @@ export function RoleConversation({
           )}
           <AgentExperience
             revision={lastCompleted?.id}
-            key={instanceId || detail?.session.id || owner}
+            key={`${global ? "global" : project.id}:${instanceId || detail?.session.id || owner}`}
             request={request}
             projectId={global ? "global" : project.id}
             instanceId={
@@ -919,39 +1040,27 @@ export function RoleConversation({
               ""
             }
             owner={selectedOwner || project}
+            references={experienceRefs}
             onReference={
-              formalOutput
+              !acceptsExperience || busy
                 ? undefined
-                : (entry) =>
+                : (entry) => {
+                    const key = experienceKey(entry);
                     setExperienceRefs((old) =>
-                      old.some(
-                        (r) =>
-                          r.snapshot_id === entry.snapshot_id &&
-                          r.project_id === entry.project_id,
-                      )
-                        ? old
+                      old.some((row) => experienceKey(row) === key)
+                        ? old.filter((row) => experienceKey(row) !== key)
                         : [...old, entry],
-                    )
+                    );
+                  }
             }
+            onDeleted={removeReference}
             onRestored={(id) => {
               manualSession.current = true;
-              void loadSessions();
+              setExperienceRefs([]);
+              setSessionAnchor(id);
               setSessionId(id);
             }}
-            onLocate={(entry) => {
-              if (entry.project_id === "00000000-0000-4000-8000-000000000000") {
-                if (global) {
-                  manualSession.current = true;
-                  setSessionId(entry.session_id);
-                } else {
-                  pendingFocus.current = {
-                    owner: "global",
-                    session: entry.session_id,
-                  };
-                  setOwner("global");
-                }
-              } else onLocateExperience?.(entry);
-            }}
+            onLocate={onLocateExperience}
           />
         </div>
         <ActionButton
@@ -985,19 +1094,7 @@ export function RoleConversation({
           )}
         </p>
       )}
-      {experienceRefs.length > 0 && (
-        <div className="notice" aria-label="当前讨论引用的经验">
-          {experienceRefs.map((entry) => (
-            <p key={`${entry.project_id}:${entry.snapshot_id}`}>
-              {displayText(entry.project_name)} /{" "}
-              {displayText(entry.feature_name || "讨论")}
-            </p>
-          ))}
-          <ActionButton onClick={() => setExperienceRefs([])}>
-            清除经验引用
-          </ActionButton>
-        </div>
-      )}
+      {!detail && references}
       {detail?.experience_reads?.length > 0 && (
         <details>
           <summary>Agent 在本次讨论中读取的经验</summary>
@@ -1006,13 +1103,15 @@ export function RoleConversation({
               {displayText(
                 entry.source
                   ? `${entry.source.project_name} / ${entry.source.feature_name || "讨论"}`
-                  : "检索历史经验",
+                  : entry.method === "agent.experience.read"
+                    ? "读取经验快照"
+                    : "检索历史经验",
               )}
               {" · "}
               {displayText(
                 entry.status === "succeeded"
                   ? "已读取"
-                  : entry.status === "prepared"
+                  : ["prepared", "running"].includes(entry.status)
                     ? "读取中"
                     : "读取失败",
               )}
@@ -1032,6 +1131,7 @@ export function RoleConversation({
           onChange={(e) => {
             captureFeedback();
             manualSession.current = true;
+            setExperienceRefs([]);
             return setSessionId(e.target.value);
           }}
         >
@@ -1089,6 +1189,45 @@ export function RoleConversation({
                 ))}
               </ActionSelect>
             </label>
+            <div className="actions">
+              <ActionButton
+                disabled={busy || !continuationReady}
+                onClick={() => continueDiscussion()}
+              >
+                继续此会话
+              </ActionButton>
+              {selectedTurn && (
+                <ActionButton
+                  disabled={busy || !continuationReady}
+                  onClick={() => continueDiscussion(selectedTurn)}
+                >
+                  从此轮次继续
+                </ActionButton>
+              )}
+              {acceptsExperience && (
+                <>
+                  <ActionButton
+                    disabled={busy || !canDeleteHistory}
+                    onClick={() => deleteDiscussion()}
+                  >
+                    删除会话
+                  </ActionButton>
+                  {selectedTurn && (
+                    <ActionButton
+                      disabled={busy || !canDeleteHistory}
+                      onClick={() => deleteDiscussion(selectedTurn)}
+                    >
+                      删除此轮次
+                    </ActionButton>
+                  )}
+                </>
+              )}
+            </div>
+            {requiresContinuation && (
+              <p className="notice">
+                此会话需要通过后继会话续聊。点击继续此会话会继承已保存的上下文。
+              </p>
+            )}
             {workflowContext?.step_instance_id ? (
               <>
                 <p className="muted">
@@ -1123,7 +1262,8 @@ export function RoleConversation({
               </p>
             )}
           </section>
-          {detail.session.predecessor ? (
+          {detail.session.predecessor &&
+          detail.predecessor_available !== false ? (
             <p className="muted">
               本次讨论继承了前序上下文。
               <ActionButton
@@ -1264,6 +1404,7 @@ export function RoleConversation({
               {displayText(detail.session.snapshot_id)}
             </p>
           )}
+          {references}
           <div role="log" aria-label="讨论记录" className="conversation-log">
             {projected
               .filter((event) => !turnId || event.turn_id === turnId)
@@ -1411,7 +1552,7 @@ export function RoleConversation({
                 </div>
               </div>
             ))}
-          <ActionForm onSubmit={send}>
+          <ActionForm ref={composer} onSubmit={send}>
             <MarkdownField
               label="讨论输入"
               disabled={formalOutput && !controller}
@@ -1432,13 +1573,7 @@ export function RoleConversation({
                   ? !["active", "budget_exhausted"].includes(
                       controller.data.status,
                     )
-                  : formalOutput ||
-                    !!active ||
-                    [
-                      "needs_reconciliation",
-                      "requires_successor",
-                      "closed",
-                    ].includes(detail.session.lifecycle))
+                  : formalOutput || !!active || requiresContinuation)
               }
             >
               发送

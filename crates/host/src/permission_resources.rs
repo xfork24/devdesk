@@ -200,6 +200,11 @@ impl Workspace {
             .as_ref()
             .and_then(|b| b.permissions.as_ref())
             .and_then(|p| p.binding_lock.as_ref());
+        let requires_successor = session.runtime_binding.as_ref().is_some_and(|binding| {
+            frozen.is_none()
+                || binding.adapter_version
+                    != harness::managed_adapter_identity(binding.installation.key.provider)
+        });
         let desired = s
             .configuration(&session.agent)
             .ok()
@@ -219,7 +224,7 @@ impl Workspace {
             }
         };
         Ok(
-            json!({"status":status,"frozen":frozen,"desired":desired.as_ref().and_then(|r|r.as_ref().ok()),"reason":pending.and_then(|r|r.data["reason"].as_str()).or_else(||desired.as_ref().and_then(|r|r.as_ref().err()).map(|e|e.message.as_str())),"pending_command":pending.map(|r|&r.data["command"])}),
+            json!({"status":status,"requires_successor":requires_successor,"frozen":frozen,"desired":desired.as_ref().and_then(|r|r.as_ref().ok()),"reason":pending.and_then(|r|r.data["reason"].as_str()).or_else(||desired.as_ref().and_then(|r|r.as_ref().err()).map(|e|e.message.as_str())),"pending_command":pending.map(|r|&r.data["command"])}),
         )
     }
 

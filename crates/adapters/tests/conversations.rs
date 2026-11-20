@@ -711,6 +711,234 @@ fn conversation_commands_are_idempotent_and_switching_creates_a_snapshot_success
     }
 }
 
+#[test]
+fn discussion_continuation_uses_the_selected_boundary_and_deletion_preserves_evidence() {
+    let directory = tempfile::tempdir().unwrap();
+    let e = engine(directory.path());
+    let (project, original, first) = initialize(&e);
+    complete_fixture(&e, &original, &first);
+    let before_second = e.store.snapshot().unwrap().sessions[0].revision;
+    let second = e
+        .execute(
+            "conversation.send",
+            Command {
+                command_id: id(),
+                target: Some(original.clone()),
+                expected_revision: Some(before_second),
+                payload: json!({"client_message_id":id(),"input":"marker after the first turn"}),
+            },
+        )
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let active = e.store.snapshot().unwrap();
+    let denied = e.execute(
+        "session.delete",
+        Command {
+            command_id: id(),
+            target: Some(original.clone()),
+            expected_revision: Some(active.sessions[0].revision),
+            payload: json!({}),
+        },
+    );
+    assert!(denied.is_err());
+    e.execute(
+        "conversation.cancel",
+        Command {
+            command_id: id(),
+            target: Some(second.clone()),
+            expected_revision: Some(
+                active
+                    .turns
+                    .iter()
+                    .find(|row| row.id == second)
+                    .unwrap()
+                    .revision,
+            ),
+            payload: json!({}),
+        },
+    )
+    .unwrap();
+    e.store
+        .seed_fixture_state(None, &mut |state| {
+            state.sessions[0].lifecycle = Some(SessionLifecycle::RequiresSuccessor);
+            Ok(Value::Null)
+        })
+        .unwrap();
+    let original_detail = e
+        .query("query.session", &json!({"id":original}), 1)
+        .unwrap();
+    let session = &original_detail["session"];
+    let agent = &original_detail["agent_instance_id"];
+    let turns = original_detail["turns"].as_array().unwrap();
+    let first_revision = turns.iter().find(|row| row["id"] == first).unwrap()["revision"].clone();
+    let second_revision = turns.iter().find(|row| row["id"] == second).unwrap()["revision"].clone();
+    let open = |source: Value, revision| {
+        e.open_prepared_session(
+            &runtime::ResourceFixture {
+                store: e.store.as_ref(),
+            },
+            Command {
+                command_id: id(),
+                target: Some(project.clone()),
+                expected_revision: revision,
+                payload: json!({"agent_instance_id":agent,"continue_from":source}),
+            },
+        )
+    };
+    let selected = json!({"session_id":original,"turn_id":first,"turn_revision":first_revision});
+    assert_eq!(
+        open(selected.clone(), Some(0)).unwrap_err().code,
+        "revision_conflict"
+    );
+    let from_first = open(selected, session["revision"].as_u64()).unwrap();
+    let from_cancelled = open(
+        json!({"session_id":original,"turn_id":second,"turn_revision":second_revision}),
+        session["revision"].as_u64(),
+    )
+    .unwrap();
+    let state = e.store.snapshot().unwrap();
+    let inherited = |opened: &Value| {
+        let next = state
+            .sessions
+            .iter()
+            .find(|row| row.id == opened["id"])
+            .unwrap();
+        assert_eq!(next.predecessor.as_deref(), Some(original.as_str()));
+        assert!(next.external_session.is_none());
+        let snap = state
+            .snapshots
+            .iter()
+            .find(|snap| Some(&snap.id) == next.snapshot_id.as_ref())
+            .unwrap();
+        serde_json::from_str::<Value>(&snap.content).unwrap()
+    };
+    let first_context = inherited(&from_first);
+    assert_eq!(first_context["source_turn"], first);
+    assert!(first_context.to_string().contains("Discuss a requirement"));
+    assert!(
+        !first_context
+            .to_string()
+            .contains("marker after the first turn")
+    );
+    let cancelled_context = inherited(&from_cancelled);
+    assert_eq!(cancelled_context["source_turn"], second);
+    assert!(
+        cancelled_context
+            .to_string()
+            .contains("marker after the first turn")
+    );
+
+    let delete = Command {
+        command_id: id(),
+        target: Some(original.clone()),
+        expected_revision: session["revision"].as_u64(),
+        payload: json!({"turn_id":second,"turn_revision":second_revision}),
+    };
+    let removed = e
+        .execute("conversation.delete_turn", delete.clone())
+        .unwrap();
+    assert_eq!(
+        e.execute("conversation.delete_turn", delete).unwrap(),
+        removed
+    );
+    let detail = e
+        .query("query.session", &json!({"id":original}), 1)
+        .unwrap();
+    assert_eq!(detail["total_turns"], 1);
+    assert!(
+        detail["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|event| event["turn_id"] != second)
+    );
+    let retained = e
+        .query(
+            "query.session",
+            &json!({"id":original,"diagnostic_turn_id":second}),
+            1,
+        )
+        .unwrap();
+    assert_eq!(retained["turn"]["status"], "cancelled");
+    let later = open(json!({"session_id":original}), removed["revision"].as_u64()).unwrap();
+    let current = e.store.snapshot().unwrap();
+    let next = current
+        .sessions
+        .iter()
+        .find(|row| row.id == later["id"])
+        .unwrap();
+    let snap = current
+        .snapshots
+        .iter()
+        .find(|snap| Some(&snap.id) == next.snapshot_id.as_ref())
+        .unwrap();
+    assert!(!snap.content.contains("marker after the first turn"));
+    let input = e
+        .execute(
+            "conversation.send",
+            Command {
+                command_id: id(),
+                target: Some(next.id.clone()),
+                expected_revision: Some(next.revision),
+                payload: json!({"client_message_id":id(),"input":"continue working"}),
+            },
+        )
+        .unwrap();
+    let dispatched = e
+        .store
+        .conversation_start_source(input["id"].as_str().unwrap())
+        .unwrap();
+    assert_eq!(dispatched.snapshot.as_ref().unwrap().id, snap.id);
+    assert!(
+        dispatched
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .content
+            .contains("Discuss a requirement")
+    );
+    assert!(dispatched.authority.workflow.is_none());
+    assert!(dispatched.authority.controller.is_none());
+    e.execute(
+        "session.delete",
+        Command {
+            command_id: id(),
+            target: Some(original.clone()),
+            expected_revision: removed["revision"].as_u64(),
+            payload: json!({}),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        e.query("query.session", &json!({"id":original}), 1)
+            .unwrap_err()
+            .code,
+        "not_found"
+    );
+    assert!(
+        e.query(
+            "query.sessions",
+            &json!({"owner_id":project,"workflow_session_id":original}),
+            1
+        )
+        .unwrap()["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["id"] != original)
+    );
+    assert!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .turns
+            .iter()
+            .any(|row| row.id == second)
+    );
+}
+
 fn complete_fixture(e: &Engine, sid: &str, tid: &str) {
     e.store
         .seed_fixture_state(None, &mut |s| {

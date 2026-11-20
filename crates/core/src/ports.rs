@@ -880,6 +880,7 @@ pub trait EngineeringStore: Send + Sync {
     fn conversation_input_facts(
         &self,
         _session: &Session,
+        _through_turn: Option<&str>,
     ) -> Result<crate::ConversationCaptureFacts> {
         Err(err("unsupported", "存储未实现输入前有界上下文事实"))
     }

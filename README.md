@@ -16,6 +16,8 @@ DevDesk 使用 Rust 内核管理配置与工程事实，React 提供 Web 工作�
 
 当前支持 macOS 和 Linux Host，工程 worker 在 Linux Docker 容器执行。Codex 与 DSH 都提供动态工具和经验访问桥；当前根编排驱动支持 Codex。100 个活跃前端是持续容量目标，正式联合验收状态见[并发与性能约束](docs/design/quality-and-limits.md#支持范围与容量)。
 
+角色讨论支持从已有会话或指定轮次继续，也可删除独立讨论记录。Agent 经验可分页查看、引用、删除和定位来源。见[讨论、经验与结束](docs/design/agent-runtime.md#讨论经验与结束)。
+
 ## 快速开始
 
 ### 环境要求
