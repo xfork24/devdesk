@@ -310,13 +310,19 @@ test("根经理页处理子流程的真实例外申请，理由必填且只批�
     .getByRole("article", { name: "例外批准当前 Task", exact: true });
   await expect(card).toBeVisible();
   const blocker = page
+    .getByRole("region", { name: "当前阻塞点", exact: true })
     .locator(`a[href*="execution_id=${review.id}"]`)
     .filter({ hasText: "查看流程阻塞点" })
     .first();
-  await blocker
-    .locator("xpath=ancestor::details[1]")
-    .locator(":scope > summary")
-    .click();
+  const blockerDetails = blocker.locator("xpath=ancestor::details[1]");
+  // Awaiting-acceptance blockers open automatically so the current result is
+  // actionable. Exercise closing/reopening without assuming a collapsed panel.
+  await expect(blockerDetails).toHaveAttribute("open", "");
+  await expect(blocker).toBeVisible();
+  await blockerDetails.locator(":scope > summary").click();
+  await expect(blocker).not.toBeVisible();
+  await blockerDetails.locator(":scope > summary").click();
+  await expect(blocker).toBeVisible();
   await blocker.click();
   await expect(page.locator(`#workflow-execution-${review.id}`)).toBeVisible();
   await expect(
