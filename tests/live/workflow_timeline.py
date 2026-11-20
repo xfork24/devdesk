@@ -93,38 +93,46 @@ def build_spans(report):
         'excluded':excluded,'durationMs':finish-start,'netMs':report['timing_audit']['workflow_net_ms']}
 
 
-def render_svg(report, path):
-    start, wall = report['started_at_ms'], report['wall_ms']
+def render_svg(report, path, basis='raw'):
+    start = report['started_at_ms']
+    wall = report['timing_audit']['workflow_net_ms'] if basis=='net' else report['wall_ms']
+    excluded=[(a['requested_at_ms'],a['signed_at_ms']) for a in report['timing_audit']['approvals']]
+    excluded += [(p['started_at_ms'],p['finished_at_ms']) for p in report['timing_audit']['host_suspensions']]
+    def offset(at):
+        removed=union_ms([(max(start,a),min(at,b)) for a,b in excluded if b>start and a<at]) if basis=='net' else 0
+        return at-start-removed
+    def span_ms(a,b): return offset(b)-offset(a)
     rows = sorted(report['steps'], key=lambda s:s['started'])
     width, left, plot, row_height, top = 1560, 480, 800, 30, 155
     height = top + len(rows)*row_height + 110
-    def x(at): return left+(at-start)/wall*plot
+    def x(at): return left+offset(at)/wall*plot
     elements=[f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-labelledby="title desc">',
         '<title id="title">成功回归的 workflow 端到端时序</title>',
-        '<desc id="desc">33 个步骤按开始时间排列。蓝色为生产者执行，浅蓝为内部接纳等待，橙色为代审批响应，灰色竖带为主机休眠。横轴为原始墙钟分钟；代审批和主机休眠从净耗时排除。</desc>',
+        f'<desc id="desc">33 个步骤按开始时间排列。蓝色为生产者执行，浅蓝为内部接纳等待。横轴为{"排除代审批响应及主机休眠后的净流程分钟" if basis=="net" else "原始墙钟分钟，橙色为代审批响应，灰色竖带为主机休眠"}。</desc>',
         '<style>text{font:14px system-ui,sans-serif;fill:#202b3d}.small{font-size:12px}.grid{stroke:#d9dee5;stroke-width:1}</style>',
         f'<rect width="{width}" height="{height}" fill="#fff"/>',
-        f'<text x="24" y="32" style="font-size:22px">Workflow 端到端时间线 · {clock(start)[:10]}</text>',
-        f'<text x="24" y="61">原始 {elapsed(wall)}　− 代审批 {elapsed(report["timing_audit"]["external_approval_response_ms"])}　− 主机休眠估算 {elapsed(report["timing_audit"]["host_suspension_ms"])}　= 净耗时约 {elapsed(report["timing_audit"]["workflow_net_ms"])}</text>']
-    for index,(color,label) in enumerate([('#377eb8','生产者执行'),('#a9c9e2','内部接纳'),('#df8b27','代审批（排除）'),('#dfe2e6','主机休眠（排除）')]):
+        f'<text x="24" y="32" style="font-size:22px">Workflow 端到端时间线 · {clock(start)[:10]} · {"净耗时" if basis=="net" else "原始墙钟"}</text>',
+        f'<text x="24" y="61">原始 {elapsed(report["wall_ms"])}　− 代审批 {elapsed(report["timing_audit"]["external_approval_response_ms"])}　− 主机休眠估算 {elapsed(report["timing_audit"]["host_suspension_ms"])}　= 净耗时约 {elapsed(report["timing_audit"]["workflow_net_ms"])}</text>']
+    legend=[('#377eb8','生产者执行'),('#a9c9e2','内部接纳'),('#df8b27','代审批（排除）'),('#dfe2e6','主机休眠（排除）')]
+    for index,(color,label) in enumerate(legend if basis=='raw' else legend[:2]):
         px=24+index*230
         elements += [f'<rect x="{px}" y="80" width="15" height="12" fill="{color}"/>',f'<text x="{px+23}" y="91" class="small">{label}</text>']
-    for minute in range(0,37,3):
-        px=x(start+minute*60000)
+    for minute in range(0,int(wall//60000)+1,1 if basis=='net' else 3):
+        px=left+minute*60000/wall*plot
         elements += [f'<line class="grid" x1="{px:.2f}" x2="{px:.2f}" y1="130" y2="{height-80}"/>',f'<text x="{px:.2f}" y="121" text-anchor="middle" class="small">{minute} 分</text>']
-    for pause in report['timing_audit']['host_suspensions']:
+    for pause in report['timing_audit']['host_suspensions'] if basis=='raw' else []:
         elements.append(f'<rect x="{x(pause["started_at_ms"]):.2f}" y="130" width="{max(.2,pause["duration_ms"]/wall*plot):.2f}" height="{height-210}" fill="#dfe2e6" fill-opacity=".65"/>')
     approvals={a['execution']:a for a in report['timing_audit']['approvals']}
-    elements.append('<text x="1300" y="121" class="small">执行 / 结束至接纳</text>')
+    elements.append(f'<text x="1300" y="121" class="small">{"净执行 / 净接纳等待" if basis=="net" else "执行 / 结束至接纳"}</text>')
     for index,step in enumerate(rows):
         y=top+index*row_height
         accepted=max(step['finished'],step['accepted_at_ms'] or step['finished'])
         tooltip=escape(f'{step["layer"]} {step["name"]} | {clock(step["started"])} → {clock(step["finished"])} | 接纳 {clock(accepted)}')
         elements += [f'<g><title>{tooltip}</title><text x="24" y="{y+5}">{index+1:02d}　{escape(step["layer"]+" · "+step["name"])}</text>',
-            f'<rect x="{x(step["started"]):.2f}" y="{y-8}" width="{max(.4,step["duration_ms"]/wall*plot):.2f}" height="14" fill="#377eb8"/>',
-            f'<rect x="{x(step["finished"]):.2f}" y="{y-8}" width="{max(0,(accepted-step["finished"])/wall*plot):.2f}" height="14" fill="#a9c9e2"/>',
-            f'<text x="1300" y="{y+5}" class="small">{elapsed(step["duration_ms"])} / {elapsed(accepted-step["finished"])}</text>']
-        if step['id'] in approvals:
+            f'<rect x="{x(step["started"]):.2f}" y="{y-8}" width="{max(.4,span_ms(step["started"],step["finished"])/wall*plot):.2f}" height="14" fill="#377eb8"/>',
+            f'<rect x="{x(step["finished"]):.2f}" y="{y-8}" width="{max(0,span_ms(step["finished"],accepted)/wall*plot):.2f}" height="14" fill="#a9c9e2"/>',
+            f'<text x="1300" y="{y+5}" class="small">{elapsed(span_ms(step["started"],step["finished"]))} / {elapsed(span_ms(step["finished"],accepted))}</text>']
+        if step['id'] in approvals and basis=='raw':
             a=approvals[step['id']]
             elements.append(f'<rect x="{x(a["requested_at_ms"]):.2f}" y="{y-8}" width="{a["external_response_ms"]/wall*plot:.2f}" height="14" fill="#df8b27"/>')
         elements.append('</g>')
@@ -139,7 +147,8 @@ if __name__ == '__main__':
     parser.add_argument('report',type=Path)
     parser.add_argument('--svg',required=True,type=Path)
     parser.add_argument('--spans',required=True,type=Path)
+    parser.add_argument('--basis',choices=('raw','net'),default='raw')
     args=parser.parse_args()
     report=json.loads(args.report.read_text())
     args.spans.write_text(json.dumps(build_spans(report),ensure_ascii=False,indent=2)+'\n')
-    render_svg(report,args.svg)
+    render_svg(report,args.svg,args.basis)

@@ -6,6 +6,8 @@
 
 [原始计时与验收数据](workflow-benchmark-2026-11-20.json) · [完整时序图](workflow-timeline-2026-11-20.svg)
 
+[保存的原始交互图](workflow-timeline-2026-11-20-raw.html) · [保存的净耗时交互图](workflow-timeline-2026-11-20-net.html) · [净耗时 SVG](workflow-timeline-2026-11-20-net.svg) · [Agent、工具与 workflow 组件拆解和优化分析](workflow-cost-breakdown-2026-11-20.md)
+
 ![按开始时间排列的全部 33 个步骤及外部等待](workflow-timeline-2026-11-20.svg)
 
 ## 基准身份与环境

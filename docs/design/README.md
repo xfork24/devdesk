@@ -32,4 +32,6 @@ DevDesk 将需求、Agent 执行、工程验证和人工决定组织成可追踪
 
 [2026-11-20 完整工作流回归与性能基准](workflow-benchmark-2026-11-20.md)：包含原始时序、审批和主机休眠排除口径、全部步骤及真实回归证据。
 
+[15 分钟净流程的组件拆解与优化方向](workflow-cost-breakdown-2026-11-20.md)：保存两种交互时间线，按主机时间戳区分 Agent、业务工具、workflow 侧成本，并核对审批准备、步骤间等待及收尾。
+
 这里描述当前实现。出厂流程示例以 [configurations/manifest.json](../../configurations/manifest.json) 发布的资源为准；历史方案和验收记录另见[计划索引](../plans/README.md)。某项历史测试通过，不代表当前机器已经通过相同验收。
