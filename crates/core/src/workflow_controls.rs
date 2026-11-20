@@ -442,7 +442,27 @@ impl Engine {
                         commit.step(&resources, &mut next)?;
                     }
                 }
-                let id=commit.new_record(record("workflow_pending_decision",root.record.id.clone(),root.record.scope.clone(),reason.into(),1,None,json!({"status":"pending","plan_revision_id":root.instance.active_plan_revision_id,"request":request,"actor":context.actor()}),false),"workflow-pending-decision")?;
+                let mut pending = record(
+                    "workflow_pending_decision",
+                    root.record.id.clone(),
+                    root.record.scope.clone(),
+                    reason.into(),
+                    1,
+                    None,
+                    json!({"status":"pending","plan_revision_id":root.instance.active_plan_revision_id,"request":request,"actor":context.actor()}),
+                    false,
+                );
+                let id = if let WorkflowActor::Segment { .. } = context.actor() {
+                    let resources = root.step(self, &text(arguments, "execution_id")?)?;
+                    pending.id = crate::workflow_segment_actions::segment_human_request_id(
+                        &resources.execution,
+                    );
+                    let id = pending.id.clone();
+                    commit.insert_record(&pending)?;
+                    id
+                } else {
+                    commit.new_record(pending, "workflow-pending-decision")?
+                };
                 commit
                     .finish(fingerprint, json!({"id":id,"status":"pending"}))
                     .map(Some)

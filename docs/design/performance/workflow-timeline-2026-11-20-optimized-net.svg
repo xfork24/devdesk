@@ -1,0 +1,1377 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1640" height="2548" viewBox="0 0 1640 2548" role="img" aria-labelledby="title-afb7b261-3ec4-b058-bf4f-6e5f16fc9e27-net desc-afb7b261-3ec4-b058-bf4f-6e5f16fc9e27-net">
+<title id="title-afb7b261-3ec4-b058-bf4f-6e5f16fc9e27-net">优化后 · 完整时序 · net</title>
+<desc id="desc-afb7b261-3ec4-b058-bf4f-6e5f16fc9e27-net">阶段、步骤、步骤间隔、审批准备、人工响应及显式完成均逐行展示。颜色来自互斥时间账本，聚合行不能相加。净轴移除外部响应与有证据的休眠。</desc>
+<style>text{font:13px system-ui,sans-serif;fill:#202b3d}.small{font-size:12px}.grid{stroke:#d9dee5;stroke-width:1}g[data-span-id]{cursor:pointer}g[data-span-id]:hover .row-bg,g[data-span-id]:focus .row-bg{fill:#edf2f7}</style>
+<rect width="1640" height="2548" fill="#fff"/>
+<text x="18" y="30" style="font-size:21px">优化后 · 净流程 · 84 项完整时序</text>
+<text x="18" y="56">原始 19:52.936 − 外部响应 06:15.542 − 休眠约 00:00.000 = 净 13:37.394</text>
+<text x="18" y="79" class="small">所有颜色沿用 Host 观测账本；Agent 包括服务/传输，workflow 包括运行时。阶段与子流程行包含后代，不能累计求和。</text>
+<rect x="18" y="94" width="14" height="12" fill="#377eb8"/>
+<text x="39" y="105" class="small">Agent 服务</text>
+<rect x="278" y="94" width="14" height="12" fill="#269778"/>
+<text x="299" y="105" class="small">业务工具</text>
+<rect x="538" y="94" width="14" height="12" fill="#8060ab"/>
+<text x="559" y="105" class="small">Workflow 编排与运行时</text>
+<rect x="798" y="94" width="14" height="12" fill="#d28927"/>
+<text x="819" y="105" class="small">外部排除</text>
+<line class="grid" x1="515.00" x2="515.00" y1="128" y2="2520"/>
+<text x="515.00" y="124" text-anchor="middle" class="small">0 分</text>
+<line class="grid" x1="565.53" x2="565.53" y1="128" y2="2520"/>
+<text x="565.53" y="124" text-anchor="middle" class="small">1 分</text>
+<line class="grid" x1="616.07" x2="616.07" y1="128" y2="2520"/>
+<text x="616.07" y="124" text-anchor="middle" class="small">2 分</text>
+<line class="grid" x1="666.60" x2="666.60" y1="128" y2="2520"/>
+<text x="666.60" y="124" text-anchor="middle" class="small">3 分</text>
+<line class="grid" x1="717.13" x2="717.13" y1="128" y2="2520"/>
+<text x="717.13" y="124" text-anchor="middle" class="small">4 分</text>
+<line class="grid" x1="767.67" x2="767.67" y1="128" y2="2520"/>
+<text x="767.67" y="124" text-anchor="middle" class="small">5 分</text>
+<line class="grid" x1="818.20" x2="818.20" y1="128" y2="2520"/>
+<text x="818.20" y="124" text-anchor="middle" class="small">6 分</text>
+<line class="grid" x1="868.73" x2="868.73" y1="128" y2="2520"/>
+<text x="868.73" y="124" text-anchor="middle" class="small">7 分</text>
+<line class="grid" x1="919.26" x2="919.26" y1="128" y2="2520"/>
+<text x="919.26" y="124" text-anchor="middle" class="small">8 分</text>
+<line class="grid" x1="969.80" x2="969.80" y1="128" y2="2520"/>
+<text x="969.80" y="124" text-anchor="middle" class="small">9 分</text>
+<line class="grid" x1="1020.33" x2="1020.33" y1="128" y2="2520"/>
+<text x="1020.33" y="124" text-anchor="middle" class="small">10 分</text>
+<line class="grid" x1="1070.86" x2="1070.86" y1="128" y2="2520"/>
+<text x="1070.86" y="124" text-anchor="middle" class="small">11 分</text>
+<line class="grid" x1="1121.40" x2="1121.40" y1="128" y2="2520"/>
+<text x="1121.40" y="124" text-anchor="middle" class="small">12 分</text>
+<line class="grid" x1="1171.93" x2="1171.93" y1="128" y2="2520"/>
+<text x="1171.93" y="124" text-anchor="middle" class="small">13 分</text>
+<line class="grid" x1="1222.46" x2="1222.46" y1="128" y2="2520"/>
+<text x="1222.46" y="124" text-anchor="middle" class="small">14 分</text>
+<line class="grid" x1="1273.00" x2="1273.00" y1="128" y2="2520"/>
+<text x="1273.00" y="124" text-anchor="middle" class="small">15 分</text>
+<text x="18" y="150" class="small">Agent 服务 · 互斥总账</text>
+<rect x="522.25" y="139" width="28.69" height="11" fill="#377eb8"/>
+<rect x="551.16" y="139" width="4.75" height="11" fill="#377eb8"/>
+<rect x="556.06" y="139" width="30.76" height="11" fill="#377eb8"/>
+<rect x="594.68" y="139" width="30.37" height="11" fill="#377eb8"/>
+<rect x="625.26" y="139" width="12.83" height="11" fill="#377eb8"/>
+<rect x="644.60" y="139" width="8.84" height="11" fill="#377eb8"/>
+<rect x="653.47" y="139" width="12.66" height="11" fill="#377eb8"/>
+<rect x="670.42" y="139" width="16.12" height="11" fill="#377eb8"/>
+<rect x="686.78" y="139" width="13.26" height="11" fill="#377eb8"/>
+<rect x="709.18" y="139" width="37.54" height="11" fill="#377eb8"/>
+<rect x="750.98" y="139" width="17.68" height="11" fill="#377eb8"/>
+<rect x="768.89" y="139" width="15.13" height="11" fill="#377eb8"/>
+<rect x="793.78" y="139" width="8.06" height="11" fill="#377eb8"/>
+<rect x="802.05" y="139" width="0.15" height="11" fill="#377eb8"/>
+<rect x="802.22" y="139" width="4.94" height="11" fill="#377eb8"/>
+<rect x="807.54" y="139" width="1.84" height="11" fill="#377eb8"/>
+<rect x="810.25" y="139" width="6.55" height="11" fill="#377eb8"/>
+<rect x="816.83" y="139" width="2.87" height="11" fill="#377eb8"/>
+<rect x="819.72" y="139" width="25.54" height="11" fill="#377eb8"/>
+<rect x="845.30" y="139" width="13.50" height="11" fill="#377eb8"/>
+<rect x="870.04" y="139" width="24.95" height="11" fill="#377eb8"/>
+<rect x="895.09" y="139" width="7.84" height="11" fill="#377eb8"/>
+<rect x="902.96" y="139" width="0.12" height="11" fill="#377eb8"/>
+<rect x="903.14" y="139" width="3.78" height="11" fill="#377eb8"/>
+<rect x="909.02" y="139" width="3.15" height="11" fill="#377eb8"/>
+<rect x="912.19" y="139" width="6.46" height="11" fill="#377eb8"/>
+<rect x="927.33" y="139" width="21.17" height="11" fill="#377eb8"/>
+<rect x="958.60" y="139" width="9.08" height="11" fill="#377eb8"/>
+<rect x="967.92" y="139" width="3.39" height="11" fill="#377eb8"/>
+<rect x="971.59" y="139" width="0.04" height="11" fill="#377eb8"/>
+<rect x="972.27" y="139" width="5.95" height="11" fill="#377eb8"/>
+<rect x="981.44" y="139" width="3.15" height="11" fill="#377eb8"/>
+<rect x="984.62" y="139" width="33.31" height="11" fill="#377eb8"/>
+<rect x="1018.23" y="139" width="16.02" height="11" fill="#377eb8"/>
+<rect x="1096.78" y="139" width="22.32" height="11" fill="#377eb8"/>
+<rect x="1119.67" y="139" width="12.48" height="11" fill="#377eb8"/>
+<rect x="1133.27" y="139" width="2.17" height="11" fill="#377eb8"/>
+<rect x="1135.46" y="139" width="10.07" height="11" fill="#377eb8"/>
+<rect x="1145.79" y="139" width="7.46" height="11" fill="#377eb8"/>
+<rect x="1153.52" y="139" width="10.30" height="11" fill="#377eb8"/>
+<text x="1295" y="150" class="small">09:48.054</text>
+<text x="18" y="168" class="small">业务工具 · 互斥总账</text>
+<rect x="625.22" y="157" width="0.01" height="11" fill="#269778"/>
+<rect x="640.16" y="157" width="0.04" height="11" fill="#269778"/>
+<rect x="653.44" y="157" width="0.03" height="11" fill="#269778"/>
+<rect x="686.74" y="157" width="0.01" height="11" fill="#269778"/>
+<rect x="768.84" y="157" width="0.01" height="11" fill="#269778"/>
+<rect x="786.32" y="157" width="0.01" height="11" fill="#269778"/>
+<rect x="802.20" y="157" width="0.02" height="11" fill="#269778"/>
+<rect x="816.80" y="157" width="0.03" height="11" fill="#269778"/>
+<rect x="819.69" y="157" width="0.03" height="11" fill="#269778"/>
+<rect x="845.27" y="157" width="0.03" height="11" fill="#269778"/>
+<rect x="860.61" y="157" width="0.26" height="11" fill="#269778"/>
+<rect x="861.55" y="157" width="1.21" height="11" fill="#269778"/>
+<rect x="894.99" y="157" width="0.11" height="11" fill="#269778"/>
+<rect x="902.93" y="157" width="0.03" height="11" fill="#269778"/>
+<rect x="903.08" y="157" width="0.06" height="11" fill="#269778"/>
+<rect x="906.92" y="157" width="2.10" height="11" fill="#269778"/>
+<rect x="912.17" y="157" width="0.03" height="11" fill="#269778"/>
+<rect x="918.66" y="157" width="8.68" height="11" fill="#269778"/>
+<rect x="950.55" y="157" width="0.32" height="11" fill="#269778"/>
+<rect x="951.95" y="157" width="1.32" height="11" fill="#269778"/>
+<rect x="971.52" y="157" width="0.01" height="11" fill="#269778"/>
+<rect x="971.82" y="157" width="0.04" height="11" fill="#269778"/>
+<rect x="972.16" y="157" width="0.04" height="11" fill="#269778"/>
+<rect x="978.42" y="157" width="0.01" height="11" fill="#269778"/>
+<rect x="978.68" y="157" width="0.02" height="11" fill="#269778"/>
+<rect x="978.96" y="157" width="0.01" height="11" fill="#269778"/>
+<rect x="979.20" y="157" width="0.02" height="11" fill="#269778"/>
+<rect x="979.47" y="157" width="0.01" height="11" fill="#269778"/>
+<rect x="979.70" y="157" width="0.01" height="11" fill="#269778"/>
+<rect x="980.02" y="157" width="0.01" height="11" fill="#269778"/>
+<rect x="980.29" y="157" width="0.01" height="11" fill="#269778"/>
+<rect x="980.57" y="157" width="0.01" height="11" fill="#269778"/>
+<rect x="981.06" y="157" width="0.01" height="11" fill="#269778"/>
+<rect x="981.40" y="157" width="0.01" height="11" fill="#269778"/>
+<rect x="984.60" y="157" width="0.02" height="11" fill="#269778"/>
+<rect x="1018.18" y="157" width="0.01" height="11" fill="#269778"/>
+<rect x="1037.04" y="157" width="1.34" height="11" fill="#269778"/>
+<rect x="1039.83" y="157" width="4.29" height="11" fill="#269778"/>
+<rect x="1045.32" y="157" width="0.89" height="11" fill="#269778"/>
+<rect x="1047.83" y="157" width="14.45" height="11" fill="#269778"/>
+<rect x="1063.03" y="157" width="1.72" height="11" fill="#269778"/>
+<rect x="1066.43" y="157" width="20.44" height="11" fill="#269778"/>
+<rect x="1088.83" y="157" width="0.02" height="11" fill="#269778"/>
+<rect x="1089.57" y="157" width="0.20" height="11" fill="#269778"/>
+<rect x="1119.31" y="157" width="0.01" height="11" fill="#269778"/>
+<rect x="1119.60" y="157" width="0.01" height="11" fill="#269778"/>
+<rect x="1132.36" y="157" width="0.01" height="11" fill="#269778"/>
+<rect x="1132.63" y="157" width="0.01" height="11" fill="#269778"/>
+<rect x="1132.94" y="157" width="0.01" height="11" fill="#269778"/>
+<rect x="1133.23" y="157" width="0.01" height="11" fill="#269778"/>
+<rect x="1135.44" y="157" width="0.02" height="11" fill="#269778"/>
+<rect x="1145.75" y="157" width="0.01" height="11" fill="#269778"/>
+<rect x="1153.48" y="157" width="0.01" height="11" fill="#269778"/>
+<rect x="1165.74" y="157" width="1.35" height="11" fill="#269778"/>
+<rect x="1167.91" y="157" width="1.40" height="11" fill="#269778"/>
+<rect x="1170.18" y="157" width="2.40" height="11" fill="#269778"/>
+<rect x="1173.32" y="157" width="10.79" height="11" fill="#269778"/>
+<rect x="1184.84" y="157" width="1.64" height="11" fill="#269778"/>
+<rect x="1187.20" y="157" width="0.02" height="11" fill="#269778"/>
+<rect x="1189.11" y="157" width="13.69" height="11" fill="#269778"/>
+<text x="1295" y="168" class="small">01:46.005</text>
+<text x="18" y="186" class="small">Workflow 编排与运行时 · 互斥总账</text>
+<rect x="515.00" y="175" width="7.25" height="11" fill="#8060ab"/>
+<rect x="550.93" y="175" width="0.23" height="11" fill="#8060ab"/>
+<rect x="555.91" y="175" width="0.15" height="11" fill="#8060ab"/>
+<rect x="586.83" y="175" width="7.86" height="11" fill="#8060ab"/>
+<rect x="625.05" y="175" width="0.17" height="11" fill="#8060ab"/>
+<rect x="625.22" y="175" width="0.03" height="11" fill="#8060ab"/>
+<rect x="638.09" y="175" width="1.61" height="11" fill="#8060ab"/>
+<rect x="639.69" y="175" width="0.47" height="11" fill="#8060ab"/>
+<rect x="640.20" y="175" width="4.40" height="11" fill="#8060ab"/>
+<rect x="666.13" y="175" width="4.29" height="11" fill="#8060ab"/>
+<rect x="686.54" y="175" width="0.19" height="11" fill="#8060ab"/>
+<rect x="686.74" y="175" width="0.03" height="11" fill="#8060ab"/>
+<rect x="700.04" y="175" width="1.56" height="11" fill="#8060ab"/>
+<rect x="701.59" y="175" width="7.59" height="11" fill="#8060ab"/>
+<rect x="746.73" y="175" width="4.25" height="11" fill="#8060ab"/>
+<rect x="768.66" y="175" width="0.18" height="11" fill="#8060ab"/>
+<rect x="768.85" y="175" width="0.04" height="11" fill="#8060ab"/>
+<rect x="784.03" y="175" width="1.77" height="11" fill="#8060ab"/>
+<rect x="785.80" y="175" width="0.52" height="11" fill="#8060ab"/>
+<rect x="786.32" y="175" width="7.46" height="11" fill="#8060ab"/>
+<rect x="801.84" y="175" width="0.21" height="11" fill="#8060ab"/>
+<rect x="807.15" y="175" width="0.39" height="11" fill="#8060ab"/>
+<rect x="809.38" y="175" width="0.87" height="11" fill="#8060ab"/>
+<rect x="858.80" y="175" width="1.82" height="11" fill="#8060ab"/>
+<rect x="860.87" y="175" width="0.67" height="11" fill="#8060ab"/>
+<rect x="862.75" y="175" width="7.29" height="11" fill="#8060ab"/>
+<rect x="948.50" y="175" width="2.06" height="11" fill="#8060ab"/>
+<rect x="950.87" y="175" width="1.08" height="11" fill="#8060ab"/>
+<rect x="953.27" y="175" width="5.33" height="11" fill="#8060ab"/>
+<rect x="967.68" y="175" width="0.24" height="11" fill="#8060ab"/>
+<rect x="971.31" y="175" width="0.21" height="11" fill="#8060ab"/>
+<rect x="971.53" y="175" width="0.06" height="11" fill="#8060ab"/>
+<rect x="971.63" y="175" width="0.19" height="11" fill="#8060ab"/>
+<rect x="971.86" y="175" width="0.30" height="11" fill="#8060ab"/>
+<rect x="972.19" y="175" width="0.07" height="11" fill="#8060ab"/>
+<rect x="978.21" y="175" width="0.21" height="11" fill="#8060ab"/>
+<rect x="978.43" y="175" width="0.24" height="11" fill="#8060ab"/>
+<rect x="978.70" y="175" width="0.26" height="11" fill="#8060ab"/>
+<rect x="978.97" y="175" width="0.24" height="11" fill="#8060ab"/>
+<rect x="979.22" y="175" width="0.25" height="11" fill="#8060ab"/>
+<rect x="979.48" y="175" width="0.22" height="11" fill="#8060ab"/>
+<rect x="979.71" y="175" width="0.31" height="11" fill="#8060ab"/>
+<rect x="980.03" y="175" width="0.26" height="11" fill="#8060ab"/>
+<rect x="980.30" y="175" width="0.28" height="11" fill="#8060ab"/>
+<rect x="980.59" y="175" width="0.48" height="11" fill="#8060ab"/>
+<rect x="981.07" y="175" width="0.32" height="11" fill="#8060ab"/>
+<rect x="981.41" y="175" width="0.03" height="11" fill="#8060ab"/>
+<rect x="1017.93" y="175" width="0.26" height="11" fill="#8060ab"/>
+<rect x="1018.19" y="175" width="0.04" height="11" fill="#8060ab"/>
+<rect x="1034.25" y="175" width="2.79" height="11" fill="#8060ab"/>
+<rect x="1038.38" y="175" width="1.45" height="11" fill="#8060ab"/>
+<rect x="1044.13" y="175" width="1.20" height="11" fill="#8060ab"/>
+<rect x="1046.22" y="175" width="1.62" height="11" fill="#8060ab"/>
+<rect x="1062.28" y="175" width="0.75" height="11" fill="#8060ab"/>
+<rect x="1064.76" y="175" width="1.68" height="11" fill="#8060ab"/>
+<rect x="1086.88" y="175" width="1.95" height="11" fill="#8060ab"/>
+<rect x="1088.85" y="175" width="0.72" height="11" fill="#8060ab"/>
+<rect x="1089.77" y="175" width="7.01" height="11" fill="#8060ab"/>
+<rect x="1119.10" y="175" width="0.20" height="11" fill="#8060ab"/>
+<rect x="1119.32" y="175" width="0.28" height="11" fill="#8060ab"/>
+<rect x="1119.61" y="175" width="0.06" height="11" fill="#8060ab"/>
+<rect x="1132.15" y="175" width="0.21" height="11" fill="#8060ab"/>
+<rect x="1132.37" y="175" width="0.25" height="11" fill="#8060ab"/>
+<rect x="1132.64" y="175" width="0.30" height="11" fill="#8060ab"/>
+<rect x="1132.95" y="175" width="0.28" height="11" fill="#8060ab"/>
+<rect x="1133.23" y="175" width="0.04" height="11" fill="#8060ab"/>
+<rect x="1145.53" y="175" width="0.22" height="11" fill="#8060ab"/>
+<rect x="1145.76" y="175" width="0.03" height="11" fill="#8060ab"/>
+<rect x="1153.25" y="175" width="0.23" height="11" fill="#8060ab"/>
+<rect x="1153.49" y="175" width="0.04" height="11" fill="#8060ab"/>
+<rect x="1163.82" y="175" width="1.92" height="11" fill="#8060ab"/>
+<rect x="1167.09" y="175" width="0.82" height="11" fill="#8060ab"/>
+<rect x="1169.31" y="175" width="0.87" height="11" fill="#8060ab"/>
+<rect x="1172.59" y="175" width="0.73" height="11" fill="#8060ab"/>
+<rect x="1184.11" y="175" width="0.73" height="11" fill="#8060ab"/>
+<rect x="1186.47" y="175" width="0.73" height="11" fill="#8060ab"/>
+<rect x="1187.22" y="175" width="1.11" height="11" fill="#8060ab"/>
+<rect x="1188.33" y="175" width="0.78" height="11" fill="#8060ab"/>
+<rect x="1202.80" y="175" width="0.62" height="11" fill="#8060ab"/>
+<text x="1295" y="186" class="small">02:03.335</text>
+<text x="18" y="204" class="small">外部排除 · 互斥总账</text>
+<text x="1295" y="204" class="small">06:15.542（净轴不显示）</text>
+<text x="1295" y="224" class="small">原始 / 净跨度；聚合行不累计</text>
+<g tabindex="0" role="button" data-span-id="workflow" aria-label="Feature 端到端（含 Task） | 2026-11-20T12:42:49.048+08:00 → 2026-11-20T13:02:41.984+08:00 | 原始 19:52.936 / 净 13:37.394"><title>Feature 端到端（含 Task） | 2026-11-20T12:42:49.048+08:00 → 2026-11-20T13:02:41.984+08:00 | 原始 19:52.936 / 净 13:37.394</title>
+<rect class="row-bg" x="0" y="223" width="1640" height="25" fill="transparent"/>
+<text x="18" y="240">01　Feature 端到端（含 Task）</text>
+<rect x="515.00" y="228" width="7.25" height="12" fill="#8060ab"/>
+<rect x="522.25" y="228" width="28.69" height="12" fill="#377eb8"/>
+<rect x="550.93" y="228" width="0.23" height="12" fill="#8060ab"/>
+<rect x="551.16" y="228" width="4.75" height="12" fill="#377eb8"/>
+<rect x="555.91" y="228" width="0.15" height="12" fill="#8060ab"/>
+<rect x="556.06" y="228" width="30.76" height="12" fill="#377eb8"/>
+<rect x="586.83" y="228" width="7.86" height="12" fill="#8060ab"/>
+<rect x="594.68" y="228" width="30.37" height="12" fill="#377eb8"/>
+<rect x="625.05" y="228" width="0.17" height="12" fill="#8060ab"/>
+<rect x="625.22" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="625.22" y="228" width="0.15" height="12" fill="#8060ab"/>
+<rect x="625.26" y="228" width="12.83" height="12" fill="#377eb8"/>
+<rect x="638.09" y="228" width="1.61" height="12" fill="#8060ab"/>
+<rect x="639.69" y="228" width="0.47" height="12" fill="#8060ab"/>
+<rect x="640.16" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="640.20" y="228" width="4.40" height="12" fill="#8060ab"/>
+<rect x="644.60" y="228" width="8.84" height="12" fill="#377eb8"/>
+<rect x="653.44" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="653.47" y="228" width="12.66" height="12" fill="#377eb8"/>
+<rect x="666.13" y="228" width="4.29" height="12" fill="#8060ab"/>
+<rect x="670.42" y="228" width="16.12" height="12" fill="#377eb8"/>
+<rect x="686.54" y="228" width="0.19" height="12" fill="#8060ab"/>
+<rect x="686.74" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="686.74" y="228" width="0.15" height="12" fill="#8060ab"/>
+<rect x="686.78" y="228" width="13.26" height="12" fill="#377eb8"/>
+<rect x="700.04" y="228" width="1.56" height="12" fill="#8060ab"/>
+<rect x="701.59" y="228" width="7.59" height="12" fill="#8060ab"/>
+<rect x="709.18" y="228" width="37.54" height="12" fill="#377eb8"/>
+<rect x="746.73" y="228" width="4.25" height="12" fill="#8060ab"/>
+<rect x="750.98" y="228" width="17.68" height="12" fill="#377eb8"/>
+<rect x="768.66" y="228" width="0.18" height="12" fill="#8060ab"/>
+<rect x="768.84" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="768.85" y="228" width="0.15" height="12" fill="#8060ab"/>
+<rect x="768.89" y="228" width="15.13" height="12" fill="#377eb8"/>
+<rect x="784.03" y="228" width="1.77" height="12" fill="#8060ab"/>
+<rect x="785.80" y="228" width="0.52" height="12" fill="#8060ab"/>
+<rect x="786.32" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="786.32" y="228" width="7.46" height="12" fill="#8060ab"/>
+<rect x="793.78" y="228" width="8.06" height="12" fill="#377eb8"/>
+<rect x="801.84" y="228" width="0.21" height="12" fill="#8060ab"/>
+<rect x="802.05" y="228" width="0.15" height="12" fill="#377eb8"/>
+<rect x="802.20" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="802.22" y="228" width="4.94" height="12" fill="#377eb8"/>
+<rect x="807.15" y="228" width="0.39" height="12" fill="#8060ab"/>
+<rect x="807.54" y="228" width="1.84" height="12" fill="#377eb8"/>
+<rect x="809.38" y="228" width="0.87" height="12" fill="#8060ab"/>
+<rect x="810.25" y="228" width="6.55" height="12" fill="#377eb8"/>
+<rect x="816.80" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="816.83" y="228" width="2.87" height="12" fill="#377eb8"/>
+<rect x="819.69" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="819.72" y="228" width="25.54" height="12" fill="#377eb8"/>
+<rect x="845.27" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="845.30" y="228" width="13.50" height="12" fill="#377eb8"/>
+<rect x="858.80" y="228" width="1.82" height="12" fill="#8060ab"/>
+<rect x="860.61" y="228" width="0.26" height="12" fill="#269778"/>
+<rect x="860.87" y="228" width="0.67" height="12" fill="#8060ab"/>
+<rect x="861.55" y="228" width="1.21" height="12" fill="#269778"/>
+<rect x="862.75" y="228" width="7.29" height="12" fill="#8060ab"/>
+<rect x="870.04" y="228" width="24.95" height="12" fill="#377eb8"/>
+<rect x="894.99" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="895.09" y="228" width="7.84" height="12" fill="#377eb8"/>
+<rect x="902.93" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="902.96" y="228" width="0.15" height="12" fill="#377eb8"/>
+<rect x="903.08" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="903.14" y="228" width="3.78" height="12" fill="#377eb8"/>
+<rect x="906.92" y="228" width="2.10" height="12" fill="#269778"/>
+<rect x="909.02" y="228" width="3.15" height="12" fill="#377eb8"/>
+<rect x="912.17" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="912.19" y="228" width="6.46" height="12" fill="#377eb8"/>
+<rect x="918.66" y="228" width="8.68" height="12" fill="#269778"/>
+<rect x="927.33" y="228" width="21.17" height="12" fill="#377eb8"/>
+<rect x="948.50" y="228" width="2.06" height="12" fill="#8060ab"/>
+<rect x="950.55" y="228" width="0.32" height="12" fill="#269778"/>
+<rect x="950.87" y="228" width="1.08" height="12" fill="#8060ab"/>
+<rect x="951.95" y="228" width="1.32" height="12" fill="#269778"/>
+<rect x="953.27" y="228" width="5.33" height="12" fill="#8060ab"/>
+<rect x="958.60" y="228" width="9.08" height="12" fill="#377eb8"/>
+<rect x="967.68" y="228" width="0.24" height="12" fill="#8060ab"/>
+<rect x="967.92" y="228" width="3.39" height="12" fill="#377eb8"/>
+<rect x="971.31" y="228" width="0.21" height="12" fill="#8060ab"/>
+<rect x="971.52" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="971.53" y="228" width="0.15" height="12" fill="#8060ab"/>
+<rect x="971.59" y="228" width="0.15" height="12" fill="#377eb8"/>
+<rect x="971.63" y="228" width="0.19" height="12" fill="#8060ab"/>
+<rect x="971.82" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="971.86" y="228" width="0.30" height="12" fill="#8060ab"/>
+<rect x="972.16" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="972.19" y="228" width="0.15" height="12" fill="#8060ab"/>
+<rect x="972.27" y="228" width="5.95" height="12" fill="#377eb8"/>
+<rect x="978.21" y="228" width="0.21" height="12" fill="#8060ab"/>
+<rect x="978.42" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="978.43" y="228" width="0.24" height="12" fill="#8060ab"/>
+<rect x="978.68" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="978.70" y="228" width="0.26" height="12" fill="#8060ab"/>
+<rect x="978.96" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="978.97" y="228" width="0.24" height="12" fill="#8060ab"/>
+<rect x="979.20" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="979.22" y="228" width="0.25" height="12" fill="#8060ab"/>
+<rect x="979.47" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="979.48" y="228" width="0.22" height="12" fill="#8060ab"/>
+<rect x="979.70" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="979.71" y="228" width="0.31" height="12" fill="#8060ab"/>
+<rect x="980.02" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="980.03" y="228" width="0.26" height="12" fill="#8060ab"/>
+<rect x="980.29" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="980.30" y="228" width="0.28" height="12" fill="#8060ab"/>
+<rect x="980.57" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="980.59" y="228" width="0.48" height="12" fill="#8060ab"/>
+<rect x="981.06" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="981.07" y="228" width="0.32" height="12" fill="#8060ab"/>
+<rect x="981.40" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="981.41" y="228" width="0.15" height="12" fill="#8060ab"/>
+<rect x="981.44" y="228" width="3.15" height="12" fill="#377eb8"/>
+<rect x="984.60" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="984.62" y="228" width="33.31" height="12" fill="#377eb8"/>
+<rect x="1017.93" y="228" width="0.26" height="12" fill="#8060ab"/>
+<rect x="1018.18" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="1018.19" y="228" width="0.15" height="12" fill="#8060ab"/>
+<rect x="1018.23" y="228" width="16.02" height="12" fill="#377eb8"/>
+<rect x="1034.25" y="228" width="2.79" height="12" fill="#8060ab"/>
+<rect x="1037.04" y="228" width="1.34" height="12" fill="#269778"/>
+<rect x="1038.38" y="228" width="1.45" height="12" fill="#8060ab"/>
+<rect x="1039.83" y="228" width="4.29" height="12" fill="#269778"/>
+<rect x="1044.13" y="228" width="1.20" height="12" fill="#8060ab"/>
+<rect x="1045.32" y="228" width="0.89" height="12" fill="#269778"/>
+<rect x="1046.22" y="228" width="1.62" height="12" fill="#8060ab"/>
+<rect x="1047.83" y="228" width="14.45" height="12" fill="#269778"/>
+<rect x="1062.28" y="228" width="0.75" height="12" fill="#8060ab"/>
+<rect x="1063.03" y="228" width="1.72" height="12" fill="#269778"/>
+<rect x="1064.76" y="228" width="1.68" height="12" fill="#8060ab"/>
+<rect x="1066.43" y="228" width="20.44" height="12" fill="#269778"/>
+<rect x="1086.88" y="228" width="1.95" height="12" fill="#8060ab"/>
+<rect x="1088.83" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="1088.85" y="228" width="0.72" height="12" fill="#8060ab"/>
+<rect x="1089.57" y="228" width="0.20" height="12" fill="#269778"/>
+<rect x="1089.77" y="228" width="7.01" height="12" fill="#8060ab"/>
+<rect x="1096.78" y="228" width="22.32" height="12" fill="#377eb8"/>
+<rect x="1119.10" y="228" width="0.20" height="12" fill="#8060ab"/>
+<rect x="1119.31" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="1119.32" y="228" width="0.28" height="12" fill="#8060ab"/>
+<rect x="1119.60" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="1119.61" y="228" width="0.15" height="12" fill="#8060ab"/>
+<rect x="1119.67" y="228" width="12.48" height="12" fill="#377eb8"/>
+<rect x="1132.15" y="228" width="0.21" height="12" fill="#8060ab"/>
+<rect x="1132.36" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="1132.37" y="228" width="0.25" height="12" fill="#8060ab"/>
+<rect x="1132.63" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="1132.64" y="228" width="0.30" height="12" fill="#8060ab"/>
+<rect x="1132.94" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="1132.95" y="228" width="0.28" height="12" fill="#8060ab"/>
+<rect x="1133.23" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="1133.23" y="228" width="0.15" height="12" fill="#8060ab"/>
+<rect x="1133.27" y="228" width="2.17" height="12" fill="#377eb8"/>
+<rect x="1135.44" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="1135.46" y="228" width="10.07" height="12" fill="#377eb8"/>
+<rect x="1145.53" y="228" width="0.22" height="12" fill="#8060ab"/>
+<rect x="1145.75" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="1145.76" y="228" width="0.15" height="12" fill="#8060ab"/>
+<rect x="1145.79" y="228" width="7.46" height="12" fill="#377eb8"/>
+<rect x="1153.25" y="228" width="0.23" height="12" fill="#8060ab"/>
+<rect x="1153.48" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="1153.49" y="228" width="0.15" height="12" fill="#8060ab"/>
+<rect x="1153.52" y="228" width="10.30" height="12" fill="#377eb8"/>
+<rect x="1163.82" y="228" width="1.92" height="12" fill="#8060ab"/>
+<rect x="1165.74" y="228" width="1.35" height="12" fill="#269778"/>
+<rect x="1167.09" y="228" width="0.82" height="12" fill="#8060ab"/>
+<rect x="1167.91" y="228" width="1.40" height="12" fill="#269778"/>
+<rect x="1169.31" y="228" width="0.87" height="12" fill="#8060ab"/>
+<rect x="1170.18" y="228" width="2.40" height="12" fill="#269778"/>
+<rect x="1172.59" y="228" width="0.73" height="12" fill="#8060ab"/>
+<rect x="1173.32" y="228" width="10.79" height="12" fill="#269778"/>
+<rect x="1184.11" y="228" width="0.73" height="12" fill="#8060ab"/>
+<rect x="1184.84" y="228" width="1.64" height="12" fill="#269778"/>
+<rect x="1186.47" y="228" width="0.73" height="12" fill="#8060ab"/>
+<rect x="1187.20" y="228" width="0.15" height="12" fill="#269778"/>
+<rect x="1187.22" y="228" width="1.11" height="12" fill="#8060ab"/>
+<rect x="1188.33" y="228" width="0.78" height="12" fill="#8060ab"/>
+<rect x="1189.11" y="228" width="13.69" height="12" fill="#269778"/>
+<rect x="1202.80" y="228" width="0.62" height="12" fill="#8060ab"/>
+<text x="1295" y="240" class="small">19:52.936 / 13:37.394</text></g>
+<g tabindex="0" role="button" data-span-id="stage-requirements" aria-label="需求 | 2026-11-20T12:42:49.048+08:00 → 2026-11-20T12:46:42.630+08:00 | 原始 03:53.582 / 净 02:28.472"><title>需求 | 2026-11-20T12:42:49.048+08:00 → 2026-11-20T12:46:42.630+08:00 | 原始 03:53.582 / 净 02:28.472</title>
+<rect class="row-bg" x="0" y="250" width="1640" height="25" fill="transparent"/>
+<text x="30" y="267">02　需求</text>
+<rect x="515.00" y="255" width="7.25" height="12" fill="#8060ab"/>
+<rect x="522.25" y="255" width="28.69" height="12" fill="#377eb8"/>
+<rect x="550.93" y="255" width="0.23" height="12" fill="#8060ab"/>
+<rect x="551.16" y="255" width="4.75" height="12" fill="#377eb8"/>
+<rect x="555.91" y="255" width="0.15" height="12" fill="#8060ab"/>
+<rect x="556.06" y="255" width="30.76" height="12" fill="#377eb8"/>
+<rect x="586.83" y="255" width="7.86" height="12" fill="#8060ab"/>
+<rect x="594.68" y="255" width="30.37" height="12" fill="#377eb8"/>
+<rect x="625.05" y="255" width="0.17" height="12" fill="#8060ab"/>
+<rect x="625.22" y="255" width="0.15" height="12" fill="#269778"/>
+<rect x="625.22" y="255" width="0.15" height="12" fill="#8060ab"/>
+<rect x="625.26" y="255" width="12.83" height="12" fill="#377eb8"/>
+<rect x="638.09" y="255" width="1.61" height="12" fill="#8060ab"/>
+<rect x="639.69" y="255" width="0.35" height="12" fill="#8060ab"/>
+<text x="1295" y="267" class="small">03:53.582 / 02:28.472</text></g>
+<g tabindex="0" role="button" data-span-id="initial-dispatch" aria-label="启动及首次派发 | 2026-11-20T12:42:49.048+08:00 → 2026-11-20T12:43:32.047+08:00 | 原始 00:42.999 / 净 00:42.999"><title>启动及首次派发 | 2026-11-20T12:42:49.048+08:00 → 2026-11-20T12:43:32.047+08:00 | 原始 00:42.999 / 净 00:42.999</title>
+<rect class="row-bg" x="0" y="277" width="1640" height="25" fill="transparent"/>
+<text x="42" y="294">03　启动及首次派发</text>
+<rect x="515.00" y="282" width="7.25" height="12" fill="#8060ab"/>
+<rect x="522.25" y="282" width="28.69" height="12" fill="#377eb8"/>
+<rect x="550.93" y="282" width="0.23" height="12" fill="#8060ab"/>
+<rect x="551.16" y="282" width="0.15" height="12" fill="#377eb8"/>
+<text x="1295" y="294" class="small">00:42.999 / 00:42.999</text></g>
+<g tabindex="0" role="button" data-span-id="c4db9744-f051-fd76-f980-ea28a22c3b97" aria-label="F01 澄清需求与 PRD | 2026-11-20T12:43:32.047+08:00 → 2026-11-20T12:44:15.979+08:00 | 原始 00:43.932 / 净 00:43.932"><title>F01 澄清需求与 PRD | 2026-11-20T12:43:32.047+08:00 → 2026-11-20T12:44:15.979+08:00 | 原始 00:43.932 / 净 00:43.932</title>
+<rect class="row-bg" x="0" y="304" width="1640" height="25" fill="transparent"/>
+<text x="42" y="321">04　F01 澄清需求与 PRD</text>
+<rect x="551.21" y="309" width="4.70" height="12" fill="#377eb8"/>
+<rect x="555.91" y="309" width="0.15" height="12" fill="#8060ab"/>
+<rect x="556.06" y="309" width="30.76" height="12" fill="#377eb8"/>
+<rect x="586.83" y="309" width="1.39" height="12" fill="#8060ab"/>
+<text x="1295" y="321" class="small">00:43.932 / 00:43.932</text></g>
+<g tabindex="0" role="button" data-span-id="c4db9744-f051-fd76-f980-ea28a22c3b97-gap" aria-label="步骤间调度 → F02 PRD 验收与人工确认 | 2026-11-20T12:44:15.979+08:00 → 2026-11-20T12:44:16.199+08:00 | 原始 00:00.220 / 净 00:00.220"><title>步骤间调度 → F02 PRD 验收与人工确认 | 2026-11-20T12:44:15.979+08:00 → 2026-11-20T12:44:16.199+08:00 | 原始 00:00.220 / 净 00:00.220</title>
+<rect class="row-bg" x="0" y="331" width="1640" height="25" fill="transparent"/>
+<text x="42" y="348">05　步骤间调度 → F02 PRD 验收与人工确认</text>
+<rect x="588.21" y="336" width="0.19" height="12" fill="#8060ab"/>
+<text x="1295" y="348" class="small">00:00.220 / 00:00.220</text></g>
+<g tabindex="0" role="button" data-span-id="d7cb3146-e43a-68de-d848-a75981a67e4d" aria-label="F02 PRD 验收与人工确认 | 2026-11-20T12:44:16.199+08:00 → 2026-11-20T12:46:42.426+08:00 | 原始 02:26.227 / 净 01:01.117"><title>F02 PRD 验收与人工确认 | 2026-11-20T12:44:16.199+08:00 → 2026-11-20T12:46:42.426+08:00 | 原始 02:26.227 / 净 01:01.117</title>
+<rect class="row-bg" x="0" y="358" width="1640" height="25" fill="transparent"/>
+<text x="42" y="375">06　F02 PRD 验收与人工确认</text>
+<rect x="588.40" y="363" width="6.28" height="12" fill="#8060ab"/>
+<rect x="594.68" y="363" width="30.37" height="12" fill="#377eb8"/>
+<rect x="625.05" y="363" width="0.17" height="12" fill="#8060ab"/>
+<rect x="625.22" y="363" width="0.15" height="12" fill="#269778"/>
+<rect x="625.22" y="363" width="0.15" height="12" fill="#8060ab"/>
+<rect x="625.26" y="363" width="12.83" height="12" fill="#377eb8"/>
+<rect x="638.09" y="363" width="1.61" height="12" fill="#8060ab"/>
+<rect x="639.69" y="363" width="0.18" height="12" fill="#8060ab"/>
+<text x="1295" y="375" class="small">02:26.227 / 01:01.117</text></g>
+<g tabindex="0" role="button" data-span-id="d7cb3146-e43a-68de-d848-a75981a67e4d-prepare" aria-label="审批请求准备 | 2026-11-20T12:45:16.348+08:00 → 2026-11-20T12:45:17.103+08:00 | 原始 00:00.755 / 净 00:00.755"><title>审批请求准备 | 2026-11-20T12:45:16.348+08:00 → 2026-11-20T12:45:17.103+08:00 | 原始 00:00.755 / 净 00:00.755</title>
+<rect class="row-bg" x="0" y="385" width="1640" height="25" fill="transparent"/>
+<text x="54" y="402">07　审批请求准备</text>
+<rect x="639.06" y="390" width="0.64" height="12" fill="#8060ab"/>
+<text x="1295" y="402" class="small">00:00.755 / 00:00.755</text></g>
+<g tabindex="0" role="button" data-span-id="d7cb3146-e43a-68de-d848-a75981a67e4d-approval" aria-label="代审批响应（净耗时排除） | 2026-11-20T12:45:17.103+08:00 → 2026-11-20T12:46:42.213+08:00 | 原始 01:25.110 / 净 00:00.000"><title>代审批响应（净耗时排除） | 2026-11-20T12:45:17.103+08:00 → 2026-11-20T12:46:42.213+08:00 | 原始 01:25.110 / 净 00:00.000</title>
+<rect class="row-bg" x="0" y="412" width="1640" height="25" fill="transparent"/>
+<text x="54" y="429">08　代审批响应（净耗时排除）</text>
+<circle cx="639.69" cy="423" r="2" fill="#d28927"/>
+<text x="1295" y="429" class="small">01:25.110 / 00:00.000</text></g>
+<g tabindex="0" role="button" data-span-id="d7cb3146-e43a-68de-d848-a75981a67e4d-gap" aria-label="步骤间调度 → 自动提供代码基线 | 2026-11-20T12:46:42.426+08:00 → 2026-11-20T12:46:42.630+08:00 | 原始 00:00.204 / 净 00:00.204"><title>步骤间调度 → 自动提供代码基线 | 2026-11-20T12:46:42.426+08:00 → 2026-11-20T12:46:42.630+08:00 | 原始 00:00.204 / 净 00:00.204</title>
+<rect class="row-bg" x="0" y="439" width="1640" height="25" fill="transparent"/>
+<text x="42" y="456">09　步骤间调度 → 自动提供代码基线</text>
+<rect x="639.87" y="444" width="0.17" height="12" fill="#8060ab"/>
+<text x="1295" y="456" class="small">00:00.204 / 00:00.204</text></g>
+<g tabindex="0" role="button" data-span-id="stage-design" aria-label="设计 | 2026-11-20T12:46:42.630+08:00 → 2026-11-20T12:49:32.395+08:00 | 原始 02:49.765 / 净 01:13.514"><title>设计 | 2026-11-20T12:46:42.630+08:00 → 2026-11-20T12:49:32.395+08:00 | 原始 02:49.765 / 净 01:13.514</title>
+<rect class="row-bg" x="0" y="466" width="1640" height="25" fill="transparent"/>
+<text x="30" y="483">10　设计</text>
+<rect x="640.05" y="471" width="0.15" height="12" fill="#8060ab"/>
+<rect x="640.16" y="471" width="0.15" height="12" fill="#269778"/>
+<rect x="640.20" y="471" width="4.40" height="12" fill="#8060ab"/>
+<rect x="644.60" y="471" width="8.84" height="12" fill="#377eb8"/>
+<rect x="653.44" y="471" width="0.15" height="12" fill="#269778"/>
+<rect x="653.47" y="471" width="12.66" height="12" fill="#377eb8"/>
+<rect x="666.13" y="471" width="4.29" height="12" fill="#8060ab"/>
+<rect x="670.42" y="471" width="16.12" height="12" fill="#377eb8"/>
+<rect x="686.54" y="471" width="0.19" height="12" fill="#8060ab"/>
+<rect x="686.74" y="471" width="0.15" height="12" fill="#269778"/>
+<rect x="686.74" y="471" width="0.15" height="12" fill="#8060ab"/>
+<rect x="686.78" y="471" width="13.26" height="12" fill="#377eb8"/>
+<rect x="700.04" y="471" width="1.56" height="12" fill="#8060ab"/>
+<rect x="701.59" y="471" width="0.37" height="12" fill="#8060ab"/>
+<text x="1295" y="483" class="small">02:49.765 / 01:13.514</text></g>
+<g tabindex="0" role="button" data-span-id="2876cf4d-eebb-5039-bdbe-a1118dd87c73" aria-label="自动提供代码基线 | 2026-11-20T12:46:42.630+08:00 → 2026-11-20T12:46:43.498+08:00 | 原始 00:00.868 / 净 00:00.868"><title>自动提供代码基线 | 2026-11-20T12:46:42.630+08:00 → 2026-11-20T12:46:43.498+08:00 | 原始 00:00.868 / 净 00:00.868</title>
+<rect class="row-bg" x="0" y="493" width="1640" height="25" fill="transparent"/>
+<text x="42" y="510">11　自动提供代码基线</text>
+<rect x="640.05" y="498" width="0.15" height="12" fill="#8060ab"/>
+<rect x="640.16" y="498" width="0.15" height="12" fill="#269778"/>
+<rect x="640.20" y="498" width="0.58" height="12" fill="#8060ab"/>
+<text x="1295" y="510" class="small">00:00.868 / 00:00.868</text></g>
+<g tabindex="0" role="button" data-span-id="2876cf4d-eebb-5039-bdbe-a1118dd87c73-gap" aria-label="步骤间调度 → F03 架构与接口设计 | 2026-11-20T12:46:43.498+08:00 → 2026-11-20T12:46:43.679+08:00 | 原始 00:00.181 / 净 00:00.181"><title>步骤间调度 → F03 架构与接口设计 | 2026-11-20T12:46:43.498+08:00 → 2026-11-20T12:46:43.679+08:00 | 原始 00:00.181 / 净 00:00.181</title>
+<rect class="row-bg" x="0" y="520" width="1640" height="25" fill="transparent"/>
+<text x="42" y="537">12　步骤间调度 → F03 架构与接口设计</text>
+<rect x="640.78" y="525" width="0.15" height="12" fill="#8060ab"/>
+<text x="1295" y="537" class="small">00:00.181 / 00:00.181</text></g>
+<g tabindex="0" role="button" data-span-id="33730a15-c210-e773-6b16-fe649039fdc3" aria-label="F03 架构与接口设计 | 2026-11-20T12:46:43.679+08:00 → 2026-11-20T12:47:15.103+08:00 | 原始 00:31.424 / 净 00:31.424"><title>F03 架构与接口设计 | 2026-11-20T12:46:43.679+08:00 → 2026-11-20T12:47:15.103+08:00 | 原始 00:31.424 / 净 00:31.424</title>
+<rect class="row-bg" x="0" y="547" width="1640" height="25" fill="transparent"/>
+<text x="42" y="564">13　F03 架构与接口设计</text>
+<rect x="640.93" y="552" width="3.68" height="12" fill="#8060ab"/>
+<rect x="644.60" y="552" width="8.84" height="12" fill="#377eb8"/>
+<rect x="653.44" y="552" width="0.15" height="12" fill="#269778"/>
+<rect x="653.47" y="552" width="12.66" height="12" fill="#377eb8"/>
+<rect x="666.13" y="552" width="1.27" height="12" fill="#8060ab"/>
+<text x="1295" y="564" class="small">00:31.424 / 00:31.424</text></g>
+<g tabindex="0" role="button" data-span-id="33730a15-c210-e773-6b16-fe649039fdc3-gap" aria-label="步骤间调度 → F04 Design 评审与人工确认 | 2026-11-20T12:47:15.103+08:00 → 2026-11-20T12:47:15.298+08:00 | 原始 00:00.195 / 净 00:00.195"><title>步骤间调度 → F04 Design 评审与人工确认 | 2026-11-20T12:47:15.103+08:00 → 2026-11-20T12:47:15.298+08:00 | 原始 00:00.195 / 净 00:00.195</title>
+<rect class="row-bg" x="0" y="574" width="1640" height="25" fill="transparent"/>
+<text x="42" y="591">14　步骤间调度 → F04 Design 评审与人工确认</text>
+<rect x="667.39" y="579" width="0.16" height="12" fill="#8060ab"/>
+<text x="1295" y="591" class="small">00:00.195 / 00:00.195</text></g>
+<g tabindex="0" role="button" data-span-id="89967343-c624-94a2-4caf-318d21a01461" aria-label="F04 Design 评审与人工确认 | 2026-11-20T12:47:15.298+08:00 → 2026-11-20T12:49:32.136+08:00 | 原始 02:16.838 / 净 00:40.587"><title>F04 Design 评审与人工确认 | 2026-11-20T12:47:15.298+08:00 → 2026-11-20T12:49:32.136+08:00 | 原始 02:16.838 / 净 00:40.587</title>
+<rect class="row-bg" x="0" y="601" width="1640" height="25" fill="transparent"/>
+<text x="42" y="618">15　F04 Design 评审与人工确认</text>
+<rect x="667.56" y="606" width="2.86" height="12" fill="#8060ab"/>
+<rect x="670.42" y="606" width="16.12" height="12" fill="#377eb8"/>
+<rect x="686.54" y="606" width="0.19" height="12" fill="#8060ab"/>
+<rect x="686.74" y="606" width="0.15" height="12" fill="#269778"/>
+<rect x="686.74" y="606" width="0.15" height="12" fill="#8060ab"/>
+<rect x="686.78" y="606" width="13.26" height="12" fill="#377eb8"/>
+<rect x="700.04" y="606" width="1.56" height="12" fill="#8060ab"/>
+<rect x="701.59" y="606" width="0.15" height="12" fill="#8060ab"/>
+<text x="1295" y="618" class="small">02:16.838 / 00:40.587</text></g>
+<g tabindex="0" role="button" data-span-id="89967343-c624-94a2-4caf-318d21a01461-prepare" aria-label="审批请求准备 | 2026-11-20T12:47:54.956+08:00 → 2026-11-20T12:47:55.706+08:00 | 原始 00:00.750 / 净 00:00.750"><title>审批请求准备 | 2026-11-20T12:47:54.956+08:00 → 2026-11-20T12:47:55.706+08:00 | 原始 00:00.750 / 净 00:00.750</title>
+<rect class="row-bg" x="0" y="628" width="1640" height="25" fill="transparent"/>
+<text x="54" y="645">16　审批请求准备</text>
+<rect x="700.96" y="633" width="0.63" height="12" fill="#8060ab"/>
+<text x="1295" y="645" class="small">00:00.750 / 00:00.750</text></g>
+<g tabindex="0" role="button" data-span-id="89967343-c624-94a2-4caf-318d21a01461-approval" aria-label="代审批响应（净耗时排除） | 2026-11-20T12:47:55.706+08:00 → 2026-11-20T12:49:31.957+08:00 | 原始 01:36.251 / 净 00:00.000"><title>代审批响应（净耗时排除） | 2026-11-20T12:47:55.706+08:00 → 2026-11-20T12:49:31.957+08:00 | 原始 01:36.251 / 净 00:00.000</title>
+<rect class="row-bg" x="0" y="655" width="1640" height="25" fill="transparent"/>
+<text x="54" y="672">17　代审批响应（净耗时排除）</text>
+<circle cx="701.59" cy="666" r="2" fill="#d28927"/>
+<text x="1295" y="672" class="small">01:36.251 / 00:00.000</text></g>
+<g tabindex="0" role="button" data-span-id="89967343-c624-94a2-4caf-318d21a01461-gap" aria-label="步骤间调度 → F05 规划 Tasks 与依赖 DAG | 2026-11-20T12:49:32.136+08:00 → 2026-11-20T12:49:32.395+08:00 | 原始 00:00.259 / 净 00:00.259"><title>步骤间调度 → F05 规划 Tasks 与依赖 DAG | 2026-11-20T12:49:32.136+08:00 → 2026-11-20T12:49:32.395+08:00 | 原始 00:00.259 / 净 00:00.259</title>
+<rect class="row-bg" x="0" y="682" width="1640" height="25" fill="transparent"/>
+<text x="42" y="699">18　步骤间调度 → F05 规划 Tasks 与依赖 DAG</text>
+<rect x="701.74" y="687" width="0.22" height="12" fill="#8060ab"/>
+<text x="1295" y="699" class="small">00:00.259 / 00:00.259</text></g>
+<g tabindex="0" role="button" data-span-id="stage-planning" aria-label="任务规划 | 2026-11-20T12:49:32.395+08:00 → 2026-11-20T12:53:00.221+08:00 | 原始 03:27.826 / 净 01:40.933"><title>任务规划 | 2026-11-20T12:49:32.395+08:00 → 2026-11-20T12:53:00.221+08:00 | 原始 03:27.826 / 净 01:40.933</title>
+<rect class="row-bg" x="0" y="709" width="1640" height="25" fill="transparent"/>
+<text x="30" y="726">19　任务规划</text>
+<rect x="701.96" y="714" width="7.22" height="12" fill="#8060ab"/>
+<rect x="709.18" y="714" width="37.54" height="12" fill="#377eb8"/>
+<rect x="746.73" y="714" width="4.25" height="12" fill="#8060ab"/>
+<rect x="750.98" y="714" width="17.68" height="12" fill="#377eb8"/>
+<rect x="768.66" y="714" width="0.18" height="12" fill="#8060ab"/>
+<rect x="768.84" y="714" width="0.15" height="12" fill="#269778"/>
+<rect x="768.85" y="714" width="0.15" height="12" fill="#8060ab"/>
+<rect x="768.89" y="714" width="15.13" height="12" fill="#377eb8"/>
+<rect x="784.03" y="714" width="1.77" height="12" fill="#8060ab"/>
+<rect x="785.80" y="714" width="0.52" height="12" fill="#8060ab"/>
+<rect x="786.32" y="714" width="0.15" height="12" fill="#269778"/>
+<rect x="786.32" y="714" width="0.65" height="12" fill="#8060ab"/>
+<text x="1295" y="726" class="small">03:27.826 / 01:40.933</text></g>
+<g tabindex="0" role="button" data-span-id="afccac99-6319-6c14-db43-9cd1cd8c6d61" aria-label="F05 规划 Tasks 与依赖 DAG | 2026-11-20T12:49:32.395+08:00 → 2026-11-20T12:50:27.213+08:00 | 原始 00:54.818 / 净 00:54.818"><title>F05 规划 Tasks 与依赖 DAG | 2026-11-20T12:49:32.395+08:00 → 2026-11-20T12:50:27.213+08:00 | 原始 00:54.818 / 净 00:54.818</title>
+<rect class="row-bg" x="0" y="736" width="1640" height="25" fill="transparent"/>
+<text x="42" y="753">20　F05 规划 Tasks 与依赖 DAG</text>
+<rect x="701.96" y="741" width="7.22" height="12" fill="#8060ab"/>
+<rect x="709.18" y="741" width="37.54" height="12" fill="#377eb8"/>
+<rect x="746.73" y="741" width="1.40" height="12" fill="#8060ab"/>
+<text x="1295" y="753" class="small">00:54.818 / 00:54.818</text></g>
+<g tabindex="0" role="button" data-span-id="afccac99-6319-6c14-db43-9cd1cd8c6d61-gap" aria-label="步骤间调度 → F06 Tasks 评审与人工确认 | 2026-11-20T12:50:27.213+08:00 → 2026-11-20T12:50:27.392+08:00 | 原始 00:00.179 / 净 00:00.179"><title>步骤间调度 → F06 Tasks 评审与人工确认 | 2026-11-20T12:50:27.213+08:00 → 2026-11-20T12:50:27.392+08:00 | 原始 00:00.179 / 净 00:00.179</title>
+<rect class="row-bg" x="0" y="763" width="1640" height="25" fill="transparent"/>
+<text x="42" y="780">21　步骤间调度 → F06 Tasks 评审与人工确认</text>
+<rect x="748.13" y="768" width="0.15" height="12" fill="#8060ab"/>
+<text x="1295" y="780" class="small">00:00.179 / 00:00.179</text></g>
+<g tabindex="0" role="button" data-span-id="6f89dfc0-58a4-c21d-1579-6b730ae95ac4" aria-label="F06 Tasks 评审与人工确认 | 2026-11-20T12:50:27.392+08:00 → 2026-11-20T12:52:59.012+08:00 | 原始 02:31.620 / 净 00:44.727"><title>F06 Tasks 评审与人工确认 | 2026-11-20T12:50:27.392+08:00 → 2026-11-20T12:52:59.012+08:00 | 原始 02:31.620 / 净 00:44.727</title>
+<rect class="row-bg" x="0" y="790" width="1640" height="25" fill="transparent"/>
+<text x="42" y="807">22　F06 Tasks 评审与人工确认</text>
+<rect x="748.28" y="795" width="2.70" height="12" fill="#8060ab"/>
+<rect x="750.98" y="795" width="17.68" height="12" fill="#377eb8"/>
+<rect x="768.66" y="795" width="0.18" height="12" fill="#8060ab"/>
+<rect x="768.84" y="795" width="0.15" height="12" fill="#269778"/>
+<rect x="768.85" y="795" width="0.15" height="12" fill="#8060ab"/>
+<rect x="768.89" y="795" width="15.13" height="12" fill="#377eb8"/>
+<rect x="784.03" y="795" width="1.77" height="12" fill="#8060ab"/>
+<rect x="785.80" y="795" width="0.15" height="12" fill="#8060ab"/>
+<text x="1295" y="807" class="small">02:31.620 / 00:44.727</text></g>
+<g tabindex="0" role="button" data-span-id="6f89dfc0-58a4-c21d-1579-6b730ae95ac4-prepare" aria-label="审批请求准备 | 2026-11-20T12:51:10.984+08:00 → 2026-11-20T12:51:11.938+08:00 | 原始 00:00.954 / 净 00:00.954"><title>审批请求准备 | 2026-11-20T12:51:10.984+08:00 → 2026-11-20T12:51:11.938+08:00 | 原始 00:00.954 / 净 00:00.954</title>
+<rect class="row-bg" x="0" y="817" width="1640" height="25" fill="transparent"/>
+<text x="54" y="834">23　审批请求准备</text>
+<rect x="784.99" y="822" width="0.80" height="12" fill="#8060ab"/>
+<text x="1295" y="834" class="small">00:00.954 / 00:00.954</text></g>
+<g tabindex="0" role="button" data-span-id="6f89dfc0-58a4-c21d-1579-6b730ae95ac4-approval" aria-label="代审批响应（净耗时排除） | 2026-11-20T12:51:11.938+08:00 → 2026-11-20T12:52:58.831+08:00 | 原始 01:46.893 / 净 00:00.000"><title>代审批响应（净耗时排除） | 2026-11-20T12:51:11.938+08:00 → 2026-11-20T12:52:58.831+08:00 | 原始 01:46.893 / 净 00:00.000</title>
+<rect class="row-bg" x="0" y="844" width="1640" height="25" fill="transparent"/>
+<text x="54" y="861">24　代审批响应（净耗时排除）</text>
+<circle cx="785.80" cy="855" r="2" fill="#d28927"/>
+<text x="1295" y="861" class="small">01:46.893 / 00:00.000</text></g>
+<g tabindex="0" role="button" data-span-id="6f89dfc0-58a4-c21d-1579-6b730ae95ac4-gap" aria-label="步骤间调度 → 自动登记已确认 Task 图 | 2026-11-20T12:52:59.012+08:00 → 2026-11-20T12:52:59.250+08:00 | 原始 00:00.238 / 净 00:00.238"><title>步骤间调度 → 自动登记已确认 Task 图 | 2026-11-20T12:52:59.012+08:00 → 2026-11-20T12:52:59.250+08:00 | 原始 00:00.238 / 净 00:00.238</title>
+<rect class="row-bg" x="0" y="871" width="1640" height="25" fill="transparent"/>
+<text x="42" y="888">25　步骤间调度 → 自动登记已确认 Task 图</text>
+<rect x="785.95" y="876" width="0.20" height="12" fill="#8060ab"/>
+<text x="1295" y="888" class="small">00:00.238 / 00:00.238</text></g>
+<g tabindex="0" role="button" data-span-id="d414d82d-76f9-98e3-304f-d016b42022c3" aria-label="自动登记已确认 Task 图 | 2026-11-20T12:52:59.250+08:00 → 2026-11-20T12:53:00.030+08:00 | 原始 00:00.780 / 净 00:00.780"><title>自动登记已确认 Task 图 | 2026-11-20T12:52:59.250+08:00 → 2026-11-20T12:53:00.030+08:00 | 原始 00:00.780 / 净 00:00.780</title>
+<rect class="row-bg" x="0" y="898" width="1640" height="25" fill="transparent"/>
+<text x="42" y="915">26　自动登记已确认 Task 图</text>
+<rect x="786.15" y="903" width="0.17" height="12" fill="#8060ab"/>
+<rect x="786.32" y="903" width="0.15" height="12" fill="#269778"/>
+<rect x="786.32" y="903" width="0.49" height="12" fill="#8060ab"/>
+<text x="1295" y="915" class="small">00:00.780 / 00:00.780</text></g>
+<g tabindex="0" role="button" data-span-id="d414d82d-76f9-98e3-304f-d016b42022c3-gap" aria-label="步骤间调度 → F07 按 DAG 并发开发 Tasks | 2026-11-20T12:53:00.030+08:00 → 2026-11-20T12:53:00.221+08:00 | 原始 00:00.191 / 净 00:00.191"><title>步骤间调度 → F07 按 DAG 并发开发 Tasks | 2026-11-20T12:53:00.030+08:00 → 2026-11-20T12:53:00.221+08:00 | 原始 00:00.191 / 净 00:00.191</title>
+<rect class="row-bg" x="0" y="925" width="1640" height="25" fill="transparent"/>
+<text x="42" y="942">27　步骤间调度 → F07 按 DAG 并发开发 Tasks</text>
+<rect x="786.81" y="930" width="0.16" height="12" fill="#8060ab"/>
+<text x="1295" y="942" class="small">00:00.191 / 00:00.191</text></g>
+<g tabindex="0" role="button" data-span-id="stage-implementation" aria-label="实施 | 2026-11-20T12:53:00.221+08:00 → 2026-11-20T12:58:58.495+08:00 | 原始 05:58.274 / 净 05:58.274"><title>实施 | 2026-11-20T12:53:00.221+08:00 → 2026-11-20T12:58:58.495+08:00 | 原始 05:58.274 / 净 05:58.274</title>
+<rect class="row-bg" x="0" y="952" width="1640" height="25" fill="transparent"/>
+<text x="30" y="969">28　实施</text>
+<rect x="786.97" y="957" width="6.81" height="12" fill="#8060ab"/>
+<rect x="793.78" y="957" width="8.06" height="12" fill="#377eb8"/>
+<rect x="801.84" y="957" width="0.21" height="12" fill="#8060ab"/>
+<rect x="802.05" y="957" width="0.15" height="12" fill="#377eb8"/>
+<rect x="802.20" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="802.22" y="957" width="4.94" height="12" fill="#377eb8"/>
+<rect x="807.15" y="957" width="0.39" height="12" fill="#8060ab"/>
+<rect x="807.54" y="957" width="1.84" height="12" fill="#377eb8"/>
+<rect x="809.38" y="957" width="0.87" height="12" fill="#8060ab"/>
+<rect x="810.25" y="957" width="6.55" height="12" fill="#377eb8"/>
+<rect x="816.80" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="816.83" y="957" width="2.87" height="12" fill="#377eb8"/>
+<rect x="819.69" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="819.72" y="957" width="25.54" height="12" fill="#377eb8"/>
+<rect x="845.27" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="845.30" y="957" width="13.50" height="12" fill="#377eb8"/>
+<rect x="858.80" y="957" width="1.82" height="12" fill="#8060ab"/>
+<rect x="860.61" y="957" width="0.26" height="12" fill="#269778"/>
+<rect x="860.87" y="957" width="0.67" height="12" fill="#8060ab"/>
+<rect x="861.55" y="957" width="1.21" height="12" fill="#269778"/>
+<rect x="862.75" y="957" width="7.29" height="12" fill="#8060ab"/>
+<rect x="870.04" y="957" width="24.95" height="12" fill="#377eb8"/>
+<rect x="894.99" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="895.09" y="957" width="7.84" height="12" fill="#377eb8"/>
+<rect x="902.93" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="902.96" y="957" width="0.15" height="12" fill="#377eb8"/>
+<rect x="903.08" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="903.14" y="957" width="3.78" height="12" fill="#377eb8"/>
+<rect x="906.92" y="957" width="2.10" height="12" fill="#269778"/>
+<rect x="909.02" y="957" width="3.15" height="12" fill="#377eb8"/>
+<rect x="912.17" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="912.19" y="957" width="6.46" height="12" fill="#377eb8"/>
+<rect x="918.66" y="957" width="8.68" height="12" fill="#269778"/>
+<rect x="927.33" y="957" width="21.17" height="12" fill="#377eb8"/>
+<rect x="948.50" y="957" width="2.06" height="12" fill="#8060ab"/>
+<rect x="950.55" y="957" width="0.32" height="12" fill="#269778"/>
+<rect x="950.87" y="957" width="1.08" height="12" fill="#8060ab"/>
+<rect x="951.95" y="957" width="1.32" height="12" fill="#269778"/>
+<rect x="953.27" y="957" width="5.33" height="12" fill="#8060ab"/>
+<rect x="958.60" y="957" width="9.08" height="12" fill="#377eb8"/>
+<rect x="967.68" y="957" width="0.24" height="12" fill="#8060ab"/>
+<rect x="967.92" y="957" width="3.39" height="12" fill="#377eb8"/>
+<rect x="971.31" y="957" width="0.21" height="12" fill="#8060ab"/>
+<rect x="971.52" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="971.53" y="957" width="0.15" height="12" fill="#8060ab"/>
+<rect x="971.59" y="957" width="0.15" height="12" fill="#377eb8"/>
+<rect x="971.63" y="957" width="0.19" height="12" fill="#8060ab"/>
+<rect x="971.82" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="971.86" y="957" width="0.30" height="12" fill="#8060ab"/>
+<rect x="972.16" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="972.19" y="957" width="0.15" height="12" fill="#8060ab"/>
+<rect x="972.27" y="957" width="5.95" height="12" fill="#377eb8"/>
+<rect x="978.21" y="957" width="0.21" height="12" fill="#8060ab"/>
+<rect x="978.42" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="978.43" y="957" width="0.24" height="12" fill="#8060ab"/>
+<rect x="978.68" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="978.70" y="957" width="0.26" height="12" fill="#8060ab"/>
+<rect x="978.96" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="978.97" y="957" width="0.24" height="12" fill="#8060ab"/>
+<rect x="979.20" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="979.22" y="957" width="0.25" height="12" fill="#8060ab"/>
+<rect x="979.47" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="979.48" y="957" width="0.22" height="12" fill="#8060ab"/>
+<rect x="979.70" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="979.71" y="957" width="0.31" height="12" fill="#8060ab"/>
+<rect x="980.02" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="980.03" y="957" width="0.26" height="12" fill="#8060ab"/>
+<rect x="980.29" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="980.30" y="957" width="0.28" height="12" fill="#8060ab"/>
+<rect x="980.57" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="980.59" y="957" width="0.48" height="12" fill="#8060ab"/>
+<rect x="981.06" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="981.07" y="957" width="0.32" height="12" fill="#8060ab"/>
+<rect x="981.40" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="981.41" y="957" width="0.15" height="12" fill="#8060ab"/>
+<rect x="981.44" y="957" width="3.15" height="12" fill="#377eb8"/>
+<rect x="984.60" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="984.62" y="957" width="33.31" height="12" fill="#377eb8"/>
+<rect x="1017.93" y="957" width="0.26" height="12" fill="#8060ab"/>
+<rect x="1018.18" y="957" width="0.15" height="12" fill="#269778"/>
+<rect x="1018.19" y="957" width="0.15" height="12" fill="#8060ab"/>
+<rect x="1018.23" y="957" width="16.02" height="12" fill="#377eb8"/>
+<rect x="1034.25" y="957" width="2.79" height="12" fill="#8060ab"/>
+<rect x="1037.04" y="957" width="1.34" height="12" fill="#269778"/>
+<rect x="1038.38" y="957" width="1.45" height="12" fill="#8060ab"/>
+<rect x="1039.83" y="957" width="4.29" height="12" fill="#269778"/>
+<rect x="1044.13" y="957" width="1.20" height="12" fill="#8060ab"/>
+<rect x="1045.32" y="957" width="0.89" height="12" fill="#269778"/>
+<rect x="1046.22" y="957" width="1.62" height="12" fill="#8060ab"/>
+<rect x="1047.83" y="957" width="14.45" height="12" fill="#269778"/>
+<rect x="1062.28" y="957" width="0.75" height="12" fill="#8060ab"/>
+<rect x="1063.03" y="957" width="1.72" height="12" fill="#269778"/>
+<rect x="1064.76" y="957" width="1.68" height="12" fill="#8060ab"/>
+<rect x="1066.43" y="957" width="20.44" height="12" fill="#269778"/>
+<rect x="1086.88" y="957" width="1.84" height="12" fill="#8060ab"/>
+<text x="1295" y="969" class="small">05:58.274 / 05:58.274</text></g>
+<g tabindex="0" role="button" data-span-id="bc05ac2a-0422-b0a5-ef5e-e967bf6d337c" aria-label="F07 按 DAG 并发开发 Tasks | 2026-11-20T12:53:00.221+08:00 → 2026-11-20T12:58:58.294+08:00 | 原始 05:58.073 / 净 05:58.073"><title>F07 按 DAG 并发开发 Tasks | 2026-11-20T12:53:00.221+08:00 → 2026-11-20T12:58:58.294+08:00 | 原始 05:58.073 / 净 05:58.073</title>
+<rect class="row-bg" x="0" y="979" width="1640" height="25" fill="transparent"/>
+<text x="42" y="996">29　F07 按 DAG 并发开发 Tasks</text>
+<rect x="786.97" y="984" width="6.81" height="12" fill="#8060ab"/>
+<rect x="793.78" y="984" width="8.06" height="12" fill="#377eb8"/>
+<rect x="801.84" y="984" width="0.21" height="12" fill="#8060ab"/>
+<rect x="802.05" y="984" width="0.15" height="12" fill="#377eb8"/>
+<rect x="802.20" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="802.22" y="984" width="4.94" height="12" fill="#377eb8"/>
+<rect x="807.15" y="984" width="0.39" height="12" fill="#8060ab"/>
+<rect x="807.54" y="984" width="1.84" height="12" fill="#377eb8"/>
+<rect x="809.38" y="984" width="0.87" height="12" fill="#8060ab"/>
+<rect x="810.25" y="984" width="6.55" height="12" fill="#377eb8"/>
+<rect x="816.80" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="816.83" y="984" width="2.87" height="12" fill="#377eb8"/>
+<rect x="819.69" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="819.72" y="984" width="25.54" height="12" fill="#377eb8"/>
+<rect x="845.27" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="845.30" y="984" width="13.50" height="12" fill="#377eb8"/>
+<rect x="858.80" y="984" width="1.82" height="12" fill="#8060ab"/>
+<rect x="860.61" y="984" width="0.26" height="12" fill="#269778"/>
+<rect x="860.87" y="984" width="0.67" height="12" fill="#8060ab"/>
+<rect x="861.55" y="984" width="1.21" height="12" fill="#269778"/>
+<rect x="862.75" y="984" width="7.29" height="12" fill="#8060ab"/>
+<rect x="870.04" y="984" width="24.95" height="12" fill="#377eb8"/>
+<rect x="894.99" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="895.09" y="984" width="7.84" height="12" fill="#377eb8"/>
+<rect x="902.93" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="902.96" y="984" width="0.15" height="12" fill="#377eb8"/>
+<rect x="903.08" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="903.14" y="984" width="3.78" height="12" fill="#377eb8"/>
+<rect x="906.92" y="984" width="2.10" height="12" fill="#269778"/>
+<rect x="909.02" y="984" width="3.15" height="12" fill="#377eb8"/>
+<rect x="912.17" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="912.19" y="984" width="6.46" height="12" fill="#377eb8"/>
+<rect x="918.66" y="984" width="8.68" height="12" fill="#269778"/>
+<rect x="927.33" y="984" width="21.17" height="12" fill="#377eb8"/>
+<rect x="948.50" y="984" width="2.06" height="12" fill="#8060ab"/>
+<rect x="950.55" y="984" width="0.32" height="12" fill="#269778"/>
+<rect x="950.87" y="984" width="1.08" height="12" fill="#8060ab"/>
+<rect x="951.95" y="984" width="1.32" height="12" fill="#269778"/>
+<rect x="953.27" y="984" width="5.33" height="12" fill="#8060ab"/>
+<rect x="958.60" y="984" width="9.08" height="12" fill="#377eb8"/>
+<rect x="967.68" y="984" width="0.24" height="12" fill="#8060ab"/>
+<rect x="967.92" y="984" width="3.39" height="12" fill="#377eb8"/>
+<rect x="971.31" y="984" width="0.21" height="12" fill="#8060ab"/>
+<rect x="971.52" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="971.53" y="984" width="0.15" height="12" fill="#8060ab"/>
+<rect x="971.59" y="984" width="0.15" height="12" fill="#377eb8"/>
+<rect x="971.63" y="984" width="0.19" height="12" fill="#8060ab"/>
+<rect x="971.82" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="971.86" y="984" width="0.30" height="12" fill="#8060ab"/>
+<rect x="972.16" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="972.19" y="984" width="0.15" height="12" fill="#8060ab"/>
+<rect x="972.27" y="984" width="5.95" height="12" fill="#377eb8"/>
+<rect x="978.21" y="984" width="0.21" height="12" fill="#8060ab"/>
+<rect x="978.42" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="978.43" y="984" width="0.24" height="12" fill="#8060ab"/>
+<rect x="978.68" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="978.70" y="984" width="0.26" height="12" fill="#8060ab"/>
+<rect x="978.96" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="978.97" y="984" width="0.24" height="12" fill="#8060ab"/>
+<rect x="979.20" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="979.22" y="984" width="0.25" height="12" fill="#8060ab"/>
+<rect x="979.47" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="979.48" y="984" width="0.22" height="12" fill="#8060ab"/>
+<rect x="979.70" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="979.71" y="984" width="0.31" height="12" fill="#8060ab"/>
+<rect x="980.02" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="980.03" y="984" width="0.26" height="12" fill="#8060ab"/>
+<rect x="980.29" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="980.30" y="984" width="0.28" height="12" fill="#8060ab"/>
+<rect x="980.57" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="980.59" y="984" width="0.48" height="12" fill="#8060ab"/>
+<rect x="981.06" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="981.07" y="984" width="0.32" height="12" fill="#8060ab"/>
+<rect x="981.40" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="981.41" y="984" width="0.15" height="12" fill="#8060ab"/>
+<rect x="981.44" y="984" width="3.15" height="12" fill="#377eb8"/>
+<rect x="984.60" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="984.62" y="984" width="33.31" height="12" fill="#377eb8"/>
+<rect x="1017.93" y="984" width="0.26" height="12" fill="#8060ab"/>
+<rect x="1018.18" y="984" width="0.15" height="12" fill="#269778"/>
+<rect x="1018.19" y="984" width="0.15" height="12" fill="#8060ab"/>
+<rect x="1018.23" y="984" width="16.02" height="12" fill="#377eb8"/>
+<rect x="1034.25" y="984" width="2.79" height="12" fill="#8060ab"/>
+<rect x="1037.04" y="984" width="1.34" height="12" fill="#269778"/>
+<rect x="1038.38" y="984" width="1.45" height="12" fill="#8060ab"/>
+<rect x="1039.83" y="984" width="4.29" height="12" fill="#269778"/>
+<rect x="1044.13" y="984" width="1.20" height="12" fill="#8060ab"/>
+<rect x="1045.32" y="984" width="0.89" height="12" fill="#269778"/>
+<rect x="1046.22" y="984" width="1.62" height="12" fill="#8060ab"/>
+<rect x="1047.83" y="984" width="14.45" height="12" fill="#269778"/>
+<rect x="1062.28" y="984" width="0.75" height="12" fill="#8060ab"/>
+<rect x="1063.03" y="984" width="1.72" height="12" fill="#269778"/>
+<rect x="1064.76" y="984" width="1.68" height="12" fill="#8060ab"/>
+<rect x="1066.43" y="984" width="20.44" height="12" fill="#269778"/>
+<rect x="1086.88" y="984" width="1.67" height="12" fill="#8060ab"/>
+<text x="1295" y="996" class="small">05:58.073 / 05:58.073</text></g>
+<g tabindex="0" role="button" data-span-id="task-dispatch" aria-label="创建 Task 并首次派发 | 2026-11-20T12:53:00.221+08:00 → 2026-11-20T12:53:18.180+08:00 | 原始 00:17.959 / 净 00:17.959"><title>创建 Task 并首次派发 | 2026-11-20T12:53:00.221+08:00 → 2026-11-20T12:53:18.180+08:00 | 原始 00:17.959 / 净 00:17.959</title>
+<rect class="row-bg" x="0" y="1006" width="1640" height="25" fill="transparent"/>
+<text x="54" y="1023">30　创建 Task 并首次派发</text>
+<rect x="786.97" y="1011" width="6.81" height="12" fill="#8060ab"/>
+<rect x="793.78" y="1011" width="8.06" height="12" fill="#377eb8"/>
+<rect x="801.84" y="1011" width="0.21" height="12" fill="#8060ab"/>
+<rect x="802.05" y="1011" width="0.15" height="12" fill="#377eb8"/>
+<text x="1295" y="1023" class="small">00:17.959 / 00:17.959</text></g>
+<g tabindex="0" role="button" data-span-id="task" aria-label="Task 子流程 | 2026-11-20T12:53:18.180+08:00 → 2026-11-20T12:58:57.585+08:00 | 原始 05:39.405 / 净 05:39.405"><title>Task 子流程 | 2026-11-20T12:53:18.180+08:00 → 2026-11-20T12:58:57.585+08:00 | 原始 05:39.405 / 净 05:39.405</title>
+<rect class="row-bg" x="0" y="1033" width="1640" height="25" fill="transparent"/>
+<text x="54" y="1050">31　Task 子流程</text>
+<rect x="802.09" y="1038" width="0.15" height="12" fill="#377eb8"/>
+<rect x="802.20" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="802.22" y="1038" width="4.94" height="12" fill="#377eb8"/>
+<rect x="807.15" y="1038" width="0.39" height="12" fill="#8060ab"/>
+<rect x="807.54" y="1038" width="1.84" height="12" fill="#377eb8"/>
+<rect x="809.38" y="1038" width="0.87" height="12" fill="#8060ab"/>
+<rect x="810.25" y="1038" width="6.55" height="12" fill="#377eb8"/>
+<rect x="816.80" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="816.83" y="1038" width="2.87" height="12" fill="#377eb8"/>
+<rect x="819.69" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="819.72" y="1038" width="25.54" height="12" fill="#377eb8"/>
+<rect x="845.27" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="845.30" y="1038" width="13.50" height="12" fill="#377eb8"/>
+<rect x="858.80" y="1038" width="1.82" height="12" fill="#8060ab"/>
+<rect x="860.61" y="1038" width="0.26" height="12" fill="#269778"/>
+<rect x="860.87" y="1038" width="0.67" height="12" fill="#8060ab"/>
+<rect x="861.55" y="1038" width="1.21" height="12" fill="#269778"/>
+<rect x="862.75" y="1038" width="7.29" height="12" fill="#8060ab"/>
+<rect x="870.04" y="1038" width="24.95" height="12" fill="#377eb8"/>
+<rect x="894.99" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="895.09" y="1038" width="7.84" height="12" fill="#377eb8"/>
+<rect x="902.93" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="902.96" y="1038" width="0.15" height="12" fill="#377eb8"/>
+<rect x="903.08" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="903.14" y="1038" width="3.78" height="12" fill="#377eb8"/>
+<rect x="906.92" y="1038" width="2.10" height="12" fill="#269778"/>
+<rect x="909.02" y="1038" width="3.15" height="12" fill="#377eb8"/>
+<rect x="912.17" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="912.19" y="1038" width="6.46" height="12" fill="#377eb8"/>
+<rect x="918.66" y="1038" width="8.68" height="12" fill="#269778"/>
+<rect x="927.33" y="1038" width="21.17" height="12" fill="#377eb8"/>
+<rect x="948.50" y="1038" width="2.06" height="12" fill="#8060ab"/>
+<rect x="950.55" y="1038" width="0.32" height="12" fill="#269778"/>
+<rect x="950.87" y="1038" width="1.08" height="12" fill="#8060ab"/>
+<rect x="951.95" y="1038" width="1.32" height="12" fill="#269778"/>
+<rect x="953.27" y="1038" width="5.33" height="12" fill="#8060ab"/>
+<rect x="958.60" y="1038" width="9.08" height="12" fill="#377eb8"/>
+<rect x="967.68" y="1038" width="0.24" height="12" fill="#8060ab"/>
+<rect x="967.92" y="1038" width="3.39" height="12" fill="#377eb8"/>
+<rect x="971.31" y="1038" width="0.21" height="12" fill="#8060ab"/>
+<rect x="971.52" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="971.53" y="1038" width="0.15" height="12" fill="#8060ab"/>
+<rect x="971.59" y="1038" width="0.15" height="12" fill="#377eb8"/>
+<rect x="971.63" y="1038" width="0.19" height="12" fill="#8060ab"/>
+<rect x="971.82" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="971.86" y="1038" width="0.30" height="12" fill="#8060ab"/>
+<rect x="972.16" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="972.19" y="1038" width="0.15" height="12" fill="#8060ab"/>
+<rect x="972.27" y="1038" width="5.95" height="12" fill="#377eb8"/>
+<rect x="978.21" y="1038" width="0.21" height="12" fill="#8060ab"/>
+<rect x="978.42" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="978.43" y="1038" width="0.24" height="12" fill="#8060ab"/>
+<rect x="978.68" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="978.70" y="1038" width="0.26" height="12" fill="#8060ab"/>
+<rect x="978.96" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="978.97" y="1038" width="0.24" height="12" fill="#8060ab"/>
+<rect x="979.20" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="979.22" y="1038" width="0.25" height="12" fill="#8060ab"/>
+<rect x="979.47" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="979.48" y="1038" width="0.22" height="12" fill="#8060ab"/>
+<rect x="979.70" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="979.71" y="1038" width="0.31" height="12" fill="#8060ab"/>
+<rect x="980.02" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="980.03" y="1038" width="0.26" height="12" fill="#8060ab"/>
+<rect x="980.29" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="980.30" y="1038" width="0.28" height="12" fill="#8060ab"/>
+<rect x="980.57" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="980.59" y="1038" width="0.48" height="12" fill="#8060ab"/>
+<rect x="981.06" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="981.07" y="1038" width="0.32" height="12" fill="#8060ab"/>
+<rect x="981.40" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="981.41" y="1038" width="0.15" height="12" fill="#8060ab"/>
+<rect x="981.44" y="1038" width="3.15" height="12" fill="#377eb8"/>
+<rect x="984.60" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="984.62" y="1038" width="33.31" height="12" fill="#377eb8"/>
+<rect x="1017.93" y="1038" width="0.26" height="12" fill="#8060ab"/>
+<rect x="1018.18" y="1038" width="0.15" height="12" fill="#269778"/>
+<rect x="1018.19" y="1038" width="0.15" height="12" fill="#8060ab"/>
+<rect x="1018.23" y="1038" width="16.02" height="12" fill="#377eb8"/>
+<rect x="1034.25" y="1038" width="2.79" height="12" fill="#8060ab"/>
+<rect x="1037.04" y="1038" width="1.34" height="12" fill="#269778"/>
+<rect x="1038.38" y="1038" width="1.45" height="12" fill="#8060ab"/>
+<rect x="1039.83" y="1038" width="4.29" height="12" fill="#269778"/>
+<rect x="1044.13" y="1038" width="1.20" height="12" fill="#8060ab"/>
+<rect x="1045.32" y="1038" width="0.89" height="12" fill="#269778"/>
+<rect x="1046.22" y="1038" width="1.62" height="12" fill="#8060ab"/>
+<rect x="1047.83" y="1038" width="14.45" height="12" fill="#269778"/>
+<rect x="1062.28" y="1038" width="0.75" height="12" fill="#8060ab"/>
+<rect x="1063.03" y="1038" width="1.72" height="12" fill="#269778"/>
+<rect x="1064.76" y="1038" width="1.68" height="12" fill="#8060ab"/>
+<rect x="1066.43" y="1038" width="20.44" height="12" fill="#269778"/>
+<rect x="1086.88" y="1038" width="1.07" height="12" fill="#8060ab"/>
+<text x="1295" y="1050" class="small">05:39.405 / 05:39.405</text></g>
+<g tabindex="0" role="button" data-span-id="626796c1-2bda-7411-0f7f-9ff6897dfbcb" aria-label="准备 Task 基线 | 2026-11-20T12:53:18.180+08:00 → 2026-11-20T12:53:21.083+08:00 | 原始 00:02.903 / 净 00:02.903"><title>准备 Task 基线 | 2026-11-20T12:53:18.180+08:00 → 2026-11-20T12:53:21.083+08:00 | 原始 00:02.903 / 净 00:02.903</title>
+<rect class="row-bg" x="0" y="1060" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1077">32　准备 Task 基线</text>
+<rect x="802.09" y="1065" width="0.15" height="12" fill="#377eb8"/>
+<rect x="802.20" y="1065" width="0.15" height="12" fill="#269778"/>
+<rect x="802.22" y="1065" width="2.32" height="12" fill="#377eb8"/>
+<text x="1295" y="1077" class="small">00:02.903 / 00:02.903</text></g>
+<g tabindex="0" role="button" data-span-id="626796c1-2bda-7411-0f7f-9ff6897dfbcb-gap" aria-label="步骤间调度 → T01 编写独立行为测试 | 2026-11-20T12:53:21.083+08:00 → 2026-11-20T12:53:22.456+08:00 | 原始 00:01.373 / 净 00:01.373"><title>步骤间调度 → T01 编写独立行为测试 | 2026-11-20T12:53:21.083+08:00 → 2026-11-20T12:53:22.456+08:00 | 原始 00:01.373 / 净 00:01.373</title>
+<rect class="row-bg" x="0" y="1087" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1104">33　步骤间调度 → T01 编写独立行为测试</text>
+<rect x="804.54" y="1092" width="1.16" height="12" fill="#377eb8"/>
+<text x="1295" y="1104" class="small">00:01.373 / 00:01.373</text></g>
+<g tabindex="0" role="button" data-span-id="7b4bd8a5-e59e-b4e8-8a96-47f2a34d6a48" aria-label="T01 编写独立行为测试 | 2026-11-20T12:53:22.456+08:00 → 2026-11-20T12:54:27.280+08:00 | 原始 01:04.824 / 净 01:04.824"><title>T01 编写独立行为测试 | 2026-11-20T12:53:22.456+08:00 → 2026-11-20T12:54:27.280+08:00 | 原始 01:04.824 / 净 01:04.824</title>
+<rect class="row-bg" x="0" y="1114" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1131">34　T01 编写独立行为测试</text>
+<rect x="805.69" y="1119" width="1.46" height="12" fill="#377eb8"/>
+<rect x="807.15" y="1119" width="0.39" height="12" fill="#8060ab"/>
+<rect x="807.54" y="1119" width="1.84" height="12" fill="#377eb8"/>
+<rect x="809.38" y="1119" width="0.87" height="12" fill="#8060ab"/>
+<rect x="810.25" y="1119" width="6.55" height="12" fill="#377eb8"/>
+<rect x="816.80" y="1119" width="0.15" height="12" fill="#269778"/>
+<rect x="816.83" y="1119" width="2.87" height="12" fill="#377eb8"/>
+<rect x="819.69" y="1119" width="0.15" height="12" fill="#269778"/>
+<rect x="819.72" y="1119" width="25.54" height="12" fill="#377eb8"/>
+<rect x="845.27" y="1119" width="0.15" height="12" fill="#269778"/>
+<rect x="845.30" y="1119" width="13.50" height="12" fill="#377eb8"/>
+<rect x="858.80" y="1119" width="1.49" height="12" fill="#8060ab"/>
+<text x="1295" y="1131" class="small">01:04.824 / 01:04.824</text></g>
+<g tabindex="0" role="button" data-span-id="7b4bd8a5-e59e-b4e8-8a96-47f2a34d6a48-gap" aria-label="步骤间调度 → 自动固定测试及条件空接口 | 2026-11-20T12:54:27.280+08:00 → 2026-11-20T12:54:27.543+08:00 | 原始 00:00.263 / 净 00:00.263"><title>步骤间调度 → 自动固定测试及条件空接口 | 2026-11-20T12:54:27.280+08:00 → 2026-11-20T12:54:27.543+08:00 | 原始 00:00.263 / 净 00:00.263</title>
+<rect class="row-bg" x="0" y="1141" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1158">35　步骤间调度 → 自动固定测试及条件空接口</text>
+<rect x="860.29" y="1146" width="0.22" height="12" fill="#8060ab"/>
+<text x="1295" y="1158" class="small">00:00.263 / 00:00.263</text></g>
+<g tabindex="0" role="button" data-span-id="e9477f04-1006-991e-a8cf-40d4dce4b5ed" aria-label="自动固定测试及条件空接口 | 2026-11-20T12:54:27.543+08:00 → 2026-11-20T12:54:28.346+08:00 | 原始 00:00.803 / 净 00:00.803"><title>自动固定测试及条件空接口 | 2026-11-20T12:54:27.543+08:00 → 2026-11-20T12:54:28.346+08:00 | 原始 00:00.803 / 净 00:00.803</title>
+<rect class="row-bg" x="0" y="1168" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1185">36　自动固定测试及条件空接口</text>
+<rect x="860.51" y="1173" width="0.15" height="12" fill="#8060ab"/>
+<rect x="860.61" y="1173" width="0.26" height="12" fill="#269778"/>
+<rect x="860.87" y="1173" width="0.32" height="12" fill="#8060ab"/>
+<text x="1295" y="1185" class="small">00:00.803 / 00:00.803</text></g>
+<g tabindex="0" role="button" data-span-id="e9477f04-1006-991e-a8cf-40d4dce4b5ed-gap" aria-label="步骤间调度 → T02 执行真实 Red | 2026-11-20T12:54:28.346+08:00 → 2026-11-20T12:54:28.604+08:00 | 原始 00:00.258 / 净 00:00.258"><title>步骤间调度 → T02 执行真实 Red | 2026-11-20T12:54:28.346+08:00 → 2026-11-20T12:54:28.604+08:00 | 原始 00:00.258 / 净 00:00.258</title>
+<rect class="row-bg" x="0" y="1195" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1212">37　步骤间调度 → T02 执行真实 Red</text>
+<rect x="861.19" y="1200" width="0.22" height="12" fill="#8060ab"/>
+<text x="1295" y="1212" class="small">00:00.258 / 00:00.258</text></g>
+<g tabindex="0" role="button" data-span-id="212b67cf-9e89-0589-7822-bdaa47e423d6" aria-label="T02 执行真实 Red | 2026-11-20T12:54:28.604+08:00 → 2026-11-20T12:54:30.761+08:00 | 原始 00:02.157 / 净 00:02.157"><title>T02 执行真实 Red | 2026-11-20T12:54:28.604+08:00 → 2026-11-20T12:54:30.761+08:00 | 原始 00:02.157 / 净 00:02.157</title>
+<rect class="row-bg" x="0" y="1222" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1239">38　T02 执行真实 Red</text>
+<rect x="861.41" y="1227" width="0.15" height="12" fill="#8060ab"/>
+<rect x="861.55" y="1227" width="1.21" height="12" fill="#269778"/>
+<rect x="862.75" y="1227" width="0.47" height="12" fill="#8060ab"/>
+<text x="1295" y="1239" class="small">00:02.157 / 00:02.157</text></g>
+<g tabindex="0" role="button" data-span-id="212b67cf-9e89-0589-7822-bdaa47e423d6-gap" aria-label="步骤间调度 → T03 实现、测试及必要文档 | 2026-11-20T12:54:30.761+08:00 → 2026-11-20T12:54:31.079+08:00 | 原始 00:00.318 / 净 00:00.318"><title>步骤间调度 → T03 实现、测试及必要文档 | 2026-11-20T12:54:30.761+08:00 → 2026-11-20T12:54:31.079+08:00 | 原始 00:00.318 / 净 00:00.318</title>
+<rect class="row-bg" x="0" y="1249" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1266">39　步骤间调度 → T03 实现、测试及必要文档</text>
+<rect x="863.22" y="1254" width="0.27" height="12" fill="#8060ab"/>
+<text x="1295" y="1266" class="small">00:00.318 / 00:00.318</text></g>
+<g tabindex="0" role="button" data-span-id="24903634-935a-df02-02c8-94efb2c61f86" aria-label="T03 实现、测试及必要文档 | 2026-11-20T12:54:31.079+08:00 → 2026-11-20T12:56:14.011+08:00 | 原始 01:42.932 / 净 01:42.932"><title>T03 实现、测试及必要文档 | 2026-11-20T12:54:31.079+08:00 → 2026-11-20T12:56:14.011+08:00 | 原始 01:42.932 / 净 01:42.932</title>
+<rect class="row-bg" x="0" y="1276" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1293">40　T03 实现、测试及必要文档</text>
+<rect x="863.49" y="1281" width="6.55" height="12" fill="#8060ab"/>
+<rect x="870.04" y="1281" width="24.95" height="12" fill="#377eb8"/>
+<rect x="894.99" y="1281" width="0.15" height="12" fill="#269778"/>
+<rect x="895.09" y="1281" width="7.84" height="12" fill="#377eb8"/>
+<rect x="902.93" y="1281" width="0.15" height="12" fill="#269778"/>
+<rect x="902.96" y="1281" width="0.15" height="12" fill="#377eb8"/>
+<rect x="903.08" y="1281" width="0.15" height="12" fill="#269778"/>
+<rect x="903.14" y="1281" width="3.78" height="12" fill="#377eb8"/>
+<rect x="906.92" y="1281" width="2.10" height="12" fill="#269778"/>
+<rect x="909.02" y="1281" width="3.15" height="12" fill="#377eb8"/>
+<rect x="912.17" y="1281" width="0.15" height="12" fill="#269778"/>
+<rect x="912.19" y="1281" width="6.46" height="12" fill="#377eb8"/>
+<rect x="918.66" y="1281" width="8.68" height="12" fill="#269778"/>
+<rect x="927.33" y="1281" width="21.17" height="12" fill="#377eb8"/>
+<rect x="948.50" y="1281" width="1.68" height="12" fill="#8060ab"/>
+<text x="1295" y="1293" class="small">01:42.932 / 01:42.932</text></g>
+<g tabindex="0" role="button" data-span-id="24903634-935a-df02-02c8-94efb2c61f86-gap" aria-label="步骤间调度 → 自动固定完整实现差异 | 2026-11-20T12:56:14.011+08:00 → 2026-11-20T12:56:14.297+08:00 | 原始 00:00.286 / 净 00:00.286"><title>步骤间调度 → 自动固定完整实现差异 | 2026-11-20T12:56:14.011+08:00 → 2026-11-20T12:56:14.297+08:00 | 原始 00:00.286 / 净 00:00.286</title>
+<rect class="row-bg" x="0" y="1303" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1320">41　步骤间调度 → 自动固定完整实现差异</text>
+<rect x="950.18" y="1308" width="0.24" height="12" fill="#8060ab"/>
+<text x="1295" y="1320" class="small">00:00.286 / 00:00.286</text></g>
+<g tabindex="0" role="button" data-span-id="ad8c84fe-47e3-d49d-a28a-a81cd4a332a5" aria-label="自动固定完整实现差异 | 2026-11-20T12:56:14.297+08:00 → 2026-11-20T12:56:15.464+08:00 | 原始 00:01.167 / 净 00:01.167"><title>自动固定完整实现差异 | 2026-11-20T12:56:14.297+08:00 → 2026-11-20T12:56:15.464+08:00 | 原始 00:01.167 / 净 00:01.167</title>
+<rect class="row-bg" x="0" y="1330" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1347">42　自动固定完整实现差异</text>
+<rect x="950.42" y="1335" width="0.15" height="12" fill="#8060ab"/>
+<rect x="950.55" y="1335" width="0.32" height="12" fill="#269778"/>
+<rect x="950.87" y="1335" width="0.53" height="12" fill="#8060ab"/>
+<text x="1295" y="1347" class="small">00:01.167 / 00:01.167</text></g>
+<g tabindex="0" role="button" data-span-id="ad8c84fe-47e3-d49d-a28a-a81cd4a332a5-gap" aria-label="步骤间调度 → T04 执行独立 Green | 2026-11-20T12:56:15.464+08:00 → 2026-11-20T12:56:15.739+08:00 | 原始 00:00.275 / 净 00:00.275"><title>步骤间调度 → T04 执行独立 Green | 2026-11-20T12:56:15.464+08:00 → 2026-11-20T12:56:15.739+08:00 | 原始 00:00.275 / 净 00:00.275</title>
+<rect class="row-bg" x="0" y="1357" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1374">43　步骤间调度 → T04 执行独立 Green</text>
+<rect x="951.40" y="1362" width="0.23" height="12" fill="#8060ab"/>
+<text x="1295" y="1374" class="small">00:00.275 / 00:00.275</text></g>
+<g tabindex="0" role="button" data-span-id="315b457b-c10d-33b9-2465-03df3c92ca99" aria-label="T04 执行独立 Green | 2026-11-20T12:56:15.739+08:00 → 2026-11-20T12:56:18.612+08:00 | 原始 00:02.873 / 净 00:02.873"><title>T04 执行独立 Green | 2026-11-20T12:56:15.739+08:00 → 2026-11-20T12:56:18.612+08:00 | 原始 00:02.873 / 净 00:02.873</title>
+<rect class="row-bg" x="0" y="1384" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1401">44　T04 执行独立 Green</text>
+<rect x="951.64" y="1389" width="0.32" height="12" fill="#8060ab"/>
+<rect x="951.95" y="1389" width="1.32" height="12" fill="#269778"/>
+<rect x="953.27" y="1389" width="0.79" height="12" fill="#8060ab"/>
+<text x="1295" y="1401" class="small">00:02.873 / 00:02.873</text></g>
+<g tabindex="0" role="button" data-span-id="315b457b-c10d-33b9-2465-03df3c92ca99-gap" aria-label="步骤间调度 → T05 独立 Code Review | 2026-11-20T12:56:18.612+08:00 → 2026-11-20T12:56:18.908+08:00 | 原始 00:00.296 / 净 00:00.296"><title>步骤间调度 → T05 独立 Code Review | 2026-11-20T12:56:18.612+08:00 → 2026-11-20T12:56:18.908+08:00 | 原始 00:00.296 / 净 00:00.296</title>
+<rect class="row-bg" x="0" y="1411" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1428">45　步骤间调度 → T05 独立 Code Review</text>
+<rect x="954.06" y="1416" width="0.25" height="12" fill="#8060ab"/>
+<text x="1295" y="1428" class="small">00:00.296 / 00:00.296</text></g>
+<g tabindex="0" role="button" data-span-id="422902fd-b1c8-6535-7e4a-492fb64cb962" aria-label="T05 独立 Code Review | 2026-11-20T12:56:18.908+08:00 → 2026-11-20T12:57:56.308+08:00 | 原始 01:37.400 / 净 01:37.400"><title>T05 独立 Code Review | 2026-11-20T12:56:18.908+08:00 → 2026-11-20T12:57:56.308+08:00 | 原始 01:37.400 / 净 01:37.400</title>
+<rect class="row-bg" x="0" y="1438" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1455">46　T05 独立 Code Review</text>
+<rect x="954.31" y="1443" width="4.29" height="12" fill="#8060ab"/>
+<rect x="958.60" y="1443" width="9.08" height="12" fill="#377eb8"/>
+<rect x="967.68" y="1443" width="0.24" height="12" fill="#8060ab"/>
+<rect x="967.92" y="1443" width="3.39" height="12" fill="#377eb8"/>
+<rect x="971.31" y="1443" width="0.21" height="12" fill="#8060ab"/>
+<rect x="971.52" y="1443" width="0.15" height="12" fill="#269778"/>
+<rect x="971.53" y="1443" width="0.15" height="12" fill="#8060ab"/>
+<rect x="971.59" y="1443" width="0.15" height="12" fill="#377eb8"/>
+<rect x="971.63" y="1443" width="0.19" height="12" fill="#8060ab"/>
+<rect x="971.82" y="1443" width="0.15" height="12" fill="#269778"/>
+<rect x="971.86" y="1443" width="0.30" height="12" fill="#8060ab"/>
+<rect x="972.16" y="1443" width="0.15" height="12" fill="#269778"/>
+<rect x="972.19" y="1443" width="0.15" height="12" fill="#8060ab"/>
+<rect x="972.27" y="1443" width="5.95" height="12" fill="#377eb8"/>
+<rect x="978.21" y="1443" width="0.21" height="12" fill="#8060ab"/>
+<rect x="978.42" y="1443" width="0.15" height="12" fill="#269778"/>
+<rect x="978.43" y="1443" width="0.24" height="12" fill="#8060ab"/>
+<rect x="978.68" y="1443" width="0.15" height="12" fill="#269778"/>
+<rect x="978.70" y="1443" width="0.26" height="12" fill="#8060ab"/>
+<rect x="978.96" y="1443" width="0.15" height="12" fill="#269778"/>
+<rect x="978.97" y="1443" width="0.24" height="12" fill="#8060ab"/>
+<rect x="979.20" y="1443" width="0.15" height="12" fill="#269778"/>
+<rect x="979.22" y="1443" width="0.25" height="12" fill="#8060ab"/>
+<rect x="979.47" y="1443" width="0.15" height="12" fill="#269778"/>
+<rect x="979.48" y="1443" width="0.22" height="12" fill="#8060ab"/>
+<rect x="979.70" y="1443" width="0.15" height="12" fill="#269778"/>
+<rect x="979.71" y="1443" width="0.31" height="12" fill="#8060ab"/>
+<rect x="980.02" y="1443" width="0.15" height="12" fill="#269778"/>
+<rect x="980.03" y="1443" width="0.26" height="12" fill="#8060ab"/>
+<rect x="980.29" y="1443" width="0.15" height="12" fill="#269778"/>
+<rect x="980.30" y="1443" width="0.28" height="12" fill="#8060ab"/>
+<rect x="980.57" y="1443" width="0.15" height="12" fill="#269778"/>
+<rect x="980.59" y="1443" width="0.48" height="12" fill="#8060ab"/>
+<rect x="981.06" y="1443" width="0.15" height="12" fill="#269778"/>
+<rect x="981.07" y="1443" width="0.32" height="12" fill="#8060ab"/>
+<rect x="981.40" y="1443" width="0.15" height="12" fill="#269778"/>
+<rect x="981.41" y="1443" width="0.15" height="12" fill="#8060ab"/>
+<rect x="981.44" y="1443" width="3.15" height="12" fill="#377eb8"/>
+<rect x="984.60" y="1443" width="0.15" height="12" fill="#269778"/>
+<rect x="984.62" y="1443" width="33.31" height="12" fill="#377eb8"/>
+<rect x="1017.93" y="1443" width="0.26" height="12" fill="#8060ab"/>
+<rect x="1018.18" y="1443" width="0.15" height="12" fill="#269778"/>
+<rect x="1018.19" y="1443" width="0.15" height="12" fill="#8060ab"/>
+<rect x="1018.23" y="1443" width="16.02" height="12" fill="#377eb8"/>
+<rect x="1034.25" y="1443" width="2.09" height="12" fill="#8060ab"/>
+<text x="1295" y="1455" class="small">01:37.400 / 01:37.400</text></g>
+<g tabindex="0" role="button" data-span-id="422902fd-b1c8-6535-7e4a-492fb64cb962-gap" aria-label="步骤间调度 → T06 源分支项目回归 | 2026-11-20T12:57:56.308+08:00 → 2026-11-20T12:57:56.694+08:00 | 原始 00:00.386 / 净 00:00.386"><title>步骤间调度 → T06 源分支项目回归 | 2026-11-20T12:57:56.308+08:00 → 2026-11-20T12:57:56.694+08:00 | 原始 00:00.386 / 净 00:00.386</title>
+<rect class="row-bg" x="0" y="1465" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1482">47　步骤间调度 → T06 源分支项目回归</text>
+<rect x="1036.34" y="1470" width="0.33" height="12" fill="#8060ab"/>
+<text x="1295" y="1482" class="small">00:00.386 / 00:00.386</text></g>
+<g tabindex="0" role="button" data-span-id="dce4e708-a94b-e181-3ff8-2b31079e080d" aria-label="T06 源分支项目回归 | 2026-11-20T12:57:56.694+08:00 → 2026-11-20T12:57:59.677+08:00 | 原始 00:02.983 / 净 00:02.983"><title>T06 源分支项目回归 | 2026-11-20T12:57:56.694+08:00 → 2026-11-20T12:57:59.677+08:00 | 原始 00:02.983 / 净 00:02.983</title>
+<rect class="row-bg" x="0" y="1492" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1509">48　T06 源分支项目回归</text>
+<rect x="1036.66" y="1497" width="0.38" height="12" fill="#8060ab"/>
+<rect x="1037.04" y="1497" width="1.34" height="12" fill="#269778"/>
+<rect x="1038.38" y="1497" width="0.79" height="12" fill="#8060ab"/>
+<text x="1295" y="1509" class="small">00:02.983 / 00:02.983</text></g>
+<g tabindex="0" role="button" data-span-id="dce4e708-a94b-e181-3ff8-2b31079e080d-gap" aria-label="步骤间调度 → T07 提交并推送 Task | 2026-11-20T12:57:59.677+08:00 → 2026-11-20T12:58:00.034+08:00 | 原始 00:00.357 / 净 00:00.357"><title>步骤间调度 → T07 提交并推送 Task | 2026-11-20T12:57:59.677+08:00 → 2026-11-20T12:58:00.034+08:00 | 原始 00:00.357 / 净 00:00.357</title>
+<rect class="row-bg" x="0" y="1519" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1536">49　步骤间调度 → T07 提交并推送 Task</text>
+<rect x="1039.17" y="1524" width="0.30" height="12" fill="#8060ab"/>
+<text x="1295" y="1536" class="small">00:00.357 / 00:00.357</text></g>
+<g tabindex="0" role="button" data-span-id="82787c53-c5f8-76d6-19b0-2e75ac3e4152" aria-label="T07 提交并推送 Task | 2026-11-20T12:58:00.034+08:00 → 2026-11-20T12:58:06.254+08:00 | 原始 00:06.220 / 净 00:06.220"><title>T07 提交并推送 Task | 2026-11-20T12:58:00.034+08:00 → 2026-11-20T12:58:06.254+08:00 | 原始 00:06.220 / 净 00:06.220</title>
+<rect class="row-bg" x="0" y="1546" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1563">50　T07 提交并推送 Task</text>
+<rect x="1039.48" y="1551" width="0.36" height="12" fill="#8060ab"/>
+<rect x="1039.83" y="1551" width="4.29" height="12" fill="#269778"/>
+<rect x="1044.13" y="1551" width="0.59" height="12" fill="#8060ab"/>
+<text x="1295" y="1563" class="small">00:06.220 / 00:06.220</text></g>
+<g tabindex="0" role="button" data-span-id="82787c53-c5f8-76d6-19b0-2e75ac3e4152-gap" aria-label="步骤间调度 → 读取最新 Feature 基线 | 2026-11-20T12:58:06.254+08:00 → 2026-11-20T12:58:06.584+08:00 | 原始 00:00.330 / 净 00:00.330"><title>步骤间调度 → 读取最新 Feature 基线 | 2026-11-20T12:58:06.254+08:00 → 2026-11-20T12:58:06.584+08:00 | 原始 00:00.330 / 净 00:00.330</title>
+<rect class="row-bg" x="0" y="1573" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1590">51　步骤间调度 → 读取最新 Feature 基线</text>
+<rect x="1044.71" y="1578" width="0.28" height="12" fill="#8060ab"/>
+<text x="1295" y="1590" class="small">00:00.330 / 00:00.330</text></g>
+<g tabindex="0" role="button" data-span-id="b884a632-428d-3270-1b34-190af33b48d2" aria-label="读取最新 Feature 基线 | 2026-11-20T12:58:06.584+08:00 → 2026-11-20T12:58:08.768+08:00 | 原始 00:02.184 / 净 00:02.184"><title>读取最新 Feature 基线 | 2026-11-20T12:58:06.584+08:00 → 2026-11-20T12:58:08.768+08:00 | 原始 00:02.184 / 净 00:02.184</title>
+<rect class="row-bg" x="0" y="1600" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1617">52　读取最新 Feature 基线</text>
+<rect x="1044.99" y="1605" width="0.33" height="12" fill="#8060ab"/>
+<rect x="1045.32" y="1605" width="0.89" height="12" fill="#269778"/>
+<rect x="1046.22" y="1605" width="0.62" height="12" fill="#8060ab"/>
+<text x="1295" y="1617" class="small">00:02.184 / 00:02.184</text></g>
+<g tabindex="0" role="button" data-span-id="b884a632-428d-3270-1b34-190af33b48d2-gap" aria-label="步骤间调度 → T08 创建 Task → Feature PR | 2026-11-20T12:58:08.768+08:00 → 2026-11-20T12:58:09.538+08:00 | 原始 00:00.770 / 净 00:00.770"><title>步骤间调度 → T08 创建 Task → Feature PR | 2026-11-20T12:58:08.768+08:00 → 2026-11-20T12:58:09.538+08:00 | 原始 00:00.770 / 净 00:00.770</title>
+<rect class="row-bg" x="0" y="1627" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1644">53　步骤间调度 → T08 创建 Task → Feature PR</text>
+<rect x="1046.83" y="1632" width="0.65" height="12" fill="#8060ab"/>
+<text x="1295" y="1644" class="small">00:00.770 / 00:00.770</text></g>
+<g tabindex="0" role="button" data-span-id="cb1dcf30-f98c-58d2-323f-7f3cdfc61b89" aria-label="T08 创建 Task → Feature PR | 2026-11-20T12:58:09.538+08:00 → 2026-11-20T12:58:27.353+08:00 | 原始 00:17.815 / 净 00:17.815"><title>T08 创建 Task → Feature PR | 2026-11-20T12:58:09.538+08:00 → 2026-11-20T12:58:27.353+08:00 | 原始 00:17.815 / 净 00:17.815</title>
+<rect class="row-bg" x="0" y="1654" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1671">54　T08 创建 Task → Feature PR</text>
+<rect x="1047.48" y="1659" width="0.35" height="12" fill="#8060ab"/>
+<rect x="1047.83" y="1659" width="14.45" height="12" fill="#269778"/>
+<rect x="1062.28" y="1659" width="0.20" height="12" fill="#8060ab"/>
+<text x="1295" y="1671" class="small">00:17.815 / 00:17.815</text></g>
+<g tabindex="0" role="button" data-span-id="cb1dcf30-f98c-58d2-323f-7f3cdfc61b89-gap" aria-label="步骤间调度 → T09 隔离合并结果项目回归 | 2026-11-20T12:58:27.353+08:00 → 2026-11-20T12:58:27.672+08:00 | 原始 00:00.319 / 净 00:00.319"><title>步骤间调度 → T09 隔离合并结果项目回归 | 2026-11-20T12:58:27.353+08:00 → 2026-11-20T12:58:27.672+08:00 | 原始 00:00.319 / 净 00:00.319</title>
+<rect class="row-bg" x="0" y="1681" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1698">55　步骤间调度 → T09 隔离合并结果项目回归</text>
+<rect x="1062.48" y="1686" width="0.27" height="12" fill="#8060ab"/>
+<text x="1295" y="1698" class="small">00:00.319 / 00:00.319</text></g>
+<g tabindex="0" role="button" data-span-id="5a90eb4a-8bc2-1808-ab5d-f72ad6516f54" aria-label="T09 隔离合并结果项目回归 | 2026-11-20T12:58:27.672+08:00 → 2026-11-20T12:58:31.267+08:00 | 原始 00:03.595 / 净 00:03.595"><title>T09 隔离合并结果项目回归 | 2026-11-20T12:58:27.672+08:00 → 2026-11-20T12:58:31.267+08:00 | 原始 00:03.595 / 净 00:03.595</title>
+<rect class="row-bg" x="0" y="1708" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1725">56　T09 隔离合并结果项目回归</text>
+<rect x="1062.75" y="1713" width="0.28" height="12" fill="#8060ab"/>
+<rect x="1063.03" y="1713" width="1.72" height="12" fill="#269778"/>
+<rect x="1064.76" y="1713" width="1.02" height="12" fill="#8060ab"/>
+<text x="1295" y="1725" class="small">00:03.595 / 00:03.595</text></g>
+<g tabindex="0" role="button" data-span-id="5a90eb4a-8bc2-1808-ab5d-f72ad6516f54-gap" aria-label="步骤间调度 → T10 自动合入、同步及完成登记 | 2026-11-20T12:58:31.267+08:00 → 2026-11-20T12:58:31.621+08:00 | 原始 00:00.354 / 净 00:00.354"><title>步骤间调度 → T10 自动合入、同步及完成登记 | 2026-11-20T12:58:31.267+08:00 → 2026-11-20T12:58:31.621+08:00 | 原始 00:00.354 / 净 00:00.354</title>
+<rect class="row-bg" x="0" y="1735" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1752">57　步骤间调度 → T10 自动合入、同步及完成登记</text>
+<rect x="1065.78" y="1740" width="0.30" height="12" fill="#8060ab"/>
+<text x="1295" y="1752" class="small">00:00.354 / 00:00.354</text></g>
+<g tabindex="0" role="button" data-span-id="4fe3e346-2e14-60e1-ac87-83177e86fc9b" aria-label="T10 自动合入、同步及完成登记 | 2026-11-20T12:58:31.621+08:00 → 2026-11-20T12:58:57.245+08:00 | 原始 00:25.624 / 净 00:25.624"><title>T10 自动合入、同步及完成登记 | 2026-11-20T12:58:31.621+08:00 → 2026-11-20T12:58:57.245+08:00 | 原始 00:25.624 / 净 00:25.624</title>
+<rect class="row-bg" x="0" y="1762" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1779">58　T10 自动合入、同步及完成登记</text>
+<rect x="1066.08" y="1767" width="0.35" height="12" fill="#8060ab"/>
+<rect x="1066.43" y="1767" width="20.44" height="12" fill="#269778"/>
+<rect x="1086.88" y="1767" width="0.78" height="12" fill="#8060ab"/>
+<text x="1295" y="1779" class="small">00:25.624 / 00:25.624</text></g>
+<g tabindex="0" role="button" data-span-id="task-close" aria-label="Task 最后一步结束 → 显式完成 | 2026-11-20T12:58:56.316+08:00 → 2026-11-20T12:58:57.585+08:00 | 原始 00:01.269 / 净 00:01.269"><title>Task 最后一步结束 → 显式完成 | 2026-11-20T12:58:56.316+08:00 → 2026-11-20T12:58:57.585+08:00 | 原始 00:01.269 / 净 00:01.269</title>
+<rect class="row-bg" x="0" y="1789" width="1640" height="25" fill="transparent"/>
+<text x="66" y="1806">59　Task 最后一步结束 → 显式完成</text>
+<rect x="1086.88" y="1794" width="1.07" height="12" fill="#8060ab"/>
+<text x="1295" y="1806" class="small">00:01.269 / 00:01.269</text></g>
+<g tabindex="0" role="button" data-span-id="bc05ac2a-0422-b0a5-ef5e-e967bf6d337c-gap" aria-label="步骤间调度 → 自动读取已汇合 Feature | 2026-11-20T12:58:58.294+08:00 → 2026-11-20T12:58:58.495+08:00 | 原始 00:00.201 / 净 00:00.201"><title>步骤间调度 → 自动读取已汇合 Feature | 2026-11-20T12:58:58.294+08:00 → 2026-11-20T12:58:58.495+08:00 | 原始 00:00.201 / 净 00:00.201</title>
+<rect class="row-bg" x="0" y="1816" width="1640" height="25" fill="transparent"/>
+<text x="42" y="1833">60　步骤间调度 → 自动读取已汇合 Feature</text>
+<rect x="1088.54" y="1821" width="0.17" height="12" fill="#8060ab"/>
+<text x="1295" y="1833" class="small">00:00.201 / 00:00.201</text></g>
+<g tabindex="0" role="button" data-span-id="stage-delivery" aria-label="Feature 交付 | 2026-11-20T12:58:58.495+08:00 → 2026-11-20T13:02:41.984+08:00 | 原始 03:43.489 / 净 02:16.201"><title>Feature 交付 | 2026-11-20T12:58:58.495+08:00 → 2026-11-20T13:02:41.984+08:00 | 原始 03:43.489 / 净 02:16.201</title>
+<rect class="row-bg" x="0" y="1843" width="1640" height="25" fill="transparent"/>
+<text x="30" y="1860">61　Feature 交付</text>
+<rect x="1088.71" y="1848" width="0.15" height="12" fill="#8060ab"/>
+<rect x="1088.83" y="1848" width="0.15" height="12" fill="#269778"/>
+<rect x="1088.85" y="1848" width="0.72" height="12" fill="#8060ab"/>
+<rect x="1089.57" y="1848" width="0.20" height="12" fill="#269778"/>
+<rect x="1089.77" y="1848" width="7.01" height="12" fill="#8060ab"/>
+<rect x="1096.78" y="1848" width="22.32" height="12" fill="#377eb8"/>
+<rect x="1119.10" y="1848" width="0.20" height="12" fill="#8060ab"/>
+<rect x="1119.31" y="1848" width="0.15" height="12" fill="#269778"/>
+<rect x="1119.32" y="1848" width="0.28" height="12" fill="#8060ab"/>
+<rect x="1119.60" y="1848" width="0.15" height="12" fill="#269778"/>
+<rect x="1119.61" y="1848" width="0.15" height="12" fill="#8060ab"/>
+<rect x="1119.67" y="1848" width="12.48" height="12" fill="#377eb8"/>
+<rect x="1132.15" y="1848" width="0.21" height="12" fill="#8060ab"/>
+<rect x="1132.36" y="1848" width="0.15" height="12" fill="#269778"/>
+<rect x="1132.37" y="1848" width="0.25" height="12" fill="#8060ab"/>
+<rect x="1132.63" y="1848" width="0.15" height="12" fill="#269778"/>
+<rect x="1132.64" y="1848" width="0.30" height="12" fill="#8060ab"/>
+<rect x="1132.94" y="1848" width="0.15" height="12" fill="#269778"/>
+<rect x="1132.95" y="1848" width="0.28" height="12" fill="#8060ab"/>
+<rect x="1133.23" y="1848" width="0.15" height="12" fill="#269778"/>
+<rect x="1133.23" y="1848" width="0.15" height="12" fill="#8060ab"/>
+<rect x="1133.27" y="1848" width="2.17" height="12" fill="#377eb8"/>
+<rect x="1135.44" y="1848" width="0.15" height="12" fill="#269778"/>
+<rect x="1135.46" y="1848" width="10.07" height="12" fill="#377eb8"/>
+<rect x="1145.53" y="1848" width="0.22" height="12" fill="#8060ab"/>
+<rect x="1145.75" y="1848" width="0.15" height="12" fill="#269778"/>
+<rect x="1145.76" y="1848" width="0.15" height="12" fill="#8060ab"/>
+<rect x="1145.79" y="1848" width="7.46" height="12" fill="#377eb8"/>
+<rect x="1153.25" y="1848" width="0.23" height="12" fill="#8060ab"/>
+<rect x="1153.48" y="1848" width="0.15" height="12" fill="#269778"/>
+<rect x="1153.49" y="1848" width="0.15" height="12" fill="#8060ab"/>
+<rect x="1153.52" y="1848" width="10.30" height="12" fill="#377eb8"/>
+<rect x="1163.82" y="1848" width="1.92" height="12" fill="#8060ab"/>
+<rect x="1165.74" y="1848" width="1.35" height="12" fill="#269778"/>
+<rect x="1167.09" y="1848" width="0.82" height="12" fill="#8060ab"/>
+<rect x="1167.91" y="1848" width="1.40" height="12" fill="#269778"/>
+<rect x="1169.31" y="1848" width="0.87" height="12" fill="#8060ab"/>
+<rect x="1170.18" y="1848" width="2.40" height="12" fill="#269778"/>
+<rect x="1172.59" y="1848" width="0.73" height="12" fill="#8060ab"/>
+<rect x="1173.32" y="1848" width="10.79" height="12" fill="#269778"/>
+<rect x="1184.11" y="1848" width="0.73" height="12" fill="#8060ab"/>
+<rect x="1184.84" y="1848" width="1.64" height="12" fill="#269778"/>
+<rect x="1186.47" y="1848" width="0.73" height="12" fill="#8060ab"/>
+<rect x="1187.20" y="1848" width="0.15" height="12" fill="#269778"/>
+<rect x="1187.22" y="1848" width="1.11" height="12" fill="#8060ab"/>
+<rect x="1188.33" y="1848" width="0.78" height="12" fill="#8060ab"/>
+<rect x="1189.11" y="1848" width="13.69" height="12" fill="#269778"/>
+<rect x="1202.80" y="1848" width="0.62" height="12" fill="#8060ab"/>
+<text x="1295" y="1860" class="small">03:43.489 / 02:16.201</text></g>
+<g tabindex="0" role="button" data-span-id="f43701a3-7360-3678-629d-15a85db46de0" aria-label="自动读取已汇合 Feature | 2026-11-20T12:58:58.495+08:00 → 2026-11-20T12:58:58.992+08:00 | 原始 00:00.497 / 净 00:00.497"><title>自动读取已汇合 Feature | 2026-11-20T12:58:58.495+08:00 → 2026-11-20T12:58:58.992+08:00 | 原始 00:00.497 / 净 00:00.497</title>
+<rect class="row-bg" x="0" y="1870" width="1640" height="25" fill="transparent"/>
+<text x="42" y="1887">62　自动读取已汇合 Feature</text>
+<rect x="1088.71" y="1875" width="0.15" height="12" fill="#8060ab"/>
+<rect x="1088.83" y="1875" width="0.15" height="12" fill="#269778"/>
+<rect x="1088.85" y="1875" width="0.28" height="12" fill="#8060ab"/>
+<text x="1295" y="1887" class="small">00:00.497 / 00:00.497</text></g>
+<g tabindex="0" role="button" data-span-id="f43701a3-7360-3678-629d-15a85db46de0-gap" aria-label="步骤间调度 → 自动固定 Feature 完整差异 | 2026-11-20T12:58:58.992+08:00 → 2026-11-20T12:58:59.177+08:00 | 原始 00:00.185 / 净 00:00.185"><title>步骤间调度 → 自动固定 Feature 完整差异 | 2026-11-20T12:58:58.992+08:00 → 2026-11-20T12:58:59.177+08:00 | 原始 00:00.185 / 净 00:00.185</title>
+<rect class="row-bg" x="0" y="1897" width="1640" height="25" fill="transparent"/>
+<text x="42" y="1914">63　步骤间调度 → 自动固定 Feature 完整差异</text>
+<rect x="1089.13" y="1902" width="0.16" height="12" fill="#8060ab"/>
+<text x="1295" y="1914" class="small">00:00.185 / 00:00.185</text></g>
+<g tabindex="0" role="button" data-span-id="b16249eb-6c9d-f42e-2d43-de3e90ad5fb3" aria-label="自动固定 Feature 完整差异 | 2026-11-20T12:58:59.177+08:00 → 2026-11-20T12:59:00.213+08:00 | 原始 00:01.036 / 净 00:01.036"><title>自动固定 Feature 完整差异 | 2026-11-20T12:58:59.177+08:00 → 2026-11-20T12:59:00.213+08:00 | 原始 00:01.036 / 净 00:01.036</title>
+<rect class="row-bg" x="0" y="1924" width="1640" height="25" fill="transparent"/>
+<text x="42" y="1941">64　自动固定 Feature 完整差异</text>
+<rect x="1089.29" y="1929" width="0.28" height="12" fill="#8060ab"/>
+<rect x="1089.57" y="1929" width="0.20" height="12" fill="#269778"/>
+<rect x="1089.77" y="1929" width="0.39" height="12" fill="#8060ab"/>
+<text x="1295" y="1941" class="small">00:01.036 / 00:01.036</text></g>
+<g tabindex="0" role="button" data-span-id="b16249eb-6c9d-f42e-2d43-de3e90ad5fb3-gap" aria-label="步骤间调度 → F08 Feature Code Review | 2026-11-20T12:59:00.213+08:00 → 2026-11-20T12:59:00.408+08:00 | 原始 00:00.195 / 净 00:00.195"><title>步骤间调度 → F08 Feature Code Review | 2026-11-20T12:59:00.213+08:00 → 2026-11-20T12:59:00.408+08:00 | 原始 00:00.195 / 净 00:00.195</title>
+<rect class="row-bg" x="0" y="1951" width="1640" height="25" fill="transparent"/>
+<text x="42" y="1968">65　步骤间调度 → F08 Feature Code Review</text>
+<rect x="1090.16" y="1956" width="0.16" height="12" fill="#8060ab"/>
+<text x="1295" y="1968" class="small">00:00.195 / 00:00.195</text></g>
+<g tabindex="0" role="button" data-span-id="33458d1b-fb65-13a0-04df-1b6f665e16c5" aria-label="F08 Feature Code Review | 2026-11-20T12:59:00.408+08:00 → 2026-11-20T13:00:29.349+08:00 | 原始 01:28.941 / 净 01:28.941"><title>F08 Feature Code Review | 2026-11-20T12:59:00.408+08:00 → 2026-11-20T13:00:29.349+08:00 | 原始 01:28.941 / 净 01:28.941</title>
+<rect class="row-bg" x="0" y="1978" width="1640" height="25" fill="transparent"/>
+<text x="42" y="1995">66　F08 Feature Code Review</text>
+<rect x="1090.32" y="1983" width="6.46" height="12" fill="#8060ab"/>
+<rect x="1096.78" y="1983" width="22.32" height="12" fill="#377eb8"/>
+<rect x="1119.10" y="1983" width="0.20" height="12" fill="#8060ab"/>
+<rect x="1119.31" y="1983" width="0.15" height="12" fill="#269778"/>
+<rect x="1119.32" y="1983" width="0.28" height="12" fill="#8060ab"/>
+<rect x="1119.60" y="1983" width="0.15" height="12" fill="#269778"/>
+<rect x="1119.61" y="1983" width="0.15" height="12" fill="#8060ab"/>
+<rect x="1119.67" y="1983" width="12.48" height="12" fill="#377eb8"/>
+<rect x="1132.15" y="1983" width="0.21" height="12" fill="#8060ab"/>
+<rect x="1132.36" y="1983" width="0.15" height="12" fill="#269778"/>
+<rect x="1132.37" y="1983" width="0.25" height="12" fill="#8060ab"/>
+<rect x="1132.63" y="1983" width="0.15" height="12" fill="#269778"/>
+<rect x="1132.64" y="1983" width="0.30" height="12" fill="#8060ab"/>
+<rect x="1132.94" y="1983" width="0.15" height="12" fill="#269778"/>
+<rect x="1132.95" y="1983" width="0.28" height="12" fill="#8060ab"/>
+<rect x="1133.23" y="1983" width="0.15" height="12" fill="#269778"/>
+<rect x="1133.23" y="1983" width="0.15" height="12" fill="#8060ab"/>
+<rect x="1133.27" y="1983" width="2.17" height="12" fill="#377eb8"/>
+<rect x="1135.44" y="1983" width="0.15" height="12" fill="#269778"/>
+<rect x="1135.46" y="1983" width="10.07" height="12" fill="#377eb8"/>
+<rect x="1145.53" y="1983" width="0.22" height="12" fill="#8060ab"/>
+<rect x="1145.75" y="1983" width="0.15" height="12" fill="#269778"/>
+<rect x="1145.76" y="1983" width="0.15" height="12" fill="#8060ab"/>
+<rect x="1145.79" y="1983" width="7.46" height="12" fill="#377eb8"/>
+<rect x="1153.25" y="1983" width="0.23" height="12" fill="#8060ab"/>
+<rect x="1153.48" y="1983" width="0.15" height="12" fill="#269778"/>
+<rect x="1153.49" y="1983" width="0.15" height="12" fill="#8060ab"/>
+<rect x="1153.52" y="1983" width="10.30" height="12" fill="#377eb8"/>
+<rect x="1163.82" y="1983" width="1.41" height="12" fill="#8060ab"/>
+<text x="1295" y="1995" class="small">01:28.941 / 01:28.941</text></g>
+<g tabindex="0" role="button" data-span-id="33458d1b-fb65-13a0-04df-1b6f665e16c5-gap" aria-label="步骤间调度 → F09 Feature 源分支项目回归 | 2026-11-20T13:00:29.349+08:00 → 2026-11-20T13:00:29.595+08:00 | 原始 00:00.246 / 净 00:00.246"><title>步骤间调度 → F09 Feature 源分支项目回归 | 2026-11-20T13:00:29.349+08:00 → 2026-11-20T13:00:29.595+08:00 | 原始 00:00.246 / 净 00:00.246</title>
+<rect class="row-bg" x="0" y="2005" width="1640" height="25" fill="transparent"/>
+<text x="42" y="2022">67　步骤间调度 → F09 Feature 源分支项目回归</text>
+<rect x="1165.23" y="2010" width="0.21" height="12" fill="#8060ab"/>
+<text x="1295" y="2022" class="small">00:00.246 / 00:00.246</text></g>
+<g tabindex="0" role="button" data-span-id="8c77cae5-762f-f6b9-5459-8e5dc6ad69aa" aria-label="F09 Feature 源分支项目回归 | 2026-11-20T13:00:29.595+08:00 → 2026-11-20T13:00:31.964+08:00 | 原始 00:02.369 / 净 00:02.369"><title>F09 Feature 源分支项目回归 | 2026-11-20T13:00:29.595+08:00 → 2026-11-20T13:00:31.964+08:00 | 原始 00:02.369 / 净 00:02.369</title>
+<rect class="row-bg" x="0" y="2032" width="1640" height="25" fill="transparent"/>
+<text x="42" y="2049">68　F09 Feature 源分支项目回归</text>
+<rect x="1165.44" y="2037" width="0.30" height="12" fill="#8060ab"/>
+<rect x="1165.74" y="2037" width="1.35" height="12" fill="#269778"/>
+<rect x="1167.09" y="2037" width="0.34" height="12" fill="#8060ab"/>
+<text x="1295" y="2049" class="small">00:02.369 / 00:02.369</text></g>
+<g tabindex="0" role="button" data-span-id="8c77cae5-762f-f6b9-5459-8e5dc6ad69aa-gap" aria-label="步骤间调度 → F10 提交并推送 Feature | 2026-11-20T13:00:31.964+08:00 → 2026-11-20T13:00:32.222+08:00 | 原始 00:00.258 / 净 00:00.258"><title>步骤间调度 → F10 提交并推送 Feature | 2026-11-20T13:00:31.964+08:00 → 2026-11-20T13:00:32.222+08:00 | 原始 00:00.258 / 净 00:00.258</title>
+<rect class="row-bg" x="0" y="2059" width="1640" height="25" fill="transparent"/>
+<text x="42" y="2076">69　步骤间调度 → F10 提交并推送 Feature</text>
+<rect x="1167.43" y="2064" width="0.22" height="12" fill="#8060ab"/>
+<text x="1295" y="2076" class="small">00:00.258 / 00:00.258</text></g>
+<g tabindex="0" role="button" data-span-id="b3a3f50d-e102-20c8-7371-1f2f76c9089a" aria-label="F10 提交并推送 Feature | 2026-11-20T13:00:32.222+08:00 → 2026-11-20T13:00:34.588+08:00 | 原始 00:02.366 / 净 00:02.366"><title>F10 提交并推送 Feature | 2026-11-20T13:00:32.222+08:00 → 2026-11-20T13:00:34.588+08:00 | 原始 00:02.366 / 净 00:02.366</title>
+<rect class="row-bg" x="0" y="2086" width="1640" height="25" fill="transparent"/>
+<text x="42" y="2103">70　F10 提交并推送 Feature</text>
+<rect x="1167.65" y="2091" width="0.26" height="12" fill="#8060ab"/>
+<rect x="1167.91" y="2091" width="1.40" height="12" fill="#269778"/>
+<rect x="1169.31" y="2091" width="0.33" height="12" fill="#8060ab"/>
+<text x="1295" y="2103" class="small">00:02.366 / 00:02.366</text></g>
+<g tabindex="0" role="button" data-span-id="b3a3f50d-e102-20c8-7371-1f2f76c9089a-gap" aria-label="步骤间调度 → 读取最新主分支 | 2026-11-20T13:00:34.588+08:00 → 2026-11-20T13:00:34.936+08:00 | 原始 00:00.348 / 净 00:00.348"><title>步骤间调度 → 读取最新主分支 | 2026-11-20T13:00:34.588+08:00 → 2026-11-20T13:00:34.936+08:00 | 原始 00:00.348 / 净 00:00.348</title>
+<rect class="row-bg" x="0" y="2113" width="1640" height="25" fill="transparent"/>
+<text x="42" y="2130">71　步骤间调度 → 读取最新主分支</text>
+<rect x="1169.64" y="2118" width="0.29" height="12" fill="#8060ab"/>
+<text x="1295" y="2130" class="small">00:00.348 / 00:00.348</text></g>
+<g tabindex="0" role="button" data-span-id="bbae03c9-1117-a20c-ee0a-d7c1df9fde9b" aria-label="读取最新主分支 | 2026-11-20T13:00:34.936+08:00 → 2026-11-20T13:00:38.357+08:00 | 原始 00:03.421 / 净 00:03.421"><title>读取最新主分支 | 2026-11-20T13:00:34.936+08:00 → 2026-11-20T13:00:38.357+08:00 | 原始 00:03.421 / 净 00:03.421</title>
+<rect class="row-bg" x="0" y="2140" width="1640" height="25" fill="transparent"/>
+<text x="42" y="2157">72　读取最新主分支</text>
+<rect x="1169.94" y="2145" width="0.25" height="12" fill="#8060ab"/>
+<rect x="1170.18" y="2145" width="2.40" height="12" fill="#269778"/>
+<rect x="1172.59" y="2145" width="0.23" height="12" fill="#8060ab"/>
+<text x="1295" y="2157" class="small">00:03.421 / 00:03.421</text></g>
+<g tabindex="0" role="button" data-span-id="bbae03c9-1117-a20c-ee0a-d7c1df9fde9b-gap" aria-label="步骤间调度 → F11 验证汇合后生成纯代码候选并创建 PR | 2026-11-20T13:00:38.357+08:00 → 2026-11-20T13:00:38.606+08:00 | 原始 00:00.249 / 净 00:00.249"><title>步骤间调度 → F11 验证汇合后生成纯代码候选并创建 PR | 2026-11-20T13:00:38.357+08:00 → 2026-11-20T13:00:38.606+08:00 | 原始 00:00.249 / 净 00:00.249</title>
+<rect class="row-bg" x="0" y="2167" width="1640" height="25" fill="transparent"/>
+<text x="42" y="2184">73　步骤间调度 → F11 验证汇合后生成纯代码候选并创建 PR</text>
+<rect x="1172.82" y="2172" width="0.21" height="12" fill="#8060ab"/>
+<text x="1295" y="2184" class="small">00:00.249 / 00:00.249</text></g>
+<g tabindex="0" role="button" data-span-id="cab093e6-b637-5467-4683-b9494838cbb8" aria-label="F11 验证汇合后生成纯代码候选并创建 PR | 2026-11-20T13:00:38.606+08:00 → 2026-11-20T13:00:52.024+08:00 | 原始 00:13.418 / 净 00:13.418"><title>F11 验证汇合后生成纯代码候选并创建 PR | 2026-11-20T13:00:38.606+08:00 → 2026-11-20T13:00:52.024+08:00 | 原始 00:13.418 / 净 00:13.418</title>
+<rect class="row-bg" x="0" y="2194" width="1640" height="25" fill="transparent"/>
+<text x="42" y="2211">74　F11 验证汇合后生成纯代码候选并创建 PR</text>
+<rect x="1173.03" y="2199" width="0.29" height="12" fill="#8060ab"/>
+<rect x="1173.32" y="2199" width="10.79" height="12" fill="#269778"/>
+<rect x="1184.11" y="2199" width="0.22" height="12" fill="#8060ab"/>
+<text x="1295" y="2211" class="small">00:13.418 / 00:13.418</text></g>
+<g tabindex="0" role="button" data-span-id="cab093e6-b637-5467-4683-b9494838cbb8-gap" aria-label="步骤间调度 → F12 隔离合并结果项目回归 | 2026-11-20T13:00:52.024+08:00 → 2026-11-20T13:00:52.258+08:00 | 原始 00:00.234 / 净 00:00.234"><title>步骤间调度 → F12 隔离合并结果项目回归 | 2026-11-20T13:00:52.024+08:00 → 2026-11-20T13:00:52.258+08:00 | 原始 00:00.234 / 净 00:00.234</title>
+<rect class="row-bg" x="0" y="2221" width="1640" height="25" fill="transparent"/>
+<text x="42" y="2238">75　步骤间调度 → F12 隔离合并结果项目回归</text>
+<rect x="1184.33" y="2226" width="0.20" height="12" fill="#8060ab"/>
+<text x="1295" y="2238" class="small">00:00.234 / 00:00.234</text></g>
+<g tabindex="0" role="button" data-span-id="142e39b5-014a-669e-aa06-cb23ddab68ae" aria-label="F12 隔离合并结果项目回归 | 2026-11-20T13:00:52.258+08:00 → 2026-11-20T13:00:54.945+08:00 | 原始 00:02.687 / 净 00:02.687"><title>F12 隔离合并结果项目回归 | 2026-11-20T13:00:52.258+08:00 → 2026-11-20T13:00:54.945+08:00 | 原始 00:02.687 / 净 00:02.687</title>
+<rect class="row-bg" x="0" y="2248" width="1640" height="25" fill="transparent"/>
+<text x="42" y="2265">76　F12 隔离合并结果项目回归</text>
+<rect x="1184.53" y="2253" width="0.31" height="12" fill="#8060ab"/>
+<rect x="1184.84" y="2253" width="1.64" height="12" fill="#269778"/>
+<rect x="1186.47" y="2253" width="0.32" height="12" fill="#8060ab"/>
+<text x="1295" y="2265" class="small">00:02.687 / 00:02.687</text></g>
+<g tabindex="0" role="button" data-span-id="142e39b5-014a-669e-aa06-cb23ddab68ae-gap" aria-label="步骤间调度 → F13 主分支正式人工审核 | 2026-11-20T13:00:54.945+08:00 → 2026-11-20T13:00:55.164+08:00 | 原始 00:00.219 / 净 00:00.219"><title>步骤间调度 → F13 主分支正式人工审核 | 2026-11-20T13:00:54.945+08:00 → 2026-11-20T13:00:55.164+08:00 | 原始 00:00.219 / 净 00:00.219</title>
+<rect class="row-bg" x="0" y="2275" width="1640" height="25" fill="transparent"/>
+<text x="42" y="2292">77　步骤间调度 → F13 主分支正式人工审核</text>
+<rect x="1186.79" y="2280" width="0.18" height="12" fill="#8060ab"/>
+<text x="1295" y="2292" class="small">00:00.219 / 00:00.219</text></g>
+<g tabindex="0" role="button" data-span-id="700b7d8f-79dc-b0cb-6302-23db540e40ff" aria-label="F13 主分支正式人工审核 | 2026-11-20T13:00:55.164+08:00 → 2026-11-20T13:02:24.369+08:00 | 原始 01:29.205 / 净 00:01.917"><title>F13 主分支正式人工审核 | 2026-11-20T13:00:55.164+08:00 → 2026-11-20T13:02:24.369+08:00 | 原始 01:29.205 / 净 00:01.917</title>
+<rect class="row-bg" x="0" y="2302" width="1640" height="25" fill="transparent"/>
+<text x="42" y="2319">78　F13 主分支正式人工审核</text>
+<rect x="1186.97" y="2307" width="0.23" height="12" fill="#8060ab"/>
+<rect x="1187.20" y="2307" width="0.15" height="12" fill="#269778"/>
+<rect x="1187.22" y="2307" width="1.11" height="12" fill="#8060ab"/>
+<rect x="1188.33" y="2307" width="0.26" height="12" fill="#8060ab"/>
+<text x="1295" y="2319" class="small">01:29.205 / 00:01.917</text></g>
+<g tabindex="0" role="button" data-span-id="700b7d8f-79dc-b0cb-6302-23db540e40ff-prepare" aria-label="审批请求准备 | 2026-11-20T13:00:55.456+08:00 → 2026-11-20T13:00:56.776+08:00 | 原始 00:01.320 / 净 00:01.320"><title>审批请求准备 | 2026-11-20T13:00:55.456+08:00 → 2026-11-20T13:00:56.776+08:00 | 原始 00:01.320 / 净 00:01.320</title>
+<rect class="row-bg" x="0" y="2329" width="1640" height="25" fill="transparent"/>
+<text x="54" y="2346">79　审批请求准备</text>
+<rect x="1187.22" y="2334" width="1.11" height="12" fill="#8060ab"/>
+<text x="1295" y="2346" class="small">00:01.320 / 00:01.320</text></g>
+<g tabindex="0" role="button" data-span-id="700b7d8f-79dc-b0cb-6302-23db540e40ff-approval" aria-label="代审批响应（净耗时排除） | 2026-11-20T13:00:56.776+08:00 → 2026-11-20T13:02:24.064+08:00 | 原始 01:27.288 / 净 00:00.000"><title>代审批响应（净耗时排除） | 2026-11-20T13:00:56.776+08:00 → 2026-11-20T13:02:24.064+08:00 | 原始 01:27.288 / 净 00:00.000</title>
+<rect class="row-bg" x="0" y="2356" width="1640" height="25" fill="transparent"/>
+<text x="54" y="2373">80　代审批响应（净耗时排除）</text>
+<circle cx="1188.33" cy="2367" r="2" fill="#d28927"/>
+<text x="1295" y="2373" class="small">01:27.288 / 00:00.000</text></g>
+<g tabindex="0" role="button" data-span-id="700b7d8f-79dc-b0cb-6302-23db540e40ff-gap" aria-label="步骤间调度 → F14 合入主分支并同步 | 2026-11-20T13:02:24.369+08:00 → 2026-11-20T13:02:24.630+08:00 | 原始 00:00.261 / 净 00:00.261"><title>步骤间调度 → F14 合入主分支并同步 | 2026-11-20T13:02:24.369+08:00 → 2026-11-20T13:02:24.630+08:00 | 原始 00:00.261 / 净 00:00.261</title>
+<rect class="row-bg" x="0" y="2383" width="1640" height="25" fill="transparent"/>
+<text x="42" y="2400">81　步骤间调度 → F14 合入主分支并同步</text>
+<rect x="1188.59" y="2388" width="0.22" height="12" fill="#8060ab"/>
+<text x="1295" y="2400" class="small">00:00.261 / 00:00.261</text></g>
+<g tabindex="0" role="button" data-span-id="4cf9f488-d163-95a0-b735-79bc020c94e6" aria-label="F14 合入主分支并同步 | 2026-11-20T13:02:24.630+08:00 → 2026-11-20T13:02:41.700+08:00 | 原始 00:17.070 / 净 00:17.070"><title>F14 合入主分支并同步 | 2026-11-20T13:02:24.630+08:00 → 2026-11-20T13:02:41.700+08:00 | 原始 00:17.070 / 净 00:17.070</title>
+<rect class="row-bg" x="0" y="2410" width="1640" height="25" fill="transparent"/>
+<text x="42" y="2427">82　F14 合入主分支并同步</text>
+<rect x="1188.81" y="2415" width="0.30" height="12" fill="#8060ab"/>
+<rect x="1189.11" y="2415" width="13.69" height="12" fill="#269778"/>
+<rect x="1202.80" y="2415" width="0.38" height="12" fill="#8060ab"/>
+<text x="1295" y="2427" class="small">00:17.070 / 00:17.070</text></g>
+<g tabindex="0" role="button" data-span-id="root-close" aria-label="最后一步接纳 → Feature 显式完成 | 2026-11-20T13:02:41.700+08:00 → 2026-11-20T13:02:41.905+08:00 | 原始 00:00.205 / 净 00:00.205"><title>最后一步接纳 → Feature 显式完成 | 2026-11-20T13:02:41.700+08:00 → 2026-11-20T13:02:41.905+08:00 | 原始 00:00.205 / 净 00:00.205</title>
+<rect class="row-bg" x="0" y="2437" width="1640" height="25" fill="transparent"/>
+<text x="42" y="2454">83　最后一步接纳 → Feature 显式完成</text>
+<rect x="1203.18" y="2442" width="0.17" height="12" fill="#8060ab"/>
+<text x="1295" y="2454" class="small">00:00.205 / 00:00.205</text></g>
+<g tabindex="0" role="button" data-span-id="settlement" aria-label="经理关闭及 worker 静止 | 2026-11-20T13:02:41.905+08:00 → 2026-11-20T13:02:41.984+08:00 | 原始 00:00.079 / 净 00:00.079"><title>经理关闭及 worker 静止 | 2026-11-20T13:02:41.905+08:00 → 2026-11-20T13:02:41.984+08:00 | 原始 00:00.079 / 净 00:00.079</title>
+<rect class="row-bg" x="0" y="2464" width="1640" height="25" fill="transparent"/>
+<text x="42" y="2481">84　经理关闭及 worker 静止</text>
+<rect x="1203.36" y="2469" width="0.15" height="12" fill="#8060ab"/>
+<text x="1295" y="2481" class="small">00:00.079 / 00:00.079</text></g>
+<text x="18" y="2540" class="small">原始起点 2026-11-20T12:42:49.048+08:00；共同横轴上限 15:02.380。点击或键盘选择行可在 HTML 查看确切时间。</text>
+</svg>

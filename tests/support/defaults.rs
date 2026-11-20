@@ -26,7 +26,7 @@ pub fn default_configured_agent_id(role: &str) -> String {
     format!(
         "simplified-agent-{role}:{}",
         match role {
-            "project-manager" => 10,
+            "project-manager" => 11,
             "tester" => 9,
             _ => 8,
         }

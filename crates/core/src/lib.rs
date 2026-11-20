@@ -108,6 +108,7 @@ mod workflow_driver;
 mod workflow_driving;
 mod workflow_eligibility;
 mod workflow_failure;
+mod workflow_segment_actions;
 mod workflow_segments;
 pub use controllers::CONTROL_TOOLS;
 pub use standards::{compare_work_standards, work_standard_choices, work_standard_selection};

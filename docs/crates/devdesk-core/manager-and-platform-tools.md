@@ -28,6 +28,14 @@ manager_workspace 的内容读取会处理分块、摘要校验和已知凭据�
 
 controller 的 epoch、会话绑定和原操作关系用于拒绝旧控制者的迟到请求。`workflow.controller.wait` 表示等待后续变化；它不要求 Host 一直阻塞当前 HTTP 请求。
 
+Tool `workflow.segment.dispatch:4` 的显式选项 `prepare_human_requests` 允许平台在原完成条件及证据校验通过后准备普通 `workflow.step.confirm` 请求，`complete_instance` 允许完整节点委托复核整体合同后登记完成。两项默认关闭，分别检查经理的请求/完成权限，并计入原 64 操作预算。准备请求还要求 `include_human`；自动完成必须包含当前实例所有节点。它们不能签署、豁免、批准失败评审或接管新子实例。
+
+[workflow_segment_actions.rs](../../../crates/core/src/workflow_segment_actions.rs) 复用确切审批材料投影、原控制入口及事务读集。同一个确切结果只生成一个耐久请求，重复委托也共享请求；拒绝后停止并回到经理。相同授权内的普通请求、实际签署与完成通知保留在 SSE/审计，但不单独唤醒模型；拒绝、失败、输入、变更及外部代次仍保留。根已真正完成且经理 worker 静止后，协调器直接关闭经理。
+
+正常 worker 回收可能早于输出接纳，不能只依赖停止事件后 400ms 内出现结果来识别正常进展。已选择自动审批准备的委托可合并确切 native terminal 已成功且静止、原 worker 停止证明已接纳的通知；同时绑定 session、turn、operation、输入和计划，并排除显式停止。该提示只减少经理通知，后续输出校验、失败及未知副作用通知仍按原链路执行。
+
+普通 `feature.create` 与 `workflow.start`、子流程创建共用返工额度初始化，在新建实例的同一事务登记已知的零次历史。它不能补写或重置旧实例的未知历史；旧记录仍须显式核对基准，已有共享额度及上限继续沿用。
+
 ## 工程工具的执行阶段
 
 [platform_preparation.rs](../../../crates/core/src/platform_preparation.rs) 准备固定请求，[platform_runtime.rs](../../../crates/core/src/platform_runtime.rs) 执行端口调用，[platform_observations.rs](../../../crates/core/src/platform_observations.rs) 和 [platform_reconciliation.rs](../../../crates/core/src/platform_reconciliation.rs) 处理实际结果及核对。平台处理器不是一张直接映射到 shell 的表。

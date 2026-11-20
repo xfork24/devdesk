@@ -1,11 +1,11 @@
 {
   "type": "skill",
   "identity": "simplified-skill-workflow-orchestration",
-  "revision": 7,
+  "revision": 8,
   "name": "精简版DAG 经理编排",
   "scope": "global",
   "data": {
-    "body_file": "simplified-workflow-orchestration-v7.md",
+    "body_file": "simplified-workflow-orchestration-v8.md",
     "rules": []
   }
 }

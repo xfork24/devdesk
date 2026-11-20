@@ -1,0 +1,2472 @@
+{
+  "schema_version": 1,
+  "root": "afb7b261-3ec4-b058-bf4f-6e5f16fc9e27",
+  "project": "d4ec7a1e-1344-4c10-9561-94b86ff7c382",
+  "started_at_ms": 1795149769048,
+  "completed_at_ms": 1795150961984,
+  "workflow_net_ms": 817394,
+  "allocation_ms": {
+    "internal": 48925,
+    "lifecycle": 64628,
+    "agent": 588054,
+    "tools": 115787,
+    "external": 375542
+  },
+  "runtime_and_internal_ms": 113553,
+  "component_allocation_ms": {
+    "agent": 588054,
+    "business_tools": 106005,
+    "workflow": 123335
+  },
+  "tool_allocation_ms": {
+    "controller": 1159,
+    "native_platform_bridge": 8623,
+    "platform_other": 393,
+    "workspace": 4926,
+    "shell": 13252,
+    "tests": 10182,
+    "git": 77252
+  },
+  "agent_role_allocation_ms": {
+    "manager": 57084,
+    "producer": 530970
+  },
+  "turn_counts": {
+    "manager": 2,
+    "producer": 10
+  },
+  "manager_wait_only": {
+    "count": 0,
+    "observed_service_aggregate_ms": 0,
+    "exclusive_agent_ms": 0,
+    "turns": []
+  },
+  "native_tools": [
+    {
+      "id": "exec-1be775df-82ac-4190-99db-d96df2cfd806",
+      "turn": "d60859bb-ac74-205e-db35-5b1a5b8a6310",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_segment_dispatch",
+      "started": 1795149811713,
+      "finished": 1795149811982,
+      "producer_reported_duration_ms": 270,
+      "group": "controller",
+      "duration_ms": 269
+    },
+    {
+      "id": "exec-33564bbe-9af2-471f-82ea-6810a05cd462",
+      "turn": "d60859bb-ac74-205e-db35-5b1a5b8a6310",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_controller_wait",
+      "started": 1795149817622,
+      "finished": 1795149817804,
+      "producer_reported_duration_ms": 152,
+      "group": "controller",
+      "duration_ms": 182
+    },
+    {
+      "id": "exec-7eaa3cd4-4618-4266-a342-f8722efe2356",
+      "turn": "ce35c535-76e5-2ea0-7be0-ab43af7bcf28",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_spec_lint",
+      "started": 1795149899716,
+      "finished": 1795149899961,
+      "producer_reported_duration_ms": 258,
+      "group": "native_platform_bridge",
+      "duration_ms": 245
+    },
+    {
+      "id": "exec-43531129-8411-47f7-b862-29cc1805fd93",
+      "turn": "7735316e-bc7f-4c70-a86a-0c8d4369757c",
+      "kind": "commandExecution",
+      "tool": "shell",
+      "started": 1795150015244,
+      "finished": 1795150015244,
+      "producer_reported_duration_ms": 1,
+      "group": "shell",
+      "duration_ms": 0
+    },
+    {
+      "id": "exec-ae081683-0707-412f-aefe-9e4b5db3faad",
+      "turn": "7735316e-bc7f-4c70-a86a-0c8d4369757c",
+      "kind": "commandExecution",
+      "tool": "shell",
+      "started": 1795150018536,
+      "finished": 1795150018570,
+      "producer_reported_duration_ms": 0,
+      "group": "shell",
+      "duration_ms": 34
+    },
+    {
+      "id": "exec-b0b78291-2707-4e2e-8af3-9f3c24ba0407",
+      "turn": "3a2ee1ec-f877-ca7e-34f6-4a4e55a04866",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_spec_lint",
+      "started": 1795150057838,
+      "finished": 1795150058114,
+      "producer_reported_duration_ms": 285,
+      "group": "native_platform_bridge",
+      "duration_ms": 276
+    },
+    {
+      "id": "exec-94b33f6a-0df9-4d32-bf54-5020cfd71986",
+      "turn": "298c720c-8794-263a-4308-245844ca599f",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_spec_lint",
+      "started": 1795150251593,
+      "finished": 1795150251865,
+      "producer_reported_duration_ms": 267,
+      "group": "native_platform_bridge",
+      "duration_ms": 272
+    },
+    {
+      "id": "exec-9c32778a-687f-47ef-b3b9-d33554db789f",
+      "turn": "8c763793-05ef-2bc8-7f83-a4753c34e20e",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_segment_dispatch",
+      "started": 1795150397880,
+      "finished": 1795150398124,
+      "producer_reported_duration_ms": 226,
+      "group": "controller",
+      "duration_ms": 244
+    },
+    {
+      "id": "exec-eb974be1-7e00-4b5e-b0c1-e7be02e5de31",
+      "turn": "8c763793-05ef-2bc8-7f83-a4753c34e20e",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_controller_wait",
+      "started": 1795150404188,
+      "finished": 1795150404652,
+      "producer_reported_duration_ms": 365,
+      "group": "controller",
+      "duration_ms": 464
+    },
+    {
+      "id": "exec-ebccec6b-1311-4555-b1d0-a99c384ab6c6",
+      "turn": "cfaa9d1f-66bd-e9b4-4bab-60b209724de1",
+      "kind": "commandExecution",
+      "tool": "shell",
+      "started": 1795150415642,
+      "finished": 1795150415672,
+      "producer_reported_duration_ms": 0,
+      "group": "shell",
+      "duration_ms": 30
+    },
+    {
+      "id": "exec-9efa0a58-10c6-4fbb-809d-04a6a9f01f04",
+      "turn": "cfaa9d1f-66bd-e9b4-4bab-60b209724de1",
+      "kind": "commandExecution",
+      "tool": "shell",
+      "started": 1795150419075,
+      "finished": 1795150419110,
+      "producer_reported_duration_ms": 0,
+      "group": "shell",
+      "duration_ms": 35
+    },
+    {
+      "id": "exec-3edaeac5-c1db-48d7-90ef-e8fc83c9c3c5",
+      "turn": "cfaa9d1f-66bd-e9b4-4bab-60b209724de1",
+      "kind": "commandExecution",
+      "tool": "shell",
+      "started": 1795150449440,
+      "finished": 1795150449481,
+      "producer_reported_duration_ms": 0,
+      "group": "shell",
+      "duration_ms": 41
+    },
+    {
+      "id": "exec-86d523f6-33a6-40df-aa70-7767effd669c",
+      "turn": "759c1b1b-24dd-5e4a-992f-987ead60d189",
+      "kind": "commandExecution",
+      "tool": "shell",
+      "started": 1795150508479,
+      "finished": 1795150508538,
+      "producer_reported_duration_ms": 0,
+      "group": "shell",
+      "duration_ms": 59
+    },
+    {
+      "id": "exec-3fd82f36-3bd4-44b5-8dbd-1d86e74ed139",
+      "turn": "759c1b1b-24dd-5e4a-992f-987ead60d189",
+      "kind": "commandExecution",
+      "tool": "shell",
+      "started": 1795150508538,
+      "finished": 1795150508604,
+      "producer_reported_duration_ms": 0,
+      "group": "shell",
+      "duration_ms": 66
+    },
+    {
+      "id": "exec-505f609e-48b9-4d5f-9f02-b9380690a2c0",
+      "turn": "759c1b1b-24dd-5e4a-992f-987ead60d189",
+      "kind": "commandExecution",
+      "tool": "shell",
+      "started": 1795150517908,
+      "finished": 1795150517941,
+      "producer_reported_duration_ms": 0,
+      "group": "shell",
+      "duration_ms": 33
+    },
+    {
+      "id": "exec-0cb04067-fb84-43e0-bd01-c195da60469f",
+      "turn": "759c1b1b-24dd-5e4a-992f-987ead60d189",
+      "kind": "commandExecution",
+      "tool": "shell",
+      "started": 1795150518085,
+      "finished": 1795150518157,
+      "producer_reported_duration_ms": 58,
+      "group": "shell",
+      "duration_ms": 72
+    },
+    {
+      "id": "exec-b3bd978b-c75d-487a-ac21-6e68148d2c32",
+      "turn": "759c1b1b-24dd-5e4a-992f-987ead60d189",
+      "kind": "commandExecution",
+      "tool": "shell",
+      "started": 1795150522645,
+      "finished": 1795150525141,
+      "producer_reported_duration_ms": 2476,
+      "group": "shell",
+      "duration_ms": 2496
+    },
+    {
+      "id": "exec-9afb2d4d-ce0c-4a56-8002-3690039f112e",
+      "turn": "759c1b1b-24dd-5e4a-992f-987ead60d189",
+      "kind": "commandExecution",
+      "tool": "shell",
+      "started": 1795150523810,
+      "finished": 1795150523837,
+      "producer_reported_duration_ms": 0,
+      "group": "shell",
+      "duration_ms": 27
+    },
+    {
+      "id": "exec-5802690f-b606-446e-bf51-d17ccfc82499",
+      "turn": "759c1b1b-24dd-5e4a-992f-987ead60d189",
+      "kind": "commandExecution",
+      "tool": "shell",
+      "started": 1795150528877,
+      "finished": 1795150528908,
+      "producer_reported_duration_ms": 0,
+      "group": "shell",
+      "duration_ms": 31
+    },
+    {
+      "id": "exec-e23cd61a-58c6-4d7c-bec6-547ee10287a6",
+      "turn": "759c1b1b-24dd-5e4a-992f-987ead60d189",
+      "kind": "commandExecution",
+      "tool": "shell",
+      "started": 1795150536579,
+      "finished": 1795150546882,
+      "producer_reported_duration_ms": 10282,
+      "group": "shell",
+      "duration_ms": 10303
+    },
+    {
+      "id": "exec-a0dd5bb1-f904-436e-b76d-d28aac2430b4",
+      "turn": "759c1b1b-24dd-5e4a-992f-987ead60d189",
+      "kind": "commandExecution",
+      "tool": "shell",
+      "started": 1795150554081,
+      "finished": 1795150554081,
+      "producer_reported_duration_ms": 1,
+      "group": "shell",
+      "duration_ms": 0
+    },
+    {
+      "id": "exec-da10e0b4-53cb-4520-a281-7c235a7b50fa",
+      "turn": "13579802-8905-8f9a-6407-7ee2964d4c08",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_outputs_read",
+      "started": 1795150594787,
+      "finished": 1795150594953,
+      "producer_reported_duration_ms": 132,
+      "group": "native_platform_bridge",
+      "duration_ms": 166
+    },
+    {
+      "id": "exec-55be95f7-b9e3-42e1-bca9-18600a55049b",
+      "turn": "13579802-8905-8f9a-6407-7ee2964d4c08",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_outputs_read",
+      "started": 1795150594787,
+      "finished": 1795150595042,
+      "producer_reported_duration_ms": 196,
+      "group": "native_platform_bridge",
+      "duration_ms": 255
+    },
+    {
+      "id": "exec-a7d87e2f-40de-4980-95ef-21eed63ff0e6",
+      "turn": "13579802-8905-8f9a-6407-7ee2964d4c08",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_outputs_read",
+      "started": 1795150594953,
+      "finished": 1795150595070,
+      "producer_reported_duration_ms": 277,
+      "group": "native_platform_bridge",
+      "duration_ms": 117
+    },
+    {
+      "id": "exec-22d1ef59-8f1e-46c1-ab25-724da77f01fa",
+      "turn": "13579802-8905-8f9a-6407-7ee2964d4c08",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_outputs_read",
+      "started": 1795150599100,
+      "finished": 1795150599435,
+      "producer_reported_duration_ms": 319,
+      "group": "native_platform_bridge",
+      "duration_ms": 335
+    },
+    {
+      "id": "exec-1f599be4-8731-4fb8-b255-974c671382cf",
+      "turn": "13579802-8905-8f9a-6407-7ee2964d4c08",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_outputs_read",
+      "started": 1795150599482,
+      "finished": 1795150599834,
+      "producer_reported_duration_ms": 364,
+      "group": "native_platform_bridge",
+      "duration_ms": 352
+    },
+    {
+      "id": "exec-adffb455-7fb7-4d1f-8292-31ab26559a0b",
+      "turn": "13579802-8905-8f9a-6407-7ee2964d4c08",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_outputs_read",
+      "started": 1795150599834,
+      "finished": 1795150600236,
+      "producer_reported_duration_ms": 381,
+      "group": "native_platform_bridge",
+      "duration_ms": 402
+    },
+    {
+      "id": "exec-6a6f1b56-40c3-48d5-8733-1ea22e731eb3",
+      "turn": "13579802-8905-8f9a-6407-7ee2964d4c08",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_outputs_read",
+      "started": 1795150607295,
+      "finished": 1795150607625,
+      "producer_reported_duration_ms": 301,
+      "group": "native_platform_bridge",
+      "duration_ms": 330
+    },
+    {
+      "id": "exec-129387e6-2813-49dc-8672-aaaa491c89d4",
+      "turn": "13579802-8905-8f9a-6407-7ee2964d4c08",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_outputs_read",
+      "started": 1795150607625,
+      "finished": 1795150607938,
+      "producer_reported_duration_ms": 292,
+      "group": "native_platform_bridge",
+      "duration_ms": 313
+    },
+    {
+      "id": "exec-30d51840-4c6c-4755-9665-b6ff40e2b0c5",
+      "turn": "13579802-8905-8f9a-6407-7ee2964d4c08",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_outputs_read",
+      "started": 1795150607938,
+      "finished": 1795150608263,
+      "producer_reported_duration_ms": 295,
+      "group": "native_platform_bridge",
+      "duration_ms": 325
+    },
+    {
+      "id": "exec-273d7337-2792-4f41-b844-4efee9a247a6",
+      "turn": "13579802-8905-8f9a-6407-7ee2964d4c08",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_outputs_read",
+      "started": 1795150608263,
+      "finished": 1795150608560,
+      "producer_reported_duration_ms": 285,
+      "group": "native_platform_bridge",
+      "duration_ms": 297
+    },
+    {
+      "id": "exec-0bcd3e83-2203-408a-82ca-061af0473aa6",
+      "turn": "13579802-8905-8f9a-6407-7ee2964d4c08",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_outputs_read",
+      "started": 1795150608560,
+      "finished": 1795150608861,
+      "producer_reported_duration_ms": 278,
+      "group": "native_platform_bridge",
+      "duration_ms": 301
+    },
+    {
+      "id": "exec-3060b790-fe3d-40ed-9590-2ef5189d0d34",
+      "turn": "13579802-8905-8f9a-6407-7ee2964d4c08",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_outputs_read",
+      "started": 1795150608861,
+      "finished": 1795150609208,
+      "producer_reported_duration_ms": 334,
+      "group": "native_platform_bridge",
+      "duration_ms": 347
+    },
+    {
+      "id": "exec-6a43d8dd-a281-40ff-ae70-a23c8533f909",
+      "turn": "13579802-8905-8f9a-6407-7ee2964d4c08",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_outputs_read",
+      "started": 1795150609208,
+      "finished": 1795150609530,
+      "producer_reported_duration_ms": 289,
+      "group": "native_platform_bridge",
+      "duration_ms": 322
+    },
+    {
+      "id": "exec-777b3747-4e39-45b7-bcfa-a627ccc56acc",
+      "turn": "13579802-8905-8f9a-6407-7ee2964d4c08",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_outputs_read",
+      "started": 1795150609530,
+      "finished": 1795150609820,
+      "producer_reported_duration_ms": 281,
+      "group": "native_platform_bridge",
+      "duration_ms": 290
+    },
+    {
+      "id": "exec-96b2b89b-0857-4764-829d-c16435c1881d",
+      "turn": "13579802-8905-8f9a-6407-7ee2964d4c08",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_outputs_read",
+      "started": 1795150609820,
+      "finished": 1795150610329,
+      "producer_reported_duration_ms": 384,
+      "group": "native_platform_bridge",
+      "duration_ms": 509
+    },
+    {
+      "id": "exec-be458aff-8ea1-4940-970a-280ff9734732",
+      "turn": "13579802-8905-8f9a-6407-7ee2964d4c08",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_outputs_read",
+      "started": 1795150610329,
+      "finished": 1795150610770,
+      "producer_reported_duration_ms": 505,
+      "group": "native_platform_bridge",
+      "duration_ms": 441
+    },
+    {
+      "id": "exec-ab28c8e5-7ac5-4529-877c-1aee79f1058f",
+      "turn": "13579802-8905-8f9a-6407-7ee2964d4c08",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_outputs_read",
+      "started": 1795150610770,
+      "finished": 1795150611128,
+      "producer_reported_duration_ms": 361,
+      "group": "native_platform_bridge",
+      "duration_ms": 358
+    },
+    {
+      "id": "exec-1b7a58b1-6a21-4c2f-9efd-a35689e1bbba",
+      "turn": "13579802-8905-8f9a-6407-7ee2964d4c08",
+      "kind": "commandExecution",
+      "tool": "shell",
+      "started": 1795150614874,
+      "finished": 1795150614901,
+      "producer_reported_duration_ms": 0,
+      "group": "shell",
+      "duration_ms": 27
+    },
+    {
+      "id": "exec-c42e7d1c-3437-45aa-8be2-c11d46f3aaf0",
+      "turn": "13579802-8905-8f9a-6407-7ee2964d4c08",
+      "kind": "commandExecution",
+      "tool": "shell",
+      "started": 1795150622700,
+      "finished": 1795150622700,
+      "producer_reported_duration_ms": 0,
+      "group": "shell",
+      "duration_ms": 0
+    },
+    {
+      "id": "exec-9316ddf1-dc84-4854-8a67-0db24b5fa667",
+      "turn": "13579802-8905-8f9a-6407-7ee2964d4c08",
+      "kind": "commandExecution",
+      "tool": "shell",
+      "started": 1795150637418,
+      "finished": 1795150637418,
+      "producer_reported_duration_ms": 0,
+      "group": "shell",
+      "duration_ms": 0
+    },
+    {
+      "id": "exec-4ef7ea6e-ebaf-418b-a0f4-e1c10eb1a7b9",
+      "turn": "13579802-8905-8f9a-6407-7ee2964d4c08",
+      "kind": "commandExecution",
+      "tool": "shell",
+      "started": 1795150637493,
+      "finished": 1795150637493,
+      "producer_reported_duration_ms": 0,
+      "group": "shell",
+      "duration_ms": 0
+    },
+    {
+      "id": "exec-032fbd1e-6605-46aa-a973-fec9e77ad68e",
+      "turn": "13579802-8905-8f9a-6407-7ee2964d4c08",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_spec_lint",
+      "started": 1795150654450,
+      "finished": 1795150654804,
+      "producer_reported_duration_ms": 344,
+      "group": "native_platform_bridge",
+      "duration_ms": 354
+    },
+    {
+      "id": "exec-fbd95f2a-1709-49e7-a72f-7493b7424a66",
+      "turn": "55d47856-2eaa-937c-739e-fa8eefafb534",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_outputs_read",
+      "started": 1795150774579,
+      "finished": 1795150774907,
+      "producer_reported_duration_ms": 309,
+      "group": "native_platform_bridge",
+      "duration_ms": 328
+    },
+    {
+      "id": "exec-6491523e-8c01-43f5-bbe7-1ef1f668e7a0",
+      "turn": "55d47856-2eaa-937c-739e-fa8eefafb534",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_outputs_read",
+      "started": 1795150774907,
+      "finished": 1795150775250,
+      "producer_reported_duration_ms": 319,
+      "group": "native_platform_bridge",
+      "duration_ms": 343
+    },
+    {
+      "id": "exec-d9e80eb9-8a05-4308-bd14-0c00ca1ab327",
+      "turn": "55d47856-2eaa-937c-739e-fa8eefafb534",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_outputs_read",
+      "started": 1795150790071,
+      "finished": 1795150790403,
+      "producer_reported_duration_ms": 303,
+      "group": "native_platform_bridge",
+      "duration_ms": 332
+    },
+    {
+      "id": "exec-ddb6282e-38d9-4a83-a665-42c750035a51",
+      "turn": "55d47856-2eaa-937c-739e-fa8eefafb534",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_outputs_read",
+      "started": 1795150790403,
+      "finished": 1795150790698,
+      "producer_reported_duration_ms": 291,
+      "group": "native_platform_bridge",
+      "duration_ms": 295
+    },
+    {
+      "id": "exec-74d5a650-cbf8-45e8-8173-31e98f6122e7",
+      "turn": "55d47856-2eaa-937c-739e-fa8eefafb534",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_outputs_read",
+      "started": 1795150790698,
+      "finished": 1795150791098,
+      "producer_reported_duration_ms": 364,
+      "group": "native_platform_bridge",
+      "duration_ms": 400
+    },
+    {
+      "id": "exec-ddf959ac-5342-4ee4-ac49-adcb94d76896",
+      "turn": "55d47856-2eaa-937c-739e-fa8eefafb534",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_workflow_outputs_read",
+      "started": 1795150791098,
+      "finished": 1795150791400,
+      "producer_reported_duration_ms": 308,
+      "group": "native_platform_bridge",
+      "duration_ms": 302
+    },
+    {
+      "id": "exec-08c02a8d-a8ea-42bb-9341-fbdb54e33608",
+      "turn": "55d47856-2eaa-937c-739e-fa8eefafb534",
+      "kind": "commandExecution",
+      "tool": "shell",
+      "started": 1795150793974,
+      "finished": 1795150793999,
+      "producer_reported_duration_ms": 0,
+      "group": "shell",
+      "duration_ms": 25
+    },
+    {
+      "id": "exec-24a4716f-54af-4145-8802-6f830eb969a5",
+      "turn": "55d47856-2eaa-937c-739e-fa8eefafb534",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_spec_lint",
+      "started": 1795150805955,
+      "finished": 1795150806266,
+      "producer_reported_duration_ms": 323,
+      "group": "native_platform_bridge",
+      "duration_ms": 311
+    },
+    {
+      "id": "exec-3b566cd6-df14-4efe-b16d-1e5eaab3323c",
+      "turn": "55d47856-2eaa-937c-739e-fa8eefafb534",
+      "kind": "dynamicToolCall",
+      "tool": "devdesk_spec_lint",
+      "started": 1795150815122,
+      "finished": 1795150815448,
+      "producer_reported_duration_ms": 318,
+      "group": "native_platform_bridge",
+      "duration_ms": 326
+    }
+  ],
+  "native_turns": [
+    {
+      "turn": "d60859bb-ac74-205e-db35-5b1a5b8a6310",
+      "session": "e4d426b5-0243-77f1-739f-87cff1315521",
+      "role": "manager",
+      "started": 1795149777654,
+      "finished": 1795149821120,
+      "preparation_ms": 7241,
+      "settlement_ms": 629,
+      "open_intent": 1795149770444,
+      "dispatch_observed": 1795149777590,
+      "open_observed": 1795149777568,
+      "controller_methods": [
+        "workflow.controller.wait",
+        "workflow.segment.dispatch"
+      ],
+      "exclusive_agent_ms": 39292
+    },
+    {
+      "turn": "ab1b548a-eabc-7d34-cbdf-88ed70d42b3d",
+      "session": "a71df4f6-db0b-c1d0-2ec1-6b764b1ae3f5",
+      "role": "producer",
+      "started": 1795149817215,
+      "finished": 1795149854331,
+      "preparation_ms": 3952,
+      "settlement_ms": 1271,
+      "open_intent": 1795149813275,
+      "dispatch_observed": 1795149817170,
+      "open_observed": 1795149817138,
+      "controller_methods": [],
+      "exclusive_agent_ms": 36934
+    },
+    {
+      "turn": "ce35c535-76e5-2ea0-7be0-ab43af7bcf28",
+      "session": "a25871b9-d779-2d4d-2e48-72f7f37f1175",
+      "role": "producer",
+      "started": 1795149863660,
+      "finished": 1795149915193,
+      "preparation_ms": 6659,
+      "settlement_ms": 1155,
+      "open_intent": 1795149857018,
+      "dispatch_observed": 1795149863617,
+      "open_observed": 1795149863565,
+      "controller_methods": [],
+      "exclusive_agent_ms": 51288
+    },
+    {
+      "turn": "7735316e-bc7f-4c70-a86a-0c8d4369757c",
+      "session": "09a0e65a-60dc-1be6-3222-cd50beda20c6",
+      "role": "producer",
+      "started": 1795150008043,
+      "finished": 1795150033601,
+      "preparation_ms": 3332,
+      "settlement_ms": 1153,
+      "open_intent": 1795150004727,
+      "dispatch_observed": 1795150008009,
+      "open_observed": 1795150007977,
+      "controller_methods": [],
+      "exclusive_agent_ms": 25524
+    },
+    {
+      "turn": "3a2ee1ec-f877-ca7e-34f6-4a4e55a04866",
+      "session": "9cb00923-fa27-368c-fc8b-6244987bf367",
+      "role": "producer",
+      "started": 1795150038698,
+      "finished": 1795150073859,
+      "preparation_ms": 2282,
+      "settlement_ms": 1097,
+      "open_intent": 1795150036439,
+      "dispatch_observed": 1795150038655,
+      "open_observed": 1795150038621,
+      "controller_methods": [],
+      "exclusive_agent_ms": 34885
+    },
+    {
+      "turn": "c68f91f4-1d17-1727-df05-3c915da6e075",
+      "session": "64b87f74-04ab-b974-4a49-770142039f01",
+      "role": "producer",
+      "started": 1795150180972,
+      "finished": 1795150225550,
+      "preparation_ms": 7496,
+      "settlement_ms": 1147,
+      "open_intent": 1795150173517,
+      "dispatch_observed": 1795150180908,
+      "open_observed": 1795150180875,
+      "controller_methods": [],
+      "exclusive_agent_ms": 44578
+    },
+    {
+      "turn": "298c720c-8794-263a-4308-245844ca599f",
+      "session": "2564c929-47e8-c7ac-ad2a-e344a5475748",
+      "role": "producer",
+      "started": 1795150230600,
+      "finished": 1795150269834,
+      "preparation_ms": 2331,
+      "settlement_ms": 1150,
+      "open_intent": 1795150228290,
+      "dispatch_observed": 1795150230563,
+      "open_observed": 1795150230524,
+      "controller_methods": [],
+      "exclusive_agent_ms": 38962
+    },
+    {
+      "turn": "8c763793-05ef-2bc8-7f83-a4753c34e20e",
+      "session": "e4d426b5-0243-77f1-739f-87cff1315521",
+      "role": "manager",
+      "started": 1795150388312,
+      "finished": 1795150406832,
+      "preparation_ms": 7259,
+      "settlement_ms": 667,
+      "open_intent": 1795150381087,
+      "dispatch_observed": 1795150388255,
+      "open_observed": 1795150388232,
+      "controller_methods": [
+        "workflow.segment.dispatch",
+        "workflow.controller.wait"
+      ],
+      "exclusive_agent_ms": 17792
+    },
+    {
+      "turn": "cfaa9d1f-66bd-e9b4-4bab-60b209724de1",
+      "session": "ad906af8-beeb-062e-13da-7471cc4b8f28",
+      "role": "producer",
+      "started": 1795150407870,
+      "finished": 1795150465506,
+      "preparation_ms": 4514,
+      "settlement_ms": 1174,
+      "open_intent": 1795150403373,
+      "dispatch_observed": 1795150407817,
+      "open_observed": 1795150407789,
+      "controller_methods": [],
+      "exclusive_agent_ms": 57530
+    },
+    {
+      "turn": "759c1b1b-24dd-5e4a-992f-987ead60d189",
+      "session": "9bb49b91-2b73-9231-ecbd-04fb46923d59",
+      "role": "producer",
+      "started": 1795150478858,
+      "finished": 1795150572014,
+      "preparation_ms": 6721,
+      "settlement_ms": 1174,
+      "open_intent": 1795150472160,
+      "dispatch_observed": 1795150478822,
+      "open_observed": 1795150478782,
+      "controller_methods": [],
+      "exclusive_agent_ms": 80096
+    },
+    {
+      "turn": "13579802-8905-8f9a-6407-7ee2964d4c08",
+      "session": "5a5d7789-1fb3-1318-2c51-63dcb5b5b680",
+      "role": "producer",
+      "started": 1795150584005,
+      "finished": 1795150673825,
+      "preparation_ms": 2859,
+      "settlement_ms": 1146,
+      "open_intent": 1795150581176,
+      "dispatch_observed": 1795150583967,
+      "open_observed": 1795150583914,
+      "controller_methods": [],
+      "exclusive_agent_ms": 84234
+    },
+    {
+      "turn": "55d47856-2eaa-937c-739e-fa8eefafb534",
+      "session": "37286e08-dd5d-1ba9-374f-e5169949cba9",
+      "role": "producer",
+      "started": 1795150748078,
+      "finished": 1795150827679,
+      "preparation_ms": 5734,
+      "settlement_ms": 1209,
+      "open_intent": 1795150742364,
+      "dispatch_observed": 1795150748038,
+      "open_observed": 1795150747987,
+      "controller_methods": [],
+      "exclusive_agent_ms": 76939
+    }
+  ],
+  "clock_anomalies": [],
+  "phase_windows": [
+    {
+      "name": "首次派发",
+      "kind": "initial_dispatch",
+      "started": 1795149769048,
+      "finished": 1795149812047,
+      "wall_ms": 42999,
+      "net_ms": 42999,
+      "allocation_ms": {
+        "internal": 1365,
+        "lifecycle": 7241,
+        "agent": 34124,
+        "tools": 269,
+        "external": 0
+      },
+      "component_ms": {
+        "agent": 34124,
+        "business_tools": 0,
+        "workflow": 8875
+      }
+    },
+    {
+      "name": "requirements → requirements_review",
+      "kind": "between_steps",
+      "started": 1795149855979,
+      "finished": 1795149856199,
+      "wall_ms": 220,
+      "net_ms": 220,
+      "allocation_ms": {
+        "internal": 220,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Feature",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 220
+      }
+    },
+    {
+      "name": "requirements_review",
+      "kind": "approval_preparation",
+      "started": 1795149916348,
+      "finished": 1795149917103,
+      "wall_ms": 755,
+      "net_ms": 755,
+      "allocation_ms": {
+        "internal": 755,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 755
+      }
+    },
+    {
+      "name": "requirements_review → source_workspace",
+      "kind": "between_steps",
+      "started": 1795150002426,
+      "finished": 1795150002630,
+      "wall_ms": 204,
+      "net_ms": 204,
+      "allocation_ms": {
+        "internal": 204,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Feature",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 204
+      }
+    },
+    {
+      "name": "source_workspace → design",
+      "kind": "between_steps",
+      "started": 1795150003498,
+      "finished": 1795150003679,
+      "wall_ms": 181,
+      "net_ms": 181,
+      "allocation_ms": {
+        "internal": 181,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Feature",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 181
+      }
+    },
+    {
+      "name": "design → design_review",
+      "kind": "between_steps",
+      "started": 1795150035103,
+      "finished": 1795150035298,
+      "wall_ms": 195,
+      "net_ms": 195,
+      "allocation_ms": {
+        "internal": 195,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Feature",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 195
+      }
+    },
+    {
+      "name": "design_review",
+      "kind": "approval_preparation",
+      "started": 1795150074956,
+      "finished": 1795150075706,
+      "wall_ms": 750,
+      "net_ms": 750,
+      "allocation_ms": {
+        "internal": 750,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 750
+      }
+    },
+    {
+      "name": "design_review → planning",
+      "kind": "between_steps",
+      "started": 1795150172136,
+      "finished": 1795150172395,
+      "wall_ms": 259,
+      "net_ms": 259,
+      "allocation_ms": {
+        "internal": 259,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Feature",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 259
+      }
+    },
+    {
+      "name": "planning → plan_review",
+      "kind": "between_steps",
+      "started": 1795150227213,
+      "finished": 1795150227392,
+      "wall_ms": 179,
+      "net_ms": 179,
+      "allocation_ms": {
+        "internal": 179,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Feature",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 179
+      }
+    },
+    {
+      "name": "plan_review",
+      "kind": "approval_preparation",
+      "started": 1795150270984,
+      "finished": 1795150271938,
+      "wall_ms": 954,
+      "net_ms": 954,
+      "allocation_ms": {
+        "internal": 954,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 954
+      }
+    },
+    {
+      "name": "plan_review → tasks",
+      "kind": "between_steps",
+      "started": 1795150379012,
+      "finished": 1795150379250,
+      "wall_ms": 238,
+      "net_ms": 238,
+      "allocation_ms": {
+        "internal": 238,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Feature",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 238
+      }
+    },
+    {
+      "name": "tasks → implementation",
+      "kind": "between_steps",
+      "started": 1795150380030,
+      "finished": 1795150380221,
+      "wall_ms": 191,
+      "net_ms": 191,
+      "allocation_ms": {
+        "internal": 191,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Feature",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 191
+      }
+    },
+    {
+      "name": "创建 Task 并首次派发",
+      "kind": "task_dispatch",
+      "started": 1795150380221,
+      "finished": 1795150398180,
+      "wall_ms": 17959,
+      "net_ms": 17959,
+      "allocation_ms": {
+        "internal": 832,
+        "lifecycle": 7259,
+        "agent": 9624,
+        "tools": 244,
+        "external": 0
+      },
+      "component_ms": {
+        "agent": 9624,
+        "business_tools": 0,
+        "workflow": 8335
+      }
+    },
+    {
+      "name": "workspace → tests",
+      "kind": "between_steps",
+      "started": 1795150401083,
+      "finished": 1795150402456,
+      "wall_ms": 1373,
+      "net_ms": 1373,
+      "allocation_ms": {
+        "internal": 0,
+        "lifecycle": 0,
+        "agent": 1373,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Task",
+      "component_ms": {
+        "agent": 1373,
+        "business_tools": 0,
+        "workflow": 0
+      }
+    },
+    {
+      "name": "tests → tests_snapshot",
+      "kind": "between_steps",
+      "started": 1795150467280,
+      "finished": 1795150467543,
+      "wall_ms": 263,
+      "net_ms": 263,
+      "allocation_ms": {
+        "internal": 263,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Task",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 263
+      }
+    },
+    {
+      "name": "tests_snapshot → red",
+      "kind": "between_steps",
+      "started": 1795150468346,
+      "finished": 1795150468604,
+      "wall_ms": 258,
+      "net_ms": 258,
+      "allocation_ms": {
+        "internal": 258,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Task",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 258
+      }
+    },
+    {
+      "name": "red → implementation",
+      "kind": "between_steps",
+      "started": 1795150470761,
+      "finished": 1795150471079,
+      "wall_ms": 318,
+      "net_ms": 318,
+      "allocation_ms": {
+        "internal": 318,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Task",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 318
+      }
+    },
+    {
+      "name": "implementation → implementation_snapshot",
+      "kind": "between_steps",
+      "started": 1795150574011,
+      "finished": 1795150574297,
+      "wall_ms": 286,
+      "net_ms": 286,
+      "allocation_ms": {
+        "internal": 286,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Task",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 286
+      }
+    },
+    {
+      "name": "implementation_snapshot → green",
+      "kind": "between_steps",
+      "started": 1795150575464,
+      "finished": 1795150575739,
+      "wall_ms": 275,
+      "net_ms": 275,
+      "allocation_ms": {
+        "internal": 275,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Task",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 275
+      }
+    },
+    {
+      "name": "green → review",
+      "kind": "between_steps",
+      "started": 1795150578612,
+      "finished": 1795150578908,
+      "wall_ms": 296,
+      "net_ms": 296,
+      "allocation_ms": {
+        "internal": 296,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Task",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 296
+      }
+    },
+    {
+      "name": "review → regression",
+      "kind": "between_steps",
+      "started": 1795150676308,
+      "finished": 1795150676694,
+      "wall_ms": 386,
+      "net_ms": 386,
+      "allocation_ms": {
+        "internal": 386,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Task",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 386
+      }
+    },
+    {
+      "name": "regression → source_publish",
+      "kind": "between_steps",
+      "started": 1795150679677,
+      "finished": 1795150680034,
+      "wall_ms": 357,
+      "net_ms": 357,
+      "allocation_ms": {
+        "internal": 357,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Task",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 357
+      }
+    },
+    {
+      "name": "source_publish → target",
+      "kind": "between_steps",
+      "started": 1795150686254,
+      "finished": 1795150686584,
+      "wall_ms": 330,
+      "net_ms": 330,
+      "allocation_ms": {
+        "internal": 330,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Task",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 330
+      }
+    },
+    {
+      "name": "target → publication",
+      "kind": "between_steps",
+      "started": 1795150688768,
+      "finished": 1795150689538,
+      "wall_ms": 770,
+      "net_ms": 770,
+      "allocation_ms": {
+        "internal": 770,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Task",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 770
+      }
+    },
+    {
+      "name": "publication → merge_regression",
+      "kind": "between_steps",
+      "started": 1795150707353,
+      "finished": 1795150707672,
+      "wall_ms": 319,
+      "net_ms": 319,
+      "allocation_ms": {
+        "internal": 319,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Task",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 319
+      }
+    },
+    {
+      "name": "merge_regression → merge",
+      "kind": "between_steps",
+      "started": 1795150711267,
+      "finished": 1795150711621,
+      "wall_ms": 354,
+      "net_ms": 354,
+      "allocation_ms": {
+        "internal": 354,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Task",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 354
+      }
+    },
+    {
+      "name": "Task 最后生产者结束 → 显式完成",
+      "kind": "completion",
+      "started": 1795150736316,
+      "finished": 1795150737585,
+      "wall_ms": 1269,
+      "net_ms": 1269,
+      "allocation_ms": {
+        "internal": 1269,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Task",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 1269
+      }
+    },
+    {
+      "name": "implementation → workspace_current",
+      "kind": "between_steps",
+      "started": 1795150738294,
+      "finished": 1795150738495,
+      "wall_ms": 201,
+      "net_ms": 201,
+      "allocation_ms": {
+        "internal": 201,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Feature",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 201
+      }
+    },
+    {
+      "name": "workspace_current → workspace",
+      "kind": "between_steps",
+      "started": 1795150738992,
+      "finished": 1795150739177,
+      "wall_ms": 185,
+      "net_ms": 185,
+      "allocation_ms": {
+        "internal": 185,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Feature",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 185
+      }
+    },
+    {
+      "name": "workspace → review",
+      "kind": "between_steps",
+      "started": 1795150740213,
+      "finished": 1795150740408,
+      "wall_ms": 195,
+      "net_ms": 195,
+      "allocation_ms": {
+        "internal": 195,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Feature",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 195
+      }
+    },
+    {
+      "name": "review → regression",
+      "kind": "between_steps",
+      "started": 1795150829349,
+      "finished": 1795150829595,
+      "wall_ms": 246,
+      "net_ms": 246,
+      "allocation_ms": {
+        "internal": 246,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Feature",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 246
+      }
+    },
+    {
+      "name": "regression → source_publish",
+      "kind": "between_steps",
+      "started": 1795150831964,
+      "finished": 1795150832222,
+      "wall_ms": 258,
+      "net_ms": 258,
+      "allocation_ms": {
+        "internal": 258,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Feature",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 258
+      }
+    },
+    {
+      "name": "source_publish → target",
+      "kind": "between_steps",
+      "started": 1795150834588,
+      "finished": 1795150834936,
+      "wall_ms": 348,
+      "net_ms": 348,
+      "allocation_ms": {
+        "internal": 348,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Feature",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 348
+      }
+    },
+    {
+      "name": "target → publication",
+      "kind": "between_steps",
+      "started": 1795150838357,
+      "finished": 1795150838606,
+      "wall_ms": 249,
+      "net_ms": 249,
+      "allocation_ms": {
+        "internal": 249,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Feature",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 249
+      }
+    },
+    {
+      "name": "publication → merge_regression",
+      "kind": "between_steps",
+      "started": 1795150852024,
+      "finished": 1795150852258,
+      "wall_ms": 234,
+      "net_ms": 234,
+      "allocation_ms": {
+        "internal": 234,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Feature",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 234
+      }
+    },
+    {
+      "name": "merge_regression → approval",
+      "kind": "between_steps",
+      "started": 1795150854945,
+      "finished": 1795150855164,
+      "wall_ms": 219,
+      "net_ms": 219,
+      "allocation_ms": {
+        "internal": 219,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Feature",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 219
+      }
+    },
+    {
+      "name": "approval",
+      "kind": "approval_preparation",
+      "started": 1795150855456,
+      "finished": 1795150856776,
+      "wall_ms": 1320,
+      "net_ms": 1320,
+      "allocation_ms": {
+        "internal": 1320,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 1320
+      }
+    },
+    {
+      "name": "approval → merge",
+      "kind": "between_steps",
+      "started": 1795150944369,
+      "finished": 1795150944630,
+      "wall_ms": 261,
+      "net_ms": 261,
+      "allocation_ms": {
+        "internal": 261,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Feature",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 261
+      }
+    },
+    {
+      "name": "Feature 最后生产者结束 → 显式完成",
+      "kind": "completion",
+      "started": 1795150961246,
+      "finished": 1795150961905,
+      "wall_ms": 659,
+      "net_ms": 659,
+      "allocation_ms": {
+        "internal": 659,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "layer": "Feature",
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 659
+      }
+    },
+    {
+      "name": "根完成 → 经理关闭及 worker 静止",
+      "kind": "settlement",
+      "started": 1795150961905,
+      "finished": 1795150961984,
+      "wall_ms": 79,
+      "net_ms": 79,
+      "allocation_ms": {
+        "internal": 79,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      },
+      "component_ms": {
+        "agent": 0,
+        "business_tools": 0,
+        "workflow": 79
+      }
+    }
+  ],
+  "phase_summary": {
+    "task_dispatch": {
+      "count": 1,
+      "wall_union_ms": 17959,
+      "net_union_ms": 17959,
+      "allocation_ms": {
+        "internal": 832,
+        "lifecycle": 7259,
+        "agent": 9624,
+        "tools": 244,
+        "external": 0
+      }
+    },
+    "approval_preparation": {
+      "count": 4,
+      "wall_union_ms": 3779,
+      "net_union_ms": 3779,
+      "allocation_ms": {
+        "internal": 3779,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      }
+    },
+    "initial_dispatch": {
+      "count": 1,
+      "wall_union_ms": 42999,
+      "net_union_ms": 42999,
+      "allocation_ms": {
+        "internal": 1365,
+        "lifecycle": 7241,
+        "agent": 34124,
+        "tools": 269,
+        "external": 0
+      }
+    },
+    "between_steps": {
+      "count": 31,
+      "wall_union_ms": 9648,
+      "net_union_ms": 9648,
+      "allocation_ms": {
+        "internal": 8275,
+        "lifecycle": 0,
+        "agent": 1373,
+        "tools": 0,
+        "external": 0
+      }
+    },
+    "settlement": {
+      "count": 1,
+      "wall_union_ms": 79,
+      "net_union_ms": 79,
+      "allocation_ms": {
+        "internal": 79,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      }
+    },
+    "completion": {
+      "count": 2,
+      "wall_union_ms": 1928,
+      "net_union_ms": 1928,
+      "allocation_ms": {
+        "internal": 1928,
+        "lifecycle": 0,
+        "agent": 0,
+        "tools": 0,
+        "external": 0
+      }
+    }
+  },
+  "slices": [
+    {
+      "started": 1795149769048,
+      "finished": 1795149770413,
+      "category": "internal"
+    },
+    {
+      "started": 1795149770413,
+      "finished": 1795149777654,
+      "category": "lifecycle"
+    },
+    {
+      "started": 1795149777654,
+      "finished": 1795149811713,
+      "category": "agent"
+    },
+    {
+      "started": 1795149811713,
+      "finished": 1795149811982,
+      "category": "tools"
+    },
+    {
+      "started": 1795149811982,
+      "finished": 1795149817622,
+      "category": "agent"
+    },
+    {
+      "started": 1795149817622,
+      "finished": 1795149817804,
+      "category": "tools"
+    },
+    {
+      "started": 1795149817804,
+      "finished": 1795149854331,
+      "category": "agent"
+    },
+    {
+      "started": 1795149854331,
+      "finished": 1795149855602,
+      "category": "lifecycle"
+    },
+    {
+      "started": 1795149855602,
+      "finished": 1795149857001,
+      "category": "internal"
+    },
+    {
+      "started": 1795149857001,
+      "finished": 1795149863660,
+      "category": "lifecycle"
+    },
+    {
+      "started": 1795149863660,
+      "finished": 1795149899716,
+      "category": "agent"
+    },
+    {
+      "started": 1795149899716,
+      "finished": 1795149899961,
+      "category": "tools"
+    },
+    {
+      "started": 1795149899961,
+      "finished": 1795149915193,
+      "category": "agent"
+    },
+    {
+      "started": 1795149915193,
+      "finished": 1795149916348,
+      "category": "lifecycle"
+    },
+    {
+      "started": 1795149916348,
+      "finished": 1795149917103,
+      "category": "internal"
+    },
+    {
+      "started": 1795149917103,
+      "finished": 1795150002213,
+      "category": "external"
+    },
+    {
+      "started": 1795150002213,
+      "finished": 1795150002768,
+      "category": "internal"
+    },
+    {
+      "started": 1795150002768,
+      "finished": 1795150002814,
+      "category": "tools"
+    },
+    {
+      "started": 1795150002814,
+      "finished": 1795150004711,
+      "category": "internal"
+    },
+    {
+      "started": 1795150004711,
+      "finished": 1795150008043,
+      "category": "lifecycle"
+    },
+    {
+      "started": 1795150008043,
+      "finished": 1795150018536,
+      "category": "agent"
+    },
+    {
+      "started": 1795150018536,
+      "finished": 1795150018570,
+      "category": "tools"
+    },
+    {
+      "started": 1795150018570,
+      "finished": 1795150033601,
+      "category": "agent"
+    },
+    {
+      "started": 1795150033601,
+      "finished": 1795150034754,
+      "category": "lifecycle"
+    },
+    {
+      "started": 1795150034754,
+      "finished": 1795150036416,
+      "category": "internal"
+    },
+    {
+      "started": 1795150036416,
+      "finished": 1795150038698,
+      "category": "lifecycle"
+    },
+    {
+      "started": 1795150038698,
+      "finished": 1795150057838,
+      "category": "agent"
+    },
+    {
+      "started": 1795150057838,
+      "finished": 1795150058114,
+      "category": "tools"
+    },
+    {
+      "started": 1795150058114,
+      "finished": 1795150073859,
+      "category": "agent"
+    },
+    {
+      "started": 1795150073859,
+      "finished": 1795150074956,
+      "category": "lifecycle"
+    },
+    {
+      "started": 1795150074956,
+      "finished": 1795150075706,
+      "category": "internal"
+    },
+    {
+      "started": 1795150075706,
+      "finished": 1795150171957,
+      "category": "external"
+    },
+    {
+      "started": 1795150171957,
+      "finished": 1795150173476,
+      "category": "internal"
+    },
+    {
+      "started": 1795150173476,
+      "finished": 1795150180972,
+      "category": "lifecycle"
+    },
+    {
+      "started": 1795150180972,
+      "finished": 1795150225550,
+      "category": "agent"
+    },
+    {
+      "started": 1795150225550,
+      "finished": 1795150226697,
+      "category": "lifecycle"
+    },
+    {
+      "started": 1795150226697,
+      "finished": 1795150228269,
+      "category": "internal"
+    },
+    {
+      "started": 1795150228269,
+      "finished": 1795150230600,
+      "category": "lifecycle"
+    },
+    {
+      "started": 1795150230600,
+      "finished": 1795150251593,
+      "category": "agent"
+    },
+    {
+      "started": 1795150251593,
+      "finished": 1795150251865,
+      "category": "tools"
+    },
+    {
+      "started": 1795150251865,
+      "finished": 1795150269834,
+      "category": "agent"
+    },
+    {
+      "started": 1795150269834,
+      "finished": 1795150270984,
+      "category": "lifecycle"
+    },
+    {
+      "started": 1795150270984,
+      "finished": 1795150271938,
+      "category": "internal"
+    },
+    {
+      "started": 1795150271938,
+      "finished": 1795150378831,
+      "category": "external"
+    },
+    {
+      "started": 1795150378831,
+      "finished": 1795150379446,
+      "category": "internal"
+    },
+    {
+      "started": 1795150379446,
+      "finished": 1795150379453,
+      "category": "tools"
+    },
+    {
+      "started": 1795150379453,
+      "finished": 1795150381053,
+      "category": "internal"
+    },
+    {
+      "started": 1795150381053,
+      "finished": 1795150388312,
+      "category": "lifecycle"
+    },
+    {
+      "started": 1795150388312,
+      "finished": 1795150397880,
+      "category": "agent"
+    },
+    {
+      "started": 1795150397880,
+      "finished": 1795150398124,
+      "category": "tools"
+    },
+    {
+      "started": 1795150398124,
+      "finished": 1795150398306,
+      "category": "agent"
+    },
+    {
+      "started": 1795150398306,
+      "finished": 1795150398326,
+      "category": "tools"
+    },
+    {
+      "started": 1795150398326,
+      "finished": 1795150404188,
+      "category": "agent"
+    },
+    {
+      "started": 1795150404188,
+      "finished": 1795150404652,
+      "category": "tools"
+    },
+    {
+      "started": 1795150404652,
+      "finished": 1795150406832,
+      "category": "agent"
+    },
+    {
+      "started": 1795150406832,
+      "finished": 1795150407870,
+      "category": "lifecycle"
+    },
+    {
+      "started": 1795150407870,
+      "finished": 1795150415642,
+      "category": "agent"
+    },
+    {
+      "started": 1795150415642,
+      "finished": 1795150415672,
+      "category": "tools"
+    },
+    {
+      "started": 1795150415672,
+      "finished": 1795150419075,
+      "category": "agent"
+    },
+    {
+      "started": 1795150419075,
+      "finished": 1795150419110,
+      "category": "tools"
+    },
+    {
+      "started": 1795150419110,
+      "finished": 1795150449440,
+      "category": "agent"
+    },
+    {
+      "started": 1795150449440,
+      "finished": 1795150449481,
+      "category": "tools"
+    },
+    {
+      "started": 1795150449481,
+      "finished": 1795150465506,
+      "category": "agent"
+    },
+    {
+      "started": 1795150465506,
+      "finished": 1795150466680,
+      "category": "lifecycle"
+    },
+    {
+      "started": 1795150466680,
+      "finished": 1795150467663,
+      "category": "internal"
+    },
+    {
+      "started": 1795150467663,
+      "finished": 1795150467971,
+      "category": "tools"
+    },
+    {
+      "started": 1795150467971,
+      "finished": 1795150468772,
+      "category": "internal"
+    },
+    {
+      "started": 1795150468772,
+      "finished": 1795150470203,
+      "category": "tools"
+    },
+    {
+      "started": 1795150470203,
+      "finished": 1795150472137,
+      "category": "internal"
+    },
+    {
+      "started": 1795150472137,
+      "finished": 1795150478858,
+      "category": "lifecycle"
+    },
+    {
+      "started": 1795150478858,
+      "finished": 1795150508479,
+      "category": "agent"
+    },
+    {
+      "started": 1795150508479,
+      "finished": 1795150508604,
+      "category": "tools"
+    },
+    {
+      "started": 1795150508604,
+      "finished": 1795150517908,
+      "category": "agent"
+    },
+    {
+      "started": 1795150517908,
+      "finished": 1795150517941,
+      "category": "tools"
+    },
+    {
+      "started": 1795150517941,
+      "finished": 1795150518085,
+      "category": "agent"
+    },
+    {
+      "started": 1795150518085,
+      "finished": 1795150518157,
+      "category": "tools"
+    },
+    {
+      "started": 1795150518157,
+      "finished": 1795150522645,
+      "category": "agent"
+    },
+    {
+      "started": 1795150522645,
+      "finished": 1795150525141,
+      "category": "tools"
+    },
+    {
+      "started": 1795150525141,
+      "finished": 1795150528877,
+      "category": "agent"
+    },
+    {
+      "started": 1795150528877,
+      "finished": 1795150528908,
+      "category": "tools"
+    },
+    {
+      "started": 1795150528908,
+      "finished": 1795150536579,
+      "category": "agent"
+    },
+    {
+      "started": 1795150536579,
+      "finished": 1795150546882,
+      "category": "tools"
+    },
+    {
+      "started": 1795150546882,
+      "finished": 1795150572014,
+      "category": "agent"
+    },
+    {
+      "started": 1795150572014,
+      "finished": 1795150573188,
+      "category": "lifecycle"
+    },
+    {
+      "started": 1795150573188,
+      "finished": 1795150574454,
+      "category": "internal"
+    },
+    {
+      "started": 1795150574454,
+      "finished": 1795150574831,
+      "category": "tools"
+    },
+    {
+      "started": 1795150574831,
+      "finished": 1795150576117,
+      "category": "internal"
+    },
+    {
+      "started": 1795150576117,
+      "finished": 1795150577679,
+      "category": "tools"
+    },
+    {
+      "started": 1795150577679,
+      "finished": 1795150581146,
+      "category": "internal"
+    },
+    {
+      "started": 1795150581146,
+      "finished": 1795150584005,
+      "category": "lifecycle"
+    },
+    {
+      "started": 1795150584005,
+      "finished": 1795150594787,
+      "category": "agent"
+    },
+    {
+      "started": 1795150594787,
+      "finished": 1795150595070,
+      "category": "tools"
+    },
+    {
+      "started": 1795150595070,
+      "finished": 1795150599100,
+      "category": "agent"
+    },
+    {
+      "started": 1795150599100,
+      "finished": 1795150599435,
+      "category": "tools"
+    },
+    {
+      "started": 1795150599435,
+      "finished": 1795150599482,
+      "category": "agent"
+    },
+    {
+      "started": 1795150599482,
+      "finished": 1795150600236,
+      "category": "tools"
+    },
+    {
+      "started": 1795150600236,
+      "finished": 1795150607295,
+      "category": "agent"
+    },
+    {
+      "started": 1795150607295,
+      "finished": 1795150611128,
+      "category": "tools"
+    },
+    {
+      "started": 1795150611128,
+      "finished": 1795150614874,
+      "category": "agent"
+    },
+    {
+      "started": 1795150614874,
+      "finished": 1795150614901,
+      "category": "tools"
+    },
+    {
+      "started": 1795150614901,
+      "finished": 1795150654450,
+      "category": "agent"
+    },
+    {
+      "started": 1795150654450,
+      "finished": 1795150654804,
+      "category": "tools"
+    },
+    {
+      "started": 1795150654804,
+      "finished": 1795150673825,
+      "category": "agent"
+    },
+    {
+      "started": 1795150673825,
+      "finished": 1795150674971,
+      "category": "lifecycle"
+    },
+    {
+      "started": 1795150674971,
+      "finished": 1795150677143,
+      "category": "internal"
+    },
+    {
+      "started": 1795150677143,
+      "finished": 1795150678735,
+      "category": "tools"
+    },
+    {
+      "started": 1795150678735,
+      "finished": 1795150680460,
+      "category": "internal"
+    },
+    {
+      "started": 1795150680460,
+      "finished": 1795150685557,
+      "category": "tools"
+    },
+    {
+      "started": 1795150685557,
+      "finished": 1795150686976,
+      "category": "internal"
+    },
+    {
+      "started": 1795150686976,
+      "finished": 1795150688037,
+      "category": "tools"
+    },
+    {
+      "started": 1795150688037,
+      "finished": 1795150689957,
+      "category": "internal"
+    },
+    {
+      "started": 1795150689957,
+      "finished": 1795150707113,
+      "category": "tools"
+    },
+    {
+      "started": 1795150707113,
+      "finished": 1795150708003,
+      "category": "internal"
+    },
+    {
+      "started": 1795150708003,
+      "finished": 1795150710050,
+      "category": "tools"
+    },
+    {
+      "started": 1795150710050,
+      "finished": 1795150712042,
+      "category": "internal"
+    },
+    {
+      "started": 1795150712042,
+      "finished": 1795150736316,
+      "category": "tools"
+    },
+    {
+      "started": 1795150736316,
+      "finished": 1795150738637,
+      "category": "internal"
+    },
+    {
+      "started": 1795150738637,
+      "finished": 1795150738656,
+      "category": "tools"
+    },
+    {
+      "started": 1795150738656,
+      "finished": 1795150739512,
+      "category": "internal"
+    },
+    {
+      "started": 1795150739512,
+      "finished": 1795150739755,
+      "category": "tools"
+    },
+    {
+      "started": 1795150739755,
+      "finished": 1795150742344,
+      "category": "internal"
+    },
+    {
+      "started": 1795150742344,
+      "finished": 1795150748078,
+      "category": "lifecycle"
+    },
+    {
+      "started": 1795150748078,
+      "finished": 1795150774579,
+      "category": "agent"
+    },
+    {
+      "started": 1795150774579,
+      "finished": 1795150775250,
+      "category": "tools"
+    },
+    {
+      "started": 1795150775250,
+      "finished": 1795150790071,
+      "category": "agent"
+    },
+    {
+      "started": 1795150790071,
+      "finished": 1795150791400,
+      "category": "tools"
+    },
+    {
+      "started": 1795150791400,
+      "finished": 1795150793974,
+      "category": "agent"
+    },
+    {
+      "started": 1795150793974,
+      "finished": 1795150793999,
+      "category": "tools"
+    },
+    {
+      "started": 1795150793999,
+      "finished": 1795150805955,
+      "category": "agent"
+    },
+    {
+      "started": 1795150805955,
+      "finished": 1795150806266,
+      "category": "tools"
+    },
+    {
+      "started": 1795150806266,
+      "finished": 1795150815122,
+      "category": "agent"
+    },
+    {
+      "started": 1795150815122,
+      "finished": 1795150815448,
+      "category": "tools"
+    },
+    {
+      "started": 1795150815448,
+      "finished": 1795150827679,
+      "category": "agent"
+    },
+    {
+      "started": 1795150827679,
+      "finished": 1795150828888,
+      "category": "lifecycle"
+    },
+    {
+      "started": 1795150828888,
+      "finished": 1795150829954,
+      "category": "internal"
+    },
+    {
+      "started": 1795150829954,
+      "finished": 1795150831561,
+      "category": "tools"
+    },
+    {
+      "started": 1795150831561,
+      "finished": 1795150832535,
+      "category": "internal"
+    },
+    {
+      "started": 1795150832535,
+      "finished": 1795150834195,
+      "category": "tools"
+    },
+    {
+      "started": 1795150834195,
+      "finished": 1795150835229,
+      "category": "internal"
+    },
+    {
+      "started": 1795150835229,
+      "finished": 1795150838081,
+      "category": "tools"
+    },
+    {
+      "started": 1795150838081,
+      "finished": 1795150838948,
+      "category": "internal"
+    },
+    {
+      "started": 1795150838948,
+      "finished": 1795150851759,
+      "category": "tools"
+    },
+    {
+      "started": 1795150851759,
+      "finished": 1795150852626,
+      "category": "internal"
+    },
+    {
+      "started": 1795150852626,
+      "finished": 1795150854569,
+      "category": "tools"
+    },
+    {
+      "started": 1795150854569,
+      "finished": 1795150855436,
+      "category": "internal"
+    },
+    {
+      "started": 1795150855436,
+      "finished": 1795150855456,
+      "category": "tools"
+    },
+    {
+      "started": 1795150855456,
+      "finished": 1795150856776,
+      "category": "internal"
+    },
+    {
+      "started": 1795150856776,
+      "finished": 1795150944064,
+      "category": "external"
+    },
+    {
+      "started": 1795150944064,
+      "finished": 1795150944992,
+      "category": "internal"
+    },
+    {
+      "started": 1795150944992,
+      "finished": 1795150961246,
+      "category": "tools"
+    },
+    {
+      "started": 1795150961246,
+      "finished": 1795150961984,
+      "category": "internal"
+    }
+  ],
+  "notes": [
+    "All attribution boundaries use persisted Host observation times; producer clock fields are not used.",
+    "Observed Agent envelope is admission to terminal; excluding tools still includes provider/transport and Host polling latency, not pure model inference.",
+    "A tool span includes request/receipt handling observed by Host. Same-batch tool boundaries can be zero; producer duration is diagnostic only.",
+    "Wall ownership priority: external, all tools, observed Agent service, kernel turn lifecycle, remaining internal/unattributed.",
+    "The three-component ledger assigns controller API calls and native platform request/reply bridging to workflow; business tools retain Git, tests, shell, workspace and other platform handlers.",
+    "Runtime lifecycle includes worker/container setup, dispatch, polling and cleanup. Remaining internal time is not a measurement of scheduler CPU.",
+    "Phase windows (approval preparation, inter-step, completion) overlap component categories; never add phase totals to component totals.",
+    "Concurrent Agent/tools use explicit ownership priority. Time allocation is not a causal critical path or a guaranteed speedup estimate."
+  ],
+  "benchmark_sha256": "d5feaf4d1354df9d4e857f0f9cb007555c38ec8cc0c016ce8634c9dd0eb6489d"
+}

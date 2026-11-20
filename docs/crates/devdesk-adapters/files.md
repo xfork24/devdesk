@@ -76,6 +76,7 @@
 | [src/workflow_observations.rs](../../../crates/adapters/src/workflow_observations.rs) | Selected terminal ledger values and actual stopped-worker evidence. Normal workflow observation does not load conversation or execution history. |
 | [src/workflow_projection.rs](../../../crates/adapters/src/workflow_projection.rs) | Transactional display metadata. Canonical runtime facts remain resource rows; these small projections never authorize control or replace sources. |
 | [src/workflow_readers.rs](../../../crates/adapters/src/workflow_readers.rs) | [SQLite、资源提交与产物文件](storage-and-source-codecs.md) |
+| [src/workflow_stop_events.rs](../../../crates/adapters/src/workflow_stop_events.rs) | A successful native terminal and its admitted stop proof are ordinary progress. Output admission can follow cleanup seconds later; it still performs all checks. |
 | [src/workspace_read.rs](../../../crates/adapters/src/workspace_read.rs) | Legacy workspace shape over bounded committed rows. Source and runtime history bodies are loaded only by their explicit readers. |
 | [tests/advisory_read_bounds.rs](../../../crates/adapters/tests/advisory_read_bounds.rs) | [SQLite、资源提交与产物文件](storage-and-source-codecs.md) |
 | [tests/agent_capabilities.rs](../../../crates/adapters/tests/agent_capabilities.rs) | `CallingHarness`、`open_session`、`dispatch_turn` |
@@ -124,6 +125,7 @@
 | [tests/settings_concurrency.rs](../../../crates/adapters/tests/settings_concurrency.rs) | `save`、`independent_edits_commit_but_stale_same_field_cannot_overwrite`、`invalid_batches_and_missing_guards_leave_both_settings_unchanged` |
 | [tests/standard_snapshots.rs](../../../crates/adapters/tests/standard_snapshots.rs) | Snapshot and adoption contracts through production commands, native material tools and SQLite. |
 | [tests/support/mod.rs](../../../crates/adapters/tests/support/mod.rs) | Resolve a test installation on this Docker platform, then freeze its content ID. |
+| [tests/support/segment_actions.rs](../../../crates/adapters/tests/support/segment_actions.rs) | `delegated_completion_keeps_the_whole_workflow_rule`、`automated_delegation_does_not_wake_manager_for_ordinary_approval_or_completion`、`delegated_preparation_preserves_human_gate_and_completes_after_signature_across_restart` |
 | [tests/tool_integrations.rs](../../../crates/adapters/tests/tool_integrations.rs) | [HTTP、MCP、OAuth 与 Skill 接入](external-integrations.md) |
 | [tests/workflow_performance.rs](../../../crates/adapters/tests/workflow_performance.rs) | Opt-in component measurements. No model, worker, network, or user dataset. |
 | [tests/workflow_progress.rs](../../../crates/adapters/tests/workflow_progress.rs) | Read-model fixtures only. No workflow, model, Git or native worker is run. |

@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "bundle_version": "2026.11.19-streamlined-performance-v6-rebase",
+  "bundle_version": "2026.11.20-delegated-approval-completion",
   "usage_index": "reference-usage.json",
   "types": {
     "role": [
@@ -25,7 +25,7 @@
       "skills/builtin-skill-workflow-orchestration-v5.json",
       "skills/simplified-skill-context-v4.json",
       "skills/simplified-skill-project-planning-v3.json",
-      "skills/simplified-skill-workflow-orchestration-v7.json",
+      "skills/simplified-skill-workflow-orchestration-v8.json",
       "skills/simplified-skill-test-design-v2.json",
       "skills/simplified-skill-implementation-v1.json",
       "skills/simplified-skill-code-review-v1.json",
@@ -104,7 +104,7 @@
       "capabilities/builtin-capability-project-manager-minimax-dsh-v5.json",
       "capabilities/simplified-capability-analyst-v8.json",
       "capabilities/simplified-capability-architect-v8.json",
-      "capabilities/simplified-capability-project-manager-v10.json",
+      "capabilities/simplified-capability-project-manager-v11.json",
       "capabilities/simplified-capability-developer-v8.json",
       "capabilities/simplified-capability-tester-v9.json",
       "capabilities/simplified-capability-reviewer-v8.json"
@@ -124,7 +124,7 @@
       "agents/builtin-agent-minimax-project-manager-v5.json",
       "agents/simplified-agent-analyst-v8.json",
       "agents/simplified-agent-architect-v8.json",
-      "agents/simplified-agent-project-manager-v10.json",
+      "agents/simplified-agent-project-manager-v11.json",
       "agents/simplified-agent-developer-v8.json",
       "agents/simplified-agent-tester-v9.json",
       "agents/simplified-agent-reviewer-v8.json"
@@ -185,7 +185,7 @@
       "tools/builtin-tool-workflow-materials-import-v2.json",
       "tools/builtin-tool-workflow-execution-reconcile-v2.json",
       "tools/builtin-tool-workflow-complete-v2.json",
-      "tools/builtin-tool-workflow-segment-dispatch-v3.json",
+      "tools/builtin-tool-workflow-segment-dispatch-v4.json",
       "tools/builtin-tool-workflow-decision-request-v4.json",
       "tools/builtin-tool-workflow-rework-preview-v1.json",
       "tools/simplified-tool-tests-run-v2.json",

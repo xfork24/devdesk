@@ -1,7 +1,7 @@
 {
   "type": "tool",
   "identity": "builtin-tool-workflow-segment-dispatch",
-  "revision": 3,
+  "revision": 4,
   "name": "有界委托节点执行",
   "scope": "global",
   "data": {
@@ -43,6 +43,14 @@
         "include_human": {
           "type": "boolean",
           "description": "Explicitly include Human-gated execution. Never signs or waives a Human decision; waits for the exact real signature before accepting."
+        },
+        "prepare_human_requests": {
+          "type": "boolean",
+          "description": "Explicitly prepare ordinary Human confirmation requests after all completion/evidence checks. Never signs, approves exceptions, or repeats a rejected result."
+        },
+        "complete_instance": {
+          "type": "boolean",
+          "description": "Explicitly delegate final registration for this instance; requires all current nodes in steps. Rechecks the whole completion contract, delivery, actual Human signatures and stop proofs."
         }
       },
       "required": [
@@ -53,7 +61,7 @@
         "control_version"
       ],
       "additionalProperties": false,
-      "description": "Authorize 1-32 exact current-plan nodes. Human-gated nodes require include_human=true; this only delegates execution and subsequent acceptance after an actual exact Human signature. Healthy Human waits retain the grant and still notify the manager. Rejection, input, failure, plan/driver/manager changes stop it. Never completes the root. Preserve the original expected_revision, plan_revision_id and control_version."
+      "description": "Authorize 1-32 exact current-plan nodes with at most 64 operations. include_human permits execution/acceptance only after actual exact Human signature. Optional prepare_human_requests and complete_instance are separately checked opt-in authority; omitted flags preserve dispatch/accept-only behavior. Rejection, failure, input, plan/driver/manager changes remain attention boundaries. Preserve original revisions and control version."
     },
     "output_schema": {
       "type": "object"

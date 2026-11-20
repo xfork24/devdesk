@@ -294,7 +294,18 @@ impl Engine {
                     }
                     let deadline = controller.wait_deadline.is_some_and(|d| d <= now());
                     if !bootstrap && events.is_empty() && users.is_empty() && !deadline {
-                        if let Some(turn) = &latest.value
+                        let run = if let Some(root) = controller.root_instance_id.as_deref() {
+                            let run = one(self.store.as_ref(), "workflow_run_authority", root)?;
+                            commit.witness([version(&run)])?;
+                            run.value
+                        } else {
+                            None
+                        };
+                        if run.as_ref().is_some_and(|r| {
+                            matches!(r["status"].as_str(), Some("completed" | "cancelled"))
+                        }) {
+                            controller.status = "closed".into();
+                        } else if let Some(turn) = &latest.value
                             && turn["status"] == "completed"
                             && controller.wait_turn_id.as_deref() != turn["id"].as_str()
                         {

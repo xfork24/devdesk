@@ -189,10 +189,14 @@ impl WorkflowCommit<'_> {
                         ),
                     "委托已撤销或不属于原流程",
                 )?;
-                if let Some(node) = self.command.payload["node_id"]
-                    .as_str()
-                    .or_else(|| self.command.payload["step"].as_str())
-                {
+                let node = if method == "workflow.decision.request" {
+                    self.command.payload["arguments"]["execution_id"].as_str()
+                } else {
+                    self.command.payload["node_id"]
+                        .as_str()
+                        .or_else(|| self.command.payload["step"].as_str())
+                };
+                if let Some(node) = node {
                     let execution = root
                         .instance
                         .steps
@@ -206,10 +210,39 @@ impl WorkflowCommit<'_> {
                         "步骤不属于原委托范围",
                     )?;
                 }
-                require(
-                    matches!(method, "workflow.step.dispatch" | "workflow.step.accept"),
-                    "委托只允许派发和接纳确切节点",
-                )?;
+                match method {
+                    "workflow.step.dispatch" | "workflow.step.accept" => {}
+                    "workflow.decision.request" => {
+                        require(
+                            segment["data"]["prepare_human_requests"] == true
+                                && segment["data"]["include_human"] == true
+                                && self.command.payload["operation"] == "workflow.step.confirm"
+                                && node.is_some(),
+                            "原委托没有普通审批材料准备权",
+                        )?;
+                        let e = root.step(self.engine, node.unwrap())?;
+                        let ready = self.engine.native_step_readiness(root, &e)?;
+                        require(
+                            ready["completion_satisfied"] == true
+                                && ready["human_satisfied"] != true
+                                && ready["actions"]["accept"]["code"] == "human_confirmation",
+                            "自动请求必须满足原完成条件且确实需要普通人工签核",
+                        )?;
+                        self.witness(e.reads.versions().iter().cloned())?;
+                    }
+                    "workflow.complete" => {
+                        require(
+                            segment["data"]["complete_instance"] == true
+                                && root.instance.steps.iter().all(|e| {
+                                    segment["data"]["node_ids"]
+                                        .as_array()
+                                        .is_some_and(|ids| ids.contains(&json!(e.node_id)))
+                                }),
+                            "自动完成必须持有完整实例委托",
+                        )?;
+                    }
+                    _ => return Err(err("permission_denied", "该操作不属于原有界委托")),
+                }
                 let operations = segment["data"]["operations"]
                     .as_u64()
                     .ok_or_else(|| err("storage", "原委托预算缺失"))?;
@@ -230,6 +263,22 @@ impl WorkflowCommit<'_> {
                         "原委托决定者已撤权",
                     )?;
                     self.witness([version(&authority)])?;
+                    if matches!(method, "workflow.decision.request" | "workflow.complete") {
+                        let current = one(self.engine.store.as_ref(), "governance", &id)?;
+                        let owner = restored(self.engine, &current)?;
+                        let controller: WorkflowController = owner.decode()?;
+                        let operation = if method == "workflow.decision.request" {
+                            "request_decision"
+                        } else {
+                            "complete"
+                        };
+                        controller.policy.permits(operation)?;
+                        require(
+                            !controller.policy.human_operations.contains(operation),
+                            "委托操作仍需独立人类授权",
+                        )?;
+                        self.witness([version(&current)])?;
+                    }
                 }
                 let original = restored(self.engine, &row)?;
                 let mut data = original.data.clone();

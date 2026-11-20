@@ -22,6 +22,7 @@ mod workflow_intents;
 mod workflow_observations;
 mod workflow_projection;
 mod workflow_readers;
+mod workflow_stop_events;
 pub use configuration_backend::ConfigurationBackend;
 mod context_calls;
 mod conversation_captures;

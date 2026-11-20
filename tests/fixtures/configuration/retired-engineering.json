@@ -5502,5 +5502,68 @@
         }
       }
     }
+  },
+  {
+    "type": "tool",
+    "identity": "builtin-tool-workflow-segment-dispatch",
+    "revision": 3,
+    "name": "有界委托节点执行",
+    "scope": "global",
+    "data": {
+      "qualified_name": "workflow.segment.dispatch",
+      "implementation": "platform",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "plan_revision_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "control_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "decision_ref": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "string"
+            }
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "include_human": {
+            "type": "boolean",
+            "description": "Explicitly include Human-gated execution. Never signs or waives a Human decision; waits for the exact real signature before accepting."
+          }
+        },
+        "required": [
+          "plan_revision_id",
+          "reason",
+          "steps",
+          "expected_revision",
+          "control_version"
+        ],
+        "additionalProperties": false,
+        "description": "Authorize 1-32 exact current-plan nodes. Human-gated nodes require include_human=true; this only delegates execution and subsequent acceptance after an actual exact Human signature. Healthy Human waits retain the grant and still notify the manager. Rejection, input, failure, plan/driver/manager changes stop it. Never completes the root. Preserve the original expected_revision, plan_revision_id and control_version."
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "capabilities": []
+    }
   }
 ]

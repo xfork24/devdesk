@@ -60,7 +60,7 @@ def build_spans(report):
                        '结束至接纳原始耗时':elapsed(accepted-step['finished'])})
                 approval = human.get(step['id'])
                 if approval:
-                    add(step['id']+'-prepare','经理准备审批请求',approval['ready_at_ms'],approval['requested_at_ms'],'内部等待',step['id'])
+                    add(step['id']+'-prepare','审批请求准备',approval['ready_at_ms'],approval['requested_at_ms'],'内部等待',step['id'])
                     add(step['id']+'-approval','代审批响应（净耗时排除）',approval['requested_at_ms'],approval['signed_at_ms'],'外部排除',step['id'])
             if index+1<len(ordered):
                 following=ordered[index+1]

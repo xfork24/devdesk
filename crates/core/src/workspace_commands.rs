@@ -321,6 +321,7 @@ impl Engine {
             commit.change(change)?;
         }
         if let Some((row, instance, frozen)) = &root {
+            commit.initialize_rework_budgets(instance, &row.scope)?;
             for row in [frozen, row] {
                 let key = ResourceKey::new("governance", &row.id);
                 commit.witness([ResourceVersion {

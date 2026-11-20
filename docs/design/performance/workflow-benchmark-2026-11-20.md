@@ -177,7 +177,7 @@ OS 电源日志只有秒级精度，并描述进入/退出休眠的过渡。为�
 
 ## 复核与重建
 
-[完整交付验收器](../../tests/live/verify_project_regression.py) 和 [只读基准导出器](../../tests/live/workflow_benchmark.py) 不推进流程、不代签。导出器先严格核对完整交付，再导出计时。`--host-power-log` 必须显式提供与本轮匹配的系统睡眠/唤醒证据；不提供时不会凭空从静默区间扣时间。`--host-metadata` 接受启动器的二进制身份、构建模式和缓存模式收据。系统日志中与本轮有关的四条睡眠/唤醒原文已随 JSON 保存，其余机器活动不入库。
+[完整交付验收器](../../../tests/live/verify_project_regression.py) 和 [只读基准导出器](../../../tests/live/workflow_benchmark.py) 不推进流程、不代签。导出器先严格核对完整交付，再导出计时。`--host-power-log` 必须显式提供与本轮匹配的系统睡眠/唤醒证据；不提供时不会凭空从静默区间扣时间。`--host-metadata` 接受启动器的二进制身份、构建模式和缓存模式收据。系统日志中与本轮有关的四条睡眠/唤醒原文已随 JSON 保存，其余机器活动不入库。
 
 ```bash
 python3 tests/live/verify_project_regression.py --url http://127.0.0.1:4320 \
@@ -190,8 +190,8 @@ python3 tests/live/workflow_benchmark.py --url http://127.0.0.1:4320 \
   --host-power-log /path/to/saved-power-events.log \
   --host-metadata /path/to/launcher-receipt.json \
   --report /tmp/devdesk-workflow-benchmark.json
-python3 tests/live/workflow_timeline.py docs/design/workflow-benchmark-2026-11-20.json \
-  --svg docs/design/workflow-timeline-2026-11-20.svg --spans /tmp/devdesk-timeline-spans.json
+python3 tests/live/workflow_timeline.py docs/design/performance/workflow-benchmark-2026-11-20.json \
+  --svg docs/design/performance/workflow-timeline-2026-11-20.svg --spans /tmp/devdesk-timeline-spans.json
 python3 -m unittest discover -s tests/live -p 'test_*.py'
 ```
 

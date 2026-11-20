@@ -178,10 +178,13 @@ fn delegated_progress(conn: &Connection, instance: &Value) -> Result<BTreeMap<St
                 || !graph
                     .iter()
                     .any(|s| s["key"] == execution["step"] && s["confirmation"] == "human"))
-                && delegated_execution_progress(execution, &graph, &covered)
+                && (delegated_execution_progress(execution, &graph, &covered)
+                    || (execution["status"] == "waiting_confirmation"
+                        && data["prepare_human_requests"] == true))
+                && nodes.contains(&execution["node_id"])
             {
                 hints.insert(execution["id"].as_str().unwrap_or("").to_owned(),
-                    json!({"segment_id":grant["id"],"controller_id":data["actor"]["controller_id"],"epoch":data["actor"]["epoch"]}));
+                    json!({"segment_id":grant["id"],"controller_id":data["actor"]["controller_id"],"epoch":data["actor"]["epoch"],"prepare_human_requests":data["prepare_human_requests"]==true}));
             }
         }
     }
@@ -356,13 +359,28 @@ pub(super) fn append(
             }
         }
         for batch in facts.chunks(16) {
-            changes.push((
-                current.clone(),
-                json!({"kind":"workflow.changed","changes":batch}),
-            ));
+            let mut fact = json!({"kind":"workflow.changed","changes":batch});
+            if actor["kind"] == "segment" && current["data"]["status"] == "completed" {
+                let grant = row(conn, actor["authorization_id"].as_str().unwrap_or(""))?;
+                if let Some(grant) = grant.filter(|g| {
+                    g["type"] == "workflow_segment"
+                        && g["definition_id"] == id
+                        && g["data"]["complete_instance"] == true
+                        && g["data"]["actor"]["kind"] == "controller"
+                }) {
+                    fact["delegated_completion"] = json!({"controller_id":grant["data"]["actor"]["controller_id"],"epoch":grant["data"]["actor"]["epoch"]});
+                }
+            }
+            changes.push((current.clone(), fact));
         }
         if let Some((session, operation, turn)) = before.stopped.get(&id) {
-            changes.push((current, json!({"kind":"execution.stopped","session_id":session,"operation_id":operation,"turn_id":turn})));
+            let mut fact = json!({"kind":"execution.stopped","session_id":session,"operation_id":operation,"turn_id":turn});
+            if let Some(hint) = crate::workflow_stop_events::normal_stop_hint(
+                conn, &current, prepared, &delegated, session, operation, turn,
+            )? {
+                fact["delegated_progress"] = hint;
+            }
+            changes.push((current, fact));
         }
     }
     for change in &prepared.changes {
@@ -408,10 +426,46 @@ pub(super) fn append(
         } else {
             None
         };
-        if let Some(fact) = fact
+        if let Some(mut fact) = fact
             && let Some(id) = record_instance(conn, next)?
             && let Some(instance) = row(conn, &id)?
         {
+            let execution = if kind == "workflow_confirmation"
+                && next["data"]["actor"]["kind"] == "human"
+                && next["data"]["override_completion"] != true
+                && next["data"]["manual_approval"] != true
+                && next["data"]["exception_scope"].is_null()
+            {
+                next["definition_id"].as_str()
+            } else if kind == "workflow_pending_decision"
+                && next["data"]["actor"]["kind"] == "segment"
+                && next["data"]["request"]["operation"] == "workflow.step.confirm"
+                && matches!(
+                    next["data"]["status"].as_str(),
+                    Some("pending" | "approved")
+                )
+            {
+                next["data"]["request"]["arguments"]["execution_id"].as_str()
+            } else {
+                None
+            };
+            if let Some(execution) = execution {
+                let hints = delegated_progress(conn, &instance)?;
+                if let Some(hint) = hints
+                    .get(execution)
+                    .filter(|h| h["prepare_human_requests"] == true)
+                {
+                    fact["delegated_progress"] = hint.clone();
+                }
+            }
+            if kind == "workflow_segment"
+                && next["data"]["status"] == "completed"
+                && next["data"]["complete_instance"] == true
+                && instance["data"]["status"] == "completed"
+                && next["data"]["actor"]["kind"] == "controller"
+            {
+                fact["delegated_completion"] = json!({"controller_id":next["data"]["actor"]["controller_id"],"epoch":next["data"]["actor"]["epoch"]});
+            }
             changes.push((instance, fact));
         }
     }

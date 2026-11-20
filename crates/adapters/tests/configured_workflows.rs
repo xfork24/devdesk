@@ -1155,7 +1155,7 @@ fn unsealed_workspace_at_clock(legacy: bool, clock: &std::sync::atomic::AtomicU6
             "workflow.execution.reconcile".into(),
             json!({"instance_id":run["id"],"step":"writer","execution_id":timed_step["id"],"expected_revision":view["record"]["revision"],"expected_step_revision":waiting["step_revision"],"plan_revision_id":view["runtime"]["active_plan_revision_id"],"control_version":view["runtime"]["control_version"],"reason":"核对原始拒绝时间并恢复原执行，不申请 Human 判定"}),
         )];
-        command(&e,"orchestration.open",outer["id"].as_str(),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
+        command(&e,"orchestration.open",outer["id"].as_str(),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11"})).unwrap();
         command(
             &e,
             "workflow.driver.select",
@@ -1635,6 +1635,27 @@ fn detailed_configuration_compiles_and_reset_references_form_a_complete_new_grap
         .unwrap();
     let instance: ConfiguredWorkflowInstance = row.decode().unwrap();
     assert!(instance.human_governance);
+    // The ordinary Feature entry point must have the same authoritative zero
+    // baseline as workflow.start and child creation. Existing history is never
+    // inferred as zero; only this atomic creation can establish it.
+    assert!(!instance.plan.document.rework_policies.is_empty());
+    for policy in instance.plan.document.rework_policies.keys() {
+        let budget = created
+            .governance
+            .iter()
+            .find(|r| {
+                r.r#type == "workflow_rework_budget"
+                    && r.definition_id == feature["id"]
+                    && r.name == *policy
+            })
+            .unwrap();
+        assert_eq!(budget.data["used"], 0);
+        assert_eq!(budget.data["history_baseline_known"], true);
+        assert_eq!(
+            budget.data["initial_plan_revision_id"],
+            instance.active_plan_revision_id
+        );
+    }
     let rendered: Value = serde_json::from_str(
         &render_source_task(
             &instance,
@@ -2672,7 +2693,7 @@ fn platform_material_forwarding_case(mode: &str) {
         ..Default::default()
     });
     e.harness = relay.clone();
-    command(&e,"orchestration.open",Some(root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
+    command(&e,"orchestration.open",Some(root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11"})).unwrap();
     command(
         &e,
         "workflow.driver.select",
@@ -2938,7 +2959,7 @@ fn manager_input_decisions_are_current_and_only_exact_approved_content_can_be_re
             format!("人类决定：先修复环境再重跑，不放行失败结果。引用原报告：{value}");
         let mut arguments = json!({"instance_id":root,"plan_revision_id":view["runtime"]["active_plan_revision_id"],"expected_revision":view["record"]["revision"],"control_version":view["runtime"]["control_version"],"expected_step_revision":waiting["step_revision"],"execution_id":waiting["execution_id"],"step":"repair","input":approved_input});
         let pending = command(&e,"workflow.decision.request",Some(&root),json!({"operation":"workflow.step.input","reason":"请确认原样转交此报告","arguments":arguments,"interaction":{"title":"转交原失败报告","background":"步骤等待原报告","requested_action":"确认确切补充输入","completed_work":"已核对需转交的报告正文","review_summary":"本次只请求转交，未宣称验收通过","materials":[],"evidence":[{"instance_id":root,"execution_id":waiting["execution_id"],"label":"等待输入的执行","purpose":"核对确切问题和补充输入范围"}]}})).unwrap();
-        command(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
+        command(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11"})).unwrap();
         let manager = e
             .query("query.orchestration", &json!({"root_instance_id":root}), 4)
             .unwrap();

@@ -115,12 +115,12 @@ Task 和 Feature 的最后一步已接纳、全部规则通过、子流程及原
 
 ## 复核
 
-[只读分析器](../../tests/live/workflow_costs.py) 仅读取已有基准及本地持久化事件，不运行模型、创建容器或推进工作流。
+[只读分析器](../../../tests/live/workflow_costs.py) 仅读取已有基准及本地持久化事件，不运行模型、创建容器或推进工作流。
 
 ```bash
-python3 tests/live/workflow_costs.py docs/design/workflow-benchmark-2026-11-20.json \
+python3 tests/live/workflow_costs.py docs/design/performance/workflow-benchmark-2026-11-20.json \
   --data data --report /tmp/devdesk-workflow-cost-breakdown.json
-python3 tests/live/workflow_timeline.py docs/design/workflow-benchmark-2026-11-20.json \
+python3 tests/live/workflow_timeline.py docs/design/performance/workflow-benchmark-2026-11-20.json \
   --basis net --svg /tmp/devdesk-workflow-net.svg --spans /tmp/devdesk-workflow-spans.json
 python3 -m unittest discover -s tests/live -p 'test_*.py'
 ```

@@ -14,6 +14,8 @@ use devdesk_core::*;
 use devdesk_domain::*;
 use serde_json::{Value, json};
 use std::sync::Arc;
+#[path = "support/segment_actions.rs"]
+mod segment_actions;
 
 #[test]
 fn a_later_human_stop_survives_reconciliation_of_an_earlier_kernel_stop() {
@@ -1040,6 +1042,7 @@ fn plan_sources_publish_members_atomically_but_external_catalog_changes_still_co
 
 #[derive(Default)]
 struct NativeManager {
+    automated_segment: bool,
     plan_change: Option<Value>,
     segment: bool,
     segment_wait: bool,
@@ -1061,7 +1064,7 @@ fn signed_native_plan_change_survives_own_reply_but_not_controller_revocation() 
         let directory = tempfile::tempdir().unwrap();
         let mut e = engine(directory.path());
         let root = start(&e, document());
-        let opened = cmd(&e, "orchestration.open", Some(&root), json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
+        let opened = cmd(&e, "orchestration.open", Some(&root), json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11"})).unwrap();
         cmd(
             &e,
             "workflow.driver.select",
@@ -1296,6 +1299,11 @@ impl ports::Harness for NativeManager {
             )
         };
         args["expected_revision"] = instance["revision"].clone();
+        if self.automated_segment && method == "workflow_segment_dispatch" {
+            args["include_human"] = json!(true);
+            args["prepare_human_requests"] = json!(true);
+            args["complete_instance"] = json!(true);
+        }
         args["control_version"] = instance["control_version"].clone();
         if method.starts_with("workflow_step_")
             && let Some(execution) = execution
@@ -1426,7 +1434,7 @@ fn native_delegation_wait_batches_progress_and_survives_store_reopen() {
     });
     e.harness = harness.clone();
     let root = start(&e, document());
-    cmd(&e, "orchestration.open", Some(&root), json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
+    cmd(&e, "orchestration.open", Some(&root), json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11"})).unwrap();
     cmd(
         &e,
         "workflow.driver.select",
@@ -1751,7 +1759,7 @@ fn native_plan_change_outlives_its_call_but_retains_takeover_and_control_fences(
             plan_change: Some(arguments),
             ..Default::default()
         });
-        let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
+        let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11"})).unwrap();
         cmd(
             &e,
             "workflow.driver.select",
@@ -1867,7 +1875,7 @@ fn manager_starts_without_extra_input_and_surfaces_rejected_startup_until_resume
     let mut e = engine(directory.path());
     e.harness = Arc::new(RejectedManager);
     let root = start(&e, document());
-    cmd(&e, "orchestration.open", Some(&root), json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
+    cmd(&e, "orchestration.open", Some(&root), json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11"})).unwrap();
     cmd(
         &e,
         "workflow.driver.select",
@@ -1984,7 +1992,7 @@ fn a_controller_does_not_inherit_a_live_owners_code_view() {
             Ok(Value::Null)
         })
         .unwrap();
-    let controller = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
+    let controller = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..50 {
         drive_manager(&e);
         if runtime(&e, &root)["runtime"]["status"] == "completed" {
@@ -2015,7 +2023,7 @@ fn a_native_manager_controls_without_a_running_step_and_persists_its_real_call_c
     let harness = Arc::new(NativeManager::default());
     e.harness = harness.clone();
     let id = start(&e, document());
-    cmd(&e,"orchestration.open",Some(&id),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&id),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..60 {
         drive_manager(&e);
         if runtime(&e, &id)["runtime"]["status"] == "completed" {
@@ -2099,7 +2107,7 @@ fn committed_native_action_recovers_its_receipt_after_host_interruption_and_take
     let mut e = engine(directory.path());
     e.harness = Arc::new(NativeManager::default());
     let root = start(&e, document());
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..20 {
         drive_manager_cycle(&e, true, false);
         if e.store
@@ -2190,7 +2198,7 @@ fn cancelling_manager_turn_revokes_prepared_calls_before_any_business_dispatch()
     let mut e = engine(directory.path());
     e.harness = Arc::new(NativeManager::default());
     let root = start(&e, document());
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..20 {
         drive_manager_cycle(&e, true, false);
         if e.store
@@ -2264,7 +2272,7 @@ fn native_result_is_delivered_in_the_same_drive_and_never_redispatched() {
     let mut e = engine(directory.path());
     e.harness = harness.clone();
     let root = start(&e, document());
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..20 {
         drive_manager_cycle(&e, true, false);
         if e.store
@@ -2352,7 +2360,7 @@ fn human_takeover_revokes_an_already_authorized_native_segment() {
         ..Default::default()
     });
     let root = start(&e, document());
-    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
+    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11","policy":WorkflowControlPolicy::default()})).unwrap();
     cmd(
         &e,
         "workflow.driver.select",
@@ -3560,7 +3568,7 @@ fn takeover_fences_a_late_native_command_without_advancing_the_next_node() {
     let harness = Arc::new(NativeManager::default());
     e.harness = harness;
     let root = start(&e, document());
-    let controller=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap()["id"].as_str().unwrap().to_owned();
+    let controller=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11","policy":WorkflowControlPolicy::default()})).unwrap()["id"].as_str().unwrap().to_owned();
     for _ in 0..8 {
         drive_manager(&e);
         if e.store
@@ -3664,7 +3672,7 @@ fn changes_before_send_admission_are_coalesced_into_one_pending_wakeup() {
     let mut e = engine(directory.path());
     e.harness = Arc::new(NativeManager::default());
     let root = start(&e, document());
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..3 {
         drive_manager_with_send(&e, false);
     }
@@ -3698,7 +3706,7 @@ fn manager_notices_show_original_human_feedback_after_consumption_and_restart() 
     let directory = tempfile::tempdir().unwrap();
     let e = engine(directory.path());
     let root = start(&e, document());
-    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
+    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11"})).unwrap();
     let controller = opened["id"].as_str().unwrap();
     let notify = |controller: &str, instance: &str, title: &str, execution: Option<&str>| {
         let notice_id = id();
@@ -3806,7 +3814,7 @@ fn manager_notices_show_original_human_feedback_after_consumption_and_restart() 
     }
 
     let foreign_root = start(&e, document());
-    let foreign = cmd(&e,"orchestration.open",Some(&foreign_root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
+    let foreign = cmd(&e,"orchestration.open",Some(&foreign_root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11"})).unwrap();
     let foreign_controller = foreign["id"].as_str().unwrap();
     notify(foreign_controller, &foreign_root, "其他流程的问题", None);
     cmd(
@@ -3870,7 +3878,7 @@ fn human_input_follows_the_controller_epoch_across_background_revision_updates()
     let mut e = engine(directory.path());
     e.harness = Arc::new(NativeManager::default());
     let root = start(&e, document());
-    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
+    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11","policy":WorkflowControlPolicy::default()})).unwrap();
     let controller = opened["id"].as_str().unwrap();
     let original = e
         .store
@@ -3957,7 +3965,7 @@ fn signing_an_unchanged_waiting_gate_wakes_the_idle_manager() {
         json!({"step":"one"}),
     )
     .unwrap();
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..20 {
         drive_manager(&e);
     }
@@ -4200,7 +4208,7 @@ fn manager_chat_signs_only_one_observed_gate_and_never_conditional_or_stale_appr
         json!({"step":"one"}),
     )
     .unwrap();
-    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
+    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11","policy":WorkflowControlPolicy::default()})).unwrap();
     let controller = opened["id"].as_str().unwrap();
     let pending = pending_business_gate(&e, &root);
     let context = json!([{"id":pending["id"],"revision":1}]);
@@ -4399,7 +4407,7 @@ fn manager_sees_and_signs_a_deep_child_gate_before_any_model_decision_request() 
         &e,
         json!({"schema_version":6,"stages":[{"key":"work","name":"Feature"}],"steps":[{"key":"call","name":"执行Task","stage":"work","executor":{"type":"workflow","workflow_ref":middle["id"]}}]}),
     );
-    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
+    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11","policy":WorkflowControlPolicy::default()})).unwrap();
     cmd(
         &e,
         "workflow.step.dispatch",
@@ -4510,7 +4518,7 @@ fn manager_chat_does_not_approve_multiple_pending_requests() {
         json!({"step":"one"}),
     )
     .unwrap();
-    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
+    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11","policy":WorkflowControlPolicy::default()})).unwrap();
     let one = pending_business_gate(&e, &root);
     let two = pending_business_gate(&e, &root);
     let result = cmd(&e,"orchestration.input",opened["id"].as_str(),json!({"epoch":1,"input":"确认PRD，继续执行后续步骤","approval_context":[{"id":one["id"],"revision":1},{"id":two["id"],"revision":1}]})).unwrap();
@@ -4564,7 +4572,7 @@ fn source_control_policy_is_canonical_after_reload_without_changing_authorizatio
     let dir = tempfile::tempdir().unwrap();
     let e = engine(dir.path());
     let root = start(&e, document());
-    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
+    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11"})).unwrap();
     let controller = opened["id"].as_str().unwrap().to_owned();
     let before = e
         .store
@@ -4610,7 +4618,7 @@ fn human_adopts_root_manager_sources_only_after_the_old_writer_is_stopped() {
     let root = start(&e, document());
     let state = e.store.snapshot().unwrap();
     let original = state
-        .configuration("simplified-agent-project-manager:10")
+        .configuration("simplified-agent-project-manager:11")
         .unwrap();
     let mut successor = original.source();
     successor.identity = format!("selected-manager-{}", id());
@@ -5047,7 +5055,7 @@ fn switching_agent_to_rust_rejects_already_prepared_native_calls() {
     let harness = Arc::new(NativeManager::default());
     e.harness = harness;
     let root = start(&e, document());
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..20 {
         drive_manager_cycle(&e, true, false);
         if e.store
@@ -5884,7 +5892,7 @@ fn native_manager_cannot_wait_for_another_roots_platform_execution() {
     let mut doc = document();
     doc["steps"][0]["confirmation"] = json!("human");
     let root = start(&e, doc);
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11"})).unwrap();
     cmd(
         &e,
         "workflow.driver.select",
@@ -5925,7 +5933,7 @@ fn assert_native_human_gate_with_platform(wait_for_execution: bool, platform: bo
         doc["steps"][0]["executor"] = json!({"type":"tool","tool_ref":"builtin-tool-materials-capture:1","arguments":{"material":{"type":"constant","value":{"data":"frozen input"}}}});
     }
     let root = start(&e, doc);
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11"})).unwrap();
     cmd(
         &e,
         "workflow.driver.select",
@@ -6108,7 +6116,7 @@ fn wait_registration_rechecks_concurrent_events_without_replaying_business_actio
         let mut doc = document();
         doc["steps"][0]["confirmation"] = json!("human");
         let root = start(&e, doc);
-        cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
+        cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11"})).unwrap();
         cmd(
             &e,
             "workflow.driver.select",
@@ -6199,7 +6207,7 @@ fn managers_do_not_exhaust_wakeup_or_tool_call_counts_and_keep_human_gates() {
         let mut policy = serde_json::to_value(WorkflowControlPolicy::default()).unwrap();
         policy["max_turns_per_wakeup"] = json!(1);
         policy["max_tool_calls_per_turn"] = json!(1);
-        let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10","policy":policy})).unwrap();
+        let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11","policy":policy})).unwrap();
         let controller_id = opened["id"].as_str().unwrap().to_owned();
         cmd(
             &e,
@@ -6296,7 +6304,7 @@ fn a_legacy_manager_suspension_recovers_its_original_delegation_after_restart() 
     });
     e.harness = harness.clone();
     let root = start(&e, document());
-    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:10"})).unwrap();
+    let opened = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11"})).unwrap();
     let controller_id = opened["id"].as_str().unwrap().to_owned();
     cmd(
         &e,

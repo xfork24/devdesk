@@ -1,6 +1,9 @@
 //! Commit-time workflow facts. Notifications never choose a business action.
 use crate::*;
 use std::collections::BTreeMap;
+#[cfg(test)]
+#[path = "controller_automation_event_tests.rs"]
+mod automation_tests;
 
 fn step_fact(step: &Value) -> Value {
     json!({"execution_id":step["id"],"step":step["step"],"status":step["status"],
@@ -318,6 +321,11 @@ fn native_event_items_at(
                     change["execution"]["status"].as_str(),
                     Some("running" | "awaiting_acceptance" | "completed")
                 )
+                || (change["kind"] == "execution"
+                    && change["execution"]["status"] == "waiting_confirmation"
+                    && change["delegated_progress"]["controller_id"] == id
+                    && change["delegated_progress"]["epoch"] == epoch
+                    && change["delegated_progress"]["prepare_human_requests"] == true)
         })
     };
     let mut items = Vec::new();
@@ -378,7 +386,21 @@ fn native_event_items_at(
         {
             break;
         }
-        if stop_result
+        let automatic_notice = controller.is_some_and(|(id, epoch)| {
+            let change = &data["change"];
+            (change["delegated_completion"]["controller_id"] == id
+                && change["delegated_completion"]["epoch"] == epoch)
+                || (change["delegated_progress"]["controller_id"] == id
+                    && change["delegated_progress"]["epoch"] == epoch
+                    && change["delegated_progress"]["prepare_human_requests"] == true
+                    && (change["kind"] == "human.confirmed"
+                        || (change["kind"] == "execution.stopped"
+                            && change["delegated_progress"]["normal_native_stop"] == true)
+                        || (change["kind"] == "decision.changed"
+                            && matches!(change["status"].as_str(), Some("pending" | "approved")))))
+        });
+        if automatic_notice
+            || stop_result
             || (data["change"]["kind"] == "workflow.changed"
                 && data["change"]["changes"].as_array().is_some_and(|changes| {
                     !changes.is_empty()

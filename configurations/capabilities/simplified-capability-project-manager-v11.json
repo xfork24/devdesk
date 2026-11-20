@@ -1,7 +1,7 @@
 {
   "type": "capability",
   "identity": "simplified-capability-project-manager",
-  "revision": 10,
+  "revision": 11,
   "name": "精简版project-manager能力",
   "scope": "global",
   "harness_ref": "builtin-harness-codex-managed:1",
@@ -10,7 +10,7 @@
     "simplified-skill-context:4",
     "simplified-skill-project-planning:3",
     "simplified-skill-delivery-self-check:4",
-    "simplified-skill-workflow-orchestration:7",
+    "simplified-skill-workflow-orchestration:8",
     "builtin-skill-project-workbench:1"
   ],
   "tools": [
@@ -35,7 +35,7 @@
     "builtin-tool-workflow-decision-request:4",
     "builtin-tool-workflow-execution-reconcile:2",
     "builtin-tool-workflow-complete:2",
-    "builtin-tool-workflow-segment-dispatch:3",
+    "builtin-tool-workflow-segment-dispatch:4",
     "builtin-tool-project-overview:1",
     "builtin-tool-project-records-list:1",
     "builtin-tool-project-record-read:1",

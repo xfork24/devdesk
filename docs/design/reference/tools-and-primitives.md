@@ -72,7 +72,7 @@
 | `workflow.materials.import` | [封存用户提供的材料](../../../configurations/tools/builtin-tool-workflow-materials-import-v2.json) | `plan_revision_id`、`delivery_ref`、`value`、`source`、`expected_revision`、`control_version` |
 | `workflow.execution.reconcile` | [核对未知执行结果](../../../configurations/tools/builtin-tool-workflow-execution-reconcile-v2.json) | `plan_revision_id`、`step`、`expected_revision`、`control_version`、`expected_step_revision`、`execution_id` |
 | `workflow.complete` | [完成当前实例](../../../configurations/tools/builtin-tool-workflow-complete-v2.json) | `plan_revision_id`、`expected_revision`、`control_version` |
-| `workflow.segment.dispatch` | [有界委托节点执行](../../../configurations/tools/builtin-tool-workflow-segment-dispatch-v3.json) | `plan_revision_id`、`reason`、`steps`、`expected_revision`、`control_version` |
+| `workflow.segment.dispatch` | [有界委托节点执行](../../../configurations/tools/builtin-tool-workflow-segment-dispatch-v4.json) | `plan_revision_id`、`reason`、`steps`、`expected_revision`、`control_version`；可显式授予普通审批材料准备与完整实例收尾 |
 | `workflow.decision.request` | [请求真正的人类决定](../../../configurations/tools/builtin-tool-workflow-decision-request-v4.json) | `plan_revision_id`、`reason`、`operation`、`arguments`、`interaction`、`expected_revision`、`control_version` |
 | `workflow.rework.preview` | [预演评审返工](../../../configurations/tools/builtin-tool-workflow-rework-preview-v1.json) | `instance_id`、`plan_revision_id`、`rework` |
 

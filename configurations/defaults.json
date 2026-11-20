@@ -9,7 +9,7 @@
   "role_agent_bindings": {
     "builtin-role-analyst:1": "simplified-agent-analyst:8",
     "builtin-role-architect:1": "simplified-agent-architect:8",
-    "builtin-role-project-manager:1": "simplified-agent-project-manager:10",
+    "builtin-role-project-manager:1": "simplified-agent-project-manager:11",
     "builtin-role-developer:1": "simplified-agent-developer:8",
     "builtin-role-tester:1": "simplified-agent-tester:9",
     "builtin-role-reviewer:1": "simplified-agent-reviewer:8"

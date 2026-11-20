@@ -23,6 +23,7 @@
 | [src/configuration_transfers.rs](../../../crates/core/src/configuration_transfers.rs) | [配置加载、发布与编译](configuration-and-catalog.md) |
 | [src/configured_runtime.rs](../../../crates/core/src/configured_runtime.rs) | [配置加载、发布与编译](configuration-and-catalog.md) |
 | [src/configured_workflows.rs](../../../crates/core/src/configured_workflows.rs) | [配置加载、发布与编译](configuration-and-catalog.md) |
+| [src/controller_automation_event_tests.rs](../../../crates/core/src/controller_automation_event_tests.rs) | `automatic_notices_coalesce_only_owned_normal_human_progress` |
 | [src/controller_calls.rs](../../../crates/core/src/controller_calls.rs) | [项目经理与平台工具](manager-and-platform-tools.md) |
 | [src/controller_definitions.rs](../../../crates/core/src/controller_definitions.rs) | Controller configuration is derived from the complete source catalog and explicit actual work/root facts. It does not inspect runtime history. |
 | [src/controller_event_tests.rs](../../../crates/core/src/controller_event_tests.rs) | [项目经理与平台工具](manager-and-platform-tools.md) |
@@ -140,6 +141,7 @@
 | [src/workflow_rules.rs](../../../crates/core/src/workflow_rules.rs) | [工作流启动、派发与结果接纳](workflow-execution.md) |
 | [src/workflow_runtime.rs](../../../crates/core/src/workflow_runtime.rs) | [工作流启动、派发与结果接纳](workflow-execution.md) |
 | [src/workflow_runtime_facts.rs](../../../crates/core/src/workflow_runtime_facts.rs) | Public execution facts. Never project credentials or model connection settings. |
+| [src/workflow_segment_actions.rs](../../../crates/core/src/workflow_segment_actions.rs) | Optional deterministic actions under an exact, finite delegation. |
 | [src/workflow_segments.rs](../../../crates/core/src/workflow_segments.rs) | [工作流启动、派发与结果接纳](workflow-execution.md) |
 | [src/workflow_start.rs](../../../crates/core/src/workflow_start.rs) | [工作流启动、派发与结果接纳](workflow-execution.md) |
 | [src/workspace_commands.rs](../../../crates/core/src/workspace_commands.rs) | Workspace metadata and new work are admitted from explicit native facts. A Feature and its frozen initial plan are created in one atomic commit. |

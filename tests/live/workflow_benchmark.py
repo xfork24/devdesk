@@ -188,6 +188,12 @@ report={'schema_version':2,'root':ROOT,'project':PROJECT,'started_at_ms':created
                          'platform_outside_human_and_native':covered-human_native,
                          'other_wait_or_unattributed':finished-created-covered},
     'timing_audit':timing_audit,'manager_wakeups':wakeups,'segment_events':segment_events,
+    'delegations':[{'id':i,'instance':definition,**d} for i,t,definition,d,_ in records
+                   if t=='workflow_segment' and definition in members],
+    'completion_decisions':[{'id':d['decision_id'],'completion_record_id':i,'instance':definition,'created_at_ms':ts,
+                            **next(value for identity,_,_,value,_ in records if identity==d['decision_id'])}
+                            for i,t,definition,d,ts in records
+                            if t=='workflow_completion' and definition in members],
     'completion_milestones':completion_milestones,'wait_summary':wait_summary,
     'non_human_wait_wall_ms':finished-created-union(human_intervals),
     'steps':steps,'superseded_attempts':attempts,'wait_intervals':waits,'human_confirmations':confirmations,

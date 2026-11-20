@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<title>Workflow 优化前后完整时间分布</title>
+<style>
+  :root { color-scheme: light dark; font: 15px system-ui,sans-serif; background: light-dark(#fafbfc,#1c2026); color: light-dark(#202b3d,#e6eaf0) }
+  body { margin: 0 auto; padding: 20px; max-width: 1700px }
+  h1 { font-size: 23px; margin: 0 0 12px } h2 { font-size: 18px; margin: 20px 0 8px }
+  p { line-height: 1.65; margin: 8px 0 } a { color: light-dark(#225d93,#8fc6fa) }
+  .controls { display: flex; gap: 22px; align-items: center; flex-wrap: wrap; position: sticky; top: 0; padding: 12px 0; background: light-dark(#fafbfc,#1c2026); z-index: 2 }
+  select,button { font: inherit; padding: 7px 12px; border: 1px solid light-dark(#c5cdd8,#596575); border-radius: 6px; background: light-dark(#fff,#29313b); color: inherit }
+  button[aria-pressed="true"] { background: light-dark(#263f58,#b5d6f5); color: light-dark(#fff,#10253a) }
+  .table { overflow: auto } table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums }
+  th,td { padding: 8px 12px; text-align: right; border-bottom: 1px solid light-dark(#d9dee5,#414d5b); white-space: nowrap } th:first-child,td:first-child { text-align: left }
+  .chart { max-height: 78vh; overflow: auto; background: #fff; border-radius: 6px }
+  svg { display: block; width: 100%; min-width: 1400px; height: auto }
+  .detail { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; min-height: 3em; background: light-dark(#eef2f6,#29313b); padding: 12px; border-radius: 6px }
+  .muted { color: light-dark(#516278,#b9c5d4) }
+  @media(max-width:600px) { body { padding: 12px } th,td { padding: 7px } }
+</style>
+<h1>Workflow 优化前后完整时间分布</h1>
+<p>净耗时排除审批请求创建后的外部响应与有系统证据的主机休眠。结束采用持久化完成、经理关闭及 worker 静止的最后时间戳；操作者发现完成的延迟不计入。</p>
+<div class="table"><table aria-label="优化前后实测对比"><thead><tr><th>测量</th><th>优化前</th><th>优化后</th><th>减少</th><th>变化</th></tr></thead><tbody id="metrics"></tbody></table></div>
+<p class="muted">阶段窗口与组件分配相互重叠，不能相加。两次为同项目、相同工作流与测试配置的等规模文本改动；单次模型运行存在波动，具体因果边界见同目录性能报告。</p>
+<div class="controls">
+  <label>运行 <select id="run"><option value="1">优化后</option><option value="0">优化前</option><option value="both">同时显示</option></select></label>
+  <div role="group" aria-label="计时口径"><button data-basis="net" aria-pressed="true">净流程</button> <button data-basis="raw" aria-pressed="false">原始墙钟</button></div>
+  <span id="scale" class="muted"></span>
+</div>
+<div id="timelines"></div>
+<h2>所选时间段</h2>
+<div id="detail" class="detail" role="status">点击或用键盘 Enter 选择时序行，查看原始起止时间和持续时间。</div>
+<p><a href="workflow-timeline-2026-11-20-optimized-net.svg">优化后净流程 SVG</a> · <a href="workflow-timeline-2026-11-20-optimized-raw.svg">优化后原始 SVG</a> · <a href="workflow-optimization-2026-11-20.md">效果分析与完整证据</a></p>
+<script id="performance-data" type="application/json">__PERFORMANCE_DATA__</script>
+<script>
+  const data = JSON.parse(document.getElementById('performance-data').textContent);
+  const names = {
+    workflow_net_ms:'端到端净流程',approval_preparation_ms:'四次审批准备',instance_completion_ms:'Task + Feature 显式完成窗口',settlement_ms:'根完成至经理及 worker 静止',
+    manager_turns:'经理原生回合',manager_wait_only_turns:'只调用 wait 的经理回合',manager_observation_only_turns:'只读/等待回合（无控制动作）',manager_wait_only_exclusive_ms:'wait 回合独占的净 Agent 时间',
+    agent_ms:'Agent 服务净分配',business_tools_ms:'业务工具净分配',workflow_ms:'Workflow 编排与运行时净分配'
+  };
+  const time = ms => {
+    const sign = ms < 0 ? '−' : ''; ms = Math.abs(ms);
+    return sign + String(Math.floor(ms/60000)).padStart(2,'0') + ':' + (ms%60000/1000).toFixed(3).padStart(6,'0');
+  };
+  const tbody = document.getElementById('metrics');
+  for (const row of data.metrics) {
+    const tr = document.createElement('tr');
+    const format = value => row.metric.endsWith('_ms') ? time(value) : String(value);
+    for (const value of [names[row.metric],format(row.before),format(row.after),format(row.saved),row.reduction_percent === null ? '—' : (row.reduction_percent >= 0 ? '减少 ' : '增加 ') + Math.abs(row.reduction_percent).toFixed(1)+'%']) {
+      const td = document.createElement('td'); td.textContent = value; tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+  let basis = 'net';
+  const run = document.getElementById('run'), timelines = document.getElementById('timelines');
+  function render() {
+    timelines.replaceChildren();
+    const indices = run.value === 'both' ? [0,1] : [Number(run.value)];
+    for (const index of indices) {
+      const heading = document.createElement('h2'); heading.textContent = data.titles[index];
+      const chart = document.createElement('div'); chart.className = 'chart'; chart.innerHTML = data.views[index][basis];
+      chart.querySelector('svg').setAttribute('role','group');
+      const select = event => {
+        const row = event.target.closest('[data-span-id]'); if (!row) return;
+        const span = data.datasets[index].spans.find(s => s.id === row.getAttribute('data-span-id'));
+        document.getElementById('detail').textContent = data.titles[index]+' · '+span.name+'\n'+Object.entries(span.attributes).map(([k,v]) => k+'：'+v).join('\n');
+      };
+      chart.addEventListener('click',select);
+      chart.addEventListener('keydown',event => { if (event.key==='Enter' || event.key===' ') {event.preventDefault();select(event);} });
+      timelines.append(heading,chart);
+    }
+    document.getElementById('scale').textContent = '两轮共用横轴比例；'+(basis==='net'?'外部等待折叠为零时长':'保留全部外部等待');
+    document.querySelectorAll('[data-basis]').forEach(button => button.setAttribute('aria-pressed',String(button.dataset.basis===basis)));
+  }
+  run.addEventListener('change',render);
+  document.querySelectorAll('[data-basis]').forEach(button => button.addEventListener('click',() => {basis=button.dataset.basis;render();}));
+  render();
+</script>
+</html>

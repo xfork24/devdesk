@@ -53,6 +53,7 @@ impl Engine {
             "委托需要 1 至 32 个确切节点",
         )?;
         let mut nodes = std::collections::BTreeSet::new();
+        let mut needed_operations = 0u64;
         for key in keys {
             let e = root.step(self, &key)?;
             let step = root
@@ -70,6 +71,21 @@ impl Engine {
                 "委托节点重复或未显式允许人审节点执行",
             )?;
             commit.witness(e.reads.versions().iter().cloned())?;
+            if !matches!(
+                e.execution.status,
+                StepExecutionStatus::Completed | StepExecutionStatus::Skipped
+            ) {
+                needed_operations += if e.execution.status == StepExecutionStatus::Queued {
+                    2
+                } else {
+                    1
+                };
+                if c.payload["prepare_human_requests"] == true
+                    && step.confirmation == ConfirmationPolicy::Human
+                {
+                    needed_operations += 1;
+                }
+            }
         }
         let driver = one(
             self.store.as_ref(),
@@ -77,13 +93,51 @@ impl Engine {
             &root.instance.root_instance_id,
         )?;
         let actual = driver.value.as_ref();
+        let prepare_human = c.payload["prepare_human_requests"] == true;
+        let complete_instance = c.payload["complete_instance"] == true;
+        require(
+            !(prepare_human || complete_instance)
+                || needed_operations + u64::from(complete_instance) <= 64,
+            "自动准备与收尾超出有界委托操作预算，请先缩小执行批次",
+        )?;
+        require(
+            !prepare_human || c.payload["include_human"] == true,
+            "准备审批请求需要显式包含 Human 节点",
+        )?;
+        require(
+            !complete_instance
+                || root
+                    .instance
+                    .steps
+                    .iter()
+                    .all(|e| nodes.contains(&e.node_id)),
+            "自动完成必须委托当前实例的全部节点",
+        )?;
+        if let WorkflowActor::Controller { controller_id, .. } = context.actor() {
+            let selected = one(self.store.as_ref(), "governance", controller_id)?;
+            let owner = restored(self, &selected)?;
+            let controller: WorkflowController = owner.decode()?;
+            for (enabled, operation) in [
+                (prepare_human, "request_decision"),
+                (complete_instance, "complete"),
+            ] {
+                if enabled {
+                    controller.policy.permits(operation)?;
+                    require(
+                        !controller.policy.human_operations.contains(operation),
+                        "自动委托操作仍需要独立人类授权",
+                    )?;
+                }
+            }
+            commit.witness([version(&selected)])?;
+        }
         require(
             matches!(context.actor(), WorkflowActor::Human)
                 || actual.is_some_and(|d| d["data"]["mode"] == "agent"),
             "当前经理不持有根 Agent 驱动",
         )?;
         commit.witness([version(&driver)])?;
-        let id=commit.new_record(record("workflow_segment",root.record.id.clone(),root.record.scope.clone(),text(&c.payload,"reason")?,1,None,json!({"status":"active","plan_revision_id":root.instance.active_plan_revision_id,"node_ids":nodes,"include_human":c.payload["include_human"]==true,"actor":context.actor(),"driver_id":actual.map(|d|&d["id"]),"driver_epoch":actual.map(|d|&d["data"]["epoch"]),"driver_mode":actual.map(|d|&d["data"]["mode"]),"max_operations":64,"operations":0}),false),"workflow-segment")?;
+        let id=commit.new_record(record("workflow_segment",root.record.id.clone(),root.record.scope.clone(),text(&c.payload,"reason")?,1,None,json!({"status":"active","plan_revision_id":root.instance.active_plan_revision_id,"node_ids":nodes,"include_human":c.payload["include_human"]==true,"prepare_human_requests":prepare_human,"complete_instance":complete_instance,"actor":context.actor(),"driver_id":actual.map(|d|&d["id"]),"driver_epoch":actual.map(|d|&d["data"]["epoch"]),"driver_mode":actual.map(|d|&d["data"]["mode"]),"max_operations":64,"operations":0}),false),"workflow-segment")?;
         commit.finish(fingerprint, json!({"id":id,"status":"active"}))
     }
     pub fn drive_workflow_segments(&self) -> Result<()> {
@@ -228,6 +282,19 @@ impl Engine {
                     if e.status == StepExecutionStatus::WaitingConfirmation
                         && ready["human_satisfied"] != true
                     {
+                        if segment.data["prepare_human_requests"] == true {
+                            match self
+                                .prepare_segment_human_request(&segment, &root, &resources, &ready)
+                            {
+                                Ok(true) => break,
+                                Ok(false) => {}
+                                Err(error) if error.retryable_conflict() => break,
+                                Err(error) => {
+                                    status = Some(("stopped", error.to_string()));
+                                    break;
+                                }
+                            }
+                        }
                         // Dispatch delegation never supplies a Human signature.
                         // Keep the grant durable while unrelated nodes advance;
                         // acceptance still repeats the exact signature checks.
@@ -274,7 +341,31 @@ impl Engine {
                 complete = false;
             }
             if complete {
-                status = Some(("completed", String::new()));
+                if segment.data["complete_instance"] == true
+                    && !matches!(
+                        root.instance.status,
+                        StepExecutionStatus::Completed | StepExecutionStatus::Cancelled
+                    )
+                {
+                    if self.native_completion_ready(&root)? {
+                        match self.complete_segment_instance(&segment, &root) {
+                            Ok(_) => {}
+                            Err(error) if error.retryable_conflict() => {}
+                            Err(error) => status = Some(("stopped", error.to_string())),
+                        }
+                    } else {
+                        status =
+                            Some(("stopped", "整体完成条件或交付证据未满足，需经理核对".into()));
+                    }
+                    // Completion changes the header and consumes this grant in
+                    // the same guarded command. Observe its terminal state next tick.
+                    if status.is_none() {
+                        continue;
+                    }
+                }
+                if status.is_none() {
+                    status = Some(("completed", String::new()));
+                }
             }
             if let Some((status, reason)) = status {
                 let mut next = segment.clone();

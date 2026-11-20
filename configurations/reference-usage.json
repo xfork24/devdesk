@@ -836,10 +836,10 @@
     ],
     "builtin-skill-project-workbench:1": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/skills/4",
         "kind": "reference"
@@ -1197,10 +1197,10 @@
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/0",
         "kind": "reference"
@@ -1226,10 +1226,10 @@
     ],
     "builtin-tool-configuration-catalog:1": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/27",
         "kind": "reference"
@@ -1237,10 +1237,10 @@
     ],
     "builtin-tool-configuration-change-apply:1": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/31",
         "kind": "reference"
@@ -1248,10 +1248,10 @@
     ],
     "builtin-tool-configuration-change-preview:1": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/30",
         "kind": "reference"
@@ -1259,10 +1259,10 @@
     ],
     "builtin-tool-configuration-read:1": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/28",
         "kind": "reference"
@@ -1270,10 +1270,10 @@
     ],
     "builtin-tool-configuration-transfer-apply:2": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/33",
         "kind": "reference"
@@ -1281,10 +1281,10 @@
     ],
     "builtin-tool-configuration-transfer-cancel:2": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/34",
         "kind": "reference"
@@ -1292,10 +1292,10 @@
     ],
     "builtin-tool-configuration-transfer-stage:1": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/32",
         "kind": "reference"
@@ -1303,10 +1303,10 @@
     ],
     "builtin-tool-configuration-transfer-status:1": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/35",
         "kind": "reference"
@@ -1314,10 +1314,10 @@
     ],
     "builtin-tool-configuration-usage:1": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/29",
         "kind": "reference"
@@ -1454,10 +1454,10 @@
     "builtin-tool-materials-capture:1": [],
     "builtin-tool-project-artifact-read:1": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/25",
         "kind": "reference"
@@ -1465,10 +1465,10 @@
     ],
     "builtin-tool-project-overview:1": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/22",
         "kind": "reference"
@@ -1476,10 +1476,10 @@
     ],
     "builtin-tool-project-record-read:1": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/24",
         "kind": "reference"
@@ -1487,10 +1487,10 @@
     ],
     "builtin-tool-project-records-list:1": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/23",
         "kind": "reference"
@@ -1498,10 +1498,10 @@
     ],
     "builtin-tool-project-resources:1": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/26",
         "kind": "reference"
@@ -1536,10 +1536,10 @@
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/36",
         "kind": "reference"
@@ -1566,10 +1566,10 @@
     "builtin-tool-tasks-create:1": [],
     "builtin-tool-workflow-cancel:2": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/14",
         "kind": "reference"
@@ -1577,10 +1577,10 @@
     ],
     "builtin-tool-workflow-change-apply:4": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/16",
         "kind": "reference"
@@ -1588,10 +1588,10 @@
     ],
     "builtin-tool-workflow-change-preview:3": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/15",
         "kind": "reference"
@@ -1599,10 +1599,10 @@
     ],
     "builtin-tool-workflow-complete:2": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/20",
         "kind": "reference"
@@ -1610,10 +1610,10 @@
     ],
     "builtin-tool-workflow-controller-notify:1": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/38",
         "kind": "reference"
@@ -1621,10 +1621,10 @@
     ],
     "builtin-tool-workflow-controller-wait:1": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/37",
         "kind": "reference"
@@ -1632,10 +1632,10 @@
     ],
     "builtin-tool-workflow-decision-request:4": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/18",
         "kind": "reference"
@@ -1643,10 +1643,10 @@
     ],
     "builtin-tool-workflow-events-read:1": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/3",
         "kind": "reference"
@@ -1654,10 +1654,10 @@
     ],
     "builtin-tool-workflow-execution-inspect:1": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/5",
         "kind": "reference"
@@ -1665,10 +1665,10 @@
     ],
     "builtin-tool-workflow-execution-reconcile:2": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/19",
         "kind": "reference"
@@ -1676,10 +1676,10 @@
     ],
     "builtin-tool-workflow-execution-stop:2": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/11",
         "kind": "reference"
@@ -1687,10 +1687,10 @@
     ],
     "builtin-tool-workflow-inspect:2": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/2",
         "kind": "reference"
@@ -1698,10 +1698,10 @@
     ],
     "builtin-tool-workflow-materials-import:2": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/17",
         "kind": "reference"
@@ -1745,10 +1745,10 @@
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/4",
         "kind": "reference"
@@ -1774,10 +1774,10 @@
     ],
     "builtin-tool-workflow-pause:2": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/12",
         "kind": "reference"
@@ -1785,10 +1785,10 @@
     ],
     "builtin-tool-workflow-resume:2": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/13",
         "kind": "reference"
@@ -1796,21 +1796,21 @@
     ],
     "builtin-tool-workflow-rework-preview:1": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/39",
         "kind": "reference"
       }
     ],
-    "builtin-tool-workflow-segment-dispatch:3": [
+    "builtin-tool-workflow-segment-dispatch:4": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/21",
         "kind": "reference"
@@ -1818,10 +1818,10 @@
     ],
     "builtin-tool-workflow-start:3": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/1",
         "kind": "reference"
@@ -1829,10 +1829,10 @@
     ],
     "builtin-tool-workflow-step-accept:2": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/7",
         "kind": "reference"
@@ -1840,10 +1840,10 @@
     ],
     "builtin-tool-workflow-step-dispatch:2": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/6",
         "kind": "reference"
@@ -1851,10 +1851,10 @@
     ],
     "builtin-tool-workflow-step-input:2": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/8",
         "kind": "reference"
@@ -1862,10 +1862,10 @@
     ],
     "builtin-tool-workflow-step-retry:2": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/9",
         "kind": "reference"
@@ -1873,10 +1873,10 @@
     ],
     "builtin-tool-workflow-step-rework:3": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/tools/10",
         "kind": "reference"
@@ -3515,10 +3515,10 @@
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/skills/0",
         "kind": "reference"
@@ -3571,10 +3571,10 @@
         "kind": "reference"
       },
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/skills/2",
         "kind": "reference"
@@ -3633,10 +3633,10 @@
     ],
     "simplified-skill-project-planning:3": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/skills/1",
         "kind": "reference"
@@ -3653,12 +3653,12 @@
         "kind": "reference"
       }
     ],
-    "simplified-skill-workflow-orchestration:7": [
+    "simplified-skill-workflow-orchestration:8": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/skills/3",
         "kind": "reference"
@@ -3707,10 +3707,10 @@
     ],
     "simplified-spec-planning:1": [
       {
-        "reference": "simplified-capability-project-manager:10",
+        "reference": "simplified-capability-project-manager:11",
         "name": "精简版project-manager能力",
         "type": "capability",
-        "version": 10,
+        "version": 11,
         "scope": "global",
         "path": "/spec_refs/0",
         "kind": "reference"

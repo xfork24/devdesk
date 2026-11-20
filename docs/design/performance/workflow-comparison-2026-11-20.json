@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "before_root": "a7597e37-0dfe-c2e8-7456-ae9c191bea3f",
+  "after_root": "afb7b261-3ec4-b058-bf4f-6e5f16fc9e27",
+  "metrics": [
+    {
+      "metric": "workflow_net_ms",
+      "before": 902380,
+      "after": 817394,
+      "saved": 84986,
+      "reduction_percent": 9.418
+    },
+    {
+      "metric": "approval_preparation_ms",
+      "before": 76831,
+      "after": 3779,
+      "saved": 73052,
+      "reduction_percent": 95.081
+    },
+    {
+      "metric": "instance_completion_ms",
+      "before": 39110,
+      "after": 1928,
+      "saved": 37182,
+      "reduction_percent": 95.07
+    },
+    {
+      "metric": "settlement_ms",
+      "before": 5598,
+      "after": 79,
+      "saved": 5519,
+      "reduction_percent": 98.589
+    },
+    {
+      "metric": "manager_turns",
+      "before": 21,
+      "after": 2,
+      "saved": 19,
+      "reduction_percent": 90.476
+    },
+    {
+      "metric": "manager_wait_only_turns",
+      "before": 7,
+      "after": 0,
+      "saved": 7,
+      "reduction_percent": 100.0
+    },
+    {
+      "metric": "manager_observation_only_turns",
+      "before": 13,
+      "after": 0,
+      "saved": 13,
+      "reduction_percent": 100.0
+    },
+    {
+      "metric": "manager_wait_only_exclusive_ms",
+      "before": 22370,
+      "after": 0,
+      "saved": 22370,
+      "reduction_percent": 100.0
+    },
+    {
+      "metric": "agent_ms",
+      "before": 720481,
+      "after": 588054,
+      "saved": 132427,
+      "reduction_percent": 18.38
+    },
+    {
+      "metric": "business_tools_ms",
+      "before": 94418,
+      "after": 106005,
+      "saved": -11587,
+      "reduction_percent": -12.272
+    },
+    {
+      "metric": "workflow_ms",
+      "before": 87481,
+      "after": 123335,
+      "saved": -35854,
+      "reduction_percent": -40.985
+    }
+  ],
+  "notes": [
+    "Each row is observed before/after, not a guaranteed causal saving.",
+    "Phase windows overlap component totals; do not add them."
+  ],
+  "sources": [
+    {
+      "path": "workflow-benchmark-2026-11-20.json",
+      "sha256": "89d6d51a92294edb2879b7f67ce133307e78528ea25354716aa5b51957ba2cd7"
+    },
+    {
+      "path": "workflow-cost-breakdown-2026-11-20.json",
+      "sha256": "24d28e09c599403ec0b4eb3680c6f09d4a92ec086b0b23bb5f87d2b5db04f30b"
+    },
+    {
+      "path": "workflow-benchmark-2026-11-20-optimized.json",
+      "sha256": "d5feaf4d1354df9d4e857f0f9cb007555c38ec8cc0c016ce8634c9dd0eb6489d"
+    },
+    {
+      "path": "workflow-cost-breakdown-2026-11-20-optimized.json",
+      "sha256": "71f9367398e7e13368812bc958da90b64aa603d0b10adc6736e47e072621786e"
+    }
+  ]
+}
