@@ -49,21 +49,26 @@ export async function loadCatalog(
   includeArchived = false,
   kind?: string,
   includeHistory = false,
+  signal?: AbortSignal,
 ) {
   const result: Row[] = [];
   let offset = 0;
   let generation: string | undefined;
   for (;;) {
-    const page = await request("query.configuration_index", {
-      include_archived: includeArchived,
-      local: !!projectId,
-      project_id: projectId,
-      offset,
-      limit: 1000,
-      include_history: includeHistory,
-      kind,
-      index_version: generation,
-    });
+    const page = await request(
+      "query.configuration_index",
+      {
+        include_archived: includeArchived,
+        local: !!projectId,
+        project_id: projectId,
+        offset,
+        limit: 1000,
+        include_history: includeHistory,
+        kind,
+        index_version: generation,
+      },
+      { signal },
+    );
     if (generation !== undefined && page.index_version !== generation)
       throw new Error("模板目录已变化，请重新载入");
     generation = page.index_version;

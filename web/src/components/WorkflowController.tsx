@@ -119,11 +119,10 @@ export function WorkflowController({
                 const needsDetails =
                   summary.runtime_approval_pending ||
                   summary.workflow_approval_pending ||
-                  (summary.waiting || []).some(
-                    (step: Row) =>
-                      ["awaiting_acceptance", "needs_reconciliation"].includes(
-                        step.status,
-                      ),
+                  (summary.waiting || []).some((step: Row) =>
+                    ["awaiting_acceptance", "needs_reconciliation"].includes(
+                      step.status,
+                    ),
                   );
                 return needsDetails
                   ? request(

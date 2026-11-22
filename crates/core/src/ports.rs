@@ -618,6 +618,24 @@ pub trait EngineeringStore: Send + Sync {
     ) -> Result<crate::read_models::WorkflowManagementSummary> {
         Err(err("unsupported", "存储未实现流程管理摘要"))
     }
+    /// Selected work adoption with optional history from the same read.
+    fn work_configuration_view(
+        &self,
+        owner: &str,
+        project: Option<&str>,
+        include_history: bool,
+    ) -> Result<Value> {
+        crate::standards::work_configuration_view(
+            &self.snapshot()?,
+            owner,
+            project,
+            include_history,
+        )
+    }
+    /// Standards comparison and usage only need catalog, owners and plan metadata.
+    fn standard_work_snapshot(&self, _usage_ref: Option<&str>) -> Result<EngineeringState> {
+        self.snapshot()
+    }
     fn workflow_progress(
         &self,
         _id: &str,

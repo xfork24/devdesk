@@ -12,7 +12,7 @@ mod workspace;
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Path, Query, Request, State},
-    http::{HeaderValue, StatusCode, header},
+    http::{HeaderMap, HeaderValue, StatusCode, header},
     middleware::{self, Next},
     response::{
         IntoResponse, Response,
@@ -289,6 +289,7 @@ impl Drop for ReadLifetime {
 }
 async fn rpc(
     State(app): State<Arc<App>>,
+    headers: HeaderMap,
     request: std::result::Result<Json<Value>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
     let request =
@@ -310,6 +311,11 @@ async fn rpc(
     static SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let measure = performance_logging();
     let request_id = SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let trace_id = headers
+        .get("x-devdesk-trace-id")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| uuid::Uuid::parse_str(value).ok())
+        .map(|value| value.simple().to_string());
     let submitted = std::time::Instant::now();
     let method = request["method"].as_str().unwrap().to_string();
     let params = request.get("params").cloned().unwrap_or(json!({}));
@@ -321,12 +327,16 @@ async fn rpc(
     let result = tokio::task::spawn_blocking(move || {
         let trace = measure.then(devdesk_adapters::performance::Trace::start);
         let _read_scope=ReadCancellation::enter(read.then(||cancelled.clone()));
-        devdesk_adapters::performance::record("worker.queue_wait", submitted.elapsed().as_secs_f64()*1000.0);
+        let queue_ms = submitted.elapsed().as_secs_f64()*1000.0;
+        devdesk_adapters::performance::record("worker.queue_wait", queue_ms);
+        let dispatch_started = std::time::Instant::now();
         let result = {
             let _span = devdesk_adapters::performance::Span::new("rpc.dispatch");
             if read && cancelled.load(Ordering::Relaxed) { Err(devdesk_domain::err("cancelled", "读取已取消")) } else { app.workspace().and_then(|w| w.dispatch_display_read(&method, params)) }
         };
+        let dispatch_ms = dispatch_started.elapsed().as_secs_f64()*1000.0;
         let success = result.is_ok();
+        let error_code = result.as_ref().err().map(|error| error.code.clone());
         let response = match result {
             Ok(outcome) => {
                 let mut response = json!({"jsonrpc":"2.0","id":id,"result":outcome.value});
@@ -341,17 +351,17 @@ async fn rpc(
         };
         let milliseconds = submitted.elapsed().as_secs_f64()*1000.0;
         if let Some(trace) = trace {
-            eprintln!("{}",json!({"type":"performance","request_id":request_id,"method":method.chars().take(120).collect::<String>(),"success":success,"response_bytes":body.len(),"request_ms":milliseconds,"measurement":trace.finish()}));
+            eprintln!("{}",json!({"type":"performance","request_id":request_id,"trace_id":trace_id,"method":method.chars().take(120).collect::<String>(),"success":success,"error_code":error_code,"response_bytes":body.len(),"request_ms":milliseconds,"measurement":trace.finish()}));
+        } else if milliseconds >= 1500.0 || matches!(error_code.as_deref(), Some("storage" | "storage_busy")) {
+            eprintln!("{}", json!({"type":"rpc_diagnostic","request_id":request_id,"trace_id":trace_id,"method":method.chars().take(120).collect::<String>(),"error_code":error_code,"request_ms":milliseconds,"queue_ms":queue_ms,"dispatch_ms":dispatch_ms,"response_bytes":body.len(),"client_disconnected":cancelled.load(Ordering::Relaxed)}));
         }
         (body, milliseconds)
     }).await;
     match result {
         Ok((body, milliseconds)) => {
             let mut response = ([(header::CONTENT_TYPE,"application/json")],body).into_response();
-            if measure {
-                response.headers_mut().insert("server-timing",HeaderValue::from_str(&format!("rpc;dur={milliseconds:.3}")).expect("numeric timing"));
-                response.headers_mut().insert("x-devdesk-request-id",HeaderValue::from_str(&request_id.to_string()).expect("numeric request id"));
-            }
+            response.headers_mut().insert("server-timing",HeaderValue::from_str(&format!("rpc;dur={milliseconds:.3}")).expect("numeric timing"));
+            response.headers_mut().insert("x-devdesk-request-id",HeaderValue::from_str(&request_id.to_string()).expect("numeric request id"));
             response
         }
         Err(e) => Json(json!({"jsonrpc":"2.0","id":fallback_id,"error":failure(err("internal",e.to_string()))})).into_response(),

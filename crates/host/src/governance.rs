@@ -209,7 +209,18 @@ impl Workspace {
         }
         Some((|| {
             let target = params["target"].as_str().or_else(|| params["id"].as_str());
-            let global = self.global.snapshot()?;
+            let configuration_read = matches!(
+                method,
+                "query.standard_diff"
+                    | "query.standard_usage"
+                    | "query.work_standard_choices"
+                    | "query.work_standard_diff"
+            );
+            let global = if configuration_read {
+                self.global.configuration_snapshot()?.state.as_ref().clone()
+            } else {
+                self.global.snapshot()?
+            };
             let target_global =
                 target.is_some_and(|id| global.governance.iter().any(|r| r.id == id));
             if [
@@ -220,19 +231,42 @@ impl Workspace {
             .contains(&method)
             {
                 let mut states = Vec::new();
-                let mut offset = 0;
-                loop {
-                    let (projects, total) = self.global.projects(offset, 100)?;
-                    for project in &projects {
-                        let state = SqliteStore::read_project_snapshot(
-                            Path::new(&self.global.root()),
-                            &project.id,
-                        )?;
-                        states.push((project.clone(), state));
-                    }
-                    offset += projects.len();
-                    if offset >= total || projects.is_empty() {
-                        break;
+                let needs_project = method != "query.standard_diff"
+                    || [
+                        ("before_ref", "before_project_id"),
+                        ("after_ref", "after_project_id"),
+                    ]
+                    .into_iter()
+                    .any(|(reference, project)| {
+                        params[project].is_string()
+                            || params[reference]
+                                .as_str()
+                                .is_some_and(|id| global.configuration(id).is_err())
+                    });
+                if needs_project {
+                    let mut offset = 0;
+                    loop {
+                        crate::check_read_cancelled()?;
+                        let (projects, total) = self.global.projects(offset, 100)?;
+                        for project in &projects {
+                            crate::check_read_cancelled()?;
+                            let engine = self.project_engine(Some(&project.id))?;
+                            let state = if method == "query.standard_diff" {
+                                engine
+                                    .store
+                                    .configuration_snapshot()?
+                                    .state
+                                    .as_ref()
+                                    .clone()
+                            } else {
+                                engine.store.standard_work_snapshot(None)?
+                            };
+                            states.push((project.clone(), state));
+                        }
+                        offset += projects.len();
+                        if offset >= total || projects.is_empty() {
+                            break;
+                        }
                     }
                 }
                 if method == "query.work_standard_choices" {
@@ -313,12 +347,14 @@ impl Workspace {
                 let mut records = Vec::new();
                 let mut offset = 0;
                 loop {
+                    crate::check_read_cancelled()?;
                     let (projects, total) = self.global.projects(offset, 100)?;
                     for project in &projects {
-                        let state = SqliteStore::read_project_snapshot(
-                            Path::new(&self.global.root()),
-                            &project.id,
-                        )?;
+                        crate::check_read_cancelled()?;
+                        let state = self
+                            .project_engine(Some(&project.id))?
+                            .store
+                            .standard_work_snapshot(Some(reference))?;
                         records.extend(
                             state
                                 .governance

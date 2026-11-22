@@ -93,7 +93,14 @@ function LazyWorkStandard(props: WorkStandardProps) {
       </div>
       <div hidden={!expanded}>
         {loading ? <p role="status">正在读取执行配置…</p> : null}
-        {error ? <p role="alert">{error}</p> : null}
+        {error ? (
+          <>
+            <p role="alert">{error}</p>
+            <ActionButton onClick={() => void open()}>
+              重新读取执行配置
+            </ActionButton>
+          </>
+        ) : null}
         {snapshot ? (
           <WorkStandardEditor
             {...snapshot}
@@ -128,6 +135,10 @@ function WorkStandardEditor({
   const [reason, setReason] = useState("");
   const [preview, setPreview] = useState<Row>();
   const [error, setError] = useState("");
+  const [readError, setReadError] = useState("");
+  const [readAttempt, setReadAttempt] = useState(0);
+  const [requirementsError, setRequirementsError] = useState("");
+  const [requirementsAttempt, setRequirementsAttempt] = useState(0);
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
   const [bindings, setBindings] = useState<Row>({});
@@ -145,28 +156,34 @@ function WorkStandardEditor({
   const activeStandard =
     runtime?.plan.standard_ref || configuration?.data.standard_ref;
   useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
+    const { signal } = controller;
     setReady(false);
-    void loadCatalog(request, projectId, true)
-      .then((rows) => {
-        if (active) setRecords(rows);
-      })
-      .catch((e) => {
-        if (active) setError(String(e));
-      });
-    const work = request("query.work_configuration", {
-      project_id: projectId,
-      owner_id: owner.id,
-    }).then((data) => {
-      if (active) setConfiguration(data.configuration);
-      return data;
-    });
+    setReadError("");
     void Promise.all([
-      work,
-      request("query.project_configuration", { project_id: projectId }),
+      loadCatalog(request, projectId, true, undefined, false, signal),
+      request(
+        "query.work_configuration",
+        {
+          project_id: projectId,
+          owner_id: owner.id,
+          view: "selection",
+        },
+        { signal },
+      ),
+      request(
+        "query.project_configuration",
+        {
+          project_id: projectId,
+          view: "selection",
+        },
+        { signal },
+      ),
     ])
-      .then(([data, defaults]) => {
-        if (!active) return;
+      .then(([rows, data, defaults]) => {
+        if (signal.aborted) return;
+        setRecords(rows);
+        setConfiguration(data.configuration);
         setSelected(
           instance?.data.plan.standard_ref ||
             data.configuration?.data.standard_ref ||
@@ -192,11 +209,11 @@ function WorkStandardEditor({
         setReady(true);
       })
       .catch((e) => {
-        if (active) setError(String(e));
+        if (signal.aborted) return;
+        setReadError(String(e));
+        controller.abort();
       });
-    return () => {
-      active = false;
-    };
+    return () => controller.abort();
   }, [
     request,
     projectId,
@@ -207,25 +224,37 @@ function WorkStandardEditor({
     instance?.data.plan.harness_permission_ref,
     instance?.data.workflow_ref,
     instanceBindings,
+    readAttempt,
   ]);
+  const authorizationExpanded = panels.authorization;
   useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
+    const { signal } = controller;
     setRequirements(undefined);
-    if (workflow)
-      void request("query.workflow_requirements", {
-        id: workflow,
-        project_id: projectId,
-      })
+    setRequirementsError("");
+    if (workflow && authorizationExpanded)
+      void request(
+        "query.workflow_requirements",
+        {
+          id: workflow,
+          project_id: projectId,
+        },
+        { signal },
+      )
         .then((value) => {
-          if (active) setRequirements(value);
+          if (!signal.aborted) setRequirements(value);
         })
         .catch((e) => {
-          if (active) setError(String(e));
+          if (!signal.aborted) setRequirementsError(String(e));
         });
-    return () => {
-      active = false;
-    };
-  }, [workflow, request, projectId]);
+    return () => controller.abort();
+  }, [
+    workflow,
+    request,
+    projectId,
+    authorizationExpanded,
+    requirementsAttempt,
+  ]);
   const snapshot = records.find((r) => r.id === selected);
   const roots: string[] =
     snapshot?.workflow_refs || snapshot?.root_workflow_refs || [];
@@ -248,7 +277,18 @@ function WorkStandardEditor({
           {displayText(error)}
         </p>
       ) : null}
-      {!ready && !error ? <p role="status">正在读取规范与授权…</p> : null}
+      {readError ? (
+        <>
+          <p role="alert">{displayText(readError)}</p>
+          <ActionButton
+            onClick={() => setReadAttempt((attempt) => attempt + 1)}
+          >
+            重新读取规范与授权
+          </ActionButton>
+        </>
+      ) : !ready ? (
+        <p role="status">正在读取规范与授权…</p>
+      ) : null}
       <section
         id={`${panelId}-standard`}
         className="work-standard-content"
@@ -312,6 +352,18 @@ function WorkStandardEditor({
         hidden={!panels.authorization}
         aria-label="执行者与授权内容"
       >
+        {requirementsError ? (
+          <>
+            <p role="alert">{displayText(requirementsError)}</p>
+            <ActionButton
+              onClick={() => setRequirementsAttempt((attempt) => attempt + 1)}
+            >
+              重新读取执行者
+            </ActionButton>
+          </>
+        ) : ready && workflow && !requirements ? (
+          <p role="status">正在读取执行者…</p>
+        ) : null}
         <fieldset
           className="work-standard-fields"
           disabled={!ready || !instance || ended || busy}

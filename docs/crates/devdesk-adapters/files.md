@@ -68,6 +68,7 @@
 | [src/session_resources.rs](../../../crates/adapters/src/session_resources.rs) | [运行环境准备与验证](runtime-preparation.md) |
 | [src/source_store.rs](../../../crates/adapters/src/source_store.rs) | [SQLite、资源提交与产物文件](storage-and-source-codecs.md) |
 | [src/source_views.rs](../../../crates/adapters/src/source_views.rs) | [适配器工厂与配置装载](factory-and-configuration.md) |
+| [src/standard_reads.rs](../../../crates/adapters/src/standard_reads.rs) | Read adoption records without reconstructing the execution history. |
 | [src/store_changes.rs](../../../crates/adapters/src/store_changes.rs) | [SQLite、资源提交与产物文件](storage-and-source-codecs.md) |
 | [src/tests.rs](../../../crates/adapters/src/tests.rs) | [Git、测试和 GitHub 适配器](engineering-resources.md) |
 | [src/tool_calls.rs](../../../crates/adapters/src/tool_calls.rs) | Select a finite set of native tool rows and restore their exact frozen views. |

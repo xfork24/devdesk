@@ -14,6 +14,7 @@ mod resource_commits;
 mod resource_read_scope;
 mod runtime_queries;
 mod scheduling_read;
+mod standard_reads;
 mod store_changes;
 mod tool_calls;
 mod workflow_details;
@@ -1007,6 +1008,17 @@ impl EngineeringStore for SqliteStore {
             id,
             child_offset,
         )
+    }
+    fn work_configuration_view(
+        &self,
+        owner: &str,
+        project: Option<&str>,
+        include_history: bool,
+    ) -> Result<Value> {
+        standard_reads::work_configuration(self, owner, project, include_history)
+    }
+    fn standard_work_snapshot(&self, usage_ref: Option<&str>) -> Result<EngineeringState> {
+        standard_reads::snapshot(self, usage_ref)
     }
     fn workflow_progress(
         &self,

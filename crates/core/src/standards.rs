@@ -482,16 +482,28 @@ impl Engine {
             return None;
         }
         Some((|| {
-            let state = self.store.snapshot()?;
+            let project = self
+                .store
+                .project_id()
+                .or_else(|| p["project_id"].as_str().map(str::to_owned));
+            if method == "query.work_configuration" {
+                return self.store.work_configuration_view(
+                    &text(p, "owner_id")?,
+                    project.as_deref(),
+                    p["view"] != "selection",
+                );
+            }
+            let state = match method {
+                "query.work_standard_diff" => self.store.standard_work_snapshot(None)?,
+                "query.standard_usage" => {
+                    self.store.standard_work_snapshot(Some(&text(p, "id")?))?
+                }
+                _ => self.store.configuration_snapshot()?.state.as_ref().clone(),
+            };
             if method == "query.project_standard_preview" {
                 return self.project_standard_preview(state, p);
             }
-            let scope = self
-                .store
-                .project_id()
-                .or_else(|| p["project_id"].as_str().map(str::to_owned))
-                .map(Scope::project)
-                .unwrap_or(Scope::global());
+            let scope = project.map(Scope::project).unwrap_or(Scope::global());
             let limit = p["limit"].as_u64().unwrap_or(100).clamp(1, 1000) as usize;
             let offset = p["offset"].as_u64().unwrap_or(0) as usize;
             if method == "query.standard_catalog" {
@@ -519,23 +531,6 @@ impl Engine {
                     })
                     .collect::<Result<Vec<_>>>()?;
                 return Ok(json!({"records":rows}));
-            }
-            if method == "query.work_configuration" {
-                let owner = text(p, "owner_id")?;
-                let work = work_reference(&state, &owner)?;
-                require(
-                    scope.project_id().is_none_or(|project| {
-                        work.scope(&state)
-                            .ok()
-                            .and_then(|s| s.project_id().map(str::to_owned))
-                            .as_deref()
-                            == Some(project)
-                    }),
-                    "工作跨项目",
-                )?;
-                return Ok(
-                    json!({"configuration":work_configuration(&state,&owner),"history":state.governance.iter().filter(|r|is_work_plan(&state,r,&owner)).collect::<Vec<_>>() }),
-                );
             }
             if method == "standard.capture.preview" {
                 if let Some(base) = p["base_standard_ref"].as_str() {
@@ -628,6 +623,31 @@ impl Engine {
             Ok(result)
         })())
     }
+}
+
+pub(crate) fn work_configuration_view(
+    state: &EngineeringState,
+    owner: &str,
+    project: Option<&str>,
+    include_history: bool,
+) -> Result<Value> {
+    let work = work_reference(state, owner)?;
+    if let Some(project) = project {
+        require(
+            work.scope(state)?.project_id() == Some(project),
+            "工作跨项目",
+        )?;
+    }
+    let history = if include_history {
+        state
+            .governance
+            .iter()
+            .filter(|r| is_work_plan(state, r, owner))
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    Ok(json!({"configuration":work_configuration(state, owner),"history":history}))
 }
 
 /// A replacement may change internals while preserving the exact external material contract.

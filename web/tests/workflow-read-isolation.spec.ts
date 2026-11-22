@@ -1724,6 +1724,45 @@ for (const failure of ["catalog", "defaults"] as const) {
   });
 }
 
+test("a timed-out adopted configuration can be read again using its diagnostic ID", async ({
+  page,
+}) => {
+  const url = await fixture(page);
+  let trace: string | undefined;
+  let reads = 0;
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    if (call.method === "query.work_configuration" && ++reads === 1) {
+      expect(call.params.view).toBe("selection");
+      trace = (await route.request().allHeaders())["x-devdesk-trace-id"];
+      return;
+    }
+    return route.fallback();
+  });
+  await page.goto(url);
+  const panel = page
+    .getByRole("region", { name: "流程规范", exact: true })
+    .locator(".work-standard");
+  const open = panel.getByRole("button", { name: "采用的规范", exact: true });
+  await expect(open).toBeVisible();
+  await page.evaluate(() => {
+    const original = AbortSignal.timeout;
+    AbortSignal.timeout = (ms) =>
+      original.call(AbortSignal, ms === 30000 ? 1200 : ms);
+  });
+  await open.click();
+  const alert = panel.getByRole("alert");
+  await expect(alert).toContainText("读取超时");
+  expect(trace).toMatch(/^[a-f0-9]{32}$/);
+  await expect(alert).toContainText(`query.work_configuration · 请求 ${trace}`);
+  await panel.getByRole("button", { name: "重新读取规范与授权" }).click();
+  await expect(alert).toHaveCount(0);
+  await expect.poll(() => reads).toBe(2);
+  await expect(
+    panel.getByText("正在读取规范与授权…", { exact: true }),
+  ).toHaveCount(0);
+});
+
 test("Standard and authorization open independently on one row without comparison or history controls", async ({
   page,
 }, info) => {

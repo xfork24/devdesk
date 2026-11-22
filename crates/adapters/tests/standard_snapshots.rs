@@ -434,6 +434,15 @@ fn tasks_in_one_feature_execute_distinct_standards_and_keep_history_after_switch
         )
         .unwrap();
     assert_eq!(history["history"].as_array().unwrap().len(), 2);
+    let selection = e
+        .query(
+            "query.work_configuration",
+            &json!({"owner_id":ta,"project_id":project,"view":"selection"}),
+            1,
+        )
+        .unwrap();
+    assert_eq!(selection["configuration"], history["configuration"]);
+    assert_eq!(selection["history"], json!([]));
     let usage = e
         .query(
             "query.standard_usage",

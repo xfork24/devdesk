@@ -1704,7 +1704,8 @@
       "precondition": "none",
       "sites": [
         "crates/core/src/standards.rs",
-        "crates/host/src/governance.rs"
+        "crates/host/src/governance.rs",
+        "crates/host/src/workspace.rs"
       ]
     },
     {
@@ -1867,6 +1868,7 @@
       "precondition": "none",
       "sites": [
         "crates/core/src/configured_workflows.rs",
+        "crates/host/src/configuration_read.rs",
         "crates/host/src/governance.rs"
       ]
     },

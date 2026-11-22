@@ -558,9 +558,10 @@ export function WorkflowInstanceView({
                     activeData?.completion_status?.[execution.id];
                   const sourceRework =
                     activeData?.source_publication_rework?.[execution.id];
-                  const recoveringSource =
-                    ["rework_source_publication", "retry_source_publication"]
-                      .includes(execution.reconciliation?.resolution);
+                  const recoveringSource = [
+                    "rework_source_publication",
+                    "retry_source_publication",
+                  ].includes(execution.reconciliation?.resolution);
                   const unmet = completion?.satisfied === false;
                   const confirmation = completion?.confirmation;
                   const humanSatisfied =
@@ -781,7 +782,7 @@ export function WorkflowInstanceView({
                             {execution.status === "needs_reconciliation" ? (
                               <ActionButton
                                 type="button"
-                                  disabled={busy || sourceRework?.pending}
+                                disabled={busy || sourceRework?.pending}
                                 onClick={() =>
                                   void act("workflow.step.reconcile", {
                                     step: execution.step,

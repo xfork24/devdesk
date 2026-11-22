@@ -128,6 +128,7 @@ const cachedMethods = new Set([
   "query.ui_bootstrap",
   "query.standard",
   "query.standard_catalog",
+  "query.workflow_requirements",
   "query.workflows",
   "query.roles",
   "query.model_providers",

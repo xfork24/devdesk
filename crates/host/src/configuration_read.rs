@@ -15,6 +15,7 @@ pub(super) fn directory_query(method: &str) -> bool {
             | "query.workflows"
             | "query.workflow"
             | "query.workflow_draft"
+            | "query.workflow_requirements"
             | "query.agent_revision"
             | "query.agent_instances"
             | "query.standard_catalog"

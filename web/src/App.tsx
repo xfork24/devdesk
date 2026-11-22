@@ -194,32 +194,48 @@ async function rpc(
           method,
           params,
           async (signal) => {
-            const res = await fetch("/rpc", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                jsonrpc: "2.0",
-                id: ++sequence,
-                method,
-                params,
-              }),
-              signal: AbortSignal.any([
-                signal,
-                AbortSignal.timeout(
-                  [
-                    "session.open",
-                    "experience.restore",
-                    "runtime.prepare",
-                  ].includes(method)
-                    ? 25 * 60 * 1000
-                    : method === "codex.auth.start"
-                      ? 5 * 60 * 1000
-                      : 30000,
-                ),
-              ]),
-            });
-            if (!res.ok) throw new Error(`HTTP ${res.status} · 内核连接失败`);
-            const data = await res.json();
+            const id = ++sequence;
+            const traceId = globalThis.crypto
+              ?.randomUUID?.()
+              .replaceAll("-", "");
+            const timeout = AbortSignal.timeout(
+              [
+                "session.open",
+                "experience.restore",
+                "runtime.prepare",
+              ].includes(method)
+                ? 25 * 60 * 1000
+                : method === "codex.auth.start"
+                  ? 5 * 60 * 1000
+                  : 30000,
+            );
+            let data;
+            try {
+              const res = await fetch("/rpc", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  ...(traceId ? { "X-DevDesk-Trace-Id": traceId } : {}),
+                },
+                body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+                signal: AbortSignal.any([signal, timeout]),
+              });
+              if (!res.ok) throw new Error(`HTTP ${res.status} · 内核连接失败`);
+              data = await res.json();
+            } catch (error) {
+              if (timeout.aborted && !signal.aborted) {
+                const message = method.startsWith("query.")
+                  ? "读取超时，可重新读取"
+                  : "内核响应超时，操作结果待确认";
+                throw new Error(
+                  `${message} · ${method} · 请求 ${traceId || id}`,
+                  {
+                    cause: error,
+                  },
+                );
+              }
+              throw error;
+            }
             if (data.error)
               throw new Error(
                 `${data.error.data?.code || ""} · ${data.error.message}`,

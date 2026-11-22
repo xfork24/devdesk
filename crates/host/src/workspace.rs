@@ -652,6 +652,13 @@ impl Workspace {
         if method == "query.project_directory" {
             return self.project_directory(&params);
         }
+        if method == "query.work_configuration"
+            && let Some(project) = params["project_id"].as_str()
+        {
+            return self
+                .project_engine(Some(project))?
+                .query(method, &params, 0);
+        }
         if matches!(
             method,
             "query.workflow_instance"
