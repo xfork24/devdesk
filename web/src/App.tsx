@@ -2,7 +2,7 @@ import { displayText, shortId as short } from "./display-text";
 import { WorkflowExecutionRecords } from "./components/WorkflowExecutionRecords";
 import { WorkflowContexts } from "./components/WorkflowContexts";
 import { RawJsonReader } from "./components/reading";
-import { readingKeys } from "./components/reading-state";
+import { navigateReading, readingKeys } from "./components/reading-state";
 import {
   getCatalogGeneration,
   observeCatalogGeneration,
@@ -298,6 +298,7 @@ function routeTabValue(p: URLSearchParams) {
 }
 const routeTab = routeTabValue(route);
 const defaultExecutionTab = "manager";
+type ActivityFilter = "running" | "waiting_confirmation" | "blocked";
 const executionTabs = [
   ["manager", "项目经理"],
   ["overview", "工作流程"],
@@ -327,6 +328,7 @@ function App() {
   const workspaceRefreshQueued = useRef(false);
   const refreshWorkspace = useRef<() => void>(() => {});
   const projectGeneration = useRef(0);
+  const activityRequest = useRef<AbortController | null>(null);
   const kernelStopped = useRef(false);
   const [detailPages, setDetailPages] = useState<Record<string, number>>({});
   const [loadedData, setData] = useState<Row>();
@@ -376,6 +378,10 @@ function App() {
   useEffect(
     () => () => configurationLifetime.controller.abort(),
     [configurationLifetime],
+  );
+  useEffect(
+    () => () => activityRequest.current?.abort(),
+    [tab, projectId, configurationSession],
   );
   const configurationRequest = configurationReader.request;
   const configurationScope = useMemo(
@@ -434,6 +440,7 @@ function App() {
       (route.get("tab") === "documents" ? "documents" : defaultExecutionTab),
   );
   activePage.current = { tab, featureId, taskFilter, executionTab };
+  const workspaceFeatureId = tab === "overview" ? "" : featureId;
   const summaryPage =
     tab === "execution" &&
     ["manager", "overview"].includes(executionTab) &&
@@ -620,7 +627,7 @@ function App() {
         if (!c.setup_required) {
           const configurationPage =
             ["projects", "workflows", "actors", "components"].includes(tab) ||
-            (tab === "discussion" && !featureId && !taskFilter);
+            (tab === "discussion" && !workspaceFeatureId && !taskFilter);
           const d = await rpc(
             summaryPage
               ? "query.execution_workspace"
@@ -630,7 +637,7 @@ function App() {
             summaryPage
               ? {
                   project_id: projectId,
-                  feature_id: featureId || undefined,
+                  feature_id: workspaceFeatureId || undefined,
                   offset: featurePage * 50,
                   task_offset: (detailPages.tasks || 0) * 50,
                   project_offset: projectPage * 50,
@@ -640,7 +647,7 @@ function App() {
                 }
               : {
                   project_id: projectId || undefined,
-                  feature_id: featureId || undefined,
+                  feature_id: workspaceFeatureId || undefined,
                   offset: featurePage * 50,
                   project_offset: projectPage * 50,
                   github_only: true,
@@ -694,7 +701,7 @@ function App() {
     },
     [
       projectId,
-      featureId,
+      workspaceFeatureId,
       featurePage,
       projectPage,
       detailPages,
@@ -891,7 +898,52 @@ function App() {
     project && !projects.some((p) => p.id === project.id)
       ? [project, ...projects]
       : projects;
+  const overviewProject = projectId || project?.id || "";
+  const openOverviewRoute = (feature?: string) => {
+    activityRequest.current?.abort();
+    setDetailPages({});
+    const params = new URLSearchParams({
+      tab: feature ? "execution" : "overview",
+    });
+    if (overviewProject) params.set("project_id", overviewProject);
+    if (feature) {
+      params.set("feature_id", feature);
+      params.set("detail", defaultExecutionTab);
+    }
+    const url = `?${params}`;
+    if (location.search !== url) navigateReading(url);
+  };
+  const openFeatureByActivity = async (filter: ActivityFilter) => {
+    if (!overviewProject) return;
+    activityRequest.current?.abort();
+    const request = new AbortController();
+    activityRequest.current = request;
+    const { signal } = request;
+    const source = location.search;
+    const target = currentActionTarget();
+    publishActionFeedback(target, "");
+    try {
+      const results = await rpc(
+        "query.execution_workspace",
+        {
+          project_id: overviewProject,
+          work_filter: filter,
+          limit: 1,
+        },
+        { signal, fresh: true },
+      );
+      if (signal.aborted || source !== location.search) return;
+      const match = results.features[0];
+      if (match) openOverviewRoute(match.id);
+      else publishActionFeedback(target, "当前没有符合此状态的 Feature。");
+    } catch (error) {
+      if (!signal.aborted) publishActionFeedback(target, String(error), true);
+    } finally {
+      if (activityRequest.current === request) activityRequest.current = null;
+    }
+  };
   const resetProjectView = (id: string) => {
+    activityRequest.current?.abort();
     ++requestGeneration.current;
     ++projectGeneration.current;
     setProjectId(id);
@@ -1409,150 +1461,81 @@ function App() {
             </section>
           )}
           {data && repositoryReady && tab === "overview" && (
-            <>
-              <div className="metrics">
+            <div className="overview-grid">
+              <section
+                className="panel feature-queue-panel"
+                aria-labelledby="feature-queue-title"
+              >
+                <div className="panel-heading">
+                  <h2 id="feature-queue-title">
+                    Feature 工作队列{" "}
+                    <span>{displayText(data.total_features)}</span>
+                  </h2>
+                  {features.some((feature) => feature.id === featureId) && (
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={() => openOverviewRoute(featureId)}
+                    >
+                      进入执行工作台 <ArrowRight size={15} aria-hidden="true" />
+                    </button>
+                  )}
+                </div>
+                {features.length === 0 ? (
+                  <Empty>创建第一个 Feature，开始规划与交付。</Empty>
+                ) : (
+                  <FeatureBranchQueue
+                    key={overviewProject}
+                    projectId={overviewProject}
+                    repository={project?.workspace_definition.repository || ""}
+                    mainline={project?.workspace_definition.mainline || "main"}
+                    features={features}
+                    selectedId={featureId}
+                    onSelect={(id) => {
+                      activityRequest.current?.abort();
+                      setFeatureId(id);
+                      setTaskFilter("");
+                      setDetailPages({});
+                    }}
+                    request={rpc}
+                    revision={branchQueueRevision}
+                  />
+                )}
+                <Pagination
+                  page={featurePage}
+                  setPage={setFeaturePage}
+                  hasMore={(featurePage + 1) * 50 < data.total_features}
+                />
+              </section>
+              <aside className="metrics" aria-label="项目统计">
                 <Metric
                   title="项目 Features"
-                  value={data.summary?.features ?? data.total_features}
+                  value={data.summary?.features ?? data.total_features ?? 0}
                   icon={<Layers3 />}
-                  onClick={() => {
-                    setTab("execution");
-                    setWorkFilter("");
-                    setFeatureId("");
-                    setTaskFilter("");
-                    setFeaturePage(0);
-                    setExecutionTab(defaultExecutionTab);
-                  }}
-                />
-                <Metric
-                  title="项目 Tasks"
-                  value={data.summary?.tasks || 0}
-                  icon={<Workflow />}
-                  onClick={() => {
-                    setTab("execution");
-                    setWorkFilter("tasks");
-                    setFeatureId("");
-                    setTaskFilter("");
-                    setFeaturePage(0);
-                    setExecutionTab(defaultExecutionTab);
-                  }}
+                  onClick={() => openOverviewRoute()}
                 />
                 <Metric
                   title="运行中"
                   value={data.summary?.running || 0}
                   icon={<Activity />}
-                  onClick={() => {
-                    setTab("execution");
-                    setWorkFilter("running");
-                    setFeatureId("");
-                    setTaskFilter("");
-                    setFeaturePage(0);
-                    setExecutionTab(defaultExecutionTab);
-                  }}
+                  onClick={() => void openFeatureByActivity("running")}
                 />
                 <Metric
                   title="等待人确认"
                   value={data.summary?.waiting_confirmation || 0}
                   icon={<Pause />}
-                  onClick={() => {
-                    setTab("execution");
-                    setWorkFilter("waiting_confirmation");
-                    setFeatureId("");
-                    setTaskFilter("");
-                    setFeaturePage(0);
-                    setExecutionTab(defaultExecutionTab);
-                  }}
+                  onClick={() =>
+                    void openFeatureByActivity("waiting_confirmation")
+                  }
                 />
                 <Metric
                   title="需要处理"
                   value={data.summary?.blocked || 0}
                   icon={<AlertTriangle />}
-                  onClick={() => {
-                    setTab("execution");
-                    setWorkFilter("blocked");
-                    setFeatureId("");
-                    setTaskFilter("");
-                    setFeaturePage(0);
-                    setExecutionTab(defaultExecutionTab);
-                  }}
+                  onClick={() => void openFeatureByActivity("blocked")}
                 />
-              </div>
-              <div className="overview-grid">
-                <section
-                  className="panel feature-queue-panel"
-                  aria-labelledby="feature-queue-title"
-                >
-                  <div className="panel-heading">
-                    <h2 id="feature-queue-title">
-                      Feature 工作队列{" "}
-                      <span>{displayText(data.total_features)}</span>
-                    </h2>
-                    {features.some((feature) => feature.id === featureId) && (
-                      <button
-                        type="button"
-                        className="primary"
-                        onClick={() => {
-                          setTaskFilter("");
-                          setReadingTarget({});
-                          setExecutionTab(defaultExecutionTab);
-                          setTab("execution");
-                        }}
-                      >
-                        进入执行工作台{" "}
-                        <ArrowRight size={15} aria-hidden="true" />
-                      </button>
-                    )}
-                  </div>
-                  {features.length === 0 ? (
-                    <Empty>创建第一个 Feature，开始规划与交付。</Empty>
-                  ) : (
-                    <FeatureBranchQueue
-                      key={projectId}
-                      projectId={projectId || project?.id || ""}
-                      repository={
-                        project?.workspace_definition.repository || ""
-                      }
-                      mainline={
-                        project?.workspace_definition.mainline || "main"
-                      }
-                      features={features}
-                      selectedId={featureId}
-                      onSelect={(id) => {
-                        setFeatureId(id);
-                        setTaskFilter("");
-                        setDetailPages({});
-                      }}
-                      request={rpc}
-                      revision={branchQueueRevision}
-                    />
-                  )}
-                  <Pagination
-                    page={featurePage}
-                    setPage={setFeaturePage}
-                    hasMore={(featurePage + 1) * 50 < data.total_features}
-                  />
-                </section>
-                <section className="panel journey">
-                  <h2>当前工作流程</h2>
-                  {(
-                    data.configurations?.find(
-                      (r: Row) =>
-                        r.type === "workflow_instance" &&
-                        r.data.parent_execution_id == null,
-                    )?.data.plan?.document?.stages || []
-                  ).map((stage: Row) => (
-                    <div className="journey-step" key={stage.key}>
-                      <strong>{displayText(stage.name)}</strong>
-                      <p>{displayText(stage.description)}</p>
-                    </div>
-                  ))}
-                  <p className="muted">
-                    项目选择 Workflow 并绑定角色
-                    Agent；步骤声明任务、技能、产物和完成条件。
-                  </p>
-                </section>
-              </div>
-            </>
+              </aside>
+            </div>
           )}
           {data && tab === "execution" && (
             <div className="feature-picker">
@@ -1852,6 +1835,7 @@ function App() {
               />
             )}
           {tab === "execution" &&
+            !featureId &&
             !f &&
             ["manager", "overview"].includes(executionTab) && (
               <section className="panel">
@@ -2187,16 +2171,18 @@ function Metric({
   title: string;
   value: number;
   icon: React.ReactNode;
-  onClick?: () => void;
+  onClick: () => void;
 }) {
   return (
-    <ActionButton className="metric" onClick={onClick}>
-      <div>
-        <span>{displayText(title)}</span>
-        <strong>{displayText(value.toString().padStart(2, "0"))}</strong>
-      </div>
-      <div className="metric-icon">{displayText(icon)}</div>
-    </ActionButton>
+    <div className="metric-card">
+      <ActionButton className="metric" type="button" onClick={onClick}>
+        <span className="metric-icon" aria-hidden="true">
+          {icon}
+        </span>
+        <span className="metric-label">{title}</span>
+        <strong>{value.toString().padStart(2, "0")}</strong>
+      </ActionButton>
+    </div>
   );
 }
 function Pagination({

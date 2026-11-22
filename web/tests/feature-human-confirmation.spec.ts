@@ -376,6 +376,125 @@ test("在工作总览展开分支并选择 Feature，在执行工作台显式启
   await expect(start.getByText(/已捕获启动请求/)).toBeVisible();
 });
 
+test("总览统计重置筛选并直接打开匹配的 Feature", async ({ page }, info) => {
+  await setup(page);
+  const project = {
+    id: "metrics-project",
+    title: "状态统计项目",
+    revision: 1,
+    workspace_definition: { repository: "fixture/metrics", mainline: "main" },
+  };
+  const features = ["recent", "review", "blocked"].map((id) => ({
+    id,
+    project_id: project.id,
+    title: `Feature ${id}`,
+    revision: 1,
+    status: "running",
+  }));
+  const matches: Record<string, typeof features> = {
+    running: [features[0], features[1]],
+    waiting_confirmation: [features[1]],
+    blocked: [features[2]],
+  };
+  const shortcuts: {
+    project_id: string;
+    work_filter: string;
+    limit: number;
+  }[] = [];
+  await page.route("**/capabilities", (route) =>
+    route.fulfill({ json: { setup_required: false } }),
+  );
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    if (!["query.workspace", "query.execution_workspace"].includes(call.method))
+      return route.fallback();
+    const { work_filter, feature_id, limit } = call.params;
+    const rows = matches[work_filter] ?? features;
+    const active = features.find((feature) => feature.id === feature_id);
+    if (limit === 1) shortcuts.push(call.params);
+    await route.fulfill({
+      json: {
+        jsonrpc: "2.0",
+        id: call.id,
+        result: {
+          active_project: project,
+          projects: [project],
+          total_projects: 1,
+          repository_ready: true,
+          configuration_ready: true,
+          configurations: [],
+          summary: {
+            features: 3,
+            running: 2,
+            waiting_confirmation: 1,
+            blocked: 1,
+          },
+          total_features: rows.length,
+          features: rows.slice(0, limit),
+          detail: active ? { feature: active, tasks: [] } : null,
+        },
+      },
+    });
+  });
+  const overview = `?tab=overview&project_id=${project.id}`;
+  await page.goto(
+    `${overview}&filter=running&feature_id=recent&task_id=old-task&output_id=old-output&config_tab=workflow`,
+  );
+  const metrics = page.getByRole("complementary", { name: "项目统计" });
+  const queue = page.getByRole("region", { name: /Feature 工作队列/ });
+  await expect(
+    queue.getByRole("button", { name: "Feature blocked", exact: true }),
+  ).toHaveCount(0);
+  await expect(metrics.getByRole("button")).toHaveCount(4);
+  await expect(
+    page.getByRole("heading", { name: "当前工作流程", exact: true }),
+  ).toHaveCount(0);
+  await metrics.getByRole("button", { name: /项目 Features/ }).click();
+  await expect(page).toHaveURL(`/${overview}`);
+  await expect(
+    queue.getByRole("button", { name: "Feature blocked", exact: true }),
+  ).toBeVisible();
+  await expect(
+    queue.getByRole("button", { name: "进入执行工作台" }),
+  ).toHaveCount(0);
+  const queueBox = (await queue.boundingBox())!;
+  for (const button of await metrics.getByRole("button").all()) {
+    const box = (await button.boundingBox())!;
+    expect(box.x).toBeGreaterThan(queueBox.x + queueBox.width);
+    expect(Math.abs(box.width - box.height)).toBeLessThan(1);
+  }
+  await page.screenshot({ path: info.outputPath("overview-statistics.png") });
+
+  for (const [label, filter, id] of [
+    ["等待人确认", "waiting_confirmation", "review"],
+    ["运行中", "running", "recent"],
+    ["需要处理", "blocked", "blocked"],
+  ]) {
+    await metrics.getByRole("button", { name: new RegExp(label) }).click();
+    await expect(page).toHaveURL(
+      `/?tab=execution&project_id=${project.id}&feature_id=${id}&detail=manager`,
+    );
+    await expect(page.getByLabel("当前 Feature")).toHaveValue(id);
+    await expect(
+      page.getByRole("heading", { name: "Feature 工作队列", exact: true }),
+    ).toHaveCount(0);
+    expect(shortcuts.at(-1)).toEqual({
+      project_id: project.id,
+      work_filter: filter,
+      limit: 1,
+    });
+    await page.goBack();
+    await expect(metrics).toBeVisible();
+  }
+
+  matches.blocked = [];
+  await metrics.getByRole("button", { name: /需要处理/ }).click();
+  await expect(metrics.getByRole("status")).toHaveText(
+    "当前没有符合此状态的 Feature。",
+  );
+  await expect(page).toHaveURL(`/${overview}`);
+});
+
 test("Spec 验收后展示待确认产物，人工确认绑定当前执行和输入输出", async ({
   page,
 }, info) => {

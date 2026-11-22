@@ -677,6 +677,67 @@ fn execution_workspace_pages_native_facts_and_excludes_unrelated_history() {
         store.execution_workspace(&filter).unwrap().total_features,
         1
     );
+    let add_root = |feature: &str, root: &str, status: &str, steps: Value| {
+        record(
+            &conn,
+            PROJECT,
+            root,
+            "workflow_instance",
+            feature,
+            json!({"owner_id":feature,"root_instance_id":root,"status":status,"steps":steps}),
+        );
+    };
+    add_root("f-2", "needs-work", "running", json!([]));
+    record(
+        &conn,
+        PROJECT,
+        "actionable-child",
+        "workflow_instance",
+        "child-owner",
+        json!({"owner_id":"child-owner","root_instance_id":"needs-work","parent_execution_id":"invoke-child","status":"running","steps":[
+            {"id":"wait-a","status":"waiting_confirmation"},
+            {"id":"wait-b","status":"waiting_confirmation"},
+            {"id":"blocked","status":"needs_reconciliation"}
+        ]}),
+    );
+    add_root(
+        "f-3",
+        "old-root",
+        "running",
+        json!([{"id":"obsolete","status":"failed"}]),
+    );
+    add_root(
+        "f-3",
+        "completed-root",
+        "completed",
+        json!([{"id":"old-wait","status":"waiting_confirmation"}]),
+    );
+    add_root(
+        "f-5",
+        "recent-root",
+        "running",
+        json!([{"id":"running","status":"running"}]),
+    );
+    let summary = store
+        .workspace_reading(&json!({"project_id":PROJECT}))
+        .unwrap();
+    assert_eq!(summary["summary"]["running"], 2);
+    assert_eq!(summary["summary"]["waiting_confirmation"], 1);
+    assert_eq!(summary["summary"]["blocked"], 1);
+    for (status, expected, count) in [
+        ("running", "f-5", 2),
+        ("waiting_confirmation", "f-2", 1),
+        ("blocked", "f-2", 1),
+    ] {
+        let query = ExecutionWorkspaceQuery::parse(
+            &json!({"project_id":PROJECT,"work_filter":status,"limit":1}),
+        )
+        .unwrap();
+        let matches = store.execution_workspace(&query).unwrap();
+        assert_eq!(matches.total_features, count);
+        assert_eq!(matches.features[0].id, expected);
+        assert!(matches.detail.is_none());
+    }
     let mut foreign = filter;
     foreign.feature_id = Some("missing".into());
     assert_eq!(

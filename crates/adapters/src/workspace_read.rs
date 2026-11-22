@@ -93,7 +93,12 @@ pub(super) fn read(store: &SqliteStore, p: &Value) -> Result<Value> {
             .collect::<Result<Vec<_>>>()?;
         result["detail"]["contexts"] = json!(rows);
     }
-    let (features,tasks,running,waiting,blocked):(u64,u64,u64,u64,u64)=conn.query_row("SELECT (SELECT count(*) FROM features),(SELECT count(*) FROM tasks),coalesce(sum(json_extract(data,'$.status')='running'),0),coalesce(sum(json_extract(data,'$.status')='waiting_confirmation'),0),coalesce(sum(json_extract(data,'$.status') IN ('failed','needs_reconciliation','waiting_input')),0) FROM workflow_display_steps",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))).map_err(storage)?;
+    let (features, tasks): (u64, u64) = conn.query_row(
+        "SELECT (SELECT count(*) FROM features WHERE project_id=?1),
+                (SELECT count(*) FROM tasks t JOIN features f ON f.id=t.feature_id WHERE f.project_id=?1)",
+        [project], |row| Ok((row.get(0)?, row.get(1)?)),
+    ).map_err(storage)?;
+    let (running, waiting, blocked) = execution_read::activity_counts(&conn, project)?;
     result["summary"] = json!({"features":features,"tasks":tasks,"running":running,"waiting_confirmation":waiting,"blocked":blocked});
     for (kind, key) in [
         ("delivery_type", "delivery_types"),

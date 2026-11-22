@@ -407,46 +407,52 @@ main {
 }
 .metrics {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 17px;
-  margin-bottom: 24px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 12px;
+}
+.metric-card {
+  min-width: 0;
 }
 .metric {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: #fff;
-  border: 1px solid #e4e7ee;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 4px;
+  aspect-ratio: 1;
+  width: 100%;
   border-radius: 8px;
-  padding: 20px 21px;
+  padding: 12px;
+  text-align: start;
+  white-space: normal;
 }
-.metric span {
-  font-size: 11px;
-  color: #8b94a7;
+.metric-label {
+  margin-top: auto;
+  font-size: 12px;
+  line-height: 1.25;
+  color: #626d83;
 }
 .metric strong {
-  display: block;
-  font-size: 30px;
-  line-height: 1.3;
+  font-size: 27px;
+  line-height: 1.1;
   font-weight: 600;
-  margin-top: 8px;
-  letter-spacing: -1px;
   color: #364059;
 }
 .metric-icon {
-  color: #8f7fcb;
-  background: #f4f0fc;
-  border-radius: 9px;
-  padding: 10px;
   display: flex;
+  color: #7966b8;
+  background: #f4f0fc;
+  border-radius: 7px;
+  padding: 6px;
 }
 .metric-icon svg {
-  width: 21px;
-  height: 21px;
+  width: 17px;
+  height: 17px;
 }
 .overview-grid {
   display: grid;
-  grid-template-columns: 1.65fr 1fr;
+  grid-template-columns: minmax(0, 1fr) clamp(224px, 24vw, 288px);
   gap: 22px;
   align-items: start;
 }
@@ -670,50 +676,6 @@ main {
   color: #b68a58;
   border-color: #f1e2cc;
 }
-.journey {
-  padding: 23px;
-}
-.journey h2 {
-  margin: 7px 0 24px;
-}
-.journey-step {
-  display: flex;
-  gap: 13px;
-  padding-bottom: 23px;
-  position: relative;
-}
-.journey-step > span {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  width: 28px;
-  height: 28px;
-  background: #f3f0fb;
-  border: 1px solid #e8e2f7;
-  color: #9c8ec0;
-  border-radius: 50%;
-  font-size: 9px;
-  z-index: 1;
-  flex-shrink: 0;
-}
-.journey-step:not(:nth-last-child(2)):after {
-  content: "";
-  position: absolute;
-  height: 38px;
-  width: 1px;
-  background: #eae5f5;
-  left: 14px;
-  top: 27px;
-}
-.journey-step strong {
-  font-size: 12px;
-  font-weight: 550;
-}
-.journey-step p {
-  font-size: 10px;
-  color: #9aa2b1;
-  margin: 3px 0 0;
-}
 .notice {
   background: #f7f5fb;
   border: 1px solid #e9e3f3;
@@ -723,10 +685,6 @@ main {
   color: #9784ac;
   line-height: 1.8;
   margin-bottom: 20px;
-}
-.journey > .notice {
-  margin: 0;
-  font-size: 10px;
 }
 .feature-picker {
   display: flex;
@@ -1273,9 +1231,6 @@ footer {
   main {
     padding: 35px 45px;
   }
-  .overview-grid {
-    grid-template-columns: 1.8fr 1fr;
-  }
   .feature-row {
     padding: 22px;
   }
@@ -1293,18 +1248,14 @@ footer {
     padding: 22px;
   }
   .overview-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .metrics {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .metrics > .action-control:last-child:nth-child(odd) > .metric {
-    grid-column: 1 / -1;
+    grid-row: 1;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    width: min(100%, 520px);
   }
   .run-deps {
-    display: none;
-  }
-  .journey {
     display: none;
   }
   .page-heading h1 {
@@ -1356,13 +1307,9 @@ footer {
     font-size: 11px;
   }
   .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: min(100%, 288px);
     gap: 10px;
-  }
-  .metric {
-    padding: 14px;
-  }
-  .metric-icon {
-    padding: 7px;
   }
   .feature-row {
     padding: 15px 12px;

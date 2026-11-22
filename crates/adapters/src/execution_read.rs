@@ -21,6 +21,40 @@ fn feature(row: &rusqlite::Row<'_>) -> rusqlite::Result<FeatureBrief> {
     })
 }
 
+// One row per Feature with actionable steps under its current workflow root.
+// The header and step projections exclude archived plan bodies from the read.
+const FEATURE_ACTIVITY: &str = "WITH feature_activity AS (
+    SELECT f.id AS feature_id,
+           max(json_extract(s.data,'$.status')='running') AS running,
+           max(json_extract(s.data,'$.status')='waiting_confirmation') AS waiting_confirmation,
+           max(json_extract(s.data,'$.status') IN ('failed','needs_reconciliation','waiting_input')) AS blocked
+    FROM features f
+    JOIN workflow_display_headers root ON root.instance_id=(
+        SELECT i.id FROM governance_records i
+        JOIN workflow_display_headers header ON header.instance_id=i.id
+        WHERE i.type='workflow_instance' AND i.owner_project=?1 AND i.definition_id=f.id
+          AND json_extract(header.record,'$.data.owner_id')=f.id
+          AND json_extract(header.record,'$.data.parent_execution_id') IS NULL
+        ORDER BY i.rowid DESC LIMIT 1)
+    JOIN workflow_display_headers h ON h.instance_id=root.instance_id
+        OR json_extract(h.record,'$.data.root_instance_id')=root.instance_id
+    JOIN workflow_display_steps s ON s.instance_id=h.instance_id
+    WHERE f.project_id=?1 AND f.status NOT IN ('completed','cancelled')
+      AND json_extract(root.record,'$.data.status') NOT IN ('completed','cancelled')
+      AND json_extract(h.record,'$.data.status') NOT IN ('completed','cancelled')
+      AND coalesce(json_extract(h.record,'$.data.project_id'),?1)=?1
+      AND json_extract(s.data,'$.status') IN ('running','waiting_confirmation','failed','needs_reconciliation','waiting_input')
+    GROUP BY f.id
+)";
+
+pub(super) fn activity_counts(conn: &Connection, project: &str) -> Result<(u64, u64, u64)> {
+    conn.query_row(
+        &format!("{FEATURE_ACTIVITY} SELECT coalesce(sum(running),0),coalesce(sum(waiting_confirmation),0),coalesce(sum(blocked),0) FROM feature_activity"),
+        [project],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    ).map_err(storage)
+}
+
 pub(super) fn feature_branches(
     pool: &ConnectionPool,
     project: &str,
@@ -154,18 +188,22 @@ pub(super) fn workspace(
     let current = project(&tx, id)?;
     let fields =
         "id,project_id,substr(title,1,128),length(title)>128,status,revision,input_version";
-    // The filter describes current work; historical nested executions cannot keep
-    // a finished feature in a running/blocked queue.
-    let predicate = "project_id=?1 AND (?2='' OR (?2='tasks' AND EXISTS(SELECT 1 FROM tasks t WHERE t.feature_id=features.id)) OR (?2 IN ('running','waiting_confirmation','blocked') AND EXISTS(SELECT 1 FROM governance_records i,json_each(i.data,'$.steps') s WHERE i.type='workflow_instance' AND i.definition_id=features.id AND i.owner_project=?1 AND json_extract(i.data,'$.owner_id')=features.id AND json_extract(i.data,'$.parent_execution_id') IS NULL AND i.rowid=(SELECT max(j.rowid) FROM governance_records j WHERE j.type='workflow_instance' AND j.definition_id=features.id AND j.owner_project=?1 AND json_extract(j.data,'$.parent_execution_id') IS NULL) AND ((?2 IN ('running','waiting_confirmation') AND json_extract(s.value,'$.status')=?2) OR (?2='blocked' AND json_extract(s.value,'$.status') IN ('failed','needs_reconciliation','waiting_input'))))))";
+    let predicate = "project_id=?1 AND CASE ?2
+        WHEN '' THEN 1
+        WHEN 'tasks' THEN EXISTS(SELECT 1 FROM tasks t WHERE t.feature_id=features.id)
+        ELSE id IN (SELECT feature_id FROM feature_activity WHERE CASE ?2
+            WHEN 'running' THEN running WHEN 'waiting_confirmation' THEN waiting_confirmation
+            WHEN 'blocked' THEN blocked END)
+        END";
     let total_features = tx
         .query_row(
-            &format!("SELECT count(*) FROM features WHERE {predicate}"),
+            &format!("{FEATURE_ACTIVITY} SELECT count(*) FROM features WHERE {predicate}"),
             params![id, query.work_filter],
             |row| row.get(0),
         )
         .map_err(storage)?;
     let features = {
-        let mut statement = tx.prepare_cached(&format!("SELECT {fields} FROM features WHERE {predicate} ORDER BY rowid DESC LIMIT ?3 OFFSET ?4")).map_err(storage)?;
+        let mut statement = tx.prepare_cached(&format!("{FEATURE_ACTIVITY} SELECT {fields} FROM features WHERE {predicate} ORDER BY rowid DESC LIMIT ?3 OFFSET ?4")).map_err(storage)?;
         statement
             .query_map(
                 params![id, query.work_filter, query.limit, query.feature_offset],

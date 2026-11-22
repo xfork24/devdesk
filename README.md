@@ -49,7 +49,7 @@ python3 scripts/dev/run-host.py target/release/devdesk-host --data ./data --port
 4. 创建 Feature 并填写需求。在执行页查看当前输入、步骤产物、测试和评审；需要人工决定时，核对确切版本后签署。
 5. 确认 PR、合入结果和本地同步回执，再判断工程交付是否完成。
 
-在“工作总览”的 Feature 工作队列中，可以逐级展开主分支下的 Feature、Candidate 和 Task 分支，并查看交付状态。选中 Feature 后，点击“进入执行工作台”打开该项目的对应工作项。
+在“工作总览”的 Feature 工作队列中，可以逐级展开主分支下的 Feature、Candidate 和 Task 分支，并查看交付状态。选中 Feature 后，点击“进入执行工作台”打开该工作项。点击「项目 Features」查看项目完整队列，点击状态卡片直接前往匹配的 Feature。
 
 默认出厂目录发布精简版 Feature/Task 流程，保留独立 Red/Green、代码评审、源版本与合并结果两类项目回归。PRD、Design、Tasks 和最终 Feature 合入要求 Human 决定。配置组成及流程详见[默认配置](configurations/README.md)与[工作流和编排](docs/design/workflow.md)。
 
