@@ -46,14 +46,16 @@ pub(super) fn segments_pending_sql() -> String {
 }
 
 // The display rows are transactional hints, never dispatch authority. Include
-// status repairs and cancellation as well as actual running receipts.
+// status repairs and cancellation as well as actual running receipts. Revisit
+// older business/unknown projections of confirmed child cancellations once.
 pub(super) const WORKFLOW_READY: &str = "(
  json_extract(c.data,'$.status') NOT IN ('completed','cancelled') AND (
  coalesce(json_extract(c.data,'$.cancel_requested'),0)=1
  OR (json_extract(c.data,'$.status') IN ('failed','needs_reconciliation')
    AND EXISTS(SELECT 1 FROM workflow_display_steps s WHERE s.instance_id=c.id)
    AND NOT EXISTS(SELECT 1 FROM workflow_display_steps s WHERE s.instance_id=c.id
-     AND json_extract(s.data,'$.status') IN ('failed','needs_reconciliation')))
+     AND (json_extract(s.data,'$.status')='needs_reconciliation'
+       OR (json_extract(s.data,'$.status')='failed' AND json_extract(c.data,'$.status')='failed'))))
  OR EXISTS(SELECT 1 FROM workflow_display_steps s WHERE s.instance_id=c.id AND (
    json_extract(s.data,'$.status')='running'
    OR (json_extract(s.data,'$.status')='needs_reconciliation' AND
@@ -71,7 +73,11 @@ pub(super) const WORKFLOW_READY: &str = "(
      AND json_extract(child.data,'$.parent_execution_id')=json_extract(s.value,'$.id'))
    AND NOT EXISTS(SELECT 1 FROM governance_records child WHERE child.type='workflow_instance'
      AND json_extract(child.data,'$.parent_execution_id')=json_extract(s.value,'$.id')
-     AND json_extract(child.data,'$.status') IN ('failed','cancelled','needs_reconciliation')))
+     AND (json_extract(child.data,'$.status') IN ('failed','needs_reconciliation')
+       OR (json_extract(child.data,'$.status')='cancelled'
+         AND NOT (json_extract(s.value,'$.status')='needs_reconciliation'
+           AND json_extract(s.value,'$.failure.kind')='business'
+           AND json_extract(s.value,'$.failure.effect')='unknown')))))
  OR EXISTS(SELECT 1 FROM governance_records a WHERE a.type='workflow_instance'
    AND json_extract(a.data,'$.root_instance_id')=json_extract(c.data,'$.root_instance_id')
    AND json_extract(a.data,'$.status') NOT IN ('completed','cancelled')

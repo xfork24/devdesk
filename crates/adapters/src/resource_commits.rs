@@ -475,7 +475,18 @@ fn revision_projection(kind: &str) -> Option<fn(Option<&Value>) -> u64> {
 }
 
 fn snapshot(conn: &Connection, key: &ResourceKey) -> Result<ResourceSnapshot> {
-    let value = value(conn, key)?;
+    let mut value = value(conn, key)?;
+    if matches!(
+        key.kind.as_str(),
+        "workflow_step"
+            | "workflow_step_replace"
+            | "workflow_step_restore"
+            | "workflow_step_create"
+            | "workflow_header"
+    ) && let Some(value) = value.as_mut()
+    {
+        payload_store::restore_step(conn, value)?;
+    }
     Ok(ResourceSnapshot {
         resource: key.clone(),
         revision: if let Some(project) = revision_projection(&key.kind) {
@@ -1059,7 +1070,7 @@ pub(super) fn read_on(conn: &Connection, keys: &[ResourceKey]) -> Result<Vec<Res
                 revision: versions.get(&key.id).copied().unwrap_or(0),
                 value: rows
                     .get(&execution)
-                    .map(|value| serde_json::from_str(value).map_err(storage))
+                    .map(|value| payload_store::decode_step(conn, value))
                     .transpose()?,
             });
         }
@@ -1088,6 +1099,7 @@ fn replay_on(
     command_id: &str,
     expected_fingerprint: &str,
 ) -> Result<Option<CommitReceipt>> {
+    let _packs = payload_store::read_scope();
     let previous = conn
         .query_row(
             "SELECT fingerprint,CAST(result AS TEXT),versions,cursor FROM operations WHERE id=?1",
@@ -1105,12 +1117,22 @@ fn replay_on(
         .map_err(sqlite_error)?;
     previous
         .map(|(fingerprint, result, versions, cursor)| {
-            if fingerprint != expected_fingerprint {
+            if !project_storage::fingerprint_matches(&fingerprint, expected_fingerprint) {
                 return Err(err("invalid_params", "command_id 被不同参数或身份复用"));
             }
+            let versions = if versions == project_storage::EVENT_VERSIONS {
+                conn.query_row(
+                    "SELECT CAST(detail AS TEXT) FROM events WHERE id=?1 AND kind='resource.changed'",
+                    [cursor],
+                    |row| row.get(0),
+                )
+                .map_err(sqlite_error)?
+            } else {
+                versions
+            };
             Ok(CommitReceipt {
-                result: serde_json::from_str(&result).map_err(storage)?,
-                versions: serde_json::from_str(&versions).map_err(storage)?,
+                result: payload_store::decode_result(conn, &result)?,
+                versions: store_changes::decode_versions(&versions)?,
                 cursor,
             })
         })
@@ -1292,7 +1314,7 @@ fn prepare_write(change: &ResourceChange, specs: &ColumnSpecs) -> Result<Option<
 fn prepare_writes(
     pool: &ConnectionPool,
     prepared: &PreparedChangeSet,
-) -> Result<Vec<Option<SqlWrite>>> {
+) -> Result<(Vec<Option<SqlWrite>>, String, bool)> {
     let changed: std::collections::BTreeSet<_> = prepared
         .changes
         .iter()
@@ -1432,8 +1454,12 @@ fn prepare_writes(
         }
     }
     let mut specs = ColumnSpecs::new();
+    let root;
+    let external;
     {
         let conn = pool.read()?;
+        root = project_storage::connection_root(&conn);
+        external = payload_store::enabled(&conn)?;
         for change in &prepared.changes {
             if !matches!(
                 change.resource.kind.as_str(),
@@ -1456,11 +1482,73 @@ fn prepare_writes(
             }
         }
     }
-    prepared
+    let artifact_index = project_storage::prepared_snapshots(root.as_deref(), &prepared.changes)?;
+    let output_artifacts = if external {
+        prepared
+            .changes
+            .iter()
+            .filter(|change| change.resource.kind == "artifact")
+            .map(|change| serde_json::from_value::<Artifact>(change.value.clone()).map_err(storage))
+            .collect::<Result<Vec<_>>>()?
+    } else {
+        Vec::new()
+    };
+    let writes = prepared
         .changes
         .iter()
-        .map(|change| prepare_write(change, &specs))
-        .collect()
+        .map(|change| {
+            if change.resource.kind == "snapshot"
+                && let Some(content) = artifact_index.reference(&change.value)?
+            {
+                let mut stored = change.clone();
+                stored.value["content"] = json!(content);
+                return prepare_write(&stored, &specs);
+            }
+            if let Some(root) = root.as_deref().filter(|_| external) {
+                let mut value = change.value.clone();
+                match change.resource.kind.as_str() {
+                    "governance" => {
+                        if let Some(kind) = value["type"].as_str().map(str::to_owned) {
+                            let artifact = output_artifacts
+                                .iter()
+                                .find(|a| value["data"]["artifact_id"] == a.id);
+                            payload_store::governance(root, &kind, &mut value["data"], artifact)?;
+                        }
+                    }
+                    "workflow_step"
+                    | "workflow_step_replace"
+                    | "workflow_step_restore"
+                    | "workflow_step_create" => {
+                        payload_store::step(root, &mut value)?;
+                    }
+                    "workflow_header" => {
+                        payload_store::governance(root, "workflow_instance", &mut value, None)?
+                    }
+                    "conversation_event"
+                        if matches!(value["kind"].as_str(), Some("user" | "tool")) =>
+                    {
+                        if let Some(text) = value["content"].as_str() {
+                            value["content"] = json!(payload_store::pack_text(root, text)?);
+                        }
+                    }
+                    _ => return prepare_write(change, &specs),
+                }
+                return prepare_write(
+                    &ResourceChange {
+                        resource: change.resource.clone(),
+                        value,
+                    },
+                    &specs,
+                );
+            }
+            prepare_write(change, &specs)
+        })
+        .collect::<Result<_>>()?;
+    let mut result = prepared.result.clone();
+    if let Some(root) = root.as_deref().filter(|_| external) {
+        payload_store::result(root, &mut result)?;
+    }
+    Ok((writes, result.to_string(), external))
 }
 
 pub(super) fn verify_read_set(conn: &Connection, read_set: &ReadSet) -> Result<()> {
@@ -1484,6 +1572,8 @@ fn commit_once(
     conn: &mut Connection,
     prepared: &PreparedChangeSet,
     writes: &[Option<SqlWrite>],
+    stored_result: &str,
+    compact_versions: bool,
     mut timing: Option<&mut performance::TransactionTiming>,
 ) -> Result<(CommitReceipt, bool)> {
     if let Some(receipt) = replay_on(conn, &prepared.command_id, &prepared.fingerprint)? {
@@ -1621,7 +1711,7 @@ fn commit_once(
         }
         workflow_projection::commit(&transaction, prepared)?;
         workflow_events::append(&transaction, prepared, runtime_events)?;
-        let encoded_versions = serde_json::to_string(&versions).map_err(storage)?;
+        let encoded_versions = store_changes::encode_versions(&versions, compact_versions)?;
         for change in &prepared.changes {
             if change.resource.kind == "source_head" {
                 let actual = value(&transaction, &change.resource)?;
@@ -1649,9 +1739,9 @@ fn commit_once(
             "INSERT INTO operations(id,fingerprint,result,versions,cursor) VALUES(?1,?2,?3,?4,?5)",
             rusqlite::params![
                 prepared.command_id,
-                prepared.fingerprint,
-                prepared.result.to_string(),
-                encoded_versions,
+                project_storage::stored_fingerprint(&prepared.fingerprint),
+                stored_result,
+                project_storage::EVENT_VERSIONS,
                 cursor
             ],
         )
@@ -1700,7 +1790,19 @@ pub(super) fn commit(
     prepared.validate()?;
     require(prepared.changes.len() <= 4096, "一次提交的资源过多")?;
     let _span = performance::Span::new("resource.commit");
-    let writes = prepare_writes(pool, prepared)?;
+    match replay(pool, &prepared.command_id, &prepared.fingerprint) {
+        Ok(None) => {}
+        outcome => {
+            let result = outcome.map(|receipt| (receipt.unwrap(), false));
+            if let Some(mut timing) =
+                performance::TransactionTiming::new(pool.observation_id(), prepared, 0)
+            {
+                timing.finished(&result);
+            }
+            return result;
+        }
+    }
+    let (writes, stored_result, compact_versions) = prepare_writes(pool, prepared)?;
     let checkout_deadline = Instant::now() + Duration::from_secs(2);
     let mut technical_spent = Duration::ZERO;
     for attempt in 0..16 {
@@ -1723,7 +1825,14 @@ pub(super) fn commit(
                 timing.pool_acquired();
             }
             let started = Instant::now();
-            let result = commit_once(&mut conn, prepared, &writes, timing.as_mut());
+            let result = commit_once(
+                &mut conn,
+                prepared,
+                &writes,
+                &stored_result,
+                compact_versions,
+                timing.as_mut(),
+            );
             if let Some(timing) = timing.as_mut() {
                 timing.finished(&result);
             }

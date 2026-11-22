@@ -180,7 +180,7 @@ impl CommandTests {
                 &job.join("work"),
             )?;
         }
-        let sandbox = DockerSandbox::new(&root)?;
+        let sandbox = DockerSandbox::for_dataset(&root, &self.root)?;
         let mut receipt = sandbox.inspect(&r.operation_id)?;
         if !state.start_dispatched {
             if !allow_start {
@@ -484,7 +484,13 @@ impl CommandTests {
                 .is_none_or(|receipt| !receipt.running),
             "测试清理前必须取得停止证明",
         )?;
-        sandbox.remove(&r.operation_id)
+        sandbox.remove(&r.operation_id)?;
+        // The platform grants disposal after retaining the original result or
+        // stop proof. Keep job identity and any local result for replay.
+        if let Err(error) = crate::storage_maintenance::retire_test(&job) {
+            eprintln!("DevDesk test scratch cleanup: {}", error.message);
+        }
+        Ok(())
     }
 }
 impl ports::Tests for CommandTests {

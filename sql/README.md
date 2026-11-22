@@ -13,10 +13,12 @@
 
 project 60 的执行合同支持显式 time_limits v1 和步骤 time_budget 事实，显示行保存其下一期限提示。步骤物理权威仍是原实例的 steps JSON，没有拆分或双写另一套执行事实。project 59 及更旧版本在初始化写入前拒绝，不自动转换数据。
 
+project 61 将运行记录的长正文字段改为不可变对象引用。SQLite 保留查询和校验所需的字段。归档表按摘要定位包内偏移和长度。project 60 通过显式命令迁移，Host 启动保持原版本。
+
 项目库另有从 Scope 计算的 owner_project 虚拟列及有界运行查询索引，覆盖 project/feature 归属与子流程父执行。通用事实编解码只选择可写的物理列；虚拟列不进入源正文或变更提交。
 
 Session、Turn、RuntimeExecution、仓库操作及 Artifact 保存不可由配置重建的执行事实。幂等记录同样保存源引用，重放时解析；人工决定、失败报告、输入来源与实际回执不因解析而改写。流程修改在接纳时形成新的 Workflow 源修订，既有执行仍关联原计划和源修订。
 
 模板目录使用独立的代次选择记录；恢复出厂选择复用同一源引用。运行引用的源修订永久保留。凭据只保存不透明引用，不进入源正文或运行日志。
 
-有限资源提交使用 `resource_versions(kind, resource_id, revision)` 保护资源前置条件；`operations.versions` 和 `operations.cursor` 与结果及业务事件原子提交。该端口不允许以项目大锁替代版本校验；业务入口及回调使用原资源读集合提交；原生工作流事件随资源变化在同一事务追加。global 18 / project 48 不自动转换为当前基线。
+有限资源提交通过 `resource_versions(kind, resource_id, revision)` 保护资源前置条件。回执与业务事件在同一事务提交，新回执的 `operations.versions` 通过 `operations.cursor` 引用 `resource.changed` 事件中的版本列表。新 Host 同时支持旧回执的内联列表。业务入口和回调以原资源读集合校验版本，原生工作流事件随资源变化在同一事务追加。global 18 / project 48 不自动转换为当前基线。

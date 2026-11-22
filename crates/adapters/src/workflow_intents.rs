@@ -100,6 +100,11 @@ pub(super) fn task_facts(
 ) -> Result<TaskFacts> {
     let command = &row.data["command"];
     let delivered=conn.query_row("SELECT e.content,json_extract(g.data,'$.digest') FROM turns t JOIN sessions s ON s.id=t.session_id JOIN conversation_events e ON e.turn_id=t.id AND e.session_id=s.id AND e.kind='user' JOIN governance_records g ON g.definition_id=t.id AND g.type IN ('configured_execution_task','archived_configured_execution_task') WHERE t.session_id=?1 AND t.client_message_id=?2 AND s.project_id=?3 ORDER BY e.rowid LIMIT 1",params![command["target"].as_str().unwrap_or(""),command["payload"]["client_message_id"].as_str().unwrap_or(""),row.scope.project_id()],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).optional().map_err(storage)?;
+    let delivered = delivered
+        .map(|(body, digest)| -> Result<_> {
+            Ok((payload_store::unpack_text(conn, body)?, digest))
+        })
+        .transpose()?;
     task_source_facts(conn, &row.scope, &row.definition_id, descriptor, delivered)
 }
 pub(super) fn task_source_facts(

@@ -107,7 +107,7 @@ impl Engine {
             "已封存上下文的经验投影".into(),
             1,
             None,
-            json!({"status":"captured","session":session,"turn_id":turn,"snapshot":snapshot,"artifact_id":artifact.artifact.id,
+            json!({"status":"captured","session":session,"turn_id":turn,"snapshot":{"id":snapshot.id},"artifact_id":artifact.artifact.id,
                 "experience":{"agent_instance_id":link.data["agent_instance_id"],"agent_revision_id":link.data["agent_revision_id"],"snapshot_id":snapshot.id,"session_id":session.id,"project_id":session.project_id,"project_name":facts.project_title,"feature_id":session.feature_id,"feature_name":facts.feature_title.clone().unwrap_or_default(),"task_id":session.task_id,
                     "workflow_instance_id":workflow["instance_id"],"step_execution_id":workflow["execution_id"],"plan_revision_id":workflow["plan_revision_id"],"content_digest":configuration_hash(snapshot),"captured_at":snapshot.capture.captured_at,"work_time":facts.work_time,"binding":link.data["binding"],"kind":snapshot.kind}}),
             false,
@@ -425,6 +425,7 @@ impl Engine {
             let snapshot = raw["data"]["snapshot"].clone();
             let mut data = intent.data.clone();
             data["status"] = json!("captured");
+            data["snapshot"] = json!({"id":snapshot_id});
             data["artifact_id"] = json!(artifact.id);
             data["observation_id"] = json!(accepted_key.id);
             update_record(&mut intent, data);

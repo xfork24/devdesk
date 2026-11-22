@@ -1301,6 +1301,12 @@ fn failed_log_export_retains_the_stopped_worker_and_recovers_without_resending_i
         .unwrap();
     assert!(worker.writer_revoked && worker.protocol_artifact.is_none());
     assert!(store.has_pending_work().unwrap());
+    let raw = dir.path().join(format!(
+        "execution/sessions/{}/coordinator/{}.jsonl",
+        worker.session_id, worker.operation_id
+    ));
+    std::fs::create_dir_all(raw.parent().unwrap()).unwrap();
+    std::fs::write(&raw, "sanitized fixture frames").unwrap();
     fixture.log_allowed.store(true, SeqCst);
     for _ in 0..8 {
         e.tick_conversations(2).unwrap();
@@ -1317,6 +1323,17 @@ fn failed_log_export_retains_the_stopped_worker_and_recovers_without_resending_i
     );
     assert_eq!(fixture.dispatched.load(SeqCst), 1);
     assert_eq!(fixture.cleaned.load(SeqCst), 1);
+    let protocol = after.executions.iter().find(|w| w.id == worker.id).unwrap();
+    let sealed = after
+        .artifacts
+        .iter()
+        .find(|artifact| Some(&artifact.id) == protocol.protocol_artifact.as_ref())
+        .unwrap();
+    assert!(!raw.exists());
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join(&sealed.relative_path)).unwrap(),
+        "sanitized fixture frames"
+    );
     assert!(
         after
             .turns

@@ -6,6 +6,7 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
+| [工程库存储改造与百万级容量评估](project-payload-storage/PLAN.md) | [实施与验收](project-payload-storage/EXECUTION.md)、[容量与 I/O 报告](project-payload-storage/PERFORMANCE.md) | 正式工程库已迁移至 project 61，达到 120 MB 容量目标。部分相对 P95 探针仍有差距，百万级使用现有数据推算 |
 | [架构与代码文档重写](architecture-documentation-rewrite/PLAN.md) | [实施与验证](architecture-documentation-rewrite/EXECUTION.md) | 2026-11-19：P0–P5 完成；重写架构和代码手册，24 篇旧页合并删除，文件索引独立；文档/架构检查与 8 项检查器回归通过 |
 | [精简版性能基准与后续优化](streamlined-workflow-performance/PLAN.md) | [基准](streamlined-workflow-performance/BASELINE.md)、[执行](streamlined-workflow-performance/EXECUTION.md) | 2026-11-19：详细版出厂退役，精简版完整交付 22 分 54.790 秒；两项中断修复已回归，新性能计划待实施 |
 | [默认 Feature / Task 开发流程精简](default-workflow-simplification/PLAN.md) | [实施](default-workflow-simplification/EXECUTION.md)、[本轮验收](default-workflow-simplification/ACCEPTANCE.md)、[变基合入](default-workflow-simplification/MERGE.md)、[main 续验](default-workflow-simplification/FOLLOW-UP.md)、[性能](default-workflow-simplification/PERFORMANCE.md)、[退役清单](default-workflow-simplification/RETIREMENT.md) | 已合入本地 main；续验单 Task/Feature 完成真实交付，最终 Rust 627、浏览器 128 项覆盖通过。新默认及通知合并已定向验证；本轮原生含返工用时 29 分 18.6 秒，五分钟目标未达成 |

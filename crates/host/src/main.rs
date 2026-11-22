@@ -752,6 +752,21 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .and_then(|i| args.get(i + 1))
             .cloned()
     };
+    if args.first().is_some_and(|arg| arg == "storage") {
+        let data = PathBuf::from(option("--data").ok_or("storage requires --data")?);
+        let project = option("--project").ok_or("storage requires --project")?;
+        let report = match args.get(1).map(String::as_str) {
+            Some("migrate") => devdesk_adapters::project_migration::migrate(&data, &project)?,
+            Some("compact") => devdesk_adapters::project_migration::compact(&data, &project)?,
+            _ => {
+                return Err(
+                    "Usage: devdesk-host storage (migrate|compact) --data PATH --project ID".into(),
+                );
+            }
+        };
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        return Ok(());
+    }
     if let Some(path) = option("--factory-export") {
         let mut state = devdesk_domain::EngineeringState::default();
         devdesk_adapters::seed_factory_configuration(&mut state);

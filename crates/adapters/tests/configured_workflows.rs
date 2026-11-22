@@ -2410,6 +2410,44 @@ fn cancelling_a_child_under_a_paused_ancestor_still_releases_the_invocation() {
         true
     );
     assert!(!engine.store.has_pending_work().unwrap());
+
+    let run_id = run["id"].as_str().unwrap();
+    let stopped = &state.configuration(run_id).unwrap().data["steps"][0];
+    assert_eq!(stopped["status"], "failed");
+    assert_eq!(stopped["failure"]["kind"], "cancelled");
+    assert_eq!(stopped["failure"]["effect"], "applied");
+
+    // Exercise the old projection and a restart between the step and header updates.
+    for stale_step in [true, false] {
+        engine
+            .store
+            .seed_fixture_state(None, &mut |state| {
+                let root = state
+                    .governance
+                    .iter_mut()
+                    .find(|r| r.id == run_id)
+                    .unwrap();
+                root.data["status"] = json!("needs_reconciliation");
+                if stale_step {
+                    let step = &mut root.data["steps"][0];
+                    step["status"] = json!("needs_reconciliation");
+                    step["failure"]["kind"] = json!("business");
+                    step["failure"]["effect"] = json!("unknown");
+                }
+                root.content_hash = content_digest(&root.refs, &root.data);
+                root.revision += 1;
+                Ok(Value::Null)
+            })
+            .unwrap();
+        assert!(engine.store.has_pending_work().unwrap());
+        control_fixture::evaluate(&engine).unwrap();
+        let recovered = instance(&engine, &run["id"]);
+        assert_eq!(recovered["status"], "failed");
+        assert_eq!(recovered["steps"][0]["failure"], stopped["failure"]);
+        assert_eq!(recovered["steps"][0]["id"], stopped["id"]);
+        assert_eq!(recovered["paused"], true);
+        assert!(!engine.store.has_pending_work().unwrap());
+    }
 }
 
 #[test]
@@ -3696,6 +3734,14 @@ fn cancelling_one_child_does_not_cancel_its_sibling_and_rework_replaces_the_old_
         state.configuration(&right.id).unwrap().data["steps"][0]["status"],
         "waiting_confirmation"
     );
+    let stopped = &state
+        .configuration(run["id"].as_str().unwrap())
+        .unwrap()
+        .data["steps"][0];
+    assert_eq!(stopped["status"], "failed");
+    assert_eq!(stopped["failure"]["kind"], "cancelled");
+    assert_eq!(stopped["failure"]["effect"], "applied");
+
     command(
         &engine,
         "workflow.step.rework",
@@ -3708,6 +3754,21 @@ fn cancelling_one_child_does_not_cancel_its_sibling_and_rework_replaces_the_old_
     let root = state.configuration(run["id"].as_str().unwrap()).unwrap();
     assert_ne!(root.data["steps"][0]["id"], first);
     assert_eq!(root.data["steps"][1]["id"], second);
+    let new_left = state
+        .governance
+        .iter()
+        .find(|r| {
+            r.r#type == "workflow_instance"
+                && r.data["parent_execution_id"] == root.data["steps"][0]["id"]
+        })
+        .unwrap();
+    assert_ne!(new_left.id, left.id);
+    assert_eq!(new_left.data["steps"][0]["status"], "waiting_confirmation");
+    assert_eq!(
+        state.configuration(&left.id).unwrap().data["status"],
+        "cancelled"
+    );
+    assert_eq!(state.configuration(&right.id).unwrap().data, right.data);
     assert!(
         state
             .governance
@@ -4958,6 +5019,15 @@ fn repeated_unknown_child_failure_does_not_rewrite_the_parent_finish_time() {
         "child_execution_failed"
     );
     assert_eq!(before.data["steps"][0]["status"], "needs_reconciliation");
+    assert_eq!(before.data["steps"][0]["failure"]["effect"], "unknown");
+    let error = command(
+        &engine,
+        "workflow.step.rework",
+        run["id"].as_str(),
+        json!({"step":"child"}),
+    )
+    .unwrap_err();
+    assert_eq!(error.code, "needs_reconciliation");
     for _ in 0..12 {
         std::thread::sleep(std::time::Duration::from_millis(2));
         engine.evaluate_workflows().unwrap();

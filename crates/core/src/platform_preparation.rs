@@ -49,13 +49,47 @@ impl Engine {
                 serde_json::from_value(self.store.restore_runtime_record(raw)?)
                     .map_err(|e| err("storage", e.to_string()))?;
             require(
-                grant.r#type == "platform_call_preparation"
-                    && grant.data["command"] == json!(c)
-                    && grant.data["fingerprint"] == fingerprint,
-                "平台准备身份被不同命令复用",
+                grant.r#type == "platform_call_preparation",
+                "平台准备类型不符",
             )?;
-            let request = serde_json::from_value(grant.data["request"].clone())
-                .map_err(|e| err("storage", e.to_string()))?;
+            let request = if grant.data["status"] == "committed"
+                && grant.data.get("command_id").is_some()
+            {
+                let call_id = text(&grant.data, "call_id")?;
+                require(
+                    grant.data["command_id"] == c.command_id
+                        && self
+                            .replay_workflow_tool(c)?
+                            .is_some_and(|result| result["id"] == call_id),
+                    "已提交的平台准备缺少原命令回执",
+                )?;
+                let call = self
+                    .store
+                    .read_resources(&[ResourceKey::new("governance", &call_id)])?
+                    .remove(0);
+                let raw = call
+                    .value
+                    .as_ref()
+                    .ok_or_else(|| err("storage", "平台调用回执缺失"))?;
+                let call =
+                    ConfigurationRecord::from_storage(self.store.restore_runtime_record(raw)?)?;
+                require(
+                    call.r#type == "platform_call" && call.data["preparation_id"] == grant.id,
+                    "平台准备与原调用不匹配",
+                )?;
+                let mut request: PlatformToolRequest =
+                    serde_json::from_value(call.data["request"].clone())
+                        .map_err(|e| err("storage", e.to_string()))?;
+                request.runtime = None;
+                request
+            } else {
+                require(
+                    grant.data["command"] == json!(c) && grant.data["fingerprint"] == fingerprint,
+                    "平台准备身份被不同命令复用",
+                )?;
+                serde_json::from_value(grant.data["request"].clone())
+                    .map_err(|e| err("storage", e.to_string()))?
+            };
             let operation = text(&grant.data, "runtime_operation_id")?;
             return Ok(Some(PreparedConfiguredPlatform {
                 root: self.store.root(),
@@ -404,6 +438,18 @@ impl Engine {
         let mut data = grant.data.clone();
         data["status"] = json!("committed");
         data["call_id"] = json!(row.id);
+        data["command_id"] = json!(c.command_id);
+        data["origin_id"] = json!(origin.resource.id);
+        for field in [
+            "command",
+            "fingerprint",
+            "request",
+            "authority",
+            "source_basis",
+            "origin",
+        ] {
+            data.as_object_mut().unwrap().remove(field);
+        }
         update_record(&mut grant, data);
         self.store
             .commit_changes(&PreparedChangeSet {

@@ -15,6 +15,7 @@ mod resource_read_scope;
 mod runtime_queries;
 mod scheduling_read;
 mod standard_reads;
+mod storage_maintenance;
 mod store_changes;
 mod tool_calls;
 mod workflow_details;
@@ -31,7 +32,10 @@ mod conversation_queries;
 mod conversation_reads;
 mod conversation_sources;
 mod factory_bundle;
+mod payload_store;
+pub mod project_migration;
 mod project_records;
+mod project_storage;
 pub mod session_resources;
 mod source_store;
 mod source_views;
@@ -68,7 +72,8 @@ pub use catalog::GlobalStore;
 use devdesk_core::*;
 use devdesk_domain::*;
 pub use runtime_registry::configuration_digest;
-const PROJECT_SCHEMA_VERSION: u32 = 60;
+const PROJECT_SCHEMA_VERSION: u32 = 61;
+const LEGACY_PROJECT_SCHEMA_VERSION: u32 = 60;
 use rusqlite::{
     Connection,
     types::{Value as SqlValue, ValueRef},
@@ -109,8 +114,11 @@ impl SqliteStore {
             !root.join("global.sqlite3").exists(),
             "此目录是全局配置库；请打开其项目数据库",
         )?;
-        let connection = open_engineering_connection(&root.join("engineering.sqlite3"))?;
+        let mut connection = open_engineering_connection(&root.join("engineering.sqlite3"))?;
         fs::create_dir_all(root.join("artifacts")).map_err(storage)?;
+        if !payload_store::enabled(&connection)? {
+            project_storage::maintain(&mut connection, &root)?;
+        }
         Ok(Self {
             connection: connection_pool::ConnectionPool::new(
                 &root.join("engineering.sqlite3"),
@@ -138,6 +146,15 @@ impl SqliteStore {
                 .unwrap_or_else(devdesk_core::id),
         );
         Ok(store)
+    }
+    pub fn maintain_runtime_storage(&self, data_root: &Path) {
+        let result = self
+            .connection
+            .read()
+            .and_then(|conn| storage_maintenance::maintain(data_root, &self.root, &conn));
+        if let Err(error) = result {
+            eprintln!("DevDesk runtime storage maintenance: {}", error.message);
+        }
     }
     pub fn open_project(data_root: &Path, project_id: &str) -> Result<Self> {
         let root = Self::project_path(data_root, project_id)?;
@@ -486,11 +503,19 @@ fn open_engineering_connection(path: &Path) -> Result<connection_pool::ManagedCo
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
     require(
-        version == 0 || version == PROJECT_SCHEMA_VERSION,
+        matches!(
+            version,
+            0 | LEGACY_PROJECT_SCHEMA_VERSION | PROJECT_SCHEMA_VERSION
+        ),
         "数据集协议不兼容；请使用新的空数据目录",
     )?;
     if version != 0 {
         check_dataset_layout(&connection)?;
+        storage_maintenance::checkpoint(&connection)?;
+    } else {
+        connection
+            .pragma_update(None, "page_size", 8192)
+            .map_err(storage)?;
     }
     connection
         .execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")
@@ -544,6 +569,7 @@ fn load_table_filtered_params<T: DeserializeOwned>(
     parameters: &[&dyn rusqlite::ToSql],
 ) -> Result<Vec<T>> {
     let _span = performance::Span::new("sqlite.table_read_decode");
+    let _packs = payload_store::read_scope();
     let columns = columns(conn, table)?;
     let selection = columns
         .iter()
@@ -590,8 +616,38 @@ fn load_table_filtered_params<T: DeserializeOwned>(
             Ok(Value::Object(map))
         })
         .map_err(storage)?;
-    rows.map(|v| serde_json::from_value(v.map_err(storage)?).map_err(storage))
-        .collect()
+    rows.map(|row| {
+        let mut value = row.map_err(storage)?;
+        if table == "snapshots" {
+            project_storage::restore_snapshot(conn, &mut value)?;
+        }
+        if table == "events"
+            && value["kind"] == "resource.changed"
+            && let Some(detail) = value["detail"]
+                .as_str()
+                .filter(|detail| detail.starts_with("[["))
+        {
+            value["detail"] = json!(store_changes::encode_versions(
+                &store_changes::decode_versions(detail)?,
+                false
+            )?);
+        }
+        if table == "governance_records" {
+            let kind = value["type"].as_str().unwrap_or("").to_owned();
+            payload_store::restore_governance(conn, &kind, &mut value["data"])?;
+        }
+        if table == "conversation_events" && matches!(value["kind"].as_str(), Some("user" | "tool"))
+        {
+            let text = value["content"]
+                .take()
+                .as_str()
+                .ok_or_else(|| err("storage", "消息正文不是文本"))?
+                .to_owned();
+            value["content"] = json!(payload_store::unpack_text(conn, text)?);
+        }
+        serde_json::from_value(value).map_err(storage)
+    })
+    .collect()
 }
 #[cfg(any(test, feature = "test-fixtures"))]
 fn normalize_fixture_revisions<T: Serialize + DeserializeOwned>(
@@ -769,11 +825,14 @@ impl SqliteStore {
             let mut rows = q.query([id]).map_err(storage)?;
             if let Some(row) = rows.next().map_err(storage)? {
                 let saved: String = row.get(0).map_err(storage)?;
-                require(saved == fp, "command_id 被不同参数复用")?;
+                require(
+                    project_storage::fingerprint_matches(&saved, fp),
+                    "command_id 被不同参数复用",
+                )?;
                 let result: String = row.get(1).map_err(storage)?;
                 return source_views::restore(
                     &self.load_cached(&conn)?,
-                    &serde_json::from_str(&result).map_err(storage)?,
+                    &payload_store::decode_result(&conn, &result)?,
                 );
             }
         }
@@ -1539,6 +1598,30 @@ impl FileArtifacts {
     pub fn new(root: PathBuf) -> Self {
         Self { root }
     }
+    fn checked_path(&self, relative_path: &str) -> Result<PathBuf> {
+        let root = self.root.canonicalize().map_err(storage)?;
+        reject_symlink(&root.join("artifacts"))?;
+        let base = root.join("artifacts");
+        require(
+            base.canonicalize().map_err(storage)? == base,
+            "Artifact 根目录越界",
+        )?;
+        let relative = Path::new(relative_path);
+        require(
+            relative
+                .components()
+                .all(|p| matches!(p, std::path::Component::Normal(_))),
+            "Artifact 相对路径越界",
+        )?;
+        let mut current = root.clone();
+        for part in relative.components() {
+            current.push(part);
+            reject_symlink(&current)?;
+        }
+        let path = current.canonicalize().map_err(storage)?;
+        require(path.starts_with(&base), "Artifact 越界")?;
+        Ok(path)
+    }
 }
 impl ArtifactStore for FileArtifacts {
     fn seal_prepared(&self, seal: &ArtifactSeal, body: &str) -> Result<Artifact> {
@@ -1632,33 +1715,30 @@ impl ArtifactStore for FileArtifacts {
         })
     }
     fn read(&self, artifact: &Artifact) -> Result<Vec<u8>> {
-        let root = self.root.canonicalize().map_err(storage)?;
-        reject_symlink(&root.join("artifacts"))?;
-        let base = root.join("artifacts");
-        require(
-            base.canonicalize().map_err(storage)? == base,
-            "Artifact 根目录越界",
-        )?;
-        let relative = Path::new(&artifact.relative_path);
-        require(
-            relative
-                .components()
-                .all(|p| matches!(p, std::path::Component::Normal(_))),
-            "Artifact 相对路径越界",
-        )?;
-        let mut current = root.clone();
-        for part in relative.components() {
-            current.push(part);
-            reject_symlink(&current)?;
-        }
-        let path = current.canonicalize().map_err(storage)?;
-        require(path.starts_with(&base), "Artifact 越界")?;
+        let path = self.checked_path(&artifact.relative_path)?;
         let bytes = fs::read(path).map_err(storage)?;
         require(
             format!("{:x}", Sha256::digest(&bytes)) == artifact.sha256,
             "Artifact 哈希不匹配",
         )?;
         Ok(bytes)
+    }
+    fn retire_protocol_copy(
+        &self,
+        execution: &RuntimeExecution,
+        artifact: &Artifact,
+    ) -> Result<()> {
+        require(
+            artifact.origin == Origin::External,
+            "只清理已封存的外部 worker 日志",
+        )?;
+        storage_maintenance::retire_protocol(
+            &self.root,
+            &execution.session_id,
+            &execution.operation_id,
+            &artifact.relative_path,
+            &artifact.sha256,
+        )
     }
 }
 

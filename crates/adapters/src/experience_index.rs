@@ -145,15 +145,11 @@ pub(super) fn entries(
                 }
             }
         }
-        let prefix: Option<String> = conn
-            .query_row(
-                "SELECT substr(content,1,320) FROM snapshots WHERE id=?1",
-                [row["snapshot_id"].as_str().unwrap_or("")],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(storage)?;
-        if let Some(prefix) = prefix {
+        if let Some((_, prefix)) = project_storage::snapshot_excerpt(
+            &conn,
+            row["snapshot_id"].as_str().unwrap_or(""),
+            320,
+        )? {
             row["summary"] = json!(prefix);
         }
         // content_digest is already sealed in the immutable experience fact. Detail reads still verify the manifest.

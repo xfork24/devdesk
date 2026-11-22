@@ -128,8 +128,8 @@ CREATE TABLE "interactions" (
  FOREIGN KEY(project_id,session_id,turn_id) REFERENCES turns(project_id,session_id,id) DEFERRABLE INITIALLY DEFERRED
 );
 
-CREATE TABLE operations (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, result JSON NOT NULL CHECK(json_valid(result)), versions JSON NOT NULL DEFAULT '[]' CHECK(json_valid(versions)), cursor INTEGER NOT NULL DEFAULT 0);
-CREATE TABLE resource_versions(kind TEXT NOT NULL,resource_id TEXT NOT NULL,revision INTEGER NOT NULL CHECK(revision>=0),PRIMARY KEY(kind,resource_id));
+CREATE TABLE operations (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, result JSON NOT NULL CHECK(json_valid(result)), versions JSON NOT NULL DEFAULT '[]' CHECK(json_valid(versions)), cursor INTEGER NOT NULL DEFAULT 0) WITHOUT ROWID;
+CREATE TABLE resource_versions(kind TEXT NOT NULL,resource_id TEXT NOT NULL,revision INTEGER NOT NULL CHECK(revision>=0),PRIMARY KEY(kind,resource_id)) WITHOUT ROWID;
 
 CREATE TABLE projects (
  "id" TEXT PRIMARY KEY,
@@ -251,7 +251,6 @@ CREATE UNIQUE INDEX idx_governance_published_version ON governance_records(type,
 
 CREATE UNIQUE INDEX idx_governance_resource_version ON governance_records(type,definition_id,version) WHERE type IN ('capability','role');
 
-CREATE INDEX idx_governance_scope ON governance_records(json_extract(scope,'$'),type);
 
 CREATE INDEX idx_heads_project_id ON heads("project_id");
 
@@ -513,7 +512,8 @@ CREATE TRIGGER turn_capacity_update AFTER UPDATE OF status ON turns WHEN (OLD.st
 END;
 CREATE TRIGGER session_authority_immutable BEFORE UPDATE ON sessions WHEN OLD.project_id IS NOT NEW.project_id OR OLD.feature_id IS NOT NEW.feature_id OR OLD.task_id IS NOT NEW.task_id OR OLD.scope IS NOT NEW.scope OR OLD.owner_id!=NEW.owner_id OR OLD.agent!=NEW.agent OR OLD.harness!=NEW.harness OR OLD.sandbox!=NEW.sandbox OR OLD.runtime_binding IS NOT NEW.runtime_binding OR OLD.predecessor IS NOT NEW.predecessor OR (OLD.external_session IS NOT NULL AND OLD.external_session IS NOT NEW.external_session) BEGIN SELECT RAISE(ABORT,'session authority is immutable'); END;
 CREATE UNIQUE INDEX idx_worker_stop_once ON governance_records(definition_id) WHERE type='worker_stop_intent';
-CREATE INDEX idx_runtime_work_seek ON governance_records(type,json_extract(data,'$.status'),id);
+CREATE INDEX idx_runtime_work_seek ON governance_records(type,json_extract(data,'$.status'),id)
+ WHERE json_extract(data,'$.status') IS NOT NULL;
 CREATE UNIQUE INDEX idx_conversation_open_once ON governance_records(definition_id) WHERE type='conversation_open_intent';
 CREATE INDEX idx_conversation_active_seek ON turns(id) WHERE status NOT IN ('queued','completed','failed','cancelled');
 CREATE INDEX idx_conversation_queued_seek ON turns(id) WHERE status='queued';
@@ -859,5 +859,12 @@ CREATE TABLE dataset_layout(id INTEGER PRIMARY KEY CHECK(id=1),contract TEXT NOT
 INSERT INTO dataset_layout VALUES(1,'single-host-resource-v2');
 
 CREATE INDEX idx_workflow_timed_wait ON workflow_display_steps(instance_id,json_extract(data,'$.time_budget.next_deadline_at')) WHERE json_extract(data,'$.time_budget.next_deadline_at') IS NOT NULL;
-PRAGMA user_version=60;
+CREATE TABLE payload_pack_objects (
+ sha256 TEXT PRIMARY KEY,
+ pack TEXT NOT NULL,
+ offset INTEGER NOT NULL CHECK(offset >= 0),
+ bytes INTEGER NOT NULL CHECK(bytes >= 0)
+) WITHOUT ROWID;
+CREATE INDEX idx_payload_pack_file ON payload_pack_objects(pack);
+PRAGMA user_version=61;
 COMMIT;

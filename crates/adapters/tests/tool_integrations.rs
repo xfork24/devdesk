@@ -1727,7 +1727,19 @@ fn manual_tool_creation_replays_original_packed_result_and_does_not_wait_for_old
             |r| r.get(0),
         )
         .unwrap();
-    let packed: Value = serde_json::from_str(&packed).unwrap();
+    let pointer: Value = serde_json::from_str(&packed).unwrap();
+    let stored = &pointer["$devdesk_project_payload_v1"];
+    let hash = stored["sha256"].as_str().unwrap();
+    let bytes = std::fs::read(
+        root.path()
+            .join("payloads/objects")
+            .join(&hash[..2])
+            .join(&hash[2..4])
+            .join(hash),
+    )
+    .unwrap();
+    assert_eq!(Some(bytes.len() as u64), stored["bytes"].as_u64());
+    let packed: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(
         packed["data"]["invocation"]["tool"]["$source"],
         "bound_tool"

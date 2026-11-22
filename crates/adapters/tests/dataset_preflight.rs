@@ -63,6 +63,23 @@ fn global_discussion_compatibility_is_checked_before_global_writes() {
     reject_unchanged(root.path(), "数据集协议不兼容");
 }
 #[test]
+fn current_projects_and_legacy_discussions_can_open_the_same_dataset() {
+    let root = tempfile::tempdir().unwrap();
+    GlobalStore::open(root.path()).unwrap();
+    let project = id();
+    SqliteStore::open_project(root.path(), &project).unwrap();
+    reserve(root.path(), &project, true);
+    let discussion = SqliteStore::global_discussion_path(root.path()).unwrap();
+    SqliteStore::open(&discussion).unwrap();
+    let conn = rusqlite::Connection::open(discussion.join("engineering.sqlite3")).unwrap();
+    conn.execute_batch("PRAGMA user_version=60;").unwrap();
+    drop(conn);
+    GlobalStore::open(root.path()).unwrap();
+    SqliteStore::open_project(root.path(), &project).unwrap();
+    SqliteStore::open(&discussion).unwrap();
+}
+
+#[test]
 fn missing_published_project_is_not_silently_recreated() {
     let root = tempfile::tempdir().unwrap();
     GlobalStore::open(root.path()).unwrap();

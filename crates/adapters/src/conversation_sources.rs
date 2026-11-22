@@ -196,6 +196,9 @@ pub(super) fn source(
         guards.push(version(row));
     }
     let user=conn.query_row("SELECT content FROM conversation_events WHERE session_id=?1 AND turn_id=?2 AND kind='user' ORDER BY rowid LIMIT 1",rusqlite::params![sid,tid],|r|r.get::<_,String>(0)).optional().map_err(storage)?;
+    let user = user
+        .map(|body| payload_store::unpack_text(&conn, body))
+        .transpose()?;
     let task = task_row
         .as_ref()
         .map(|row| {

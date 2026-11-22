@@ -750,6 +750,18 @@ impl Engine {
         worker["container_id"] = json!(receipt.container_id);
         worker["status"] = json!(Status::Running);
         let mut data = intent.data.clone();
+        let request = &data["request"];
+        // Once the native open is admitted, dispatch resumes from the original
+        // Turn and Worker. The worktree checkpoint needs only this subset.
+        data["request"] = json!({
+            "code_view": request["code_view"],
+            "configured_task": request["configured_task"].is_object().then(|| json!({})),
+            "session": {
+                "id": request["session"]["id"],
+                "agent": request["session"]["agent"],
+                "runtime_binding": request["session"]["runtime_binding"]
+            }
+        });
         data["status"] = json!("completed");
         data["observation_id"] = json!(observed.resource.id);
         data["after_open"] = json!({"session_revision":start.request.session.revision+1,"turn_revision":start.turn.revision,"execution_revision":start.execution_revision+1});

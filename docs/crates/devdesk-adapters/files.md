@@ -49,12 +49,15 @@
 | [src/named_artifacts.rs](../../../crates/adapters/src/named_artifacts.rs) | [SQLite、资源提交与产物文件](storage-and-source-codecs.md) |
 | [src/native_command_output.rs](../../../crates/adapters/src/native_command_output.rs) | Immutable, sanitized command results for the originating worker. This is a bounded projection of its protocol journal, never a platform test receipt. |
 | [src/operational_reads.rs](../../../crates/adapters/src/operational_reads.rs) | [SQLite、资源提交与产物文件](storage-and-source-codecs.md) |
+| [src/payload_store.rs](../../../crates/adapters/src/payload_store.rs) | Project-local storage for immutable bodies selected by the SQLite codec. |
 | [src/performance/transactions.rs](../../../crates/adapters/src/performance/transactions.rs) | Opt-in individual transaction boundaries, with bounded identities and loss accounting. |
 | [src/performance.rs](../../../crates/adapters/src/performance.rs) | Opt-in, bounded request measurements. No parameters or business content are recorded. |
 | [src/permission_profiles.rs](../../../crates/adapters/src/permission_profiles.rs) | [凭据与权限后端](credentials-and-permissions.md) |
 | [src/permissions.rs](../../../crates/adapters/src/permissions.rs) | [凭据与权限后端](credentials-and-permissions.md) |
 | [src/process.rs](../../../crates/adapters/src/process.rs) | Bounded coordinator subprocesses. No shell interpolation or raw external errors. |
+| [src/project_migration.rs](../../../crates/adapters/src/project_migration.rs) | Explicit offline project database upgrades. The original remains usable until the candidate and every new payload reference have been checked. |
 | [src/project_records.rs](../../../crates/adapters/src/project_records.rs) | Metadata pages and exact records in one project. No aggregate state restore. |
+| [src/project_storage.rs](../../../crates/adapters/src/project_storage.rs) | Physical representation of immutable snapshot bodies and committed receipts. |
 | [src/read_models.rs](../../../crates/adapters/src/read_models.rs) | Indexed display reads; no EngineeringState construction or source expansion. |
 | [src/repository_contexts.rs](../../../crates/adapters/src/repository_contexts.rs) | [Git、测试和 GitHub 适配器](engineering-resources.md) |
 | [src/resource_commits.rs](../../../crates/adapters/src/resource_commits.rs) | [SQLite、资源提交与产物文件](storage-and-source-codecs.md) |
@@ -65,10 +68,12 @@
 | [src/runtime_registry.rs](../../../crates/adapters/src/runtime_registry.rs) | [运行环境准备与验证](runtime-preparation.md) |
 | [src/runtime_verification.rs](../../../crates/adapters/src/runtime_verification.rs) | [运行环境准备与验证](runtime-preparation.md) |
 | [src/scheduling_read.rs](../../../crates/adapters/src/scheduling_read.rs) | [SQLite、资源提交与产物文件](storage-and-source-codecs.md) |
+| [src/session_cache.rs](../../../crates/adapters/src/session_cache.rs) | Session caches use an index while idle and private files while a worker runs. |
 | [src/session_resources.rs](../../../crates/adapters/src/session_resources.rs) | [运行环境准备与验证](runtime-preparation.md) |
 | [src/source_store.rs](../../../crates/adapters/src/source_store.rs) | [SQLite、资源提交与产物文件](storage-and-source-codecs.md) |
 | [src/source_views.rs](../../../crates/adapters/src/source_views.rs) | [适配器工厂与配置装载](factory-and-configuration.md) |
 | [src/standard_reads.rs](../../../crates/adapters/src/standard_reads.rs) | Read adoption records without reconstructing the execution history. |
+| [src/storage_maintenance.rs](../../../crates/adapters/src/storage_maintenance.rs) | Host-owned cache storage. Cached files linked to an idle session are materialized privately before Docker can write to them. |
 | [src/store_changes.rs](../../../crates/adapters/src/store_changes.rs) | [SQLite、资源提交与产物文件](storage-and-source-codecs.md) |
 | [src/tests.rs](../../../crates/adapters/src/tests.rs) | [Git、测试和 GitHub 适配器](engineering-resources.md) |
 | [src/tool_calls.rs](../../../crates/adapters/src/tool_calls.rs) | Select a finite set of native tool rows and restore their exact frozen views. |

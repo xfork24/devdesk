@@ -327,6 +327,25 @@ impl DockerSandbox {
             },
         })
     }
+    pub(crate) fn for_dataset(root: &Path, data: &Path) -> Result<Self> {
+        let mut sandbox = Self::new(root)?;
+        if sandbox.runtime_cache.is_none() {
+            sandbox.runtime_cache = Some(crate::storage_maintenance::shared_runtime(data)?);
+        }
+        Ok(sandbox)
+    }
+    pub(crate) fn has_containers(&self) -> Result<bool> {
+        let result = self.call(vec![
+            "ps".into(),
+            "-a".into(),
+            "--filter".into(),
+            format!("label=devdesk.root={}", self.root.display()),
+            "--format".into(),
+            "{{.ID}}".into(),
+        ])?;
+        require(result.code == 0, "无法核对数据集容器")?;
+        Ok(!result.stdout.trim_ascii().is_empty())
+    }
     pub fn with_runtime_cache(mut self, directory: PathBuf) -> Self {
         self.runtime_cache = Some(directory);
         self
@@ -550,8 +569,13 @@ impl DockerSandbox {
         let environment = runtime_environment();
         identity["runtime_environment"] = json!(environment);
         let runtime_cache = self.runtime_cache_directory(&spec.project_id);
-        identity["runtime_cache"] = json!(runtime_cache);
         identity["minimum_runtime_free_bytes"] = json!(self.minimum_runtime_free_bytes);
+        identity["runtime_cache"] = json!(self.root.join("runtime-cache").join(&spec.project_id));
+        let project_cache_digest = format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_vec(&identity).map_err(storage)?)
+        );
+        identity["runtime_cache"] = json!(runtime_cache);
         let digest = format!(
             "{:x}",
             Sha256::digest(serde_json::to_vec(&identity).map_err(storage)?)
@@ -559,6 +583,7 @@ impl DockerSandbox {
         if let Some((receipt, _)) = self.inspect_owned(&name)? {
             require(
                 receipt.specification_digest == digest
+                    || receipt.specification_digest == project_cache_digest
                     || receipt.specification_digest == legacy_digest,
                 "操作 ID 被不同容器规格复用",
             )?;

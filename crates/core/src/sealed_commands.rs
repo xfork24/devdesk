@@ -303,6 +303,13 @@ impl Engine {
             });
         }
         let mut data = intent.data.clone();
+        let result = data
+            .as_object_mut()
+            .unwrap()
+            .remove("result")
+            .unwrap_or(Value::Null);
+        data.as_object_mut().unwrap().remove("changes");
+        data.as_object_mut().unwrap().remove("read_set");
         data["status"] = json!("completed");
         data["observation_ids"] = json!(observation_ids);
         update_record(&mut intent, data);
@@ -315,7 +322,7 @@ impl Engine {
             fingerprint: fingerprint.clone(),
             read_set: read_set.merge(witnesses)?,
             changes,
-            result: intent.data["result"].clone(),
+            result,
             time: now() as i64,
         };
         match self.store.commit_changes(&plan) {

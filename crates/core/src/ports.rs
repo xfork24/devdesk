@@ -1055,6 +1055,13 @@ pub trait ArtifactStore: Send + Sync {
         body: &str,
     ) -> Result<Artifact>;
     fn read(&self, artifact: &Artifact) -> Result<Vec<u8>>;
+    fn retire_protocol_copy(
+        &self,
+        _execution: &devdesk_domain::RuntimeExecution,
+        _artifact: &Artifact,
+    ) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// Environment operations used while core assembles and verifies a Session binding.

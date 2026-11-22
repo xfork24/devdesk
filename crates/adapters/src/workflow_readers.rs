@@ -284,10 +284,8 @@ fn executions(
     let mut exact = None;
     let mut instance_metadata = BTreeMap::<String, Value>::new();
     for (instance, name, owner, title, raw, historical) in rows {
-        let e: Value = source_views::restore(
-            &catalog.state,
-            &serde_json::from_str::<Value>(&raw).map_err(storage)?,
-        )?;
+        let e: Value =
+            source_views::restore(&catalog.state, &payload_store::decode_step(conn, &raw)?)?;
         let frozen = step_source(conn, catalog, project, &instance, &e, &mut plans)?;
         let step = &frozen["step"];
         let outputs=e["outputs"].as_object().into_iter().flatten().map(|(port,id)|{

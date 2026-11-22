@@ -1,4 +1,5 @@
 use super::*;
+use devdesk_core::concurrency::{ResourceKey, ResourceVersion};
 use std::sync::{Arc, Weak};
 
 #[derive(Default)]
@@ -41,7 +42,43 @@ pub(super) fn events_after(conn: &Connection, cursor: u64, limit: usize) -> Resu
         })
         .map_err(storage)?
         .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(storage)
+        .map_err(storage)?
+        .into_iter()
+        .map(event_detail)
+        .collect()
+}
+
+pub(super) fn encode_versions(versions: &[ResourceVersion], compact: bool) -> Result<String> {
+    if compact {
+        let packed: Vec<_> = versions
+            .iter()
+            .map(|v| (&v.resource.kind, &v.resource.id, v.revision))
+            .collect();
+        serde_json::to_string(&packed).map_err(storage)
+    } else {
+        serde_json::to_string(versions).map_err(storage)
+    }
+}
+
+pub(super) fn decode_versions(detail: &str) -> Result<Vec<ResourceVersion>> {
+    if !detail.starts_with("[[") {
+        return serde_json::from_str(detail).map_err(storage);
+    }
+    let parts: Vec<(String, String, u64)> = serde_json::from_str(detail).map_err(storage)?;
+    Ok(parts
+        .into_iter()
+        .map(|(kind, id, revision)| ResourceVersion {
+            resource: ResourceKey::new(kind, id),
+            revision,
+        })
+        .collect())
+}
+
+pub(super) fn event_detail(mut event: Event) -> Result<Event> {
+    if event.kind == "resource.changed" && event.detail.starts_with("[[") {
+        event.detail = encode_versions(&decode_versions(&event.detail)?, false)?;
+    }
+    Ok(event)
 }
 pub(super) fn cursor(conn: &Connection) -> Result<u64> {
     conn.query_row("SELECT coalesce(max(id),0) FROM events", [], |row| {
@@ -77,7 +114,17 @@ pub(super) fn tail(
         )
         .map_err(storage)?
         .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(storage)
+        .map_err(storage)?
+        .into_iter()
+        .map(|mut item| {
+            item.event = event_detail(item.event)?;
+            if item.event.detail.len() > 8192 {
+                item.event.detail.clear();
+                item.omitted = true;
+            }
+            Ok(item)
+        })
+        .collect()
 }
 pub(super) fn pending_tools(conn: &Connection) -> Result<bool> {
     conn.query_row("SELECT EXISTS(SELECT 1 FROM governance_records WHERE type='tool_call' AND (json_extract(data,'$.status') IN ('awaiting_approval','prepared','dispatched','needs_reconciliation') OR (json_extract(data,'$.status') IN ('succeeded','failed','cancelled') AND coalesce(json_extract(data,'$.reply_sent'),0)=0 AND json_extract(data,'$.invocation.session_id') IS NOT NULL)))",[],|r|r.get(0)).map_err(storage)

@@ -33,16 +33,10 @@ Host 通过这些服务展示进度和错误。读安装列表与主动安装是
 
 源码仅位于容器 `/work`。运行时依赖使用独立的宿主机目录，通过 Docker bind volume 挂载到 `/tmp/devdesk-runtime`，不受普通 `/tmp` 的小容量、禁止执行挂载限制。`DEVDESK_RUNTIME_DIR` 指向当前会话的依赖安装、虚拟环境、配置和临时文件目录。
 
-依赖缓存默认位于项目执行根下的 `runtime-cache/<project-id>`，同一项目的容器可以复用；跨项目共享默认关闭。`downloads` 保存项目下载缓存，`images/<image digest>` 保存同一确切镜像兼容的浏览器和已安装工具。会话私有安装环境、配置、凭据、构建输出和临时文件位于各自的 `state/runtime`，移除容器不会删除项目缓存。
+同一个数据集默认使用 `data/shared-cache/runtime`。该目录的 `downloads` 保存外部依赖下载缓存，`images/<image digest>` 保存同一固定镜像可复用的浏览器、字体和已安装工具。Host 在项目没有遗留 Docker 容器时迁入旧项目缓存。合并时保留发生冲突的旧文件。Host 的 `DEVDESK_SHARED_DEPENDENCY_CACHE=/absolute/path` 可显式选择另一个位置，容器内的 `DEVDESK_RUNTIME_CACHE` 指向已挂载的工具目录。镜像安装根仍由 Host 的 `DEVDESK_RUNTIME_CACHE` 单独配置。
 
-只有显式设置 Host 的 `DEVDESK_SHARED_DEPENDENCY_CACHE=/absolute/path` 才跨项目共享下载与工具缓存；这与现有镜像安装根目录 `DEVDESK_RUNTIME_CACHE` 独立。容器内 `DEVDESK_RUNTIME_CACHE` 指向已挂载的工具目录。Cargo 只复用 registry/git 缓存，保留私有 `CARGO_HOME` 配置；模型只复用下载缓存，保留私有 `HF_HOME` 凭据。
+会话私有安装环境、配置、凭据和构建输出留在各自的 `state/runtime`。worker 释放后清理临时目录和只读 Git 导出。测试完成或停止的原始回执入库后，清理测试容器、源码导出和临时文件。
 
-每次创建业务容器前，检查宿主机可用空间，再通过临时、无网络容器，以真实运行 UID 验证每个运行时挂载的可用空间、创建/写入和执行权限。默认要求至少 4 GiB 空闲，`DEVDESK_RUNTIME_MIN_FREE_BYTES` 可提高下限。失败返回具体的空间、权限或挂载错误，并标记业务操作尚未执行；不使用 `chmod 777` 兜底。检查证明启动时可用，不代表磁盘空间在整个任务期间被独占预留。
+`data/shared-cache/codex` 按文件内容和权限保存 Codex 插件、Apps 缓存、系统 Skills 及会话安装的 Node 依赖。闲置会话在协调器目录保存索引，启动时按索引生成私有的可写文件。worker 释放后写入索引，再清理已入库的会话缓存副本。远程插件目录按凭据作用域和 Codex 缓存键保留最新快照。模型目录按凭据、Codex 版本和模型目录身份保留最新快照，继续使用来源的刷新时间和 ETag。
 
-平台配置 Node/npm、Python/pip/uv、Rust/Cargo、Go、Java/Maven/Gradle、Ruby、NuGet 和模型下载缓存等目录，并将目录约束放入 Agent 的冻结运行上下文。npm 的本地安装仍须使用明确的外部 prefix；只设置下载缓存不能阻止包管理器创建工作区内的安装目录。依赖清单和锁文件、代码、测试及最终验收证据可以进入 Git，下载包、安装环境及构建临时目录不作为证据入库。
-
-运行上下文同时要求优先复用项目已有测试入口，区分正式回归代码与实现者不可改写的独立流程断言。浏览器及服务检查须设置超时，并在失败路径清理页面、浏览器和子进程，关闭上一轮后再启动下一轮；成功验收仍须保留实际命令观测和源码身份。运行目录隔离不替代测试程序自身的资源回收。
-
-快照遵循仓库 `.gitignore`，并为常见运行目录提供低优先级 `info/exclude` 规则。为拦截未知目录中的整套运行环境，提交前检查未跟踪文件：单个新增文件超过 8 MiB 或未声明新增文件合计超过 64 MiB 时，保留现场、拒绝提交并给出具体路径；业务确需的大资产可在 `allowed_paths` 中明确列出。此检查发生在暂存和提交之前，失败被标为未应用，不会伪装成未知 Git 副作用。
-
-大快照首先读取提交间的完整文件/对象清单，仅限量展开小文件补丁；未展开内容带有确切路径与对象身份，明确标记 `patch_complete: false`，不会作为完整审阅证据。正常大小的差异继续返回完整补丁，核对只读取原快照回执，不重新执行原写操作。
+会话线程、权限和凭据保存在独立目录。Host 打开数据集时执行 SQLite WAL checkpoint，也会整理已释放会话的 Codex 数据库。原始运行协议日志封存并入库后，Host 核对原日志和封存产物的 SHA-256，再清理重复运行副本。历史日志从封存产物读取。

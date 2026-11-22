@@ -3,6 +3,12 @@ use crate::{connection_pool::ConnectionPool, *};
 use devdesk_core::{ConversationCaptureFacts, concurrency::*, tool_calls::ToolCallPage};
 use rusqlite::{OptionalExtension, params};
 
+fn inherited_snapshot(conn: &Connection, id: Option<&str>) -> Result<Option<Value>> {
+    let Some(id) = id else { return Ok(None) };
+    Ok(project_storage::snapshot_excerpt(conn, id, 16_384)?
+        .map(|(kind, excerpt)| json!({"snapshot_id":id,"kind":kind,"content_excerpt":excerpt})))
+}
+
 pub(super) fn page(pool: &ConnectionPool, after: Option<&str>) -> Result<ToolCallPage> {
     let conn = pool.read()?;
     let mut q = conn.prepare_cached("SELECT id FROM governance_records INDEXED BY idx_conversation_capture_pending WHERE type IN ('conversation_capture_intent','captured_experience_intent') AND json_extract(data,'$.status') IN ('prepared','capturing','captured') AND id>?1 ORDER BY id LIMIT 17").map_err(storage)?;
@@ -97,11 +103,14 @@ pub(super) fn facts(
     let mut messages: Vec<ConversationEvent> = load_table_filtered_params(
         &conn,
         "conversation_events",
-        "id IN (SELECT id FROM (SELECT id,sum(bytes) OVER(ORDER BY sequence DESC) AS total FROM (SELECT id,sequence,length(CAST(content AS BLOB)) AS bytes FROM conversation_events WHERE session_id=?1 AND sequence<=?2 ORDER BY sequence DESC LIMIT 100)) WHERE total<=65536)",
+        &format!(
+            "id IN (SELECT id FROM (SELECT id,sum(bytes) OVER(ORDER BY sequence DESC) AS total FROM (SELECT id,sequence,{} AS bytes FROM conversation_events WHERE session_id=?1 AND sequence<=?2 ORDER BY sequence DESC LIMIT 100)) WHERE total<=65536)",
+            payload_store::CONVERSATION_BYTES
+        ),
         &[&session.id, &sequence],
     )?;
     messages.sort_by_key(|e| e.sequence);
-    let inherited = session.snapshot_id.as_ref().map(|id| conn.query_row("SELECT kind,substr(content,1,16384) FROM snapshots WHERE id=?1", [id], |r| Ok(json!({"snapshot_id":id,"kind":r.get::<_,String>(0)?,"content_excerpt":r.get::<_,String>(1)?}))).optional().map_err(storage)).transpose()?.flatten();
+    let inherited = inherited_snapshot(&conn, session.snapshot_id.as_deref())?;
     let contexts = json_rows(
         &conn,
         "SELECT json_object('turn_id',g.definition_id,'experience_refs',json_extract(g.data,'$.experience_refs')) FROM governance_records g WHERE g.type='conversation_context' AND json_extract(g.data,'$.session_id')=?1 AND EXISTS(SELECT 1 FROM turns t WHERE t.id=g.definition_id AND t.session_id=?1 AND t.rowid<=(SELECT rowid FROM turns WHERE id=?2)) ORDER BY g.rowid DESC LIMIT 50",
@@ -242,17 +251,14 @@ pub(super) fn input(
         &conn,
         "conversation_events", &format!(
             "id IN (SELECT id FROM (SELECT id,sum(bytes) OVER(ORDER BY sequence DESC) AS total FROM
-             (SELECT id,sequence,length(CAST(content AS BLOB)) AS bytes FROM conversation_events
+             (SELECT id,sequence,{} AS bytes FROM conversation_events
               WHERE session_id=?1 AND turn_id IN ({visible_turns}) ORDER BY sequence DESC LIMIT 100))
-             WHERE total<=65536)"
+             WHERE total<=65536)", payload_store::CONVERSATION_BYTES
         ),
         &[&session.id, &turn_boundary],
     )?;
     messages.sort_by_key(|e| e.sequence);
-    let inherited = session.snapshot_id.as_ref().map(|id|conn.query_row(
-        "SELECT kind,substr(content,1,16384) FROM snapshots WHERE id=?1",[id],
-        |r|Ok(json!({"snapshot_id":id,"kind":r.get::<_,String>(0)?,"content_excerpt":r.get::<_,String>(1)?}))
-    ).optional().map_err(storage)).transpose()?.flatten();
+    let inherited = inherited_snapshot(&conn, session.snapshot_id.as_deref())?;
     let contexts = json_rows(
         &conn,
         &format!(

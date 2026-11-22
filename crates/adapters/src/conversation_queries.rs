@@ -228,9 +228,10 @@ pub(super) fn query(
     let mut literal = std::collections::BTreeMap::new();
     for (id, turn) in task_inputs {
         let body=conn.query_row("SELECT e.content,json_extract(g.data,'$.digest') FROM conversation_events e JOIN governance_records g ON g.definition_id=e.turn_id AND g.type IN ('configured_execution_task','archived_configured_execution_task') WHERE e.turn_id=?1 AND e.session_id=?2 AND e.kind='user' ORDER BY e.sequence LIMIT 1",params![id,turn["session_id"].as_str()],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).optional().map_err(storage)?.ok_or_else(||err("storage","原任务用户账本缺失"))?;
-        let value: Value = serde_json::from_str(&body.0).map_err(storage)?;
+        let content = payload_store::unpack_text(&conn, body.0)?;
+        let value: Value = serde_json::from_str(&content).map_err(storage)?;
         require(configuration_hash(&value) == body.1, "原任务账本摘要不符")?;
-        literal.insert(id, body.0);
+        literal.insert(id, content);
     }
     if let Some(turn) = result.get_mut("turn")
         && let Some(body) = turn["id"].as_str().and_then(|id| literal.get(id))

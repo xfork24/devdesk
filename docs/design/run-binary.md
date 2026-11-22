@@ -22,7 +22,16 @@ macOS 包是包含凭据助手的签名命令行程序，不是已公证的 App 
 
 ## 数据与退出
 
-同一数据集只能由一个 Host 管理。当前数据标记为 `devdesk-profile-runtime-v2`，布局为 `single-host-resource-v2`，数据库基线为 global 24 / project 60。程序打开兼容数据集或初始化空目录，不自动迁移、删库或覆盖非 DevDesk 目录。
+同一数据集只能由一个 Host 管理。当前数据标记为 `devdesk-profile-runtime-v2`，布局为 `single-host-resource-v2`，数据库基线为 global 24 / project 61。程序兼容打开 project 60，初始化新项目使用 project 61。
+
+停止该数据集的 Host 后，可以执行显式维护命令。
+
+```sh
+devdesk-host storage migrate --data /path/to/data --project <project-id>
+devdesk-host storage compact --data /path/to/data --project <project-id>
+```
+
+迁移命令输出迁移前后的工程库大小和备份路径。归档命令将仍被引用的对象合并，核验每条索引对应的正文后清理散文件。恢复旧版时使用迁移输出的备份。正常备份新版项目时，一起保存工程库、`artifacts/` 和 `payloads/`。
 
 遇到不兼容错误时保留原数据。验证新版本请使用独立空目录，不以清空旧目录作为恢复步骤。切换数据目录需退出后重新启动。
 

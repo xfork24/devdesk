@@ -236,10 +236,9 @@ impl Workspace {
     }
     fn initialize_project(&self, id: &str, creating: bool) -> Result<Arc<Engine>> {
         let root = PathBuf::from(self.global.root());
-        let e = engine(
-            Arc::new(SqliteStore::open_project(&root, id)?),
-            &self.adapters,
-        );
+        let store = SqliteStore::open_project(&root, id)?;
+        store.maintain_runtime_storage(&root);
+        let e = engine(Arc::new(store), &self.adapters);
         let e = Arc::new(
             Arc::try_unwrap(e)
                 .map_err(|_| err("storage", "装配项目服务失败"))?
@@ -289,8 +288,11 @@ impl Workspace {
             .clone();
         let result = cell
             .get_or_init(|| {
-                let root = SqliteStore::global_discussion_path(Path::new(&self.global.root()))?;
-                let e = engine(Arc::new(SqliteStore::open(&root)?), &self.adapters);
+                let data = PathBuf::from(self.global.root());
+                let root = SqliteStore::global_discussion_path(&data)?;
+                let store = SqliteStore::open(&root)?;
+                store.maintain_runtime_storage(&data);
+                let e = engine(Arc::new(store), &self.adapters);
                 e.store.subscribe_changes(self.background.wake.listener());
                 self.sync_configuration(&e)?;
                 e.bootstrap()?;

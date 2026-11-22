@@ -188,6 +188,7 @@ struct Worker {
 }
 type Cell = Arc<Mutex<Option<Worker>>>;
 pub struct RuntimeWorkers {
+    cache: crate::storage_maintenance::CodexCache,
     root: PathBuf,
     cells: Mutex<HashMap<Id, Cell>>,
     starts: Mutex<HashMap<Id, startup::Start>>,
@@ -195,8 +196,10 @@ pub struct RuntimeWorkers {
 }
 impl RuntimeWorkers {
     pub fn new(root: &Path) -> Result<Arc<Self>> {
+        let root = fs::canonicalize(root).map_err(storage)?;
         Ok(Arc::new(Self {
-            root: fs::canonicalize(root).map_err(storage)?,
+            cache: crate::storage_maintenance::CodexCache::new(&root),
+            root,
             cells: Mutex::new(HashMap::new()),
             starts: Default::default(),
             wakeups: Default::default(),
@@ -471,6 +474,7 @@ impl RuntimeWorkers {
                     .strip_prefix("codex:")
                     .filter(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()))
                     .ok_or_else(|| err("blocked", "Codex 凭据引用无效"))?;
+                self.cache.prepare(&home, reference)?;
                 let source = self
                     .root
                     .join("credentials/codex-accounts")
@@ -620,7 +624,7 @@ impl RuntimeWorkers {
                 ]
             }
         };
-        let sandbox = DockerSandbox::new(&root)?;
+        let sandbox = DockerSandbox::for_dataset(&root, &self.root)?;
         let created = sandbox.create(&ContainerSpec {
             host_gateway: model_connection.as_ref().is_some_and(|c| c.host_gateway),
             permissions: binding.permissions.clone(),
@@ -815,6 +819,37 @@ impl RuntimeWorkers {
                 "worker 不在本次进程中，先核对资源，禁止重发输入",
             )
         })?)
+    }
+    fn retire_cache(
+        &self,
+        session: &Session,
+        execution: &RuntimeExecution,
+        base: &Path,
+        idle: bool,
+    ) -> Result<()> {
+        use crate::storage_maintenance::{checkpoint_provider, remove_scratch};
+        let coordinator = base.join("coordinator");
+        reject_symlink(&coordinator)?;
+        remove_scratch(&coordinator.join(format!("view-{}", execution.operation_id)))?;
+        if idle {
+            let state = base.join("state");
+            let runtime = state.join("runtime");
+            for dir in [&state, &runtime] {
+                reject_symlink(dir)?;
+            }
+            remove_scratch(&runtime.join("tmp"))?;
+            let home = state.join("codex");
+            checkpoint_provider(&home)?;
+            if let Some(account) = session
+                .runtime_binding
+                .as_ref()
+                .and_then(|b| b.credential_ref.as_deref())
+                .filter(|s| s.starts_with("codex:"))
+            {
+                self.cache.retire(&home, account)?;
+            }
+        }
+        Ok(())
     }
     fn stop(&self, s: &Session, e: &RuntimeExecution) -> Result<WorkerStop> {
         self.cancel_start(&s.id, &e.operation_id)?;
@@ -1602,9 +1637,15 @@ macro_rules! provider {
             }
             fn cleanup_worker(&self, s: &Session, e: &RuntimeExecution) -> Result<()> {
                 let base = self.workers.location(s)?;
-                DockerSandbox::new(base.parent().unwrap().parent().unwrap())?
-                    .remove(&e.operation_id)?;
-                self.workers.release_start(&s.id, &e.operation_id)
+                let cell = self.workers.cell(&s.id)?;
+                let slot = cell.lock().map_err(storage)?;
+                let sandbox = DockerSandbox::new(base.parent().unwrap().parent().unwrap())?;
+                sandbox.remove(&e.operation_id)?;
+                self.workers.release_start(&s.id, &e.operation_id)?;
+                if let Err(error) = self.workers.retire_cache(s, e, &base, slot.is_none()) {
+                    eprintln!("DevDesk session cache cleanup: {}", error.message);
+                }
+                Ok(())
             }
             fn inspect_worker_cleanup(&self,s:&Session,e:&RuntimeExecution)->Result<bool>{
                 self.check(s)?;require(e.session_id==s.id,"只读清理核对跨原 worker")?;

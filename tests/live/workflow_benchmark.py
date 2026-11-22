@@ -62,9 +62,9 @@ for member in acceptance['instances']:
             'source_sha256':result['source']['sha256']})
 space=shutil.disk_usage(directory)
 environment['data_volume']={'total_bytes':space.total,'free_bytes':space.free}
-runtime_cache=directory/'execution/runtime-cache'/PROJECT
+runtime_cache=directory.parent.parent/'shared-cache/runtime'
 if runtime_cache.is_dir():
-    environment['external_project_cache_bytes']=int(subprocess.check_output(['du','-sk',str(runtime_cache)],text=True).split()[0])*1024
+    environment['shared_runtime_cache_bytes']=int(subprocess.check_output(['du','-sk',str(runtime_cache)],text=True).split()[0])*1024
 db = sqlite3.connect((directory / 'engineering.sqlite3').as_uri() + '?mode=ro', uri=True)
 records = [(i,t,d,json.loads(s),ts) for i,t,d,s,ts in db.execute(
     'SELECT id,type,definition_id,data,created_at FROM governance_records')]

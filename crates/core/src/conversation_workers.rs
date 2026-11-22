@@ -3,6 +3,7 @@
 use crate::{
     concurrency::*,
     governance::{record, update_record},
+    platform_facts::one,
     *,
 };
 
@@ -212,7 +213,7 @@ impl Engine {
                 .as_ref()
                 .is_ok_and(|p| p.operation_id == execution.operation_id && p.writer_revoked)
             {
-                self.harness.session_log(&execution).and_then(|log| {
+                self.worker_protocol_log(&execution).and_then(|log| {
                     log.map(|text| {
                         self.artifacts
                             .seal_scoped(&owner(session)?, "protocol", &text)
@@ -301,7 +302,7 @@ impl Engine {
                     "只读核对没有原 worker 写撤销证明",
                 )?;
                 let result: Result<ports::WorkerStop> = Ok(proof);
-                let log = self.harness.session_log(&execution).and_then(|log| {
+                let log = self.worker_protocol_log(&execution).and_then(|log| {
                     log.map(|body| {
                         self.artifacts
                             .seal_scoped(&owner(session)?, "protocol", &body)
@@ -575,6 +576,15 @@ impl Engine {
         })?;
         if outcome.applied {
             let result = self.harness.cleanup_worker(session, execution);
+            if result.is_ok()
+                && let Some(id) = worker["protocol_artifact"].as_str()
+            {
+                // The write revocation and sealed artifact are already committed.
+                // An unsuccessful compaction leaves the original for startup maintenance.
+                let _ = self
+                    .worker_protocol_artifact(id)
+                    .and_then(|artifact| self.artifacts.retire_protocol_copy(execution, &artifact));
+            }
             let observed_key =
                 ResourceKey::new("governance", format!("worker-cleanup-observation:{digest}"));
             let mut observed = record(
@@ -612,6 +622,31 @@ impl Engine {
         self.admit_worker_cleanup(&saved)
     }
 
+    fn worker_protocol_artifact(&self, id: &str) -> Result<Artifact> {
+        let row = one(self.store.as_ref(), "artifact", id)?;
+        let artifact: Artifact = serde_json::from_value(
+            row.value
+                .ok_or_else(|| err("not_found", "封存的 worker 协议日志缺失"))?,
+        )
+        .map_err(|error| err("storage", error.to_string()))?;
+        require(
+            artifact.id == id && artifact.origin == Origin::External,
+            "worker 协议日志身份不符",
+        )?;
+        Ok(artifact)
+    }
+
+    fn worker_protocol_log(&self, execution: &RuntimeExecution) -> Result<Option<String>> {
+        if let Some(id) = execution.protocol_artifact.as_deref() {
+            let artifact = self.worker_protocol_artifact(id)?;
+            let bytes = self.artifacts.read(&artifact)?;
+            return String::from_utf8(bytes)
+                .map(Some)
+                .map_err(|error| err("storage", error.to_string()));
+        }
+        self.harness.session_log(execution)
+    }
+
     fn capture_stopped_worker_protocol(
         &self,
         session: &Session,
@@ -635,7 +670,7 @@ impl Engine {
             .read_resources(std::slice::from_ref(&key))?
             .remove(0);
         if observation.value.is_none() {
-            let body = self.harness.session_log(execution).map_err(|error| {
+            let body = self.worker_protocol_log(execution).map_err(|error| {
                 err(
                     "worker_log_unavailable",
                     format!("原 worker 日志尚未导出，保留容器等待只读恢复：{error}"),

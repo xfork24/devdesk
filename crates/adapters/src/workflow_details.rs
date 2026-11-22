@@ -585,6 +585,9 @@ pub(super) fn task(
         return Ok(None);
     };
     let delivered=conn.query_row("SELECT content FROM conversation_events WHERE turn_id=?1 AND kind='user' AND EXISTS(SELECT 1 FROM sessions WHERE sessions.id=conversation_events.session_id AND sessions.project_id=?2) ORDER BY rowid LIMIT 1",params![turn,project],|r|r.get::<_,String>(0)).optional().map_err(storage)?;
+    let delivered = delivered
+        .map(|body| payload_store::unpack_text(&conn, body))
+        .transpose()?;
     let current_feature = conn
         .query_row(
             "SELECT f.id,f.title FROM turns t

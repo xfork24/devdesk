@@ -251,7 +251,7 @@ pub(super) fn read(
             if kind == "event" {
                 let mut event = tx
                     .query_row(
-                        if p["view"] == "summary" {"SELECT id,target,kind,substr(detail,1,513),time FROM events WHERE id=?1"} else {"SELECT id,target,kind,detail,time FROM events WHERE id=?1"},
+                        if p["view"] == "summary" {"SELECT id,target,kind,CASE WHEN kind='resource.changed' THEN detail ELSE substr(detail,1,513) END,time FROM events WHERE id=?1"} else {"SELECT id,target,kind,detail,time FROM events WHERE id=?1"},
                         [id],
                         |r| {
                             Ok(Event {
@@ -264,6 +264,7 @@ pub(super) fn read(
                         },
                     )
                     .map_err(storage)?;
+                event = store_changes::event_detail(event)?;
                 // Fetch one extra character to distinguish a complete short
                 // event from a truncated excerpt without loading its full body.
                 let truncated = p["view"] == "summary" && event.detail.chars().count() > 512;

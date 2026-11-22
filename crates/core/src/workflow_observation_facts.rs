@@ -156,7 +156,7 @@ impl Engine {
             "source_directory":"/work",
             "runtime_directory":WORKSPACE_RUNTIME_DIRECTORY,
             "dependency_cache_directory":format!("{WORKSPACE_RUNTIME_DIRECTORY}/shared"),
-            "cache_scope":"project by default; cross-project sharing requires explicit Host opt-in",
+            "cache_scope":"dataset-wide dependency downloads and fixed-image tools; active session installations are private",
             "runtime_environment_variable":"DEVDESK_RUNTIME_DIR",
             "instructions":"Keep downloaded browsers, package installations, virtual environments, caches, model weights and build output outside /work, including evidence directories. Use DEVDESK_RUNTIME_DIR and the configured package-manager paths; for npm use npm install --prefix \"$DEVDESK_RUNTIME_DIR/node\" instead of installing into the source directory. Keep only project source, dependency manifests/lockfiles, tests and final acceptance reports/screenshots in /work. Do not copy installed dependencies into Git or evidence. Large intentional project assets must be explicitly declared in snapshot allowed_paths."
         });
@@ -249,6 +249,12 @@ impl Engine {
         let mut values: BTreeMap<String, Vec<Value>> =
             step.outputs.keys().map(|k| (k.clone(), vec![])).collect();
         let mut finished = resources.execution.started.unwrap_or(0);
+        // The disposition belongs to the parent invocation. Child side
+        // effects retain their own observations.
+        let cancelled_invocation = ExecutionFailureDisposition {
+            kind: ExecutionFailureKind::Cancelled,
+            effect: ExecutionFailureEffect::Applied,
+        };
         for (index, id) in ids.iter().enumerate() {
             let child = WorkflowHeaderFacts::read(self, id)?;
             commit.witness([version(&child.header)])?;
@@ -273,12 +279,22 @@ impl Engine {
                     "child_execution_failed",
                     format!("实际子流程执行未成功：{}", selected.execution.reason),
                 );
-                if let Some(failure) = selected.execution.failure {
-                    error.execution_failure = Some(ExecutionFailureDisposition {
+                error.execution_failure = selected
+                    .execution
+                    .failure
+                    .map(|failure| ExecutionFailureDisposition {
                         kind: failure.kind,
                         effect: failure.effect,
+                    })
+                    .or_else(|| {
+                        (selected.execution.status == StepExecutionStatus::Cancelled)
+                            .then_some(cancelled_invocation)
                     });
-                }
+                return Err(error);
+            }
+            if child.instance.status == StepExecutionStatus::Cancelled {
+                let mut error = err("child_execution_failed", "实际子流程已经取消");
+                error.execution_failure = Some(cancelled_invocation);
                 return Err(error);
             }
             if child.instance.status != StepExecutionStatus::Completed {

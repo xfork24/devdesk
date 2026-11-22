@@ -38,7 +38,7 @@
 ## 并发与存储
 
 - 一个数据集只由一个 Host 管理，保留所有权文件锁及全局/项目/全局讨论分库。
-- 当前数据标记 `devdesk-profile-runtime-v2`、布局 `single-host-resource-v2`，SQLite **global 24 / project 60**。只打开兼容数据集或初始化空目录，不自动迁移、删库或转换旧数据。验证使用专用空目录。
+- 当前数据标记 `devdesk-profile-runtime-v2`、布局 `single-host-resource-v2`，SQLite **global 24 / project 61**。兼容打开 project 60，由独占数据集的显式 storage migrate 升级。启动只打开兼容数据集或初始化空目录。验证使用专用目录。
 - 项目选择属于每个浏览器标签页。请求、SSE 和产物读取显式携带项目作用域，不能引入共享 active project。
 - 普通读取使用独立已提交快照或有版本只读视图，不等待全局/项目业务锁，不隐式同步配置、写业务事实或恢复完整历史。
 - 修改入口明确声明原版本、相关读写集合、领域约束与幂等身份；新增对象校验不存在。版本检查和事实提交必须原子，不能只接收 expected_revision 而不核对。

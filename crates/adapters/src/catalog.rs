@@ -40,6 +40,7 @@ impl GlobalStore {
         )?;
         if version == 24 {
             check_dataset_layout(&connection)?;
+            storage_maintenance::checkpoint(&connection)?;
             preflight_engineering_databases(&root, &connection)?;
         }
         connection
@@ -288,7 +289,10 @@ fn check_engineering_baseline(path: &Path) -> Result<()> {
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
     require(
-        version == PROJECT_SCHEMA_VERSION,
+        matches!(
+            version,
+            LEGACY_PROJECT_SCHEMA_VERSION | PROJECT_SCHEMA_VERSION
+        ),
         "数据集协议不兼容；请使用新的空数据目录",
     )?;
     check_dataset_layout(&connection)
@@ -475,7 +479,10 @@ impl EngineeringStore for GlobalStore {
                 .optional()
                 .map_err(storage)?;
             if let Some((saved, result)) = previous {
-                require(saved == fp, "command_id 被不同参数复用")?;
+                require(
+                    project_storage::fingerprint_matches(&saved, fp),
+                    "command_id 被不同参数复用",
+                )?;
                 return source_views::restore(
                     &Self::configuration(&conn)?,
                     &serde_json::from_str(&result).map_err(storage)?,

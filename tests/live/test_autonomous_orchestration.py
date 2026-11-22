@@ -1,4 +1,5 @@
 """Negative evidence tests: the verifier must reject external workflow steering."""
+import hashlib
 import json
 import sqlite3
 import unittest
@@ -42,11 +43,20 @@ class AutonomyTests(unittest.TestCase):
     def test_default_start_is_bound_to_its_original_command_result(self):
         self.db.execute("ALTER TABLE governance_records ADD COLUMN definition_id TEXT")
         self.db.execute("CREATE TABLE operations(id TEXT,fingerprint TEXT,result TEXT)")
-        request = json.dumps(["workflow.start", "feature", 1, {}])
+        request = json.dumps(["workflow.start", "feature", 1, {"title": "原开发目标" * 24}],
+                             ensure_ascii=False, separators=(",", ":"))
         self.db.execute("UPDATE governance_records SET definition_id='command',data=? WHERE id='start-command'", (json.dumps({"context":{"actor":{"kind":"human"}},"target":"feature","request_digest":request}),))
         result = {"id":"root","type":"workflow_instance","data":{"owner_id":"feature","workflow_ref":"workflow:1"}}
         self.db.execute("INSERT INTO operations VALUES (?,?,?)", ("command",request,json.dumps(result)))
         self.assertTrue(verify(self.db,"root")["passed"])
+        encoded = json.dumps(request, ensure_ascii=False, separators=(",", ":")).encode()
+        fingerprint = "devdesk-command-sha256/v1:" + hashlib.sha256(encoded).hexdigest()
+        self.db.execute("UPDATE operations SET fingerprint=?", (fingerprint,))
+        self.assertTrue(verify(self.db,"root")["passed"])
+        self.db.execute("UPDATE operations SET fingerprint=?", (fingerprint[:-1],))
+        with self.assertRaisesRegex(AssertionError, "lacks its exact durable command receipt"):
+            verify(self.db,"root")
+        self.db.execute("UPDATE operations SET fingerprint=?", (fingerprint,))
         result["data"]["workflow_ref"] = "foreign:1"
         self.db.execute("UPDATE operations SET result=?", (json.dumps(result),))
         with self.assertRaisesRegex(AssertionError, "different root or Workflow"):

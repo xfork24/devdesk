@@ -167,19 +167,18 @@ pub(super) fn read(
         let limit = p["limit"].as_u64().unwrap_or(32).clamp(1, 100);
         let family = p["type"].as_str();
         let search = p["search"].as_str();
+        let supplied = p["snapshot_digest"].as_str();
+        let seek = supplied.is_some_and(|s| s == "seek" || s.starts_with("seek:"));
         require(search.is_none_or(|s| s.len() <= 1024), "搜索超出预算")?;
+        require(
+            !seek || (offset == 0 && search.is_none() && family.is_none()),
+            "游标分页支持无搜索和类型过滤的列表",
+        )?;
         let mut sql = metadata(&conn, kind)?;
         if kind == "governance" {
             sql.push_str(" UNION ALL SELECT reference AS id,type,name,revision,NULL AS status,NULL AS content_hash FROM source_definitions");
         }
         let filter = "(?1 IS NULL OR type=?1) AND (?2 IS NULL OR instr(coalesce(name,'')||' '||CAST(id AS TEXT),?2)>0)";
-        let total: u64 = conn
-            .query_row(
-                &format!("SELECT count(*) FROM ({sql}) WHERE {filter}"),
-                params![family, search],
-                |r| r.get(0),
-            )
-            .map_err(storage)?;
         let clock = resource_commits::read_on(
             &conn,
             &[devdesk_core::concurrency::ResourceKey::new(
@@ -200,15 +199,63 @@ pub(super) fn read(
             family,
             search,
         ));
+        let seek_prefix = format!("seek:{digest}:");
+        let after = if seek && supplied != Some("seek") {
+            let id = supplied
+                .and_then(|s| s.strip_prefix(&seek_prefix))
+                .ok_or_else(|| err("invalid_params", "列表摘要已变化，请重新分页"))?;
+            require(!id.is_empty() && id.len() <= 1024, "无效列表游标")?;
+            id
+        } else {
+            ""
+        };
         require(
-            p["snapshot_digest"].as_str().is_none_or(|v| v == digest),
+            seek || supplied.is_none_or(|v| v == digest),
             "列表摘要已变化，请重新分页",
         )?;
-        let mut q=conn.prepare_cached(&format!("SELECT json_object('id',id,'type',type,'name',name,'revision',revision,'status',status,'content_hash',content_hash) FROM ({sql}) WHERE {filter} ORDER BY CAST(id AS TEXT) LIMIT ?3 OFFSET ?4")).map_err(storage)?;
+        let total: Option<u64> = if seek {
+            None
+        } else {
+            Some(
+                conn.query_row(
+                    &format!("SELECT count(*) FROM ({sql}) WHERE {filter}"),
+                    params![family, search],
+                    |r| r.get(0),
+                )
+                .map_err(storage)?,
+            )
+        };
+        let selection = "json_object('id',id,'type',type,'name',name,'revision',revision,'status',status,'content_hash',content_hash)";
+        let (listing, args) = if seek {
+            let identity = if kind == "events" {
+                SqlValue::Integer(if after.is_empty() {
+                    0
+                } else {
+                    after.parse().map_err(storage)?
+                })
+            } else {
+                SqlValue::Text(after.to_owned())
+            };
+            (
+                format!("SELECT {selection} FROM ({sql}) WHERE id>?1 ORDER BY id LIMIT ?2"),
+                vec![identity, SqlValue::Integer((limit + 1) as i64)],
+            )
+        } else {
+            (
+                format!(
+                    "SELECT {selection} FROM ({sql}) WHERE {filter} ORDER BY CAST(id AS TEXT) LIMIT ?3 OFFSET ?4"
+                ),
+                vec![
+                    family.map_or(SqlValue::Null, |s| SqlValue::Text(s.into())),
+                    search.map_or(SqlValue::Null, |s| SqlValue::Text(s.into())),
+                    SqlValue::Integer(limit as i64),
+                    SqlValue::Integer(offset as i64),
+                ],
+            )
+        };
+        let mut q = conn.prepare_cached(&listing).map_err(storage)?;
         let mut rows = q
-            .query_map(params![family, search, limit, offset], |r| {
-                r.get::<_, String>(0)
-            })
+            .query_map(rusqlite::params_from_iter(args), |r| r.get::<_, String>(0))
             .map_err(storage)?
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(storage)?
@@ -222,8 +269,62 @@ pub(super) fn read(
                 }
             }
         }
-        json!({"kind":kind,"records":rows,"total":total,"offset":offset,"next_offset":if offset+limit<total{Some(offset+limit)}else{None},"snapshot_digest":digest,"complete":offset+limit>=total})
+        let more = total.map_or(rows.len() > limit as usize, |n| offset + limit < n);
+        rows.truncate(limit as usize);
+        if seek {
+            let next = more.then(|| {
+                let id = &rows.last().unwrap()["id"];
+                format!(
+                    "{seek_prefix}{}",
+                    id.as_str()
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| id.to_string())
+                )
+            });
+            json!({"kind":kind,"records":rows,"next_cursor":next,"snapshot_digest":digest,"complete":!more})
+        } else {
+            json!({"kind":kind,"records":rows,"total":total,"offset":offset,"next_offset":more.then_some(offset+limit),"snapshot_digest":digest,"complete":!more})
+        }
     };
     conn.execute_batch("COMMIT;").map_err(storage)?;
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn seek_pages_keep_a_bounded_window_and_reject_a_stale_cursor() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = SqliteStore::open(temp.path()).unwrap();
+        let conn = Connection::open(temp.path().join("engineering.sqlite3")).unwrap();
+        for id in [2u64, 9, 10] {
+            conn.execute(
+                "INSERT INTO events(id,target,kind,detail,time) VALUES(?1,'owner','test','',1)",
+                [id],
+            )
+            .unwrap();
+        }
+        let page = |cursor: &str| {
+            store.project_records(
+                "project.records.list",
+                &json!({"kind":"events","limit":2,"snapshot_digest":cursor}),
+            )
+        };
+        let first = page("seek").unwrap();
+        assert_eq!(first["records"][0]["id"], 2);
+        assert_eq!(first["records"][1]["id"], 9);
+        assert!(first.get("total").is_none());
+        let cursor = first["next_cursor"].as_str().unwrap();
+        let next = page(cursor).unwrap();
+        assert_eq!(next["records"][0]["id"], 10);
+        assert_eq!(next["complete"], true);
+        conn.execute(
+            "INSERT INTO events(target,kind,detail,time) VALUES('owner','test','',2)",
+            [],
+        )
+        .unwrap();
+        assert!(page(cursor).is_err());
+    }
 }

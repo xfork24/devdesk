@@ -2,6 +2,7 @@
 /web/node_modules/
 /web/dist/
 /data*/
+/.devdesk-storage-backups/
 /test-results/
 /playwright-report/
 *.log
