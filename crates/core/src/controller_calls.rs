@@ -101,7 +101,38 @@ impl Engine {
                 &args["interaction"],
                 &json!({}),
             )?;
-            let id=commit.new_record(record("controller_interaction",row.id.clone(),row.scope.clone(),text(&interaction,"title")?,1,None,json!({"instance_id":target,"plan_revision_id":args["plan_revision_id"],"turn_id":call.data["turn_id"],"interaction":interaction}),true),"controller-notice")?;
+            let escalation =
+                self.workflow_notice_escalation(&mut commit, &instance, &interaction)?;
+            let mut notice = record(
+                "controller_interaction",
+                row.id.clone(),
+                row.scope.clone(),
+                text(&interaction, "title")?,
+                1,
+                None,
+                json!({"instance_id":target,"plan_revision_id":args["plan_revision_id"],"turn_id":call.data["turn_id"],"interaction":interaction, "recovery_execution_id":escalation}),
+                true,
+            );
+            let id = if let Some(execution) = escalation {
+                notice.id = format!("workflow-recovery-escalation:{execution}");
+                let existing = one(self.store.as_ref(), "governance", &notice.id)?;
+                commit.witness([version(&existing)])?;
+                if let Some(raw) = &existing.value {
+                    require(
+                        raw["type"] == "controller_interaction"
+                            && raw["data"]["recovery_execution_id"] == execution,
+                        "恢复升级与原执行不符",
+                    )?;
+                    return commit.finish(
+                        &fingerprint,
+                        json!({"id":notice.id,"status":"published","reused":true}),
+                    );
+                }
+                commit.insert_record(&notice)?;
+                notice.id
+            } else {
+                commit.new_record(notice, "controller-notice")?
+            };
             return commit.finish(&fingerprint, json!({"id":id,"status":"published"}));
         }
         require(
@@ -209,6 +240,25 @@ impl Engine {
             commit.witness([version(&head)])?;
             controller.source_cursor = consumed;
             pending = remaining.len();
+        }
+        if pending == 0 {
+            let workflow = WorkflowHeaderFacts::read(self, root)?;
+            let (actionable, exhausted) =
+                self.workflow_recovery_attention(&mut commit, &workflow, false)?;
+            if !actionable.is_empty() {
+                return Err(err(
+                    "technical_recovery_pending",
+                    format!(
+                        "请先诊断并处理可恢复执行，再等待相应执行结果：{}",
+                        actionable
+                            .iter()
+                            .map(|(id, _)| id.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                ));
+            }
+            self.notify_exhausted_recovery(&mut commit, &row.id, &exhausted)?;
         }
         controller.run_state = if pending == 0 { "waiting" } else { "runnable" }.into();
         controller.checkpoint =

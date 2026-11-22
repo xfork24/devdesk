@@ -104,6 +104,17 @@ fn value(conn: &Connection, key: &ResourceKey) -> Result<Option<Value>> {
             let rows=q.query_map(rusqlite::params![controller,epoch,session],|r|Ok(json!({"call_id":r.get::<_,String>(0)?,"source_id":r.get::<_,String>(1)?,"pointer":r.get::<_,String>(2)?}))).map_err(storage)?.collect::<rusqlite::Result<Vec<_>>>().map_err(storage)?;
             Ok(Some(json!(rows)))
         }
+        "controller_execution_review" => {
+            let (controller,epoch,instance,execution):(String,u64,String,String)=serde_json::from_str(&key.id).map_err(storage)?;
+            Ok(load_table_filtered_params::<Value>(conn,"governance_records",r#"id=(
+                SELECT id FROM governance_records WHERE type='controller_tool_call' AND definition_id=?1
+                 AND json_extract(data,'$.epoch')=?2 AND json_extract(data,'$.method')='workflow.execution.inspect'
+                 AND json_extract(data,'$.status')='succeeded'
+                 AND coalesce(json_extract(data,'$.arguments.instance_id'),json_extract(data,'$.arguments.id'))=?3
+                 AND json_extract(data,'$.arguments.execution_id')=?4
+                 ORDER BY rowid DESC LIMIT 1
+            )"#,&[&controller,&epoch,&instance,&execution])?.into_iter().next())
+        }
         "workflow_material_inputs" => Ok(Some(json!(load_table_filtered_params::<Value>(conn,"governance_records","id IN (SELECT id FROM governance_records WHERE type='workflow_material_input' AND definition_id=?1 ORDER BY rowid DESC LIMIT 64)",&[&key.id])?))),
         "workflow_step_decisions"=>{
             let rows=load_table_filtered_params::<Value>(conn,"governance_records","id IN (SELECT id FROM governance_records WHERE type='workflow_pending_decision' AND json_extract(data,'$.status')='pending' AND json_extract(data,'$.request.arguments.execution_id')=?1 ORDER BY rowid LIMIT 33)",&[&key.id])?;
@@ -200,9 +211,25 @@ fn value(conn: &Connection, key: &ResourceKey) -> Result<Option<Value>> {
             let rows=load_table_filtered_params::<Value>(conn,"governance_records","id IN (SELECT id FROM governance_records WHERE type=?1 AND definition_id=?2 AND (json_extract(data,'$.finished') IS NULL OR CAST(json_extract(data,'$.finished') AS INTEGER)>=?3) ORDER BY CAST(json_extract(data,'$.started') AS INTEGER),id LIMIT 1025)",&[&kind,&owner,&since])?;require(rows.len()<=1024,"原执行等待区间超过预算")?;Ok(Some(json!(rows)))
         }
         "workflow_active_wait"=>Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT id FROM governance_records WHERE type='workflow_wait_interval' AND definition_id=?1 AND json_extract(data,'$.finished') IS NULL ORDER BY id LIMIT 1)",&[&key.id])?.into_iter().next()),
-        "workflow_retry_count"=>{
-            let (instance,node,round):(String,String,u64)=serde_json::from_str(&key.id).map_err(storage)?;
-            conn.query_row("SELECT count(DISTINCT definition_id) FROM governance_records WHERE type='workflow_execution_history' AND json_extract(data,'$.workflow_instance_id')=?1 AND json_extract(data,'$.node_id')=?2 AND json_extract(data,'$.round')=?3",rusqlite::params![instance,node,round],|r|r.get::<_,u64>(0)).map(|count|Some(json!({"count":count}))).map_err(storage)
+        "workflow_publication_repair_count"=>{
+            let (project,instance,node):(String,String,String)=serde_json::from_str(&key.id).map_err(storage)?;
+            // Preserve legacy spend records. A new retry counts once the
+            // scheduler actually starts inspecting the original operation.
+            conn.query_row(r#"
+                SELECT coalesce((
+                    SELECT sum(json_extract(data,'$.used')) FROM governance_records
+                    WHERE type='source_publication_retry_budget' AND definition_id=?2 AND owner_project=?1
+                    AND json_extract(data,'$.node_id')=?3
+                ),0) + (
+                    SELECT count(*) FROM governance_records request
+                    JOIN governance_records attempt ON attempt.id='workflow-reconciliation-attempt:'||request.id
+                        AND attempt.type='workflow_reconciliation_attempt'
+                    WHERE request.type='workflow_reconciliation' AND request.owner_project=?1
+                        AND json_extract(request.data,'$.instance_id')=?2 AND json_extract(request.data,'$.node_id')=?3
+                        AND json_extract(request.data,'$.resolution')='retry_source_publication'
+                )
+            "#,rusqlite::params![project,instance,node],|r|r.get::<_,u64>(0))
+                .map(|count|Some(json!({"count":count}))).map_err(storage)
         }
         "workflow_logical_retries"=>{
             let (project,instance,node,execution):(String,String,String,String)=serde_json::from_str(&key.id).map_err(storage)?;
@@ -235,11 +262,63 @@ fn value(conn: &Connection, key: &ResourceKey) -> Result<Option<Value>> {
                         END) AS started
                     FROM attempts a
                 )
-                SELECT coalesce(sum(started),0), coalesce(max(CASE WHEN current=1 THEN started END),0)
+                SELECT coalesce(sum(started),0) + (
+                    SELECT count(*) FROM governance_records repair
+                    JOIN turns t ON t.session_id=json_extract(repair.data,'$.session_id')
+                         AND t.client_message_id=json_extract(repair.data,'$.client_message_id')
+                     WHERE repair.type='workflow_repair_attempt' AND repair.definition_id=?2||':'||?3
+                       AND repair.owner_project=?1 AND json_extract(repair.data,'$.charge_turn')=1 AND t.started IS NOT NULL
+                ), coalesce(max(CASE WHEN current=1 THEN started END),0)
                   FROM (SELECT max(current) AS current,max(started) AS started FROM observed GROUP BY execution_id)
             "#;
             conn.query_row(sql,rusqlite::params![project,instance,node,execution],|r| Ok((r.get::<_,u64>(0)?,r.get::<_,bool>(1)?)))
                 .map(|(started,current)|Some(json!({"started":started,"current_started":current,"count":started.saturating_sub(1)}))).map_err(storage)
+        }
+        "workflow_rust_retries"=>{
+            let (project,instance,node):(String,String,String)=serde_json::from_str(&key.id).map_err(storage)?;
+            conn.query_row(r#"
+                SELECT count(DISTINCT decision.id) FROM governance_records decision
+                JOIN governance_records history ON history.type='workflow_execution_history'
+                    AND history.definition_id=json_extract(decision.data,'$.execution_id')
+                    AND history.owner_project=?1
+                WHERE decision.type='workflow_decision' AND decision.definition_id=?2 AND decision.owner_project=?1
+                    AND json_extract(decision.data,'$.operation')='retry'
+                    AND json_extract(decision.data,'$.actor.kind')='driver'
+                    AND json_extract(history.data,'$.workflow_instance_id')=?2
+                    AND json_extract(history.data,'$.node_id')=?3
+            "#,rusqlite::params![project,instance,node],|r|r.get::<_,u64>(0))
+                .map(|count|Some(json!({"count":count}))).map_err(storage)
+        }
+        "workflow_repair_history"=>{
+            let (project,logical):(String,String)=serde_json::from_str(&key.id).map_err(storage)?;
+            let mut statement=conn.prepare_cached(r#"
+                SELECT json_object(
+                    'id',a.id,'record',json(a.data),
+                    'started',coalesce(t.started,json_extract(p.data,'$.started'),
+                        CASE WHEN json_extract(p.data,'$.status')='succeeded' THEN p.created_at END),
+                    'turn_id',t.id,'call_id',p.id,'status',coalesce(t.status,json_extract(p.data,'$.status')),
+                    'result',json(coalesce(r.data,CASE WHEN p.id IS NOT NULL THEN json_object(
+                        'origin','platform_call','status',json_extract(p.data,'$.status'),
+                        'code',json_extract(p.data,'$.error.code'),
+                        'summary',substr(json_extract(p.data,'$.error.message'),1,512)) END))
+                )
+                FROM governance_records a
+                LEFT JOIN turns t ON t.session_id=coalesce(json_extract(a.data,'$.session_id'), (
+                    SELECT s.definition_id FROM governance_records s
+                    WHERE s.type='configured_session' AND s.owner_project=?1
+                      AND json_extract(s.data,'$.execution_id')=json_extract(a.data,'$.execution_id')
+                    LIMIT 1
+                )) AND t.client_message_id=json_extract(a.data,'$.client_message_id')
+                LEFT JOIN governance_records p ON p.id=json_extract(a.data,'$.execution_id')
+                    AND p.type='platform_call' AND p.owner_project=?1
+                LEFT JOIN governance_records r ON r.id='workflow-repair-result:'||a.id AND r.type='workflow_repair_result'
+                WHERE a.type='workflow_repair_attempt' AND a.definition_id=?2 AND a.owner_project=?1
+                ORDER BY (t.started IS NOT NULL OR json_extract(p.data,'$.started') IS NOT NULL
+                    OR json_extract(p.data,'$.status')='succeeded') DESC NULLS LAST,a.rowid DESC LIMIT 128
+            "#).map_err(storage)?;
+            let encoded=statement.query_map(rusqlite::params![project,logical],|r|r.get::<_,String>(0)).map_err(storage)?;
+            let rows=encoded.map(|r|serde_json::from_str(&r.map_err(storage)?).map_err(storage)).collect::<Result<Vec<Value>>>()?;
+            Ok(Some(json!(rows)))
         }
         "workflow_last_outputs"=>{
             let (instance,node):(String,String)=serde_json::from_str(&key.id).map_err(storage)?;
@@ -472,6 +551,7 @@ fn value(conn: &Connection, key: &ResourceKey) -> Result<Option<Value>> {
 fn revision_projection(kind: &str) -> Option<fn(Option<&Value>) -> u64> {
     match kind {
         "repository_worktree_operation"
+        | "controller_execution_review"
         | "controller_latest_intent"
         | "workflow_history_source"
         | "workflow_completion_source"
@@ -659,7 +739,10 @@ fn current_revision(conn: &Connection, key: &ResourceKey) -> Result<u64> {
             &ResourceKey::new("collection", format!("{prefix}:{owner}")),
         );
     }
-    if key.kind == "workflow_retry_count" {
+    if matches!(
+        key.kind.as_str(),
+        "workflow_publication_repair_count" | "workflow_rust_retries"
+    ) {
         return Ok(value(conn, key)?
             .and_then(|v| v["count"].as_u64())
             .unwrap_or(0));
@@ -668,6 +751,10 @@ fn current_revision(conn: &Connection, key: &ResourceKey) -> Result<u64> {
         let facts = value(conn, key)?.unwrap_or_default();
         return Ok(facts["started"].as_u64().unwrap_or(0) * 2
             + u64::from(facts["current_started"] == true));
+    }
+    if key.kind == "workflow_repair_history" {
+        let digest = configuration_hash(&value(conn, key)?);
+        return u64::from_str_radix(&digest[..15], 16).map_err(storage);
     }
 
     if key.kind == "session_active_turns" {

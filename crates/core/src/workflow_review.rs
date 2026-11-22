@@ -1,7 +1,7 @@
 //! Exact-result exceptions. A manager can propose, only Human can sign.
 use crate::{
     platform_facts::{one, restored},
-    workflow_commits::WorkflowCommit,
+    workflow_commits::{WorkflowCommit, WorkflowHeaderFacts},
     workflow_facts::FactSelection,
     workflow_resources::{WorkflowResources, version},
     *,
@@ -30,6 +30,49 @@ pub(crate) fn require_exception_hard_rules(
 }
 
 impl Engine {
+    pub(crate) fn review_recovery(
+        &self,
+        commit: &mut WorkflowCommit<'_>,
+        root: &WorkflowHeaderFacts,
+        resources: &WorkflowResources,
+    ) -> Result<Value> {
+        let e = &resources.execution;
+        if !matches!(
+            e.status,
+            StepExecutionStatus::AwaitingAcceptance | StepExecutionStatus::WaitingConfirmation
+        ) {
+            return Ok(Value::Null);
+        }
+        let Some(policy) = root
+            .instance
+            .plan
+            .document
+            .review_policies
+            .values()
+            .find(|p| p.review_step == e.step)
+        else {
+            return Ok(Value::Null);
+        };
+        let mut selection = FactSelection::default();
+        selection.rule(&policy.rejected_when);
+        let facts = resources.selected_facts(self.store.as_ref(), &selection)?;
+        commit.witness(facts.reads.versions().iter().cloned())?;
+        if !policy.rejected_when.evaluate(&facts.facts) {
+            return Ok(Value::Null);
+        }
+        let (selected, budget) = self.rework_budget_view(root, &policy.rework_policy)?;
+        commit.witness([version(&selected)])?;
+        let history = self.review_repair_history(root, &policy.rework_policy)?;
+        commit.witness([version(&history)])?;
+        let exhausted = budget["history_baseline_known"] == true && budget["remaining"] == 0;
+        Ok(
+            json!({"kind":"review_rework","status":if exhausted {"exhausted"} else {"needs_manager"},
+            "operation":"workflow.rework.preview","budget":budget,"remaining":budget["remaining"],
+            "human_required":exhausted,"allow_human_approval":policy.allow_human_approval,"reports":e.outputs,"history":history.value,
+            "reason":"独立评审未通过，请按原报告定位责任步骤并核对真实返工依据"}),
+        )
+    }
+
     pub(crate) fn native_approval_basis(
         &self,
         commit: &mut WorkflowCommit<'_>,

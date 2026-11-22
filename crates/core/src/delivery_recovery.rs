@@ -1,7 +1,7 @@
 //! Recovery of frozen delivery actions under a new reconciliation authorization.
 use crate::{
     concurrency::*,
-    governance::{record, update_record},
+    governance::record,
     platform_delivery::{DeliveryAction, delivery_source_operation},
     platform_facts::{PlatformAction, PlatformPlan, one, restored},
     platform_publish::PublishAction,
@@ -24,81 +24,48 @@ impl Engine {
     fn source_publication_retry_budget(
         &self,
         root: &WorkflowHeaderFacts,
-        step: &StepExecution,
+        resources: &WorkflowResources,
     ) -> Result<(ResourceSnapshot, ResourceSnapshot, u64, u64)> {
+        let node = &resources.execution.node_id;
         let limit = root
             .instance
             .plan
             .document
             .steps
             .iter()
-            .find(|definition| definition.node_id == step.node_id)
+            .find(|definition| definition.node_id == *node)
             .ok_or_else(|| err("storage", "源发布步骤缺少重试额度"))?
             .budget
             .retry_limit;
-        let identity = json!([root.record.id, step.node_id, step.round]).to_string();
-        let retries = one(self.store.as_ref(), "workflow_retry_count", &identity)?;
-        let budget = one(
+        let (retries, physical) = self.logical_retries(resources)?;
+        let publication = one(
             self.store.as_ref(),
-            "governance",
-            &format!("source-publication-retry-budget:{identity}"),
+            "workflow_publication_repair_count",
+            &json!([root.instance.project_id, root.record.id, node]).to_string(),
         )?;
-        let used = budget
-            .value
-            .as_ref()
-            .and_then(|r| r["data"]["used"].as_u64())
-            .unwrap_or(0);
-        let prior = retries
+        let used = publication
             .value
             .as_ref()
             .and_then(|r| r["count"].as_u64())
             .unwrap_or(0);
-        Ok((budget, retries, used.saturating_add(prior), limit))
+        Ok((publication, retries, physical.saturating_add(used), limit))
     }
 
-    pub(crate) fn spend_source_publication_retry(
+    pub(crate) fn require_source_publication_retry(
         &self,
         commit: &mut WorkflowCommit<'_>,
         root: &WorkflowHeaderFacts,
         resources: &WorkflowResources,
     ) -> Result<()> {
         let (budget, retries, used, limit) =
-            self.source_publication_retry_budget(root, &resources.execution)?;
+            self.source_publication_retry_budget(root, resources)?;
         if used >= limit {
             return Err(err(
                 "retry_budget_exhausted",
                 "源分支发布重试额度已用尽，请由人类确认返工",
             ));
         }
-        commit.witness([version(&budget), version(&retries)])?;
-        let count = budget
-            .value
-            .as_ref()
-            .and_then(|r| r["data"]["used"].as_u64())
-            .unwrap_or(0)
-            + 1;
-        let data = json!({"used":count,"instance_id":root.record.id,"node_id":resources.execution.node_id,"round":resources.execution.round});
-        let mut row = if budget.value.is_some() {
-            let mut row = restored(self, &budget)?;
-            update_record(&mut row, data);
-            row
-        } else {
-            record(
-                "source_publication_retry_budget",
-                root.record.id.clone(),
-                root.record.scope.clone(),
-                "源分支发布技术重试额度".into(),
-                1,
-                None,
-                data,
-                false,
-            )
-        };
-        row.id = budget.resource.id.clone();
-        commit.change(ResourceChange {
-            resource: budget.resource,
-            value: row.to_storage(),
-        })
+        commit.witness([version(&budget), version(&retries)])
     }
 
     pub(crate) fn source_publication_recovery_view(
@@ -115,8 +82,7 @@ impl Engine {
         else {
             return Ok(Value::Null);
         };
-        let (_, _, used, limit) =
-            self.source_publication_retry_budget(root, &resources.execution)?;
+        let (_, _, used, limit) = self.source_publication_retry_budget(root, resources)?;
         let active = one(
             self.store.as_ref(),
             "workflow_reconciliation_active",

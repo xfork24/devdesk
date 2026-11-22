@@ -10,6 +10,28 @@ use crate::{
 };
 use std::collections::BTreeSet;
 impl Engine {
+    pub(crate) fn rust_retry_count(
+        &self,
+        resources: &WorkflowResources,
+    ) -> Result<(crate::concurrency::ResourceSnapshot, u64)> {
+        let record = one(
+            self.store.as_ref(),
+            "workflow_rust_retries",
+            &json!([
+                resources.instance.project_id,
+                resources.record.id,
+                resources.execution.node_id
+            ])
+            .to_string(),
+        )?;
+        let count = record
+            .value
+            .as_ref()
+            .and_then(|v| v["count"].as_u64())
+            .unwrap_or(0);
+        Ok((record, count))
+    }
+
     pub(crate) fn logical_retries(
         &self,
         resources: &WorkflowResources,
@@ -68,6 +90,13 @@ impl Engine {
                 .is_some_and(|f| f.code == "stale_target" && f.automatic_retry_safe())
         {
             return self.prepare_delivery_refresh(commit, root, resources);
+        }
+        if !rework && matches!(commit.context.actor(), WorkflowActor::Driver { .. }) {
+            let (attempts, count) = self.rust_retry_count(resources)?;
+            if count >= root.instance.plan.document.scheduling.max_retries {
+                return Err(err("retry_budget_exhausted", "Rust 自动调度重试额度已用尽"));
+            }
+            commit.witness([version(&attempts)])?;
         }
         self.prepare_native_retry_scope(commit, root, resources, rework, None)
     }
@@ -182,7 +211,8 @@ impl Engine {
             .steps
             .iter()
             .find(|s| s.key == failed.execution.step)
-            .unwrap();
+            .ok_or_else(|| err("storage", "目标刷新步骤合同缺失"))?;
+        self.require_logical_retry_budget(commit, failed, definition)?;
         require(
             used < definition.budget.retry_limit,
             "当前源版本的目标刷新额度已耗尽",
@@ -443,7 +473,11 @@ impl Engine {
                             Value::Null
                         }
                     } else {
-                        commit.command.payload["rework"].clone()
+                        let mut assessment = commit.command.payload["rework"].clone();
+                        if let Some(history) = &commit.review_repair_history {
+                            assessment["repair_history"] = history.clone();
+                        }
+                        assessment
                     },
                     previous_execution_id: current.id.clone(),
                     reason: commit.command.payload["reason"]
@@ -492,6 +526,39 @@ impl Engine {
             next.budget_waited_ms = 0;
             next.reason.clear();
             next.runtime_context = Value::Null;
+            if current.id == execution.id
+                && (assessment.is_some()
+                    || (!rework
+                        && (current.runtime_context["repair_protocol"] == 1
+                            || matches!(definition.executor, StepExecutor::Tool { .. })
+                            || current
+                                .failure
+                                .as_ref()
+                                .is_some_and(|failure| failure.code == "needs_manager"))))
+            {
+                let reason = commit.command.payload["reason"]
+                    .as_str()
+                    .filter(|reason| !reason.trim().is_empty());
+                if !rework && matches!(commit.context.actor(), WorkflowActor::Controller { .. }) {
+                    require(reason.is_some(), "经理重试需要基于原诊断的具体修复动作")?;
+                }
+                let default = assessment
+                    .and_then(|value| value["instructions"].as_str())
+                    .unwrap_or_else(|| {
+                        current
+                            .failure
+                            .as_ref()
+                            .map(|failure| failure.message.as_str())
+                            .unwrap_or("按原执行证据重跑")
+                    });
+                let action: String = reason.unwrap_or(default).chars().take(2048).collect();
+                let phase = if matches!(commit.context.actor(), WorkflowActor::Driver { .. }) {
+                    "driver"
+                } else {
+                    "manager"
+                };
+                self.prepare_workflow_repair_attempt(commit, &selected, &next, &action, phase)?;
+            }
             commit.replace_step(&selected, &mut next)?;
             if current.id == execution.id {
                 result = Some(next);
@@ -744,7 +811,7 @@ impl Engine {
                     matches!(commit.context.actor(), WorkflowActor::Controller { .. }),
                     "源分支技术重试由项目经理执行",
                 )?;
-                self.spend_source_publication_retry(commit, root, resources)?;
+                self.require_source_publication_retry(commit, root, resources)?;
                 crate::delivery_recovery::SOURCE_PUBLICATION_RETRY
             } else {
                 require(
@@ -770,7 +837,7 @@ impl Engine {
             text(&commit.command.payload, "evidence")?;
         }
         let mut next = resources.execution.clone();
-        let id=commit.new_record(record("workflow_reconciliation",next.id.clone(),root.record.scope.clone(),"核对原执行结果".into(),1,None,json!({"status":"prepared","instance_id":root.record.id,"execution_id":next.id,"plan_revision_id":next.plan_revision_id,"input_digest":next.input_digest,"contract_digest":next.contract_digest,"original_step_revision":resources.step.revision,"original_header_version":version(&root.header),"command":commit.command,"actor":commit.context.actor(),"resolution":resolution,"evidence":commit.command.payload["evidence"],"issuer":"kernel_reconciliation"}),false),"workflow-reconciliation")?;
+        let id=commit.new_record(record("workflow_reconciliation",next.id.clone(),root.record.scope.clone(),"核对原执行结果".into(),1,None,json!({"status":"prepared","instance_id":root.record.id,"node_id":next.node_id,"execution_id":next.id,"plan_revision_id":next.plan_revision_id,"input_digest":next.input_digest,"contract_digest":next.contract_digest,"original_step_revision":resources.step.revision,"original_header_version":version(&root.header),"command":commit.command,"actor":commit.context.actor(),"resolution":resolution,"evidence":commit.command.payload["evidence"],"issuer":"kernel_reconciliation"}),false),"workflow-reconciliation")?;
         if !next.runtime_context.is_object() {
             next.runtime_context = json!({});
         }

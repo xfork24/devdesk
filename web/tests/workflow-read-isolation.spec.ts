@@ -2633,6 +2633,80 @@ test("workflow approval keeps its original draft versions and command identity a
   expect(submitted[2].command_id).not.toBe(submitted[0].command_id);
 });
 
+test("a passing Red baseline shows manager recovery without approval controls", async ({
+  page,
+}) => {
+  const url = (await fixture(page)).replace(
+    "detail=manager",
+    "detail=overview",
+  );
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    if (call.method !== "query.workflow_instance") return route.fallback();
+    const runtime = {
+      owner_id: "read-feature",
+      status: "running",
+      steps: [
+        {
+          id: "red-execution",
+          step: "red",
+          status: "awaiting_acceptance",
+          round: 1,
+          outputs: { result: "red-report" },
+        },
+      ],
+    };
+    const recovery = {
+      status: "needs_manager",
+      kind: "red_coverage",
+      reason: "独立测试在基线上全部通过。",
+    };
+    await route.fulfill({
+      json: {
+        jsonrpc: "2.0",
+        id: call.id,
+        result: {
+          record: {
+            id: "read-instance",
+            name: "Task3 流程",
+            revision: 1,
+            data: runtime,
+          },
+          runtime,
+          plan: {
+            stages: [{ key: "test", name: "独立测试" }],
+            steps: [
+              {
+                key: "red",
+                stage: "test",
+                name: "T02 执行真实 Red",
+                executor: { type: "tool" },
+                confirmation: "automatic",
+              },
+            ],
+          },
+          completion_status: {
+            "red-execution": {
+              satisfied: false,
+              human_satisfied: true,
+              ...(call.params.view === "qualification" ? { recovery } : {}),
+            },
+          },
+          children: [],
+        },
+      },
+    });
+  });
+  await page.goto(url);
+  const step = page.getByRole("article", { name: "步骤 · T02 执行真实 Red" });
+  await step.getByRole("button", { name: /T02 执行真实 Red/ }).click();
+  await expect(step.getByText("待项目经理恢复")).toBeVisible();
+  await expect(step.getByText(/独立测试在基线上全部通过/)).toBeVisible();
+  await expect(
+    step.getByRole("button", { name: /接纳结果|手动 Approve|从此步骤返工/ }),
+  ).toHaveCount(0);
+});
+
 test("parallel supplemental inputs retain separate drafts and original control versions", async ({
   page,
 }) => {

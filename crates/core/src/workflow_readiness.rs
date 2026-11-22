@@ -5,7 +5,7 @@ use crate::{
     workflow_commits::{WorkflowCommit, WorkflowHeaderFacts},
     workflow_eligibility::{WorkflowActionEligibility as Eligibility, WorkflowStepActions},
     workflow_facts::FactSelection,
-    workflow_resources::WorkflowResources,
+    workflow_resources::{WorkflowResources, version},
     *,
 };
 impl Engine {
@@ -182,7 +182,10 @@ impl Engine {
                     .as_ref()
                     .and_then(|r| r["data"]["used"].as_u64())
                     .unwrap_or(0);
-                let remaining = step.budget.retry_limit.saturating_sub(used);
+                let remaining = step
+                    .budget
+                    .retry_limit
+                    .saturating_sub(used.max(retry_count));
                 if remaining == 0 {
                     retry = Eligibility::blocked(
                         "delivery_refresh_budget",
@@ -200,27 +203,102 @@ impl Engine {
         let mut result = json!({"step":step.key,"node_id":step.node_id,"execution":e,"step_revision":resources.step.revision,"dispatchable":actions.dispatch.allowed,"actions":actions,"retry_count":retry_count,"input_gap":input_gap,"completion_satisfied":completion,"completion_overridden":overridden,"human_satisfied":human,"confirmation_status":disposition,"confirmation_ref":confirmation,"confirmation_waiver_ref":if waived{waiver.value.as_ref().map(|r|&r["id"])}else{None}});
         result["retry_limit"] = json!(step.budget.retry_limit);
         if !completion && !overridden {
-            result["recovery"] = self.test_recovery_view(&mut selected, root, resources, step)?;
+            result["recovery"] = self.test_recovery_view(&mut selected, root, resources)?;
+            if result["recovery"].is_null()
+                && matches!(
+                    e.status,
+                    StepExecutionStatus::AwaitingAcceptance
+                        | StepExecutionStatus::WaitingConfirmation
+                )
+                && root
+                    .instance
+                    .plan
+                    .document
+                    .review_policies
+                    .values()
+                    .any(|p| p.review_step == e.step)
+                && self.workflow_has_manager(&mut selected, root)?
+            {
+                result["recovery"] = self.review_recovery(&mut selected, root, resources)?;
+            }
         }
-        if e.failure
-            .as_ref()
-            .is_some_and(|failure| failure.code == "needs_manager")
+        if e.status == StepExecutionStatus::Failed
+            && e.failure.as_ref().is_some_and(|failure| {
+                failure.code == "needs_manager"
+                    || (failure.kind == ExecutionFailureKind::Technical
+                        && failure.effect != ExecutionFailureEffect::Unknown)
+            })
         {
             let fixture = self.test_fixture_recovery(&mut selected, root, resources)?;
+            let fixture_remaining = fixture
+                .as_ref()
+                .map(|recovery| self.test_recovery_remaining(root, resources, recovery))
+                .transpose()?;
+            let fixture_available = fixture_remaining.is_some_and(|remaining| remaining > 0);
             let may_continue = actions.retry.allowed
                 && e.session_id.is_some()
                 && e.turn_id.is_some()
                 && e.sequence < step.budget.max_turns;
-            let exhausted = actions.retry.code == "retry_budget" && fixture.is_none();
+            let exhausted = actions.retry.code == "retry_budget" && !fixture_available;
             result["recovery"] = json!({
-                "status":if actions.retry.allowed || fixture.is_some() {"needs_manager"} else if exhausted {"exhausted"} else {"blocked"},
-                "kind":"agent_diagnosis",
-                "operation":if !actions.retry.allowed && fixture.is_some() {"workflow.step.rework"} else {"workflow.step.retry"},
+                "status":if actions.retry.allowed || fixture_available {"needs_manager"} else if exhausted {"exhausted"} else {"blocked"},
+                "kind":if e.failure.as_ref().is_some_and(|failure| failure.code=="needs_manager") {"agent_diagnosis"} else {"technical_failure"},
+                "operation":if !actions.retry.allowed && fixture_available {"workflow.step.rework"} else {"workflow.step.retry"},
                 "remaining":step.budget.retry_limit.saturating_sub(retry_count),
                 "human_required":exhausted,
                 "continue_operation":if may_continue {Some("workflow.step.input")} else {None},
-                "fixture_repair":fixture.as_ref().map(|_|"workflow.step.rework"),
+                "fixture_repair":fixture_available.then_some("workflow.step.rework"),
             });
+        }
+        if e.status == StepExecutionStatus::WaitingInput
+            && e.failure
+                .as_ref()
+                .is_some_and(|failure| failure.code == "platform_material_needed")
+        {
+            result["recovery"] = json!({"status":"needs_manager","kind":"platform_material",
+                "operation":"workflow.outputs.read","continue_operation":"workflow.step.input",
+                "human_required":false,"reason":"项目经理需定位并转交已存在的平台材料"});
+        }
+        if e.status == StepExecutionStatus::WaitingInput
+            && result["recovery"].is_null()
+            && self.workflow_has_manager(&mut selected, root)?
+        {
+            let decisions = one(self.store.as_ref(), "workflow_step_decisions", &e.id)?;
+            selected.witness([version(&decisions)])?;
+            let reviewed = decisions
+                .value
+                .as_ref()
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .any(|row| {
+                    let data = &row["data"];
+                    data["actor"]["kind"] == "controller"
+                        && data["request"]["operation"] == "workflow.step.input"
+                        && data["plan_revision_id"] == root.instance.active_plan_revision_id
+                        && data["request"]["arguments"]["control_version"]
+                            == root.instance.control_version
+                        && data["request"]["arguments"]["expected_step_revision"]
+                            == resources.step.revision
+                });
+            if !reviewed {
+                result["recovery"] = json!({"kind":"input_review","status":"needs_manager",
+                    "operation":"workflow.inspect","continue_operation":"workflow.step.input",
+                    "human_required":false,"reason":"项目经理需先核对现有材料及是否确实需要人类输入"});
+            }
+        }
+        if !result["recovery"].is_null() && result["recovery"].get("history").is_none() {
+            let history = self.workflow_repair_history(resources)?;
+            result["recovery"]["history"] = json!(
+                history
+                    .value
+                    .as_ref()
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .take(16)
+                    .collect::<Vec<_>>()
+            );
         }
         result["delivery_refresh"] = delivery_refresh;
         if e.status == StepExecutionStatus::NeedsReconciliation

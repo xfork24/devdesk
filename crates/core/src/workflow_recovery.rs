@@ -18,6 +18,59 @@ pub(crate) struct TestRecovery {
     original_implementation: Option<StepExecution>,
 }
 
+impl TestRecovery {
+    fn impacted(&self, document: &WorkflowDefinition, failed: &StepExecution) -> BTreeSet<String> {
+        let mut impacted = document.impacted_nodes(&BTreeSet::from([self.producer.clone()]));
+        if let Some(red) = &self.preserve_red {
+            impacted.remove(red);
+        }
+        if self.original_implementation.is_some() {
+            impacted.remove(&failed.step);
+        }
+        impacted
+    }
+}
+
+fn red_without_assertion(arguments: &Value, receipt: &Value) -> bool {
+    let counts = &receipt["counts"];
+    arguments["expect_assertion_failure"] == true
+        && receipt["status"] == "succeeded"
+        && receipt["exit_code"] == 0
+        && receipt["assertion_failed"] == false
+        && receipt["expected_failure"] == false
+        && receipt["failure_type"].is_null()
+        && counts["passed"].as_u64().is_some_and(|passed| {
+            passed > 0 && counts["tests"].as_u64() == Some(passed) && counts["failed"] == 0
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn passing_red_candidate_needs_coverage_audit() {
+        let arguments = json!({"expect_assertion_failure":true});
+        let receipt = json!({"status":"succeeded","exit_code":0,"assertion_failed":false,
+            "expected_failure":false,"counts":{"tests":4,"passed":4,"failed":0}});
+        assert!(red_without_assertion(&arguments, &receipt));
+        assert!(!red_without_assertion(&json!({}), &receipt));
+        for (key, value) in [
+            ("expected_failure", json!(true)),
+            ("failure_type", json!("environment")),
+            ("counts", json!({"tests":0,"passed":0,"failed":0})),
+            (
+                "counts",
+                json!({"tests":4,"passed":3,"failed":0,"skipped":1}),
+            ),
+        ] {
+            let mut invalid = receipt.clone();
+            invalid[key] = value;
+            assert!(!red_without_assertion(&arguments, &invalid));
+        }
+    }
+}
+
 impl Engine {
     pub(crate) fn test_recovery(
         &self,
@@ -73,7 +126,6 @@ impl Engine {
             || row.data["request"]["execution_id"] != execution.id
             || row.data["request"]["instance_id"] != resources.record.id
             || row.data["request"]["project_id"] != instance.project_id
-            || receipt["status"] != "failed"
         {
             return Ok(None);
         }
@@ -81,15 +133,25 @@ impl Engine {
             .delivery_policy
             .as_ref()
             .is_some_and(|p| p.independent_green_step.as_deref() == Some(step.key.as_str()));
+        let red_without_assertion =
+            red_without_assertion(&row.data["request"]["arguments"], receipt);
+        let failed = receipt["status"] == "failed";
         let (producer_key, kind) = match receipt["failure_type"].as_str() {
-            Some("environment") if !independent_green => {
+            _ if !independent_green && red_without_assertion => {
+                let Some(InputBinding::Source { source }) = arguments.get("recipe") else {
+                    return Ok(None);
+                };
+                (&source.step, "red_coverage")
+            }
+            Some("environment") if failed && !independent_green => {
                 let Some(InputBinding::Source { source }) = arguments.get("recipe") else {
                     return Ok(None);
                 };
                 (&source.step, "test_support")
             }
             Some("assertion" | "environment")
-                if independent_green
+                if failed
+                    && independent_green
                     && (receipt["assertion_failed"] == true
                         || receipt["failure_type"] == "environment") =>
             {
@@ -340,13 +402,7 @@ impl Engine {
                 )?,
             "测试结果已满足冻结完成条件",
         )?;
-        let mut impacted = document.impacted_nodes(&BTreeSet::from([recovery.producer.clone()]));
-        if let Some(red) = &recovery.preserve_red {
-            impacted.remove(red);
-        }
-        if recovery.original_implementation.is_some() {
-            impacted.remove(&failed.execution.step);
-        }
+        let impacted = recovery.impacted(document, &failed.execution);
         let downstream = document.impacted_nodes(&BTreeSet::from([failed.execution.step.clone()]));
         for current in root
             .instance
@@ -366,7 +422,7 @@ impl Engine {
                         && !downstream.contains(&current.step)),
                 "技术恢复不能使后续已执行的操作或人工确认失效",
             )?;
-            if recovery.kind == "test_support"
+            if matches!(recovery.kind, "test_support" | "red_coverage")
                 && recovery.preserve_red.is_none()
                 && current.started.is_some()
                 && current.id != failed.execution.id
@@ -403,6 +459,8 @@ impl Engine {
                 "A previous implementation attempt diagnosed the independent Green fixture. Verify the exact report and original test contract. Correct only fixture dependencies, setup, or transport in the original test directory. Preserve all assertions, expected results, case selection, interfaces and the recipe. The original accepted Red stays available as history and the platform will run a fresh Green on the corrected fixture."
             } else if recovery.kind=="test_support" {
                 "Read the exact independent test report. Repair test dependencies, setup or support within your original writable paths. Preserve all test cases, expected outcomes, declared interfaces, test selection, and isolation. Do not change product behavior. The platform will rerun the independent test."
+            } else if recovery.kind=="red_coverage" {
+                "The independent tests actually passed on the frozen pre-implementation baseline, so they do not supply a Red. Read the exact passing report and audit coverage of the frozen Task behavior. Keep all existing case IDs, expected outcomes, acceptance references, interfaces and the recipe. Add a reproducible assertion inside a recipe file only if it exercises a real, unmet behavior within the frozen Task. Run it against the baseline and explain the gap and evidence. Do not modify product code, manufacture failures, assert implementation details, or turn documentation, test discovery or manual evidence requirements into a behavior failure. If the scoped behaviors are already satisfied or you cannot establish a genuine gap, return needs_manager with what you verified; preserve the passing report and the Red gate."
             } else {
                 "Read the exact independent Green report. Repair only the implementation within the confirmed scope and the original writable paths. Preserve the tests and acceptance criteria. The platform will seal and independently retest the repaired implementation."
             },
@@ -553,7 +611,7 @@ impl Engine {
         };
         if !matches!(
             rework.assessment["kind"].as_str(),
-            Some("test_support" | "implementation")
+            Some("test_support" | "red_coverage" | "implementation")
         ) {
             return Ok(Value::Null);
         }
@@ -590,9 +648,12 @@ impl Engine {
                 }
             }
         }
-        let mut evidence = json!({"report_id":id,"candidate":value["candidate"],"kind":value["failure_type"],
+        let mut evidence = json!({"report_id":id,"candidate":value["candidate"],"kind":rework.assessment["kind"],
             "counts":value["counts"],"diagnostics":details});
-        if rework.assessment["kind"] == "test_support" {
+        if matches!(
+            rework.assessment["kind"].as_str(),
+            Some("test_support" | "red_coverage")
+        ) {
             for output in rework.outputs.values() {
                 let selected = one(self.store.as_ref(), "governance", output)?;
                 let original = restored(self, &selected)?;
@@ -623,33 +684,42 @@ impl Engine {
         commit: &mut WorkflowCommit<'_>,
         root: &WorkflowHeaderFacts,
         resources: &WorkflowResources,
-        definition: &StepDefinition,
     ) -> Result<Value> {
         let Some(recovery) = self.test_recovery(commit, resources)? else {
             return Ok(Value::Null);
         };
-        let producer = root.step(self, &recovery.producer)?;
-        let producer_step = root
-            .instance
-            .plan
-            .document
-            .steps
-            .iter()
-            .find(|s| s.key == recovery.producer)
-            .ok_or_else(|| err("storage", "恢复执行者合同缺失"))?;
-        let used = self.logical_retries(resources)?.1;
-        let producer_used = self.logical_retries(&producer)?.1;
-        let remaining = definition.budget.retry_limit.saturating_sub(used).min(
-            producer_step
-                .budget
-                .retry_limit
-                .saturating_sub(producer_used),
-        );
+        let remaining = self.test_recovery_remaining(root, resources, &recovery)?;
         Ok(json!({
             "status":if remaining==0 {"exhausted"} else {"needs_manager"},
             "kind":recovery.kind,"producer":recovery.producer,"report_id":recovery.report,
+            "reason":if recovery.kind=="red_coverage" {Some("独立测试在基线上全部通过。需要核对原验收范围内是否缺少能触发真实 Red 的断言。")} else {None},
             "operation":"workflow.step.rework","remaining":remaining,
             "human_required":remaining==0,"escalation_id":if remaining==0 {Some(&resources.execution.id)}else{None}
         }))
+    }
+
+    pub(crate) fn test_recovery_remaining(
+        &self,
+        root: &WorkflowHeaderFacts,
+        failed: &WorkflowResources,
+        recovery: &TestRecovery,
+    ) -> Result<u64> {
+        let document = &root.instance.plan.document;
+        let impacted = recovery.impacted(document, &failed.execution);
+        let mut remaining = u64::MAX;
+        for definition in document.steps.iter().filter(|s| impacted.contains(&s.key)) {
+            let resources = root.step(self, &definition.key)?;
+            let (attempts, used) = self.logical_retries(&resources)?;
+            if attempts
+                .value
+                .as_ref()
+                .and_then(|v| v["started"].as_u64())
+                .unwrap_or(0)
+                != 0
+            {
+                remaining = remaining.min(definition.budget.retry_limit.saturating_sub(used));
+            }
+        }
+        Ok(if remaining == u64::MAX { 1 } else { remaining })
     }
 }

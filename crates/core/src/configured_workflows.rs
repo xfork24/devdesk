@@ -663,7 +663,7 @@ impl Engine {
                             )
                         })
                         .collect(),
-                    runtime_context: Value::Null,
+                    runtime_context: json!({"technical_recovery":true,"repair_protocol":1,"repair_history":[],"review_human_input":true}),
                     outputs: BTreeMap::new(),
                     agent_revision_id: selected_agent,
                     session_id: None,

@@ -733,7 +733,7 @@ export function WorkflowController({
                           )}
                         </>
                       )}
-                      {item.status === "waiting_input" && (
+                      {item.status === "waiting_input" && !item.recovery && (
                         <WorkflowStepInput
                           key={`${projectId}:${item.instance_id}:${item.execution_id}`}
                           request={request}

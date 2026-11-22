@@ -133,6 +133,8 @@
 | [src/workflow_readiness.rs](../../../crates/core/src/workflow_readiness.rs) | [工作流启动、派发与结果接纳](workflow-execution.md) |
 | [src/workflow_reading.rs](../../../crates/core/src/workflow_reading.rs) | Scope-aware readers backed by bounded native projections. |
 | [src/workflow_reconciliation.rs](../../../crates/core/src/workflow_reconciliation.rs) | [返工、计划变更与恢复](workflow-changes.md) |
+| [src/workflow_recovery.rs](../../../crates/core/src/workflow_recovery.rs) | A manager can reopen the producer of an independently observed test failure inside its original frozen plan. Model prose is never a test receipt. |
+| [src/workflow_repair_attempts.rs](../../../crates/core/src/workflow_repair_attempts.rs) | `repair_attempt_id`、`action_digest`、`workflow_notice_escalation` |
 | [src/workflow_resources.rs](../../../crates/core/src/workflow_resources.rs) | [工作流启动、派发与结果接纳](workflow-execution.md) |
 | [src/workflow_retries.rs](../../../crates/core/src/workflow_retries.rs) | [返工、计划变更与恢复](workflow-changes.md) |
 | [src/workflow_review.rs](../../../crates/core/src/workflow_review.rs) | Exact-result exceptions. A manager can propose, only Human can sign. |

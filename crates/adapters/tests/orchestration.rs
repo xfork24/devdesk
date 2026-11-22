@@ -5489,6 +5489,29 @@ fn tool_preparation_recovers_through_the_same_known_failure_policy() {
         .find(|r| r.r#type == "workflow_execution_history" && r.definition_id == before["id"])
         .unwrap();
     assert_eq!(history.data["failure"]["source_ref"], failed.id);
+    let budget = runtime(&e, &root);
+    let key = devdesk_core::concurrency::ResourceKey::new(
+        "workflow_repair_history",
+        json!([
+            budget["runtime"]["project_id"],
+            format!("{root}:{}", before["node_id"].as_str().unwrap())
+        ])
+        .to_string(),
+    );
+    let retries = e
+        .store
+        .read_resources(&[key])
+        .unwrap()
+        .remove(0)
+        .value
+        .unwrap();
+    assert_eq!(retries[0]["record"]["phase"], "driver");
+    assert_eq!(
+        retries[0]["record"]["source_failure"]["source_ref"],
+        failed.id
+    );
+    assert!(retries[0]["started"].is_number());
+    assert_eq!(retries[0]["result"]["status"], "succeeded");
     assert!(
         e.observe_workflow_intent(&failed, &Ok(json!({"id":"late-fabricated-result"})))
             .is_err()

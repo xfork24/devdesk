@@ -371,6 +371,16 @@ impl Engine {
                             && arguments["outputs"] == json!(resources.execution.outputs),
                         "决定必须绑定当前可接纳的原产物",
                     )?;
+                    if matches!(context.actor(), WorkflowActor::Controller { .. })
+                        && (self.test_recovery(&mut commit, &resources)?.is_some()
+                            || self.review_recovery(&mut commit, &root, &resources)?["status"]
+                                == "needs_manager")
+                    {
+                        return Err(err(
+                            "technical_recovery_pending",
+                            "当前结果须先走适用的恢复和返工流程",
+                        ));
+                    }
                     Some(resources)
                 } else {
                     None
@@ -413,6 +423,63 @@ impl Engine {
                         &root,
                         &request["interaction"],
                         arguments,
+                    )?;
+                }
+                if operation == "workflow.step.input"
+                    && let WorkflowActor::Controller {
+                        controller_id,
+                        epoch,
+                        ..
+                    } = context.actor()
+                {
+                    let resources = root.step(self, &text(arguments, "execution_id")?)?;
+                    let reviewed = one(
+                        self.store.as_ref(),
+                        "controller_execution_review",
+                        &json!([controller_id, epoch, root.record.id, resources.execution.id])
+                            .to_string(),
+                    )?;
+                    require(
+                        reviewed.value.is_some(),
+                        "请先实际读取此执行及已有材料，再请求只有人类可提供的输入",
+                    )?;
+                    commit.witness([version(&reviewed)])?;
+                    require(
+                        commit
+                            .resolve_material_input(&root, &text(arguments, "input")?)?
+                            .is_none(),
+                        "已读到的原始平台材料应直接转交，不需要人类签署",
+                    )?;
+                    require(
+                        request["interaction"]["evidence"]
+                            .as_array()
+                            .is_some_and(|items| {
+                                items.iter().any(|item| {
+                                    item["execution_id"] == resources.execution.id
+                                        && item["instance_id"] == root.record.id
+                                })
+                            }),
+                        "向人类请求事实前，经理必须引用已核对的原执行依据",
+                    )?;
+                    let decisions = one(
+                        self.store.as_ref(),
+                        "workflow_step_decisions",
+                        &resources.execution.id,
+                    )?;
+                    commit.witness([version(&decisions)])?;
+                    require(
+                        !decisions
+                            .value
+                            .as_ref()
+                            .and_then(Value::as_array)
+                            .into_iter()
+                            .flatten()
+                            .any(|row| {
+                                row["data"]["request"]["operation"] == "workflow.step.input"
+                                    && row["data"]["request"]["arguments"]["expected_step_revision"]
+                                        == resources.step.revision
+                            }),
+                        "此执行已有待处理的补充输入请求",
                     )?;
                 }
                 if let Some(resources) = time_resources
@@ -745,6 +812,14 @@ impl Engine {
         )?;
         if operation == "workflow.step.input" {
             text(arguments, "input")?;
+            require(
+                !resources
+                    .execution
+                    .failure
+                    .as_ref()
+                    .is_some_and(|failure| failure.code == "platform_material_needed"),
+                "已存在的平台材料应由经理原样转交",
+            )?;
         }
         commit.witness(resources.reads.versions().iter().cloned())
     }

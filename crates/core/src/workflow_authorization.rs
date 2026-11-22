@@ -17,12 +17,16 @@ impl WorkflowCommit<'_> {
                 && let Some(id) = self.command.payload["execution_id"].as_str()
             {
                 let resources = root.step(self.engine, id)?;
-                manager_diagnosis = resources.execution.status == StepExecutionStatus::Failed
+                manager_diagnosis = crate::workflow_repair_attempts::reviewed_input_repair(
+                    &resources.execution,
+                    &input,
+                ) || (resources.execution.status
+                    == StepExecutionStatus::Failed
                     && resources
                         .execution
                         .failure
                         .as_ref()
-                        .is_some_and(|f| f.code == "needs_manager");
+                        .is_some_and(|f| f.code == "needs_manager"));
                 if manager_diagnosis {
                     self.witness(resources.reads.versions().iter().cloned())?;
                 }

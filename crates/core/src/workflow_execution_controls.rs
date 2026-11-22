@@ -216,12 +216,19 @@ impl Engine {
                     .iter()
                     .find(|s| s.key == resources.execution.step)
                     .ok_or_else(|| err("storage", "输入步骤定义缺失"))?;
-                let technical = resources.execution.status == StepExecutionStatus::Failed
-                    && resources
-                        .execution
-                        .failure
-                        .as_ref()
-                        .is_some_and(|f| f.code == "needs_manager");
+                let input = text(&c.payload, "input")?;
+                let reviewed_repair = matches!(context.actor(), WorkflowActor::Controller { .. })
+                    && crate::workflow_repair_attempts::reviewed_input_repair(
+                        &resources.execution,
+                        &input,
+                    );
+                let technical = reviewed_repair
+                    || (resources.execution.status == StepExecutionStatus::Failed
+                        && resources
+                            .execution
+                            .failure
+                            .as_ref()
+                            .is_some_and(|f| f.code == "needs_manager"));
                 require(
                     (resources.execution.status == StepExecutionStatus::WaitingInput || technical)
                         && resources.execution.sequence < step.budget.max_turns,
@@ -234,8 +241,25 @@ impl Engine {
                 if technical {
                     self.require_logical_retry_budget(&mut commit, &resources, step)?;
                 }
-                let input = text(&c.payload, "input")?;
                 require(input.len() <= 65536, "补充输入超出预算")?;
+                let input = if reviewed_repair {
+                    input[crate::workflow_repair_attempts::REPAIR_INPUT_PREFIX.len()..]
+                        .trim()
+                        .to_owned()
+                } else {
+                    input
+                };
+                if resources
+                    .execution
+                    .failure
+                    .as_ref()
+                    .is_some_and(|failure| failure.code == "platform_material_needed")
+                {
+                    require(
+                        commit.material_input.is_some(),
+                        "此问题需要转交确切存在的平台材料",
+                    )?;
+                }
                 let (wait_reads, wait_changes) =
                     self.resume_native_workflow_wait(&resources.execution)?;
                 commit.witness(wait_reads.versions().iter().cloned())?;
@@ -247,7 +271,24 @@ impl Engine {
                 next.turn_id = None;
                 next.status = StepExecutionStatus::Running;
                 next.budget_wait_started = None;
+                if next
+                    .failure
+                    .as_ref()
+                    .is_some_and(|failure| failure.code == "platform_material_needed")
+                {
+                    next.failure = None;
+                }
                 if technical {
+                    let history = self.prepare_workflow_repair_attempt(
+                        &mut commit,
+                        &resources,
+                        &next,
+                        &input,
+                        "manager",
+                    )?;
+                    if next.runtime_context["repair_protocol"] == 1 {
+                        next.runtime_context["repair_history"] = json!(history);
+                    }
                     next.failure = None;
                     next.finished = None;
                     next.reason.clear();

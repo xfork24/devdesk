@@ -402,22 +402,20 @@ impl Engine {
                     .insert(step_key.clone(), e.id.clone());
                 let resources = member.step(self, &e.id)?;
                 let ready = self.native_step_readiness(&member, &resources)?;
-                let method = if permits("retry")
+                let scheduling = &member.instance.plan.document.scheduling;
+                let retry = if permits("retry")
                     && ready["actions"]["retry"]["allowed"] == true
-                    && e.failure.as_ref().is_some_and(|f| {
-                        f.automatic_retry_safe()
-                            && ((f.code == "stale_target"
-                                && member.instance.plan.document.delivery_policy.is_some())
-                                || (ready["retry_count"].as_u64().unwrap_or(u64::MAX)
-                                    < member.instance.plan.document.scheduling.max_retries
-                                    && member
-                                        .instance
-                                        .plan
-                                        .document
-                                        .scheduling
-                                        .retry_error_codes
-                                        .contains(&f.code)))
-                    }) {
+                    && let Some(failure) = &e.failure
+                    && failure.automatic_retry_safe()
+                {
+                    (failure.code == "stale_target"
+                        && member.instance.plan.document.delivery_policy.is_some())
+                        || (scheduling.retry_error_codes.contains(&failure.code)
+                            && self.rust_retry_count(&resources)?.1 < scheduling.max_retries)
+                } else {
+                    false
+                };
+                let method = if retry {
                     Some("workflow.step.retry")
                 } else if permits("accept") && ready["actions"]["accept"]["allowed"] == true {
                     Some("workflow.step.accept")

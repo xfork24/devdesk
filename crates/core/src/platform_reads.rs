@@ -193,7 +193,7 @@ impl Engine {
                 pointer.is_empty()
                     && matches!(
                         rework.assessment["kind"].as_str(),
-                        Some("test_support" | "implementation")
+                        Some("test_support" | "red_coverage" | "implementation")
                     )
                     && rework.assessment["failed_test_report_id"] == id
             });

@@ -384,7 +384,12 @@ impl Engine {
                     }
                     let resources = member.step(self, &e.id)?;
                     let readiness = self.native_step_readiness(&member, &resources)?;
-                    if !readiness["recovery"].is_null() {
+                    let recovery = &readiness["recovery"];
+                    if !recovery.is_null()
+                        && !(recovery["kind"] == "review_rework"
+                            && recovery["status"] == "exhausted"
+                            && recovery["allow_human_approval"] == true)
+                    {
                         continue;
                     }
                     let code = readiness["actions"]["accept"]["code"]

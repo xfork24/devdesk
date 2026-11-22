@@ -112,6 +112,7 @@ impl WorkflowHeaderFacts {
 }
 pub(crate) struct WorkflowCommit<'a> {
     pub material_input: Option<crate::workflow_material_inputs::MaterialInput>,
+    pub review_repair_history: Option<Value>,
     pub engine: &'a Engine,
     pub command: &'a Command,
     pub method: &'a str,
@@ -132,6 +133,7 @@ impl<'a> WorkflowCommit<'a> {
         context.require_scope(engine.store.project_id().as_deref())?;
         Ok(Self {
             material_input: None,
+            review_repair_history: None,
             engine,
             command: c,
             method,

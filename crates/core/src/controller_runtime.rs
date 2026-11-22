@@ -293,7 +293,46 @@ impl Engine {
                         commit.witness([version(page)])?;
                     }
                     let deadline = controller.wait_deadline.is_some_and(|d| d <= now());
-                    if !bootstrap && events.is_empty() && users.is_empty() && !deadline {
+                    let no_wakeup =
+                        !bootstrap && events.is_empty() && users.is_empty() && !deadline;
+                    let mut recovery_reminder = None;
+                    if no_wakeup
+                        && controller.run_state != "needs_attention"
+                        && let Some(root_id) = controller.root_instance_id.as_deref()
+                        && let Some(turn) = &latest.value
+                        && turn["status"] == "completed"
+                        && controller.wait_turn_id.as_deref() != turn["id"].as_str()
+                    {
+                        let root = WorkflowHeaderFacts::read(self, root_id)?;
+                        let (mut pending, exhausted) =
+                            self.workflow_recovery_attention(&mut commit, &root, false)?;
+                        self.notify_exhausted_recovery(&mut commit, &row.id, &exhausted)?;
+                        pending.sort_unstable();
+                        if !pending.is_empty() {
+                            let id = format!(
+                                "controller-recovery-wakeup:{}",
+                                configuration_hash(&(&row.id, &pending))
+                            );
+                            let prior = one(self.store.as_ref(), "governance", &id)?;
+                            commit.witness([version(&prior)])?;
+                            if prior.value.is_none() {
+                                let mut reminder = record(
+                                    "controller_recovery_wakeup",
+                                    row.id.clone(),
+                                    row.scope.clone(),
+                                    "重新派发经理恢复任务".into(),
+                                    1,
+                                    None,
+                                    json!({"source_turn_id":turn["id"],"pending":pending}),
+                                    true,
+                                );
+                                reminder.id = id;
+                                commit.insert_record(&reminder)?;
+                                recovery_reminder = Some(pending);
+                            }
+                        }
+                    }
+                    if no_wakeup && recovery_reminder.is_none() {
                         let run = if let Some(root) = controller.root_instance_id.as_deref() {
                             let run = one(self.store.as_ref(), "workflow_run_authority", root)?;
                             commit.witness([version(&run)])?;
@@ -332,13 +371,19 @@ impl Engine {
                                 row.id, controller.epoch, controller.event_cursor
                             );
                             let mut snapshot = json!({"renderer_version":ORCHESTRATION_RENDERER,"delivery_id":controller.delivery_id,"controller_id":row.id,"epoch":controller.epoch,"owner_id":controller.owner_id,"root_instance_id":controller.root_instance_id,"project_id":controller.project_id,"workspace_only":controller.workspace_only,"bootstrap":bootstrap,"events":events,"deadline_reached":deadline,"user_messages":users.iter().map(|r|&r["data"]["input"]).collect::<Vec<_>>()});
+                            if let Some(pending) = recovery_reminder {
+                                snapshot["recovery_reminder"] = json!({"executions":pending,"instruction":"The previous manager turn ended without disposing of these recoverable steps. Read their actual failure records and history, then act within the frozen authority."});
+                            }
                             if let Some(root) = controller.root_instance_id.as_deref() {
                                 snapshot["human_gates"] = self.controller_human_gates(root)?;
                                 snapshot["technical_recovery"] = json!(
-                                    "For the deepest affected step, use workflow.inspect and the exact failure receipt. With recovery.status=needs_manager, diagnose it and act in this turn: call recovery.operation using this failed step's execution_id, step, expected_step_revision, plan_revision_id, control_version and expected_revision. For workflow.step.rework omit rework/preview_hash: the kernel chooses the producer based on the exact test report and the frozen graph. Dispatch the returned producer and affected steps normally, then wait for the independent receipt. If recovery.fixture_repair is present and the implementation diagnosis is grounded in a reproducible fixture fault, use workflow.step.rework on that failed implementation instead of repeating the same implementation. The kernel selects the independent test author and retains the verified Red baseline. When recovery.continue_operation is available and you can resolve the diagnosed blocker, use workflow.step.input on the exact same execution and provide the verified technical guidance in input. This preserves unfinished working files. An ordinary human-input step still requires actual Human input or an exact platform material reference. Never request workflow.change.apply, a waiver, or approval for this repair. For recovery.status=exhausted, report the failure receipt, attempted repairs and actual retry counts once for that execution and wait for the human. Ask the human for decisions changing frozen business requirements, test expectations, scope, permissions or explicit human gates. Do not retry an unknown side effect without reconciliation."
+                                    "For the deepest affected step, use workflow.inspect and the exact failure receipt. With recovery.status=needs_manager, diagnose it and act in this turn: call recovery.operation using this failed step's execution_id, step, expected_step_revision, plan_revision_id, control_version and expected_revision. For workflow.step.rework omit rework/preview_hash: the kernel chooses the producer based on the exact test report and the frozen graph. Dispatch the returned producer and affected steps normally, then wait for the independent receipt. For recovery.kind=red_coverage, the baseline tests all passed. Delegate a frozen-scope coverage audit to the independent test author. Require evidence of a real missing behavior before adding an assertion. If no genuine Red can be established, preserve the passing evidence and bring the unresolved acceptance question to the human only after bounded recovery. If recovery.fixture_repair is present and the implementation diagnosis is grounded in a reproducible fixture fault, use workflow.step.rework on that failed implementation instead of repeating the same implementation. The kernel selects the independent test author and retains the verified Red baseline. When recovery.continue_operation is available and you can resolve the diagnosed blocker, use workflow.step.input on the exact same execution and provide the verified technical guidance in input. This preserves unfinished working files. When recovery.kind=platform_material, read it first and pass only the exact returned input_ref. Treat history as part of every proposal; a retry reason must name a concrete different action. Technical notices are admitted only after the applicable retry budget is exhausted. An ordinary human-input step still requires actual Human input or an exact platform material reference. Never request workflow.change.apply, a waiver, or approval for this repair. For recovery.status=exhausted, report the failure receipt, attempted repairs and actual retry counts once for that execution and wait for the human. Ask the human for decisions changing frozen business requirements, test expectations, scope, permissions or explicit human gates. Do not retry an unknown side effect without reconciliation."
                                 );
                                 snapshot["failure_reporting"] = json!(
                                     "执行或核对失败时，读取实际阻塞的最深子步骤，报告最新错误码、诊断、核对结果、实际尝试次数和下一步。确定未写入的技术故障按步骤额度重试。结果未知时先检查原操作。源发布例外：workflow.inspect 返回 source_publication_recovery.retry_allowed=true 时，用原 execution_id 和同一次读取的版本调用 workflow.step.retry，等待结果事件后再读取状态。该重试只允许创建绑定原提交且不存在的开发分支。pending=true 时等待；human_required=true 时停止重试，说明额度、最后一次错误及原分支和提交，让用户从项目经理待办或流程步骤确认返工。其他未知结果仅核对原操作。涉及凭据助手版本、签名、钥匙串权限或 GitHub Token 时按 Host 诊断报告，禁止索取凭据。"
+                                );
+                                snapshot["review_and_input_recovery"] = json!(
+                                    "For review_rework, read the exact rejection and its budget and history. Choose the smallest authorized producer repair, preview the precise scope with workflow.rework.preview, submit the same rework with its preview_hash, then dispatch the returned work and an independent review. If it is an ordinary repair, use the remaining rework budget before proposing an exception. For input_review, a step's claim that it needs a human answer is unverified. Check the execution and its existing sources. Transfer a platform input_ref when available. For a technical correction continue the original execution with workflow.step.input and input beginning with devdesk-repair: followed by the distinct technical action. Genuine human facts and business decisions require workflow.decision.request for the exact waiting execution, with the reason only a human can decide and a reference to the inspected execution. Do not use a generic notification in place of recovery or a formal human decision."
                                 );
                             }
                             snapshot["policy"] = json!(controller.policy);
@@ -349,6 +394,29 @@ impl Engine {
                                 policy.remove("max_tool_calls_per_turn");
                             }
                             snapshot["manager_availability"] = json!("continuous");
+                            if !bootstrap {
+                                let recovery = instances
+                                    .iter()
+                                    .flat_map(|instance| instance["steps"].as_array().into_iter().flatten()
+                                        .filter(|step| !step["recovery"].is_null() || !step["source_publication_recovery"].is_null())
+                                        .map(|step| {
+                                            let recovery = &step["recovery"];
+                                            let history = recovery["history"].as_array().into_iter().flatten()
+                                                .filter(|attempt| attempt["started"].is_number()).take(8).map(|attempt| json!({
+                                                    "id":attempt["id"],"status":attempt["status"],"phase":attempt["record"]["phase"],
+                                                    "action":attempt["record"]["action"].to_string().chars().take(240).collect::<String>()
+                                                })).collect::<Vec<_>>();
+                                            json!({"instance_id":instance["id"],"execution_id":step["id"],"step":step["step"],
+                                                "recovery":recovery["status"],"kind":recovery["kind"],"publication":step["source_publication_recovery"],
+                                                "attempts":recovery["budget"]["used"].as_u64().or_else(|| step["retry_count"].as_u64()),
+                                                "limit":recovery["budget"]["limit"].as_u64().or_else(|| step["retry_limit"].as_u64()),"history":history})
+                                        }))
+                                    .take(16)
+                                    .collect::<Vec<_>>();
+                                if !recovery.is_empty() {
+                                    snapshot["recovery_attention"] = json!(recovery);
+                                }
+                            }
                             if bootstrap {
                                 snapshot["root"]=root.as_ref().map(|r|json!({"id":r.record.id,"revision":r.record.revision,"plan_revision_id":r.instance.active_plan_revision_id,"control_version":r.instance.control_version,"status":r.instance.status,"human_governance":r.instance.human_governance,"user_request":r.instance.user_request})).unwrap_or(Value::Null);
                                 snapshot["checkpoint"] = controller.checkpoint.clone();
@@ -549,7 +617,11 @@ impl Engine {
                     attention["source_publication_recovery"] = recovery.clone();
                 }
                 if let Some(recovery) = readiness.get("recovery").filter(|v| !v.is_null()) {
-                    attention["recovery"] = recovery.clone();
+                    let mut recovery = recovery.clone();
+                    if let Some(rows) = recovery["history"].as_array_mut() {
+                        rows.truncate(8);
+                    }
+                    attention["recovery"] = recovery;
                     attention["retry_count"] = readiness["retry_count"].clone();
                     attention["retry_limit"] = readiness["retry_limit"].clone();
                 }

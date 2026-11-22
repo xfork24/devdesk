@@ -233,6 +233,11 @@ pub fn task_input(
     if !execution.runtime_context.is_null() {
         input["runtime_context"] = execution.runtime_context.clone();
     }
+    if execution.runtime_context["review_human_input"] == true {
+        input["input_review_instructions"] = json!(
+            "Before requesting human input, inspect the available evidence and distinguish a missing platform artifact from a fact only a human can supply. Include the exact missing fact and why existing sources cannot provide it. A project manager will verify it before asking the human. If you receive technical guidance, follow it within the existing frozen scope."
+        );
+    }
     if execution.runtime_context["technical_recovery"] == true {
         let contract = &mut input["output_contract"];
         contract["properties"]["status"]["enum"] =
@@ -254,6 +259,27 @@ pub fn task_input(
         contract["instructions"] = json!(
             "Use the supplied inputs and provenance. Diagnose technical problems and try safe repairs within the assigned permissions before escalating. If unresolved, return needs_manager with the diagnosis, actions actually attempted and a specific suggested next step in the summary. Use needs_input only for missing business information the human must decide. Preserve frozen requirements and approvals. Return one JSON object whose outputs match declared ports. Never manufacture platform evidence."
         );
+        if execution.runtime_context["repair_protocol"] == 1 {
+            contract["properties"]["input_kind"] =
+                json!({"enum":["business_decision","human_fact","platform_material"]});
+            contract["allOf"].as_array_mut().unwrap().push(json!({
+                "if":{"properties":{"status":{"const":"needs_input"}}},
+                "then":{"required":["input_kind"]}
+            }));
+            contract["properties"]["status"]["enum"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!("self_repair"));
+            contract["properties"]["recovery"]["properties"]["proposed_action"] =
+                json!({"type":"string","minLength":1,"maxLength":2048});
+            contract["allOf"].as_array_mut().unwrap().push(json!({
+                "if":{"properties":{"status":{"const":"self_repair"}}},
+                "then":{"required":["recovery"],"properties":{"recovery":{"required":["proposed_action"]}}}
+            }));
+            contract["instructions"] = json!(
+                "Read runtime_context.repair_history before acting. Investigate and diagnose the issue. When a distinct authorized repair is available, request self_repair with your evidence and concrete proposed_action before rerunning. The kernel admits actual repair turns within the frozen retry_limit and rejects repeated actions on the same frozen input. When no further authorized repair is available, return needs_manager with the diagnosis and actual attempted_actions. For needs_input set input_kind: business_decision for actual scope, acceptance or permission changes, human_fact for a necessary fact only the human has, or platform_material for an existing artifact the manager can transfer. Preserve the frozen task and permissions. Attach platform fact references and never manufacture receipts."
+            );
+        }
     }
     let input = serde_json::to_string(&input).map_err(|e| err("serialization", e.to_string()))?;
     require(

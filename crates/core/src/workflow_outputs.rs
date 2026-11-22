@@ -24,6 +24,90 @@ pub(crate) enum WorkflowOutputProof {
     },
 }
 
+fn preserves_test_contract(
+    previous: &Value,
+    next: &Value,
+    coverage_acceptance: Option<&Value>,
+) -> bool {
+    if ["interfaces", "recipe"]
+        .iter()
+        .any(|key| previous.get(*key) != next.get(*key))
+    {
+        return false;
+    }
+    let Some(frozen_acceptance) = coverage_acceptance else {
+        return previous.get("cases") == next.get("cases");
+    };
+    let (Some(original_cases), Some(cases)) =
+        (previous["cases"].as_array(), next["cases"].as_array())
+    else {
+        return false;
+    };
+    let mut ids = std::collections::BTreeSet::new();
+    original_cases.iter().all(|case| cases.contains(case))
+        && cases.iter().all(|case| {
+            case["id"]
+                .as_str()
+                .is_some_and(|id| !id.trim().is_empty() && ids.insert(id))
+                && (original_cases.contains(case) || {
+                    case["acceptance"].as_array().is_some_and(|refs| {
+                        !refs.is_empty()
+                            && refs.iter().all(|reference| {
+                                reference.is_string()
+                                    && frozen_acceptance
+                                        .as_array()
+                                        .into_iter()
+                                        .flatten()
+                                        .any(|accepted| accepted["id"] == *reference)
+                            })
+                    }) && case["files"].as_array().is_some_and(|files| {
+                        !files.is_empty()
+                            && files.iter().all(|file| {
+                                previous["recipe"]["files"]
+                                    .as_array()
+                                    .is_some_and(|recipe| recipe.contains(file))
+                            })
+                    })
+                })
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn red_coverage_can_add_a_frozen_case_without_replacing_existing_cases() {
+        let acceptance = json!([{"id":"AC-1"},{"id":"AC-2"}]);
+        let original = json!({"interfaces":[],"recipe":{"files":["test.cjs"]},
+            "cases":[{"id":"first","acceptance":["AC-1"],"files":["test.cjs"],"expected":"retained"}]});
+        let mut revised = original.clone();
+        revised["cases"].as_array_mut().unwrap().push(
+            json!({"id":"second","acceptance":["AC-2"],"files":["test.cjs"],"expected":"covered"}),
+        );
+        assert!(preserves_test_contract(
+            &original,
+            &revised,
+            Some(&acceptance)
+        ));
+        assert!(!preserves_test_contract(&original, &revised, None));
+        for (index, field, value) in [
+            (0, "expected", json!("changed")),
+            (1, "id", json!("first")),
+            (1, "acceptance", json!(["unrelated"])),
+            (1, "files", json!(["undispatched.cjs"])),
+        ] {
+            let mut invalid = revised.clone();
+            invalid["cases"][index][field] = value;
+            assert!(!preserves_test_contract(
+                &original,
+                &invalid,
+                Some(&acceptance)
+            ));
+        }
+    }
+}
+
 fn validate_checkpoint_inputs(
     plan: &ConfiguredWorkflowPlan,
     producer: &StepDefinition,
@@ -88,11 +172,18 @@ impl Engine {
             .as_str()
             .filter(|s| !s.trim().is_empty())
             .ok_or_else(|| err("output_invalid", "执行结论缺少实际摘要"))?;
+        if matches!(proof, WorkflowOutputProof::Agent { .. })
+            && (next.sequence > 1 || next.retry_of.is_some() || next.rework.is_some())
+        {
+            self.observe_workflow_repair_result(commit, resources, next, result)?;
+        }
         match result["status"].as_str() {
-            Some("needs_manager") => {
+            Some("needs_manager" | "self_repair") => {
+                let self_repair = result["status"] == "self_repair";
                 require(
                     matches!(proof, WorkflowOutputProof::Agent { .. })
-                        && next.runtime_context["technical_recovery"] == true,
+                        && next.runtime_context["technical_recovery"] == true
+                        && (!self_repair || next.runtime_context["repair_protocol"] == 1),
                     "经理恢复需要原 Agent 的冻结恢复协议",
                 )?;
                 let diagnosis = text(&result["recovery"], "diagnosis")?;
@@ -115,8 +206,19 @@ impl Engine {
                     .filter_map(Value::as_str)
                     .collect::<Vec<_>>()
                     .join("；");
+                let outcome = if self_repair {
+                    let action = text(&result["recovery"], "proposed_action")?;
+                    match self.schedule_workflow_self_repair(
+                        commit, resources, next, &diagnosis, &action,
+                    )? {
+                        None => return Ok(vec![]),
+                        Some(reason) => format!("\n自修未派发：{reason}"),
+                    }
+                } else {
+                    String::new()
+                };
                 next.status = StepExecutionStatus::Failed;
-                next.reason = format!("{summary}\n诊断：{diagnosis}\n已尝试：{attempted}");
+                next.reason = format!("{summary}\n诊断：{diagnosis}\n已尝试：{attempted}{outcome}");
                 next.finished = Some(finished);
                 next.failure = Some(WorkflowFailure {
                     code: "needs_manager".into(),
@@ -132,6 +234,30 @@ impl Engine {
                     matches!(proof, WorkflowOutputProof::Agent { .. }),
                     "平台或子流程不能制造 Agent 澄清结论",
                 )?;
+                if next.runtime_context["repair_protocol"] == 1 {
+                    let kind = result["input_kind"].as_str();
+                    if !matches!(kind, Some("business_decision" | "human_fact")) {
+                        let material = kind == Some("platform_material");
+                        next.failure = Some(WorkflowFailure {
+                            code: if material {
+                                "platform_material_needed"
+                            } else {
+                                "needs_manager"
+                            }
+                            .into(),
+                            message: summary.into(),
+                            source_ref: next.turn_id.clone().unwrap_or_else(|| next.id.clone()),
+                            kind: ExecutionFailureKind::Technical,
+                            effect: ExecutionFailureEffect::NotApplied,
+                        });
+                        if !material {
+                            next.status = StepExecutionStatus::Failed;
+                            next.reason = format!("未明确区分技术问题和人工决定：{summary}");
+                            next.finished = Some(finished);
+                            return Ok(vec![]);
+                        }
+                    }
+                }
                 next.status = StepExecutionStatus::WaitingInput;
                 next.reason = summary.into();
                 next.budget_wait_started = Some(finished);
@@ -146,7 +272,13 @@ impl Engine {
                 next.reason = summary.into();
                 next.finished = Some(finished);
                 next.failure = Some(WorkflowFailure {
-                    code: "agent_blocked".into(),
+                    code: if next.runtime_context["repair_protocol"] == 1
+                        && matches!(proof, WorkflowOutputProof::Agent { .. })
+                    {
+                        "needs_manager".into()
+                    } else {
+                        "agent_blocked".into()
+                    },
                     message: summary.into(),
                     source_ref: next.turn_id.clone().unwrap_or_else(|| next.id.clone()),
                     kind: ExecutionFailureKind::Business,
@@ -182,7 +314,10 @@ impl Engine {
             "一次执行的原始输出超过内容预算",
         )?;
         if let Some(rework) = &next.rework
-            && rework.assessment["kind"] == "test_support"
+            && matches!(
+                rework.assessment["kind"].as_str(),
+                Some("test_support" | "red_coverage")
+            )
         {
             for (port, id) in &rework.outputs {
                 let original = one(self.store.as_ref(), "governance", id)?;
@@ -196,13 +331,13 @@ impl Engine {
                     "测试恢复需要原执行冻结的验收声明",
                 )?;
                 commit.witness([version(&original)])?;
+                let coverage = (rework.assessment["kind"] == "red_coverage")
+                    .then_some(&next.inputs.get("task").unwrap_or(&Value::Null)["acceptance"]);
                 require(
-                    outputs.get(port).is_some_and(|next| {
-                        ["cases", "interfaces", "recipe"]
-                            .iter()
-                            .all(|key| next.get(*key) == previous.get(*key))
-                    }),
-                    "测试环境修复必须保留原用例、接口和测试配方",
+                    outputs
+                        .get(port)
+                        .is_some_and(|value| preserves_test_contract(previous, value, coverage)),
+                    "测试恢复必须保留原用例、接口和配方，新增用例须引用原任务验收且使用原配方文件",
                 )?;
             }
         }

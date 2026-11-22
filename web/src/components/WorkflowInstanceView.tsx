@@ -145,6 +145,7 @@ export function WorkflowInstanceView({
               [
                 "waiting_confirmation",
                 "awaiting_acceptance",
+                "waiting_input",
                 "failed",
               ].includes(step.status),
           )
@@ -599,7 +600,12 @@ export function WorkflowInstanceView({
                         <strong>{displayText(definition.name)}</strong>
                         <span className={`badge status-${execution.status}`}>
                           {displayText(
-                            stateLabels[execution.status] || execution.status,
+                            recovery?.status === "exhausted"
+                              ? "重试额度已用完"
+                              : recovery?.status === "needs_manager"
+                                ? "待项目经理恢复"
+                                : stateLabels[execution.status] ||
+                                  execution.status,
                           )}
                         </span>
                       </ActionButton>
@@ -770,23 +776,24 @@ export function WorkflowInstanceView({
                             {[
                               "awaiting_acceptance",
                               "waiting_confirmation",
-                            ].includes(execution.status) && (
-                              <ActionButton
-                                type="button"
-                                disabled={busy || !humanSatisfied}
-                                onClick={() =>
-                                  void act("workflow.step.accept", {
-                                    step: execution.step,
-                                    execution_id: execution.id,
-                                    input_digest: execution.input_digest,
-                                    outputs: execution.outputs,
-                                    reason: "用户核对并接纳结果",
-                                  })
-                                }
-                              >
-                                接纳结果
-                              </ActionButton>
-                            )}
+                            ].includes(execution.status) &&
+                              !recovery && (
+                                <ActionButton
+                                  type="button"
+                                  disabled={busy || !humanSatisfied}
+                                  onClick={() =>
+                                    void act("workflow.step.accept", {
+                                      step: execution.step,
+                                      execution_id: execution.id,
+                                      input_digest: execution.input_digest,
+                                      outputs: execution.outputs,
+                                      reason: "用户核对并接纳结果",
+                                    })
+                                  }
+                                >
+                                  接纳结果
+                                </ActionButton>
+                              )}
                             {execution.session_id ? (
                               <ActionButton
                                 type="button"
@@ -822,7 +829,7 @@ export function WorkflowInstanceView({
                               "cancelled",
                               "waiting_confirmation",
                               "awaiting_acceptance",
-                            ].includes(execution.status) ? (
+                            ].includes(execution.status) && !recovery ? (
                               <ActionButton
                                 type="button"
                                 disabled={busy}
@@ -870,7 +877,7 @@ export function WorkflowInstanceView({
                               </ActionButton>
                             ) : null}
                           </div>
-                          {execution.status === "waiting_input" ? (
+                          {execution.status === "waiting_input" && !recovery ? (
                             <WorkflowStepInput
                               key={`${projectId}:${record.id}:${execution.id}`}
                               request={request}
@@ -893,12 +900,18 @@ export function WorkflowInstanceView({
                           ) : null}
                           {recovery && (
                             <p role="status">
+                              {recovery.reason
+                                ? `${displayText(recovery.reason)} `
+                                : ""}
                               {recovery.human_required
                                 ? "自动恢复已用完相关步骤的重试额度，请核对测试或执行记录。"
                                 : "项目经理将核对执行记录并安排修复和重试。"}
                             </p>
                           )}
-                          {!recovery &&
+                          {(!recovery ||
+                            (recovery.kind === "review_rework" &&
+                              recovery.status === "exhausted" &&
+                              recovery.allow_human_approval === true)) &&
                           [
                             "waiting_confirmation",
                             "awaiting_acceptance",
@@ -906,8 +919,9 @@ export function WorkflowInstanceView({
                             <div role="group" aria-label="步骤审批">
                               {unmet ? (
                                 <p role="status">
-                                  校验未通过，完成条件尚未满足。可以返工，或填写理由后手动
-                                  Approve；原校验报告会保留。
+                                  {recovery?.status === "exhausted"
+                                    ? "返工额度已用完。可填写理由并签署当前版本的人工例外，原评审报告会保留。"
+                                    : "校验未通过，完成条件尚未满足。可以返工，或填写理由后手动批准，原校验报告会保留。"}
                                 </p>
                               ) : null}
                               {!unmet &&

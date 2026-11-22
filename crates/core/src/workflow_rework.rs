@@ -40,7 +40,39 @@ pub(crate) fn budget_id(instance: &ConfiguredWorkflowInstance, policy: &str) -> 
     )
 }
 
+fn compact_review_history(mut row: Value) -> Value {
+    for field in ["assessment", "acceptance_requirements"] {
+        row["record"]["action"][field] = json!(
+            row["record"]["action"][field]
+                .as_str()
+                .unwrap_or_default()
+                .chars()
+                .take(256)
+                .collect::<String>()
+        );
+    }
+    row
+}
+
 impl Engine {
+    pub(crate) fn review_repair_history(
+        &self,
+        root: &WorkflowHeaderFacts,
+        policy: &str,
+    ) -> Result<ResourceSnapshot> {
+        let mut snapshot = one(
+            self.store.as_ref(),
+            "workflow_repair_history",
+            &json!([root.instance.project_id, budget_id(&root.instance, policy)]).to_string(),
+        )?;
+        if let Some(Value::Array(rows)) = snapshot.value.take() {
+            snapshot.value = Some(Value::Array(
+                rows.into_iter().map(compact_review_history).collect(),
+            ));
+        }
+        Ok(snapshot)
+    }
+
     pub(crate) fn reopen_rework_owner(
         &self,
         commit: &mut WorkflowCommit<'_>,
@@ -542,6 +574,14 @@ impl Engine {
         let mut value = json!({"instance_id":root.record.id,"plan_revision_id":root.instance.active_plan_revision_id,"control_version":root.instance.control_version,
             "rework":selection,"review_input_digest":e.input_digest,"report_output_id":selection.report_output_id,"report_digest":configuration_hash(&report.data),
             "invalidated":steps,"retained":retained,"budgets":budgets,"withdrawn_parent_results":withdrawn_calls,"instances":instances,"parent_execution_id":root.instance.parent_execution_id,"header_revision":root.header.revision});
+        let history = self.review_repair_history(root, &selection.policy)?;
+        commit.witness([version(&history)])?;
+        if let Some(items) = history
+            .value
+            .filter(|items| items.as_array().is_some_and(|rows| !rows.is_empty()))
+        {
+            value["repair_history"] = items;
+        }
         value["preview_hash"] = json!(configuration_hash(&value));
         Ok((value, selection, affected))
     }
@@ -556,17 +596,70 @@ impl Engine {
             commit.command.payload["preview_hash"] == preview["preview_hash"],
             "返工预演已过期，请保留原决定并重新预演",
         )?;
-        if selection.target == ReworkTarget::ChildWorkflow {
-            return self.prepare_child_rework(commit, root, &selection, &affected);
+        let policy_budget = budget_id(&root.instance, &selection.policy);
+        if let Some(budget) = preview["budgets"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|budget| {
+                budget["id"] == policy_budget
+                    && budget["history_baseline_known"] == true
+                    && budget["remaining"] == 0
+            })
+        {
+            return Err(err(
+                "rework_budget_exhausted",
+                format!(
+                    "业务返工额度已耗尽：used={}, limit={}, remaining=0",
+                    budget["used"], budget["limit"]
+                ),
+            ));
         }
-        let key = root
-            .instance
-            .steps
-            .iter()
-            .find(|e| affected.contains(&e.step))
-            .ok_or_else(|| err("invalid_params", "没有受影响步骤"))?;
-        let selected = root.step(self, &key.id)?;
-        self.prepare_native_retry_scope(commit, root, &selected, true, Some(&affected))
+        let action = json!({"target":selection.target,"assessment":selection.assessment,"acceptance_requirements":selection.acceptance_requirements});
+        let digest = configuration_hash(&(
+            &preview["review_input_digest"],
+            &selection.target,
+            crate::workflow_repair_attempts::action_digest("", &selection.assessment),
+            crate::workflow_repair_attempts::action_digest("", &selection.acceptance_requirements),
+        ));
+        if preview["repair_history"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|item| item["started"].is_number() && item["record"]["action_digest"] == digest)
+        {
+            return Err(err(
+                "duplicate_repair_action",
+                "当前评审依据已实际执行过相同返工方案",
+            ));
+        }
+        commit.review_repair_history = preview.get("repair_history").cloned();
+        let next = if selection.target == ReworkTarget::ChildWorkflow {
+            self.prepare_child_rework(commit, root, &selection, &affected)?
+        } else {
+            let key = root
+                .instance
+                .steps
+                .iter()
+                .find(|e| affected.contains(&e.step))
+                .ok_or_else(|| err("invalid_params", "没有受影响步骤"))?;
+            let selected = root.step(self, &key.id)?;
+            self.prepare_native_retry_scope(commit, root, &selected, true, Some(&affected))?
+        };
+        let mut attempt = record(
+            "workflow_repair_attempt",
+            policy_budget,
+            root.record.scope.clone(),
+            "评审返工尝试".into(),
+            1,
+            None,
+            json!({"phase":"review","original_execution_id":selection.review_execution_id,"report_id":selection.report_output_id,
+                "execution_id":next.id,"client_message_id":format!("{}:{}",next.id,next.sequence),"action":action,"action_digest":digest,"charge_turn":false}),
+            true,
+        );
+        attempt.id = crate::workflow_repair_attempts::repair_attempt_id(&next);
+        commit.insert_record(&attempt)?;
+        Ok(next)
     }
 
     fn prepare_child_rework(
@@ -704,7 +797,13 @@ impl Engine {
                         .unwrap_or("子流程返工")
                         .into(),
                     outputs: old.outputs.clone(),
-                    assessment: json!(selection),
+                    assessment: {
+                        let mut assessment = json!(selection);
+                        if let Some(history) = &commit.review_repair_history {
+                            assessment["repair_history"] = history.clone();
+                        }
+                        assessment
+                    },
                 });
                 Ok(e)
             })

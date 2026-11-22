@@ -80,7 +80,9 @@ fn eligible(key: &ResourceKey) -> bool {
         key.kind.as_str(),
         "workflow_step"
             | "workflow_change_pending"
-            | "workflow_retry_count"
+            | "workflow_publication_repair_count"
+            | "workflow_rust_retries"
+            | "workflow_repair_history"
             | "workflow_logical_retries"
             | "workflow_confirmations"
             | "workflow_waiver"

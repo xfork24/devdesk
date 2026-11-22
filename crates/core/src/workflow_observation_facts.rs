@@ -153,6 +153,20 @@ impl Engine {
         }
         let mut context = json!({"human_exceptions":exceptions});
         context["technical_recovery"] = json!(true);
+        context["repair_protocol"] = json!(1);
+        context["review_human_input"] = json!(true);
+        let history = self.workflow_repair_history(resources)?;
+        commit.witness([version(&history)])?;
+        context["repair_history"] = json!(
+            history
+                .value
+                .as_ref()
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .take(16)
+                .collect::<Vec<_>>()
+        );
         let recovery = self.native_test_recovery_evidence(commit, &resources.execution)?;
         if !recovery.is_null() {
             context["independent_test_failure"] = recovery;
