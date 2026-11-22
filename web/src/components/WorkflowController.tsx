@@ -120,7 +120,10 @@ export function WorkflowController({
                   summary.runtime_approval_pending ||
                   summary.workflow_approval_pending ||
                   (summary.waiting || []).some(
-                    (step: Row) => step.status === "awaiting_acceptance",
+                    (step: Row) =>
+                      ["awaiting_acceptance", "needs_reconciliation"].includes(
+                        step.status,
+                      ),
                   );
                 return needsDetails
                   ? request(
@@ -344,6 +347,36 @@ export function WorkflowController({
         },
       );
       await Promise.all([(shared?.reload || load)(), refresh()]);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function reworkSource(item: Row) {
+    const recovery = item.source_publication_recovery;
+    if (
+      !window.confirm(
+        `若远端分支不存在，DevDesk 将发布原来已验证的提交。\n\n${recovery.branch}\n${recovery.revision}`,
+      )
+    )
+      return;
+    setBusy(true);
+    setError("");
+    try {
+      await submitDraft("workflow.step.rework", {
+        project_id: projectId,
+        target: item.instance_id,
+        expected_revision: item.revision,
+        payload: {
+          execution_id: item.execution_id,
+          expected_step_revision: item.step_revision,
+          plan_revision_id: item.plan_revision_id,
+          control_version: item.control_version,
+          reason: "用户在项目经理待办确认恢复原源分支发布",
+        },
+      });
+      await Promise.all([(shared?.reload || load)(true), refresh()]);
+    } catch (error) {
+      setError(String(error));
     } finally {
       setBusy(false);
     }
@@ -582,6 +615,7 @@ export function WorkflowController({
           </p>
           <ul aria-label="调度等待条件">
             {waiting.map((item) => {
+              const recovery = item.source_publication_recovery;
               const gate = (Object.values(item.actions || {}) as Row[]).find(
                 (action) => item.waiting_for?.includes(action.code),
               );
@@ -618,11 +652,42 @@ export function WorkflowController({
                     <div className="manager-disclosure-body">
                       <p>
                         {displayText(
-                          gate?.reason ||
+                          (item.failure_code && item.reason) ||
+                            gate?.reason ||
                             item.reason ||
                             "正在等待执行条件就绪。",
                         )}
+                        {item.failure_code && (
+                          <>
+                            {" "}
+                            <code>{displayText(item.failure_code)}</code>
+                          </>
+                        )}
                       </p>
+                      {recovery && (
+                        <>
+                          <p>
+                            {recovery.human_required
+                              ? `项目经理已用完 ${recovery.limit} 次重试额度，等待人工返工。`
+                              : `项目经理重试 ${recovery.attempts}/${recovery.limit}${recovery.pending ? " · 正在处理" : ""}`}
+                          </p>
+                          {recovery.error?.message && (
+                            <p>
+                              {displayText(recovery.error.message)}{" "}
+                              <code>{displayText(recovery.error.code)}</code>
+                            </p>
+                          )}
+                          {recovery.human_required && (
+                            <ActionButton
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void reworkSource(item)}
+                            >
+                              从此步骤返工
+                            </ActionButton>
+                          )}
+                        </>
+                      )}
                       {item.status === "waiting_input" && (
                         <WorkflowStepInput
                           key={`${projectId}:${item.instance_id}:${item.execution_id}`}

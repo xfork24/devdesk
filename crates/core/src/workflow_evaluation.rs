@@ -387,7 +387,20 @@ impl Engine {
                                 }
                                 Some("needs_reconciliation") => {
                                     next.status = StepExecutionStatus::NeedsReconciliation;
-                                    next.reason = "原工具副作用需要核对".into();
+                                    if let Ok(error) =
+                                        serde_json::from_value::<Error>(call.data["error"].clone())
+                                    {
+                                        let mut failure = WorkflowFailure::from_error(
+                                            &error,
+                                            call.id.clone(),
+                                            ExecutionFailureKind::Unknown,
+                                        );
+                                        failure.effect = ExecutionFailureEffect::Unknown;
+                                        next.reason = failure.message.clone();
+                                        next.failure = Some(failure);
+                                    } else {
+                                        next.reason = "原工具副作用需要核对".into();
+                                    }
                                 }
                                 Some("failed") => self.native_step_failure(
                                     &mut next,

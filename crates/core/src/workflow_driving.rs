@@ -195,7 +195,11 @@ impl Engine {
                     if e.status == StepExecutionStatus::NeedsReconciliation {
                         waiting_for.push("reconciliation");
                     }
-                    waiting.push(json!({"revision":member.record.revision,"plan_revision_id":member.instance.active_plan_revision_id,"control_version":member.instance.control_version,"step_name":member.instance.plan.document.steps.iter().find(|s|s.node_id==e.node_id).map(|s|&s.name),"ancestor_instance_ids":ancestors,"waiting_for":waiting_for,"instance_id":id,"owner_id":member.instance.owner_id,"execution_id":e.id,"step":e.step,"path":e.path,"status":e.status,"reason":e.reason,"actions":selected["actions"],"step_revision":selected["step_revision"],"input_digest":e.input_digest,"outputs":e.outputs}));
+                    let mut item = json!({"revision":member.record.revision,"plan_revision_id":member.instance.active_plan_revision_id,"control_version":member.instance.control_version,"step_name":member.instance.plan.document.steps.iter().find(|s|s.node_id==e.node_id).map(|s|&s.name),"ancestor_instance_ids":ancestors,"waiting_for":waiting_for,"instance_id":id,"owner_id":member.instance.owner_id,"execution_id":e.id,"step":e.step,"path":e.path,"status":e.status,"reason":e.reason,"actions":selected["actions"],"step_revision":selected["step_revision"],"input_digest":e.input_digest,"outputs":e.outputs});
+                    if let Some(recovery) = selected.get("source_publication_recovery") {
+                        item["source_publication_recovery"] = recovery.clone();
+                    }
+                    waiting.push(item);
                 }
             }
         }

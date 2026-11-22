@@ -102,7 +102,12 @@ pub(super) fn capture(conn: &Connection, prepared: &PreparedChangeSet) -> Result
     Ok(seen)
 }
 fn step(value: &Value) -> Value {
-    json!({"execution_id":value["id"],"step":value["step"],"status":value["status"],"outputs":value["outputs"],"input_digest":value["input_digest"],"session_id":value["session_id"],"turn_id":value["turn_id"],"reason":value["reason"].as_str().map(|v|v.chars().take(512).collect::<String>())})
+    let mut step = json!({"execution_id":value["id"],"step":value["step"],"status":value["status"],"outputs":value["outputs"],"input_digest":value["input_digest"],"session_id":value["session_id"],"turn_id":value["turn_id"],"reason":value["reason"].as_str().map(|v|v.chars().take(512).collect::<String>())});
+    if let Some(code) = value["failure"]["code"].as_str() {
+        step["failure_code"] = json!(code.chars().take(128).collect::<String>());
+        step["failure_effect"] = value["failure"]["effect"].clone();
+    }
+    step
 }
 fn metadata_only(previous: &Value, current: &Value) -> bool {
     if previous["status"] != "running" || current["status"] != "running" {
@@ -405,7 +410,7 @@ pub(super) fn append(
             && old.is_none_or(|r| r["data"]["status"] != next["data"]["status"])
         {
             Some(
-                json!({"kind":"execution.reconciled","reconciliation_id":next["id"],"execution_id":next["data"]["execution_id"],"status":next["data"]["status"],"error":next["data"]["error"]}),
+                json!({"kind":"execution.reconciled","reconciliation_id":next["id"],"execution_id":next["data"]["execution_id"],"status":next["data"]["status"],"resolution":next["data"]["resolution"],"error":next["data"]["error"]}),
             )
         } else if kind == "workflow_confirmation" && old.is_none() {
             Some(

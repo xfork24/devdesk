@@ -203,6 +203,12 @@ impl Engine {
         };
         let mut result = json!({"step":step.key,"node_id":step.node_id,"execution":e,"step_revision":resources.step.revision,"dispatchable":actions.dispatch.allowed,"actions":actions,"retry_count":retry_count,"input_gap":input_gap,"completion_satisfied":completion,"completion_overridden":overridden,"human_satisfied":human,"confirmation_status":disposition,"confirmation_ref":confirmation,"confirmation_waiver_ref":if waived{waiver.value.as_ref().map(|r|&r["id"])}else{None}});
         result["delivery_refresh"] = delivery_refresh;
+        if e.status == StepExecutionStatus::NeedsReconciliation
+            && let Ok(recovery) = self.source_publication_recovery_view(root, resources)
+            && !recovery.is_null()
+        {
+            result["source_publication_recovery"] = recovery;
+        }
         if matches!(
             e.status,
             StepExecutionStatus::Running | StepExecutionStatus::NeedsReconciliation

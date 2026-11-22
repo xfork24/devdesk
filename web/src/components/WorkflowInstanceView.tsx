@@ -556,6 +556,11 @@ export function WorkflowInstanceView({
                 {executions.map(({ definition, execution }: Row) => {
                   const completion =
                     activeData?.completion_status?.[execution.id];
+                  const sourceRework =
+                    activeData?.source_publication_rework?.[execution.id];
+                  const recoveringSource =
+                    ["rework_source_publication", "retry_source_publication"]
+                      .includes(execution.reconciliation?.resolution);
                   const unmet = completion?.satisfied === false;
                   const confirmation = completion?.confirmation;
                   const humanSatisfied =
@@ -603,6 +608,12 @@ export function WorkflowInstanceView({
                         {displayText(
                           execution.reason ? ` · ${execution.reason}` : "",
                         )}
+                        {execution.failure_code && (
+                          <>
+                            {" "}
+                            <code>{displayText(execution.failure_code)}</code>
+                          </>
+                        )}
                       </p>
                       {execution.reconciliation && (
                         <p
@@ -618,10 +629,12 @@ export function WorkflowInstanceView({
                           {["unresolved", "conflicted"].includes(
                             execution.reconciliation.status,
                           )
-                            ? `核对未完成：${execution.reconciliation.error?.message || "未取得可确认的执行结果"}${execution.reconciliation.error?.code ? `（${execution.reconciliation.error.code}）` : ""}`
+                            ? `${recoveringSource ? "返工未完成" : "核对未完成"}：${execution.reconciliation.error?.message || "未取得可确认的执行结果"}${execution.reconciliation.error?.code ? `（${execution.reconciliation.error.code}）` : ""}`
                             : execution.reconciliation.status === "completed"
                               ? "原执行结果核对已完成"
-                              : "正在核对原执行结果…"}
+                              : recoveringSource
+                                ? "正在恢复原源分支发布…"
+                                : "正在核对原执行结果…"}
                         </p>
                       )}
                       {stepOpen ? (
@@ -768,7 +781,7 @@ export function WorkflowInstanceView({
                             {execution.status === "needs_reconciliation" ? (
                               <ActionButton
                                 type="button"
-                                disabled={busy}
+                                  disabled={busy || sourceRework?.pending}
                                 onClick={() =>
                                   void act("workflow.step.reconcile", {
                                     step: execution.step,
@@ -776,6 +789,27 @@ export function WorkflowInstanceView({
                                 }
                               >
                                 核对执行结果
+                              </ActionButton>
+                            ) : null}
+                            {execution.status === "needs_reconciliation" &&
+                            sourceRework ? (
+                              <ActionButton
+                                type="button"
+                                disabled={busy || sourceRework.pending}
+                                onClick={() => {
+                                  if (
+                                    window.confirm(
+                                      `若远端分支不存在，DevDesk 将发布原来已验证的提交。\n\n${sourceRework.branch}\n${sourceRework.revision}`,
+                                    )
+                                  )
+                                    void act(
+                                      "workflow.step.rework",
+                                      { execution_id: execution.id },
+                                      execution,
+                                    );
+                                }}
+                              >
+                                从此步骤返工
                               </ActionButton>
                             ) : null}
                           </div>

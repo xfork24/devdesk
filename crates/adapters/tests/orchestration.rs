@@ -2866,6 +2866,9 @@ fn workflow_status_includes_the_latest_exact_reconciliation_failure() {
         .remove(0);
     let mut value = selected.value.unwrap();
     value["status"] = json!("needs_reconciliation");
+    value["reason"] = json!("git ls-remote 启动前失败。GitHub 凭据检查失败，请升级签名助手。");
+    value["failure"] = json!({"code":"credential_helper_upgrade_required","message":value["reason"],"kind":"unknown","effect":"unknown","source_ref":execution});
+    let cursor = e.store.event_cursor().unwrap();
     let mut reconciliation = record.clone();
     reconciliation.id = id();
     reconciliation.r#type = "workflow_reconciliation".into();
@@ -2912,10 +2915,38 @@ fn workflow_status_includes_the_latest_exact_reconciliation_failure() {
         )
         .unwrap();
     let latest = &view["runtime"]["steps"][0]["reconciliation"];
+    assert_eq!(
+        view["runtime"]["steps"][0]["failure_code"],
+        "credential_helper_upgrade_required"
+    );
     assert_eq!(latest["id"], reconciliation.id);
     assert_eq!(latest["status"], "unresolved");
     assert_eq!(latest["error"]["code"], "git_output_limit");
     assert_eq!(latest["error"]["message"], "Git diff 输出超过 1 MiB");
+    let events = e.store.events_after(cursor, 100).unwrap();
+    let diagnostic = events
+        .iter()
+        .filter(|event| event.kind == "workflow.runtime")
+        .filter_map(|event| serde_json::from_str::<Value>(&event.detail).ok())
+        .flat_map(|event| {
+            event["change"]["changes"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+        })
+        .find(|fact| fact["execution"]["execution_id"] == execution)
+        .unwrap();
+    assert_eq!(
+        diagnostic["execution"]["failure_code"],
+        "credential_helper_upgrade_required"
+    );
+    assert_eq!(diagnostic["execution"]["failure_effect"], "unknown");
+    assert!(
+        diagnostic["execution"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("升级签名助手")
+    );
 }
 
 #[test]

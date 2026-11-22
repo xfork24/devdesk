@@ -19,6 +19,8 @@ status 检查是否配置；store 保存秘密；read 返回秘密；check 检�
 
 成功形状为 `{"ok":true,"result":...}`，失败形状为 `{"ok":false,"code":...}`。认证不足与凭据不存在分别使用 authentication_required 和 credentials_required 等代码。日志和错误不得包含秘密正文。
 
+系统钥匙串失败可带 `os_status` 整数，Host 展示该状态和失败的操作。旧助手对有效的 `integration-key` 请求返回 `invalid_params` 时，Host 提示显式升级签名助手。签名校验、协议响应错误和钥匙串权限使用各自的诊断。
+
 输入有大小上限；处理后主动清理持有秘密的可变缓冲区。非 macOS 构建返回 unsupported，不提供假凭据或明文回退。
 
 ## 验证

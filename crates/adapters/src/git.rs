@@ -83,7 +83,12 @@ impl CliGit {
             args.first(),
             Some(&("clone" | "fetch" | "ls-remote" | "push"))
         ) {
-            self.github.apply_git_auth(&mut command)?;
+            self.github
+                .apply_git_auth(&mut command)
+                .map_err(|mut error| {
+                    error.message = format!("git {} 启动前失败。{}", args[0], error.message);
+                    error.with_context("git.credential_preflight", json!({"subcommand":args[0]}))
+                })?;
         }
         // Do not inherit user-configured hooks, filters, aliases, fsmonitor, shell transports, or ambient Git routing.
         for (key, _) in std::env::vars_os() {
@@ -133,7 +138,10 @@ impl CliGit {
         })
     }
     fn output(&self, path: &Path, args: &[&str]) -> Result<String> {
-        let result = self.git(path, args, None)?;
+        self.output_with_timeout(path, args, Duration::from_secs(30))
+    }
+    fn output_with_timeout(&self, path: &Path, args: &[&str], timeout: Duration) -> Result<String> {
+        let result = self.git_with_timeout(path, args, None, timeout)?;
         if result.truncated {
             return Err(err(
                 "git_output_limit",
@@ -817,9 +825,21 @@ impl CliGit {
         )
     }
     fn remote_head(&self, repo: &Path, branch: &str) -> Result<Option<String>> {
+        self.remote_head_with_timeout(repo, branch, Duration::from_secs(30))
+    }
+    fn remote_head_with_timeout(
+        &self,
+        repo: &Path,
+        branch: &str,
+        timeout: Duration,
+    ) -> Result<Option<String>> {
         let reference = format!("refs/heads/{branch}");
         self.output(repo, &["check-ref-format", &reference])?;
-        let output = self.output(repo, &["ls-remote", "--heads", "origin", &reference])?;
+        let output = self.output_with_timeout(
+            repo,
+            &["ls-remote", "--heads", "origin", &reference],
+            timeout,
+        )?;
         if output.is_empty() {
             return Ok(None);
         }
@@ -831,6 +851,34 @@ impl CliGit {
             .ok_or_else(|| err("adapter_contract", "远端 ref 结构错误"))?;
         require(valid_oid(oid) && name == reference, "远端 ref 身份不符")?;
         Ok(Some(oid.into()))
+    }
+    fn source_remote_head(
+        &self,
+        repo: &Path,
+        context: &GitContext,
+        branch: &str,
+    ) -> Result<Option<String>> {
+        let timeout = Duration::from_secs(8);
+        match self.remote_head_with_timeout(repo, branch, timeout) {
+            Err(error) if error.code == "needs_reconciliation" => {
+                let origin = self.output(repo, &["remote", "get-url", "origin"])?;
+                require(
+                    origin == format!("https://github.com/{}.git", context.workspace.repository),
+                    "仓库 origin 与冻结 GitHub 身份不符",
+                )?;
+                self.github
+                    .exact_branch_head(&context.workspace.repository, branch)
+                    .map_err(|mut error| {
+                        error.message = format!(
+                            "Git ls-remote 读取 {branch} 超过 {} 秒；GitHub API 备用查询失败。{}",
+                            timeout.as_secs(),
+                            error.message
+                        );
+                        error
+                    })
+            }
+            result => result,
+        }
     }
     fn publish_ref(
         &self,
@@ -912,11 +960,31 @@ impl CliGit {
             require(policy.compatible, "GitHub 规则不兼容，禁止推送")?;
         }
         self.operation(&c.project,operation,&json!({"kind":"publish_ref","context":c,"branch":branch,"revision":revision,"expected":expected,"stage":stage}))?;
-        let actual = self.remote_head(&repo, branch)?;
+        // Only the standalone source publication can conclude that the entire
+        // operation performed no remote write when credential setup fails here.
+        let before_source_push = |error: Error| {
+            if stage == PublishStage::Source
+                && error
+                    .context
+                    .iter()
+                    .any(|context| context.operation == "git.credential_preflight")
+            {
+                error.technical_not_applied()
+            } else {
+                error
+            }
+        };
+        let actual = if stage == PublishStage::Source {
+            self.source_remote_head(&repo, c, branch)
+                .map_err(|error| error.technical_not_applied())?
+        } else {
+            self.remote_head(&repo, branch)?
+        };
         if actual.as_deref() != Some(revision) {
             if stage == PublishStage::Source {
                 if let Some(actual) = &actual {
-                    self.output(&repo, &["fetch", "--no-tags", "origin", actual])?;
+                    self.output(&repo, &["fetch", "--no-tags", "origin", actual])
+                        .map_err(before_source_push)?;
                     require(
                         self.git(
                             &repo,
@@ -929,9 +997,10 @@ impl CliGit {
                     )?;
                 }
                 let refspec = format!("{revision}:refs/heads/{branch}");
-                self.output(&repo, &["push", "--porcelain", "origin", &refspec])?;
+                self.output(&repo, &["push", "--porcelain", "origin", &refspec])
+                    .map_err(before_source_push)?;
                 require(
-                    self.remote_head(&repo, branch)?.as_deref() == Some(revision),
+                    self.source_remote_head(&repo, c, branch)?.as_deref() == Some(revision),
                     "源分支推送回执未确认",
                 )?;
                 return Ok(RepositoryReceipt::PublishedRef {
@@ -1604,15 +1673,23 @@ impl CliGit {
                 Ok(Some(RepositoryReceipt::Candidate { revision }))
             }
             RepositoryAction::PublishRef {
-                branch, revision, ..
-            } => Ok(
-                (self.remote_head(&repo, branch)?.as_ref() == Some(revision)).then(|| {
-                    RepositoryReceipt::PublishedRef {
+                branch,
+                revision,
+                stage,
+                ..
+            } => {
+                let current = if *stage == PublishStage::Source {
+                    self.source_remote_head(&repo, context, branch)?
+                } else {
+                    self.remote_head(&repo, branch)?
+                };
+                Ok(
+                    (current.as_ref() == Some(revision)).then(|| RepositoryReceipt::PublishedRef {
                         revision: revision.clone(),
                         branch: branch.clone(),
-                    }
-                }),
-            ),
+                    }),
+                )
+            }
             _ => unreachable!(),
         }
     }
@@ -1812,6 +1889,97 @@ impl ports::Git for CliGit {
         op: &RepositoryOperation,
     ) -> Result<Option<RepositoryReceipt>> {
         self.inspect_original_repository_operation(op)
+    }
+    fn recover_source_publication(
+        &self,
+        op: &RepositoryOperation,
+        allow_create: bool,
+    ) -> Result<RepositoryReceipt> {
+        let RepositoryAction::PublishRef {
+            context,
+            branch,
+            revision,
+            expected: None,
+            stage: PublishStage::Source,
+            ..
+        } = &op.action
+        else {
+            return Err(err("unsupported", "补发仅适用于开发分支源发布"));
+        };
+        require(
+            op.project_id == context.project
+                && context.source.owner != context.project
+                && branch == &context.source.branch
+                && branch != &context.target.branch
+                && branch != &context.workspace.mainline
+                && branch
+                    .strip_prefix("devdesk/tasks/")
+                    .or_else(|| branch.strip_prefix("devdesk/features/"))
+                    .is_some_and(|id| uuid::Uuid::parse_str(id).is_ok())
+                && valid_oid(revision),
+            "补发分支或提交与冻结的开发工作区不符",
+        )?;
+        let repo = self.context(context)?;
+        self.inspect_unlocked(
+            &context.project,
+            &context.workspace.repository,
+            &context.workspace.mainline,
+        )?;
+        let receipt = RepositoryReceipt::PublishedRef {
+            revision: revision.clone(),
+            branch: branch.clone(),
+        };
+        match self.source_remote_head(&repo, context, branch)? {
+            Some(actual) if actual == *revision => return Ok(receipt),
+            Some(actual) => {
+                return Err(err(
+                    "source_publication_conflict",
+                    format!(
+                        "远端开发分支 {branch} 已指向 {actual}，原步骤期望 {revision}，没有覆盖"
+                    ),
+                ));
+            }
+            None if !allow_create => {
+                return Err(err(
+                    "needs_reconciliation",
+                    format!(
+                        "远端尚未观察到 {branch} 的原提交；本次返工的写入授权已使用，请重新核对"
+                    ),
+                ));
+            }
+            None => {}
+        }
+        let reference = format!("refs/heads/{branch}");
+        require(
+            self.oid(&repo, &reference)? == *revision,
+            "本地开发分支已偏离原先验证的提交",
+        )?;
+        self.operation(
+            &op.project_id,
+            &op.id,
+            &json!({
+                "kind":"publish_ref","context":context,"branch":branch,"revision":revision,
+                "expected":Value::Null,"stage":PublishStage::Source
+            }),
+        )?;
+        let lease = format!("--force-with-lease={reference}:");
+        let refspec = format!("{revision}:{reference}");
+        let result = self.output(&repo, &["push", "--porcelain", &lease, "origin", &refspec]);
+        match self.source_remote_head(&repo, context, branch) {
+            Ok(Some(actual)) if actual == *revision => Ok(receipt),
+            Ok(Some(actual)) => Err(err(
+                "source_publication_conflict",
+                format!("远端开发分支 {branch} 已指向 {actual}，原步骤期望 {revision}，没有覆盖"),
+            )),
+            observed => {
+                result?;
+                observed?;
+                Err(err(
+                    "needs_reconciliation",
+                    format!("尚未确认远端开发分支 {branch} 指向 {revision}，请核对执行结果"),
+                ))
+            }
+        }
     }
     fn resume_unstarted_connection(
         &self,

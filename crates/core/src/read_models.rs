@@ -317,6 +317,8 @@ pub struct WaitingStep {
     pub status: String,
     pub reason: String,
     pub reason_truncated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_code: Option<String>,
 }
 #[derive(Debug, Serialize)]
 pub struct WorkflowDriverSummary {

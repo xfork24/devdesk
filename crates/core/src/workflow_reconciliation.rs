@@ -1,5 +1,6 @@
 //! An explicit reconciliation is a new, versioned authorization. Its immutable
-//! observations never rewrite the old callback's versions or resend its effect.
+//! observations never rewrite the old callback's versions. An explicit
+//! source-publication rework can only create the original ref if absent.
 use crate::{
     concurrency::*,
     governance::{record, update_record},
@@ -366,6 +367,13 @@ impl Engine {
             }
             if let Some((_, Ok(Some(receipt)))) = self.platform_observed(&effect, "result")? {
                 return Ok(ReconciliationFact::Platform { receipt });
+            }
+            if crate::delivery_recovery::source_publication_recovery(&attempt.data["resolution"]) {
+                let receipt =
+                    self.recover_reconciled_source_publication(root, resources, attempt, basis)?;
+                return Ok(ReconciliationFact::Platform {
+                    receipt: json!(receipt),
+                });
             }
             let inspected = (|| {
                 if let PlatformAction::Delivery(action) = &plan.action

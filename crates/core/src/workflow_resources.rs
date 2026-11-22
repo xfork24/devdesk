@@ -275,14 +275,16 @@ pub(crate) fn live_workflow_chain(
                 && !matches!(run["status"].as_str(), Some("completed" | "cancelled")),
             "原流程或祖先已暂停、终止或撤销",
         )?;
+        let status = &step["status"];
+        let live = if depth == 0 {
+            *status == json!(leaf_status)
+        } else {
+            status == "running"
+                || (leaf_status == StepExecutionStatus::NeedsReconciliation
+                    && status == "needs_reconciliation")
+        };
         require(
-            step["stop_requested"] != true
-                && step["status"]
-                    == json!(if depth == 0 {
-                        leaf_status.clone()
-                    } else {
-                        StepExecutionStatus::Running
-                    }),
+            step["stop_requested"] != true && live,
             "原步骤或祖先执行资格已经变化",
         )?;
         reads = reads.merge(rows.iter().map(version))?;

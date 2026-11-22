@@ -287,6 +287,11 @@ impl Engine {
             "workflow.step.rework" if !c.payload["rework"].is_null() => {
                 self.prepare_selected_rework(&mut commit, &root)?
             }
+            "workflow.step.rework" | "workflow.step.retry"
+                if resources.execution.status == StepExecutionStatus::NeedsReconciliation =>
+            {
+                self.prepare_native_execution_reconciliation(&mut commit, &root, &resources)?
+            }
             "workflow.step.retry" | "workflow.step.rework" => self.prepare_native_retry(
                 &mut commit,
                 &root,

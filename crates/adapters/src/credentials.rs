@@ -49,22 +49,13 @@ impl CredentialVault {
     }
     pub fn write_integration(&self, reference: &str, secret: &str) -> Result<()> {
         require(
-            !secret.is_empty() && secret.len() <= 65536 && !secret.contains(['\n', '\r']),
+            !secret.is_empty() && secret.len() <= 65536 && !secret.contains(['\n', '\r', '\0']),
             "凭据内容格式无效或过大",
         )?;
         let account = Self::integration_account(reference)?;
         #[cfg(target_os = "macos")]
         {
-            crate::credentials_macos::call("store", &self.service, &account, Some(secret))
-                .map_err(|error| {
-                    if error.code != "credential_store" {
-                        return error;
-                    }
-                    err(
-                        "credential_helper_upgrade_required",
-                        "接入凭据需要支持 integration-key 的签名凭据助手；请显式升级助手",
-                    )
-                })?;
+            crate::credentials_macos::call("store", &self.service, &account, Some(secret))?;
         }
         #[cfg(target_os = "linux")]
         {

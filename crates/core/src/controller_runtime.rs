@@ -334,6 +334,9 @@ impl Engine {
                             let mut snapshot = json!({"renderer_version":ORCHESTRATION_RENDERER,"delivery_id":controller.delivery_id,"controller_id":row.id,"epoch":controller.epoch,"owner_id":controller.owner_id,"root_instance_id":controller.root_instance_id,"project_id":controller.project_id,"workspace_only":controller.workspace_only,"bootstrap":bootstrap,"events":events,"deadline_reached":deadline,"user_messages":users.iter().map(|r|&r["data"]["input"]).collect::<Vec<_>>()});
                             if let Some(root) = controller.root_instance_id.as_deref() {
                                 snapshot["human_gates"] = self.controller_human_gates(root)?;
+                                snapshot["failure_reporting"] = json!(
+                                    "执行或核对失败时，读取实际阻塞的最深子步骤，报告最新错误码、诊断、核对结果、实际尝试次数和下一步。确定未写入的技术故障按步骤额度重试。结果未知时先检查原操作。源发布例外：workflow.inspect 返回 source_publication_recovery.retry_allowed=true 时，用原 execution_id 和同一次读取的版本调用 workflow.step.retry，等待结果事件后再读取状态。该重试只允许创建绑定原提交且不存在的开发分支。pending=true 时等待；human_required=true 时停止重试，说明额度、最后一次错误及原分支和提交，让用户从项目经理待办或流程步骤确认返工。其他未知结果仅核对原操作。涉及凭据助手版本、签名、钥匙串权限或 GitHub Token 时按 Host 诊断报告，禁止索取凭据。"
+                                );
                             }
                             snapshot["policy"] = json!(controller.policy);
                             // Refresh this metadata on every delivery, including old
@@ -532,7 +535,17 @@ impl Engine {
                     .iter()
                     .find(|s| s.node_id == e.node_id)
                     .ok_or_else(|| err("storage", "原步骤合同缺失"))?;
-                shown.push(json!({"step":e.step,"id":e.id,"status":e.status,"outputs":e.outputs,"input_digest":e.input_digest,"reason":e.reason.chars().take(160).collect::<String>(),"name":step.name,"session_id":e.session_id,"turn_id":e.turn_id,"confirmation_policy":step.confirmation,"confirmation_status":readiness["confirmation_status"],"confirmation_ref":readiness["confirmation_ref"],"confirmation_waiver_ref":readiness["confirmation_waiver_ref"],"human_satisfied":readiness["human_satisfied"],"actions":readiness["actions"],"step_revision":readiness["step_revision"]}));
+                let reason_limit = if e.failure.is_some() { 512 } else { 160 };
+                let mut attention = json!({"step":e.step,"id":e.id,"status":e.status,"outputs":e.outputs,"input_digest":e.input_digest,"reason":e.reason.chars().take(reason_limit).collect::<String>(),"name":step.name,"session_id":e.session_id,"turn_id":e.turn_id,"confirmation_policy":step.confirmation,"confirmation_status":readiness["confirmation_status"],"confirmation_ref":readiness["confirmation_ref"],"confirmation_waiver_ref":readiness["confirmation_waiver_ref"],"human_satisfied":readiness["human_satisfied"],"actions":readiness["actions"],"step_revision":readiness["step_revision"]});
+                if let Some(failure) = &e.failure {
+                    attention["failure_code"] =
+                        json!(failure.code.chars().take(128).collect::<String>());
+                    attention["failure_effect"] = json!(failure.effect);
+                }
+                if let Some(recovery) = readiness.get("source_publication_recovery") {
+                    attention["source_publication_recovery"] = recovery.clone();
+                }
+                shown.push(attention);
             }
             // The attention page is bounded independently from the delegation
             // candidates. Do not force a manager to load an entire frozen plan

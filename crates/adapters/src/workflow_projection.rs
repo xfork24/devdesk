@@ -34,6 +34,12 @@ fn step_metadata(value: &Value) -> Value {
         "reason_truncated".into(),
         json!(reason.chars().count() > 512),
     );
+    if let Some(code) = value["failure"]["code"].as_str() {
+        out.insert(
+            "failure_code".into(),
+            json!(code.chars().take(128).collect::<String>()),
+        );
+    }
     Value::Object(out)
 }
 fn header(conn: &Connection, id: &str) -> Result<()> {

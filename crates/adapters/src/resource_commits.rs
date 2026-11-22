@@ -214,6 +214,7 @@ fn value(conn: &Connection, key: &ResourceKey) -> Result<Option<Value>> {
             Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT o.id FROM governance_records o JOIN governance_records c ON c.id=json_extract(o.data,'$.provenance.call_id') AND c.type='platform_call' WHERE o.type='workflow_output' AND o.immutable=1 AND json_extract(o.data,'$.value.owner_id')=?2 AND json_extract(o.data,'$.value.workspace_id')=?3 AND json_extract(o.data,'$.value.revision')=?4 AND json_extract(o.data,'$.provenance.kind')='platform' AND json_extract(o.data,'$.provenance.tool') IN ('workspace.snapshot','workspace.checkpoint') AND json_extract(c.data,'$.request.instance_id')=?1 AND json_extract(c.data,'$.status')='succeeded' ORDER BY o.rowid DESC LIMIT 1)",&[&instance,&owner,&workspace,&revision])?.into_iter().next())
         }
         "workflow_reconciliation_active"=>Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT id FROM governance_records WHERE type='workflow_reconciliation' AND definition_id=?1 AND json_extract(data,'$.status') IN ('prepared','inspecting') ORDER BY id LIMIT 1)",&[&key.id])?.into_iter().next()),
+        "workflow_reconciliation_latest"=>Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT id FROM governance_records WHERE type='workflow_reconciliation' AND definition_id=?1 ORDER BY rowid DESC LIMIT 1)",&[&key.id])?.into_iter().next()),
         "workflow_stop_source"=>Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT s.id FROM governance_records s WHERE s.type IN ('workflow_stop','workflow_stop_reassertion') AND s.definition_id=?1 AND NOT EXISTS(SELECT 1 FROM governance_records r WHERE r.type='workflow_stop_reconciliation' AND r.definition_id=s.id AND r.immutable=1 AND json_extract(r.data,'$.issuer')='kernel_workspace_reconciliation') ORDER BY s.rowid DESC LIMIT 1)",&[&key.id])?.into_iter().next()),
         "session_active_turns"=>{
             let rows=load_table_filtered_params::<Value>(conn,"turns","id IN (SELECT id FROM turns WHERE session_id=?1 AND status NOT IN ('completed','failed','cancelled') ORDER BY id LIMIT 65)",&[&key.id])?;require(rows.len()<=64,"原会话活动轮次超过预算")?;Ok(Some(json!(rows)))
@@ -443,6 +444,7 @@ fn revision_projection(kind: &str) -> Option<fn(Option<&Value>) -> u64> {
         | "workflow_snapshot_checkpoint"
         | "provider_turn_pending"
         | "workflow_reconciliation_active"
+        | "workflow_reconciliation_latest"
         | "workflow_stop_source"
         | "workspace_continuation_source"
         | "workflow_stop_history"

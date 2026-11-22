@@ -293,6 +293,11 @@ impl PlatformCall {
         }
         let mut data = self.row.data.clone();
         let mut changes = vec![];
+        let not_applied = result.as_ref().err().is_some_and(|error| {
+            error
+                .execution_failure
+                .is_some_and(|d| d.effect == ExecutionFailureEffect::NotApplied)
+        });
         match result {
             Ok(Some(receipt)) => {
                 let validation = engine
@@ -338,15 +343,13 @@ impl PlatformCall {
                 data["remote_effect"] = json!("applied");
             }
             Err(error) => {
-                let physical_unknown = !matches!(
+                let read_only = matches!(
                     &plan.action,
                     PlatformAction::Value(_)
                         | PlatformAction::WorkspaceCurrent { .. }
                         | PlatformAction::ReusedPublication { .. }
-                ) && !error
-                    .execution_failure
-                    .as_ref()
-                    .is_some_and(|d| d.effect == ExecutionFailureEffect::NotApplied);
+                );
+                let physical_unknown = !read_only && !not_applied;
                 data["status"] = json!(
                     if physical_unknown || error.code == "needs_reconciliation" {
                         "needs_reconciliation"
@@ -357,12 +360,7 @@ impl PlatformCall {
                     }
                 );
                 data["error"] = json!(error);
-                data["remote_effect"] = json!(if matches!(
-                    &plan.action,
-                    PlatformAction::Value(_)
-                        | PlatformAction::WorkspaceCurrent { .. }
-                        | PlatformAction::ReusedPublication { .. }
-                ) {
+                data["remote_effect"] = json!(if not_applied || read_only {
                     "not_applied"
                 } else {
                     "unknown"
@@ -372,11 +370,6 @@ impl PlatformCall {
         }
         // A known failed read never held a physical writer. Mutating effects
         // retain their fence until there is a positive physical completion.
-        let not_applied = result.as_ref().err().is_some_and(|error| {
-            error
-                .execution_failure
-                .is_some_and(|d| d.effect == ExecutionFailureEffect::NotApplied)
-        });
         if (result.is_ok() || not_applied)
             && let Some(fence) = &plan.fence
         {

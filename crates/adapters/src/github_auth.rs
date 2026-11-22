@@ -59,7 +59,11 @@ impl GitHubPullRequests {
             return Ok(None);
         };
         vault
-            .read_github()?
+            .read_github()
+            .map_err(|mut error| {
+                error.message = format!("GitHub 凭据检查失败。{}", error.message);
+                error
+            })?
             .map(|mut bytes| {
                 let credential = serde_json::from_slice(&bytes)
                     .map_err(|_| err("credential_store", "GitHub 凭据记录无法读取"));

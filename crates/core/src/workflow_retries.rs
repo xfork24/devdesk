@@ -655,14 +655,43 @@ impl Engine {
         )?;
         require(previous.value.is_none(), "原执行已有待处理核对请求")?;
         commit.witness([version(&previous)])?;
-        let resolution = commit.command.payload["resolution"]
-            .as_str()
-            .unwrap_or("inspect");
+        let source_recovery = matches!(
+            commit.method,
+            "workflow.step.rework" | "workflow.step.retry"
+        );
+        let resolution = if source_recovery {
+            require(
+                commit.command.payload["execution_id"] == resources.execution.id,
+                "恢复原源分支必须绑定确切执行",
+            )?;
+            let (_, basis) = self
+                .source_publication_rework_target(root, resources)?
+                .ok_or_else(|| err("needs_reconciliation", "该步骤必须先取得原执行的可核对结果"))?;
+            commit.witness(basis.versions().iter().cloned())?;
+            if commit.method == "workflow.step.retry" {
+                require(
+                    matches!(commit.context.actor(), WorkflowActor::Controller { .. }),
+                    "源分支技术重试由项目经理执行",
+                )?;
+                self.spend_source_publication_retry(commit, root, resources)?;
+                crate::delivery_recovery::SOURCE_PUBLICATION_RETRY
+            } else {
+                require(
+                    matches!(commit.context.actor(), WorkflowActor::Human),
+                    "源分支人工返工需要实际用户确认",
+                )?;
+                crate::delivery_recovery::SOURCE_PUBLICATION_REWORK
+            }
+        } else {
+            commit.command.payload["resolution"]
+                .as_str()
+                .unwrap_or("inspect")
+        };
         require(
-            ["inspect", "not_applied", "applied"].contains(&resolution),
+            source_recovery || ["inspect", "not_applied", "applied"].contains(&resolution),
             "未知核对处置",
         )?;
-        if resolution != "inspect" {
+        if resolution != "inspect" && !source_recovery {
             require(
                 matches!(commit.context.actor(), WorkflowActor::Human),
                 "副作用人工裁定需要实际 Human 签署",

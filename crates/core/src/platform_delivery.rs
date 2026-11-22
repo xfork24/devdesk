@@ -97,6 +97,24 @@ fn operation(id: &str, context: &GitContext, action: RepositoryAction) -> Reposi
         revision: 1,
     }
 }
+pub(crate) fn delivery_source_operation(
+    id: &str,
+    context: &GitContext,
+    revision: &str,
+) -> RepositoryOperation {
+    operation(
+        id,
+        context,
+        RepositoryAction::PublishRef {
+            merge: id.into(),
+            context: context.clone(),
+            branch: context.source.branch.clone(),
+            revision: revision.into(),
+            expected: None,
+            stage: PublishStage::Source,
+        },
+    )
+}
 impl Engine {
     fn delivery_step_result(
         &self,
@@ -665,18 +683,7 @@ impl Engine {
                 revision,
                 operation: op,
             } => {
-                let operation = operation(
-                    op,
-                    context,
-                    RepositoryAction::PublishRef {
-                        merge: op.clone(),
-                        context: context.clone(),
-                        branch: context.source.branch.clone(),
-                        revision: revision.clone(),
-                        expected: None,
-                        stage: PublishStage::Source,
-                    },
-                );
+                let operation = delivery_source_operation(op, context, revision);
                 stage("source", PublishAction::Repository(Box::new(operation)))
             }
             DeliveryAction::Open {

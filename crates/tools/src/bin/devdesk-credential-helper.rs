@@ -157,7 +157,7 @@ fn run() -> Value {
         match execute(&mut request) {
             Ok(value) => json!({"ok":true,"result":value}),
             Err(error) => {
-                json!({"ok":false,"code":match error.code(){-25308|-25293|-128=>"authentication_required",-25300=>"credentials_required",_=>"credential_store"},"message":"System vault denied access; use the explicit settings authorization action"})
+                json!({"ok":false,"code":match error.code(){-25308|-25293|-128=>"authentication_required",-25300=>"credentials_required",_=>"credential_store"},"os_status":error.code()})
             }
         }
     }

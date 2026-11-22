@@ -357,6 +357,15 @@ pub trait Git: Send + Sync {
     ) -> Result<Option<RepositoryReceipt>> {
         Err(err("unsupported", "Git 缺少只读仓库操作核对"))
     }
+    /// Observe the exact source publication, or create its absent ref under a
+    /// fresh human recovery grant. An existing ref may never be moved.
+    fn recover_source_publication(
+        &self,
+        _operation: &RepositoryOperation,
+        _allow_create: bool,
+    ) -> Result<RepositoryReceipt> {
+        Err(err("unsupported", "Git 缺少源分支发布恢复"))
+    }
     /// Resume explicitly requested onboarding only with proof that the
     /// original operation never reached its first local Git effect.
     fn resume_unstarted_connection(

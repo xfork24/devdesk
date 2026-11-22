@@ -1,16 +1,360 @@
-//! Reconciliation may authorize local sync after positive remote merge proof.
-//! This continuation has no operation capable of publishing or merging a PR.
+//! Recovery of frozen delivery actions under a new reconciliation authorization.
 use crate::{
     concurrency::*,
-    governance::record,
-    platform_delivery::DeliveryAction,
+    governance::{record, update_record},
+    platform_delivery::{DeliveryAction, delivery_source_operation},
     platform_facts::{PlatformAction, PlatformPlan, one, restored},
     platform_publish::PublishAction,
-    workflow_resources::{WorkflowResources, version},
+    workflow_commits::{WorkflowCommit, WorkflowHeaderFacts},
+    workflow_resources::{WorkflowResources, live_workflow_chain, version},
     *,
 };
 
+pub(crate) const SOURCE_PUBLICATION_REWORK: &str = "rework_source_publication";
+pub(crate) const SOURCE_PUBLICATION_RETRY: &str = "retry_source_publication";
+
+pub(crate) fn source_publication_recovery(resolution: &Value) -> bool {
+    matches!(
+        resolution.as_str(),
+        Some(SOURCE_PUBLICATION_REWORK | SOURCE_PUBLICATION_RETRY)
+    )
+}
+
 impl Engine {
+    fn source_publication_retry_budget(
+        &self,
+        root: &WorkflowHeaderFacts,
+        step: &StepExecution,
+    ) -> Result<(ResourceSnapshot, ResourceSnapshot, u64, u64)> {
+        let limit = root
+            .instance
+            .plan
+            .document
+            .steps
+            .iter()
+            .find(|definition| definition.node_id == step.node_id)
+            .ok_or_else(|| err("storage", "源发布步骤缺少重试额度"))?
+            .budget
+            .retry_limit;
+        let identity = json!([root.record.id, step.node_id, step.round]).to_string();
+        let retries = one(self.store.as_ref(), "workflow_retry_count", &identity)?;
+        let budget = one(
+            self.store.as_ref(),
+            "governance",
+            &format!("source-publication-retry-budget:{identity}"),
+        )?;
+        let used = budget
+            .value
+            .as_ref()
+            .and_then(|r| r["data"]["used"].as_u64())
+            .unwrap_or(0);
+        let prior = retries
+            .value
+            .as_ref()
+            .and_then(|r| r["count"].as_u64())
+            .unwrap_or(0);
+        Ok((budget, retries, used.saturating_add(prior), limit))
+    }
+
+    pub(crate) fn spend_source_publication_retry(
+        &self,
+        commit: &mut WorkflowCommit<'_>,
+        root: &WorkflowHeaderFacts,
+        resources: &WorkflowResources,
+    ) -> Result<()> {
+        let (budget, retries, used, limit) =
+            self.source_publication_retry_budget(root, &resources.execution)?;
+        if used >= limit {
+            return Err(err(
+                "retry_budget_exhausted",
+                "源分支发布重试额度已用尽，请由人类确认返工",
+            ));
+        }
+        commit.witness([version(&budget), version(&retries)])?;
+        let count = budget
+            .value
+            .as_ref()
+            .and_then(|r| r["data"]["used"].as_u64())
+            .unwrap_or(0)
+            + 1;
+        let data = json!({"used":count,"instance_id":root.record.id,"node_id":resources.execution.node_id,"round":resources.execution.round});
+        let mut row = if budget.value.is_some() {
+            let mut row = restored(self, &budget)?;
+            update_record(&mut row, data);
+            row
+        } else {
+            record(
+                "source_publication_retry_budget",
+                root.record.id.clone(),
+                root.record.scope.clone(),
+                "源分支发布技术重试额度".into(),
+                1,
+                None,
+                data,
+                false,
+            )
+        };
+        row.id = budget.resource.id.clone();
+        commit.change(ResourceChange {
+            resource: budget.resource,
+            value: row.to_storage(),
+        })
+    }
+
+    pub(crate) fn source_publication_recovery_view(
+        &self,
+        root: &WorkflowHeaderFacts,
+        resources: &WorkflowResources,
+    ) -> Result<Value> {
+        let Some((operation, _)) = self.source_publication_rework_target(root, resources)? else {
+            return Ok(Value::Null);
+        };
+        let RepositoryAction::PublishRef {
+            branch, revision, ..
+        } = operation.action
+        else {
+            return Ok(Value::Null);
+        };
+        let (_, _, used, limit) =
+            self.source_publication_retry_budget(root, &resources.execution)?;
+        let active = one(
+            self.store.as_ref(),
+            "workflow_reconciliation_active",
+            &resources.execution.id,
+        )?;
+        let latest = one(
+            self.store.as_ref(),
+            "workflow_reconciliation_latest",
+            &resources.execution.id,
+        )?;
+        let pending = active.value.is_some();
+        let error = latest
+            .value
+            .as_ref()
+            .map(|record| &record["data"]["error"])
+            .filter(|error| error.is_object())
+            .map(|error| json!({"code":error["code"],"message":error["message"]}));
+        Ok(
+            json!({"branch":branch,"revision":revision,"attempts":used,"limit":limit,
+            "retry_allowed":!pending && used < limit,"human_required":!pending && used >= limit,
+            "pending":pending,"error":error}),
+        )
+    }
+
+    pub(crate) fn source_publication_rework_target(
+        &self,
+        root: &WorkflowHeaderFacts,
+        resources: &WorkflowResources,
+    ) -> Result<Option<(RepositoryOperation, ReadSet)>> {
+        let step = &resources.execution;
+        if step.status != StepExecutionStatus::NeedsReconciliation
+            || root
+                .instance
+                .plan
+                .document
+                .delivery_policy
+                .as_ref()
+                .is_none_or(|policy| policy.source_publication_step != step.step)
+        {
+            return Ok(None);
+        }
+        let Some(call_id) = step.tool_call_id.as_deref() else {
+            return Ok(None);
+        };
+        let selected = one(self.store.as_ref(), "governance", call_id)?;
+        let call = restored(self, &selected)?;
+        if call.r#type != "platform_call"
+            || call.data["request"]["definition"]["qualified_name"] != "git.source.publish"
+            || call.data["status"] != "needs_reconciliation"
+            || call.data["remote_effect"] != "unknown"
+        {
+            return Ok(None);
+        }
+        let request: crate::platform_tools::PlatformToolRequest =
+            serde_json::from_value(call.data["request"].clone())
+                .map_err(|e| err("storage", e.to_string()))?;
+        require(
+            call.scope == root.record.scope
+                && request.instance_id == root.record.id
+                && request.project_id == root.instance.project_id
+                && request.owner_id == root.instance.owner_id
+                && request.step_execution_id() == step.id
+                && request.caller.is_none()
+                && call.data["cancel_requested"] != true,
+            "原源分支发布已取消或与当前执行不符",
+        )?;
+        let effect_row = one(
+            self.store.as_ref(),
+            "governance",
+            &text(&call.data, "effect_id")?,
+        )?;
+        let effect = restored(self, &effect_row)?;
+        require(
+            effect.r#type == "platform_effect_intent"
+                && effect.immutable
+                && effect.scope == call.scope
+                && effect.definition_id == call.id
+                && effect.data["request_digest"] == configuration_hash(&request),
+            "返工缺少原源分支发布意图",
+        )?;
+        let plan: PlatformPlan = serde_json::from_value(effect.data["plan"].clone())
+            .map_err(|e| err("storage", e.to_string()))?;
+        let PlatformAction::Delivery(action) = &plan.action else {
+            return Ok(None);
+        };
+        let DeliveryAction::Source {
+            context,
+            revision,
+            operation,
+        } = action.as_ref()
+        else {
+            return Ok(None);
+        };
+        require(
+            context.project == request.project_id
+                && context.source.owner == request.owner_id
+                && context.source.branch != context.target.branch
+                && context.source.branch != context.workspace.mainline,
+            "返工只能恢复原开发分支",
+        )?;
+        let operation = delivery_source_operation(operation, context, revision);
+        let stage_row = one(
+            self.store.as_ref(),
+            "governance",
+            &format!("platform-publish-stage:{}:source", effect.id),
+        )?;
+        if stage_row.value.is_none() {
+            return Ok(None);
+        }
+        let stage = restored(self, &stage_row)?;
+        require(
+            stage.r#type == "platform_publish_stage"
+                && stage.immutable
+                && stage.scope == effect.scope
+                && stage.definition_id == effect.id
+                && stage.data["issuer"] == "kernel_platform"
+                && stage.data["action"]
+                    == json!(PublishAction::Repository(Box::new(operation.clone()))),
+            "返工缺少原源分支发布阶段授权",
+        )?;
+        let fence = plan
+            .fence
+            .as_ref()
+            .ok_or_else(|| err("storage", "源发布缺少原工作区写入授权"))?;
+        let fence_row = one(self.store.as_ref(), "governance", &fence.id)?;
+        require(
+            fence_row
+                .value
+                .as_ref()
+                .is_some_and(|v| v["data"] == fence.data && v["data"]["status"] == "active"),
+            "原源分支发布已失去工作区写入授权",
+        )?;
+        let pending_change = one(
+            self.store.as_ref(),
+            "workflow_change_pending",
+            &root.record.id,
+        )?;
+        require(pending_change.value.is_none(), "运行计划正在变更")?;
+        let (_, chain) = live_workflow_chain(
+            self.store.as_ref(),
+            &root.record.id,
+            &step.id,
+            StepExecutionStatus::NeedsReconciliation,
+        )?;
+        let basis = crate::platform_reconciliation::reconciliation_business_basis(
+            &plan,
+            &selected.resource,
+        )?
+        .merge(
+            plan.basis
+                .versions()
+                .iter()
+                .filter(|seen| {
+                    seen.resource.kind == "workflow_step"
+                        && seen.resource != resources.step.resource
+                })
+                .cloned(),
+        )?
+        .merge(chain.versions().iter().cloned())?
+        .merge([
+            version(&selected),
+            version(&effect_row),
+            version(&stage_row),
+            version(&fence_row),
+            version(&pending_change),
+        ])?;
+        Ok(Some((operation, basis)))
+    }
+
+    pub(crate) fn recover_reconciled_source_publication(
+        &self,
+        root: &WorkflowHeaderFacts,
+        resources: &WorkflowResources,
+        attempt: &ConfigurationRecord,
+        authority: &ReadSet,
+    ) -> Result<RepositoryReceipt> {
+        require(
+            attempt.r#type == "workflow_reconciliation_attempt"
+                && attempt.immutable
+                && attempt.data["issuer"] == "kernel_reconciliation"
+                && ((attempt.data["actor"]["kind"] == "human"
+                    && attempt.data["resolution"] == SOURCE_PUBLICATION_REWORK)
+                    || (attempt.data["actor"]["kind"] == "controller"
+                        && attempt.data["resolution"] == SOURCE_PUBLICATION_RETRY))
+                && attempt.data["call_id"].as_str() == resources.execution.tool_call_id.as_deref(),
+            "补发需要对原发布的受限重试或人工返工授权",
+        )?;
+        let (operation, basis) = self
+            .source_publication_rework_target(root, resources)?
+            .ok_or_else(|| err("needs_reconciliation", "原步骤缺少可返工的源分支发布授权"))?;
+        let key = ResourceKey::new(
+            "governance",
+            format!("source-publication-rework:{}", attempt.id),
+        );
+        let previous = one(self.store.as_ref(), "governance", &key.id)?;
+        let mut grant = record(
+            "source_publication_rework_grant",
+            attempt.id.clone(),
+            attempt.scope.clone(),
+            "仅创建原先锁定的源分支".into(),
+            1,
+            None,
+            json!({"operation": operation, "issuer": "kernel_reconciliation"}),
+            true,
+        );
+        grant.id = key.id.clone();
+        if previous.value.is_some() {
+            let saved = restored(self, &previous)?;
+            require(
+                saved.r#type == grant.r#type
+                    && saved.immutable
+                    && saved.definition_id == attempt.id
+                    && saved.data == grant.data,
+                "补发授权与原操作不符",
+            )?;
+            return self.git.recover_source_publication(&operation, false);
+        }
+        let acquired = self.store.submit_changes(&PreparedChangeSet {
+            command_id: key.id.clone(),
+            fingerprint: configuration_hash(&grant.data),
+            read_set: basis.merge(authority.versions().iter().cloned())?.merge([
+                version(&previous),
+                ResourceVersion {
+                    resource: ResourceKey::new("governance", &attempt.id),
+                    revision: attempt.revision,
+                },
+            ])?,
+            changes: vec![ResourceChange {
+                resource: key,
+                value: self.store.encode_runtime_record(&grant)?,
+            }],
+            result: json!({"id":grant.id}),
+            time: now() as i64,
+        })?;
+        self.git
+            .recover_source_publication(&operation, acquired.applied)
+    }
+
     pub(crate) fn release_failed_delivery_fence(
         &self,
         commit: &mut crate::workflow_commits::WorkflowCommit<'_>,

@@ -140,6 +140,7 @@ impl Engine {
         }
         let mut completion_status = BTreeMap::new();
         let mut actors = BTreeMap::new();
+        let mut source_publication_rework = BTreeMap::new();
         for execution in steps {
             let id = text(execution, "id")?;
             let step = plan
@@ -147,6 +148,20 @@ impl Engine {
                 .iter()
                 .find(|s| Some(s.key.as_str()) == execution["step"].as_str())
                 .ok_or_else(|| err("storage", "当前执行步骤不在冻结计划中"))?;
+            if execution["status"] == "needs_reconciliation"
+                && plan
+                    .delivery_policy
+                    .as_ref()
+                    .is_some_and(|policy| policy.source_publication_step == step.key)
+            {
+                let root = crate::workflow_commits::WorkflowHeaderFacts::read(self, &row.id)?;
+                let resources = root.step(self, &id)?;
+                if let Ok(recovery) = self.source_publication_recovery_view(&root, &resources)
+                    && !recovery.is_null()
+                {
+                    source_publication_rework.insert(id.clone(), recovery);
+                }
+            }
             let confirmation = confirmations.get(&id);
             let waived = selected.waivers.iter().any(|w| {
                 w.data["plan_revision_id"] == runtime["active_plan_revision_id"]
@@ -197,7 +212,7 @@ impl Engine {
             json!({"cursor":selected.cursor,"record":visible_record,"runtime":display.data,"plan":if query.view==WorkflowDetailView::Status {status_plan(&selected.plan_document)} else {selected.plan_document},
             "outputs":outputs,"children":selected.children,"children_more":selected.children_more,"next_child_offset":selected.next_child_offset,
             "step_total":selected.step_total,"next_step_offset":selected.next_step_offset,"step_offset":selected.step_offset,"child_offset":selected.child_offset,"focus":selected.focus,"step_revisions":selected.step_revisions,"completion_status":completion_status,"actors":actors,"history":selected.history,
-            "history_more":selected.next_history_before.is_some(),"next_history_before":selected.next_history_before,
+            "history_more":selected.next_history_before.is_some(),"next_history_before":selected.next_history_before,"source_publication_rework":source_publication_rework,
             "representation":if query.view==WorkflowDetailView::Status {"workflow_status"} else {"workflow_detail"}}),
         )
     }

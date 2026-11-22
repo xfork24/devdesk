@@ -7279,6 +7279,351 @@ fn stale_target_refresh_preserves_source_evidence_and_has_a_durable_source_budge
 }
 
 #[test]
+fn human_source_publication_rework_preserves_prior_results_and_the_frozen_commit() {
+    use devdesk_core::ports::Git;
+
+    #[derive(Default)]
+    struct SourceRemote(Mutex<(Option<String>, usize)>);
+    impl Git for SourceRemote {
+        fn candidate(&self, _: &GitContext, _: &str, _: &str, _: &str) -> Result<String> {
+            panic!("source recovery must not construct a candidate")
+        }
+
+        fn advance(&self, _: &GitContext, _: &str, _: &str, _: &str, _: &str) -> Result<String> {
+            panic!("source recovery must not advance a target")
+        }
+
+        fn inspect_repository_operation(
+            &self,
+            op: &RepositoryOperation,
+        ) -> Result<Option<RepositoryReceipt>> {
+            let RepositoryAction::PublishRef {
+                branch, revision, ..
+            } = &op.action
+            else {
+                panic!("unexpected repository action")
+            };
+            Ok(
+                (self.0.lock().unwrap().0.as_ref() == Some(revision)).then(|| {
+                    RepositoryReceipt::PublishedRef {
+                        branch: branch.clone(),
+                        revision: revision.clone(),
+                    }
+                }),
+            )
+        }
+
+        fn recover_source_publication(
+            &self,
+            op: &RepositoryOperation,
+            allow_create: bool,
+        ) -> Result<RepositoryReceipt> {
+            let RepositoryAction::PublishRef {
+                branch,
+                revision,
+                expected: None,
+                stage: PublishStage::Source,
+                ..
+            } = &op.action
+            else {
+                panic!("recovery changed the frozen action")
+            };
+            let mut remote = self.0.lock().unwrap();
+            match &remote.0 {
+                Some(actual) if actual == revision => {}
+                Some(_) => return Err(err("source_publication_conflict", "foreign source branch")),
+                None if allow_create => {
+                    remote.0 = Some(revision.clone());
+                    remote.1 += 1;
+                }
+                None => return Err(err("needs_reconciliation", "read only")),
+            }
+            Ok(RepositoryReceipt::PublishedRef {
+                branch: branch.clone(),
+                revision: revision.clone(),
+            })
+        }
+    }
+
+    let directory = tempfile::tempdir().unwrap();
+    let mut e = engine(directory.path());
+    let remote = Arc::new(SourceRemote::default());
+    e.git = remote.clone();
+    let manager = Arc::new(RecordingAgent::default());
+    e.harness = manager.clone();
+    let defaults = e.configuration_defaults(None).unwrap();
+    let project = command(
+        &e,
+        "project.create",
+        None,
+        json!({"title":"Source publication recovery"}),
+    )
+    .unwrap();
+    let pid = project["id"].as_str().unwrap();
+    command(&e, "project.configuration.update", Some(pid), json!({"standard_ref":defaults["standard_ref"],"role_agent_bindings":defaults["role_agent_bindings"],"orchestration":{"mode":"manual"}})).unwrap();
+    let feature = command(
+        &e,
+        "feature.create",
+        None,
+        json!({"project_id":pid,"title":"Recovery fixture"}),
+    )
+    .unwrap();
+    let owner = feature["id"].as_str().unwrap();
+    let state = e.store.snapshot().unwrap();
+    let run = state
+        .governance
+        .iter()
+        .find(|r| r.r#type == "workflow_instance" && r.data["owner_id"] == owner)
+        .unwrap();
+    let root = run.id.clone();
+    let mut instance: ConfiguredWorkflowInstance = run.decode().unwrap();
+    let regression = instance
+        .steps
+        .iter_mut()
+        .find(|s| s.step == "regression")
+        .unwrap();
+    regression.status = StepExecutionStatus::Completed;
+    let regression_id = regression.id.clone();
+    let source = instance
+        .steps
+        .iter_mut()
+        .find(|s| s.step == "source_publish")
+        .unwrap();
+    source.status = StepExecutionStatus::NeedsReconciliation;
+    source.tool_call_id = Some(source.id.clone());
+    source.input_digest = "original-input".into();
+    let execution = source.id.clone();
+    let branch = format!("devdesk/features/{owner}");
+    let revision = "a".repeat(40);
+    let context = GitContext {
+        project: pid.into(),
+        workspace: Workspace {
+            repository: "test/fixture".into(),
+            path: "/fixture/repository".into(),
+            mainline: "main".into(),
+        },
+        source: CodeLocation {
+            owner: owner.into(),
+            worktree: "/fixture/source".into(),
+            branch: branch.clone(),
+        },
+        target: CodeLocation {
+            owner: pid.into(),
+            worktree: "/fixture/main".into(),
+            branch: "main".into(),
+        },
+        origin: Origin::External,
+    };
+    let operation_id = id();
+    let operation = RepositoryOperation {
+        id: operation_id.clone(),
+        project_id: pid.into(),
+        action: RepositoryAction::PublishRef {
+            merge: operation_id.clone(),
+            context: context.clone(),
+            branch: branch.clone(),
+            revision: revision.clone(),
+            expected: None,
+            stage: PublishStage::Source,
+        },
+        status: RepositoryOperationStatus::Dispatched,
+        receipt: None,
+        reason: String::new(),
+        revision: 1,
+    };
+    let request = PlatformToolRequest {
+        definition_ref: Some("simplified-tool-source-publish:1".into()),
+        execution_id: execution.clone(),
+        instance_id: root.clone(),
+        owner_id: owner.into(),
+        project_id: pid.into(),
+        definition: state
+            .configuration("simplified-tool-source-publish:1")
+            .unwrap()
+            .decode()
+            .unwrap(),
+        arguments: json!({"workspace":{"revision":revision}}),
+        runtime: None,
+        permissions: None,
+        caller: None,
+    };
+    let row = |kind: &str, key: String, definition: &str, data: Value, immutable| {
+        let mut result = run.clone();
+        result.id = key;
+        result.r#type = kind.into();
+        result.definition_id = definition.into();
+        result.revision = 1;
+        result.refs.clear();
+        result.content_hash = content_digest(&result.refs, &data);
+        result.data = data;
+        result.immutable = immutable;
+        result
+    };
+    let fence = row(
+        "platform_workspace_fence",
+        format!("platform-workspace-fence:{execution}"),
+        &execution,
+        json!({"status":"active","worktree":context.source.worktree}),
+        false,
+    );
+    let effect_id = format!("platform-effect:{execution}");
+    let effect = row(
+        "platform_effect_intent",
+        effect_id.clone(),
+        &execution,
+        json!({
+            "request_digest": configuration_hash(&request),
+            "plan": {"action":{"Delivery":{"Source":{"context":context,"revision":revision,"operation":operation_id}}},"basis":[{"resource":{"kind":"governance","id":fence.id},"revision":1}],"changes":[],"head":null,"fence":fence,"permit":null}
+        }),
+        true,
+    );
+    let stage = row(
+        "platform_publish_stage",
+        format!("platform-publish-stage:{effect_id}:source"),
+        &effect_id,
+        json!({"status":"granted","parent_effect":effect_id,"action":{"Repository":operation},"issuer":"kernel_platform"}),
+        true,
+    );
+    let call = row(
+        "platform_call",
+        execution.clone(),
+        &execution,
+        json!({"status":"needs_reconciliation","effect_id":effect_id,"request":request,"remote_effect":"unknown"}),
+        false,
+    );
+    e.store
+        .seed_fixture_state(None, &mut |state| {
+            let run = state.governance.iter_mut().find(|r| r.id == root).unwrap();
+            instance.status = StepExecutionStatus::NeedsReconciliation;
+            run.data = json!(instance);
+            run.content_hash = content_digest(&run.refs, &run.data);
+            run.revision += 1;
+            state
+                .governance
+                .extend([fence.clone(), effect.clone(), stage.clone(), call.clone()]);
+            Ok(Value::Null)
+        })
+        .unwrap();
+    let status = || {
+        e.query(
+            "query.workflow_instance",
+            &json!({"id":root,"view":"status"}),
+            4,
+        )
+        .unwrap()
+    };
+    let step = |key: &str| {
+        status()["runtime"]["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["step"] == key)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(
+        status()["source_publication_rework"][&execution]["revision"],
+        revision
+    );
+    command(
+        &e,
+        "workflow.step.reconcile",
+        Some(&root),
+        json!({"execution_id":execution}),
+    )
+    .unwrap();
+    e.tick(16).unwrap();
+    assert_eq!(step("source_publish")["status"], "needs_reconciliation");
+    assert_eq!(remote.0.lock().unwrap().1, 0);
+
+    remote.0.lock().unwrap().0 = Some("b".repeat(40));
+    let budget = || status()["source_publication_rework"][&execution].clone();
+    let limit = budget()["limit"].as_u64().unwrap();
+    assert!(limit > 0);
+    for attempt in 0..=limit {
+        let view = e.query("workflow.inspect", &json!({"id":root}), 4).unwrap();
+        let readiness = view["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["step"] == "source_publish")
+            .unwrap();
+        let before = manager.native_replies.lock().unwrap().len();
+        *manager.native_steps.lock().unwrap() = vec![(
+            "workflow.step.retry".into(),
+            json!({"instance_id":root,"step":"source_publish","execution_id":execution,
+                "expected_revision":view["record"]["revision"],"expected_step_revision":readiness["step_revision"],
+                "plan_revision_id":view["runtime"]["active_plan_revision_id"],"control_version":view["runtime"]["control_version"]}),
+        )];
+        if attempt == 0 {
+            command(&e, "orchestration.open", Some(&root), json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11"})).unwrap();
+            command(
+                &e,
+                "workflow.driver.select",
+                Some(&root),
+                json!({"mode":"agent"}),
+            )
+            .unwrap();
+        }
+        for _ in 0..24 {
+            e.drive_controllers().unwrap();
+            drive(&e, 1);
+            if manager.native_replies.lock().unwrap().len() > before && budget()["pending"] == false
+            {
+                break;
+            }
+        }
+        let replies = manager.native_replies.lock().unwrap();
+        let (_, reply) = replies
+            .get(before)
+            .expect("manager received its retry result");
+        if attempt < limit {
+            assert!(reply.success, "{reply:?}");
+            assert_eq!(budget()["attempts"], attempt + 1);
+            assert_eq!(budget()["error"]["code"], "source_publication_conflict");
+            assert_eq!(budget()["human_required"], attempt + 1 == limit);
+        } else {
+            assert!(!reply.success);
+            assert!(
+                json!(reply).to_string().contains("retry_budget_exhausted"),
+                "{reply:?}"
+            );
+        }
+    }
+    assert_eq!(*remote.0.lock().unwrap(), (Some("b".repeat(40)), 0));
+
+    remote.0.lock().unwrap().0 = None;
+    command(
+        &e,
+        "workflow.step.rework",
+        Some(&root),
+        json!({"execution_id":execution}),
+    )
+    .unwrap();
+    e.tick(16).unwrap();
+    e.tick(16).unwrap();
+    let published = step("source_publish");
+    assert_eq!(published["status"], "awaiting_acceptance", "{published:#}");
+    command(
+        &e,
+        "workflow.step.accept",
+        Some(&root),
+        json!({
+            "execution_id":execution,
+            "input_digest":published["input_digest"],
+            "outputs":published["outputs"]
+        }),
+    )
+    .unwrap();
+    let published = step("source_publish");
+    assert_eq!(published["id"], execution);
+    assert_eq!(published["status"], "completed", "{published:#}");
+    assert_eq!(step("regression")["id"], regression_id);
+    assert_eq!(step("regression")["status"], "completed");
+    assert_eq!(*remote.0.lock().unwrap(), (Some(revision), 1));
+}
+
+#[test]
 fn output_only_invocation_amendment_revalidates_completed_children_without_reexecution() {
     let dir = tempfile::tempdir().unwrap();
     let mut e = engine(dir.path());

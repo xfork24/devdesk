@@ -31,6 +31,83 @@ impl GitHubPullRequests {
         )?;
         Ok(())
     }
+    pub(crate) fn exact_branch_head(
+        &self,
+        repository: &str,
+        branch: &str,
+    ) -> Result<Option<String>> {
+        Self::validate_repository_branch(repository, branch)?;
+        let (owner, name) = repository.split_once('/').unwrap();
+        let query = "query($owner:String!,$name:String!,$ref:String!){repository(owner:$owner,name:$name){nameWithOwner ref(qualifiedName:$ref){name prefix target{oid}}}}";
+        let mut command = self.api_command()?;
+        command.args([
+            "graphql",
+            "-f",
+            &format!("query={query}"),
+            "-f",
+            &format!("owner={owner}"),
+            "-f",
+            &format!("name={name}"),
+            "-f",
+            &format!("ref=refs/heads/{branch}"),
+        ]);
+        let output =
+            capture_command_split(command, Duration::from_secs(10), None).map_err(|error| {
+                if error.code == "needs_reconciliation" {
+                    err("github_ref_timeout", "GitHub API 查询分支超过 10 秒")
+                } else {
+                    error
+                }
+            })?;
+        if output.code != 0 || output.truncated {
+            return Err(auth::api_error(
+                &output,
+                "GitHub API 未能确认分支，请检查仓库访问和网络",
+            ));
+        }
+        let value: Value = serde_json::from_slice(&output.stdout)
+            .map_err(|_| err("github_ref_response", "GitHub API 返回了无效的分支数据"))?;
+        Self::parse_exact_branch_head(repository, branch, &value)
+    }
+
+    fn parse_exact_branch_head(
+        repository: &str,
+        branch: &str,
+        value: &Value,
+    ) -> Result<Option<String>> {
+        let row = &value["data"]["repository"];
+        if value.get("errors").is_some()
+            || !row["nameWithOwner"]
+                .as_str()
+                .is_some_and(|name| name.eq_ignore_ascii_case(repository))
+        {
+            return Err(err(
+                "github_ref_response",
+                "GitHub API 未确认原仓库身份和查询结果",
+            ));
+        }
+        match row.get("ref") {
+            Some(Value::Null) => Ok(None),
+            Some(reference)
+                if reference["name"] == branch && reference["prefix"] == "refs/heads/" =>
+            {
+                let sha = reference["target"]["oid"]
+                    .as_str()
+                    .filter(|sha| {
+                        sha.len() == 40
+                            && sha
+                                .bytes()
+                                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                    })
+                    .ok_or_else(|| err("github_ref_response", "GitHub API 缺少有效的原分支提交"))?;
+                Ok(Some(sha.to_owned()))
+            }
+            _ => Err(err(
+                "github_ref_response",
+                "GitHub API 未返回原分支的确切查询结果",
+            )),
+        }
+    }
     pub fn diagnose(&self, repository: &str, branch: &str) -> Result<RepositoryPolicy> {
         Self::validate_repository_branch(repository, branch)?;
         let pieces: Vec<_> = repository.split('/').collect();
@@ -321,6 +398,36 @@ mod tests {
     use super::*;
     fn fixture() -> Value {
         json!({"id":"fixture-repo","nameWithOwner":"owner/repo","viewerPermission":"ADMIN","ref":{"target":{"oid":"a".repeat(40)}},"branchProtectionRules":{"totalCount":0,"pageInfo":{"hasNextPage":false}},"rulesets":{"nodes":[],"pageInfo":{"hasNextPage":false}}})
+    }
+    #[test]
+    fn exact_branch_fallback_distinguishes_absence_from_unconfirmed_reads() {
+        let branch = "devdesk/tasks/original";
+        let oid = "a".repeat(40);
+        let response = |reference: Value| json!({"data":{"repository":{"nameWithOwner":"Owner/Repo","ref":reference}}});
+        let observed = response(json!({"name":branch,"prefix":"refs/heads/","target":{"oid":oid}}));
+        assert_eq!(
+            GitHubPullRequests::parse_exact_branch_head("owner/repo", branch, &observed).unwrap(),
+            Some(oid)
+        );
+        let mut absent = response(Value::Null);
+        assert_eq!(
+            GitHubPullRequests::parse_exact_branch_head("owner/repo", branch, &absent).unwrap(),
+            None
+        );
+        absent["errors"] = json!([{"message":"partial result"}]);
+        for result in [
+            absent,
+            response(json!({"name":branch,"prefix":"refs/tags/","target":{"oid":"a".repeat(40)}})),
+            json!({"data":{"repository":{"nameWithOwner":"Owner/Repo"}}}),
+            json!({"data":{"repository":{"nameWithOwner":"different/repo","ref":null}}}),
+        ] {
+            assert_eq!(
+                GitHubPullRequests::parse_exact_branch_head("owner/repo", branch, &result)
+                    .unwrap_err()
+                    .code,
+                "github_ref_response"
+            );
+        }
     }
     #[test]
     fn pr_request_validation_does_not_query_or_require_branch_protection() {
