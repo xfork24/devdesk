@@ -1271,6 +1271,26 @@
       ],
       "additionalProperties": false
     },
+    "GitHubAuthConfiguration": {
+      "type": "object",
+      "required": [
+        "expected_revision",
+        "token"
+      ],
+      "properties": {
+        "expected_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "token": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 4096,
+          "writeOnly": true
+        }
+      },
+      "additionalProperties": false
+    },
     "GitHubProjectOpen": {
       "type": "object",
       "required": [
@@ -7060,6 +7080,25 @@
         "properties": {
           "params": {
             "$ref": "#/$defs/RuntimePrepare"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "const": "github.configure_auth"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "params"
+        ],
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/GitHubAuthConfiguration"
           }
         }
       }

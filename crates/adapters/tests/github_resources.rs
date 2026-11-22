@@ -18,7 +18,7 @@ fn lost_pr_receipt_is_recovered_by_the_original_marker_without_creating_a_second
         request.number.is_some(),
         "read a known existing PR before testing lost receipt recovery"
     );
-    let adapter = GitHubPullRequests;
+    let adapter = GitHubPullRequests::default();
     let known = adapter.read(&request).unwrap();
     request.number = None;
     let recovered = adapter.ensure(&request).unwrap();

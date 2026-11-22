@@ -15,12 +15,14 @@ type Props = {
   ready: boolean;
   request: Request;
   refresh: () => Promise<void>;
+  onOpenConnection?: () => void;
 };
 export function RepositorySettings({
   project,
   ready,
   request,
   refresh,
+  onOpenConnection,
 }: Props) {
   const {
     error,
@@ -100,6 +102,11 @@ export function RepositorySettings({
             )}
           </span>
         </p>
+        {connectionBlocked && onOpenConnection && (
+          <ActionButton onClick={onOpenConnection}>
+            打开 GitHub 连接设置
+          </ActionButton>
+        )}
         {error && (
           <div className="error" role="alert">
             {displayText(error)}

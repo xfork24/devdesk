@@ -37,6 +37,7 @@
 | [src/git_test_configuration.rs](../../../crates/adapters/src/git_test_configuration.rs) | [Git、测试和 GitHub 适配器](engineering-resources.md) |
 | [src/git_workspace_continuation.rs](../../../crates/adapters/src/git_workspace_continuation.rs) | [Git、测试和 GitHub 适配器](engineering-resources.md) |
 | [src/github.rs](../../../crates/adapters/src/github.rs) | [Git、测试和 GitHub 适配器](engineering-resources.md) |
+| [src/github_auth.rs](../../../crates/adapters/src/github_auth.rs) | `SavedCredential`、`GitHubAuthStatus`、`prepare_command` |
 | [src/github_delivery.rs](../../../crates/adapters/src/github_delivery.rs) | [Git、测试和 GitHub 适配器](engineering-resources.md) |
 | [src/harness.rs](../../../crates/adapters/src/harness.rs) | [Harness 协议与 Docker 容器](harness-and-protocols.md) |
 | [src/harness_startup.rs](../../../crates/adapters/src/harness_startup.rs) | [Harness 协议与 Docker 容器](harness-and-protocols.md) |

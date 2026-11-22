@@ -30,6 +30,7 @@ pub struct WorktreeReceipt {
 }
 pub struct CliGit {
     root: PathBuf,
+    github: crate::github::GitHubPullRequests,
 }
 fn valid_oid(value: &str) -> bool {
     matches!(value.len(), 40 | 64)
@@ -47,10 +48,14 @@ fn checked_uuid(value: &str) -> Result<()> {
         "Git 资源标识必须是 UUID",
     )
 }
+fn mainline_operation_id(operation: uuid::Uuid) -> uuid::Uuid {
+    uuid::Uuid::from_u128(operation.as_u128() ^ 0x6d61696e6c696e650000000000000000)
+}
 impl CliGit {
     pub fn new(root: &Path) -> Result<Self> {
         Ok(Self {
             root: fs::canonicalize(root).map_err(storage)?,
+            github: crate::github::GitHubPullRequests::new(root)?,
         })
     }
     fn project(&self, project: &str) -> Result<PathBuf> {
@@ -74,6 +79,12 @@ impl CliGit {
         timeout: Duration,
     ) -> Result<Output> {
         let mut command = Command::new("git");
+        if matches!(
+            args.first(),
+            Some(&("clone" | "fetch" | "ls-remote" | "push"))
+        ) {
+            self.github.apply_git_auth(&mut command)?;
+        }
         // Do not inherit user-configured hooks, filters, aliases, fsmonitor, shell transports, or ambient Git routing.
         for (key, _) in std::env::vars_os() {
             if key.to_string_lossy().starts_with("GIT_") {
@@ -107,7 +118,7 @@ impl CliGit {
                 "-c",
                 "credential.helper=",
                 "-c",
-                "credential.helper=!gh auth git-credential",
+                "credential.https://github.com.helper=!gh auth git-credential",
                 "-C",
             ])
             .arg(path)
@@ -895,7 +906,8 @@ impl CliGit {
                 "精简发布不能直接写入正式目标",
             )?;
         } else {
-            let policy = crate::github::GitHubPullRequests
+            let policy = self
+                .github
                 .diagnose(&c.workspace.repository, &c.target.branch)?;
             require(policy.compatible, "GitHub 规则不兼容，禁止推送")?;
         }
@@ -1238,8 +1250,7 @@ impl CliGit {
                 repository,
                 mainline,
             } => {
-                let policy =
-                    crate::github::GitHubPullRequests.diagnose_connection(repository, mainline)?;
+                let policy = self.github.diagnose_connection(repository, mainline)?;
                 require(
                     policy.compatible,
                     format!(
@@ -1248,11 +1259,8 @@ impl CliGit {
                     ),
                 )?;
                 let facts = self.clone_repository(&op.project_id, repository, mainline, &op.id)?;
-                let phase = uuid::Uuid::from_u128(
-                    uuid::Uuid::parse_str(&op.id).map_err(storage)?.as_u128()
-                        ^ 0x6d61696e6c696e650000000000000000,
-                )
-                .to_string();
+                let phase = mainline_operation_id(uuid::Uuid::parse_str(&op.id).map_err(storage)?)
+                    .to_string();
                 let work = self.prepare_mainline(&op.project_id, mainline, &facts.head, &phase)?;
                 Ok(RepositoryReceipt::Connected {
                     policy,
@@ -1805,6 +1813,50 @@ impl ports::Git for CliGit {
     ) -> Result<Option<RepositoryReceipt>> {
         self.inspect_original_repository_operation(op)
     }
+    fn resume_unstarted_connection(
+        &self,
+        op: &RepositoryOperation,
+    ) -> Result<Option<RepositoryReceipt>> {
+        if !matches!(op.action, RepositoryAction::Connect { .. }) {
+            return Ok(None);
+        }
+        let operation = uuid::Uuid::parse_str(&op.id).map_err(storage)?;
+        let mainline = mainline_operation_id(operation);
+        let project = self.project(&op.project_id)?;
+        let operations = project.join("execution/git-operations");
+        fs::create_dir_all(&operations).map_err(storage)?;
+        reject_symlink(&operations)?;
+        let lock_path = operations.join(format!("resume-connect-{}.lock", op.id));
+        reject_symlink(&lock_path)?;
+        let lock = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(lock_path)
+            .map_err(storage)?;
+        fs2::FileExt::try_lock_exclusive(&lock)
+            .map_err(|_| err("resource_pending", "仓库接入正在核对"))?;
+        if let Some(receipt) = self.inspect_original_repository_operation(op)? {
+            return Ok(Some(receipt));
+        }
+        // Clone and worktree markers are written before the first physical changes.
+        for path in [
+            operations.join(format!("clone-{}.json", op.id)),
+            operations.join(format!("worktree-{mainline}.json")),
+            operations.join(format!("repository_receipt-{}.json", op.id)),
+            project.join("repository"),
+            project
+                .join("execution/worktrees/mainlines")
+                .join(&op.project_id),
+        ] {
+            reject_symlink(&path)?;
+            if path.try_exists().map_err(storage)? {
+                return Ok(None);
+            }
+        }
+        self.repository_operation(op).map(Some)
+    }
     fn inspect_advance(&self, c: &GitContext, operation: &str) -> Result<AdvanceObservation> {
         checked_uuid(operation)?;
         let repo = self.context(c)?;
@@ -1876,7 +1928,8 @@ impl ports::Git for CliGit {
             return Ok(());
         }
         self.inspect_unlocked(&c.project, &c.workspace.repository, &c.workspace.mainline)?;
-        let policy = crate::github::GitHubPullRequests
+        let policy = self
+            .github
             .diagnose(&c.workspace.repository, &c.target.branch)?;
         require(policy.compatible, "GitHub 规则不兼容，禁止本地 CAS")?;
         require(

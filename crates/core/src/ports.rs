@@ -357,6 +357,14 @@ pub trait Git: Send + Sync {
     ) -> Result<Option<RepositoryReceipt>> {
         Err(err("unsupported", "Git 缺少只读仓库操作核对"))
     }
+    /// Resume explicitly requested onboarding only with proof that the
+    /// original operation never reached its first local Git effect.
+    fn resume_unstarted_connection(
+        &self,
+        _operation: &RepositoryOperation,
+    ) -> Result<Option<RepositoryReceipt>> {
+        Ok(None)
+    }
     fn inspect_advance(
         &self,
         _context: &GitContext,

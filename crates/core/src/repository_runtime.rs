@@ -84,7 +84,8 @@ impl Engine {
             context.require_project(&op.project_id)?;
             require(
                 c.expected_revision == Some(selected.revision)
-                    && op.status == RepositoryOperationStatus::NeedsReconciliation,
+                    && op.status == RepositoryOperationStatus::NeedsReconciliation
+                    && op.reason != "reconcile_requested",
                 "仓库原版本已变化或无需核对",
             )?;
             op.reason = "reconcile_requested".into();
@@ -677,16 +678,51 @@ impl Engine {
                 self.git
                     .inspect_repository_operation(&operation)
                     .and_then(|receipt| {
-                        receipt.ok_or_else(|| {
-                            err("needs_reconciliation", "原物理操作仍未确认，保留原错误")
-                        })
+                        if let Some(receipt) = receipt {
+                            return Ok(receipt);
+                        }
+                        if let Err(original_error) = &result
+                            && matches!(operation.action, RepositoryAction::Connect { .. })
+                        {
+                            let basis: ReadSet =
+                                serde_json::from_value(effect.data["basis"].clone())
+                                    .map_err(|e| err("storage", e.to_string()))?;
+                            let keys: Vec<_> = basis
+                                .versions()
+                                .iter()
+                                .map(|v| v.resource.clone())
+                                .collect();
+                            let current = self.store.read_resources(&keys)?;
+                            require(
+                                current.len() == keys.len()
+                                    && current.iter().all(|row| {
+                                        basis
+                                            .require(&row.resource)
+                                            .is_ok_and(|revision| revision == row.revision)
+                                    }),
+                                "仓库接入的原授权版本已变化",
+                            )?;
+                            return self
+                                .git
+                                .resume_unstarted_connection(&operation)?
+                                .ok_or_else(|| original_error.clone());
+                        }
+                        Err(err(
+                            "needs_reconciliation",
+                            "原物理操作仍未确认，保留原错误",
+                        ))
                     })
             };
+            if let Err(error) = &inspected
+                && error.code == "resource_pending"
+            {
+                return Err(error.clone());
+            }
             let mut row = record(
                 "repository_effect_observation",
                 op.id.clone(),
                 effect.scope.clone(),
-                "显式只读核对原仓库结果".into(),
+                "显式核对原仓库结果".into(),
                 1,
                 None,
                 json!({"effect_id":effect.id,"original_observation":observed_key.id,"reconciliation_version":version(&selected),"result":inspected}),

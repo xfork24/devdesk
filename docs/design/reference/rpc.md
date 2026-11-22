@@ -65,6 +65,10 @@
 
 `query.settings` 同时返回设置值和 versions；`settings.update` 的 preconditions 只包含本次修改的 setting 资源。不同设置项分别检查版本，冲突后保留原草稿。
 
+`github.auth_status` 返回 GitHub 连接状态、账号、凭据来源及版本。`github.configure_auth` 使用该版本作为 `expected_revision`，验证并保存 `token`。两种响应均只返回状态信息。
+
+`repository.reconcile` 核对原仓库操作。若原接入报错，且物理标记、仓库和工作副本都表明克隆尚未开始，显式核对可以沿用原项目、仓库、分支和操作身份继续接入。
+
 ## SSE 和历史
 
 当前工作台使用 `GET /events?tail=true&configuration=true&project_id=ID`。事件 ID 为作用域与 cursor 的组合，同作用域 Last-Event-ID 可恢复窗口内事件。`stream.ready` 表示连接就绪；`stream.reset` 表示需要重新读取当前状态。

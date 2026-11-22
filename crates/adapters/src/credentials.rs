@@ -16,6 +16,9 @@ pub struct CredentialVault {
     service: String,
 }
 
+// The GitHub entry uses the existing helper protocol under a separate service.
+const GITHUB_REFERENCE: &str = "integration-secret:6e331880-bdcc-4be3-bac8-2588f6b6af3d";
+
 #[cfg(target_os = "linux")]
 fn secret_tool() -> Result<PathBuf> {
     std::env::var_os("PATH").and_then(|paths| std::env::split_paths(&paths).map(|p|p.join("secret-tool")).find(|p|p.is_file()))
@@ -121,6 +124,71 @@ impl CredentialVault {
                 Sha256::digest(root.to_string_lossy().as_bytes())
             ),
         })
+    }
+    pub(crate) fn github(dataset: &Path) -> Result<Self> {
+        let dataset = Self::new(dataset)?;
+        Ok(Self {
+            service: format!(
+                "devdesk.{:x}",
+                Sha256::digest(format!("github/v1:{}", dataset.service))
+            ),
+        })
+    }
+    pub(crate) fn write_github(&self, value: &str) -> Result<()> {
+        self.write_integration(GITHUB_REFERENCE, value)
+            .map_err(|error| {
+                if error.code == "blocked" || error.code == "needs_reconciliation" {
+                    err(
+                        "credential_store_unavailable",
+                        "无法保存 GitHub Token，请解锁宿主机的系统凭据库后重试",
+                    )
+                } else {
+                    error
+                }
+            })
+    }
+    pub(crate) fn read_github(&self) -> Result<Option<Vec<u8>>> {
+        let account = Self::integration_account(GITHUB_REFERENCE)?;
+        #[cfg(target_os = "linux")]
+        {
+            if secret_tool().is_err() {
+                return Ok(None);
+            }
+            match self.lookup_linux_secret(&account) {
+                Err(error)
+                    if error.code == "credential_store_unavailable"
+                        && std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_none() =>
+                {
+                    Ok(None)
+                }
+                result => result,
+            }
+        }
+        #[cfg(target_os = "macos")]
+        {
+            if crate::credentials_macos::helper_path().is_err() {
+                return Ok(None);
+            }
+            let configured = crate::credentials_macos::call(
+                "status",
+                &self.service,
+                &account,
+                None,
+            )?["configured"]
+                .as_bool()
+                .ok_or_else(|| err("credential_store", "凭据助手缺少存在性结果"))?;
+            configured
+                .then(|| {
+                    self.read_integration(GITHUB_REFERENCE)
+                        .map(String::into_bytes)
+                })
+                .transpose()
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        {
+            let _ = account;
+            Ok(None)
+        }
     }
     fn provider(provider: HarnessProvider) -> Result<()> {
         require(
@@ -253,38 +321,7 @@ impl CredentialVault {
         #[cfg(target_os = "linux")]
         {
             let _ = reference;
-            let mut command = std::process::Command::new(secret_tool()?);
-            command.args(["lookup", "service", &self.service, "account", account]);
-            let mut output =
-                crate::process::capture_command(command, std::time::Duration::from_secs(15), None)
-                    .map_err(|_| {
-                        err(
-                            "authentication_required",
-                            "无法核对凭据候选，请检查桌面凭据库",
-                        )
-                    })?;
-            // GNOME libsecret's lookup returns 1 without output only for a missing
-            // value; errors emit stderr. Never turn an unknown failure into absence.
-            // https://github.com/GNOME/libsecret/blob/main/tool/secret-tool.c
-            if output.code == 1
-                && !output.truncated
-                && output.stdout.is_empty()
-                && output.stderr.is_empty()
-            {
-                return Ok(None);
-            }
-            require(
-                output.code == 0 && !output.truncated,
-                "无法核对凭据候选，请检查桌面凭据库",
-            )?;
-            while output
-                .stdout
-                .last()
-                .is_some_and(|b| *b == b'\n' || *b == b'\r')
-            {
-                output.stdout.pop();
-            }
-            Ok(Some(output.stdout))
+            self.lookup_linux_secret(account)
         }
         #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         {
@@ -294,6 +331,46 @@ impl CredentialVault {
                 "系统没有受支持的凭据库",
             ))
         }
+    }
+    #[cfg(target_os = "linux")]
+    fn lookup_linux_secret(&self, account: &str) -> Result<Option<Vec<u8>>> {
+        let mut command = std::process::Command::new(secret_tool()?);
+        command.args(["lookup", "service", &self.service, "account", account]);
+        let mut output = crate::process::capture_command_split(
+            command,
+            std::time::Duration::from_secs(15),
+            None,
+        )
+        .map_err(|_| {
+            err(
+                "credential_store_unavailable",
+                "无法读取系统凭据库，请检查桌面会话",
+            )
+        })?;
+        // GNOME libsecret's lookup returns 1 without output only for a missing
+        // value; errors emit stderr. Never turn an unknown failure into absence.
+        // https://github.com/GNOME/libsecret/blob/main/tool/secret-tool.c
+        if output.code == 1
+            && !output.truncated
+            && output.stdout.is_empty()
+            && output.stderr.is_empty()
+        {
+            return Ok(None);
+        }
+        if output.code != 0 || output.truncated {
+            return Err(err(
+                "credential_store_unavailable",
+                "无法读取系统凭据库，请检查桌面会话",
+            ));
+        }
+        while output
+            .stdout
+            .last()
+            .is_some_and(|b| *b == b'\n' || *b == b'\r')
+        {
+            output.stdout.pop();
+        }
+        Ok(Some(output.stdout))
     }
     pub fn status(
         &self,

@@ -16,7 +16,7 @@
 ./devdesk-host --data "/完整路径/DevDesk 数据" --port 4317
 ```
 
-工程执行还需要可用的 Linux Docker Engine/Desktop、Git，以及按功能需要登录的 GitHub CLI。模型认证在设置中完成。执行安装由所选 Harness/Sandbox 配置准备，不必手工猜测镜像标签。
+工程执行还需要可用的 Linux Docker Engine/Desktop、Git，以及 GitHub CLI。GitHub 和模型认证可在设置中完成。执行安装由所选 Harness/Sandbox 配置准备，不必手工猜测镜像标签。
 
 macOS 包是包含凭据助手的签名命令行程序，不是已公证的 App 安装器。
 
@@ -50,6 +50,8 @@ macOS 通过固定签名的 `devdesk-credential-helper` 访问 Keychain。Host �
 
 Linux 需要 `secret-tool` 和已解锁的 Secret Service/D-Bus 会话，例如 libsecret-tools 与 GNOME Keyring。不降级为明文 API key 文件。Codex OAuth 使用数据集私有认证文件，Ollama 默认免密。
 
+在“设置 → GitHub 连接”中检查账号或保存个人访问令牌。DevDesk 验证账号后，将 Token 写入当前数据集对应的系统凭据库。未保存 Token 时使用 Host 的 `GH_TOKEN`、`GITHUB_TOKEN` 或 GitHub CLI 登录。如果认证在克隆开始前失败，更新凭据后可在原项目中点击“核对并重试原操作”。
+
 ## Linux 权限策略
 
 使用受限嵌套权限且启用 AppArmor 时，经审阅安装随包专用策略：
@@ -79,6 +81,7 @@ sudo ./scripts/platform/linux/install-linux-sandbox-policy.sh --install
 | 数据集被占用 | 是否已有 Host 使用相同目录，避免并行启动 |
 | 安装或容器启动失败 | Docker 是否运行、挂载是否允许、镜像及权限策略是否可用 |
 | 模型连接失败 | 所选配置版本、系统凭据授权、容器网络及服务地址 |
+| GitHub 仓库接入失败 | 设置中的 GitHub 连接状态、目标仓库权限和网络 |
 | 步骤等待而无进展 | 是等待输入、等待人工确认、预算阻止，还是外部结果待核对 |
 | 远程工作台拒绝连接 | 连接密钥、公开地址与 Host/Origin 是否匹配 |
 

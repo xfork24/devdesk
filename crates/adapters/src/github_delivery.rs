@@ -24,8 +24,8 @@ fn segment(value: &str) -> String {
 }
 impl GitHubPullRequests {
     fn delivery_api(&self, method: &str, endpoint: &str, input: Option<Value>) -> Result<Value> {
-        let mut command = std::process::Command::new("gh");
-        command.args(["api", "--method", method, endpoint]);
+        let mut command = self.api_command()?;
+        command.args(["--method", method, endpoint]);
         if input.is_some() {
             command.args(["--input", "-"]);
         }
@@ -119,7 +119,7 @@ impl DeliveryClient<'_> {
         (self.api)(method, endpoint, input)
     }
     fn receipt(&self, request: &PullRequestRequest, value: &Value) -> Result<PullRequestReceipt> {
-        GitHubPullRequests.receipt(request, value)
+        GitHubPullRequests::receipt(request, value)
     }
     fn delivery_target(&self, repository: &str, branch: &str) -> Result<Value> {
         GitHubPullRequests::validate_repository_branch(repository, branch)?;

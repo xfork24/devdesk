@@ -1,9 +1,18 @@
 //! GitHub PR publication and observed merges; existing rules are never changed or bypassed.
 use super::*;
-use crate::process::capture;
+use crate::process::{capture_command, capture_command_split};
+use std::process::Command;
+use std::sync::Mutex;
 use std::time::Duration;
+#[path = "github_auth.rs"]
+mod auth;
+pub use auth::GitHubAuthStatus;
 pub type RepositoryPolicy = GitHubRepositoryPolicy;
-pub struct GitHubPullRequests;
+#[derive(Default)]
+pub struct GitHubPullRequests {
+    vault: Option<credentials::CredentialVault>,
+    credential_update: Mutex<()>,
+}
 impl GitHubPullRequests {
     pub(crate) fn validate_repository_branch(repository: &str, branch: &str) -> Result<()> {
         let pieces: Vec<_> = repository.split('/').collect();
@@ -26,8 +35,7 @@ impl GitHubPullRequests {
         Self::validate_repository_branch(repository, branch)?;
         let pieces: Vec<_> = repository.split('/').collect();
         let query = r#"query($owner:String!,$name:String!,$branch:String!){repository(owner:$owner,name:$name){id nameWithOwner viewerPermission ref(qualifiedName:$branch){target{oid}} branchProtectionRules(first:100){totalCount pageInfo{hasNextPage}} rulesets(first:100,includeParents:true){nodes{id name enforcement target} pageInfo{hasNextPage}}}}"#;
-        let args = vec![
-            "api".into(),
+        let args = [
             "graphql".into(),
             "-f".into(),
             format!("query={query}"),
@@ -38,11 +46,15 @@ impl GitHubPullRequests {
             "-f".into(),
             format!("branch=refs/heads/{branch}"),
         ];
-        let output = capture("gh", &args, Duration::from_secs(20))?;
-        require(
-            output.code == 0 && !output.truncated,
-            "无法核对 GitHub 仓库；请检查 GitHub CLI 登录（gh auth login）、仓库访问权限及网络连接",
-        )?;
+        let mut command = self.api_command()?;
+        command.args(args);
+        let output = capture_command_split(command, Duration::from_secs(20), None)?;
+        if output.code != 0 || output.truncated {
+            return Err(auth::api_error(
+                &output,
+                "无法读取 GitHub 仓库和分支规则，请检查仓库权限及网络连接",
+            ));
+        }
         let value: Value = serde_json::from_slice(&output.stdout).map_err(storage)?;
         require(value.get("errors").is_none(), "GitHub 规则查询不完整")?;
         Self::policy(repository, branch, &value["data"]["repository"])
@@ -113,12 +125,12 @@ impl GitHubPullRequests {
 
 impl GitHubPullRequests {
     fn api(&self, endpoint: &str, input: Option<Value>) -> Result<Value> {
-        let mut command = std::process::Command::new("gh");
-        command.args(["api", endpoint]);
+        let mut command = self.api_command()?;
+        command.arg(endpoint);
         if input.is_some() {
             command.args(["--method", "POST", "--input", "-"]);
         }
-        let output = crate::process::capture_command(
+        let output = capture_command(
             command,
             Duration::from_secs(25),
             input.map(|v| serde_json::to_vec(&v).unwrap()),
@@ -152,11 +164,7 @@ impl GitHubPullRequests {
         // belongs to the merge path, not to publication validation.
         Self::validate_repository_branch(&r.repository, &r.base_branch)
     }
-    pub(crate) fn receipt(
-        &self,
-        r: &PullRequestRequest,
-        row: &Value,
-    ) -> Result<PullRequestReceipt> {
+    pub(crate) fn receipt(r: &PullRequestRequest, row: &Value) -> Result<PullRequestReceipt> {
         require(
             row["head"]["repo"]["full_name"]
                 .as_str()
@@ -266,7 +274,7 @@ impl ports::PullRequests for GitHubPullRequests {
             .map_err(|error| error.technical_not_applied())?;
             self.api(&format!("repos/{}/pulls",r.repository),Some(json!({"title":format!("DevDesk delivery {}",r.merge),"head":r.head_branch,"base":r.base_branch,"body":format!("{}\n\nFrozen candidate: `{}`\nExpected target: `{}`\n\nValidated and reviewed by DevDesk before local CAS and exact remote lease. GitHub records indirect merge; no platform merge endpoint is used.",r.marker(),r.candidate,r.expected_target)})))?
         };
-        self.receipt(r, &row)
+        Self::receipt(r, &row)
     }
     fn inspect(&self, r: &PullRequestRequest) -> Result<Option<PullRequestReceipt>> {
         self.validate_request(r)?;
@@ -290,7 +298,7 @@ impl ports::PullRequests for GitHubPullRequests {
                 let number = row["number"]
                     .as_u64()
                     .ok_or_else(|| err("github_unavailable", "PR number 缺失"))?;
-                self.receipt(
+                Self::receipt(
                     r,
                     &self.api(&format!("repos/{}/pulls/{number}", r.repository), None)?,
                 )
@@ -302,7 +310,7 @@ impl ports::PullRequests for GitHubPullRequests {
         let number = r
             .number
             .ok_or_else(|| err("blocked", "核对 PR 需要 number"))?;
-        self.receipt(
+        Self::receipt(
             r,
             &self.api(&format!("repos/{}/pulls/{number}", r.repository), None)?,
         )
@@ -328,7 +336,9 @@ mod tests {
             number: None,
             projection: None,
         };
-        GitHubPullRequests.validate_request(&request).unwrap();
+        GitHubPullRequests::default()
+            .validate_request(&request)
+            .unwrap();
     }
     #[test]
     fn never_treat_admin_or_incomplete_rules_as_permission_to_bypass() {

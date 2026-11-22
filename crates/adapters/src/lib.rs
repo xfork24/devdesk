@@ -1647,7 +1647,7 @@ pub fn execution_adapters(root: &Path) -> Result<ports::ExecutionAdapters> {
         harness: std::sync::Arc::new(RoutingHarness::new(root)?),
         git: std::sync::Arc::new(CliGit::new(root)?),
         tests: std::sync::Arc::new(CommandTests::new(root)?),
-        pull_requests: Some(std::sync::Arc::new(github::GitHubPullRequests)),
+        pull_requests: Some(std::sync::Arc::new(github::GitHubPullRequests::new(root)?)),
     })
 }
 

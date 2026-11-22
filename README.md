@@ -25,7 +25,7 @@ DevDesk 使用 Rust 内核管理配置与工程事实，React 提供 Web 工作�
 | 用途 | 依赖 |
 |---|---|
 | 源码构建 | Rust **1.99.1**（`rust-toolchain.toml`）、Node **24**、npm、Python **3.10+**、C 编译工具链 |
-| 工程执行 | 运行中的 Docker、Git、已认证的 GitHub CLI，以及选定模型服务商的认证 |
+| 工程执行 | 运行中的 Docker、Git、GitHub CLI，以及 GitHub 和选定模型服务商的认证 |
 | 本机凭据 | macOS 固定签名 Keychain 助手；Linux Secret Service 和可访问的用户 D-Bus |
 | 完整回归 | Python Schema 校验依赖、Chromium、Docker 与镜像/包源网络 |
 
@@ -43,7 +43,7 @@ python3 scripts/dev/run-host.py target/release/devdesk-host --data ./data --port
 
 ### 创建第一项工作
 
-1. 在 Web 中“打开 GitHub 项目”，选择专用仓库与主分支，等待克隆和工作空间登记完成。
+1. 在“设置 → GitHub 连接”中检查认证，按需保存 Token。然后“打开 GitHub 项目”，选择专用仓库与主分支，等待克隆和工作空间登记完成。
 2. 在设置中完成模型认证；为项目选择 Workflow、Standard、Role→Agent、Sandbox、权限 Profile 和驱动，并保存项目测试配置。
 3. 准备实际执行环境。Host 根据所选 Harness 与 Sandbox 组合配方，核验镜像、驱动与权限资产；准备探针不调用模型。
 4. 创建 Feature 并填写需求。在执行页查看当前输入、步骤产物、测试和评审；需要人工决定时，核对确切版本后签署。

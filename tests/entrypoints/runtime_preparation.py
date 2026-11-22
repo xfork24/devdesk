@@ -28,8 +28,47 @@ with tempfile.TemporaryDirectory(prefix='devdesk-prepare-') as tmp:
     subprocess.run([real_git, '-C', str(source), '-c', 'user.name=Fixture', '-c', 'user.email=fixture@localhost', '-c', 'commit.gpgSign=false', 'commit', '-qm', 'fixture'], check=True)
     head = subprocess.check_output([real_git, '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
     gh = root / 'gh'
-    gh.write_text('#!' + sys.executable + '\n' + "import json,os\nprint(json.dumps({'data':{'repository':{'id':'fixture-repository','nameWithOwner':'fixture/repository','viewerPermission':'WRITE','ref':{'target':{'oid':os.environ['DEVDESK_GIT_HEAD']}},'branchProtectionRules':{'totalCount':0,'pageInfo':{'hasNextPage':False}},'rulesets':{'nodes':[],'pageInfo':{'hasNextPage':False}}}}}))\n")
+    gh.write_text('#!' + sys.executable + '\n' + r'''
+import json,os,sys
+from pathlib import Path
+args = sys.argv[1:]
+root = Path(os.environ['DEVDESK_DOCKER_FIXTURE'])
+assert args[:3] == ['api', '--hostname', 'github.com']
+if (root/'require-github-token').exists():
+    token = os.environ.get('GH_TOKEN')
+    if not token:
+        print('To get started with GitHub CLI, please run: gh auth login', file=sys.stderr)
+        sys.exit(4)
+    if token != 'fixture-valid-token':
+        print(json.dumps({'status': '401'}))
+        sys.exit(1)
+if args[3] == 'user':
+    assert args[4:] == ['--jq', '.login']
+    print('fixture-account')
+else:
+    assert args[3] == 'graphql'
+    print(json.dumps({'data':{'repository':{'id':'fixture-repository','nameWithOwner':'fixture/repository','viewerPermission':'WRITE','ref':{'target':{'oid':os.environ['DEVDESK_GIT_HEAD']}},'branchProtectionRules':{'totalCount':0,'pageInfo':{'hasNextPage':False}},'rulesets':{'nodes':[],'pageInfo':{'hasNextPage':False}}}}}))
+''')
     gh.chmod(0o755)
+    if sys.platform.startswith('linux'):
+        secret_tool = root / 'secret-tool'
+        secret_tool.write_text('#!' + sys.executable + '\n' + r'''
+import os, sys
+from pathlib import Path
+args = sys.argv[1:]
+service = args[args.index('service') + 1]
+account = args[args.index('account') + 1]
+entry = Path(os.environ['DEVDESK_DOCKER_FIXTURE']) / (service + '-' + account)
+if args[0] == 'lookup':
+    if not entry.exists():
+        sys.exit(1)
+    sys.stdout.write(entry.read_text())
+elif args[0] == 'store':
+    entry.write_text(sys.stdin.read())
+else:
+    sys.exit(2)
+''')
+        secret_tool.chmod(0o755)
     git = root / 'git'
     git.write_text('#!' + sys.executable + '\n' + r'''
 import os,subprocess,sys
@@ -42,6 +81,8 @@ if 'clone' in args:
     args[-2]=os.environ['DEVDESK_GIT_SOURCE']
     with (Path(os.environ['DEVDESK_DOCKER_FIXTURE'])/'clones').open('a') as f:f.write('clone\n')
     root=Path(os.environ['DEVDESK_DOCKER_FIXTURE'])
+    if (root/'require-github-token').exists():
+        assert os.environ.get('GH_TOKEN') == 'fixture-valid-token'
     if not (root/'interrupted-clone').exists():
         (root/'interrupted-clone').touch()
         subprocess.run([real,'init','--bare','-q',str(parent/'repository')],check=True)
@@ -115,6 +156,8 @@ sys.exit(3)
 ''')
     fixture.chmod(0o755)
     env = {**os.environ, 'PATH': str(root) + os.pathsep + os.environ['PATH'], 'DEVDESK_DOCKER_FIXTURE': str(root), 'DEVDESK_REAL_GIT': real_git, 'DEVDESK_GIT_SOURCE': str(source), 'DEVDESK_GIT_HEAD': head}
+    env.pop('GH_TOKEN', None)
+    env.pop('GITHUB_TOKEN', None)
     def launch(dataset):
         child = subprocess.Popen([str(BINARY), '--data', str(root / dataset), '--port', '0'], cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         child.stdout.readline()
@@ -262,6 +305,45 @@ sys.exit(3)
         assert 'error' in rpc('runtime.prepare', {'provider':'codex'})
         assert len(rpc('query.runtime_installations')['result']['installations']) == 2
         assert 'error' in rpc('runtime.prepare', {'provider':'unknown'})
+        if sys.platform.startswith('linux'):
+            child.terminate()
+            child.communicate(timeout=20)
+            assert child.returncode == 0
+            (root/'require-github-token').touch()
+            child, url = launch('data-auth')
+            status = rpc('github.auth_status')['result']
+            assert status['status'] == 'unconfigured', status
+            opened = rpc('project.open_github', {'command_id':'github-open-auth', 'payload':{'repository':'fixture/repository'}})
+            github_id = opened['result']['id']
+            deadline = time.monotonic() + 12
+            while time.monotonic() < deadline:
+                op = rpc('query.repository', {'project_id':github_id})['result']['operations'][0]
+                if op['status'] == 'needs_reconciliation': break
+                time.sleep(.1)
+            assert op['reason'].startswith('github_auth_required'), op
+            original_id = op['id']
+            assert (root/'clones').read_text().splitlines() == ['clone','clone']
+            rejected = rpc('github.configure_auth', {'expected_revision':status['revision'],'token':'fixture-invalid-token'})
+            assert rejected['error']['data']['code'] == 'github_auth_invalid', rejected
+            assert rpc('github.auth_status')['result'] == status
+            saved = rpc('github.configure_auth', {'expected_revision':status['revision'],'token':'fixture-valid-token'})
+            assert 'fixture-valid-token' not in json.dumps(saved)
+            assert saved['result']['source'] == 'devdesk' and saved['result']['login'] == 'fixture-account', saved
+            stale = rpc('github.configure_auth', {'expected_revision':status['revision'],'token':'fixture-valid-token'})
+            assert stale['error']['data']['code'] == 'revision_conflict', stale
+            assert rpc('github.auth_status')['result'] == saved['result']
+            reply = rpc('repository.reconcile', {'project_id':github_id,'command_id':'resume-after-auth','target':op['id'],'expected_revision':op['revision'],'payload':{}})
+            assert 'result' in reply, reply
+            deadline = time.monotonic() + 12
+            while time.monotonic() < deadline:
+                state = rpc('query.repository', {'project_id':github_id})['result']
+                op = state['operations'][0]
+                if op['status'] == 'completed' or op['reason'] != 'reconcile_requested': break
+                time.sleep(.1)
+            assert len(state['operations']) == 1 and op['id'] == original_id and op['status'] == 'completed', state
+            assert rpc('query.workspace', {'project_id':github_id})['result']['repository_ready'] is True
+            assert (root/'clones').read_text().splitlines() == ['clone','clone','clone']
+            print('PASS: GitHub Token validation, replacement revision, credential reuse, same-operation recovery')
         print('PASS: interrupted clone remains unknown without refetch; fresh clone/worktree/reopen, lazy per-Harness preparation, concurrent reuse, failure/retry, daemon failure, standalone embedded recipes')
     finally:
         child.terminate()

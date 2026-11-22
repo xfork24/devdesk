@@ -86,6 +86,7 @@ import { WorkStandard } from "./components/WorkStandard";
 import { WorkflowMaterials } from "./components/WorkflowMaterials";
 import { WorkflowScope } from "./components/WorkflowScope";
 import { RepositorySettings } from "./components/RepositorySettings";
+import { GitHubConnection } from "./components/GitHubConnection";
 import { RoleConversation } from "./components/RoleConversation";
 import { RuntimeSettings } from "./components/RuntimeSettings";
 import { RuntimePreparationStatus } from "./components/RuntimePreparationStatus";
@@ -1308,6 +1309,7 @@ function App() {
               ready={repositoryReady}
               request={rpc}
               refresh={load}
+              onOpenConnection={() => setTab("settings")}
             />
           )}
           {project &&
@@ -1967,6 +1969,7 @@ function App() {
                   </div>
                 )}
               </section>
+              <GitHubConnection request={rpc} />
               {project && (
                 <RepositorySettings
                   key={`${project.id}:${catalogGeneration}`}

@@ -539,6 +539,24 @@
       ]
     },
     {
+      "method": "github.auth_status",
+      "access": "read",
+      "scope": "global",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "github.configure_auth",
+      "access": "platform_mutation",
+      "scope": "global",
+      "precondition": "github_credential_revision",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
       "method": "github.diagnose",
       "access": "read",
       "scope": "explicit",

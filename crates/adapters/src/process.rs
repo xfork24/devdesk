@@ -39,6 +39,13 @@ pub(crate) fn capture_split(program: &str, args: &[String], timeout: Duration) -
     command.args(args);
     capture_command_streams(command, timeout, None, 1024 * 1024, true)
 }
+pub(crate) fn capture_command_split(
+    command: Command,
+    timeout: Duration,
+    input: Option<Vec<u8>>,
+) -> Result<Output> {
+    capture_command_streams(command, timeout, input, 1024 * 1024, true)
+}
 pub(crate) fn capture_command(
     command: Command,
     timeout: Duration,

@@ -41,6 +41,7 @@ type EngineInitialization = Arc<std::sync::OnceLock<Result<Arc<Engine>>>>;
 pub struct Workspace {
     pub global: Arc<GlobalStore>,
     codex_auth: codex_auth::CodexAuthentication,
+    github: github::GitHubPullRequests,
     configuration: Arc<Engine>,
     adapters: ports::ExecutionAdapters,
     opened: Mutex<BTreeMap<String, Arc<Engine>>>,
@@ -114,6 +115,7 @@ impl Workspace {
         workspace_defaults(&configuration)?;
         let workspace = Arc::new(Self {
             codex_auth: codex_auth::CodexAuthentication::new(root)?,
+            github: github::GitHubPullRequests::new(root)?,
             global,
             configuration,
             adapters,
@@ -424,6 +426,38 @@ impl Workspace {
         })
     }
     pub fn dispatch_with_receipt(&self, method: &str, params: Value) -> Result<RpcOutcome> {
+        if method == "github.auth_status" {
+            return Ok(RpcOutcome {
+                value: json!(self.github.auth_status()?),
+                commit: None,
+            });
+        }
+        if method == "github.configure_auth" {
+            require(
+                params.as_object().is_some_and(|fields| {
+                    fields
+                        .keys()
+                        .all(|key| ["expected_revision", "token"].contains(&key.as_str()))
+                }),
+                "GitHub 认证请求包含未知字段",
+            )?;
+            let expected = params["expected_revision"]
+                .as_str()
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    err(
+                        "precondition_required",
+                        "需要 GitHub 凭据版本，请先检查连接",
+                    )
+                })?;
+            let token = params["token"]
+                .as_str()
+                .ok_or_else(|| err("invalid_params", "需要 GitHub Token"))?;
+            return Ok(RpcOutcome {
+                value: json!(self.github.configure_auth(expected, token)?),
+                commit: None,
+            });
+        }
         if method == "credentials.configure" {
             let command = devdesk_core::credential_updates::parse(&params)?;
             let vault = credentials::CredentialVault::new(Path::new(&self.global.root()))?;
@@ -883,9 +917,7 @@ impl Workspace {
                 .as_str()
                 .ok_or_else(|| err("invalid_params", "需要 repository"))?;
             let branch = params["branch"].as_str().unwrap_or("main");
-            return Ok(json!(
-                github::GitHubPullRequests.diagnose_connection(repo, branch)?
-            ));
+            return Ok(json!(self.github.diagnose_connection(repo, branch)?));
         }
         if method == "runtime.discover_codex" {
             return Ok(json!(self.global.discover_codex()?));
@@ -2753,6 +2785,7 @@ impl Workspace {
             global,
             configuration,
             codex_auth: devdesk_adapters::codex_auth::CodexAuthentication::new(root)?,
+            github: github::GitHubPullRequests::new(root)?,
             adapters,
             opened: Mutex::new(opened),
             loading: Default::default(),
