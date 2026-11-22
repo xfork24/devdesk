@@ -248,30 +248,14 @@ test("打开 GitHub 项目自动接入，完成前阻止工程操作，重载保
   fixture.ready();
   await expect(page.getByText("GitHub 已接入", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "设置", exact: true }).click();
-  const repository = page.getByRole("region", {
-    name: "GitHub 仓库状态",
-    exact: true,
-  });
   await expect(
-    repository.getByText("打开项目时自动检查权限、登记并克隆仓库。", {
-      exact: true,
-    }),
+    page.getByRole("region", { name: "GitHub 仓库状态", exact: true }),
   ).toHaveCount(0);
-  await expect(repository.locator(".panel-heading")).toHaveCSS(
-    "border-bottom-width",
-    "0px",
-  );
-  await expect(repository.getByRole("status")).toHaveText("仓库已接入");
   await expect(
-    repository.getByText("仓库接入 · 已完成", { exact: true }),
-  ).toHaveCount(0);
-  const link = await repository
-    .getByRole("link", { name: "fixture/repository", exact: true })
-    .boundingBox();
-  const status = await repository.getByRole("status").boundingBox();
-  expect(Math.abs(link!.y - status!.y)).toBeLessThan(2);
+    page.getByRole("region", { name: "GitHub 连接", exact: true }),
+  ).toBeVisible();
   await page.screenshot({
-    path: testInfo.outputPath("repository-settings.png"),
+    path: testInfo.outputPath("github-connection-settings.png"),
     fullPage: true,
   });
   await page.getByRole("button", { name: "工作总览", exact: true }).click();

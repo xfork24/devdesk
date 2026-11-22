@@ -1966,15 +1966,6 @@ function App() {
                 )}
               </section>
               <GitHubConnection request={rpc} />
-              {project && (
-                <RepositorySettings
-                  key={`${project.id}:${catalogGeneration}`}
-                  project={project}
-                  ready={repositoryReady}
-                  request={rpc}
-                  refresh={load}
-                />
-              )}
               <RuntimeSettings
                 provider={data.default_harness || "codex"}
                 installations={data.runtime_installations || []}
