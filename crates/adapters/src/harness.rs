@@ -13,6 +13,15 @@ use std::{collections::HashMap, sync::Arc};
 #[path = "harness_startup.rs"]
 mod startup;
 
+// Bump this contract only when the provider protocol or persisted worker state
+// is incompatible. The build digest separately keys installation probes.
+fn managed_adapter_contract(provider: HarnessProvider) -> &'static str {
+    match provider {
+        HarnessProvider::Codex => "codex-app-server/v1",
+        HarnessProvider::Dsh => "dsh-sdk/v1",
+    }
+}
+
 pub fn managed_adapter_identity(provider: HarnessProvider) -> String {
     let mut hash = Sha256::new();
     hash.update(include_bytes!("harness.rs"));
@@ -47,14 +56,39 @@ pub fn managed_adapter_identity(provider: HarnessProvider) -> String {
     ));
     let digest = format!("{:x}", hash.finalize());
     format!(
-        "{}/v1+build.{}",
-        match provider {
-            HarnessProvider::Codex => "codex-app-server",
-            HarnessProvider::Dsh => "dsh-sdk",
-        },
+        "{}+build.{}",
+        managed_adapter_contract(provider),
         &digest[..16]
     )
 }
+
+pub fn validate_managed_adapter(binding: &RuntimeBinding) -> Result<()> {
+    let provider = binding.installation.key.provider;
+    let contract = managed_adapter_contract(provider);
+    let compatible = binding
+        .adapter_version
+        .strip_prefix(contract)
+        .and_then(|suffix| suffix.strip_prefix("+build."))
+        .is_some_and(|digest| digest.len() == 16 && digest.bytes().all(|b| b.is_ascii_hexdigit()));
+    if !compatible {
+        return Err(err(
+            "runtime_adapter_incompatible",
+            "冻结适配器协议不兼容，请创建带上下文的后继会话",
+        ));
+    }
+    let assets_match = binding.permissions.as_ref().map_or_else(
+        || binding.adapter_version == managed_adapter_identity(provider),
+        |frozen| frozen.enforcement.asset_digests == permissions::asset_digests(),
+    );
+    if !assets_match {
+        return Err(err(
+            "permission_asset_mismatch",
+            "冻结权限资产已变化或无法验证，请创建带上下文的后继会话",
+        ));
+    }
+    Ok(())
+}
+
 pub fn provider_turn_text(r: &ports::TurnDispatch) -> Result<String> {
     if let Some(task) = &r.configured_task {
         task.validate()?;
@@ -280,10 +314,7 @@ impl RuntimeWorkers {
             r.agent.id == r.session.agent && r.agent.agent_profile.is_some(),
             "角色修订不一致",
         )?;
-        require(
-            binding.adapter_version == managed_adapter_identity(binding.installation.key.provider),
-            "冻结适配器构建已更换，请通过 session.open 创建带上下文的后继会话",
-        )?;
+        validate_managed_adapter(binding)?;
         let image = match &binding.installation.artifact {
             RuntimeArtifact::DockerImage { image_id } => image_id.clone(),
             _ => return Err(err("unsupported", "真实执行要求固定 Linux Docker 镜像")),
@@ -1738,6 +1769,73 @@ fn dynamic_tools(binding: &RuntimeBinding) -> Result<Vec<Value>> {
         dynamic.extend(agent_context_tools().into_iter().map(|t|json!({"type":"function","name":t.call_name(),"description":t.input_schema["description"].as_str().unwrap_or(&t.qualified_name),"inputSchema":t.input_schema})));
     }
     Ok(dynamic)
+}
+
+#[cfg(test)]
+#[test]
+fn managed_binding_survives_a_compatible_rebuild_and_checks_frozen_permission_assets() {
+    let provider = HarnessProvider::Codex;
+    let mut binding: RuntimeBinding = serde_json::from_value(json!({
+        "installation":{"id":"fixture","key":{"provider":"codex","version":"fixture","os":"linux","arch":"aarch64"},"artifact":{"kind":"docker_image","image_id":format!("sha256:{}","a".repeat(64))},"source":"fixture","license":"test"},
+        "adapter_version":"codex-app-server/v1+build.0000000000000000","model":"fixture",
+        "tool_policy":"read_only","work_type":"discussion","configuration_digest":"fixture"
+    })).unwrap();
+    let layer = ResolvedPermission {
+        reference: PermissionRef {
+            revision_id: "fixture".into(),
+        },
+        policy: PermissionPolicy {
+            filesystem: FilesystemPermission::FullAccess,
+            network: NetworkPermission::Enabled,
+            tools: ToolPermission::AllAvailable,
+        },
+        sources: vec![],
+    };
+    binding.permissions = Some(
+        permissions::compile_resolved_permissions(
+            provider,
+            ExecutionScope {
+                work_type: WorkType::Discussion,
+                writable_paths: vec![],
+                read_only_paths: vec![],
+            },
+            layer.clone(),
+            layer,
+            ApprovalPolicy::Never,
+        )
+        .unwrap(),
+    );
+    assert_ne!(binding.adapter_version, managed_adapter_identity(provider));
+    validate_managed_adapter(&binding).unwrap();
+    let mut without_assets = binding.clone();
+    without_assets.permissions = None;
+    assert_eq!(
+        validate_managed_adapter(&without_assets).unwrap_err().code,
+        "permission_asset_mismatch"
+    );
+    for incompatible in [
+        "dsh-sdk/v1+build.0000000000000000",
+        "codex-app-server/v2+build.0000000000000000",
+        "codex-app-server/v1+build.0000",
+    ] {
+        let mut changed = binding.clone();
+        changed.adapter_version = incompatible.into();
+        assert_eq!(
+            validate_managed_adapter(&changed).unwrap_err().code,
+            "runtime_adapter_incompatible"
+        );
+    }
+    binding
+        .permissions
+        .as_mut()
+        .unwrap()
+        .enforcement
+        .asset_digests
+        .clear();
+    assert_eq!(
+        validate_managed_adapter(&binding).unwrap_err().code,
+        "permission_asset_mismatch"
+    );
 }
 
 #[cfg(test)]

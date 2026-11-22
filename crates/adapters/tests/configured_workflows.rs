@@ -1566,6 +1566,58 @@ fn instance(engine: &Engine, id: &Value) -> Value {
 }
 
 #[test]
+fn checkpoint_interface_contract_rejects_an_incompatible_test_plan_before_sealing_it() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut engine = engine(directory.path());
+    let recorder = Arc::new(RecordingAgent::default());
+    engine.harness = recorder.clone();
+    let (role, agent) = research_agent(&engine);
+    let definition = publish(
+        &engine,
+        json!({
+            "schema_version":6,
+            "stages":[{"key":"work","name":"独立测试"}],
+            "steps":[
+                {"key":"prepare","name":"编写测试方案","stage":"work",
+                 "executor":{"type":"agent","role_ref":role["id"]},
+             "task_instructions":"声明独立测试所需的接口。",
+                 "outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}},
+                {"key":"checkpoint","name":"固定测试接口","stage":"work","dependencies":["prepare"],
+                 "executor":{"type":"tool","tool_ref":"simplified-tool-checkpoint:1","arguments":{
+                    "workspace":{"type":"constant","value":{}},
+                    "allowed_paths":{"type":"constant","value":["."]},
+                    "interfaces":{"type":"source","source":{"step":"prepare","port":"result","pointer":"/interfaces"}}
+                 }}}
+            ]
+        }),
+    );
+    recorder.responses.lock().unwrap().push(json!({
+        "status":"completed","summary":"已声明接口",
+        "outputs":{"result":{"interfaces":[{"path":"server.ts","runner":"node_test","exports":["createServer"]}]}}
+    }));
+    let project = command(
+        &engine,
+        "project.create",
+        None,
+        json!({"title":"测试接口校验"}),
+    )
+    .unwrap();
+    let run=command(&engine,"workflow.start",project["id"].as_str(),json!({"workflow_ref":definition["id"],"role_agent_bindings":{role["id"].as_str().unwrap():agent["id"]}})).unwrap();
+    drive(&engine, 8);
+    let runtime = instance(&engine, &run["id"]);
+    let producer = &runtime["steps"][0];
+    assert_eq!(producer["status"], "failed");
+    assert_eq!(producer["failure"]["code"], "output_invalid");
+    let message = producer["reason"].as_str().unwrap();
+    assert!(
+        message.contains("server.ts") && message.contains("固定测试接口"),
+        "{message}"
+    );
+    assert_eq!(producer["outputs"], json!({}));
+    assert_eq!(runtime["steps"][1]["status"], "queued");
+}
+
+#[test]
 fn detailed_configuration_compiles_and_reset_references_form_a_complete_new_graph() {
     let dir = tempfile::tempdir().unwrap();
     let engine = engine(dir.path());
@@ -6104,6 +6156,81 @@ fn supplemental_turns_do_not_spend_retry_quota_and_recovery_keeps_the_task_conte
     );
 }
 
+#[test]
+fn manager_recovery_counts_started_attempts_across_replacements_and_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = engine(dir.path());
+    let harness = Arc::new(RecordingAgent::default());
+    e.harness = harness.clone();
+    let (role, agent) = research_agent(&e);
+    let diagnosis = json!({
+        "status":"needs_manager","summary":"Need the manager to arrange a narrow correction.",
+        "outputs":{},"recovery":{"diagnosis":"Fixture cannot resolve the input mapping.",
+            "attempted_actions":["Read the frozen inputs","Checked the local configuration"]}
+    });
+    harness.responses.lock().unwrap().push(diagnosis.clone());
+    let run = launch(
+        &e,
+        &role,
+        &agent,
+        json!({"budget":{"max_turns":8,"timeout_seconds":300,"retry_limit":1},
+            "outputs":{"document":{"delivery_ref":"fixture-delivery-object:1"}}}),
+    );
+    let id = run["id"].as_str().unwrap();
+    let readiness =
+        |e: &Engine| e.query("workflow.inspect", &json!({"id":id}), 4).unwrap()["steps"][0].clone();
+    drive(&e, 8);
+    let first = readiness(&e);
+    assert_eq!(first["execution"]["failure"]["code"], "needs_manager");
+    assert_eq!(first["recovery"]["status"], "needs_manager");
+    assert_eq!(first["retry_count"], 0);
+    harness.responses.lock().unwrap().push(diagnosis.clone());
+    command(
+        &e,
+        "workflow.step.input",
+        Some(id),
+        json!({"step":"study","input":"Use the diagnosed original input mapping."}),
+    )
+    .unwrap();
+    drive(&e, 8);
+    let continued = readiness(&e);
+    assert_eq!(continued["execution"]["id"], first["execution"]["id"]);
+    assert_eq!(continued["execution"]["sequence"], 2);
+    assert_eq!(continued["recovery"]["status"], "needs_manager");
+    assert_eq!(continued["retry_count"], 0);
+    command(&e, "workflow.step.retry", Some(id), json!({"step":"study"})).unwrap();
+    let queued = readiness(&e);
+    assert_eq!(queued["execution"]["status"], "queued");
+    command(
+        &e,
+        "workflow.execution.stop",
+        Some(id),
+        json!({"step":"study"}),
+    )
+    .unwrap();
+    command(&e, "workflow.step.retry", Some(id), json!({"step":"study"})).unwrap();
+    assert_eq!(readiness(&e)["retry_count"], 0);
+    drop(e);
+    let mut reopened = engine(dir.path());
+    reopened.harness = harness.clone();
+    harness.responses.lock().unwrap().push(diagnosis);
+    drive(&reopened, 8);
+    let exhausted = readiness(&reopened);
+    assert_eq!(exhausted["retry_count"], 1);
+    assert_eq!(exhausted["recovery"]["status"], "exhausted");
+    assert_eq!(exhausted["recovery"]["human_required"], true);
+    assert_eq!(harness.calls.lock().unwrap().len(), 3);
+    assert!(
+        command(
+            &reopened,
+            "workflow.step.retry",
+            Some(id),
+            json!({"step":"study"})
+        )
+        .is_err()
+    );
+}
+
 struct RejectedBeforeDispatch {
     base: RecordingAgent,
     attempts: std::sync::atomic::AtomicUsize,
@@ -6771,8 +6898,43 @@ fn proposed_exception_requires_real_signature_preserves_report_and_cannot_repeat
         let current = instance(&engine, &run["id"]);
         let review = &current["steps"][2];
         let report = review["outputs"]["report"].as_str().unwrap();
+        let waiting = engine
+            .query("query.workflow_driver", &json!({"id":run["id"]}), 4)
+            .unwrap();
+        let approval = waiting["approvals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["arguments"]["execution_id"] == review["id"])
+            .unwrap();
+        let materials = approval["interaction"]["materials"].as_array().unwrap();
+        let source = materials
+            .iter()
+            .find(|item| item["output_id"] == current["steps"][1]["outputs"]["doc"])
+            .unwrap();
+        let output = materials
+            .iter()
+            .find(|item| item["output_id"] == report)
+            .unwrap();
+        let catalog = engine.store.configuration_snapshot().unwrap();
+        let delivery_name = &catalog
+            .state
+            .configuration("fixture-delivery-object:1")
+            .unwrap()
+            .name;
+        assert_eq!(source["label"], *delivery_name);
+        assert_eq!(
+            source["purpose"],
+            "由「责任文档」第 1 轮产出，用作本次审批的输入材料。"
+        );
+        assert_eq!(output["label"], *delivery_name);
+        assert_eq!(
+            output["purpose"],
+            "由「独立评审」第 1 轮产出，用作本次审批的待确认产物。"
+        );
         let args = json!({"instance_id":run["id"],"plan_revision_id":current["active_plan_revision_id"],"step":"review","execution_id":review["id"],"input_digest":review["input_digest"],"outputs":review["outputs"]});
-        let payload = json!({"plan_revision_id":current["active_plan_revision_id"],"operation":"workflow.step.approve","arguments":args,"reason":"建议接受此候选的浏览器证据缺口","interaction":{"title":"批准当前候选的具体例外","background":"独立评审拒绝","requested_action":"批准或拒绝 M-001 至 M-004 观察缺口","completed_work":"自动测试通过","review_summary":"缺少浏览器观察","issues":"接受未完成浏览器验收的风险，仅适用于此候选","recommendation":"建议用户例外批准；拒绝后在剩余额度内补证","materials":[{"label":"原报告","purpose":"核对失败项","instance_id":run["id"],"execution_id":review["id"],"output_id":report}],"evidence":[]}});
+        let label = if approved { "原报告" } else { "result" };
+        let payload = json!({"plan_revision_id":current["active_plan_revision_id"],"operation":"workflow.step.approve","arguments":args,"reason":"建议接受此候选的浏览器证据缺口","interaction":{"title":"批准当前候选的具体例外","background":"独立评审拒绝","requested_action":"批准或拒绝 M-001 至 M-004 观察缺口","completed_work":"自动测试通过","review_summary":"缺少浏览器观察","issues":"接受未完成浏览器验收的风险，仅适用于此候选","recommendation":"建议用户例外批准；拒绝后在剩余额度内补证","materials":[{"label":label,"purpose":"核对失败项","instance_id":run["id"],"execution_id":review["id"],"output_id":report}],"evidence":[]}});
         let pending = command(
             &engine,
             "workflow.decision.request",
@@ -6780,6 +6942,26 @@ fn proposed_exception_requires_real_signature_preserves_report_and_cannot_repeat
             payload.clone(),
         )
         .unwrap();
+        let view = engine
+            .query(
+                "query.orchestration",
+                &json!({"root_instance_id":run["id"]}),
+                4,
+            )
+            .unwrap();
+        let request = view["decisions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["id"] == pending["id"])
+            .unwrap();
+        let material = &request["data"]["request"]["interaction"]["materials"][0];
+        assert_eq!(
+            material["label"],
+            if approved { label } else { delivery_name }
+        );
+        assert_eq!(material["purpose"], "核对失败项");
+        assert_eq!(material["output_id"], report);
         assert!(
             command(
                 &engine,

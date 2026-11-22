@@ -196,8 +196,19 @@ impl Engine {
                         waiting_for.push("reconciliation");
                     }
                     let mut item = json!({"revision":member.record.revision,"plan_revision_id":member.instance.active_plan_revision_id,"control_version":member.instance.control_version,"step_name":member.instance.plan.document.steps.iter().find(|s|s.node_id==e.node_id).map(|s|&s.name),"ancestor_instance_ids":ancestors,"waiting_for":waiting_for,"instance_id":id,"owner_id":member.instance.owner_id,"execution_id":e.id,"step":e.step,"path":e.path,"status":e.status,"reason":e.reason,"actions":selected["actions"],"step_revision":selected["step_revision"],"input_digest":e.input_digest,"outputs":e.outputs});
+                    if e.status == StepExecutionStatus::AwaitingAcceptance
+                        && selected["actions"]["accept"]["allowed"] == true
+                    {
+                        item["materials"] =
+                            json!(self.controller_approval_materials(&member, e, false)?);
+                    }
                     if let Some(recovery) = selected.get("source_publication_recovery") {
                         item["source_publication_recovery"] = recovery.clone();
+                    }
+                    if let Some(recovery) = selected.get("recovery").filter(|v| !v.is_null()) {
+                        item["recovery"] = recovery.clone();
+                        item["retry_count"] = selected["retry_count"].clone();
+                        item["retry_limit"] = selected["retry_limit"].clone();
                     }
                     waiting.push(item);
                 }

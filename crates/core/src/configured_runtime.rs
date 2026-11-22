@@ -233,6 +233,28 @@ pub fn task_input(
     if !execution.runtime_context.is_null() {
         input["runtime_context"] = execution.runtime_context.clone();
     }
+    if execution.runtime_context["technical_recovery"] == true {
+        let contract = &mut input["output_contract"];
+        contract["properties"]["status"]["enum"] =
+            json!(["completed", "needs_input", "needs_manager", "blocked"]);
+        contract["properties"]["recovery"] = json!({
+            "type":"object","additionalProperties":false,
+            "required":["diagnosis","attempted_actions"],
+            "properties":{"diagnosis":{"type":"string","minLength":1,"maxLength":2048},
+                "attempted_actions":{"type":"array","minItems":1,"maxItems":8,
+                    "items":{"type":"string","minLength":1,"maxLength":512}}}
+        });
+        contract["allOf"].as_array_mut().unwrap().push(json!({
+            "if":{"properties":{"status":{"const":"needs_manager"}}},
+            "then":{"required":["recovery"]}
+        }));
+        contract["description"] = json!(
+            "When completing, include all required output ports. For needs_input, needs_manager or blocked, outputs may be empty."
+        );
+        contract["instructions"] = json!(
+            "Use the supplied inputs and provenance. Diagnose technical problems and try safe repairs within the assigned permissions before escalating. If unresolved, return needs_manager with the diagnosis, actions actually attempted and a specific suggested next step in the summary. Use needs_input only for missing business information the human must decide. Preserve frozen requirements and approvals. Return one JSON object whose outputs match declared ports. Never manufacture platform evidence."
+        );
+    }
     let input = serde_json::to_string(&input).map_err(|e| err("serialization", e.to_string()))?;
     require(
         input.len() <= TASK_PAYLOAD_LIMIT,

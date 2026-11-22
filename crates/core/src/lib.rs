@@ -188,6 +188,7 @@ mod workflow_outputs;
 mod workflow_readiness;
 mod workflow_reading;
 mod workflow_reconciliation;
+mod workflow_recovery;
 mod workflow_resources;
 mod workflow_retries;
 mod workflow_rule_hints;

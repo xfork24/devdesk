@@ -334,6 +334,9 @@ impl Engine {
                             let mut snapshot = json!({"renderer_version":ORCHESTRATION_RENDERER,"delivery_id":controller.delivery_id,"controller_id":row.id,"epoch":controller.epoch,"owner_id":controller.owner_id,"root_instance_id":controller.root_instance_id,"project_id":controller.project_id,"workspace_only":controller.workspace_only,"bootstrap":bootstrap,"events":events,"deadline_reached":deadline,"user_messages":users.iter().map(|r|&r["data"]["input"]).collect::<Vec<_>>()});
                             if let Some(root) = controller.root_instance_id.as_deref() {
                                 snapshot["human_gates"] = self.controller_human_gates(root)?;
+                                snapshot["technical_recovery"] = json!(
+                                    "For the deepest affected step, use workflow.inspect and the exact failure receipt. With recovery.status=needs_manager, diagnose it and act in this turn: call recovery.operation using this failed step's execution_id, step, expected_step_revision, plan_revision_id, control_version and expected_revision. For workflow.step.rework omit rework/preview_hash: the kernel chooses the producer based on the exact test report and the frozen graph. Dispatch the returned producer and affected steps normally, then wait for the independent receipt. If recovery.fixture_repair is present and the implementation diagnosis is grounded in a reproducible fixture fault, use workflow.step.rework on that failed implementation instead of repeating the same implementation. The kernel selects the independent test author and retains the verified Red baseline. When recovery.continue_operation is available and you can resolve the diagnosed blocker, use workflow.step.input on the exact same execution and provide the verified technical guidance in input. This preserves unfinished working files. An ordinary human-input step still requires actual Human input or an exact platform material reference. Never request workflow.change.apply, a waiver, or approval for this repair. For recovery.status=exhausted, report the failure receipt, attempted repairs and actual retry counts once for that execution and wait for the human. Ask the human for decisions changing frozen business requirements, test expectations, scope, permissions or explicit human gates. Do not retry an unknown side effect without reconciliation."
+                                );
                                 snapshot["failure_reporting"] = json!(
                                     "执行或核对失败时，读取实际阻塞的最深子步骤，报告最新错误码、诊断、核对结果、实际尝试次数和下一步。确定未写入的技术故障按步骤额度重试。结果未知时先检查原操作。源发布例外：workflow.inspect 返回 source_publication_recovery.retry_allowed=true 时，用原 execution_id 和同一次读取的版本调用 workflow.step.retry，等待结果事件后再读取状态。该重试只允许创建绑定原提交且不存在的开发分支。pending=true 时等待；human_required=true 时停止重试，说明额度、最后一次错误及原分支和提交，让用户从项目经理待办或流程步骤确认返工。其他未知结果仅核对原操作。涉及凭据助手版本、签名、钥匙串权限或 GitHub Token 时按 Host 诊断报告，禁止索取凭据。"
                                 );
@@ -544,6 +547,11 @@ impl Engine {
                 }
                 if let Some(recovery) = readiness.get("source_publication_recovery") {
                     attention["source_publication_recovery"] = recovery.clone();
+                }
+                if let Some(recovery) = readiness.get("recovery").filter(|v| !v.is_null()) {
+                    attention["recovery"] = recovery.clone();
+                    attention["retry_count"] = readiness["retry_count"].clone();
+                    attention["retry_limit"] = readiness["retry_limit"].clone();
                 }
                 shown.push(attention);
             }

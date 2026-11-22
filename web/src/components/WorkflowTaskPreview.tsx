@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ActionButton, ActionSelect } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
 import { MarkdownPreview } from "./configuration-ui";
+import { materialTitle } from "./workflow-material";
 import { type Request, type Row } from "./rpc-types";
 import {
   LazyDetails,
@@ -93,9 +94,13 @@ export function AgentTaskView({
           {Object.keys(inputSources).length ? (
             Object.entries(inputSources).map(([key, source]) => {
               const origin = source as Row;
+              const name = materialTitle(
+                value.input_material_names?.[origin.source_output_id],
+                origin.binding?.source?.step,
+                key,
+              );
               return (
                 <section key={key}>
-                  <strong>{displayText(key)}</strong>
                   {origin.source_output_id && projectId && ownerId ? (
                     <p>
                       <ReadingLink
@@ -104,11 +109,13 @@ export function AgentTaskView({
                         ownerId={ownerId}
                         target={{ output_id: origin.source_output_id }}
                       >
-                        查看输入材料 · {displayText(key)}
+                        {displayText(name)}
                       </ReadingLink>
                     </p>
                   ) : (
-                    <p className="muted">
+                    <p>
+                      <strong>{displayText(name)}</strong>
+                      {" · "}
                       {displayText(
                         origin.binding?.type === "constant"
                           ? "冻结常量"
@@ -137,9 +144,10 @@ export function AgentTaskView({
               const r = requirement as Row;
               return (
                 <section key={port}>
-                  <strong>{displayText(r.definition?.name || port)}</strong>
+                  <strong>
+                    {displayText(materialTitle(r.definition?.name, null, port))}
+                  </strong>
                   <p>
-                    {displayText(port)} ·{" "}
                     {displayText(r.required ? "必需" : "可选")}
                     {displayText(r.content_checks ? " · 需要内容检查" : "")}
                   </p>

@@ -3,6 +3,7 @@ import { ManagerInteraction } from "./ManagerInteraction";
 import { ManagerDisclosure } from "./ManagerDisclosure";
 import { RuntimeApproval } from "./RuntimeApproval";
 import { WorkflowStepInput } from "./WorkflowStepInput";
+import { WorkflowReasonText } from "./WorkflowReasonText";
 import { DiscussionLink, ReadingLink } from "./reading";
 import { StandardDiff } from "./StandardManager";
 import {
@@ -135,13 +136,20 @@ export function WorkflowController({
                     ).then((details) => ({
                       ...details,
                       waiting: summary.waiting
-                        ? summary.waiting.map((item: Row) => ({
-                            ...item,
-                            ...(details.waiting || []).find(
+                        ? summary.waiting.map((item: Row) => {
+                            const detail = (details.waiting || []).find(
                               (detail: Row) =>
                                 detail.execution_id === item.execution_id,
-                            ),
-                          }))
+                            );
+                            return {
+                              ...item,
+                              ...detail,
+                              reason_truncated:
+                                typeof detail?.reason === "string"
+                                  ? false
+                                  : item.reason_truncated,
+                            };
+                          })
                         : details.waiting,
                     }))
                   : summary;
@@ -578,15 +586,23 @@ export function WorkflowController({
         </p>
       )}
       {!data && <p role="status">正在读取经理状态…</p>}
-      {!workspaceOnly && data?.driver?.data.reason && (
-        <p role="status">
-          {displayText(
-            typeof data.driver.data.reason === "string"
-              ? data.driver.data.reason
-              : data.driver.data.reason.message,
-          )}
-        </p>
-      )}
+      {!workspaceOnly &&
+        (data?.driver?.data.reason || data?.driver?.data.reason_truncated) && (
+          <p role="status">
+            <WorkflowReasonText
+              request={request}
+              projectId={projectId}
+              instanceId={rootId}
+              revision={data.driver.revision}
+              preview={
+                typeof data.driver.data.reason === "string"
+                  ? data.driver.data.reason
+                  : data.driver.data.reason?.message
+              }
+              truncated={data.driver.data.reason_truncated}
+            />
+          </p>
+        )}
       {waiting.length > 0 && (
         <section
           className="manager-blockers"
@@ -597,6 +613,7 @@ export function WorkflowController({
           <p className="muted">
             {data?.driver?.data.mode === "agent" &&
             waiting.some((item) => item.status === "awaiting_acceptance") &&
+            !waiting.some((item) => item.recovery) &&
             !waiting.some((item) =>
               ["waiting_input", "waiting_confirmation"].includes(item.status),
             ) &&
@@ -610,7 +627,11 @@ export function WorkflowController({
                 decision.data.status === "pending",
             )
               ? "产物已完成，项目经理可自动接纳；你也可以在此核对并人工接纳。"
-              : "在此补充步骤信息、确认产物，或回复项目经理讨论处理方案。"}
+              : waiting.some(
+                    (item) => item.recovery?.status === "needs_manager",
+                  )
+                ? "项目经理正在根据执行证据安排修复与重试。"
+                : "在此补充步骤信息、确认产物，或回复项目经理讨论处理方案。"}
           </p>
           <ul aria-label="调度等待条件">
             {waiting.map((item) => {
@@ -634,28 +655,44 @@ export function WorkflowController({
                         {displayText(item.step_name || item.path || item.step)}{" "}
                         ·{" "}
                         {displayText(
-                          item.status === "awaiting_acceptance" &&
-                            data?.driver?.data.mode === "agent" &&
-                            !decisions.some(
-                              (d: Row) =>
-                                d.current !== false &&
-                                d.data.status === "pending" &&
-                                d.data.request.arguments.execution_id ===
-                                  item.execution_id,
-                            )
-                            ? "待经理研判"
-                            : waitingLabels[item.status] || item.status,
+                          item.recovery?.status === "exhausted"
+                            ? "重试额度已用完"
+                            : item.recovery?.status === "needs_manager"
+                              ? "待项目经理恢复"
+                              : item.status === "awaiting_acceptance" &&
+                                  data?.driver?.data.mode === "agent" &&
+                                  !decisions.some(
+                                    (d: Row) =>
+                                      d.current !== false &&
+                                      d.data.status === "pending" &&
+                                      d.data.request.arguments.execution_id ===
+                                        item.execution_id,
+                                  )
+                                ? "待经理研判"
+                                : waitingLabels[item.status] || item.status,
                         )}
                       </strong>
                     </summary>
                     <div className="manager-disclosure-body">
                       <p>
-                        {displayText(
-                          (item.failure_code && item.reason) ||
-                            gate?.reason ||
-                            item.reason ||
-                            "正在等待执行条件就绪。",
-                        )}
+                        <WorkflowReasonText
+                          request={request}
+                          projectId={projectId}
+                          instanceId={item.instance_id}
+                          executionId={item.execution_id}
+                          revision={item.step_revision}
+                          truncated={item.reason_truncated}
+                          preview={
+                            item.reason_truncated
+                              ? item.reason
+                              : ((item.status === "waiting_input" ||
+                                  item.failure_code) &&
+                                  item.reason) ||
+                                gate?.reason ||
+                                item.reason ||
+                                "正在等待执行条件就绪。"
+                          }
+                        />
                         {item.failure_code && (
                           <>
                             {" "}
@@ -663,6 +700,15 @@ export function WorkflowController({
                           </>
                         )}
                       </p>
+                      {item.recovery && (
+                        <p role="status">
+                          {item.recovery.human_required
+                            ? "自动恢复已用完相关步骤的重试额度，请核对失败报告与已尝试的修复。"
+                            : "项目经理将核对失败原因并安排原步骤重试。"}{" "}
+                          本步骤已重试 {item.retry_count}/{item.retry_limit}{" "}
+                          次。
+                        </p>
+                      )}
                       {recovery && (
                         <>
                           <p>
@@ -729,17 +775,9 @@ export function WorkflowController({
                               requested_action:
                                 "核对本轮材料后确认；需要修改时填写意见并退回。",
                               completed_work:
-                                item.reason || "当前步骤已产出结果，等待接纳。",
-                              materials: Object.entries(item.outputs).map(
-                                ([label, output_id]) => ({
-                                  label,
-                                  purpose: "本轮原始产物",
-                                  output_id,
-                                  instance_id: item.instance_id,
-                                  execution_id: item.execution_id,
-                                  owner_id: item.owner_id,
-                                }),
-                              ),
+                                (!item.reason_truncated && item.reason) ||
+                                "当前步骤已产出结果，等待接纳。",
+                              materials: item.materials || [],
                               evidence: [],
                             }}
                             onDecide={(approved, opinion) =>

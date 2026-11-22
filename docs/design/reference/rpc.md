@@ -51,6 +51,8 @@
 
 方法完整清单及 access/scope/precondition 分类直接查登记表，工具的输入 Schema 查[工具参考](tools-and-primitives.md)。这样新增入口不需要手工复制一份容易遗漏的大全。
 
+`query.workflow_instance` 的 `view: "reason"` 按 `project_id` 和流程实例 `id` 读取调度原因及其 `revision`。传入 `execution_id` 时，返回该步骤的完整 `reason` 和步骤版本。若有核对记录，还返回 `reconciliation_message` 和 `reconciliation_revision`。经理页和流程详情用它补全标记为截断的摘要。
+
 `session.open` 的 `continue_from` 指定原 `session_id`，同时使用原 Session 的 `expected_revision`。指定历史轮次时同时提交 `turn_id` 和 `turn_revision`。后继 Session 从这个来源生成快照，并以独立讨论权限打开。
 
 `session.delete` 和 `conversation.delete_turn` 的 `target` 都是 Session ID，`expected_revision` 使用原 Session 版本。轮次删除在 payload 中同时传入 `turn_id` 和 `turn_revision`。删除会影响角色讨论中的可见记录，确切事件和诊断查询仍可核对原证据。

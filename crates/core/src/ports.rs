@@ -601,6 +601,9 @@ pub trait EngineeringStore: Send + Sync {
     ) -> Result<crate::read_models::WorkflowDriverSummary> {
         Err(err("unsupported", "存储未实现驱动摘要读取"))
     }
+    fn workflow_reason(&self, _id: &str, _execution: Option<&str>) -> Result<Value> {
+        Err(err("unsupported", "存储未实现工作流原因正文读取"))
+    }
     fn workflow_decision(&self, _id: &str) -> Result<crate::read_models::DecisionDetail> {
         Err(err("unsupported", "存储未实现确切决定读取"))
     }

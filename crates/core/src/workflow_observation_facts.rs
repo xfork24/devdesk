@@ -152,6 +152,30 @@ impl Engine {
             }
         }
         let mut context = json!({"human_exceptions":exceptions});
+        context["technical_recovery"] = json!(true);
+        let recovery = self.native_test_recovery_evidence(commit, &resources.execution)?;
+        if !recovery.is_null() {
+            context["independent_test_failure"] = recovery;
+        }
+        if resources.execution.retry_of.is_some() {
+            let directive = one(
+                self.store.as_ref(),
+                "governance",
+                &format!("workflow-manager-retry:{}", resources.execution.id),
+            )?;
+            commit.witness([version(&directive)])?;
+            if let Some(row) = directive.value {
+                require(
+                    row["type"] == "workflow_manager_retry"
+                        && row["immutable"] == true
+                        && row["definition_id"] == resources.execution.id
+                        && row["data"]["source_execution_id"]
+                            == json!(resources.execution.retry_of),
+                    "重试指令与原执行不符",
+                )?;
+                context["manager_retry"] = row["data"].clone();
+            }
+        }
         context["workspace_policy"] = json!({
             "source_directory":"/work",
             "runtime_directory":WORKSPACE_RUNTIME_DIRECTORY,
@@ -161,7 +185,7 @@ impl Engine {
             "instructions":"Keep downloaded browsers, package installations, virtual environments, caches, model weights and build output outside /work, including evidence directories. Use DEVDESK_RUNTIME_DIR and the configured package-manager paths; for npm use npm install --prefix \"$DEVDESK_RUNTIME_DIR/node\" instead of installing into the source directory. Keep only project source, dependency manifests/lockfiles, tests and final acceptance reports/screenshots in /work. Do not copy installed dependencies into Git or evidence. Large intentional project assets must be explicitly declared in snapshot allowed_paths."
         });
         context["test_execution_policy"] = json!({
-            "instructions":"Read the repository's existing test instructions and reuse its maintained acceptance entry points before writing a new browser script. Keep formal project regression tests in the repository's normal test locations; they are different from the frozen independent workflow assertions, which the implementation must not modify. Unless the frozen plan assigns another authorized writer, the implementation role maintains formal project regression tests and reusable acceptance entry points; the independent test author stays within its declared validation directory. Browser and server checks must have bounded timeouts and close pages, browsers and child processes in finally blocks, including after assertion or launch failures. Finish and close one browser run before starting another; a failed run is not evidence of success. Use actual project files or a correctly awaited local server. Verify required libraries and fonts in the external runtime directories before launching. Preserve the actual successful command observation and source identity for review."
+            "instructions":"Read the repository's existing test instructions and reuse its maintained acceptance entry points before writing a new browser script. Keep formal project regression tests in the repository's normal test locations; they are different from the frozen independent workflow assertions, which the implementation must not modify. Unless the frozen plan assigns another authorized writer, the implementation role maintains formal project regression tests and reusable acceptance entry points; the independent test author stays within its declared validation directory. Independent tests run in a fresh isolated container with read-only source. A dependency installed in the authoring session's runtime directory is unavailable in the independent run. Use dependencies declared by the frozen recipe or files and built-ins available to that run, and write temporary files under the system temp directory. Diagnose dependency, import and startup faults before treating any Red as a business assertion. Browser and server checks must have bounded timeouts and close pages, browsers and child processes in finally blocks. Finish and close one browser run before starting another. Use actual project files or a correctly awaited local server. Verify libraries and fonts before launching. Preserve the actual command observation and source identity for review."
         });
         let runtime = json!({"binding":binding,"inputs":inputs,"instructions":"binding is the kernel-frozen runtime selection for this Session, not a claim about arbitrary nested or remote commands. inputs contains kernel-observed outer harness execution facts bound to exact producer Turns and stop proofs. Use these image identities alongside the actual command logs and code snapshots; model-reported Node versions alone do not identify an image. Do not invent missing facts."});
         context

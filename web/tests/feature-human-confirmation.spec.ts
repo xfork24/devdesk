@@ -624,6 +624,7 @@ test("Spec 验收后展示待确认产物，人工确认绑定当前执行和输
           plan,
           history: [],
           outputs: {},
+          output_names: { "original-prd": "PRD" },
           children: [],
           completion_status: {
             [execution.id]: {
@@ -675,7 +676,7 @@ test("Spec 验收后展示待确认产物，人工确认绑定当前执行和输
     review.getByRole("button", { name: "接纳结果", exact: true }),
   ).toBeDisabled();
   await expect(
-    review.getByRole("link", { name: "核对产物 · 澄清需求与 PRD" }),
+    review.getByRole("link", { name: "核对产物 · PRD", exact: true }),
   ).toHaveAttribute("href", /output_id=original-prd/);
   await page.screenshot({
     path: info.outputPath("prd-human-confirmation.png"),

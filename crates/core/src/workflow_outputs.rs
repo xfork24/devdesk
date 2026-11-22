@@ -23,6 +23,57 @@ pub(crate) enum WorkflowOutputProof {
         outputs: serde_json::Map<String, Value>,
     },
 }
+
+fn validate_checkpoint_inputs(
+    plan: &ConfiguredWorkflowPlan,
+    producer: &StepDefinition,
+    outputs: &serde_json::Map<String, Value>,
+) -> Result<()> {
+    for consumer in &plan.document.steps {
+        let StepExecutor::Tool {
+            tool_ref,
+            arguments,
+            ..
+        } = &consumer.executor
+        else {
+            continue;
+        };
+        let Some(InputBinding::Source { source }) = arguments.get("interfaces") else {
+            continue;
+        };
+        if source.step != producer.key
+            || !plan.definitions.get(tool_ref).is_some_and(|tool| {
+                tool.data["implementation"] == "platform"
+                    && tool.data["qualified_name"] == "workspace.checkpoint"
+            })
+        {
+            continue;
+        }
+        let Some(output) = outputs.get(&source.port) else {
+            continue;
+        };
+        let interfaces = output.pointer(&source.pointer).ok_or_else(|| {
+            err(
+                "output_invalid",
+                format!(
+                    "步骤「{}」需要产物 {}{} 中的接口清单",
+                    consumer.name, source.port, source.pointer
+                ),
+            )
+        })?;
+        TestInterface::parse_list(interfaces).map_err(|error| {
+            err(
+                "output_invalid",
+                format!(
+                    "步骤「{}」无法使用这份接口清单。{}",
+                    consumer.name, error.message
+                ),
+            )
+        })?;
+    }
+    Ok(())
+}
+
 impl Engine {
     pub(crate) fn prepare_native_outputs(
         &self,
@@ -38,6 +89,44 @@ impl Engine {
             .filter(|s| !s.trim().is_empty())
             .ok_or_else(|| err("output_invalid", "执行结论缺少实际摘要"))?;
         match result["status"].as_str() {
+            Some("needs_manager") => {
+                require(
+                    matches!(proof, WorkflowOutputProof::Agent { .. })
+                        && next.runtime_context["technical_recovery"] == true,
+                    "经理恢复需要原 Agent 的冻结恢复协议",
+                )?;
+                let diagnosis = text(&result["recovery"], "diagnosis")?;
+                let attempts = result["recovery"]["attempted_actions"]
+                    .as_array()
+                    .ok_or_else(|| err("output_invalid", "缺少已尝试的诊断动作"))?;
+                require(
+                    summary.chars().count() <= 4096
+                        && diagnosis.chars().count() <= 2048
+                        && (1..=8).contains(&attempts.len())
+                        && attempts.iter().all(|action| {
+                            action
+                                .as_str()
+                                .is_some_and(|s| !s.trim().is_empty() && s.chars().count() <= 512)
+                        }),
+                    "Agent 恢复诊断超出预算",
+                )?;
+                let attempted = attempts
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join("；");
+                next.status = StepExecutionStatus::Failed;
+                next.reason = format!("{summary}\n诊断：{diagnosis}\n已尝试：{attempted}");
+                next.finished = Some(finished);
+                next.failure = Some(WorkflowFailure {
+                    code: "needs_manager".into(),
+                    message: next.reason.clone(),
+                    source_ref: next.turn_id.clone().unwrap_or_else(|| next.id.clone()),
+                    kind: ExecutionFailureKind::Business,
+                    effect: ExecutionFailureEffect::Applied,
+                });
+                return Ok(vec![]);
+            }
             Some("needs_input") => {
                 require(
                     matches!(proof, WorkflowOutputProof::Agent { .. }),
@@ -92,6 +181,32 @@ impl Engine {
             result.to_string().len() <= SPEC_VALUE_LIMIT,
             "一次执行的原始输出超过内容预算",
         )?;
+        if let Some(rework) = &next.rework
+            && rework.assessment["kind"] == "test_support"
+        {
+            for (port, id) in &rework.outputs {
+                let original = one(self.store.as_ref(), "governance", id)?;
+                let row = restored(self, &original)?;
+                let previous = &row.data["value"];
+                if row.r#type != "workflow_output" || previous["recipe"].is_null() {
+                    continue;
+                }
+                require(
+                    row.immutable && row.definition_id == rework.previous_execution_id,
+                    "测试恢复需要原执行冻结的验收声明",
+                )?;
+                commit.witness([version(&original)])?;
+                require(
+                    outputs.get(port).is_some_and(|next| {
+                        ["cases", "interfaces", "recipe"]
+                            .iter()
+                            .all(|key| next.get(*key) == previous.get(*key))
+                    }),
+                    "测试环境修复必须保留原用例、接口和测试配方",
+                )?;
+            }
+        }
+        validate_checkpoint_inputs(&resources.instance.plan, step, outputs)?;
         let catalog = self.store.configuration_snapshot()?;
         let manifest = one(
             self.store.as_ref(),

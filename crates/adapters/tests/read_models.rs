@@ -146,6 +146,61 @@ fn fixture(
 }
 
 #[test]
+fn workflow_reason_reads_exact_text_without_unpacking_the_plan() {
+    let directory = tempfile::tempdir().unwrap();
+    let reason = format!("{}\n第 3 项必须回答。", "需要补充原始材料。".repeat(100));
+    let (store, conn, _) = fixture(directory.path(), PROJECT, &reason);
+    record(
+        &conn,
+        PROJECT,
+        "blocked-child",
+        "workflow_instance",
+        "child",
+        json!({"owner_id":PROJECT,"root_instance_id":"root","parent_execution_id":"execution-0",
+            "status":"running","steps":[{"id":"blocked-execution","status":"waiting_input","reason":reason}],
+            "plan":{"$source":"not-a-restorable-plan"}}),
+    );
+    let error = "核对失败，需要原始证据。".repeat(300);
+    record(
+        &conn,
+        PROJECT,
+        "reconciliation",
+        "workflow_reconciliation",
+        "blocked-execution",
+        json!({"instance_id":"blocked-child","status":"unresolved","error":{"message":error}}),
+    );
+    let selected = store
+        .workflow_reason("blocked-child", Some("blocked-execution"))
+        .unwrap();
+    assert_eq!(selected["reason"], reason);
+    assert_eq!(selected["revision"], 1);
+    assert_eq!(selected["reconciliation_message"], error);
+    assert_eq!(selected["reconciliation_revision"], 7);
+    assert_eq!(
+        store.workflow_reason("blocked-child", None).unwrap()["reason"],
+        reason
+    );
+    assert!(
+        store
+            .workflow_reason("root", Some("blocked-execution"))
+            .is_err()
+    );
+    record(
+        &conn,
+        OTHER,
+        "outside",
+        "workflow_instance",
+        "outside",
+        json!({"owner_id":OTHER,"root_instance_id":"outside","steps":[{"id":"outside-step","reason":"另一个项目"}]}),
+    );
+    assert!(
+        store
+            .workflow_reason("outside", Some("outside-step"))
+            .is_err()
+    );
+}
+
+#[test]
 fn summaries_are_bounded_and_never_restore_unreadable_history_or_authorize_actions() {
     let directory = tempfile::tempdir().unwrap();
     let (store, conn, original) = fixture(directory.path(), PROJECT, &"甲".repeat(5000));

@@ -378,6 +378,10 @@ impl Engine {
                 let mut request = c.payload.clone();
                 if operation == "workflow.step.approve" {
                     let resources = root.step(self, &text(arguments, "execution_id")?)?;
+                    require(
+                        self.test_recovery(&mut commit, &resources)?.is_none(),
+                        "此独立测试失败应由项目经理恢复",
+                    )?;
                     request["approval_basis"] =
                         self.native_approval_basis(&mut commit, &resources)?;
                     for field in ["issues", "recommendation"] {
@@ -616,6 +620,10 @@ impl Engine {
             .find(|s| s.key == execution.step)
             .ok_or_else(|| err("storage", "确认步骤定义缺失"))?;
         let valid = step.completion.evaluate(facts);
+        require(
+            valid || self.test_recovery(commit, resources)?.is_none(),
+            "此独立测试失败需要项目经理恢复，不能作为审批通过",
+        )?;
         if manual || !valid {
             text(payload, "reason")?;
         }

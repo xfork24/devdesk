@@ -189,11 +189,20 @@ impl Engine {
         let budget =
             p["max_bytes"].as_u64().unwrap_or(16384).clamp(1024, 65536) as usize / ids.len();
         for id in ids {
-            let authorized = (pointer.is_empty()
-                && execution
-                    .rework
-                    .as_ref()
-                    .is_some_and(|r| r.outputs.values().any(|o| o == &id)))
+            let recovery_report = execution.rework.as_ref().filter(|rework| {
+                pointer.is_empty()
+                    && matches!(
+                        rework.assessment["kind"].as_str(),
+                        Some("test_support" | "implementation")
+                    )
+                    && rework.assessment["failed_test_report_id"] == id
+            });
+            let authorized = recovery_report.is_some()
+                || (pointer.is_empty()
+                    && execution
+                        .rework
+                        .as_ref()
+                        .is_some_and(|r| r.outputs.values().any(|o| o == &id)))
                 || (pointer.is_empty()
                     && execution.rework_workspace.as_ref().is_some_and(|c| {
                         c.output_id == id
@@ -240,6 +249,15 @@ impl Engine {
                         || row.data["root_instance_id"] == instance.root_instance_id),
                 "产物不属于原项目与流程根",
             )?;
+            if let Some(rework) = recovery_report {
+                require(
+                    row.r#type == "workflow_output"
+                        && row.data["provenance"]["kind"] == "platform"
+                        && row.data["provenance"]["tool"] == "tests.run"
+                        && row.data["execution_id"] == rework.assessment["failed_execution_id"],
+                    "恢复报告不属于原独立测试执行",
+                )?;
+            }
             reads = reads.merge([version(&selected)])?;
             let value = row.data["value"]
                 .pointer(pointer)

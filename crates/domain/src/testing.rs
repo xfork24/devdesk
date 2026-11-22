@@ -106,24 +106,54 @@ pub struct TestInterface {
     pub exports: Vec<String>,
 }
 impl TestInterface {
+    pub fn parse_list(value: &Value) -> Result<Vec<Self>> {
+        require(
+            value.as_array().is_some_and(|items| items.len() <= 32),
+            "接口基线需要包含最多 32 项声明的数组",
+        )?;
+        let interfaces: Vec<Self> = serde_json::from_value(value.clone())
+            .map_err(|error| err("invalid_params", error.to_string()))?;
+        let mut paths = std::collections::BTreeSet::new();
+        for interface in &interfaces {
+            interface.source()?;
+            require(
+                paths.insert(&interface.path),
+                format!("接口路径 {:?} 重复，请将导出合并到同一项", interface.path),
+            )?;
+        }
+        Ok(interfaces)
+    }
+
     pub fn source(&self) -> Result<String> {
+        let path_label = self.path.chars().take(200).collect::<String>();
         require(
             test_relative_path(&self.path)
                 && !self.exports.is_empty()
                 && self.exports.len() <= 32
+                && self
+                    .exports
+                    .iter()
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len()
+                    == self.exports.len()
                 && self.exports.iter().all(|s| {
                     !s.is_empty()
                         && s.bytes().enumerate().all(|(i, b)| {
                             b.is_ascii_alphabetic() || b == b'_' || (i > 0 && b.is_ascii_digit())
                         })
                 }),
-            "接口基线仅允许相对路径及明确导出标识",
+            format!("接口 {path_label:?} 需要相对路径及唯一的合法导出标识"),
         )?;
         match self.runner {
             TestRunner::NodeTest if self.path.ends_with(".mjs") => Ok(self
                 .exports
                 .iter()
                 .map(|name| format!("export function {name}() {{ return undefined; }}\n"))
+                .collect()),
+            TestRunner::NodeTest if self.path.ends_with(".cjs") => Ok(self
+                .exports
+                .iter()
+                .map(|name| format!("Object.defineProperty(exports, '{name}', {{ value: async function () {{ return undefined; }}, enumerable: true }});\n"))
                 .collect()),
             TestRunner::PythonUnittest if self.path.ends_with(".py") => Ok(self
                 .exports
@@ -132,7 +162,7 @@ impl TestInterface {
                 .collect()),
             _ => Err(err(
                 "unsupported",
-                "接口基线只支持声明的 ESM/Python 空实现，不接受任意源码",
+                format!("接口 {path_label:?} 与运行器 {:?} 不匹配。Node.js 可声明 .mjs 或 .cjs，Python 可声明 .py", self.runner),
             )),
         }
     }

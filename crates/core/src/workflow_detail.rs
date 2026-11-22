@@ -15,6 +15,20 @@ pub(crate) fn session_actor_brief(
 
 impl Engine {
     pub(crate) fn workflow_instance_detail(&self, p: &Value) -> Result<Value> {
+        if p["view"] == "reason" {
+            crate::read_models::fields(p, &["project_id", "id", "execution_id", "view"])?;
+            let project = crate::read_models::identifier(p, "project_id")?;
+            require(
+                self.store.project_id().as_deref() == Some(&project),
+                "工作流不属于当前项目",
+            )?;
+            let id = crate::read_models::identifier(p, "id")?;
+            let execution = p
+                .get("execution_id")
+                .map(|_| crate::read_models::identifier(p, "execution_id"))
+                .transpose()?;
+            return self.store.workflow_reason(&id, execution.as_deref());
+        }
         if p["view"] == "qualification" {
             crate::read_models::fields(p, &["project_id", "id", "execution_id", "view"])?;
             let project = crate::read_models::identifier(p, "project_id")?;
@@ -46,7 +60,7 @@ impl Engine {
                 None
             };
             return Ok(
-                json!({"id":root.record.id,"execution_id":execution,"step_revision":resources.step.revision,"completion_status":{execution.clone():{"satisfied":ready["completion_satisfied"],"pending":false,"human_satisfied":ready["human_satisfied"],"human_can_accept":human_can_accept,"confirmation":confirmation}},"advisory":true}),
+                json!({"id":root.record.id,"execution_id":execution,"step_revision":resources.step.revision,"completion_status":{execution.clone():{"satisfied":ready["completion_satisfied"],"pending":false,"human_satisfied":ready["human_satisfied"],"human_can_accept":human_can_accept,"confirmation":confirmation,"recovery":ready["recovery"]}},"advisory":true}),
             );
         }
         let query = WorkflowDetailQuery::parse(p)?;
@@ -141,6 +155,7 @@ impl Engine {
         let mut completion_status = BTreeMap::new();
         let mut actors = BTreeMap::new();
         let mut source_publication_rework = BTreeMap::new();
+        let mut output_names = BTreeMap::new();
         for execution in steps {
             let id = text(execution, "id")?;
             let step = plan
@@ -148,6 +163,15 @@ impl Engine {
                 .iter()
                 .find(|s| Some(s.key.as_str()) == execution["step"].as_str())
                 .ok_or_else(|| err("storage", "当前执行步骤不在冻结计划中"))?;
+            for (port, output) in execution["outputs"].as_object().into_iter().flatten() {
+                if let Some(output_id) = output.as_str()
+                    && let Some(declaration) = step.outputs.get(port)
+                    && let Ok(delivery) = catalog.state.configuration(&declaration.delivery_ref)
+                    && delivery.r#type == "delivery_type"
+                {
+                    output_names.insert(output_id, &delivery.name);
+                }
+            }
             if execution["status"] == "needs_reconciliation"
                 && plan
                     .delivery_policy
@@ -210,7 +234,7 @@ impl Engine {
         };
         Ok(
             json!({"cursor":selected.cursor,"record":visible_record,"runtime":display.data,"plan":if query.view==WorkflowDetailView::Status {status_plan(&selected.plan_document)} else {selected.plan_document},
-            "outputs":outputs,"children":selected.children,"children_more":selected.children_more,"next_child_offset":selected.next_child_offset,
+            "outputs":outputs,"output_names":output_names,"children":selected.children,"children_more":selected.children_more,"next_child_offset":selected.next_child_offset,
             "step_total":selected.step_total,"next_step_offset":selected.next_step_offset,"step_offset":selected.step_offset,"child_offset":selected.child_offset,"focus":selected.focus,"step_revisions":selected.step_revisions,"completion_status":completion_status,"actors":actors,"history":selected.history,
             "history_more":selected.next_history_before.is_some(),"next_history_before":selected.next_history_before,"source_publication_rework":source_publication_rework,
             "representation":if query.view==WorkflowDetailView::Status {"workflow_status"} else {"workflow_detail"}}),

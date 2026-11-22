@@ -1618,6 +1618,9 @@ export function WorkflowManager({
                         }
                         onChange={(budget) => updateStep({ budget })}
                       />
+                      <p className="muted">
+                        retry_limit 设置此步骤实际重试次数，默认为 3 次。
+                      </p>
                     </details>
                     <ActionButton
                       type="button"

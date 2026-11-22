@@ -10,6 +10,49 @@ use crate::{
 };
 use std::collections::BTreeSet;
 impl Engine {
+    pub(crate) fn logical_retries(
+        &self,
+        resources: &WorkflowResources,
+    ) -> Result<(crate::concurrency::ResourceSnapshot, u64)> {
+        let execution = &resources.execution;
+        let attempts = one(
+            self.store.as_ref(),
+            "workflow_logical_retries",
+            &json!([
+                resources.instance.project_id,
+                resources.record.id,
+                execution.node_id,
+                execution.id
+            ])
+            .to_string(),
+        )?;
+        let used = attempts
+            .value
+            .as_ref()
+            .and_then(|v| v["count"].as_u64())
+            .unwrap_or(0);
+        Ok((attempts, used))
+    }
+
+    pub(crate) fn require_logical_retry_budget(
+        &self,
+        commit: &mut WorkflowCommit<'_>,
+        resources: &WorkflowResources,
+        definition: &StepDefinition,
+    ) -> Result<crate::concurrency::ResourceSnapshot> {
+        let (attempts, used) = self.logical_retries(resources)?;
+        let started = attempts
+            .value
+            .as_ref()
+            .and_then(|v| v["started"].as_u64())
+            .unwrap_or(0);
+        if started != 0 && used >= definition.budget.retry_limit {
+            return Err(err("retry_budget_exhausted", "步骤实际重试额度已用尽"));
+        }
+        commit.witness([version(&attempts)])?;
+        Ok(attempts)
+    }
+
     pub(crate) fn prepare_native_retry(
         &self,
         commit: &mut WorkflowCommit<'_>,
@@ -181,6 +224,18 @@ impl Engine {
         rework: bool,
         scope: Option<&BTreeSet<String>>,
     ) -> Result<StepExecution> {
+        self.prepare_native_retry_with_assessment(commit, root, resources, rework, scope, None)
+    }
+
+    pub(crate) fn prepare_native_retry_with_assessment(
+        &self,
+        commit: &mut WorkflowCommit<'_>,
+        root: &WorkflowHeaderFacts,
+        resources: &WorkflowResources,
+        rework: bool,
+        scope: Option<&BTreeSet<String>>,
+        assessment: Option<&Value>,
+    ) -> Result<StepExecution> {
         let execution = &resources.execution;
         require(
             !rework || scope.is_some() || root.instance.plan.document.rework_policies.is_empty(),
@@ -243,20 +298,7 @@ impl Engine {
                     "未知副作用必须先核对，不能技术重发",
                 ));
             }
-            let retries = one(
-                self.store.as_ref(),
-                "workflow_retry_count",
-                &json!([root.record.id, execution.node_id, execution.round]).to_string(),
-            )?;
-            require(
-                retries
-                    .value
-                    .as_ref()
-                    .and_then(|v| v["count"].as_u64())
-                    .is_some_and(|n| n < definition.budget.retry_limit),
-                "技术重试预算已经用尽",
-            )?;
-            commit.witness([version(&retries)])?;
+            self.require_logical_retry_budget(commit, resources, definition)?;
         }
         let impacted = if let Some(scope) = scope {
             scope.clone()
@@ -270,7 +312,7 @@ impl Engine {
         };
         if rework {
             self.reopen_rework_owner(commit, root)?;
-            if commit.method != "workflow.delivery.republish" {
+            if assessment.is_none() && commit.method != "workflow.delivery.republish" {
                 self.consume_native_rework_budgets(commit, root, &impacted)?;
             }
         }
@@ -329,19 +371,29 @@ impl Engine {
                     "返工不能绕过未知副作用，必须先核对原执行",
                 ));
             }
-            commit.new_record(
-                record(
-                    "workflow_execution_history",
-                    current.id.clone(),
-                    root.record.scope.clone(),
-                    current.step.clone(),
-                    1,
-                    None,
-                    json!(current),
-                    true,
+            let (attempts, _) = self.logical_retries(&selected)?;
+            commit.witness([version(&attempts)])?;
+            let mut history = record(
+                "workflow_execution_history",
+                current.id.clone(),
+                root.record.scope.clone(),
+                current.step.clone(),
+                1,
+                None,
+                json!(current),
+                true,
+            );
+            history.refs.insert(
+                "physically_started".into(),
+                json!(
+                    attempts
+                        .value
+                        .as_ref()
+                        .is_some_and(|v| v["current_started"] == true)
                 ),
-                &format!("workflow-history:{}", current.id),
-            )?;
+            );
+            history.content_hash = content_digest(&history.refs, &history.data);
+            commit.new_record(history, &format!("workflow-history:{}", current.id))?;
             let mut next = current.clone();
             next.id = stable_object_id(
                 self.store.as_ref(),
@@ -384,12 +436,15 @@ impl Engine {
                 next.inputs.clear();
                 next.input_digest.clear();
                 next.rework = Some(StepReworkContext {
-                    assessment: commit
-                        .command
-                        .payload
-                        .get("rework")
-                        .cloned()
-                        .unwrap_or_default(),
+                    assessment: if let Some(assessment) = assessment {
+                        if current.id == execution.id {
+                            assessment.clone()
+                        } else {
+                            Value::Null
+                        }
+                    } else {
+                        commit.command.payload["rework"].clone()
+                    },
                     previous_execution_id: current.id.clone(),
                     reason: commit.command.payload["reason"]
                         .as_str()
@@ -403,6 +458,25 @@ impl Engine {
                 next.inputs = execution.inputs.clone();
                 next.input_digest = execution.input_digest.clone();
                 next.retry_of = Some(current.id.clone());
+                if let Some(failure) = &current.failure
+                    && failure.code == "needs_manager"
+                {
+                    let reason = commit.command.payload["reason"].as_str().unwrap_or("");
+                    require(reason.chars().count() <= 4096, "经理重试指令超出预算")?;
+                    let mut directive = record(
+                        "workflow_manager_retry",
+                        next.id.clone(),
+                        root.record.scope.clone(),
+                        "经理重试指令".into(),
+                        1,
+                        None,
+                        json!({"source_execution_id":current.id,"diagnosis_source_ref":failure.source_ref,
+                            "diagnosis":failure.message.chars().take(4096).collect::<String>(),"reason":reason}),
+                        true,
+                    );
+                    directive.id = format!("workflow-manager-retry:{}", next.id);
+                    commit.insert_record(&directive)?;
+                }
             }
             next.failure = None;
             next.agent_revision_id = None;
@@ -548,35 +622,32 @@ impl Engine {
             .to_string(),
         )?;
         commit.witness([version(&output)])?;
-        let row = output
-            .value
-            .as_ref()
-            .ok_or_else(|| err("needs_reconciliation", "当前代码头缺少该实例的真实平台快照"))?;
+        require(output.value.is_some(), "当前代码头缺少该实例的真实平台快照")?;
+        let row = crate::platform_facts::restored(self, &output)?;
         let call = one(
             self.store.as_ref(),
             "governance",
-            &text(&row["data"]["provenance"], "call_id")?,
+            &text(&row.data["provenance"], "call_id")?,
         )?;
         commit.witness([version(&call)])?;
+        let call = crate::platform_facts::restored(self, &call)?;
         require(
-            row["type"] == "workflow_output"
-                && row["immutable"] == true
-                && row["data"]["provenance"]["kind"] == "platform"
+            row.r#type == "workflow_output"
+                && row.immutable
+                && row.data["provenance"]["kind"] == "platform"
                 && [json!("workspace.snapshot"), json!("workspace.checkpoint")]
-                    .contains(&row["data"]["provenance"]["tool"])
-                && row["data"]["provenance"]["pointer"] == ""
-                && call.value.as_ref().is_some_and(|r| {
-                    r["type"] == "platform_call"
-                        && r["data"]["status"] == "succeeded"
-                        && r["data"]["request"]["instance_id"] == resources.record.id
-                        && r["data"]["receipt"] == row["data"]["value"]
-                }),
+                    .contains(&row.data["provenance"]["tool"])
+                && row.data["provenance"]["pointer"] == ""
+                && call.r#type == "platform_call"
+                && call.data["status"] == "succeeded"
+                && call.data["request"]["instance_id"] == resources.record.id
+                && call.data["receipt"] == row.data["value"],
             "返工检查点缺少原平台执行回执",
         )?;
         Ok(Some(ReworkWorkspaceCheckpoint {
             previous_workspace: previous.clone(),
-            output_id: text(row, "id")?,
-            workspace: row["data"]["value"].clone(),
+            output_id: row.id,
+            workspace: row.data["value"].clone(),
         }))
     }
     pub(crate) fn reopen_native_ancestors(

@@ -62,12 +62,30 @@ impl WorkflowCommit<'_> {
             )?;
             self.witness([version(&source), version(&decision)])?;
         }
-        let (mut authority, guards) = crate::workflow_resources::live_workflow_chain(
-            self.engine.store.as_ref(),
-            &resources.record.id,
-            &resources.execution.id,
-            resources.execution.status.clone(),
-        )?;
+        let (mut authority, guards) = if self.method == "workflow.step.input"
+            && method == "conversation.send"
+            && resources.execution.status == StepExecutionStatus::Failed
+            && resources
+                .execution
+                .failure
+                .as_ref()
+                .is_some_and(|f| f.code == "needs_manager")
+            && execution.id == resources.execution.id
+            && execution.status == StepExecutionStatus::Running
+        {
+            crate::workflow_resources::technical_resume_workflow_chain(
+                self.engine.store.as_ref(),
+                &resources.record.id,
+                &resources.execution.id,
+            )?
+        } else {
+            crate::workflow_resources::live_workflow_chain(
+                self.engine.store.as_ref(),
+                &resources.record.id,
+                &resources.execution.id,
+                resources.execution.status.clone(),
+            )?
+        };
         authority.input_digest = execution.input_digest.clone();
         authority.session_id = execution.session_id.clone();
         authority.plan_revision_id = execution.plan_revision_id.clone();

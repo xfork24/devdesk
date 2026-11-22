@@ -1,7 +1,7 @@
 import { displayText } from "../display-text";
 import { useEffect, useState } from "react";
 import { type Request, type Row } from "./rpc-types";
-import { RawJsonLink, ReadableValue, ReadingLink, ReadState } from "./reading";
+import { RawJsonLink, ReadableValue, ReadState } from "./reading";
 import { useReading, navigateReading, executionUrl } from "./reading-state";
 import { WorkflowReferences } from "./WorkflowReferences";
 const labels: Record<string, string> = {
@@ -77,25 +77,6 @@ function ExecutionReader({
             {...{ projectId, ownerId }}
             current="records"
           />
-          {record.outputs.length > 0 && (
-            <section>
-              <h4>关联交付物</h4>
-              <ul>
-                {record.outputs.map((o: Row) => (
-                  <li key={o.id}>
-                    <ReadingLink
-                      detail="documents"
-                      projectId={projectId}
-                      ownerId={ownerId}
-                      target={{ output_id: o.id }}
-                    >
-                      {displayText(o.name || o.port)}
-                    </ReadingLink>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
           <h4>关键操作、决定与回执</h4>
           {!value.facts.length && (
             <p className="muted">没有额外记录；不能据此补充推断执行经过。</p>

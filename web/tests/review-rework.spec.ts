@@ -82,6 +82,14 @@ test("经理阻塞链接定位分页外的真实步骤，刷新及前进后退�
     (s: { execution_id: string }) => sorted.indexOf(s.execution_id) >= 20,
   );
   expect(target).toBeTruthy();
+  const originalReason = await rpc(page, "query.workflow_instance", {
+    project_id: project.id,
+    id: root.id,
+    execution_id: target.execution_id,
+    view: "reason",
+  });
+  expect(originalReason.revision).toBe(target.step_revision);
+  expect(originalReason.reason ?? "").toBe(target.reason);
   await page.goto(
     `/?tab=execution&detail=manager&project_id=${project.id}&instance_id=${root.id}`,
   );

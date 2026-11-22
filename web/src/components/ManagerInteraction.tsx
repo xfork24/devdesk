@@ -1,4 +1,5 @@
 import { displayText } from "../display-text";
+import { materialTitle } from "./workflow-material";
 import { useState } from "react";
 import { ActionButton } from "./ActionFeedback";
 import { ManagerDisclosure } from "./ManagerDisclosure";
@@ -175,7 +176,9 @@ export function ManagerInteraction({
                       output_id: reference.output_id,
                     }}
                   >
-                    {displayText(reference.label)}
+                    {displayText(
+                      materialTitle(reference.label, reference.step_name),
+                    )}
                   </ReadingLink>
                   <p>{displayText(reference.purpose)}</p>
                   <p>
@@ -192,7 +195,10 @@ export function ManagerInteraction({
                             turn_id: reference.turn_id,
                           }}
                         >
-                          材料上下文
+                          {displayText(
+                            materialTitle(reference.label, reference.step_name),
+                          )}{" "}
+                          · 上下文
                         </ReadingLink>{" "}
                       </>
                     )}
@@ -205,7 +211,10 @@ export function ManagerInteraction({
                         execution_id: reference.execution_id,
                       }}
                     >
-                      材料执行记录
+                      {displayText(
+                        materialTitle(reference.label, reference.step_name),
+                      )}{" "}
+                      · 执行记录
                     </ReadingLink>
                   </p>
                 </li>
@@ -238,7 +247,13 @@ export function ManagerInteraction({
               <ul>
                 {(interaction.evidence as Row[]).map((reference, index) => (
                   <li key={reference.execution_id + ":" + index}>
-                    <strong>{displayText(reference.label)}</strong>
+                    <strong>
+                      {displayText(
+                        reference.output_id
+                          ? materialTitle(reference.label, reference.step_name)
+                          : reference.label,
+                      )}
+                    </strong>
                     <p>{displayText(reference.purpose)}</p>
                     {reference.output_id && (
                       <ReadingLink
@@ -251,7 +266,11 @@ export function ManagerInteraction({
                           output_id: reference.output_id,
                         }}
                       >
-                        查看依据原件
+                        查看
+                        {displayText(
+                          materialTitle(reference.label, reference.step_name),
+                        )}
+                        原件
                       </ReadingLink>
                     )}{" "}
                     {reference.session_id && (

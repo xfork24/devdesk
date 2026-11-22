@@ -438,14 +438,29 @@ fn status(
     let mut step_revisions = BTreeMap::new();
     for (body, version) in raw {
         let mut step: Value = serde_json::from_str(&body).map_err(storage)?;
+        if step["reason"]
+            .as_str()
+            .is_some_and(source_views::is_encoded_text)
+        {
+            step["reason"] = json!("");
+            step["reason_truncated"] = json!(true);
+        }
         if step["status"] == "needs_reconciliation" {
             let latest: Option<String> = conn.query_row(
-                "SELECT json_object('id',id,'status',json_extract(data,'$.status'),'resolution',json_extract(data,'$.resolution'),'error',CASE WHEN json_type(data,'$.error')='object' THEN json_object('code',json_extract(data,'$.error.code'),'message',substr(json_extract(data,'$.error.message'),1,2048)) ELSE NULL END) FROM governance_records WHERE type='workflow_reconciliation' AND owner_project=?1 AND definition_id=?2 AND json_extract(data,'$.instance_id')=?3 ORDER BY rowid DESC LIMIT 1",
+                "SELECT json_object('id',id,'status',json_extract(data,'$.status'),'revision',revision,'resolution',json_extract(data,'$.resolution'),'error',CASE WHEN json_type(data,'$.error')='object' THEN json_object('code',json_extract(data,'$.error.code'),'message',substr(json_extract(data,'$.error.message'),1,2048),'message_truncated',length(json_extract(data,'$.error.message'))>2048) ELSE NULL END) FROM governance_records WHERE type='workflow_reconciliation' AND owner_project=?1 AND definition_id=?2 AND json_extract(data,'$.instance_id')=?3 ORDER BY rowid DESC LIMIT 1",
                 params![project, step["id"].as_str(), id],
                 |r| r.get(0),
             ).optional().map_err(storage)?;
             if let Some(latest) = latest {
                 step["reconciliation"] = serde_json::from_str(&latest).map_err(storage)?;
+                let error = &mut step["reconciliation"]["error"];
+                if error["message"]
+                    .as_str()
+                    .is_some_and(source_views::is_encoded_text)
+                {
+                    error["message"] = json!("");
+                    error["message_truncated"] = json!(true);
+                }
             }
         }
         step_revisions.insert(
@@ -623,7 +638,25 @@ pub(super) fn task(
     let task: ConfiguredAgentTask = serde_json::from_value(data.clone()).map_err(storage)?;
     task.validate()?;
     require(task.turn_id == turn, "原任务轮次不符")?;
+    let input_ids = task.task["input_sources"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter_map(|(_, source)| source["source_output_id"].as_str())
+        .collect::<Vec<_>>();
+    let mut input_material_names = BTreeMap::new();
+    if !input_ids.is_empty() {
+        let conn = pool.read()?;
+        let mut query = conn.prepare_cached("SELECT o.id,d.name FROM json_each(?1) ids JOIN governance_records o ON o.id=ids.value AND o.owner_project=?2 AND o.type='workflow_output' JOIN source_definitions d ON d.reference=json_extract(o.data,'$.delivery_ref') AND d.type='delivery_type'").map_err(storage)?;
+        input_material_names = query
+            .query_map(params![json!(input_ids).to_string(), project], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(storage)?
+            .collect::<rusqlite::Result<BTreeMap<_, _>>>()
+            .map_err(storage)?;
+    }
     Ok(Some(
-        json!({"configured":true,"archived":record.r#type=="archived_configured_execution_task","task":data,"turn_id":turn,"current_feature":current_feature}),
+        json!({"configured":true,"archived":record.r#type=="archived_configured_execution_task","task":data,"turn_id":turn,"current_feature":current_feature,"input_material_names":input_material_names}),
     ))
 }

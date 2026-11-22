@@ -2929,6 +2929,10 @@ pre {
 .manager-feedback-text {
   white-space: pre-wrap;
 }
+.workflow-reason-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .manager-blockers > ul {
   list-style: none;
   padding: 0;

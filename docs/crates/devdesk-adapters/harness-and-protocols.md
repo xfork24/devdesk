@@ -8,6 +8,8 @@
 
 适配器为会话准备私有目录及运行输入，使用 DockerSandbox 创建容器，再由 JsonlProcess 建立协议连接。安装镜像可共享，状态和连接按会话区分。
 
+会话恢复按 Harness 提供方和适配器协议主版本判断兼容性。同协议的 Host 重新构建后，会话可继续使用原有上下文。构建摘要用于审计和运行时协议探测缓存，冻结权限资产仍需匹配。
+
 ## 协议转换
 
 [jsonl.rs](../../../crates/adapters/src/jsonl.rs) 管理请求 ID、读写、等待和消息帧。Docker 的 attach_command 生成 `docker start --attach --interactive`，使 Host 经标准输入输出连接容器内程序。

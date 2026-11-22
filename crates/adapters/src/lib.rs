@@ -1031,6 +1031,22 @@ impl EngineeringStore for SqliteStore {
             id,
         )
     }
+    fn workflow_reason(&self, id: &str, execution: Option<&str>) -> Result<Value> {
+        let project = self
+            .project_id
+            .as_deref()
+            .ok_or_else(|| err("project_required", "流程原因需要项目"))?;
+        let mut reason = read_models::workflow_reason(&self.connection, project, id, execution)?;
+        for field in ["reason", "reconciliation_message"] {
+            if reason[field]
+                .as_str()
+                .is_some_and(source_views::is_encoded_text)
+            {
+                reason[field] = self.restore_runtime_value(&reason[field])?;
+            }
+        }
+        Ok(reason)
+    }
     fn workflow_decision(&self, id: &str) -> Result<devdesk_core::read_models::DecisionDetail> {
         read_models::decision(
             &self.connection,

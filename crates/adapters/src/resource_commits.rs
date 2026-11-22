@@ -204,6 +204,43 @@ fn value(conn: &Connection, key: &ResourceKey) -> Result<Option<Value>> {
             let (instance,node,round):(String,String,u64)=serde_json::from_str(&key.id).map_err(storage)?;
             conn.query_row("SELECT count(DISTINCT definition_id) FROM governance_records WHERE type='workflow_execution_history' AND json_extract(data,'$.workflow_instance_id')=?1 AND json_extract(data,'$.node_id')=?2 AND json_extract(data,'$.round')=?3",rusqlite::params![instance,node,round],|r|r.get::<_,u64>(0)).map(|count|Some(json!({"count":count}))).map_err(storage)
         }
+        "workflow_logical_retries"=>{
+            let (project,instance,node,execution):(String,String,String,String)=serde_json::from_str(&key.id).map_err(storage)?;
+            // The current execution is included for reporting. A started
+            // attempt moved to history remains the same attempt, even across
+            // a new round or a replacement Agent.
+            let sql = r#"
+                WITH attempts AS (
+                    SELECT data, refs, 0 AS current FROM governance_records
+                     WHERE type='workflow_execution_history' AND owner_project=?1
+                       AND json_extract(data,'$.workflow_instance_id')=?2
+                       AND json_extract(data,'$.node_id')=?3
+                    UNION ALL
+                    SELECT step.value, '{}', 1 FROM governance_records g, json_each(g.data,'$.steps') step
+                     WHERE g.id=?2 AND g.owner_project=?1 AND json_extract(step.value,'$.id')=?4
+                ), observed AS (
+                    SELECT json_extract(a.data,'$.id') AS execution_id, current, coalesce(json_extract(a.refs,'$.physically_started'),
+                        CASE WHEN json_extract(a.data,'$.started') IS NULL THEN 0
+                             WHEN json_extract(a.data,'$.session_id') IS NOT NULL THEN EXISTS (
+                                 SELECT 1 FROM turns t WHERE t.session_id=json_extract(a.data,'$.session_id')
+                                   AND t.started IS NOT NULL
+                                   AND substr(t.client_message_id,1,length(json_extract(a.data,'$.id'))+1)=json_extract(a.data,'$.id')||':'
+                             )
+                             WHEN json_extract(a.data,'$.tool_call_id') IS NOT NULL THEN EXISTS (
+                                 SELECT 1 FROM governance_records c WHERE c.id=json_extract(a.data,'$.tool_call_id')
+                                   AND (json_extract(c.data,'$.started') IS NOT NULL
+                                        OR json_extract(c.data,'$.status')='succeeded')
+                             )
+                             ELSE json_extract(a.data,'$.status') IN ('completed','awaiting_acceptance','waiting_confirmation')
+                        END) AS started
+                    FROM attempts a
+                )
+                SELECT coalesce(sum(started),0), coalesce(max(CASE WHEN current=1 THEN started END),0)
+                  FROM (SELECT max(current) AS current,max(started) AS started FROM observed GROUP BY execution_id)
+            "#;
+            conn.query_row(sql,rusqlite::params![project,instance,node,execution],|r| Ok((r.get::<_,u64>(0)?,r.get::<_,bool>(1)?)))
+                .map(|(started,current)|Some(json!({"started":started,"current_started":current,"count":started.saturating_sub(1)}))).map_err(storage)
+        }
         "workflow_last_outputs"=>{
             let (instance,node):(String,String)=serde_json::from_str(&key.id).map_err(storage)?;
             Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT id FROM governance_records WHERE type='workflow_execution_history' AND json_extract(data,'$.workflow_instance_id')=?1 AND json_extract(data,'$.node_id')=?2 AND json_extract(data,'$.outputs')!='{}' ORDER BY CAST(json_extract(data,'$.round') AS INTEGER) DESC,CAST(json_extract(data,'$.sequence') AS INTEGER) DESC,CAST(json_extract(data,'$.finished') AS INTEGER) DESC LIMIT 1)",&[&instance,&node])?.into_iter().next())
@@ -352,7 +389,7 @@ fn value(conn: &Connection, key: &ResourceKey) -> Result<Option<Value>> {
         "workflow_run_authority" => conn.query_row("SELECT json_object('scope',json(scope),'project_id',json_extract(data,'$.project_id'),'root_instance_id',json_extract(data,'$.root_instance_id'),'status',json_extract(data,'$.status'),'paused',json(coalesce(data->'$.paused','false')),'cancel_requested',json(coalesce(data->'$.cancel_requested','false')),'parent_execution_id',json_extract(data,'$.parent_execution_id')) FROM governance_records WHERE id=?1 AND type='workflow_instance'",[&key.id],|r|r.get::<_,String>(0)).optional().map_err(storage)?.map(|s|serde_json::from_str(&s).map_err(storage)).transpose(),
         "workflow_step_authority" => {
             let (instance,execution):(String,String)=serde_json::from_str(&key.id).map_err(storage)?;
-            conn.query_row("SELECT json_object('id',json_extract(value,'$.id'),'status',json_extract(value,'$.status'),'plan_revision_id',json_extract(value,'$.plan_revision_id'),'input_digest',json_extract(value,'$.input_digest'),'contract_digest',json_extract(value,'$.contract_digest'),'node_id',json_extract(value,'$.node_id'),'session_id',json_extract(value,'$.session_id'),'stop_requested',json(CASE WHEN EXISTS(SELECT 1 FROM governance_records s WHERE s.type IN ('workflow_stop','workflow_stop_reassertion') AND s.definition_id=?2 AND NOT EXISTS(SELECT 1 FROM governance_records r WHERE r.type='workflow_stop_reconciliation' AND r.definition_id=s.id AND r.immutable=1 AND json_extract(r.data,'$.issuer')='kernel_workspace_reconciliation')) THEN 'true' ELSE 'false' END)) FROM json_each((SELECT data FROM governance_records WHERE id=?1 AND type='workflow_instance'),'$.steps') WHERE json_extract(value,'$.id')=?2 LIMIT 1",rusqlite::params![instance,execution],|r|r.get::<_,String>(0)).optional().map_err(storage)?.map(|s|serde_json::from_str(&s).map_err(storage)).transpose()
+            conn.query_row("SELECT json_object('id',json_extract(value,'$.id'),'status',json_extract(value,'$.status'),'failure_code',json_extract(value,'$.failure.code'),'plan_revision_id',json_extract(value,'$.plan_revision_id'),'input_digest',json_extract(value,'$.input_digest'),'contract_digest',json_extract(value,'$.contract_digest'),'node_id',json_extract(value,'$.node_id'),'session_id',json_extract(value,'$.session_id'),'stop_requested',json(CASE WHEN EXISTS(SELECT 1 FROM governance_records s WHERE s.type IN ('workflow_stop','workflow_stop_reassertion') AND s.definition_id=?2 AND NOT EXISTS(SELECT 1 FROM governance_records r WHERE r.type='workflow_stop_reconciliation' AND r.definition_id=s.id AND r.immutable=1 AND json_extract(r.data,'$.issuer')='kernel_workspace_reconciliation')) THEN 'true' ELSE 'false' END)) FROM json_each((SELECT data FROM governance_records WHERE id=?1 AND type='workflow_instance'),'$.steps') WHERE json_extract(value,'$.id')=?2 LIMIT 1",rusqlite::params![instance,execution],|r|r.get::<_,String>(0)).optional().map_err(storage)?.map(|s|serde_json::from_str(&s).map_err(storage)).transpose()
         }
         "conversation_open_seed" => Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT id FROM governance_records WHERE type='conversation_open_intent' AND definition_id=?1 ORDER BY rowid LIMIT 1)",&[&key.id])?.into_iter().next()),
         "workspace_continuation_source" => Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT id FROM governance_records WHERE type='workspace_continuation_checkpoint' AND definition_id=?1 AND immutable=1 ORDER BY rowid DESC LIMIT 1)",&[&key.id])?.into_iter().next()),
@@ -626,6 +663,11 @@ fn current_revision(conn: &Connection, key: &ResourceKey) -> Result<u64> {
         return Ok(value(conn, key)?
             .and_then(|v| v["count"].as_u64())
             .unwrap_or(0));
+    }
+    if key.kind == "workflow_logical_retries" {
+        let facts = value(conn, key)?.unwrap_or_default();
+        return Ok(facts["started"].as_u64().unwrap_or(0) * 2
+            + u64::from(facts["current_started"] == true));
     }
 
     if key.kind == "session_active_turns" {

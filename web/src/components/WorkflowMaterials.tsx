@@ -7,6 +7,7 @@ import { type Request, type Row } from "./rpc-types";
 import { RawJsonLink, ReadState } from "./reading";
 import { useReading, navigateReading, executionUrl } from "./reading-state";
 import { WorkflowReferences } from "./WorkflowReferences";
+import { materialTitle } from "./workflow-material";
 
 function MaterialReader({
   projectId,
@@ -48,11 +49,17 @@ function MaterialReader({
       ) : (
         state.value && (
           <>
-            <h3>{displayText(state.value.record.delivery_name)}</h3>
+            <h3>
+              {displayText(
+                materialTitle(
+                  state.value.record.delivery_name,
+                  state.value.record.step_name,
+                ),
+              )}
+            </h3>
             <p className="muted">
               {displayText(state.value.record.owner_title)} ·{" "}
-              {displayText(state.value.record.step_name)} ·{" "}
-              {displayText(state.value.record.port)} · 第{" "}
+              {displayText(state.value.record.step_name)} · 第{" "}
               {displayText(state.value.record.round)} 轮 ·{" "}
               {displayText(state.value.record.status)}
             </p>
@@ -192,17 +199,24 @@ export function WorkflowMaterials({
           )}
           {[...groups].map(([key, items]) => (
             <section key={key}>
-              <h4>{displayText(items[0].delivery_name)}</h4>
+              <h4>
+                {displayText(
+                  materialTitle(items[0].delivery_name, items[0].step_name),
+                )}
+              </h4>
               {items.map((item) => (
                 <div key={item.id}>
                   <button
                     aria-current={selected === item.id}
                     onClick={() => select(item.id)}
                   >
-                    {displayText(item.delivery_name)}
+                    {displayText(
+                      materialTitle(item.delivery_name, item.step_name),
+                    )}
                     <small>
                       {displayText(item.owner_title)} ·{" "}
-                      {displayText(item.step_name)} · {displayText(item.port)}
+                      {displayText(item.step_name)} · 第{" "}
+                      {displayText(item.round)} 轮
                       {displayText(item.historical ? " · 历史产物" : "")}
                     </small>
                   </button>

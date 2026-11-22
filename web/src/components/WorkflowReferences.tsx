@@ -1,6 +1,7 @@
 import { displayText } from "../display-text";
 import { DiscussionLink, ReadingLink } from "./reading";
 import type { Row } from "./rpc-types";
+import { materialTitle } from "./workflow-material";
 
 export function WorkflowReferences({
   source,
@@ -56,7 +57,13 @@ export function WorkflowReferences({
               {...{ projectId, ownerId }}
               target={{ ...target, output_id: output.id }}
             >
-              材料 · {displayText(output.name || output.port || output.id)}
+              {displayText(
+                materialTitle(
+                  output.name || source.output_names?.[output.id],
+                  source.step_name || source.step,
+                  output.port,
+                ),
+              )}
             </ReadingLink>
           ))}
         {!compact &&

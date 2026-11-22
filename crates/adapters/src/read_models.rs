@@ -22,6 +22,49 @@ fn hide_encoded_reason(reason: &mut String, truncated: &mut bool) {
     }
 }
 
+pub(super) fn workflow_reason(
+    pool: &ConnectionPool,
+    project: &str,
+    id: &str,
+    execution: Option<&str>,
+) -> Result<Value> {
+    let conn = pool.read()?;
+    let result = if let Some(execution) = execution {
+        conn.query_row(
+            "SELECT s.step_revision,json_extract(step.value,'$.reason'),
+                json_extract(r.data,'$.error.message'),r.revision
+             FROM governance_records i
+             JOIN workflow_display_steps s ON s.instance_id=i.id AND s.execution_id=?3
+             JOIN json_each(i.data,'$.steps') step ON json_extract(step.value,'$.id')=?3
+             LEFT JOIN governance_records r ON r.id=(
+                SELECT id FROM governance_records
+                WHERE type='workflow_reconciliation' AND definition_id=?3
+                  AND owner_project=?2 AND json_extract(data,'$.instance_id')=?1
+                ORDER BY rowid DESC LIMIT 1)
+             WHERE i.id=?1 AND i.type='workflow_instance' AND i.owner_project=?2",
+            params![id, project, execution],
+            |row| Ok(json!({"revision":row.get::<_,u64>(0)?,
+                "reason":row.get::<_,Option<String>>(1)?,"reconciliation_message":row.get::<_,Option<String>>(2)?,
+                "reconciliation_revision":row.get::<_,Option<u64>>(3)?})),
+        )
+    } else {
+        conn.query_row(
+            "SELECT d.revision,coalesce(json_extract(d.data,'$.reason.message'),json_extract(d.data,'$.reason'))
+             FROM governance_records i JOIN governance_records d ON d.type='workflow_driver'
+                AND d.definition_id=coalesce(json_extract(i.data,'$.root_instance_id'),i.id)
+                AND d.owner_project=i.owner_project
+             WHERE i.id=?1 AND i.type='workflow_instance' AND i.owner_project=?2
+             ORDER BY d.rowid DESC LIMIT 1",
+            params![id,project],
+            |row| Ok(json!({"revision":row.get::<_,u64>(0)?,"reason":row.get::<_,Option<String>>(1)?})),
+        )
+    };
+    result
+        .optional()
+        .map_err(storage)?
+        .ok_or_else(|| err("not_found", "未找到当前项目的流程原因"))
+}
+
 pub(super) fn orchestration(
     pool: &ConnectionPool,
     project: &str,

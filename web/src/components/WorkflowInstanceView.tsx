@@ -1,4 +1,4 @@
-import { displayText, truncateText } from "../display-text";
+import { displayText } from "../display-text";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRuntimeRefresh } from "./useRuntimeRefresh";
 import { ChevronRight } from "lucide-react";
@@ -7,9 +7,11 @@ import { useActionFeedback } from "./action-feedback";
 import { type Request, type Row } from "./rpc-types";
 import { ReadingLink, ReadState } from "./reading";
 import { WorkflowStepInput } from "./WorkflowStepInput";
+import { WorkflowReasonText } from "./WorkflowReasonText";
 import { WorkflowReferences } from "./WorkflowReferences";
 import { WorkflowStageProgress } from "./WorkflowStageProgress";
 import { useReading } from "./reading-state";
+import { materialTitle } from "./workflow-material";
 
 type Props = {
   nested?: boolean;
@@ -140,9 +142,11 @@ export function WorkflowInstanceView({
           .filter(
             (step: Row) =>
               opened.current["step:" + step.id] &&
-              ["waiting_confirmation", "awaiting_acceptance"].includes(
-                step.status,
-              ),
+              [
+                "waiting_confirmation",
+                "awaiting_acceptance",
+                "failed",
+              ].includes(step.status),
           )
           .map(async (step: Row) => {
             const qualified = await request("query.workflow_instance", {
@@ -548,9 +552,8 @@ export function WorkflowInstanceView({
             {stageOpen ? (
               <div className="workflow-stage-body">
                 {stage.description ? (
-                  <p className="muted">
-                    {displayText(truncateText(stage.description, 180))}
-                    {displayText(stage.description.length > 180 ? "…" : "")}
+                  <p className="muted workflow-reason-text">
+                    {displayText(stage.description)}
                   </p>
                 ) : null}
                 {executions.map(({ definition, execution }: Row) => {
@@ -563,6 +566,7 @@ export function WorkflowInstanceView({
                     "retry_source_publication",
                   ].includes(execution.reconciliation?.resolution);
                   const unmet = completion?.satisfied === false;
+                  const recovery = completion?.recovery;
                   const confirmation = completion?.confirmation;
                   const humanSatisfied =
                     completion?.human_satisfied ??
@@ -606,8 +610,22 @@ export function WorkflowInstanceView({
                             "执行方式未记录",
                         )}{" "}
                         · 第 {displayText(execution.round)} 轮
-                        {displayText(
-                          execution.reason ? ` · ${execution.reason}` : "",
+                        {(execution.reason || execution.reason_truncated) && (
+                          <>
+                            {" · "}
+                            <WorkflowReasonText
+                              request={request}
+                              projectId={projectId}
+                              instanceId={record.id}
+                              executionId={execution.id}
+                              revision={
+                                activeData?.step_revisions?.[execution.id]
+                              }
+                              preview={execution.reason}
+                              truncated={execution.reason_truncated}
+                              active={stepOpen}
+                            />
+                          </>
                         )}
                         {execution.failure_code && (
                           <>
@@ -629,13 +647,42 @@ export function WorkflowInstanceView({
                         >
                           {["unresolved", "conflicted"].includes(
                             execution.reconciliation.status,
-                          )
-                            ? `${recoveringSource ? "返工未完成" : "核对未完成"}：${execution.reconciliation.error?.message || "未取得可确认的执行结果"}${execution.reconciliation.error?.code ? `（${execution.reconciliation.error.code}）` : ""}`
-                            : execution.reconciliation.status === "completed"
-                              ? "原执行结果核对已完成"
-                              : recoveringSource
-                                ? "正在恢复原源分支发布…"
-                                : "正在核对原执行结果…"}
+                          ) ? (
+                            <>
+                              {recoveringSource
+                                ? "返工未完成："
+                                : "核对未完成："}
+                              <WorkflowReasonText
+                                request={request}
+                                projectId={projectId}
+                                instanceId={record.id}
+                                executionId={execution.id}
+                                revision={execution.reconciliation.revision}
+                                field="reconciliation_message"
+                                preview={
+                                  execution.reconciliation.error?.message ||
+                                  (execution.reconciliation.error
+                                    ?.message_truncated
+                                    ? ""
+                                    : "未取得可确认的执行结果")
+                                }
+                                truncated={Boolean(
+                                  execution.reconciliation.error
+                                    ?.message_truncated,
+                                )}
+                                active={stepOpen}
+                              />
+                              {execution.reconciliation.error?.code &&
+                                `（${displayText(execution.reconciliation.error.code)}）`}
+                            </>
+                          ) : execution.reconciliation.status ===
+                            "completed" ? (
+                            "原执行结果核对已完成"
+                          ) : recoveringSource ? (
+                            "正在恢复原源分支发布…"
+                          ) : (
+                            "正在核对原执行结果…"
+                          )}
                         </p>
                       )}
                       {stepOpen ? (
@@ -673,9 +720,16 @@ export function WorkflowInstanceView({
                                         >
                                           核对产物 ·{" "}
                                           {displayText(
-                                            plan.steps.find(
-                                              (s: Row) => s.key === source.step,
-                                            )?.name || name,
+                                            materialTitle(
+                                              activeData?.output_names?.[
+                                                outputId
+                                              ],
+                                              plan.steps.find(
+                                                (s: Row) =>
+                                                  s.key === source.step,
+                                              )?.name,
+                                              name,
+                                            ),
                                           )}
                                         </ReadingLink>
                                       ) : null;
@@ -689,6 +743,8 @@ export function WorkflowInstanceView({
                               owner_kind: record._reading?.owner_kind,
                               feature_id: record._reading?.feature_id,
                               ...execution,
+                              step_name: definition.name,
+                              output_names: activeData?.output_names,
                               execution_id: execution.id,
                               instance_id: current.id,
                               owner_id: runtime.owner_id,
@@ -835,7 +891,15 @@ export function WorkflowInstanceView({
                               }}
                             />
                           ) : null}
-                          {[
+                          {recovery && (
+                            <p role="status">
+                              {recovery.human_required
+                                ? "自动恢复已用完相关步骤的重试额度，请核对测试或执行记录。"
+                                : "项目经理将核对执行记录并安排修复和重试。"}
+                            </p>
+                          )}
+                          {!recovery &&
+                          [
                             "waiting_confirmation",
                             "awaiting_acceptance",
                           ].includes(execution.status) ? (

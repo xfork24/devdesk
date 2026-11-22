@@ -571,14 +571,11 @@ impl Engine {
                                 action: if request.definition.qualified_name
                                     == "workspace.checkpoint"
                                 {
-                                    let interfaces: Vec<TestInterface> = serde_json::from_value(
-                                        p.get("interfaces").cloned().unwrap_or(json!([])),
-                                    )
-                                    .map_err(|e| err("invalid_params", e.to_string()))?;
-                                    require(interfaces.len() <= 32, "接口基线超出预算")?;
-                                    for interface in &interfaces {
-                                        interface.source()?;
-                                    }
+                                    let interfaces = p
+                                        .get("interfaces")
+                                        .map(TestInterface::parse_list)
+                                        .transpose()?
+                                        .unwrap_or_default();
                                     RepositoryAction::Checkpoint {
                                         context,
                                         expected: text(&p["workspace"], "revision")?,

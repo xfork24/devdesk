@@ -290,7 +290,7 @@ fn executions(
         let step = &frozen["step"];
         let outputs=e["outputs"].as_object().into_iter().flatten().map(|(port,id)|{
             let reference=step["outputs"][port]["delivery_ref"].as_str().unwrap_or("");
-            json!({"id":id,"port":port,"name":catalog.state.configuration(reference).ok().map(|r|&r.name)})
+            json!({"id":id,"port":port,"turn_id":e["turn_id"],"name":catalog.state.configuration(reference).ok().map(|r|&r.name)})
         }).collect::<Vec<_>>();
         if !instance_metadata.contains_key(&instance) {
             let raw:String=conn.query_row("SELECT json_object('parent_execution_id',json_extract(data,'$.parent_execution_id'),'root_instance_id',json_extract(data,'$.root_instance_id')) FROM governance_records WHERE id=?1 AND type='workflow_instance'",[&instance],|r|r.get(0)).map_err(storage)?;

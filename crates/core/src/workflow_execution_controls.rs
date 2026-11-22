@@ -216,8 +216,14 @@ impl Engine {
                     .iter()
                     .find(|s| s.key == resources.execution.step)
                     .ok_or_else(|| err("storage", "输入步骤定义缺失"))?;
+                let technical = resources.execution.status == StepExecutionStatus::Failed
+                    && resources
+                        .execution
+                        .failure
+                        .as_ref()
+                        .is_some_and(|f| f.code == "needs_manager");
                 require(
-                    resources.execution.status == StepExecutionStatus::WaitingInput
+                    (resources.execution.status == StepExecutionStatus::WaitingInput || technical)
                         && resources.execution.sequence < step.budget.max_turns,
                     "原步骤不在等待输入或已用尽预算",
                 )?;
@@ -225,6 +231,9 @@ impl Engine {
                     !commit.execution_active(&resources)?,
                     "原输入执行者或工具副作用尚未核对",
                 )?;
+                if technical {
+                    self.require_logical_retry_budget(&mut commit, &resources, step)?;
+                }
                 let input = text(&c.payload, "input")?;
                 require(input.len() <= 65536, "补充输入超出预算")?;
                 let (wait_reads, wait_changes) =
@@ -238,6 +247,11 @@ impl Engine {
                 next.turn_id = None;
                 next.status = StepExecutionStatus::Running;
                 next.budget_wait_started = None;
+                if technical {
+                    next.failure = None;
+                    next.finished = None;
+                    next.reason.clear();
+                }
                 let input = if let Some(reference) = commit.material_input.clone() {
                     commit.grant_material_input(&resources, &next, &reference)?;
                     let reader = resources.instance.plan.definitions.values().any(|r| {
@@ -268,6 +282,8 @@ impl Engine {
                         );
                         rendered.to_string()
                     }
+                } else if technical {
+                    json!({"origin":"technical_recovery","instructions":"Follow the supplied diagnosis within the existing business, test, workspace and approval scope. Keep prior work and verify the proposed repair.","input":input}).to_string()
                 } else {
                     input
                 };
@@ -281,11 +297,30 @@ impl Engine {
                 )?;
                 commit.witness([version(&session)])?;
                 commit.runtime_intent(&resources,&next,"conversation.send",next.session_id.as_deref().unwrap(),Some(session.revision),json!({"client_message_id":format!("{}:{}",next.id,next.sequence),"input":rendered}))?;
+                if technical {
+                    self.reopen_native_ancestors(&mut commit, &root)?;
+                    if root.instance.status == StepExecutionStatus::Failed {
+                        let mut header = root.instance.as_ref().clone();
+                        header.status = StepExecutionStatus::Running;
+                        commit.header(&root, &header)?;
+                    }
+                }
                 commit.step(&resources, &mut next)?;
                 next
             }
             "workflow.step.rework" if !c.payload["rework"].is_null() => {
                 self.prepare_selected_rework(&mut commit, &root)?
+            }
+            "workflow.step.rework"
+                if let Some(recovery) = self.test_recovery(&mut commit, &resources)? =>
+            {
+                self.prepare_test_recovery(&mut commit, &root, &resources, &recovery)?
+            }
+            "workflow.step.rework"
+                if let Some(recovery) =
+                    self.test_fixture_recovery(&mut commit, &root, &resources)? =>
+            {
+                self.prepare_test_recovery(&mut commit, &root, &resources, &recovery)?
             }
             "workflow.step.rework" | "workflow.step.retry"
                 if resources.execution.status == StepExecutionStatus::NeedsReconciliation =>

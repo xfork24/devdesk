@@ -81,6 +81,7 @@ fn eligible(key: &ResourceKey) -> bool {
         "workflow_step"
             | "workflow_change_pending"
             | "workflow_retry_count"
+            | "workflow_logical_retries"
             | "workflow_confirmations"
             | "workflow_waiver"
             | "workflow_children_source"

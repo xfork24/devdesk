@@ -62,16 +62,7 @@ impl Engine {
             selection.binding(binding);
         }
         let facts = resources.selected_facts(self.store.as_ref(), &selection)?;
-        let attempts = one(
-            self.store.as_ref(),
-            "workflow_retry_count",
-            &json!([root.record.id, e.node_id, e.round]).to_string(),
-        )?;
-        let retry_count = attempts
-            .value
-            .as_ref()
-            .and_then(|v| v["count"].as_u64())
-            .unwrap_or(0);
+        let (attempts, retry_count) = self.logical_retries(resources)?;
         let advisory = |result: Result<()>| match result {
             Ok(()) => Eligibility::ready(),
             Err(error) => Eligibility::blocked(&error.code, error.message),
@@ -106,7 +97,12 @@ impl Engine {
             StepExecutionStatus::Failed | StepExecutionStatus::Cancelled
         ) {
             Eligibility::blocked("execution_state", "步骤不在技术失败或取消状态")
-        } else if retry_count >= step.budget.retry_limit {
+        } else if attempts
+            .value
+            .as_ref()
+            .is_some_and(|v| v["started"].as_u64().unwrap_or(0) > 0)
+            && retry_count >= step.budget.retry_limit
+        {
             Eligibility::blocked("retry_budget", "技术重试额度已满")
         } else if e
             .failure
@@ -202,6 +198,30 @@ impl Engine {
             retry,
         };
         let mut result = json!({"step":step.key,"node_id":step.node_id,"execution":e,"step_revision":resources.step.revision,"dispatchable":actions.dispatch.allowed,"actions":actions,"retry_count":retry_count,"input_gap":input_gap,"completion_satisfied":completion,"completion_overridden":overridden,"human_satisfied":human,"confirmation_status":disposition,"confirmation_ref":confirmation,"confirmation_waiver_ref":if waived{waiver.value.as_ref().map(|r|&r["id"])}else{None}});
+        result["retry_limit"] = json!(step.budget.retry_limit);
+        if !completion && !overridden {
+            result["recovery"] = self.test_recovery_view(&mut selected, root, resources, step)?;
+        }
+        if e.failure
+            .as_ref()
+            .is_some_and(|failure| failure.code == "needs_manager")
+        {
+            let fixture = self.test_fixture_recovery(&mut selected, root, resources)?;
+            let may_continue = actions.retry.allowed
+                && e.session_id.is_some()
+                && e.turn_id.is_some()
+                && e.sequence < step.budget.max_turns;
+            let exhausted = actions.retry.code == "retry_budget" && fixture.is_none();
+            result["recovery"] = json!({
+                "status":if actions.retry.allowed || fixture.is_some() {"needs_manager"} else if exhausted {"exhausted"} else {"blocked"},
+                "kind":"agent_diagnosis",
+                "operation":if !actions.retry.allowed && fixture.is_some() {"workflow.step.rework"} else {"workflow.step.retry"},
+                "remaining":step.budget.retry_limit.saturating_sub(retry_count),
+                "human_required":exhausted,
+                "continue_operation":if may_continue {Some("workflow.step.input")} else {None},
+                "fixture_repair":fixture.as_ref().map(|_|"workflow.step.rework"),
+            });
+        }
         result["delivery_refresh"] = delivery_refresh;
         if e.status == StepExecutionStatus::NeedsReconciliation
             && let Ok(recovery) = self.source_publication_recovery_view(root, resources)

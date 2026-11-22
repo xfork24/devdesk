@@ -62,14 +62,7 @@ impl Workspace {
         {
             return Err(err("permission_unconfigured", "会话必须使用版本化权限绑定"));
         }
-        if binding.adapter_version
-            != harness::managed_adapter_identity(binding.installation.key.provider)
-        {
-            return Err(err(
-                "permission_asset_mismatch",
-                "冻结适配器已变化，需要显式后继会话",
-            ));
-        }
+        harness::validate_managed_adapter(binding)?;
         if let Some(value) = &rows[1].value {
             let intent = ConfigurationRecord::from_storage(e.store.restore_runtime_record(value)?)?;
             let next: RuntimeBinding = serde_json::from_value(intent.data["binding"].clone())
@@ -201,9 +194,7 @@ impl Workspace {
             .and_then(|b| b.permissions.as_ref())
             .and_then(|p| p.binding_lock.as_ref());
         let requires_successor = session.runtime_binding.as_ref().is_some_and(|binding| {
-            frozen.is_none()
-                || binding.adapter_version
-                    != harness::managed_adapter_identity(binding.installation.key.provider)
+            frozen.is_none() || harness::validate_managed_adapter(binding).is_err()
         });
         let desired = s
             .configuration(&session.agent)

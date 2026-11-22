@@ -6,6 +6,7 @@ use crate::{
     workflow_resources::version,
     *,
 };
+use std::collections::BTreeMap;
 
 impl Engine {
     pub(crate) fn controller_workspace_view(&self, p: &Value) -> Result<Value> {
@@ -184,8 +185,187 @@ impl Engine {
                 request["arguments"]["step"].as_str().unwrap_or("评审")
             ));
         }
+        if let Some(root) = run
+            .value
+            .as_ref()
+            .and_then(|r| r["root_instance_id"].as_str())
+            && let Some(materials) = value
+                .pointer_mut("/data/request/interaction/materials")
+                .and_then(Value::as_array_mut)
+        {
+            for material in materials {
+                let generic_label = material["label"]
+                    .as_str()
+                    .is_none_or(|s| s.trim().is_empty() || s.trim().eq_ignore_ascii_case("result"));
+                let generic_purpose = material["purpose"]
+                    .as_str()
+                    .is_none_or(|s| s.trim().is_empty() || s == "核对当前审批的输入或产物");
+                if !(generic_label || generic_purpose) {
+                    continue;
+                }
+                let (Some(id), Some(instance)) = (
+                    material["output_id"].as_str(),
+                    material["instance_id"].as_str(),
+                ) else {
+                    continue;
+                };
+                let output = one(self.store.as_ref(), "governance", id)?;
+                let Some(raw) = output.value.as_ref().filter(|r| {
+                    r["type"] == "workflow_output"
+                        && r["data"]["execution_id"] == material["execution_id"]
+                }) else {
+                    continue;
+                };
+                let producer = WorkflowHeaderFacts::read(self, instance)?;
+                if producer.instance.root_instance_id != root {
+                    continue;
+                }
+                let is_output = request["arguments"]["outputs"]
+                    .as_object()
+                    .is_some_and(|outputs| outputs.values().any(|output| output == id));
+                let purpose = if is_output {
+                    "用作本次审批的待确认产物"
+                } else {
+                    "供本次审批核对"
+                };
+                if let Some(description) =
+                    self.describe_approval_material(&producer, id, raw, purpose)?
+                {
+                    if generic_label {
+                        material["label"] = description["label"].clone();
+                    }
+                    if generic_purpose {
+                        material["purpose"] = description["purpose"].clone();
+                    }
+                }
+            }
+        }
         Ok(value)
     }
+
+    fn describe_approval_material(
+        &self,
+        producer: &WorkflowHeaderFacts,
+        id: &str,
+        output: &Value,
+        purpose: &str,
+    ) -> Result<Option<Value>> {
+        let Some(source) = producer
+            .instance
+            .steps
+            .iter()
+            .find(|e| output["data"]["execution_id"] == e.id)
+        else {
+            return Ok(None);
+        };
+        let plan = &producer.instance.plan;
+        let delivery_ref = output["data"]["delivery_ref"].as_str().unwrap_or_default();
+        let frozen_delivery = plan.definitions.get(delivery_ref);
+        let same_workflow = source.workflow_revision_id == plan.workflow_revision_id;
+        let catalog = if frozen_delivery.is_none() || !same_workflow {
+            Some(self.store.configuration_snapshot()?)
+        } else {
+            None
+        };
+        let delivery =
+            frozen_delivery.or_else(|| catalog.as_ref()?.state.configuration(delivery_ref).ok());
+        let step_name = if same_workflow {
+            plan.document
+                .steps
+                .iter()
+                .find(|step| step.key == source.step)
+                .map(|step| step.name.as_str())
+        } else {
+            catalog
+                .as_ref()
+                .and_then(|catalog| {
+                    catalog
+                        .state
+                        .configuration(&source.workflow_revision_id)
+                        .ok()
+                })
+                .and_then(|workflow| workflow.data["steps"].as_array())
+                .and_then(|steps| steps.iter().find(|step| step["key"] == source.step))
+                .and_then(|step| step["name"].as_str())
+        }
+        .unwrap_or(&source.step);
+        let label = delivery
+            .filter(|delivery| {
+                delivery.r#type == "delivery_type" && !delivery.name.trim().is_empty()
+            })
+            .map(|delivery| delivery.name.clone())
+            .unwrap_or_else(|| format!("{step_name}产物"));
+        let purpose = format!("由「{step_name}」第 {} 轮产出，{purpose}。", source.round);
+        Ok(Some(
+            json!({"instance_id":producer.record.id,"owner_id":producer.instance.owner_id,"execution_id":source.id,"session_id":source.session_id,"turn_id":source.turn_id,"output_id":id,"label":label,"purpose":purpose}),
+        ))
+    }
+
+    pub(crate) fn controller_approval_materials(
+        &self,
+        member: &WorkflowHeaderFacts,
+        execution: &StepExecution,
+        include_inputs: bool,
+    ) -> Result<Vec<Value>> {
+        let mut references = execution
+            .outputs
+            .values()
+            .map(|id| (id.clone(), true))
+            .collect::<BTreeMap<_, _>>();
+        if include_inputs {
+            let manifest = one(
+                self.store.as_ref(),
+                "governance",
+                &format!("workflow-inputs:{}", execution.id),
+            )?;
+            if let Some(manifest) = manifest.value {
+                for input in manifest["data"]["targets"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|t| t["origin_ref"].as_str())
+                {
+                    references.entry(input.to_owned()).or_insert(false);
+                }
+            }
+        }
+        let mut materials = vec![];
+        for (id, is_output) in references {
+            let output = one(self.store.as_ref(), "governance", &id)?;
+            let Some(raw) = output
+                .value
+                .as_ref()
+                .filter(|r| r["type"] == "workflow_output")
+            else {
+                continue;
+            };
+            let Some(source) = raw["data"]["execution_id"].as_str() else {
+                continue;
+            };
+            let other;
+            let producer = if member.instance.steps.iter().any(|e| e.id == source) {
+                member
+            } else {
+                let owner = one(self.store.as_ref(), "workflow_execution_owner", source)?;
+                let Some(owner) = owner.value else { continue };
+                other = WorkflowHeaderFacts::read(self, &text(&owner, "instance_id")?)?;
+                if other.instance.root_instance_id != member.instance.root_instance_id {
+                    continue;
+                }
+                &other
+            };
+            let purpose = if is_output {
+                "用作本次审批的待确认产物"
+            } else {
+                "用作本次审批的输入材料"
+            };
+            if let Some(material) = self.describe_approval_material(producer, &id, raw, purpose)? {
+                materials.push(material);
+            }
+        }
+        Ok(materials)
+    }
+
     pub(crate) fn controller_step_approvals(&self, root: &str) -> Result<Vec<Value>> {
         let mut result = Vec::new();
         let mut after = String::new();
@@ -204,6 +384,9 @@ impl Engine {
                     }
                     let resources = member.step(self, &e.id)?;
                     let readiness = self.native_step_readiness(&member, &resources)?;
+                    if !readiness["recovery"].is_null() {
+                        continue;
+                    }
                     let code = readiness["actions"]["accept"]["code"]
                         .as_str()
                         .unwrap_or("");
@@ -232,47 +415,7 @@ impl Engine {
                         .iter()
                         .find(|s| s.node_id == e.node_id)
                         .ok_or_else(|| err("storage", "审批步骤合同缺失"))?;
-                    let mut references: std::collections::BTreeSet<_> =
-                        e.outputs.values().cloned().collect();
-                    let manifest = one(
-                        self.store.as_ref(),
-                        "governance",
-                        &format!("workflow-inputs:{}", e.id),
-                    )?;
-                    if let Some(raw) = &manifest.value {
-                        references.extend(
-                            raw["data"]["targets"]
-                                .as_array()
-                                .into_iter()
-                                .flatten()
-                                .filter_map(|t| t["origin_ref"].as_str())
-                                .map(str::to_owned),
-                        );
-                    }
-                    let mut materials = vec![];
-                    for id in references {
-                        let raw = one(self.store.as_ref(), "governance", &id)?;
-                        let Some(raw) = &raw.value else { continue };
-                        if raw["type"] != "workflow_output" {
-                            continue;
-                        }
-                        let Some(execution) = raw["data"]["execution_id"].as_str() else {
-                            continue;
-                        };
-                        let owner =
-                            one(self.store.as_ref(), "workflow_execution_owner", execution)?;
-                        let Some(owner) = owner.value else { continue };
-                        let actual =
-                            WorkflowHeaderFacts::read(self, &text(&owner, "instance_id")?)?;
-                        if actual.instance.root_instance_id != root {
-                            continue;
-                        }
-                        if let Some(source) =
-                            actual.instance.steps.iter().find(|s| s.id == execution)
-                        {
-                            materials.push(json!({"instance_id":actual.record.id,"owner_id":actual.instance.owner_id,"execution_id":source.id,"session_id":source.session_id,"turn_id":source.turn_id,"output_id":id,"label":raw["name"],"purpose":"核对当前审批的输入或产物"}));
-                        }
-                    }
+                    let materials = self.controller_approval_materials(&member, e, true)?;
                     let evidence = json!([{"instance_id":id,"owner_id":member.instance.owner_id,"execution_id":e.id,"session_id":e.session_id,"turn_id":e.turn_id,"label":step.name,"purpose":"核对本轮执行与校验结果"}]);
                     if ancestors.is_none() {
                         ancestors = Some(self.controller_ancestors(id)?);

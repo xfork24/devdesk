@@ -12,6 +12,12 @@
 
 [git_diff.rs](../../../crates/adapters/src/git_diff.rs) 在展开补丁前读取完整的 Git 文件清单与对象大小。超过内联预算时保留全部路径和对象身份，返回 `patch_complete: false` 的有界摘要；它不能被当作完整补丁。快照只处理当前仓库的可暂存内容，忽略规则和新增文件大小检查将运行依赖挡在提交前，已跟踪的文件不会被静默删除。
 
+`workspace.checkpoint` 按冻结测试计划中的路径和导出名称创建缺失接口。Node 测试可声明 ESM `.mjs` 或 CommonJS `.cjs`，Python 测试可声明 `.py`。CommonJS 空函数返回解析为 `undefined` 的 Promise，支持使用 `assert.rejects` 核对异步接口。检查点保留已有的接口文件。
+
+工作流将某个步骤的产物直接绑定到检查点的 `interfaces` 时，系统在封存产物前就使用检查点的同一规则校验这份清单。路径、运行器或重复声明有误时，失败信息留在产出清单的步骤，便于修正后重试。
+
+独立测试从只读的 `/work` 加载测试和候选源码。Node 测试可通过 `node:os` 的 `tmpdir()` 创建临时目录，Python 测试可用 `tempfile`。把运行生成的文件写到临时目录并在用例完成后清理。只读文件系统错误和模块加载错误属于测试环境失败，不能作为业务断言的 Red 证据。
+
 ## 真实测试
 
 [tests.rs](../../../crates/adapters/src/tests.rs) 是生产 CommandTests 实现。它在 Docker 中运行 TestRequest 指定的测试，提供 poll、stop、cleanup、inspect/reconcile 等能力。测试报告关联候选版本、环境和实际运行。

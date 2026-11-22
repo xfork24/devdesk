@@ -451,16 +451,16 @@ test("manager prepares exact materials and review evidence for a human decision"
     card.getByRole("link", { name: "本轮 PRD", exact: true }),
   ).toHaveAttribute("href", /output_id=frozen-prd/);
   await expect(
-    card.getByRole("link", { name: "材料上下文", exact: true }).first(),
+    card.getByRole("link", { name: "本轮 PRD · 上下文", exact: true }),
   ).toHaveAttribute("href", /session_id=prd-session/);
   await expect(
-    card.getByRole("link", { name: "材料执行记录", exact: true }).first(),
+    card.getByRole("link", { name: "本轮 PRD · 执行记录", exact: true }),
   ).toHaveAttribute("href", /execution_id=prd-original/);
   await expect(
     card.getByRole("link", { name: "查看上下文", exact: true }),
   ).toHaveAttribute("href", /session_id=review-session/);
   await expect(
-    card.getByRole("link", { name: "查看依据原件", exact: true }),
+    card.getByRole("link", { name: "查看独立初审原件", exact: true }),
   ).toHaveAttribute("href", /output_id=frozen-review/);
   await expect(
     card.getByRole("link", { name: "查看执行记录", exact: true }),
@@ -1274,6 +1274,8 @@ test("manager shows the current blocker without scheduling configuration at desk
   page,
 }) => {
   const url = await fixture(page);
+  const reason = `${"需要导出哪些字段？".repeat(28)}\n最后一项需要确认导出的时间范围。`;
+  const driverReason = `${"正在处理经理的调度状态。".repeat(25)}\n请补充原任务信息。`;
   await page.route("**/rpc", async (route) => {
     const call = route.request().postDataJSON();
     let result: any;
@@ -1281,7 +1283,15 @@ test("manager shows the current blocker without scheduling configuration at desk
       result = { record: { id: "controller", data: { status: "active" } } };
     else if (call.method === "query.workflow_driver")
       result = {
-        driver: { data: { mode: "agent", epoch: 1 } },
+        driver: {
+          revision: 7,
+          data: {
+            mode: "agent",
+            epoch: 1,
+            reason: driverReason.slice(0, 256),
+            reason_truncated: true,
+          },
+        },
         waiting: [
           {
             instance_id: "read-instance",
@@ -1293,13 +1303,23 @@ test("manager shows the current blocker without scheduling configuration at desk
             step: "requirements",
             step_name: "澄清需求与PRD",
             status: "waiting_input",
-            reason: "需要导出哪些字段？",
+            reason: reason.slice(0, 256),
+            reason_truncated: true,
             actions: {},
             waiting_for: [],
           },
         ],
       };
-    else return route.fallback();
+    else if (
+      call.method === "query.workflow_instance" &&
+      call.params.view === "reason"
+    ) {
+      expect(call.params.project_id).toBe("read-project");
+      expect(call.params.id).toBe("read-instance");
+      result = call.params.execution_id
+        ? { revision: 5, reason }
+        : { revision: 7, reason: driverReason };
+    } else return route.fallback();
     await route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
   });
   await page.goto(url);
@@ -1309,7 +1329,15 @@ test("manager shows the current blocker without scheduling configuration at desk
   });
   await expect(
     manager.getByRole("region", { name: "当前阻塞点" }),
-  ).toContainText("需要导出哪些字段？");
+  ).toContainText("最后一项需要确认导出的时间范围。");
+  await expect(
+    manager.getByText("请补充原任务信息。", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    manager
+      .getByRole("region", { name: "当前阻塞点" })
+      .locator(".workflow-reason-text"),
+  ).toHaveText(reason);
   await expect(
     manager.getByText("调度与经理管理", { exact: true }),
   ).toHaveCount(0);
@@ -1461,7 +1489,19 @@ test("Agent 模式在经理页展示步骤人工确认并保留失败结果给�
       result = {
         driver: { data: { mode: "agent" } },
         workflow_approval_pending: true,
-        waiting: [],
+        waiting: [
+          {
+            instance_id: "read-instance",
+            execution_id: "failed-green",
+            step: "green",
+            step_name: "T04 独立 Green",
+            status: "awaiting_acceptance",
+            reason: "一项断言失败",
+            recovery: { status: "needs_manager", human_required: false },
+            retry_count: 1,
+            retry_limit: 3,
+          },
+        ],
         approvals: [
           {
             instance_id: "read-instance",
@@ -1517,6 +1557,8 @@ test("Agent 模式在经理页展示步骤人工确认并保留失败结果给�
   await expect(
     page.getByRole("article", { name: "自动校验失败", exact: true }),
   ).toHaveCount(0);
+  await expect(page.getByText("T04 独立 Green · 待项目经理恢复")).toBeVisible();
+  await expect(page.getByText(/本步骤已重试 1\/3 次/)).toBeVisible();
   await card
     .getByRole("button", { name: /确认|批准/ })
     .first()
@@ -1919,7 +1961,7 @@ test("流程、材料、步骤上下文、Agent 讨论和审计定位同一执�
     turn_id: "33333333-4444-4555-8666-777777777777",
     plan_revision_id: "55555555-6666-4777-8888-999999999999",
     inputs: {},
-    outputs: { report: "44444444-5555-4666-8777-888888888888" },
+    outputs: { result: "44444444-5555-4666-8777-888888888888" },
   };
   const record = {
     ...execution,
@@ -2070,6 +2112,7 @@ test("流程、材料、步骤上下文、Agent 讨论和审计定位同一执�
           children: [],
           history: [],
           actors: { [execution.id]: record.actor },
+          output_names: { "44444444-5555-4666-8777-888888888888": "需求报告" },
         };
         break;
       }
@@ -2114,8 +2157,10 @@ test("流程、材料、步骤上下文、Agent 讨论和审计定位同一执�
           configured: true,
           turn_id: "33333333-4444-4555-8666-777777777777",
           current_feature: { id: "read-feature", title: "更正后的需求名称" },
+          input_material_names: { "upstream-request": "原始需求文档" },
           task: {
             task_instructions: "这是此轮实际冻结的需求输入",
+            input_sources: { result: { source_output_id: "upstream-request" } },
             user_request: {
               feature_id: "read-feature",
               title: "最初的需求名称",
@@ -2202,6 +2247,9 @@ test("流程、材料、步骤上下文、Agent 讨论和审计定位同一执�
   const context = page.getByRole("article", { name: "选中步骤上下文" });
   await expect(context).toContainText("这是此轮实际冻结的需求输入");
   await expect(
+    context.getByRole("link", { name: "原始需求文档", exact: true }),
+  ).toHaveAttribute("href", /output_id=upstream-request/);
+  await expect(
     context.getByText("更正后的需求名称", { exact: true }),
   ).toBeVisible();
   const originalInput = context.getByText("实际发送的完整输入", {
@@ -2258,8 +2306,9 @@ test("流程、材料、步骤上下文、Agent 讨论和审计定位同一执�
     future.getByRole("link", { name: "查看执行者上下文", exact: true }),
   ).toHaveCount(0);
   await expect(
-    step.getByRole("link", { name: "材料 · report", exact: true }),
-  ).toBeVisible();
+    step.getByRole("link", { name: "需求报告", exact: true }),
+  ).toHaveAttribute("href", /output_id=44444444-5555-4666-8777-888888888888/);
+  await expect(step.getByRole("link", { name: /\bresult\b/ })).toHaveCount(0);
   for (const entrance of [
     step.getByRole("link", { name: "查看此轮会话", exact: true }),
     step.getByRole("button", { name: "打开 Agent 讨论", exact: true }),
@@ -3104,6 +3153,10 @@ test("reconciliation shows its asynchronous failure beside the original executio
     "detail=manager",
     "detail=overview",
   );
+  const stageDescription = `${"请核对实际运行结果。".repeat(24)}最后确认阶段说明。`;
+  const reason = `${"需要核对原始执行结果。".repeat(55)}\n保留原执行尾部的说明。`;
+  const reconciliationMessage = `Git diff 输出超过 1 MiB；${"需使用有界差异读取。".repeat(210)}\n核对错误的最后一项。`;
+  let reasonReads = 0;
   let reconciled = false;
   await page.route("**/rpc", async (route) => {
     const call = route.request().postDataJSON();
@@ -3114,8 +3167,28 @@ test("reconciliation shows its asynchronous failure beside the original executio
       });
     }
     if (call.method !== "query.workflow_instance") return route.fallback();
+    if (call.params.view === "reason") {
+      expect(call.params).toMatchObject({
+        project_id: "read-project",
+        id: "read-instance",
+        execution_id: "snapshot-execution",
+      });
+      reasonReads += 1;
+      return route.fulfill({
+        json: {
+          jsonrpc: "2.0",
+          id: call.id,
+          result: {
+            revision: 2,
+            reason,
+            reconciliation_revision: reconciled ? 3 : null,
+            reconciliation_message: reconciled ? reconciliationMessage : null,
+          },
+        },
+      });
+    }
     const plan = {
-      stages: [{ key: "work", name: "实施" }],
+      stages: [{ key: "work", name: "实施", description: stageDescription }],
       steps: [
         {
           key: "snapshot",
@@ -3137,13 +3210,17 @@ test("reconciliation shows its asynchronous failure beside the original executio
           step: "snapshot",
           round: 2,
           status: "needs_reconciliation",
+          reason: reason.slice(0, 512),
+          reason_truncated: true,
           reconciliation: reconciled
             ? {
                 id: "reconciliation",
+                revision: 3,
                 status: "unresolved",
                 error: {
                   code: "git_output_limit",
-                  message: "Git diff 输出超过 1 MiB；需使用有界差异读取",
+                  message: reconciliationMessage.slice(0, 2048),
+                  message_truncated: true,
                 },
               }
             : undefined,
@@ -3164,6 +3241,7 @@ test("reconciliation shows its asynchronous failure beside the original executio
           runtime,
           plan,
           children: [],
+          step_revisions: { "snapshot-execution": 2 },
         },
       },
     });
@@ -3173,12 +3251,22 @@ test("reconciliation shows its asynchronous failure beside the original executio
     name: "步骤 · 保存代码快照",
     exact: true,
   });
+  await expect(
+    page.getByText("最后确认阶段说明。", { exact: false }),
+  ).toBeVisible();
+  expect(reasonReads).toBe(0);
   await execution.locator(".workflow-step-toggle").click();
+  await expect(
+    execution.getByText("保留原执行尾部的说明。", { exact: false }),
+  ).toBeVisible();
   await execution
     .getByRole("button", { name: "核对执行结果", exact: true })
     .click();
   await expect(execution.getByRole("alert")).toContainText(
     "核对未完成：Git diff 输出超过 1 MiB",
+  );
+  await expect(execution.getByRole("alert")).toContainText(
+    "核对错误的最后一项。",
   );
   await expect(execution.getByRole("alert")).toContainText("git_output_limit");
 });
@@ -3405,6 +3493,15 @@ test("经理待接纳产物与真正的人工确认分别展示", async ({ page 
             control_version: 2,
             input_digest: "original-input",
             outputs: { result: "original-output" },
+            materials: [
+              {
+                label: "实施交付报告",
+                purpose: "由「实施」第 2 轮产出，用作本次审批的待确认产物。",
+                output_id: "original-output",
+                instance_id: "read-instance",
+                execution_id: "implementation-2",
+              },
+            ],
             actions: { accept: { allowed: true } },
           },
         ],
@@ -3428,6 +3525,13 @@ test("经理待接纳产物与真正的人工确认分别展示", async ({ page 
     exact: true,
   });
   await expect(acceptance).toBeVisible();
+  await expect(
+    acceptance.getByRole("link", { name: "实施交付报告", exact: true }),
+  ).toHaveAttribute("href", /output_id=original-output/);
+  await expect(acceptance).toContainText("由「实施」第 2 轮产出");
+  await expect(
+    acceptance.getByRole("link", { name: "result", exact: true }),
+  ).toHaveCount(0);
   await acceptance
     .getByRole("button", { name: "确认：人工接纳：本轮实施产物", exact: true })
     .click();

@@ -9,14 +9,32 @@ use crate::{
 impl WorkflowCommit<'_> {
     pub fn authorize(&mut self, root: &WorkflowHeaderFacts) -> Result<()> {
         let mut human_input = false;
+        let mut manager_diagnosis = false;
         if self.method == "workflow.step.input" {
             let input = text(&self.command.payload, "input")?;
+            if matches!(self.context.actor(), WorkflowActor::Controller { .. })
+                && !crate::workflow_material_inputs::MaterialInput::is_reference(&input)
+                && let Some(id) = self.command.payload["execution_id"].as_str()
+            {
+                let resources = root.step(self.engine, id)?;
+                manager_diagnosis = resources.execution.status == StepExecutionStatus::Failed
+                    && resources
+                        .execution
+                        .failure
+                        .as_ref()
+                        .is_some_and(|f| f.code == "needs_manager");
+                if manager_diagnosis {
+                    self.witness(resources.reads.versions().iter().cloned())?;
+                }
+            }
             // Preserve an actual Human reply in full, even when it quotes
             // platform evidence. Only explicit references opt into transfer.
-            if !crate::workflow_material_inputs::MaterialInput::is_reference(&input) {
+            if !manager_diagnosis
+                && !crate::workflow_material_inputs::MaterialInput::is_reference(&input)
+            {
                 human_input = self.relays_human_input(root)?;
             }
-            if !human_input {
+            if !human_input && !manager_diagnosis {
                 self.material_input = self.resolve_material_input(root, &input)?;
             }
         }
@@ -47,7 +65,11 @@ impl WorkflowCommit<'_> {
             .as_ref()
             .is_some_and(|v| v["governed"] == true)
         {
-            if method == "workflow.step.input" && self.material_input.is_none() && !human_input {
+            if method == "workflow.step.input"
+                && self.material_input.is_none()
+                && !human_input
+                && !manager_diagnosis
+            {
                 return Err(err(
                     "human_input_required",
                     "需要人类判断的问题必须由人类回答；已有平台材料请先 workflow.outputs.read，再使用返回的 input_ref 原样转交，无需人工确认",

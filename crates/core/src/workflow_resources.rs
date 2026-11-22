@@ -240,6 +240,30 @@ pub(crate) fn live_workflow_chain(
     execution: &str,
     leaf_status: StepExecutionStatus,
 ) -> Result<(WorkflowToolAuthority, ReadSet)> {
+    workflow_chain(store, instance, execution, leaf_status, false)
+}
+
+pub(crate) fn technical_resume_workflow_chain(
+    store: &dyn EngineeringStore,
+    instance: &str,
+    execution: &str,
+) -> Result<(WorkflowToolAuthority, ReadSet)> {
+    workflow_chain(
+        store,
+        instance,
+        execution,
+        StepExecutionStatus::Failed,
+        true,
+    )
+}
+
+fn workflow_chain(
+    store: &dyn EngineeringStore,
+    instance: &str,
+    execution: &str,
+    leaf_status: StepExecutionStatus,
+    resume_child_failure: bool,
+) -> Result<(WorkflowToolAuthority, ReadSet)> {
     let mut instance = instance.to_owned();
     let mut execution = execution.to_owned();
     let mut instances = Vec::new();
@@ -280,6 +304,9 @@ pub(crate) fn live_workflow_chain(
             *status == json!(leaf_status)
         } else {
             status == "running"
+                || (resume_child_failure
+                    && status == "failed"
+                    && step["failure_code"] == "child_execution_failed")
                 || (leaf_status == StepExecutionStatus::NeedsReconciliation
                     && status == "needs_reconciliation")
         };

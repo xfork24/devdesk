@@ -28,8 +28,7 @@ fn git(path: &Path, args: &[&str]) -> String {
     String::from_utf8(output.stdout).unwrap().trim().into()
 }
 
-#[test]
-fn snapshots_keep_source_and_evidence_ignore_runtime_dependencies_and_bound_large_diffs() {
+fn snapshot_worktree_fixture() -> (tempfile::TempDir, CliGit, GitContext, String) {
     let directory = tempfile::tempdir().unwrap();
     let project = id();
     let repo = directory
@@ -68,7 +67,83 @@ fn snapshots_keep_source_and_evidence_ignore_runtime_dependencies_and_bound_larg
         },
         origin: Origin::External,
     };
-    let path = Path::new(&work.path);
+    (directory, adapter, context, base)
+}
+
+#[test]
+fn checkpoint_creates_missing_commonjs_exports_without_replacing_existing_interfaces() {
+    let (_directory, adapter, context, base) = snapshot_worktree_fixture();
+    let path = Path::new(&context.source.worktree);
+    let existing = "exports.configured = () => 'existing';\n";
+    fs::write(path.join("existing.cjs"), existing).unwrap();
+    let interfaces = [
+        ("server.cjs", "createScreenshotServer"),
+        ("backend/capture.cjs", "captureRegion"),
+        ("existing.cjs", "configured"),
+    ]
+    .into_iter()
+    .map(|(path, name)| TestInterface {
+        path: path.into(),
+        runner: TestRunner::NodeTest,
+        exports: vec![name.into()],
+    })
+    .collect();
+    let operation = RepositoryOperation {
+        id: id(),
+        project_id: context.project.clone(),
+        action: RepositoryAction::Checkpoint {
+            context: context.clone(),
+            expected: base,
+            allowed_paths: vec![".".into()],
+            protected_paths: vec![],
+            interfaces,
+        },
+        status: RepositoryOperationStatus::Dispatched,
+        receipt: None,
+        reason: String::new(),
+        revision: 1,
+    };
+    let RepositoryReceipt::Snapshot { revision } =
+        adapter.repository_operation(&operation).unwrap()
+    else {
+        panic!("expected a checkpoint snapshot");
+    };
+    assert_eq!(git(path, &["rev-parse", "HEAD"]), revision);
+    assert_eq!(
+        fs::read_to_string(path.join("existing.cjs")).unwrap(),
+        existing
+    );
+    let output = Command::new("node")
+        .current_dir(path)
+        .args([
+            "-e",
+            r#"const assert = require('node:assert/strict');
+const { createScreenshotServer } = require('./server.cjs');
+const { captureRegion } = require('./backend/capture.cjs');
+(async () => {
+    assert.equal(await createScreenshotServer(), undefined);
+    await assert.rejects(assert.rejects(captureRegion()), { code: 'ERR_ASSERTION' });
+})().catch(error => { console.error(error); process.exitCode = 1; });"#,
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let RepositoryReceipt::Snapshot { revision: replay } =
+        adapter.repository_operation(&operation).unwrap()
+    else {
+        panic!("expected the same checkpoint snapshot");
+    };
+    assert_eq!(replay, revision);
+}
+
+#[test]
+fn snapshots_keep_source_and_evidence_ignore_runtime_dependencies_and_bound_large_diffs() {
+    let (directory, adapter, context, base) = snapshot_worktree_fixture();
+    let path = Path::new(&context.source.worktree);
     let evidence = path.join("evidence/.devdesk/task");
     for subdir in [
         "browsers",
