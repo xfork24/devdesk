@@ -71,6 +71,19 @@ pub(super) fn entries(
         if !enrich {
             continue;
         }
+        if let Some(feature_id) = row["feature_id"].as_str() {
+            let title: Option<String> = conn
+                .query_row(
+                    "SELECT title FROM features WHERE id=?1 AND project_id=?2",
+                    rusqlite::params![feature_id, project],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(storage)?;
+            if let Some(title) = title {
+                row["feature_name"] = json!(title);
+            }
+        }
         let session = row["session_id"].as_str().unwrap_or("");
         let source:Option<String>=conn.query_row("SELECT data FROM governance_records WHERE type='configured_session' AND definition_id=?1 ORDER BY rowid LIMIT 1",[session],|r|r.get(0)).optional().map_err(storage)?;
         if let Some(source) = source {

@@ -39,6 +39,11 @@ export function AgentTaskView({
   if (!instructions)
     return <p className="muted">此轮没有 Workflow 步骤冻结任务。</p>;
   const inputSources = content.input_sources || {};
+  const requestTitle =
+    value.current_feature?.id &&
+    value.current_feature.id === content.user_request?.feature_id
+      ? value.current_feature.title
+      : content.user_request?.title;
   return (
     <section aria-label="Agent 任务与上下文" className="reading-body">
       <h4>任务请求</h4>
@@ -63,7 +68,7 @@ export function AgentTaskView({
           {content.user_request && (
             <>
               <h4>用户初始需求</h4>
-              <p>{displayText(content.user_request.title)}</p>
+              <p>{displayText(requestTitle)}</p>
               <MarkdownPreview
                 text={
                   content.user_request.initial_requirement ||

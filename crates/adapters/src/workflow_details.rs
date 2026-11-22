@@ -585,6 +585,17 @@ pub(super) fn task(
         return Ok(None);
     };
     let delivered=conn.query_row("SELECT content FROM conversation_events WHERE turn_id=?1 AND kind='user' AND EXISTS(SELECT 1 FROM sessions WHERE sessions.id=conversation_events.session_id AND sessions.project_id=?2) ORDER BY rowid LIMIT 1",params![turn,project],|r|r.get::<_,String>(0)).optional().map_err(storage)?;
+    let current_feature = conn
+        .query_row(
+            "SELECT f.id,f.title FROM turns t
+             JOIN sessions s ON s.id=t.session_id AND s.project_id=t.project_id
+             JOIN features f ON f.id=s.feature_id AND f.project_id=s.project_id
+             WHERE t.id=?1 AND t.project_id=?2",
+            params![turn, project],
+            |row| Ok(json!({"id":row.get::<_, String>(0)?,"title":row.get::<_, String>(1)?})),
+        )
+        .optional()
+        .map_err(storage)?;
     let descriptor = record.data["task"].clone();
     let execution = descriptor["source"]["execution_id"]
         .as_str()
@@ -610,6 +621,6 @@ pub(super) fn task(
     task.validate()?;
     require(task.turn_id == turn, "原任务轮次不符")?;
     Ok(Some(
-        json!({"configured":true,"archived":record.r#type=="archived_configured_execution_task","task":data,"turn_id":turn}),
+        json!({"configured":true,"archived":record.r#type=="archived_configured_execution_task","task":data,"turn_id":turn,"current_feature":current_feature}),
     ))
 }

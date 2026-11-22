@@ -2113,7 +2113,15 @@ test("流程、材料、步骤上下文、Agent 讨论和审计定位同一执�
         result = {
           configured: true,
           turn_id: "33333333-4444-4555-8666-777777777777",
-          task: { task_instructions: "这是此轮实际冻结的需求输入" },
+          current_feature: { id: "read-feature", title: "更正后的需求名称" },
+          task: {
+            task_instructions: "这是此轮实际冻结的需求输入",
+            user_request: {
+              feature_id: "read-feature",
+              title: "最初的需求名称",
+            },
+            rendered_input: "最初的需求名称",
+          },
         };
         break;
       case "query.configuration_index":
@@ -2193,6 +2201,16 @@ test("流程、材料、步骤上下文、Agent 讨论和审计定位同一执�
     .click();
   const context = page.getByRole("article", { name: "选中步骤上下文" });
   await expect(context).toContainText("这是此轮实际冻结的需求输入");
+  await expect(
+    context.getByText("更正后的需求名称", { exact: true }),
+  ).toBeVisible();
+  const originalInput = context.getByText("实际发送的完整输入", {
+    exact: true,
+  });
+  await originalInput.click();
+  await expect(
+    context.getByText("最初的需求名称", { exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByLabel("上下文任务与轮次", { exact: true }),
   ).toHaveValue("33333333-4444-4555-8666-777777777777");
