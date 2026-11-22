@@ -6554,6 +6554,31 @@
       },
       "additionalProperties": false
     },
+    "FeatureBranchesQuery": {
+      "type": "object",
+      "required": [
+        "project_id",
+        "feature_id"
+      ],
+      "properties": {
+        "project_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "feature_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "task_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        }
+      },
+      "additionalProperties": false
+    },
     "WorkflowWriteBasis": {
       "type": "object",
       "required": [
@@ -7455,6 +7480,25 @@
         "properties": {
           "params": {
             "$ref": "#/$defs/ExecutionWorkspaceQuery"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "const": "query.feature_branches"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "params"
+        ],
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/FeatureBranchesQuery"
           }
         }
       }

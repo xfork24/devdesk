@@ -20,6 +20,122 @@ fn feature(row: &rusqlite::Row<'_>) -> rusqlite::Result<FeatureBrief> {
         input_version: row.get(6)?,
     })
 }
+
+pub(super) fn feature_branches(
+    pool: &ConnectionPool,
+    project: &str,
+    feature: &str,
+    task_offset: u64,
+) -> Result<Value> {
+    const TASK_PAGE_SIZE: u64 = 50;
+    let _span = performance::Span::new("read_model.feature_branches");
+    let conn = pool.read()?;
+    let tx = conn.unchecked_transaction().map_err(storage)?;
+    let branch: Option<String> = tx
+        .query_row(
+            "SELECT w.branch FROM features f LEFT JOIN repository_worktrees w
+           ON w.project_id=f.project_id AND w.owner_id=f.id AND w.kind='feature'
+         WHERE f.id=?1 AND f.project_id=?2",
+            params![feature, project],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(storage)?
+        .ok_or_else(|| err("not_found", "Feature 不属于本次项目"))?;
+
+    let candidate = feature_candidate(&tx, project, feature)?;
+    let mut statement = tx.prepare_cached(
+        "SELECT t.id,substr(t.title,1,128),w.branch,
+                CASE WHEN json_extract(d.data,'$.completion.pull_request.merged')=1
+                       AND json_extract(d.data,'$.publication.owner_id')=t.id
+                       AND json_extract(d.data,'$.publication.source_branch')=w.branch
+                     THEN 'completed' ELSE t.status END
+         FROM tasks t
+         LEFT JOIN repository_worktrees w ON w.project_id=?2 AND w.owner_id=t.id AND w.kind='task'
+         LEFT JOIN governance_records d ON d.type='workflow_delivery' AND d.owner_project=?2
+           AND d.id='workflow-delivery:'||(SELECT i.id FROM governance_records i
+             WHERE i.type='workflow_instance' AND i.definition_id=t.id AND i.owner_project=?2
+               AND json_extract(i.data,'$.owner_id')=t.id
+               AND (json_extract(i.data,'$.parent_execution_id') IS NULL OR EXISTS(
+                 SELECT 1 FROM governance_records v WHERE v.type='workflow_invocation' AND v.owner_project=?2
+                   AND json_extract(v.data,'$.child_instance_id')=i.id
+                   AND json_extract(v.data,'$.member_identity')=t.id))
+             ORDER BY i.rowid DESC LIMIT 1)
+         WHERE t.feature_id=?1 ORDER BY t.rowid LIMIT ?3 OFFSET ?4",
+    ).map_err(storage)?;
+    // Read one extra row to expose a continuation without counting the entire list.
+    let mut tasks = statement
+        .query_map(
+            params![feature, project, TASK_PAGE_SIZE + 1, task_offset],
+            |row| {
+                Ok(
+                    json!({"id":row.get::<_, String>(0)?,"title":row.get::<_, String>(1)?,
+            "branch":row.get::<_, Option<String>>(2)?,"status":row.get::<_, String>(3)?}),
+                )
+            },
+        )
+        .map_err(storage)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(storage)?;
+    let next_task_offset =
+        (tasks.len() as u64 > TASK_PAGE_SIZE).then_some(task_offset + TASK_PAGE_SIZE);
+    tasks.truncate(TASK_PAGE_SIZE as usize);
+    drop(statement);
+    tx.commit().map_err(storage)?;
+    Ok(
+        json!({"feature_branch":branch,"candidate":candidate,"tasks":tasks,"next_task_offset":next_task_offset}),
+    )
+}
+
+fn feature_candidate(conn: &Connection, project: &str, feature: &str) -> Result<Option<Value>> {
+    let root: Option<(String, String)> = conn.query_row(
+        "SELECT id,json_extract(data,'$.status') FROM governance_records
+         WHERE type='workflow_instance' AND definition_id=?1 AND owner_project=?2
+           AND json_extract(data,'$.owner_id')=?1 AND json_extract(data,'$.parent_execution_id') IS NULL
+         ORDER BY rowid DESC LIMIT 1",
+        params![feature, project], |row| Ok((row.get(0)?, row.get(1)?)),
+    ).optional().map_err(storage)?;
+    let Some((instance, status)) = root else {
+        return Ok(None);
+    };
+    let projection = |row: &rusqlite::Row<'_>| {
+        Ok(
+            json!({"branch":row.get::<_, String>(0)?,"pull_request_number":row.get::<_, Option<u64>>(1)?,
+            "status":if row.get::<_, bool>(2)? { "completed" } else { "running" }}),
+        )
+    };
+    let publication = conn.query_row(
+        "SELECT json_extract(data,'$.publication.pull_request.head_branch'),
+                json_extract(data,'$.publication.pull_request.number'),
+                coalesce(json_extract(data,'$.completion.pull_request.merged'),0)
+         FROM governance_records WHERE id='workflow-delivery:'||?1 AND type='workflow_delivery' AND owner_project=?2
+           AND json_extract(data,'$.publication.owner_id')=?3
+           AND json_extract(data,'$.publication.pull_request.head_branch') GLOB 'devdesk/candidates/*'",
+        params![instance, project, feature], projection,
+    ).optional().map_err(storage)?;
+    if publication.is_some() {
+        return Ok(publication);
+    }
+
+    // Older workflows have stage receipts instead of a delivery record. This also
+    // covers a ref published by the current workflow while its PR is being opened.
+    conn.query_row(
+        "SELECT coalesce(json_extract(o.data,'$.result.Ok.head_branch'),json_extract(o.data,'$.result.Ok.branch')),
+                json_extract(o.data,'$.result.Ok.number'), ?3='completed'
+         FROM governance_records i,json_each(i.data,'$.steps') step
+         JOIN governance_records c ON c.id=json_extract(step.value,'$.tool_call_id') AND c.type='platform_call'
+         JOIN governance_records p ON p.definition_id=json_extract(c.data,'$.effect_id') AND p.type='platform_publish_stage'
+         JOIN governance_records o ON o.definition_id=p.id AND o.type='platform_effect_observation'
+         WHERE i.id=?1 AND i.owner_project=?2 AND p.owner_project=?2 AND o.owner_project=?2
+           AND json_extract(c.data,'$.handler') IN ('git.publish','git.delivery.open')
+           AND p.name IN ('candidate','candidate-ref','projected-ref','pull_request','pr','projected-pr')
+           AND json_extract(o.data,'$.phase')='result'
+           AND coalesce(json_extract(o.data,'$.result.Ok.head_branch'),json_extract(o.data,'$.result.Ok.branch')) GLOB 'devdesk/candidates/*'
+         ORDER BY o.rowid DESC LIMIT 1",
+        params![instance, project, status], projection,
+    ).optional().map_err(storage)
+}
+
 pub(super) fn workspace(
     pool: &ConnectionPool,
     id: &str,

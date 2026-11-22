@@ -656,6 +656,7 @@ impl Workspace {
             method,
             "query.workflow_instance"
                 | "query.execution_task"
+                | "query.feature_branches"
                 | "query.workflow_contexts"
                 | "query.workflow_materials"
                 | "query.workflow_executions"

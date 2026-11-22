@@ -567,6 +567,23 @@ impl Engine {
         Ok(())
     }
     pub fn query(&self, method: &str, p: &Value, global_limit: usize) -> Result<Value> {
+        if method == "query.feature_branches" {
+            read_models::fields(p, &["project_id", "feature_id", "task_offset"])?;
+            let project = read_models::identifier(p, "project_id")?;
+            let feature = read_models::identifier(p, "feature_id")?;
+            require(
+                self.store.project_id().as_deref() == Some(&project),
+                "分支查询项目不匹配",
+            )?;
+            let offset = match p.get("task_offset") {
+                None => 0,
+                Some(value) => value
+                    .as_u64()
+                    .filter(|n| *n <= 1_000_000)
+                    .ok_or_else(|| err("invalid_params", "无效的 task_offset"))?,
+            };
+            return self.store.feature_branches(&feature, offset);
+        }
         if method == "query.project_test_configuration" {
             return Ok(json!(self.discover_project_tests()?));
         }

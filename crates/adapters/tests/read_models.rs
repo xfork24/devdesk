@@ -683,6 +683,57 @@ fn execution_workspace_pages_native_facts_and_excludes_unrelated_history() {
         store.execution_workspace(&foreign).unwrap_err().code,
         "not_found"
     );
+
+    conn.execute(
+        "INSERT INTO repository_operations(id,project_id,action,status,reason,revision) VALUES('register',?1,'{}','completed','',1)",
+        [PROJECT],
+    ).unwrap();
+    for (owner, kind, branch) in [
+        ("f-0", "feature", "devdesk/features/f-0"),
+        ("task-0", "task", "devdesk/tasks/recovered-source"),
+    ] {
+        conn.execute(
+            "INSERT INTO repository_worktrees(id,project_id,owner_id,kind,branch,path,base,operation_id) VALUES(?1,?2,?1,?3,?4,?1,'base','register')",
+            params![owner, PROJECT, kind, branch],
+        ).unwrap();
+    }
+    record(
+        &conn,
+        PROJECT,
+        "workflow-delivery:feature-root",
+        "workflow_delivery",
+        "feature-root",
+        json!({"publication":{"owner_id":"f-0","pull_request":{"head_branch":"devdesk/candidates/published","number":31}},"completion":{"pull_request":{"merged":true}}}),
+    );
+    record(
+        &conn,
+        PROJECT,
+        "workflow-delivery:task-root",
+        "workflow_delivery",
+        "task-root",
+        json!({"publication":{"owner_id":"task-0","source_branch":"devdesk/tasks/recovered-source"},"completion":{"pull_request":{"merged":true}}}),
+    );
+    let tree = store.feature_branches("f-0", 0).unwrap();
+    assert_eq!(tree["feature_branch"], "devdesk/features/f-0");
+    assert_eq!(
+        tree["candidate"],
+        json!({"branch":"devdesk/candidates/published","pull_request_number":31,"status":"completed"})
+    );
+    assert_eq!(tree["tasks"][0]["branch"], "devdesk/tasks/recovered-source");
+    assert_eq!(tree["tasks"][0]["status"], "completed");
+    assert!(tree["tasks"][1]["branch"].is_null());
+    assert_eq!(tree["tasks"][1]["status"], "pending");
+    assert_eq!(tree["tasks"].as_array().unwrap().len(), 50);
+    assert_eq!(tree["next_task_offset"], 50);
+    let last = store.feature_branches("f-0", 100).unwrap();
+    assert_eq!(last["tasks"].as_array().unwrap().len(), 1);
+    assert_eq!(last["tasks"][0]["id"], "task-100");
+    assert!(last["next_task_offset"].is_null());
+    assert!(store.feature_branches("f-1", 0).unwrap()["candidate"].is_null());
+    assert_eq!(
+        store.feature_branches("missing", 0).unwrap_err().code,
+        "not_found"
+    );
 }
 
 #[test]

@@ -137,7 +137,7 @@ test("声明的流程输入放在折叠高级选项中，并与自然语言需�
   );
 });
 
-test("已有 Feature 只在执行与交付显式启动，创建入口仍在工作总览", async ({
+test("在工作总览展开分支并选择 Feature，在执行工作台显式启动", async ({
   page,
 }) => {
   await setup(page);
@@ -154,6 +154,12 @@ test("已有 Feature 只在执行与交付显式启动，创建入口仍在工�
     status: "draft",
     revision: 3,
   };
+  const delivered = {
+    ...feature,
+    id: "delivered-feature",
+    title: "已交付的 Feature",
+    status: "completed",
+  };
   const configuration = {
     id: "saved-work:1",
     type: "work_configuration",
@@ -166,6 +172,7 @@ test("已有 Feature 只在执行与交付显式启动，创建入口仍在工�
     },
   };
   let submitted: any;
+  const branchReads: any[] = [];
   await page.route("**/capabilities", (route) =>
     route.fulfill({
       json: { setup_required: false, active_project_id: project.id },
@@ -180,8 +187,8 @@ test("已有 Feature 只在执行与交付显式启动，创建入口仍在工�
         result = {
           active_project: project,
           projects: [project],
-          features: [feature],
-          total_features: 1,
+          features: [feature, delivered],
+          total_features: 2,
           total_projects: 1,
           repository_ready: true,
           configuration_ready: true,
@@ -191,13 +198,40 @@ test("已有 Feature 只在执行与交付显式启动，创建入口仍在工�
           harnesses: [],
           sandboxes: [],
           detail: {
-            feature,
+            feature:
+              call.params.feature_id === delivered.id ? delivered : feature,
             tasks: [],
             documents: [],
             snapshots: [],
             contexts: [],
             totals: {},
           },
+        };
+        break;
+      case "query.feature_branches":
+        branchReads.push(call.params);
+        result = {
+          feature_branch: `devdesk/features/${call.params.feature_id}`,
+          candidate:
+            call.params.feature_id === delivered.id
+              ? {
+                  branch: "devdesk/candidates/published",
+                  status: "completed",
+                  pull_request_number: 31,
+                }
+              : null,
+          tasks:
+            call.params.feature_id === delivered.id
+              ? [
+                  {
+                    id: "published-task",
+                    title: "实现交付功能",
+                    branch: "devdesk/tasks/recovered-source",
+                    status: "completed",
+                  },
+                ]
+              : [],
+          next_task_offset: null,
         };
         break;
       case "query.work_configuration":
@@ -234,17 +268,54 @@ test("已有 Feature 只在执行与交付显式启动，创建入口仍在工�
     }
     await route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
   });
-  await page.goto(
-    `/?tab=overview&project_id=${project.id}&feature_id=${feature.id}`,
-  );
+  await page.goto(`/?tab=overview&project_id=${project.id}`);
   await expect(
     page.getByRole("button", { name: "新 Feature", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "启动 Feature", exact: true }),
   ).toHaveCount(0);
+  const queue = page.getByRole("region", { name: /Feature 工作队列/ });
+  await expect(queue.getByText("main", { exact: true })).toBeVisible();
+  const enter = queue.getByRole("button", { name: "进入执行工作台" });
+  await expect(enter).toHaveCount(0);
+  expect(branchReads).toHaveLength(0);
+  await queue.getByRole("button", { name: `展开 ${delivered.title}` }).click();
+  await expect(queue.getByText("devdesk/candidates/published")).toBeVisible();
+  await expect(queue.getByRole("link", { name: "PR #31" })).toHaveAttribute(
+    "href",
+    "https://github.com/fixture/start/pull/31",
+  );
+  expect(branchReads[0]).toMatchObject({
+    project_id: project.id,
+    feature_id: delivered.id,
+  });
+  await expect(queue.getByText("实现交付功能")).toHaveCount(0);
+  await queue
+    .getByRole("button", { name: "展开 Feature 分支的 Tasks" })
+    .click();
+  await expect(queue.getByText("devdesk/tasks/recovered-source")).toBeVisible();
+  await expect(queue.getByText("已完成", { exact: true })).toHaveCount(4);
+  await queue
+    .getByRole("button", { name: "折叠 Feature 分支的 Tasks" })
+    .click();
+  await expect(queue.getByText("实现交付功能")).toHaveCount(0);
+  await expect(enter).toHaveCount(0);
+  const draft = queue.getByRole("button", { name: feature.title, exact: true });
+  await draft.click();
+  await expect(draft).toHaveAttribute("aria-pressed", "true");
+  await expect(queue.getByText("尚无分支记录")).toBeVisible();
+  await expect(
+    queue.getByText("工作中", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(page.getByText("SELECTED FEATURE")).toHaveCount(0);
   expect(submitted).toBeUndefined();
-  await page.getByRole("button", { name: "执行与交付", exact: true }).click();
+  await enter.click();
+  await expect(page).toHaveURL(
+    new RegExp(
+      `tab=execution&project_id=${project.id}&feature_id=${feature.id}`,
+    ),
+  );
   await expect(
     page.getByRole("button", { name: "新 Feature", exact: true }),
   ).toHaveCount(0);

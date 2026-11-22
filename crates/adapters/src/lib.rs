@@ -1141,6 +1141,16 @@ impl EngineeringStore for SqliteStore {
             query,
         )
     }
+    fn feature_branches(&self, feature: &str, task_offset: u64) -> Result<Value> {
+        execution_read::feature_branches(
+            &self.connection,
+            self.project_id
+                .as_deref()
+                .ok_or_else(|| err("project_required", "分支查询需要明确项目"))?,
+            feature,
+            task_offset,
+        )
+    }
     fn experience_headers(
         &self,
         after: Option<&str>,

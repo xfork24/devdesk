@@ -45,7 +45,7 @@
 | 会话输入与控制 | session.open、session.delete、conversation.send、conversation.delete_turn、会话及交互方法 | [会话命令](../../../crates/core/src/session_commands.rs) |
 | Agent 经验 | query.agent_experience、experience.delete、experience.restore | [经验读写](../../../crates/host/src/governance.rs) |
 | 工作流与经理 | workflow.*、orchestration.*、manager.* | [控制入口](../../../crates/core/src/workflow_controls.rs) |
-| 执行显示 | query.workflow_progress、query.execution_workspace、流程详情查询 | [读取模型](../../../crates/core/src/read_models.rs) |
+| 执行显示 | query.workflow_progress、query.execution_workspace、query.feature_branches、流程详情查询 | [读取模型](../../../crates/core/src/read_models.rs) |
 | 历史与工具调用 | query.history、query.events、query.tool_calls、query.artifact | [运行读取](../../../crates/host/src/runtime_reads.rs) |
 | 模型服务与接入 | models.list、integration.*、skill.import_package | [模型目录](../../../crates/host/src/model_providers.rs)、[接入](../../../crates/host/src/integrations.rs) |
 

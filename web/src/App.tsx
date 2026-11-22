@@ -23,6 +23,10 @@ import {
 } from "./components/action-feedback";
 import "./browser-compat";
 import { ProjectManager } from "./components/ProjectManager";
+import {
+  FeatureBranchQueue,
+  type FeatureQueueItem,
+} from "./components/FeatureBranchQueue";
 import { ConfigurationScope } from "./components/configuration-scope";
 import {
   configurationMutation,
@@ -332,6 +336,7 @@ function App() {
   const [projectId, setProjectId] = useState(route.get("project_id") || "");
   const [featureId, setFeatureId] = useState(route.get("feature_id") || "");
   const [tab, setTab] = useState(routeTab);
+  const [branchQueueRevision, setBranchQueueRevision] = useState(0);
   const configurationSession = useSyncExternalStore(
     subscribeConfigurationSession,
     getConfigurationSession,
@@ -714,6 +719,7 @@ function App() {
   useEffect(() => {
     if (caps?.setup_required !== false) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let branchFactsChanged = false;
     const stream = new EventSource(
       `/events?tail=true&configuration=true${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ""}`,
     );
@@ -723,6 +729,11 @@ function App() {
     stream.onmessage = (message) => {
       try {
         const value: Row = JSON.parse(message.data);
+        if (
+          activePage.current.tab === "overview" &&
+          ["stream.ready", "stream.reset"].includes(value.kind)
+        )
+          branchFactsChanged = true;
         observeConfigurationVersion(value.configuration_version, projectId);
         observeRuntimeEvent(projectId, value);
         let resourceShellChanged = false;
@@ -742,6 +753,17 @@ function App() {
           /^(project|repository|workspace|settings)\./.test(value.kind || "");
         if (value.kind === "resource.changed") {
           const versions: Row[] = JSON.parse(value.detail);
+          if (activePage.current.tab === "overview")
+            branchFactsChanged ||= versions.some(
+              ({ resource }) =>
+                ["feature", "task", "repository_worktree"].includes(
+                  resource?.kind,
+                ) ||
+                (resource?.kind === "governance" &&
+                  /^(workflow-delivery|platform-publish-stage):/.test(
+                    resource.id,
+                  )),
+            );
           executionContentChanged ||= versions.some(
             ({ resource }) =>
               resource?.kind === "interaction" ||
@@ -829,6 +851,10 @@ function App() {
       if (!timer)
         timer = setTimeout(() => {
           timer = undefined;
+          if (branchFactsChanged) {
+            branchFactsChanged = false;
+            setBranchQueueRevision((revision) => revision + 1);
+          }
           refreshWorkspace.current();
         }, 180);
     };
@@ -836,7 +862,10 @@ function App() {
       if (!kernelStopped.current) setConnection("连接中断 · 自动重连");
     };
     const visible = () => {
-      if (document.visibilityState !== "hidden") refreshWorkspace.current();
+      if (document.visibilityState === "hidden") return;
+      if (activePage.current.tab === "overview")
+        setBranchQueueRevision((revision) => revision + 1);
+      refreshWorkspace.current();
     };
     document.addEventListener("visibilitychange", visible);
     return () => {
@@ -850,7 +879,7 @@ function App() {
   const projects: Row[] = (loadedData?.projects || []).filter(
     (p: Row) => p.workspace_definition?.repository,
   );
-  const features: Row[] = data?.features || [];
+  const features: FeatureQueueItem[] = data?.features || [];
   const definitions: Row[] = (data?.definitions || []).filter(
     (d: Row) => d.family !== "agent" || d.agent_profile,
   );
@@ -1449,44 +1478,53 @@ function App() {
                 />
               </div>
               <div className="overview-grid">
-                <section className="panel">
+                <section
+                  className="panel feature-queue-panel"
+                  aria-labelledby="feature-queue-title"
+                >
                   <div className="panel-heading">
-                    <h2>
+                    <h2 id="feature-queue-title">
                       Feature 工作队列{" "}
                       <span>{displayText(data.total_features)}</span>
                     </h2>
-                    <span className="muted">持久化工程库</span>
+                    {features.some((feature) => feature.id === featureId) && (
+                      <button
+                        type="button"
+                        className="primary"
+                        onClick={() => {
+                          setTaskFilter("");
+                          setReadingTarget({});
+                          setExecutionTab(defaultExecutionTab);
+                          setTab("execution");
+                        }}
+                      >
+                        进入执行工作台{" "}
+                        <ArrowRight size={15} aria-hidden="true" />
+                      </button>
+                    )}
                   </div>
                   {features.length === 0 ? (
                     <Empty>创建第一个 Feature，开始规划与交付。</Empty>
                   ) : (
-                    <div className="feature-list">
-                      {features.map((feature) => (
-                        <ActionButton
-                          className={`feature-row ${feature.id === featureId ? "selected" : ""}`}
-                          key={feature.id}
-                          onClick={() => {
-                            setFeatureId(feature.id);
-                            setTaskFilter("");
-                            setDetailPages({});
-                          }}
-                        >
-                          <div className="feature-icon">
-                            <Layers3 size={18} />
-                          </div>
-                          <div>
-                            <strong>{displayText(feature.title)}</strong>
-                            <p>
-                              {displayText(short(feature.id))} · 输入 v
-                              {displayText(feature.input_version)} · revision{" "}
-                              {displayText(feature.revision)}
-                            </p>
-                          </div>
-                          <Badge value={feature.status} />
-                          <ChevronRight size={16} />
-                        </ActionButton>
-                      ))}
-                    </div>
+                    <FeatureBranchQueue
+                      key={projectId}
+                      projectId={projectId || project?.id || ""}
+                      repository={
+                        project?.workspace_definition.repository || ""
+                      }
+                      mainline={
+                        project?.workspace_definition.mainline || "main"
+                      }
+                      features={features}
+                      selectedId={featureId}
+                      onSelect={(id) => {
+                        setFeatureId(id);
+                        setTaskFilter("");
+                        setDetailPages({});
+                      }}
+                      request={rpc}
+                      revision={branchQueueRevision}
+                    />
                   )}
                   <Pagination
                     page={featurePage}
@@ -1514,32 +1552,6 @@ function App() {
                   </p>
                 </section>
               </div>
-              {f && (
-                <section className="panel feature-summary">
-                  <div className="panel-heading">
-                    <div>
-                      <span className="eyebrow">SELECTED FEATURE</span>
-                      <h2>{displayText(f.title)}</h2>
-                    </div>
-                    <Badge value={f.status} />
-                  </div>
-                  <div className="actions">
-                    <ActionButton
-                      onClick={() => {
-                        setExecutionTab(defaultExecutionTab);
-                        setTab("execution");
-                      }}
-                    >
-                      进入执行工作台 <ArrowRight size={15} />
-                    </ActionButton>
-                  </div>
-                  <p className="muted">
-                    {displayText(detail.tasks.length)} Tasks ·{" "}
-                    {displayText(detail.documents.length)} 材料 ·{" "}
-                    {displayText(detail.snapshots.length)} Snapshots
-                  </p>
-                </section>
-              )}
             </>
           )}
           {data && tab === "execution" && (

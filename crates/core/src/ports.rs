@@ -680,6 +680,9 @@ pub trait EngineeringStore: Send + Sync {
     ) -> Result<crate::read_models::ExecutionWorkspace> {
         Err(err("unsupported", "存储未实现执行工作台摘要"))
     }
+    fn feature_branches(&self, _feature: &str, _task_offset: u64) -> Result<Value> {
+        Err(err("unsupported", "存储未实现 Feature 分支查询"))
+    }
     /// Core-prepared changes and every business read dependency commit atomically.
     fn commit_changes(
         &self,

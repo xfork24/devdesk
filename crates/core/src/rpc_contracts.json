@@ -1351,6 +1351,16 @@
       ]
     },
     {
+      "method": "query.feature_branches",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/lib.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
       "method": "query.history",
       "access": "read",
       "scope": "explicit",
