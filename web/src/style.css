@@ -1945,6 +1945,62 @@ pre {
   border-radius: 8px;
   padding: 14px;
 }
+.configuration-disclosure-list {
+  display: grid;
+  gap: 6px;
+}
+.configuration-disclosure-list > .action-control > button {
+  justify-self: start;
+}
+.configuration-disclosure {
+  min-width: 0;
+  border: 1px solid #dce2ec;
+  border-radius: 8px;
+}
+.configuration-disclosure > summary {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 2fr) minmax(0, 3fr);
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 7px;
+  font-weight: 500;
+  list-style: none;
+  cursor: pointer;
+}
+.configuration-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.configuration-disclosure > summary:has(> span:only-child) {
+  grid-template-columns: 8px minmax(0, 1fr);
+}
+.configuration-disclosure > summary::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+}
+.configuration-disclosure[open] > summary::before {
+  transform: rotate(45deg);
+}
+.configuration-disclosure > summary:hover {
+  background: #f5f7fa;
+}
+.configuration-disclosure > summary > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.configuration-disclosure > summary > span + span {
+  color: #5b657a;
+}
+.configuration-disclosure > .configuration-disclosure-fields {
+  margin: 0;
+  padding: 12px;
+  border-top: 1px solid #dce2ec;
+}
 .configuration-layout .model-provider-choice {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
@@ -2148,7 +2204,7 @@ pre {
   color: inherit;
   text-decoration: none;
 }
-.native-tool-detail {
+.tool-catalog-detail {
   min-width: 0;
 }
 .configuration-usage {

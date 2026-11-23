@@ -232,7 +232,13 @@ pub fn configuration_reference_usages(
         serde_json::from_value(index.get(id).cloned().unwrap_or_else(|| json!([])))
             .map_err(|e| err("storage", e.to_string()))?
     };
-    let version = configuration_hash(&(&catalog.fingerprint, project, builtin, id));
+    let version = configuration_hash(&(
+        "configuration-usage/v3",
+        &catalog.fingerprint,
+        project,
+        builtin,
+        id,
+    ));
     let offset = p["offset"].as_u64().unwrap_or(0) as usize;
     let limit = p["limit"].as_u64().unwrap_or(100).clamp(1, 100) as usize;
     if offset > 0 && p["index_version"].as_str() != Some(&version) {

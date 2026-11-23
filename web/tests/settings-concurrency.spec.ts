@@ -14,7 +14,7 @@ async function settings(page: Page) {
   }
   await page.getByRole("button", { name: "设置", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "全局并发额度", exact: true }),
+    page.getByRole("heading", { name: "并发额度设置", exact: true }),
   ).toBeVisible();
 }
 
@@ -23,17 +23,24 @@ test("两个前端修改同一设置时拒绝过期版本并保留草稿", async
   browser,
 }) => {
   await settings(page);
+  const summary = (front: Page) =>
+    front.locator(".setting-row").filter({
+      has: front.getByRole("heading", { name: "并发额度设置", exact: true }),
+    });
+  await expect(summary(page)).toContainText(
+    "全局 32 个 Run · 单项目默认 8 个 Run",
+  );
   const other = await browser.newContext();
   try {
     const second = await other.newPage();
     await settings(second);
     await page.getByRole("button", { name: "调整", exact: true }).click();
-    const firstDialog = page.getByRole("dialog", { name: "修改全局并发" });
-    await firstDialog.getByLabel("并发额度 1—32").fill("7");
+    const firstDialog = page.getByRole("dialog", { name: "并发额度设置" });
+    await firstDialog.getByLabel("全局并发额度").fill("7");
 
     await second.getByRole("button", { name: "调整", exact: true }).click();
-    const secondDialog = second.getByRole("dialog", { name: "修改全局并发" });
-    await secondDialog.getByLabel("并发额度 1—32").fill("6");
+    const secondDialog = second.getByRole("dialog", { name: "并发额度设置" });
+    await secondDialog.getByLabel("全局并发额度").fill("6");
     const committed = second.waitForResponse((response) => {
       if (!response.url().endsWith("/rpc")) return false;
       return response.request().postDataJSON()?.method === "settings.update";
@@ -53,7 +60,7 @@ test("两个前端修改同一设置时拒绝过期版本并保留草稿", async
     await expect(firstDialog.getByRole("alert")).toContainText(
       "revision_conflict",
     );
-    await expect(firstDialog.getByLabel("并发额度 1—32")).toHaveValue("7");
+    await expect(firstDialog.getByLabel("全局并发额度")).toHaveValue("7");
     // Retrying the retained edit must keep its original version, even after SSE refreshes.
     await firstDialog
       .getByRole("button", { name: "确认", exact: true })
@@ -61,10 +68,29 @@ test("两个前端修改同一设置时拒绝过期版本并保留草稿", async
     await expect(firstDialog.getByRole("alert")).toContainText(
       "revision_conflict",
     );
+    await firstDialog
+      .getByRole("button", { name: "关闭", exact: true })
+      .click();
+    await second.getByRole("button", { name: "调整", exact: true }).click();
+    await secondDialog.getByLabel("单项目默认并发额度").fill("11");
+    await secondDialog
+      .getByRole("button", { name: "确认", exact: true })
+      .click();
+    await expect(secondDialog).toHaveCount(0);
+    await expect(summary(page)).toContainText(
+      "全局 6 个 Run · 单项目默认 11 个 Run",
+    );
+    await second.reload();
+    await expect(summary(second)).toContainText(
+      "全局 6 个 Run · 单项目默认 11 个 Run",
+    );
     const authoritative = await page.request.post("/rpc", {
       data: { jsonrpc: "2.0", id: 1, method: "query.settings", params: {} },
     });
-    expect((await authoritative.json()).result.global_concurrency).toBe(6);
+    expect((await authoritative.json()).result).toMatchObject({
+      global_concurrency: 6,
+      default_project_concurrency: 11,
+    });
   } finally {
     await other.close();
   }

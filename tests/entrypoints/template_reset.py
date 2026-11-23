@@ -47,9 +47,12 @@ def run():
         try:
             defaults = rpc("query.configuration_defaults")
             delivery_count = rpc("query.configurations", {"kind": "delivery_type", "limit": 100})["total"]
-            rpc("settings.update", {"command_id":"settings-before-reset", "preconditions":rpc("query.settings")["versions"],
-                "payload":{"global_concurrency":3,"default_harness":"dsh"}})
-            custom = rpc("delivery_type.create", {"command_id": "custom-delivery", "payload": {"spec_refs":["builtin-spec-stage-prd:2"],
+            preferences = {"global_concurrency":3,"default_project_concurrency":6,"default_harness":"dsh"}
+            versions = rpc("query.settings")["versions"]
+            rpc("settings.update", {"command_id":"settings-before-reset",
+                "preconditions":[version for version in versions if version["resource"]["id"] in preferences],
+                "payload":preferences})
+            custom = rpc("delivery_type.create", {"command_id": "custom-delivery", "payload": {"spec_refs":["builtin-spec-stage-prd:4"],
                 "name": "Standalone custom delivery", "data": {"format":"markdown","body":"database copy"}
             }})
             preview = rpc("query.template_reset_preview")
@@ -78,7 +81,7 @@ def run():
             restored = rpc("query.configuration_defaults")
             assert restored["model_ref"] == defaults["model_ref"]
             state = rpc("query.workspace")
-            assert state["global_concurrency"] == 3 and state["default_harness"] == "dsh"
+            assert all(state[key] == value for key, value in preferences.items())
         finally:
             child.terminate()
             child.wait(timeout=15)

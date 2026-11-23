@@ -10,27 +10,41 @@ pub(super) fn is_source(r: &ConfigurationRecord) -> bool {
 }
 
 pub(super) fn load_records(conn: &Connection) -> Result<Vec<ConfigurationRecord>> {
-    load_records_selected(conn, false)
+    load_records_selected(conn, "1")
 }
 pub(super) fn load_catalog_records(conn: &Connection) -> Result<Vec<ConfigurationRecord>> {
-    load_records_selected(conn, true)
+    load_records_selected(conn, &catalog_filter())
 }
-fn load_records_selected(conn: &Connection, catalog: bool) -> Result<Vec<ConfigurationRecord>> {
+
+fn catalog_filter() -> String {
+    format!(
+        "type IN ({})",
+        CATALOG_RECORD_KINDS
+            .iter()
+            .map(|k| format!("'{k}'"))
+            .collect::<Vec<_>>()
+            .join(",")
+    )
+}
+
+pub(super) fn load_reset_records(conn: &Connection) -> Result<Vec<ConfigurationRecord>> {
+    // The state must include task reconstruction facts even when they need no
+    // rewrite. Packed bodies may hide a source marker, so admit them as candidates.
+    let filter = format!(
+        "{} OR type IN ('workflow_instance','workflow_plan_revision','workflow_execution_history',
+            'configured_execution_task','archived_configured_execution_task')
+         OR instr(data, '\"$source\"') > 0 OR instr(data, 'devdesk-source-text:') > 0
+         OR instr(data, '\"$devdesk_project_payload_v1\"') > 0
+         OR instr(data, 'devdesk-payload/v1:') > 0",
+        catalog_filter()
+    );
+    load_records_selected(conn, &filter)
+}
+
+fn load_records_selected(conn: &Connection, filter: &str) -> Result<Vec<ConfigurationRecord>> {
     let _span = performance::Span::new("source.load_records");
-    let filter = if catalog {
-        format!(
-            "type IN ({})",
-            CATALOG_RECORD_KINDS
-                .iter()
-                .map(|k| format!("'{k}'"))
-                .collect::<Vec<_>>()
-                .join(",")
-        )
-    } else {
-        "1".into()
-    };
     let mut records: Vec<ConfigurationRecord> =
-        load_table_filtered::<Value>(conn, "governance_records", &filter)?
+        load_table_filtered::<Value>(conn, "governance_records", filter)?
             .into_iter()
             .map(ConfigurationRecord::from_storage)
             .collect::<Result<_>>()?;
@@ -80,17 +94,21 @@ fn load_records_selected(conn: &Connection, catalog: bool) -> Result<Vec<Configu
             }
         }
     }
-    for index in 0..records.len() {
-        if is_source(&records[index]) {
-            records[index].supersedes = records
-                .iter()
-                .filter(|r| {
-                    r.r#type == records[index].r#type
-                        && r.definition_id == records[index].definition_id
-                        && r.version < records[index].version
-                })
-                .max_by_key(|r| r.version)
-                .map(|r| r.id.clone());
+    let mut histories = std::collections::BTreeMap::<_, Vec<_>>::new();
+    for (index, row) in records.iter().enumerate().filter(|(_, row)| is_source(row)) {
+        histories
+            .entry((row.r#type.clone(), row.definition_id.clone()))
+            .or_default()
+            .push(index);
+    }
+    for indices in histories.values_mut() {
+        indices.sort_by_key(|&index| records[index].version);
+        for &index in indices.iter() {
+            let first_current =
+                indices.partition_point(|&prior| records[prior].version < records[index].version);
+            records[index].supersedes = first_current
+                .checked_sub(1)
+                .map(|prior| records[indices[prior]].id.clone());
         }
     }
     Ok(records)

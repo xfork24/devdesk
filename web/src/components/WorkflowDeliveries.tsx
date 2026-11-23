@@ -2,9 +2,10 @@ import { displayText } from "../display-text";
 import { useContext, useEffect, useRef, useState } from "react";
 import { ConfigurationScope } from "./configuration-scope";
 import { configurationHref } from "./configuration-links";
+import { loadConfigurationRecord } from "./configuration-state";
 import { ConfigurationLink } from "./ConfigurationLink";
 import { ActionButton, ActionSelect } from "./ActionFeedback";
-import { RevisionSelect } from "./configuration-ui";
+import { ConfigurationDisclosure, RevisionSelect } from "./configuration-ui";
 import { type Row } from "./rpc-types";
 import { DeliverySpecPreview } from "./DeliveryContent";
 
@@ -61,6 +62,33 @@ export function JsonField({
   );
 }
 
+function sourceName(port: string, stepName = "流程输入") {
+  return `${stepName} / ${port}`;
+}
+
+function sourcePort(document: Row, source?: Row) {
+  if (!source?.step || !source.port) return undefined;
+  return source.step === "$input"
+    ? document.inputs?.[source.port]
+    : document.steps.find((item: Row) => item.key === source.step)?.outputs?.[
+        source.port
+      ];
+}
+
+function portName(name: string) {
+  return name
+    .replace(/[_-]+/g, " ")
+    .replace(/\b[a-z]/g, (first) => first.toUpperCase());
+}
+
+function materialName(name: string, delivery?: Row, repeated = false) {
+  return delivery && !repeated ? delivery.name : portName(name);
+}
+
+function materialType(reference?: string, delivery?: Row, fallback = "未设置") {
+  return `类型：${delivery ? `${delivery.name} v${delivery.version}` : reference || fallback}`;
+}
+
 export function SourceSelect({
   document,
   step,
@@ -77,17 +105,12 @@ export function SourceSelect({
   records?: Row[];
 }) {
   const scope = useContext(ConfigurationScope);
-  const sourcePort =
-    value?.step === "$input"
-      ? document.inputs?.[value.port]
-      : document.steps.find((s: Row) => s.key === value?.step)?.outputs?.[
-          value?.port
-        ];
+  const port = sourcePort(document, value);
   const delivery =
-    records.find((r) => r.id === sourcePort?.delivery_ref) ||
-    (sourcePort?.delivery_ref
+    records.find((r) => r.id === port?.delivery_ref) ||
+    (port?.delivery_ref
       ? {
-          id: sourcePort.delivery_ref,
+          id: port.delivery_ref,
           type: "delivery_type",
           name: "来源 Delivery",
         }
@@ -96,7 +119,7 @@ export function SourceSelect({
     ...Object.keys(document.inputs || {}).map((port) => ({
       step: "$input",
       port,
-      name: `流程输入 / ${port}`,
+      name: sourceName(port),
     })),
     ...document.steps
       .filter((source: Row) => source.key !== step.key)
@@ -104,7 +127,7 @@ export function SourceSelect({
         Object.keys(source.outputs || {}).map((port) => ({
           step: source.key,
           port,
-          name: `${source.name} / ${port}`,
+          name: sourceName(port, source.name || source.key),
         })),
       ),
   ];
@@ -154,26 +177,89 @@ export function WorkflowDeliveries({
   step: Row;
   records: Row[];
   onChange: (patch: Row) => void;
-  onRenameOutput: (previous: string, next: string) => void;
+  onRenameOutput: (previous: string, next: string) => boolean;
 }) {
+  const scope = useContext(ConfigurationScope);
+  const [newPort, setNewPort] = useState<string>();
+  const [historicalTypes, setHistoricalTypes] = useState<Row[]>([]);
   const types = records.filter((row) => row.type === "delivery_type");
   const inputs = step.inputs || {},
     outputs = step.outputs || {};
+  const inputRefs = Object.entries(inputs).map(([name, value]) => ({
+    name,
+    ref: sourcePort(document, (value as Row).source)?.delivery_ref as
+      string | undefined,
+  }));
+  const outputRefs = Object.values(outputs).map(
+    (value) => (value as Row).delivery_ref,
+  );
+  const missingTypes = JSON.stringify([
+    ...new Set(
+      [...inputRefs.map(({ ref }) => ref), ...outputRefs].filter(
+        (id) => id && !types.some((row) => row.id === id),
+      ),
+    ),
+  ]);
+  useEffect(() => {
+    const refs: string[] = JSON.parse(missingTypes);
+    if (!scope || !refs.length) return;
+    const controller = new AbortController();
+    void Promise.allSettled(
+      refs.map((id) =>
+        loadConfigurationRecord(
+          scope.request,
+          { id, _index: true },
+          scope.projectId,
+          controller.signal,
+        ),
+      ),
+    ).then((results) => {
+      if (!controller.signal.aborted)
+        setHistoricalTypes(
+          results.flatMap((result) =>
+            result.status === "fulfilled" &&
+            result.value.type === "delivery_type"
+              ? [result.value]
+              : [],
+          ),
+        );
+    });
+    return () => controller.abort();
+  }, [missingTypes, scope]);
+  const typeByRef = new Map(
+    [...historicalTypes, ...types].map((row) => [row.id, row]),
+  );
   const nextKey = (rows: Row, prefix: string) => {
     let index = 1;
     while (`${prefix}_${index}` in rows) index++;
     return `${prefix}_${index}`;
   };
   return (
-    <fieldset className="full-width">
+    <fieldset className="full-width configuration-disclosure-list">
       <legend>输入与输出</legend>
       {Object.entries(inputs).map(([name, binding]) => {
         const input = binding as Row;
+        const reference = inputRefs.find((input) => input.name === name)?.ref;
+        const delivery = typeByRef.get(reference);
+        const repeated =
+          !!reference &&
+          inputRefs.filter((input) => input.ref === reference).length > 1;
+        const fallback =
+          input.type === "constant"
+            ? "固定值"
+            : input.type === "material"
+              ? "材料引用"
+              : "未设置";
         const replace = (value: Row) =>
           onChange({ inputs: { ...inputs, [name]: value } });
         return (
-          <fieldset key={name} id={`workflow-port:input:${name}`}>
-            <legend>输入 · {displayText(name)}</legend>
+          <ConfigurationDisclosure
+            key={name}
+            id={`workflow-port:input:${name}`}
+            name={`输入：${materialName(name, delivery, repeated)}`}
+            description={materialType(reference, delivery, fallback)}
+            defaultOpen={newPort === `input:${name}`}
+          >
             <label>
               输入名称
               <input
@@ -189,6 +275,7 @@ export function WorkflowDeliveries({
                     event.target.reportValidity();
                     return;
                   }
+                  setNewPort(`input:${next}`);
                   onChange({
                     inputs: Object.fromEntries(
                       Object.entries(inputs).map(([key, value]) => [
@@ -232,7 +319,11 @@ export function WorkflowDeliveries({
             ) : (
               <SourceSelect
                 document={document}
-                records={records}
+                records={
+                  historicalTypes.length
+                    ? [...records, ...historicalTypes]
+                    : records
+                }
                 step={step}
                 value={input.source}
                 label={`材料来源 · ${name}`}
@@ -265,37 +356,49 @@ export function WorkflowDeliveries({
             >
               移除输入 {displayText(name)}
             </ActionButton>
-          </fieldset>
+          </ConfigurationDisclosure>
         );
       })}
       <ActionButton
         type="button"
-        onClick={() =>
+        onClick={() => {
+          const name = nextKey(inputs, "input");
+          setNewPort(`input:${name}`);
           onChange({
             inputs: {
               ...inputs,
-              [nextKey(inputs, "input")]: {
+              [name]: {
                 type: "source",
                 source: { step: "", port: "" },
               },
             },
-          })
-        }
+          });
+        }}
       >
         添加输入
       </ActionButton>
       {Object.entries(outputs).map(([name, declaration]) => {
         const output = declaration as Row;
+        const delivery = typeByRef.get(output.delivery_ref);
+        const repeated =
+          !!output.delivery_ref &&
+          outputRefs.filter((ref) => ref === output.delivery_ref).length > 1;
         return (
-          <fieldset key={name} id={`workflow-port:output:${name}`}>
-            <legend>输出 · {displayText(name)}</legend>
+          <ConfigurationDisclosure
+            key={name}
+            id={`workflow-port:output:${name}`}
+            name={`输出：${materialName(name, delivery, repeated)}`}
+            description={materialType(output.delivery_ref, delivery)}
+            defaultOpen={newPort === `output:${name}`}
+          >
             <label>
               输出名称
               <input
                 defaultValue={name}
-                onBlur={(event) =>
-                  onRenameOutput(name, event.target.value.trim())
-                }
+                onBlur={(event) => {
+                  const next = event.target.value.trim();
+                  if (onRenameOutput(name, next)) setNewPort(`output:${next}`);
+                }}
               />
             </label>
             <RevisionSelect
@@ -305,15 +408,15 @@ export function WorkflowDeliveries({
               value={output.delivery_ref || ""}
               onChange={(delivery_ref) =>
                 onChange({
-                  outputs: { ...outputs, [name]: { ...output, delivery_ref } },
+                  outputs: {
+                    ...outputs,
+                    [name]: { ...output, delivery_ref },
+                  },
                 })
               }
             />
             <DeliverySpecPreview
-              references={
-                types.find((row) => row.id === output.delivery_ref)?.data
-                  .spec_refs || []
-              }
+              references={delivery?.data?.spec_refs || []}
               records={records}
             />
             <label>
@@ -361,22 +464,24 @@ export function WorkflowDeliveries({
             >
               移除输出 {displayText(name)}
             </ActionButton>
-          </fieldset>
+          </ConfigurationDisclosure>
         );
       })}
       <ActionButton
         type="button"
-        onClick={() =>
+        onClick={() => {
+          const name = nextKey(outputs, "output");
+          setNewPort(`output:${name}`);
           onChange({
             outputs: {
               ...outputs,
-              [nextKey(outputs, "output")]: {
+              [name]: {
                 delivery_ref: "",
                 required: true,
               },
             },
-          })
-        }
+          });
+        }}
       >
         添加输出
       </ActionButton>

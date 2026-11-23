@@ -263,7 +263,7 @@ mod tests {
         };
         let model=create("model.create",json!({"provider":"ollama","model":"fixture-local","context_window":32768,"max_output_tokens":4096})).unwrap();
         assert!(create("capability.create",json!({"name":"rejected","scope":"global","model_ref":model["id"],"harness_ref":DEFAULT_HARNESS_ID,"tools":[DEFAULT_NATIVE_TOOL_ID],"skills":[],"data":{}})).is_err());
-        create("capability.create",json!({"name":"accepted","scope":"global","model_ref":model["id"],"harness_ref":"builtin-harness-dsh-multi-provider:1","tools":[DEFAULT_NATIVE_TOOL_ID],"skills":[],"data":{}})).unwrap();
+        create("capability.create",json!({"name":"accepted","scope":"global","model_ref":model["id"],"harness_ref":"builtin-harness-dsh-multi-provider:2","tools":[DEFAULT_NATIVE_TOOL_ID],"skills":[],"data":{}})).unwrap();
         assert!(
             w.dispatch("query.runtime_installations", json!({}))
                 .unwrap()["installations"]
@@ -374,7 +374,7 @@ mod tests {
             .unwrap();
         let harness = catalog
             .state
-            .configuration("builtin-harness-dsh-multi-provider:1")
+            .configuration("builtin-harness-dsh-multi-provider:2")
             .unwrap();
         assert_ne!(
             catalog

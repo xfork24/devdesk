@@ -140,12 +140,12 @@ test("目录读取晚于 Role 详情时保留已加载的职责正文", async ({
       JSON.stringify({
         version: 2,
         value: {
-          selected: "builtin-agent-glm-tester:2",
-          name: "测试 · GLM 5.3 Flash / DSH",
+          selected: "builtin-agent-glm-tester:6",
+          name: "Test Engineer · GLM 5.3",
           scope: "global",
           data: {
             role_ref: "builtin-role-tester:1",
-            capability_ref: "builtin-capability-tester-glm-dsh:2",
+            capability_ref: "builtin-capability-tester-glm-dsh:6",
           },
         },
       }),
@@ -162,7 +162,7 @@ test("目录读取晚于 Role 详情时保留已加载的职责正文", async ({
   const role = page.locator(".actor-role-summary");
   try {
     await page.goto(
-      "/?tab=actors&config_tab=agent&config_object=builtin-agent-glm-tester%3A2",
+      "/?tab=actors&config_tab=agent&config_object=builtin-agent-glm-tester%3A6",
     );
     await expect(
       role.getByRole("heading", { name: "职责", exact: true }),
@@ -202,12 +202,12 @@ test("Role、Capability 与 Agent 的内容区块和段落间距统一为 10px",
   for (const width of [1440, 430]) {
     await page.setViewportSize({ width, height: 1000 });
     for (const [kind, reference, name] of [
-      ["agent", "builtin-agent-glm-tester:2", "测试 · GLM 5.3 Flash / DSH"],
+      ["agent", "builtin-agent-glm-tester:6", "Test Engineer · GLM 5.3"],
       ["role", "builtin-role-tester:1", "测试"],
       [
         "capability",
-        "builtin-capability-tester-glm-dsh:2",
-        "测试能力 · GLM 5.3 Flash / DSH",
+        "builtin-capability-tester-glm-dsh:6",
+        "Test Engineering Capability · GLM 5.3",
       ],
     ]) {
       await page.goto(
@@ -219,6 +219,18 @@ test("Role、Capability 与 Agent 的内容区块和段落间距统一为 10px",
         }),
       ).toHaveValue(name);
       const form = page.locator("form.actor-configuration-form");
+      if (kind === "capability") {
+        await expect(
+          form
+            .getByLabel("Harness 精确版本", { exact: true })
+            .locator("option:checked"),
+        ).toHaveText("DeepSeek Harness · v2");
+        await expect(
+          form
+            .getByLabel("Tool 精确版本", { exact: true })
+            .locator("option:checked"),
+        ).toHaveText("DeepSeek Native Tools · v2");
+      }
       if (kind !== "capability")
         await expect(
           form.getByRole("heading", { name: "职责", exact: true }),
@@ -282,11 +294,21 @@ test("配置各 Tab 的共享目录按名称排序并默认选中首个已有条
       ).toHaveCount(0);
     }
     if (tab === "model") {
-      await expect(items.first().locator("strong")).toHaveText("GLM 5.3 Flash");
+      await expect(items.locator("strong")).toHaveText([
+        "GLM 5.3",
+        "GPT-6.2 Sol High",
+        "MiniMax M3.1 Flash",
+      ]);
       await page.screenshot({
         path: info.outputPath("model-default-selection.png"),
         fullPage: true,
       });
+    }
+    if (tab === "harness") {
+      await expect(items.locator("strong")).toHaveText([
+        "Codex",
+        "DeepSeek Harness",
+      ]);
     }
   }
   await page.goto("/?tab=workflows&config_tab=workflow");
@@ -313,6 +335,19 @@ test("配置各 Tab 的共享目录按名称排序并默认选中首个已有条
     );
     const labels = await options.allTextContents();
     expect(labels).toEqual([...labels].sort(names.compare));
+    if (tab === "permission") {
+      await expect(options).toHaveText([
+        "Harness Full Access · harness · v2",
+        "Harness Read-Only · harness · v2",
+        "Implementation Workspace · harness · v3",
+        "Read-Only Workflow Step · harness · v2",
+        "Test Authoring · harness · v3",
+      ]);
+      await page
+        .getByLabel("权限类型", { exact: true })
+        .selectOption("sandbox");
+      await expect(options).toHaveText(["Sandbox Full Access · sandbox · v2"]);
+    }
   }
   await page.goto("/?tab=components&config_tab=native");
   const native = page
@@ -351,6 +386,75 @@ test("明确链接保留指定条目，新建草稿在切换 Tab 和重载后保
   );
 });
 
+test("Model 管理停用未绑定的模型并保留确切修订", async ({ page }) => {
+  await page.goto("/");
+  const created = await page.request.post("/rpc", {
+    data: {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "project.create",
+      params: {
+        command_id: crypto.randomUUID(),
+        payload: { title: "Model retirement", repository: "fixture/model" },
+      },
+    },
+  });
+  const { result: project, error } = await created.json();
+  expect(error).toBeUndefined();
+  const { result: unbound, error: createError } = await (
+    await page.request.post("/rpc", {
+      data: {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "model.create",
+        params: {
+          command_id: crypto.randomUUID(),
+          payload: {
+            name: "Unbound model",
+            scope: "global",
+            data: {
+              provider: "openai",
+              model: "fixture-unbound-model",
+              capabilities: ["structured-output", "tool-calling"],
+              parameters: {},
+            },
+          },
+        },
+      },
+    })
+  ).json();
+  expect(createError).toBeUndefined();
+  const model = unbound.id;
+  const route = `/?tab=components&config_tab=model&project_id=${project.id}`;
+  await page.goto(`${route}&config_object=${encodeURIComponent(model)}`);
+  const manager = page.getByRole("region", { name: "Model 管理", exact: true });
+  const entry = manager.getByRole("button", { name: /^Unbound model/ });
+  await expect(entry).toBeVisible();
+  await expect(manager.getByLabel("名称", { exact: true })).toHaveValue(
+    "Unbound model",
+  );
+  await manager
+    .getByRole("button", { name: "删除 Model", exact: true })
+    .click();
+  await expect(manager.getByText("已停用；历史保留。")).toBeVisible();
+  await expect(entry).toHaveCount(0);
+  await page.goto(route);
+  await expect(
+    manager.getByRole("button", { name: /^GPT-6\.2 Sol High/ }),
+  ).toBeVisible();
+  await expect(entry).toHaveCount(0);
+
+  const exact = await page.request.post("/rpc", {
+    data: {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "query.configuration_records",
+      params: { refs: [model] },
+    },
+  });
+  expect((await exact.json()).result.records[0].id).toBe(model);
+});
+
 test("MCP 与 HTTP 的接入源、绑定和动作共用排序与首项选择", async ({ page }) => {
   const sources = ["http_api", "mcp"].flatMap((kind) =>
     ["Zeta", "Alpha", "beta"].map((name, index) => ({
@@ -382,7 +486,7 @@ test("MCP 与 HTTP 的接入源、绑定和动作共用排序与首项选择", a
       scope: "global",
       data: {
         integration_ref: source.id,
-        harness_ref: "builtin-harness-codex-managed:1",
+        harness_ref: "builtin-harness-codex-managed:2",
         sandbox_ref: "builtin-sandbox-docker:2",
         auth: { kind: "none" },
         allowed_origins: ["https://example.test"],

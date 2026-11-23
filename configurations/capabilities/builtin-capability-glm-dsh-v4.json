@@ -1,0 +1,17 @@
+{
+  "type": "capability",
+  "identity": "builtin-capability-glm-dsh",
+  "revision": 4,
+  "name": "General Engineering Capability · GLM 5.3",
+  "scope": "global",
+  "harness_ref": "builtin-harness-dsh-multi-provider:2",
+  "model_ref": "builtin-model-glm-5-3:1",
+  "skills": [
+    "builtin-skill-engineering-context:4",
+    "builtin-skill-software-delivery:1"
+  ],
+  "tools": [
+    "builtin-tool-dsh-native:2"
+  ],
+  "data": {}
+}

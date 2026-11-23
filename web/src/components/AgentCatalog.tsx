@@ -1159,7 +1159,6 @@ export function ResourceEditor({
                   <WorkflowSpecifications
                     kind={kind}
                     data={data}
-                    records={records}
                     onChange={patch}
                   />
                 </fieldset>
@@ -1179,9 +1178,9 @@ export function ResourceEditor({
             )}
             {kind === "spec" ? (
               <WorkflowSpecifications
+                key={`spec-checks:${draft.selected || "new"}`}
                 kind={kind}
                 data={data}
-                records={records}
                 onChange={patch}
               />
             ) : null}

@@ -401,12 +401,15 @@ fn settings_request_requires_an_explicit_resource_version_envelope() {
     let validator = SCHEMAS.validator("rpc.schema.json#/$defs/SettingsUpdate");
     let valid = json!({"command_id":"settings-1", "preconditions":[{
         "resource":{"kind":"setting","id":"global_concurrency"},"revision":0
-    }], "payload":{"global_concurrency":7}});
+    }, {
+        "resource":{"kind":"setting","id":"default_project_concurrency"},"revision":0
+    }], "payload":{"global_concurrency":7,"default_project_concurrency":8}});
     assert!(validator.is_valid(&valid));
     for invalid in [
         json!({"global_concurrency":7}),
         json!({"command_id":"settings-1","payload":{"global_concurrency":7}}),
         json!({"command_id":"settings-1","preconditions":[],"payload":{"global_concurrency":0}}),
+        json!({"command_id":"settings-1","preconditions":[],"payload":{"default_project_concurrency":33}}),
         json!({"command_id":"settings-1","preconditions":[],"payload":{"default_harness":null}}),
     ] {
         assert!(!validator.is_valid(&invalid), "{invalid}");
@@ -626,6 +629,7 @@ fn configuration_schemas_cover_stage_intent_capability_and_standard_snapshot() {
         let doc: WorkflowDefinition = serde_json::from_value(value).unwrap();
         assert!(doc.stages.iter().all(|s| !s.description.is_empty()));
     }
+    let defaults = e.configuration_defaults(None).unwrap();
     for role in [
         "analyst",
         "architect",
@@ -634,9 +638,8 @@ fn configuration_schemas_cover_stage_intent_capability_and_standard_snapshot() {
         "tester",
         "reviewer",
     ] {
-        let agent = state
-            .configuration(&default_configured_agent_id(role))
-            .unwrap();
+        let selection = &defaults["role_agent_bindings"][default_role_id(role)];
+        let agent = state.configuration(selection.as_str().unwrap()).unwrap();
         SCHEMAS.assert_valid(
             "agent-composition.schema.json",
             &json!({"role_ref":reference_value(&agent.refs,"role_ref"),"capability_ref":reference_value(&agent.refs,"capability_ref")}),

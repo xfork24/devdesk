@@ -1,0 +1,23 @@
+{
+  "type": "permission_profile",
+  "identity": "builtin-permission-harness-read-only",
+  "revision": 2,
+  "name": "Harness Read-Only",
+  "scope": "global",
+  "data": {
+    "policy": {
+      "approval": "never",
+      "filesystem": {
+        "mode": "read_only"
+      },
+      "network": {
+        "mode": "enabled"
+      },
+      "tools": {
+        "mode": "all_available"
+      }
+    },
+    "schema_version": 2,
+    "target_kind": "harness"
+  }
+}

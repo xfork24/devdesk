@@ -32,7 +32,7 @@ try:
   {'key':'consume','name':'消费确切材料','stage':'study','executor':{'type':'control'},'dependencies':['investigate'],'inputs':{'analysis':{'type':'source','source':{'step':'investigate','port':'result'}}}}
  ]}
  profiles=c.rpc('query.permission_resources')['profiles']
- base_profile=next(r for r in profiles if r['identity']=='builtin-permission-harness-read-only' and r['revision']==1)
+ base_profile=max((r for r in profiles if r['identity']=='builtin-permission-harness-read-only'),key=lambda r:r['revision'])
  policy={**base_profile['data']['policy'],'tool_refs':[capture]}
  permission=c.command('permission.profile.create',payload={'name':'Native research Profile','identity':'native-step-'+project,'target_kind':'harness','policy':policy})
  profile_ref=f"{permission['identity']}:{permission['revision']}"

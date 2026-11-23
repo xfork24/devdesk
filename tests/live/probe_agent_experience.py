@@ -18,7 +18,7 @@ def open_session(instance):
  owner=c.rpc('query.workspace')['active_project'];return c.command('session.open',owner['id'],owner['revision'],{'agent_instance_id':instance,'work_type':'discussion','force_new':True})['id']
 
 try:
- c.open(a.project_a);base=c.rpc('query.agent_revision',{'id':a.agent_ref});model=c.rpc('query.configurations',{'kind':'model','limit':100})['records'];oldmodel=next(m for m in model if m['id']==base['data']['model_ref']);newdata=dict(oldmodel['data']);newdata['model']='gpt-6.1-terra' if oldmodel['data']['model']!='gpt-6.1-terra' else 'gpt-6.1-sol'
+ c.open(a.project_a);base=c.rpc('query.agent_revision',{'id':a.agent_ref});model=c.rpc('query.configurations',{'kind':'model','limit':100})['records'];oldmodel=next(m for m in model if m['id']==base['data']['model_ref']);newdata=dict(oldmodel['data']);newdata['model']='gpt-6.1-terra' if oldmodel['data']['model']!='gpt-6.1-terra' else 'gpt-6.2-sol'
  alternate=c.command('model.create',payload={'name':'Native experience alternate model','scope':'global','data':newdata});composition=dict(base['data']);composition['model_ref']=alternate['id'];other=c.command('agent.create',payload={'name':'Native experience alternate Agent','scope':'global','data':composition})
  ids=[c.command('agent.instance.create',payload={'name':'Native global experience '+label,'agent_revision_id':ref,'scope':'global'})['id'] for label,ref in [('A',base['id']),('B',other['id'])]];aid,bid=ids
  local=c.command('agent.instance.create',payload={'name':'Native project instance','agent_revision_id':base['id'],'scope':'project:' + str(a.project_a)})['id']

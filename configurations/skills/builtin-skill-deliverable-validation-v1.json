@@ -1,0 +1,11 @@
+{
+  "type": "skill",
+  "identity": "builtin-skill-deliverable-validation",
+  "revision": 1,
+  "name": "Deliverable Validation",
+  "scope": "global",
+  "data": {
+    "body_file": "deliverable-validation.md",
+    "rules": []
+  }
+}

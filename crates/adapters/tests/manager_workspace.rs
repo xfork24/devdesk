@@ -292,14 +292,14 @@ fn manager_five_configuration_scenarios_have_native_receipts_without_feature_or_
     cap.refs = References::from([
         (
             "model_ref".into(),
-            json!("builtin-model-gpt-6-1-sol-high:1"),
+            json!("builtin-model-gpt-6-2-sol-high:1"),
         ),
         (
             "harness_ref".into(),
-            json!("builtin-harness-codex-managed:1"),
+            json!("builtin-harness-codex-managed:2"),
         ),
         ("skills".into(), json!(["local-skill:1"])),
-        ("tools".into(), json!(["builtin-tool-codex-native:1"])),
+        ("tools".into(), json!(["builtin-tool-codex-native:2"])),
     ]);
     let mut agent = source("agent", "local-agent", &project, json!({}));
     agent.refs = References::from([
@@ -465,7 +465,7 @@ fn non_manager_agents_cannot_open_project_management_controllers() {
                     expected_revision: Some(e.store.snapshot().unwrap().projects[0].revision),
                     payload: json!({
                         "role_ref": "builtin-role-analyst:1",
-                        "agent_ref": "simplified-agent-analyst:8",
+                        "agent_ref": "builtin-agent-gpt-6-2-sol-analyst:3",
                     }),
                 },
             )
@@ -482,7 +482,7 @@ fn non_manager_agents_cannot_open_project_management_controllers() {
                 command_id: id(),
                 target: Some(project.clone()),
                 expected_revision: Some(e.store.snapshot().unwrap().projects[0].revision),
-                payload: json!({"agent_ref":"simplified-agent-analyst:8"}),
+                payload: json!({"agent_ref":"builtin-agent-gpt-6-2-sol-analyst:3"}),
             },
         )
         .unwrap_err();
@@ -944,7 +944,7 @@ fn skill_package_and_permission_binding_share_preview_validation_without_executi
                     path: "notes.md".into(),
                     content: "inert package asset".into(),
                 }],
-                requires_tools: vec!["builtin-tool-codex-native:1".into()],
+                requires_tools: vec!["builtin-tool-codex-native:2".into()],
                 source: "inline fixture".into(),
                 scripts_disabled: true,
             },
@@ -962,10 +962,11 @@ fn skill_package_and_permission_binding_share_preview_validation_without_executi
             .any(|r| r.r#type == "skill_package" && r.name == "Packaged skill")
     );
     let mut harness = s
-        .configuration("builtin-harness-codex-managed:1")
+        .configuration("builtin-harness-codex-managed:2")
         .unwrap()
         .source();
     harness.identity = "project-harness".into();
+    harness.revision = 1;
     harness.scope = Scope::project(&project);
     apply(&e, vec![create(harness)]);
     let s = e.store.snapshot().unwrap();
@@ -973,7 +974,7 @@ fn skill_package_and_permission_binding_share_preview_validation_without_executi
     let change = ConfigurationChangeSet {
         operations: vec![ConfigurationOperation::PermissionBindings {
             bindings: vec![
-                json!({"target":target,"permission_revision_id":"builtin-permission-harness-read-only:1","expected_revision":0}),
+                json!({"target":target,"permission_revision_id":"builtin-permission-harness-read-only:2","expected_revision":0}),
             ],
         }],
     };

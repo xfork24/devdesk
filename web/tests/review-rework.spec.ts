@@ -207,7 +207,7 @@ test("根经理页处理子流程的真实例外申请，理由必填且只批�
         dependencies: ["author"],
         executor: {
           type: "tool",
-          tool_ref: "builtin-tool-materials-capture:1",
+          tool_ref: "builtin-tool-materials-capture:2",
           arguments: {
             approve: { type: "constant", value: false },
             issues: {

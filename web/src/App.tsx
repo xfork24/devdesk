@@ -58,6 +58,7 @@ import React, {
 } from "react";
 import { MarkdownField, MarkdownPreview } from "./components/configuration-ui";
 import {
+  RpcResponseTimeout,
   type HostVersion,
   type ResourceVersion,
   type Row,
@@ -124,6 +125,8 @@ type Field = {
   optional?: boolean;
   description?: string;
   advanced?: boolean;
+  min?: number;
+  max?: number;
 };
 type DialogSpec = {
   title: string;
@@ -205,7 +208,8 @@ async function rpc(
                 "runtime.prepare",
               ].includes(method)
                 ? 25 * 60 * 1000
-                : method === "codex.auth.start"
+                : method === "codex.auth.start" ||
+                    method === "configuration.templates.reset"
                   ? 5 * 60 * 1000
                   : 30000,
             );
@@ -227,7 +231,7 @@ async function rpc(
                 const message = method.startsWith("query.")
                   ? "读取超时，可重新读取"
                   : "内核响应超时，操作结果待确认";
-                throw new Error(
+                throw new RpcResponseTimeout(
                   `${message} · ${method} · 请求 ${traceId || id}`,
                   {
                     cause: error,
@@ -739,6 +743,12 @@ function App() {
   useEffect(() => {
     load();
   }, [load]);
+  const datasetOpening = caps?.lifecycle?.status === "initializing";
+  useEffect(() => {
+    if (!datasetOpening) return;
+    const timer = setInterval(() => refreshWorkspace.current(), 1000);
+    return () => clearInterval(timer);
+  }, [datasetOpening]);
   useEffect(() => {
     if (caps?.setup_required !== false) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -810,9 +820,11 @@ function App() {
             ({ resource }) =>
               resource?.kind === "runtime_installation" ||
               (resource?.kind === "setting" &&
-                ["global_concurrency", "default_harness"].includes(
-                  resource.id,
-                )),
+                [
+                  "global_concurrency",
+                  "default_project_concurrency",
+                  "default_harness",
+                ].includes(resource.id)),
           );
           if (
             versions.some(
@@ -1197,6 +1209,8 @@ function App() {
           <ActionForm
             onSubmit={async (e) => {
               e.preventDefault();
+              if (datasetOpening || busy) return;
+              setError("");
               try {
                 setBusy(true);
                 const commandId = crypto.randomUUID();
@@ -1210,11 +1224,16 @@ function App() {
                     expected_revision: caps.lifecycle?.revision,
                   }),
                 }).then((r) => r.json());
-                if (r.operation_id === commandId && r.lifecycle)
+                if (r.lifecycle)
                   setCaps((current) => ({
                     ...current,
                     lifecycle: r.lifecycle,
                   }));
+                if (r.lifecycle?.status === "ready") {
+                  await load();
+                  return;
+                }
+                if (r.lifecycle?.status === "initializing") return;
                 if (r.error) throw new Error(`${r.code || ""} · ${r.error}`);
                 await load();
               } catch (e) {
@@ -1229,16 +1248,22 @@ function App() {
               <input
                 value={setupPath}
                 onChange={(e) => setSetupPath(e.target.value)}
+                disabled={busy || datasetOpening}
                 required
               />
             </label>
             <p className="muted">
               支持空目录或已有 DevDesk 数据集。切换目录需重启程序。
             </p>
-            <ActionButton className="primary" disabled={busy}>
+            <ActionButton className="primary" disabled={busy || datasetOpening}>
               初始化 / 打开数据集 <ArrowRight size={16} />
             </ActionButton>
           </ActionForm>
+          {(datasetOpening || busy) && (
+            <p className="muted" role="status">
+              正在打开数据集，完成后将自动进入工作台。
+            </p>
+          )}
           {error && (
             <div className="error" role="alert">
               {displayText(error)}
@@ -1980,6 +2005,18 @@ function App() {
                     </div>
                   </div>
                 )}
+                {project && (
+                  <div className="setting-row">
+                    <div>
+                      <h3>repository 位置</h3>
+                      <code>
+                        {displayText(
+                          project.workspace_definition.path || "未设置",
+                        )}
+                      </code>
+                    </div>
+                  </div>
+                )}
               </section>
               <GitHubConnection request={rpc} />
               <RuntimeSettings
@@ -1993,23 +2030,35 @@ function App() {
                 <TemplateSettings request={rpc} refresh={load} />
                 <div className="setting-row">
                   <div>
-                    <h3>全局并发额度</h3>
+                    <h3>并发额度设置</h3>
                     <p>
-                      {displayText(data.global_concurrency)} 个 Run · 单项目默认
-                      2 个
+                      全局 {displayText(data.global_concurrency)} 个 Run ·
+                      单项目默认 {displayText(data.default_project_concurrency)}{" "}
+                      个 Run
                     </p>
                   </div>
                   <ActionButton
                     onClick={() =>
                       show({
-                        title: "修改全局并发",
+                        title: "并发额度设置",
                         method: "settings.update",
                         fields: [
                           {
                             key: "global_concurrency",
-                            label: "并发额度 1—32",
+                            label: "全局并发额度",
                             type: "number",
                             value: String(data.global_concurrency),
+                            min: 1,
+                            max: 32,
+                          },
+                          {
+                            key: "default_project_concurrency",
+                            label: "单项目默认并发额度",
+                            type: "number",
+                            value: String(data.default_project_concurrency),
+                            description: "用于新建项目。",
+                            min: 1,
+                            max: 32,
                           },
                         ],
                       })
@@ -2018,52 +2067,6 @@ function App() {
                     调整
                   </ActionButton>
                 </div>
-                {project && (
-                  <div className="setting-row">
-                    <div>
-                      <h3>{displayText(project.title)} · Project 设置</h3>
-                      <p className="muted">
-                        Workspace: {displayText(project.workspace || "未设置")}{" "}
-                        · 项目并发 {displayText(project.concurrency)}
-                      </p>
-                    </div>
-                    <div className="actions">
-                      <ActionButton onClick={() => setTab("workflows")}>
-                        默认绑定
-                      </ActionButton>
-                      <ActionButton
-                        onClick={() =>
-                          show({
-                            title: "编辑 Project",
-                            method: "project.update",
-                            target: project.id,
-                            fields: [
-                              {
-                                key: "title",
-                                label: "名称",
-                                value: project.title,
-                              },
-                              {
-                                key: "workspace",
-                                label: "Workspace 描述",
-                                value: project.workspace,
-                                optional: true,
-                              },
-                              {
-                                key: "concurrency",
-                                label: "项目并发额度",
-                                type: "number",
-                                value: String(project.concurrency),
-                              },
-                            ],
-                          })
-                        }
-                      >
-                        编辑
-                      </ActionButton>
-                    </div>
-                  </div>
-                )}
               </section>
               <div className="setting-row">
                 <div>
@@ -2129,10 +2132,21 @@ function App() {
               setCaps(undefined);
               setData(undefined);
             } else if (dialog.method === "settings.update") {
+              const changes = Object.fromEntries(
+                dialog.fields
+                  .filter(({ key, value }) => String(payload[key]) !== value)
+                  .map(({ key }) => [key, payload[key]]),
+              );
+              if (!Object.keys(changes).length) {
+                setDialog(undefined);
+                return;
+              }
               result = await rpc(dialog.method, {
                 command_id: dialog.commandId,
-                preconditions: dialog.preconditions,
-                payload,
+                preconditions: dialog.preconditions?.filter(({ resource }) =>
+                  Object.hasOwn(changes, resource.id),
+                ),
+                payload: changes,
               });
               await load();
             } else {
@@ -2306,6 +2320,8 @@ function CommandDialog({
             autoFocus={i === 0 && !f.advanced}
             required={!f.optional}
             type={f.type === "number" ? "number" : "text"}
+            min={f.min}
+            max={f.max}
             value={values[f.key]}
             onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
           />

@@ -44,6 +44,11 @@ test("内置 Delivery 全部关联内容标准并可查看确切规范", async (
   const deliveries = catalog.records.filter(
     (r: any) => r.type === "delivery_type",
   );
+  for (const spec of specs.records) {
+    for (const check of spec.data.checks) {
+      expect(check.key).toMatch(/^check-[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
+    }
+  }
   const manifest = JSON.parse(
     readFileSync(
       new URL("../../configurations/manifest.json", import.meta.url),
@@ -62,8 +67,8 @@ test("内置 Delivery 全部关联内容标准并可查看确切规范", async (
   }
   await page.getByRole("button", { name: "流程与规范", exact: true }).click();
   await page.getByRole("tab", { name: "Delivery", exact: true }).click();
-  await page.getByRole("button", { name: /^精简版独立测试报告\s/ }).click();
-  const report = deliveries.find((r: any) => r.name === "精简版独立测试报告");
+  await page.getByRole("button", { name: /^Test Report\s/ }).click();
+  const report = deliveries.find((r: any) => r.name === "Test Report");
   await expect(page.getByLabel("内容规范", { exact: true })).toHaveValues(
     report.spec_refs,
   );
@@ -72,7 +77,7 @@ test("内置 Delivery 全部关联内容标准并可查看确切规范", async (
     .locator("summary .configuration-summary-title > span")
     .click();
   await expect(page.getByLabel("交付内容标准", { exact: true })).toContainText(
-    "平台 tests.run",
+    "Test Report Specification",
   );
 });
 test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", async ({
@@ -87,9 +92,11 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
   ).toBeVisible();
   const defaults = await rpc(page, "query.configuration_defaults");
   expect(Object.keys(defaults.role_agent_bindings)).toHaveLength(6);
-  expect(defaults.capability_ref).toBe("simplified-capability-developer:8");
+  expect(defaults.capability_ref).toBe(
+    "builtin-capability-developer-gpt-6-2-sol-codex:3",
+  );
   const completeTools = await rpc(page, "query.configuration_records", {
-    refs: ["builtin-tool-codex-native:1", "builtin-tool-dsh-native:1"],
+    refs: ["builtin-tool-codex-native:2", "builtin-tool-dsh-native:2"],
   });
   expect(
     completeTools.records.filter(
@@ -99,7 +106,7 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
   for (const row of defaults.records.filter(
     (row: any) => row.type === "capability",
   ))
-    expect(row.tools).toContain("builtin-tool-codex-native:1");
+    expect(row.tools).toContain("builtin-tool-codex-native:2");
   for (const agent of defaults.records.filter(
     (row: any) => row.type === "agent",
   )) {
@@ -113,9 +120,9 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
   );
   expect(
     defaults.records.find((r: any) => r.id === manager.capability_ref).tools,
-  ).toContain("builtin-tool-workflow-inspect:2");
+  ).toContain("builtin-tool-workflow-inspect:3");
   await page.getByRole("button", { name: "基础组件", exact: true }).click();
-  await page.getByRole("tab", { name: "Harness原生工具", exact: true }).click();
+  await page.getByRole("tab", { name: "Harness Tools", exact: true }).click();
   await expect(page.getByText("AgentID 经验检索", { exact: true })).toHaveCount(
     0,
   );
@@ -165,7 +172,7 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
 test("原生工具目录提供独立当前入口且不编辑 Schema", async ({ page }, info) => {
   await setup(page);
   await page.goto(
-    "/?tab=components&config_tab=native&config_object=builtin-tool-codex-native:1",
+    "/?tab=components&config_tab=native&config_object=builtin-tool-codex-native:2",
   );
   await expect(
     page.getByRole("region", { name: "原生工具目录" }),
@@ -183,23 +190,23 @@ test("原生工具目录提供独立当前入口且不编辑 Schema", async ({ p
     page.getByRole("button", { name: "新建 Tool", exact: true }),
   ).toHaveCount(0);
   const native = page.locator(".native-tool-group").filter({
-    has: page.getByRole("heading", { name: "Codex 原生工具组", exact: true }),
+    has: page.getByRole("heading", { name: "Codex Native Tools", exact: true }),
   });
   await expect(native.locator('a[href*="config_tab=harness"]')).toHaveCount(0);
   await native
-    .getByRole("heading", { name: "Codex 原生工具组", exact: true })
+    .getByRole("heading", { name: "Codex Native Tools", exact: true })
     .click();
   await expect(
-    page.getByRole("tab", { name: "Harness原生工具", exact: true }),
+    page.getByRole("tab", { name: "Harness Tools", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
   const list = page
     .getByRole("region", { name: "原生工具目录" })
     .locator(".configuration-list");
   await expect(list.locator("button strong")).toHaveText([
-    "Codex 原生工具组",
-    "DSH 原生工具组",
+    "Codex Native Tools",
+    "DeepSeek Native Tools",
   ]);
-  const selected = list.getByRole("button", { name: /Codex 原生工具组/ });
+  const selected = list.getByRole("button", { name: /Codex Native Tools/ });
   await expect(selected).toHaveAttribute("aria-pressed", "true");
   await expect(native).toContainText("适用 Harness：Codex Harness 0.167.0");
   await expect(native).not.toContainText("Native Codex tool contracts");
@@ -209,15 +216,15 @@ test("原生工具目录提供独立当前入口且不编辑 Schema", async ({ p
     .getByLabel("原生工具详情", { exact: true })
     .boundingBox())!;
   expect(listBox.x + listBox.width).toBeLessThan(detailBox.x);
-  await list.getByRole("button", { name: /DSH 原生工具组/ }).click();
+  await list.getByRole("button", { name: /DeepSeek Native Tools/ }).click();
   await expect(
     page
       .getByLabel("原生工具详情")
-      .getByRole("heading", { name: "DSH 原生工具组", exact: true }),
+      .getByRole("heading", { name: "DeepSeek Native Tools", exact: true }),
   ).toBeVisible();
   await page.reload();
   await expect(
-    list.getByRole("button", { name: /DSH 原生工具组/ }),
+    list.getByRole("button", { name: /DeepSeek Native Tools/ }),
   ).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByLabel("原生工具详情")).toContainText(
     "适用 Harness：DeepSeek Harness 0.2.2-rc.1",
@@ -246,10 +253,10 @@ test("原生工具目录提供独立当前入口且不编辑 Schema", async ({ p
     path: info.outputPath("native-tool-list-mobile.png"),
   });
   await page.goto(
-    "/?tab=components&config_tab=native&config_object=builtin-tool-codex-native%3A1",
+    "/?tab=components&config_tab=native&config_object=builtin-tool-codex-native%3A2",
   );
   await expect(
-    list.getByRole("button", { name: /Codex 原生工具组/ }),
+    list.getByRole("button", { name: /Codex Native Tools/ }),
   ).toHaveAttribute("aria-pressed", "true");
 });
 
@@ -291,17 +298,17 @@ test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保
   );
   await page
     .getByLabel("Model 精确版本", { exact: true })
-    .selectOption("builtin-model-gpt-6-1-sol-high:1");
+    .selectOption("builtin-model-gpt-6-2-sol-high:1");
   await page
     .getByLabel("Harness 精确版本", { exact: true })
-    .selectOption("builtin-harness-codex-managed:1");
+    .selectOption("builtin-harness-codex-managed:2");
   await page
     .getByLabel("Tool 精确版本", { exact: true })
-    .selectOption("builtin-tool-codex-native:1");
+    .selectOption("builtin-tool-codex-native:2");
   const capName = "Browser capability " + crypto.randomUUID().slice(0, 5);
   await page
     .getByLabel("Spec 精确版本", { exact: true })
-    .selectOption("builtin-spec-stage-prd:2");
+    .selectOption("builtin-spec-stage-prd:4");
   await page.getByLabel("名称", { exact: true }).fill(capName);
   await page
     .getByRole("button", { name: "创建 Capability", exact: true })
@@ -315,7 +322,7 @@ test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保
   });
   const cap = catalog.records.find((r: any) => r.name === capName);
   expect(cap).toBeTruthy();
-  expect(cap.spec_refs).toEqual(["builtin-spec-stage-prd:2"]);
+  expect(cap.spec_refs).toEqual(["builtin-spec-stage-prd:4"]);
   expect(cap.data).toEqual({});
   await page.getByRole("tab", { name: "Agent", exact: true }).click();
   const agentName = "Browser analyst " + crypto.randomUUID().slice(0, 5);
@@ -761,7 +768,8 @@ test("配置页面保持 Tab 顺序，当前链接定位且 Tools 调用记录�
     "MCP",
     "Skills",
     "Tools",
-    "Harness原生工具",
+    "Harness Tools",
+    "Internal Tools",
   ]);
   await page.getByRole("tab", { name: "Tools", exact: true }).click();
   await expect(
@@ -839,6 +847,21 @@ test("Delivery 定义和输入输出端口保存后保留精确修订", async ({
   await page
     .getByLabel("内容规范", { exact: true })
     .selectOption([specification.id]);
+  await page.getByLabel("交付物格式", { exact: true }).selectOption("json");
+  await page.getByLabel("校验结构化内容", { exact: true }).check();
+  await expect(page.getByLabel("内容 JSON Schema")).toHaveValue(/"object"/);
+  const sample = page.getByText("检查内容样本", { exact: true });
+  await sample.click();
+  await page.getByLabel("自检内容编码", { exact: true }).selectOption("json");
+  const sampleContent = page.getByLabel("待检查内容", { exact: true });
+  const runSample = page.getByRole("button", { name: "运行结构自检" });
+  await sampleContent.fill("[]");
+  await runSample.click();
+  await expect(page.getByRole("status")).toContainText("结构检查未通过");
+  await sampleContent.fill("{}");
+  await runSample.click();
+  await expect(page.getByRole("status")).toContainText("结构检查通过");
+  await sample.click();
   await page
     .getByRole("button", { name: "创建 Delivery", exact: true })
     .click();
@@ -850,6 +873,7 @@ test("Delivery 定义和输入输出端口保存后保留精确修订", async ({
   const delivery = types.records.find((r: any) => r.name === name);
   expect(delivery.spec_refs).toEqual([specification.id]);
   expect(delivery.data.body).toBeUndefined();
+  expect(delivery.data.content_schema).toEqual({ type: "object" });
   await page.getByRole("tab", { name: "Workflow", exact: true }).click();
   await page.getByRole("button", { name: "新建流程", exact: true }).click();
   const editor = page.getByRole("region", { name: "工作流程管理" });
@@ -873,6 +897,9 @@ test("Delivery 定义和输入输出端口保存后保留精确修订", async ({
   await editor
     .getByLabel("交付类型 · risks", { exact: true })
     .selectOption(delivery.id);
+  await expect(
+    editor.locator('[id="workflow-port:output:risks"] > summary > span'),
+  ).toHaveText([`输出：${name}`, `类型：${name} v1`]);
   await editor.getByRole("button", { name: "添加步骤", exact: true }).click();
   await editor.getByLabel("步骤名称", { exact: true }).fill("确认材料");
   await editor.getByLabel("执行方式", { exact: true }).selectOption("control");
@@ -885,6 +912,11 @@ test("Delivery 定义和输入输出端口保存后保留精确修订", async ({
   await editor
     .getByLabel("材料来源 · input_1", { exact: true })
     .selectOption(option!);
+  const inputRow = editor.locator('[id="workflow-port:input:input_1"]');
+  await expect(inputRow.locator("summary > span")).toHaveText([
+    `输入：${name}`,
+    `类型：${name} v1`,
+  ]);
   await editor.getByRole("button", { name: "发布流程", exact: true }).click();
   await expect(
     editor.getByRole("status").filter({ hasText: /已保存|已发布|校验通过/ }),
@@ -901,13 +933,38 @@ test("Delivery 定义和输入输出端口保存后保留精确修订", async ({
     pointer: "",
   });
   expect(consumer.dependencies).toContain(producer.key);
+  await rpc(page, "delivery_type.revise", {
+    command_id: crypto.randomUUID(),
+    target: delivery.id,
+    expected_revision: delivery.revision,
+    payload: {
+      name: `${name} 更新版`,
+      spec_refs: delivery.spec_refs,
+      data: delivery.data,
+    },
+  });
   await page.reload();
   await editor
     .getByRole("button", { name: "展开阶段：工作", exact: true })
     .click();
+  await editor.getByRole("button", { name: /^产生材料/ }).click();
+  const outputRow = editor.locator('[id="workflow-port:output:risks"]');
+  await expect(outputRow.locator("summary > span")).toHaveText([
+    `输出：${name}`,
+    `类型：${name} v1`,
+  ]);
+  await expect(outputRow.getByLabel("输出名称", { exact: true })).toBeHidden();
   await editor.getByRole("button", { name: /^确认材料/ }).click();
+  await expect(inputRow.locator("summary > span")).toHaveText([
+    `输入：${name}`,
+    `类型：${name} v1`,
+  ]);
   await expect(
-    editor.getByLabel("材料来源 · input_1", { exact: true }),
+    inputRow.getByLabel("材料来源 · input_1", { exact: true }),
+  ).toBeHidden();
+  await inputRow.locator("summary").press("Enter");
+  await expect(
+    inputRow.getByLabel("材料来源 · input_1", { exact: true }),
   ).toHaveValue(`${producer.key}:risks`);
   await page.screenshot({
     path: info.outputPath("delivery-reference.png"),

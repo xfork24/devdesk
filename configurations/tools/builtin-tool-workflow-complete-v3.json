@@ -1,0 +1,50 @@
+{
+  "type": "tool",
+  "identity": "builtin-tool-workflow-complete",
+  "revision": 3,
+  "name": "Complete Workflow",
+  "scope": "global",
+  "data": {
+    "qualified_name": "workflow.complete",
+    "implementation": "platform",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "instance_id": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "plan_revision_id": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "control_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "decision_ref": {
+          "type": "string"
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "plan_revision_id",
+        "expected_revision",
+        "control_version"
+      ],
+      "additionalProperties": false,
+      "description": "Explicitly complete this instance only after every node is disposed and final outputs/rules are satisfied. Complete each child before its parent. Preserve expected_revision from the original owner/instance read. For step writes preserve execution_id and expected_step_revision from that same read; do not refresh or retry conflicts with newer versions. Changes to control_version or plan_revision_id revoke the old request."
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "capabilities": []
+  }
+}

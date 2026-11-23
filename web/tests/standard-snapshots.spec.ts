@@ -127,7 +127,7 @@ async function child(page: Page, marker: string, material: string) {
         spec_refs: [spec.id],
         executor: {
           type: "tool",
-          tool_ref: "builtin-tool-materials-capture:1",
+          tool_ref: "builtin-tool-materials-capture:2",
           arguments: {
             marker: { type: "constant", value: marker },
             item: { type: "source", source: { step: "$input", port: "item" } },
@@ -417,7 +417,7 @@ test("同一 Feature 的 Task 实际采用不同 Standard 且切换保留执行�
         stage: "work",
         executor: {
           type: "tool",
-          tool_ref: "builtin-tool-tasks-create:1",
+          tool_ref: "builtin-tool-tasks-create:2",
           arguments: {
             tasks: {
               type: "constant",

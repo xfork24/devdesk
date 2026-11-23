@@ -34,7 +34,15 @@
 
 仓库的 [configurations](../../configurations/README.md) 是出厂资源；[manifest](../../configurations/manifest.json) 决定实际发布哪些修订。目录中存在某个文件，不代表它会被加载。
 
-运行数据中的源定义由 `source_definitions` 保存。程序从源定义解析运行所需视图，缓存和列表摘要用来加速读取，不作为第二套可独立修改的配置真相。
+基础组件页的 Tools 管理 HTTP 动作。Harness Tools 展示各 Harness 的原生工具组。Internal Tools 展示 DevDesk 平台工具的精确修订、输入与输出合同、Capability 引用和可跳转的 Workflow 步骤。
+
+构建时 Host 将出厂资源嵌入程序，初始化或重置时再导入数据集。运行时以 SQLite 的 `source_definitions` 和已保存的绑定为准。程序从这些记录解析运行所需视图，并用缓存和列表摘要加速读取。
+
+停用 Model 等源定义、删除接入或预览模板重置时，Host 从各项目的只读配置目录核对引用或计算预览。项目仍通过 Capability、Agent 或其他配置间接使用该定义时，停用会被拒绝。停用保留原修订，供已冻结的执行读取。完整重置只重写依赖配置源的历史正文和受影响的活动工作流。已有会话引用的 Agent 修订及其依赖保留在历史目录中。
+
+完整重置先提交全局目录，再更新项目与全局讨论目录。项目同步期间，查询仍可读取其上一次完整提交的目录；项目提交后，查询切换到新代次。
+
+重置准备读取配置、重建历史正文所需的事实以及可能包含源引用的记录。同一 SQLite 快照内重复引用的正文可复用已核验的解码结果。页面在操作进行时显示状态，响应超时后可使用原命令核对结果。
 
 原始配置格式、根引用与依赖检查见[格式参考](reference/contracts.md)。加载和编译见 [core 配置手册](../crates/devdesk-core/configuration-and-catalog.md)。
 

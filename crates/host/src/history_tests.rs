@@ -130,6 +130,22 @@ fn operational_pages_do_not_restore_aggregate_history_and_preserve_exact_calls()
         .to_owned();
     let engine = workspace.project_engine(Some(&project)).unwrap();
     add_history(&engine, "bounded");
+    let artifact = "sample artifact";
+    let bytes = serde_json::to_vec(artifact).unwrap();
+    // NativeTools addresses this directory by the first 16 SHA-256 bytes of "bounded-call".
+    let artifact_dir = PathBuf::from(engine.store.root())
+        .join("tool-executions/3dab190a-51da-7996-7fb1-cc56b4260635");
+    std::fs::create_dir_all(&artifact_dir).unwrap();
+    std::fs::write(artifact_dir.join("result.bin"), &bytes).unwrap();
+    engine.store.seed_fixture_state(None, &mut |state| {
+        let call = state.governance.iter_mut().find(|r| r.id == "bounded-call").unwrap();
+        call.data["receipt"] = json!({"invocation_id":call.id,"success":true,"remote_effect":"none",
+            "origin":Origin::External,"content":[{"type":"resource_link","uri":"devdesk-tool-artifact:bounded-call",
+                "size":bytes.len(),"sha256":configuration_hash(&artifact),"mimeType":"application/json"}]});
+        call.content_hash = content_digest(&call.refs, &call.data);
+        call.revision += 1;
+        Ok(Value::Null)
+    }).unwrap();
     // Unrelated opaque history must never trigger aggregate restoration.
     let mut broken = engine
         .store
@@ -141,6 +157,7 @@ fn operational_pages_do_not_restore_aggregate_history_and_preserve_exact_calls()
     broken.id = "unrelated-broken-history".into();
     broken.definition_id = broken.id.clone();
     broken.r#type = "unrelated_runtime".into();
+    broken.revision = 1;
     broken.data = json!({"value":{"$source":"tool_definition","ref":"unavailable:1"}});
     broken.content_hash = content_digest(&broken.refs, &broken.data);
     let key = devdesk_core::concurrency::ResourceKey::new("governance", &broken.id);
@@ -191,6 +208,16 @@ fn operational_pages_do_not_restore_aggregate_history_and_preserve_exact_calls()
     assert_eq!(detail["total"], 1);
     assert_eq!(detail["records"][0]["name"], "bounded");
     assert!(detail["records"][0]["data"]["invocation"]["arguments"].is_object());
+    let artifact = workspace
+        .dispatch(
+            "tool.call.artifact",
+            json!({"project_id":project,"target":"bounded-call"}),
+        )
+        .unwrap();
+    assert_eq!(
+        artifact,
+        json!({"base64":"InNhbXBsZSBhcnRpZmFjdCI=","mime":"application/json"})
+    );
     assert_eq!(
         engine.store.event_cursor().unwrap(),
         cursor,
@@ -281,7 +308,25 @@ fn opened_step_qualification_is_exact_and_never_restores_engineering_history() {
         )
         .unwrap();
     let execution = status["runtime"]["steps"][0]["id"].clone();
+    let engine = w.project_engine(Some(&project)).unwrap();
+    let baseline = engine.store.snapshot().unwrap();
+    let original = baseline.configuration(run["id"].as_str().unwrap()).unwrap();
     let trace = performance::Trace::start();
+    let summary = w
+        .dispatch(
+            "query.project_workflow_summary",
+            json!({"project_id":project,"limit":1}),
+        )
+        .unwrap();
+    assert_eq!(summary, json!({"total":1,"records":[original]}));
+    assert_eq!(
+        w.dispatch(
+            "query.project_workflow_summary",
+            json!({"project_id":project,"offset":1})
+        )
+        .unwrap(),
+        json!({"total":1,"records":[]})
+    );
     let ready=w.dispatch_display_read("query.workflow_instance",json!({"project_id":project,"id":run["id"],"execution_id":execution,"view":"qualification"})).unwrap().value;
     assert_eq!(
         ready["completion_status"][execution.as_str().unwrap()]["satisfied"],

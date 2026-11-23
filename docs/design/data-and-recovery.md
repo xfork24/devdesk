@@ -57,6 +57,8 @@ DevDesk 将可查询的状态放在 SQLite，将较大的交付内容保存为�
 
 Host 关闭时停止接收新的调度工作，等待当前阶段并核对自己管理的 worker。重开保留历史，结果未知的外部操作先核对。共享镜像不因某个会话结束而删除。
 
+Host 启动时先确认执行目录没有关联容器，再维护会话缓存和已封存日志。Docker 离线时，维护留待后续启动重新核对，执行文件原地保留。
+
 恢复当前格式的数据与迁移旧数据库是两件事。当前程序只打开兼容数据集或初始化空目录，不自动转换旧布局，也不以删库解决恢复问题。操作要求见[运行指南](run-binary.md)。
 
 实现入口：[资源提交](../crates/devdesk-adapters/storage-and-source-codecs.md)、[工作流变更与恢复](../crates/devdesk-core/workflow-changes.md)。

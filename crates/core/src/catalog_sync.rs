@@ -55,9 +55,7 @@ impl Engine {
     fn sync_shared_configuration_once(&self, global: &dyn EngineeringStore) -> Result<()> {
         let existing = self.store.configuration_snapshot()?;
         let known = global.configuration_snapshot()?;
-        if template_hard_reset_generation(&known.state)
-            > template_hard_reset_generation(&existing.state)
-        {
+        if existing.needs_factory_reset_from(&known) {
             let publication = self
                 .store
                 .prepare_configuration_reset(&known.state.governance, existing.revision)?;
@@ -79,12 +77,10 @@ impl Engine {
             return Ok(());
         }
         let mut directory = known.state.as_ref().clone();
-        for role in existing
-            .state
-            .governance
-            .iter()
-            .filter(|r| matches!(r.r#type.as_str(), "role" | "role_retirement"))
-        {
+        for role in existing.state.governance.iter().filter(|r| {
+            matches!(r.r#type.as_str(), "role" | "role_retirement")
+                && !template_history_retained(&existing.state, r)
+        }) {
             if let Some(old) = known.record(&role.id) {
                 require(old.content_hash == role.content_hash, "Role 目录摘要冲突")?;
             } else {
@@ -100,17 +96,18 @@ impl Engine {
         {
             return Ok(());
         }
-        let shared = global.configuration_snapshot()?;
         let mut next = existing.state.as_ref().clone();
         let mut ids = next
             .governance
             .iter()
             .map(|r| (r.id.clone(), r.content_hash.clone()))
             .collect::<std::collections::BTreeMap<_, _>>();
-        for record in shared.state.governance.iter().filter(|r| {
+        // Use the same global snapshot as the reset check. Role records just
+        // published to the directory are already present in this project.
+        for record in known.state.governance.iter().filter(|r| {
             r.immutable
                 && (matches!(r.r#type.as_str(), "role" | "role_retirement")
-                    || configuration_visible(&shared.state, r, self.store.project_id().as_deref()))
+                    || configuration_visible(&known.state, r, self.store.project_id().as_deref()))
         }) {
             if let Some(hash) = ids.get(&record.id) {
                 require(hash == &record.content_hash, "共享配置摘要冲突")?;
@@ -119,7 +116,7 @@ impl Engine {
                 next.governance.push(record.clone());
             }
         }
-        copy_template_catalog(&shared.state, &mut next)?;
+        copy_template_catalog(&known.state, &mut next)?;
         // Definitions/Harness/Sandbox views are rebuilt from source revisions;
         // they are not a second mutable configuration store.
         next.refresh_configuration_views()?;

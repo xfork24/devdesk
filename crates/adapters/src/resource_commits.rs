@@ -1626,6 +1626,9 @@ fn prepare_writes(
         .changes
         .iter()
         .map(|change| {
+            if change.resource.kind == "configuration_reset" {
+                return Ok(None);
+            }
             if change.resource.kind == "snapshot"
                 && let Some(content) = artifact_index.reference(&change.value)?
             {

@@ -352,7 +352,7 @@ async fn rpc(
         let milliseconds = submitted.elapsed().as_secs_f64()*1000.0;
         if let Some(trace) = trace {
             eprintln!("{}",json!({"type":"performance","request_id":request_id,"trace_id":trace_id,"method":method.chars().take(120).collect::<String>(),"success":success,"error_code":error_code,"response_bytes":body.len(),"request_ms":milliseconds,"measurement":trace.finish()}));
-        } else if milliseconds >= 1500.0 || matches!(error_code.as_deref(), Some("storage" | "storage_busy")) {
+        } else if should_log_rpc_diagnostic(error_code.as_deref(), milliseconds) {
             eprintln!("{}", json!({"type":"rpc_diagnostic","request_id":request_id,"trace_id":trace_id,"method":method.chars().take(120).collect::<String>(),"error_code":error_code,"request_ms":milliseconds,"queue_ms":queue_ms,"dispatch_ms":dispatch_ms,"response_bytes":body.len(),"client_disconnected":cancelled.load(Ordering::Relaxed)}));
         }
         (body, milliseconds)
@@ -365,6 +365,13 @@ async fn rpc(
             response
         }
         Err(e) => Json(json!({"jsonrpc":"2.0","id":fallback_id,"error":failure(err("internal",e.to_string()))})).into_response(),
+    }
+}
+fn should_log_rpc_diagnostic(error_code: Option<&str>, milliseconds: f64) -> bool {
+    match error_code {
+        Some("storage" | "storage_busy") => true,
+        Some(_) => milliseconds >= 1500.0,
+        None => false,
     }
 }
 fn lifecycle_error(app: &App, error: Error) -> Response {
@@ -951,6 +958,15 @@ mod loading_performance;
 fn performance_logging() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| std::env::var("DEVDESK_PERF_LOG").is_ok_and(|value| value == "1"))
+}
+
+#[test]
+fn rpc_diagnostics_keep_storage_errors_and_slow_failures_only() {
+    assert!(!should_log_rpc_diagnostic(None, 4039.0));
+    assert!(!should_log_rpc_diagnostic(Some("invalid_params"), 20.0));
+    assert!(should_log_rpc_diagnostic(Some("provider_io"), 4039.0));
+    assert!(should_log_rpc_diagnostic(Some("storage"), 5.0));
+    assert!(should_log_rpc_diagnostic(Some("storage_busy"), 5.0));
 }
 
 #[cfg(test)]

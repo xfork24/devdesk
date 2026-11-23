@@ -63,9 +63,11 @@
 
 `/capabilities.lifecycle` 提供 `instance_id`、`revision` 和 `status`。setup 请求携带 `command_id`、`instance_id`、`expected_revision`、`path`；shutdown 不需要 path。旧页面不能用旧实例身份停止新启动的 Host。
 
-生命周期操作进行中可以返回 `operation_in_progress`，调用者使用原命令核对结果。生命周期回执属于当前 Host 进程，与数据库中持久化业务命令的回执不同。
+生命周期操作进行中可以返回 `operation_in_progress`，调用者使用原命令核对结果。打开数据集期间，工作台展示初始化状态，数据集就绪后自动进入。生命周期回执属于当前 Host 进程，与数据库中持久化业务命令的回执不同。
 
 `query.settings` 同时返回设置值和 versions；`settings.update` 的 preconditions 只包含本次修改的 setting 资源。不同设置项分别检查版本，冲突后保留原草稿。
+
+`global_concurrency` 默认 32，控制 Host 的全局并发额度。`default_project_concurrency` 默认 8，在创建项目时写入项目额度。两项均接受 1 至 32 的整数。已创建项目继续使用各自保存的额度。
 
 `github.auth_status` 返回 GitHub 连接状态、账号、凭据来源及版本。`github.configure_auth` 使用该版本作为 `expected_revision`，验证并保存 `token`。两种响应均只返回状态信息。
 

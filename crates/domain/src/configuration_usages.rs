@@ -13,6 +13,8 @@ pub enum ConfigurationUsageKind {
     StepArgument,
     StepCollection,
     StepOutput,
+    StepSpec,
+    StepTool,
     WorkflowOutput,
 }
 
@@ -130,6 +132,16 @@ pub fn configuration_usage_index<'a>(
                         key: step.key.clone(),
                         name: step.name.clone(),
                     });
+                    for (j, spec_ref) in step.spec_refs.iter().enumerate() {
+                        add(
+                            spec_ref,
+                            format!("/data/steps/{i}/spec_refs/{j}"),
+                            ConfigurationUsageKind::StepSpec,
+                            stage.clone(),
+                            node.clone(),
+                            None,
+                        );
+                    }
                     for (name, output) in &step.outputs {
                         add(
                             &output.delivery_ref,
@@ -154,7 +166,20 @@ pub fn configuration_usage_index<'a>(
                             );
                         }
                     }
-                    if let StepExecutor::Tool { arguments, .. } = &step.executor {
+                    if let StepExecutor::Tool {
+                        tool_ref,
+                        arguments,
+                        ..
+                    } = &step.executor
+                    {
+                        add(
+                            tool_ref,
+                            format!("/data/steps/{i}/executor/tool_ref"),
+                            ConfigurationUsageKind::StepTool,
+                            stage.clone(),
+                            node.clone(),
+                            None,
+                        );
                         for (name, binding) in arguments {
                             if let InputBinding::Source { source } = binding
                                 && let Some(delivery) = source_delivery(source)
@@ -252,7 +277,7 @@ mod tests {
                 {"key":"author","name":"Author","stage":"stage","executor":{"type":"control"},
                  "inputs":{"request":{"type":"source","source":{"step":"$input","port":"request"}}},
                  "outputs":{"result":{"delivery_ref":"delivery:1"}}},
-                {"key":"review","name":"Review","stage":"stage","executor":{"type":"control"},
+                {"key":"review","name":"Review","stage":"stage","executor":{"type":"control"},"spec_refs":["spec:2"],
                  "inputs":{"work":{"type":"source","source":{"step":"author","port":"result","pointer":"/part"}},
                            "example":{"type":"constant","value":"delivery:2 skill:1"}}},
                 {"key":"tool","name":"Tool","stage":"stage","executor":{"type":"tool","tool_ref":"tool:1",
@@ -264,9 +289,21 @@ mod tests {
         );
         let index = configuration_usage_index([&delivery, &cap, &workflow]).unwrap();
         assert_eq!(index["spec:1"].len(), 2);
+        let step_spec = &index["spec:2"][0];
+        assert_eq!(step_spec.reference, "flow:1");
+        assert_eq!(step_spec.kind, ConfigurationUsageKind::StepSpec);
+        assert_eq!(step_spec.path, "/data/steps/1/spec_refs/0");
+        assert_eq!(step_spec.step.as_ref().unwrap().key, "review");
         assert_eq!(index["skill:2"][0].reference, "cap:1");
         assert!(!index.contains_key("skill:1"));
         assert!(!index.contains_key("delivery:2"));
+        assert_eq!(index["tool:1"].len(), 2);
+        let invocation = &index["tool:1"][1];
+        assert_eq!(invocation.reference, "flow:1");
+        assert_eq!(invocation.kind, ConfigurationUsageKind::StepTool);
+        assert_eq!(invocation.path, "/data/steps/2/executor/tool_ref");
+        assert_eq!(invocation.step.as_ref().unwrap().key, "tool");
+        assert_eq!(invocation.stage.as_ref().unwrap().name, "Stage");
         assert_eq!(index["delivery:1"].len(), 7);
         assert!(
             index["delivery:1"]

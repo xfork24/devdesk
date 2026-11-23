@@ -1,0 +1,11 @@
+{
+  "type": "skill",
+  "identity": "builtin-skill-engineering-context",
+  "revision": 4,
+  "name": "Engineering Context",
+  "scope": "global",
+  "data": {
+    "body_file": "engineering-context.md",
+    "rules": []
+  }
+}

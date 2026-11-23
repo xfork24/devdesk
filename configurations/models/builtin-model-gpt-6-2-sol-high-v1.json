@@ -1,0 +1,18 @@
+{
+  "type": "model",
+  "identity": "builtin-model-gpt-6-2-sol-high",
+  "revision": 1,
+  "name": "GPT-6.2 Sol High",
+  "scope": "global",
+  "data": {
+    "capabilities": [
+      "structured-output",
+      "tool-calling"
+    ],
+    "model": "gpt-6.2-sol",
+    "parameters": {
+      "reasoning_effort": "high"
+    },
+    "provider": "openai"
+  }
+}

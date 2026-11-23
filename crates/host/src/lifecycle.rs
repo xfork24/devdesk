@@ -97,6 +97,12 @@ impl Lifecycle {
         if state >> 2 != revision {
             return Err(err("revision_conflict", "Host 状态版本已改变"));
         }
+        if setup && state & 3 == OPENING {
+            return Err(err(
+                "operation_in_progress",
+                "Host 正在打开数据集，请等待完成",
+            ));
+        }
         if (setup && state & 3 != EMPTY) || state & 3 == STOPPING {
             return Err(err("invalid_state", "Host 当前状态不接纳此操作"));
         }
@@ -225,6 +231,10 @@ mod tests {
             panic!()
         };
         assert!(matches!(lifecycle.begin(true,&request),Err(e) if e.code=="operation_in_progress"));
+        assert!(matches!(
+            lifecycle.begin(true, &params(&lifecycle, "different-setup")),
+            Err(e) if e.code == "operation_in_progress"
+        ));
         lifecycle.finish_setup(&ticket, true).unwrap();
         let original = lifecycle.record(ticket, json!({"root":"fixture"})).unwrap();
         lifecycle.stop_from_signal();

@@ -1,0 +1,23 @@
+{
+  "type": "capability",
+  "identity": "builtin-capability-developer-gpt-6-2-sol-codex",
+  "revision": 3,
+  "name": "Software Development Capability · GPT-6.2 Sol High",
+  "scope": "global",
+  "harness_ref": "builtin-harness-codex-managed:2",
+  "model_ref": "builtin-model-gpt-6-2-sol-high:1",
+  "skills": [
+    "builtin-skill-engineering-context:4",
+    "builtin-skill-test-driven-development:1",
+    "builtin-skill-deliverable-validation:1"
+  ],
+  "tools": [
+    "builtin-tool-codex-native:2",
+    "builtin-tool-workflow-outputs-read:3",
+    "builtin-tool-spec-lint:2"
+  ],
+  "spec_refs": [
+    "builtin-spec-implementation-report:2"
+  ],
+  "data": {}
+}

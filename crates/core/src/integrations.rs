@@ -904,7 +904,6 @@ impl Engine {
     pub(crate) fn integration_query(&self, method: &str, p: &Value) -> Option<Result<Value>> {
         if ![
             "query.integrations",
-            "query.tool_calls",
             "query.integration_bindings",
             "skill.export",
         ]
@@ -913,14 +912,15 @@ impl Engine {
             return None;
         }
         Some((|| {
-            let s = self.store.snapshot()?;
+            let catalog = self.store.configuration_snapshot()?;
+            let s = catalog.state.as_ref();
             if method == "skill.export" {
                 let key = text(p, "id")?;
                 let r = s.configuration(&key)?;
                 let package=s.governance.iter().find(|r|r.r#type=="skill_package"&&r.definition_id==key).map(|r|r.data.clone()).unwrap_or_else(||json!({"body":r.data["body"],"description":r.name,"files":[],"requires_tools":[],"source":"inline_markdown","scripts_disabled":false}));
                 return Ok(package);
             }
-            let rows = integration_records(&s, method, p);
+            let rows = integration_records(s, method, p);
             let offset = p["offset"].as_u64().unwrap_or(0) as usize;
             let limit = p["limit"].as_u64().unwrap_or(100).min(100) as usize;
             Ok(

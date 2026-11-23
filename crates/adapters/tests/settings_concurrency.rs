@@ -34,6 +34,7 @@ fn save(
 fn independent_edits_commit_but_stale_same_field_cannot_overwrite() {
     let directory = tempfile::tempdir().unwrap();
     let store = GlobalStore::open(directory.path()).unwrap();
+    assert_eq!(store.concurrency().unwrap(), 32);
     let baseline = settings::read(&store).unwrap().versions;
     let first = save(
         &store,
@@ -49,10 +50,19 @@ fn independent_edits_commit_but_stale_same_field_cannot_overwrite() {
         json!({"default_harness":"dsh"}),
     )
     .unwrap();
+    save(
+        &store,
+        &baseline,
+        "project-default",
+        json!({"default_project_concurrency":12}),
+    )
+    .unwrap();
     let conflict = save(&store, &baseline, "stale", json!({"global_concurrency":2})).unwrap_err();
     assert_eq!(conflict.code, "revision_conflict");
     let current = settings::read(&store).unwrap();
     assert_eq!(current.global_concurrency, 7);
+    assert_eq!(store.concurrency().unwrap(), 7);
+    assert_eq!(current.default_project_concurrency, 12);
     assert_eq!(
         current.default_harness,
         devdesk_domain::HarnessProvider::Dsh
@@ -84,7 +94,7 @@ fn independent_edits_commit_but_stale_same_field_cannot_overwrite() {
         )
         .is_err()
     );
-    assert_eq!(store.events_after(0, 100).unwrap().len(), 3);
+    assert_eq!(store.events_after(0, 100).unwrap().len(), 4);
 }
 
 #[test]
@@ -99,6 +109,10 @@ fn invalid_batches_and_missing_guards_leave_both_settings_unchanged() {
         json!({"global_concurrency":33}),
         json!({"unknown":1}),
         json!({"global_concurrency":1.5}),
+        json!({"global_concurrency":7,"default_project_concurrency":0}),
+        json!({"default_project_concurrency":33}),
+        json!({"default_project_concurrency":1.5}),
+        json!({"default_project_concurrency":null}),
     ]
     .into_iter()
     .enumerate()

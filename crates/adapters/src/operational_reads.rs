@@ -131,6 +131,66 @@ fn call(
     Ok(json!(record))
 }
 
+fn project_workflow_summary(
+    conn: &Connection,
+    catalog: &ConfigurationCatalogSnapshot,
+    p: &Value,
+) -> Result<Value> {
+    let Some(scope) = p
+        .get("scope")
+        .map_or(Some(None), |value| value.as_str().map(Some))
+    else {
+        return Ok(json!({"records":[],"total":0}));
+    };
+    let project_scope = p["project_id"].as_str().map(Scope::project).map(|s| s.0);
+    let offset = p["offset"].as_u64().unwrap_or(0).min(i64::MAX as u64);
+    let limit = p["limit"].as_u64().unwrap_or(50).clamp(1, 100);
+    let predicate = "
+        r.type='workflow_instance' AND json_extract(r.data,'$.parent_execution_id') IS NULL
+        AND (?1 IS NULL OR json_extract(r.scope,'$') IN ('global',?1))
+        AND (?2 IS NULL OR json_extract(r.scope,'$')=?2)
+        AND (?3 OR NOT EXISTS(SELECT 1 FROM governance_records n
+            WHERE n.type=r.type AND n.definition_id=r.definition_id AND n.version>r.version))
+        AND (?4 OR NOT EXISTS(SELECT 1 FROM governance_records t
+            WHERE t.type IN ('agent_instance_retirement','role_retirement')
+            AND t.definition_id=r.definition_id))";
+    let filters: [&dyn rusqlite::ToSql; 4] = [
+        &project_scope,
+        &scope,
+        &(p["include_history"] == true),
+        &(p["include_deleted"] == true),
+    ];
+    let total = conn
+        .query_row(
+            &format!("SELECT count(*) FROM governance_records r WHERE {predicate}"),
+            filters,
+            |row| row.get::<_, u64>(0),
+        )
+        .map_err(storage)?;
+    let selected = format!(
+        "id IN (SELECT r.id FROM governance_records r WHERE {predicate}
+         ORDER BY r.rowid DESC LIMIT ?5 OFFSET ?6)"
+    );
+    let mut records = load_table_filtered_params::<Value>(
+        conn,
+        "governance_records",
+        &selected,
+        &[
+            filters[0], filters[1], filters[2], filters[3], &limit, &offset,
+        ],
+    )?
+    .into_iter()
+    .map(ConfigurationRecord::from_storage)
+    .collect::<Result<Vec<_>>>()?;
+    let mut memo = Default::default();
+    for record in &mut records {
+        record.data = source_views::restore_with(&catalog.state, &record.data, &mut memo)?;
+        record.content_hash = content_digest(&record.refs, &record.data);
+    }
+    records.reverse();
+    Ok(json!({"records":records,"total":total}))
+}
+
 pub(super) fn read(
     pool: &ConnectionPool,
     catalog: &ConfigurationCatalogSnapshot,
@@ -143,6 +203,19 @@ pub(super) fn read(
         return Ok(
             json!({"harnesses":catalog.state.harnesses,"sandboxes":catalog.state.sandboxes}),
         );
+    }
+    if method == "query.project_workflow_summary" {
+        let conn = pool.read()?;
+        let tx = conn.unchecked_transaction().map_err(storage)?;
+        if configuration_cache::revision(&tx)? != catalog.revision {
+            return Err(err(
+                "catalog_refresh_required",
+                "项目流程摘要需要更新源目录",
+            ));
+        }
+        let result = project_workflow_summary(&tx, catalog, p)?;
+        tx.commit().map_err(storage)?;
+        return Ok(result);
     }
     let (offset, limit) = page(p)?;
     let conn = pool.read()?;

@@ -1,16 +1,16 @@
 //! Stable factory identities used only by tests. Product selection reads catalog metadata.
 #![allow(dead_code)]
-pub const DEFAULT_MODEL_ID: &str = "builtin-model-gpt-6-1-sol-low:1";
+pub const DEFAULT_MODEL_ID: &str = "builtin-model-gpt-6-2-sol-high:1";
 
-pub const DEFAULT_HARNESS_ID: &str = "builtin-harness-codex-managed:1";
+pub const DEFAULT_HARNESS_ID: &str = "builtin-harness-codex-managed:2";
 
 pub const DEFAULT_SANDBOX_ID: &str = "builtin-sandbox-docker:2";
 
-pub const DEFAULT_STANDARD_ID: &str = "simplified-standard-engineering:9";
+pub const DEFAULT_STANDARD_ID: &str = "builtin-standard-engineering-delivery:3";
 
-pub const DEFAULT_DSH_NATIVE_TOOL_ID: &str = "builtin-tool-dsh-native:1";
+pub const DEFAULT_DSH_NATIVE_TOOL_ID: &str = "builtin-tool-dsh-native:2";
 
-pub const DEFAULT_NATIVE_TOOL_ID: &str = "builtin-tool-codex-native:1";
+pub const DEFAULT_NATIVE_TOOL_ID: &str = "builtin-tool-codex-native:2";
 
 pub fn default_agent_id(role: &str) -> String {
     default_configured_agent_id(role)
@@ -20,17 +20,15 @@ pub fn default_role_id(role: &str) -> String {
     format!("builtin-role-{role}:1")
 }
 
-pub const DEFAULT_CAPABILITY_ID: &str = "builtin-capability-sol-high-codex:4";
+pub const DEFAULT_CAPABILITY_ID: &str = "builtin-capability-sol-high-codex:6";
 
 pub fn default_configured_agent_id(role: &str) -> String {
-    format!(
-        "simplified-agent-{role}:{}",
-        match role {
-            "project-manager" => 11,
-            "tester" => 9,
-            _ => 8,
-        }
-    )
+    let defaults: serde_json::Value =
+        serde_json::from_str(include_str!("../../configurations/defaults.json")).unwrap();
+    defaults["role_agent_bindings"][default_role_id(role)]
+        .as_str()
+        .unwrap()
+        .to_owned()
 }
 
 pub const DEFAULT_PERMISSION_SANDBOX: &str = "builtin-sandbox-docker:2";

@@ -224,7 +224,7 @@ test("Skills 导入保留 Markdown 原文与工具依赖，当前链接定位同
   await markdown(importer, "Skill 内容", body);
   await importer
     .getByLabel("Skill 必需工具", { exact: true })
-    .selectOption("builtin-tool-codex-native:1");
+    .selectOption("builtin-tool-codex-native:2");
   await page.getByRole("button", { name: "新建 Skill", exact: true }).click();
   await page
     .getByRole("button", { name: "导入 Skill 包", exact: true })
@@ -249,7 +249,7 @@ test("Skills 导入保留 Markdown 原文与工具依赖，当前链接定位同
   const skill = catalog.records.find((r: any) => r.name === name);
   const pkg = await rpc(page, "skill.export", { id: skill.id });
   expect(pkg.body).toBe(body);
-  expect(pkg.requires_tools).toEqual(["builtin-tool-codex-native:1"]);
+  expect(pkg.requires_tools).toEqual(["builtin-tool-codex-native:2"]);
   await page.goto(
     `/?tab=components&config_tab=skills&config_object=${skill.id}`,
   );
@@ -383,7 +383,7 @@ test("MCP 页面实际发现 stdio 服务、只授权选中工具并查看 Docke
   const resources = await rpc(page, "query.permission_resources");
   const bindings = resources.targets
     .filter((r: any) =>
-      ["builtin-harness-codex-managed:1", "builtin-sandbox-docker:2"].includes(
+      ["builtin-harness-codex-managed:2", "builtin-sandbox-docker:2"].includes(
         r.target.revision_id,
       ),
     )
@@ -391,8 +391,8 @@ test("MCP 页面实际发现 stdio 服务、只授权选中工具并查看 Docke
       target: r.target,
       permission_revision_id:
         r.target.kind === "harness"
-          ? "builtin-permission-harness-full-access:1"
-          : "builtin-permission-sandbox-full-access:1",
+          ? "builtin-permission-harness-full-access:2"
+          : "builtin-permission-sandbox-full-access:2",
       expected_revision: r.active?.revision || 0,
     }));
   await rpc(page, "permission.bindings.apply", {

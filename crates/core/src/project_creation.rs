@@ -27,6 +27,20 @@ pub fn create(
     command: &Command,
     context: &InvocationContext,
 ) -> Result<CommitReceipt> {
+    create_with_concurrency(
+        store,
+        command,
+        context,
+        settings::DEFAULT_PROJECT_CONCURRENCY,
+    )
+}
+
+pub fn create_with_concurrency(
+    store: &dyn EngineeringStore,
+    command: &Command,
+    context: &InvocationContext,
+    concurrency: u32,
+) -> Result<CommitReceipt> {
     let project = match store.namespace() {
         StoreNamespace::Engineering {
             project_id: Some(project),
@@ -65,6 +79,7 @@ pub fn create(
     )?;
     let mainline = input.mainline.unwrap_or_else(|| "main".into());
     require(!mainline.trim().is_empty(), "mainline 不可为空")?;
+    require((1..=32).contains(&concurrency), "并发额度需为 1—32")?;
     let workspace = input.workspace.unwrap_or_default();
     let value = Project {
         id: project.clone(),
@@ -76,7 +91,7 @@ pub fn create(
             mainline,
         }),
         execution_mode: "live".into(),
-        concurrency: 2,
+        concurrency,
         revision: 1,
     };
     let initial_context = Context {

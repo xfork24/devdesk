@@ -18,7 +18,7 @@ export function useMockCodexCatalog() {
               ? { identity: "fixture", available: true }
               : {
                   models: [
-                    { model: "gpt-6.1-sol" },
+                    { model: "gpt-6.2-sol" },
                     { model: "fixture-model" },
                   ],
                 },

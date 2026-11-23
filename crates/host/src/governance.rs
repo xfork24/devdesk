@@ -209,20 +209,17 @@ impl Workspace {
         }
         Some((|| {
             let target = params["target"].as_str().or_else(|| params["id"].as_str());
-            let configuration_read = matches!(
-                method,
-                "query.standard_diff"
-                    | "query.standard_usage"
-                    | "query.work_standard_choices"
-                    | "query.work_standard_diff"
-            );
-            let global = if configuration_read {
-                self.global.configuration_snapshot()?.state.as_ref().clone()
-            } else {
-                self.global.snapshot()?
+            let retirement = matches!(method, "role.delete" | "configuration.retire");
+            let catalog = self.global.configuration_snapshot()?;
+            let global = catalog.state.as_ref();
+            let target_global = match target {
+                Some(id) if catalog.record(id).is_none() => self
+                    .global
+                    .read_resources(&[concurrency::ResourceKey::new("governance", id)])?[0]
+                    .value
+                    .is_some(),
+                _ => target.is_some(),
             };
-            let target_global =
-                target.is_some_and(|id| global.governance.iter().any(|r| r.id == id));
             if [
                 "query.work_standard_diff",
                 "query.work_standard_choices",
@@ -321,7 +318,7 @@ impl Workspace {
                         } else if params[project_key].is_string() {
                             return Err(err("not_found", "规范不在指定项目中"));
                         } else if global.configuration(reference).is_ok() {
-                            (&global, Scope::global())
+                            (global, Scope::global())
                         } else {
                             let (project, state) = states
                                 .iter()
@@ -343,7 +340,7 @@ impl Workspace {
 
             if method == "query.standard_usage" && params["project_id"].is_null() && target_global {
                 let reference = target.unwrap();
-                standard_snapshot(&global, reference, &Scope::global())?;
+                standard_snapshot(global, reference, &Scope::global())?;
                 let mut records = Vec::new();
                 let mut offset = 0;
                 loop {
@@ -437,82 +434,53 @@ impl Workspace {
                 let change: ConfigurationChangeSet =
                     serde_json::from_value(params["payload"]["changeset"].clone())
                         .map_err(|e| err("invalid_params", e.to_string()))?;
-                let mut retired = Vec::new();
-                for op in &change.operations {
-                    if let ConfigurationOperation::Retire { reference, .. } = op {
-                        retired.push(reference.clone());
-                    }
-                }
-                if !retired.is_empty() {
-                    let mut offset = 0;
-                    loop {
-                        let (projects, total) = self.global.projects(offset, 100)?;
-                        for project in &projects {
-                            let state = SqliteStore::read_project_snapshot(
-                                Path::new(&self.global.root()),
-                                &project.id,
-                            )?;
-                            check_configuration_retirements(&change, &project.title, &state)?;
-                        }
-                        offset += projects.len();
-                        if offset >= total || projects.is_empty() {
-                            break;
-                        }
-                    }
+                if change
+                    .operations
+                    .iter()
+                    .any(|op| matches!(op, ConfigurationOperation::Retire { .. }))
+                {
+                    self.visit_project_catalogs(|project, catalog| {
+                        check_configuration_retirements(&change, &project.title, &catalog.state)
+                    })?;
                 }
             }
-            if ["role.delete", "configuration.retire"].contains(&method)
-                && let Some(target) = target
-            {
-                let source = engine.store.snapshot()?.configuration(target)?.clone();
-                let mut offset = 0;
-                loop {
-                    let (projects, total) = self.global.projects(offset, 100)?;
-                    for project in &projects {
-                        let state = SqliteStore::read_project_snapshot(
-                            Path::new(&self.global.root()),
-                            &project.id,
-                        )?;
-                        let refs = devdesk_core::project_configuration_references(&state, &source);
-                        require(
-                            refs.is_empty(),
-                            format!("项目 {} 仍引用此定义，请先换绑", project.title),
-                        )?;
-                    }
-                    offset += projects.len();
-                    if offset >= total || projects.is_empty() {
-                        break;
-                    }
-                }
+            if retirement && let Some(target) = target {
+                let catalog = engine.store.configuration_snapshot()?;
+                let source = catalog.state.configuration(target)?;
+                self.visit_project_catalogs(|project, catalog| {
+                    let refs =
+                        devdesk_core::project_configuration_references(&catalog.state, source);
+                    require(
+                        refs.is_empty(),
+                        format!("项目 {} 仍引用此定义，请先换绑", project.title),
+                    )
+                })?;
             }
             if query {
-                if local && ["query.workflows", "query.configurations"].contains(&method) {
-                    let s = engine.store.snapshot()?;
-                    let directory = s.clone();
-                    let mut records: Vec<_> = s
-                        .governance
-                        .into_iter()
-                        .filter(|r| {
-                            if method == "query.workflows" {
-                                ["workflow", "workflow_draft"].contains(&r.r#type.as_str())
-                            } else {
-                                params["kind"].as_str().map_or(
-                                    r.is_definition() || r.r#type == "agent_instance",
-                                    |kind| r.r#type == kind,
-                                )
-                            }
-                        })
-                        .collect();
-                    for r in global
+                if local
+                    && (method == "query.workflows"
+                        || (method == "query.configurations"
+                            && params["kind"].as_str().is_none_or(catalog_kind)))
+                {
+                    let view = engine.store.configuration_snapshot()?;
+                    return super::configuration_read::local_directory(
+                        &view,
+                        &catalog,
+                        method,
+                        params,
+                        engine.store.project_id().as_deref(),
+                    );
+                }
+                if local && method == "query.configurations" {
+                    // The catalog reader handles normal configuration kinds.
+                    // This fallback preserves the legacy raw history response.
+                    let directory = engine.store.snapshot()?;
+                    let kind = params["kind"].as_str();
+                    let mut records: Vec<_> = directory
                         .governance
                         .iter()
-                        .filter(|r| r.r#type == "workflow_draft" && r.scope == Scope::global())
-                    {
-                        if method == "query.workflows" && !records.iter().any(|old| old.id == r.id)
-                        {
-                            records.push(r.clone());
-                        }
-                    }
+                        .filter(|r| kind == Some(r.r#type.as_str()))
+                        .collect();
                     records.retain(|r| {
                         if params["include_archived"] != true
                             && !template_record_current(&directory, r)
@@ -561,6 +529,137 @@ impl Workspace {
                 engine.execute(method, c)
             }
         })())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::workspace::tests::create;
+
+    fn unbound_model(workspace: &Workspace) -> String {
+        workspace
+            .dispatch(
+                "model.create",
+                json!({"command_id":id(),"payload":{"name":"Unbound model","scope":"global",
+                    "data":{"provider":"openai","model":"fixture-unbound-model",
+                        "capabilities":["structured-output","tool-calling"],"parameters":{}}}}),
+            )
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+
+    #[test]
+    fn catalog_operations_do_not_restore_project_history() {
+        let root = tempfile::tempdir().unwrap();
+        let w =
+            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
+        let project = create(&w, "Catalog reference checks");
+        let source = w.dispatch("integration.create", json!({"command_id":id(),
+            "payload":{"name":"Catalog integration","data":{"source":{"kind":"http_api","base_url":"https://example.test"}}}})).unwrap();
+        let model = unbound_model(&w);
+        let changeset = json!({"operations":[{"type":"retire","reference":model,
+            "expected_revision":1,"reason":"fixture retirement"}]});
+        let trace = performance::Trace::start();
+        let reset = w
+            .dispatch("query.template_reset_preview", json!({}))
+            .unwrap();
+        assert!(reset["catalog_fingerprint"].is_string());
+        let refs = w
+            .dispatch("query.configuration_references", json!({"id":model}))
+            .unwrap();
+        assert_eq!(refs["references"], json!([]));
+        let preview = w
+            .dispatch(
+                "configuration.change.preview",
+                json!({"changeset":changeset}),
+            )
+            .unwrap();
+        let applied = w
+            .dispatch(
+                "configuration.change.apply",
+                json!({"command_id":id(),
+            "payload":{"changeset":changeset,"preview_hash":preview["preview_hash"]}}),
+            )
+            .unwrap();
+        assert_eq!(applied["accepted"], true);
+        w.dispatch("integration.delete", json!({"command_id":id(),"project_id":project,
+            "target":source["id"],"expected_revision":source["revision"],"payload":{"reason":"fixture deletion"}})).unwrap();
+        let report = trace.finish();
+        for span in ["project.full_snapshot", "global.full_snapshot"] {
+            assert!(report["spans"][span].is_null(), "{report}");
+        }
+        let catalog = w.global.configuration_snapshot().unwrap();
+        assert!(catalog.is_retired(catalog.record(&model).unwrap()));
+        let integrations = w.dispatch("query.integrations", json!({})).unwrap();
+        assert!(
+            integrations["records"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|row| row["id"] != source["id"])
+        );
+    }
+
+    #[test]
+    fn retiring_an_unbound_model_reads_only_configuration() {
+        let root = tempfile::tempdir().unwrap();
+        let w =
+            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
+        let project = create(&w, "Model retirement");
+        let model = unbound_model(&w);
+        let command = json!({"command_id":id(),"project_id":project,"target":model,"expected_revision":1,
+            "payload":{"reason":"用户删除定义"}});
+
+        let trace = performance::Trace::start();
+        let result = w.dispatch("configuration.retire", command.clone()).unwrap();
+        let report = trace.finish();
+        assert!(
+            report["spans"]["project.full_snapshot"].is_null(),
+            "{report}"
+        );
+        assert!(
+            report["spans"]["global.full_snapshot"].is_null(),
+            "{report}"
+        );
+        assert_eq!(result, json!({"id":model,"retired":true}));
+        assert_eq!(w.dispatch("configuration.retire", command).unwrap(), result);
+        let catalog = w.global.configuration_snapshot().unwrap();
+        assert!(catalog.is_retired(catalog.record(&model).unwrap()));
+    }
+
+    #[test]
+    fn model_retirement_checks_other_projects_transitive_bindings() {
+        let root = tempfile::tempdir().unwrap();
+        let w =
+            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
+        let current = create(&w, "Current project");
+        let other = create(&w, "Other project");
+        let defaults = w
+            .dispatch("query.configuration_defaults", json!({}))
+            .unwrap();
+        let details = w
+            .project_engine(Some(&other))
+            .unwrap()
+            .store
+            .project_metadata()
+            .unwrap();
+        w.dispatch("project.configuration.update", json!({"command_id":id(),"project_id":other,"target":other,
+            "expected_revision":details.revision,"payload":{"workflow_ref":defaults["workflow_ref"],
+                "role_agent_bindings":defaults["role_agent_bindings"],"orchestrator_role_ref":defaults["orchestrator_role_ref"]}})).unwrap();
+        let model = defaults["model_ref"].as_str().unwrap();
+        let catalog = w.global.configuration_snapshot().unwrap();
+        let source = catalog.record(model).unwrap();
+        let error = w.dispatch("configuration.retire", json!({"command_id":id(),"project_id":current,
+            "target":model,"expected_revision":source.revision,"payload":{"reason":"用户删除定义"}})).unwrap_err();
+        assert!(
+            error.message.contains("项目 Other project 仍引用此定义"),
+            "{error:?}"
+        );
+        let catalog = w.global.configuration_snapshot().unwrap();
+        assert!(!catalog.is_retired(catalog.record(model).unwrap()));
     }
 }
 

@@ -256,25 +256,26 @@ impl Engine {
             return None;
         }
         Some((|| {
-            let s = self.store.snapshot()?;
+            let catalog = self.store.configuration_snapshot()?;
+            let s = catalog.state.as_ref();
             if method == "query.configuration_references" {
-                return Ok(json!({"references":references(&s,s.configuration(&text(p,"id")?)?)}));
+                return Ok(json!({"references":references(s,s.configuration(&text(p,"id")?)?)}));
             }
             let rows: Vec<_> = s
                 .governance
                 .iter()
                 .filter(|r| {
                     r.r#type == "capability"
-                        && (p["include_archived"] == true || template_record_current(&s, r))
-                        && !retired(&s, r)
-                        && visible(&s, r, p["project_id"].as_str())
+                        && (p["include_archived"] == true || template_record_current(s, r))
+                        && !retired(s, r)
+                        && visible(s, r, p["project_id"].as_str())
                 })
                 .filter(|r| {
                     !s.governance.iter().any(|n| {
                         n.r#type == r.r#type
                             && n.definition_id == r.definition_id
                             && n.version > r.version
-                            && (p["include_archived"] == true || template_record_current(&s, n))
+                            && (p["include_archived"] == true || template_record_current(s, n))
                     })
                 })
                 .collect();

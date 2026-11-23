@@ -296,7 +296,7 @@ export function RoleConversation({
       candidates.find((r) => r.id === recommendation) ||
       candidates.find(
         (r) =>
-          r.definition_id === "builtin-agent-sol-high-project-manager" &&
+          r.definition_id === "builtin-agent-gpt-6-2-sol-project-manager" &&
           !candidates.some((next) => next.supersedes === r.id),
       ) ||
       candidates.find(

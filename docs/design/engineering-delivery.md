@@ -6,7 +6,7 @@
 
 Feature 先完成需求、设计和计划，再建立 Task 子流程。Task 的主要过程是准备工作区、编写测试、记录测试代码、运行红灯测试、实现、记录实现版本、运行绿灯测试、独立评审、回归和交付。
 
-Feature 汇总子流程后，对整体代码继续评审和回归。当前出厂流程在需求、设计、计划评审及最终主线交付处包含人工确认。具体依赖和输入以[当前 Feature](../../configurations/workflows/simplified-workflow-feature-v9.json)与[Task](../../configurations/workflows/simplified-workflow-task-v4.json)定义为准。
+Feature 汇总子流程后，对整体代码继续评审和回归。当前出厂流程在需求、设计、计划评审及最终主线交付处包含人工确认。具体依赖和输入以[当前 Feature](../../configurations/workflows/builtin-workflow-feature-development-v3.json)与[Task](../../configurations/workflows/builtin-workflow-task-development-v3.json)定义为准。
 
 ## 每一阶段产出什么证据
 

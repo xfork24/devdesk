@@ -1,7 +1,7 @@
 //! Project-local storage for immutable bodies selected by the SQLite codec.
 use super::*;
 use rusqlite::{OptionalExtension, params};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io::Write;
 use std::os::unix::fs::FileExt;
 
@@ -12,6 +12,39 @@ const MIN_BYTES: usize = 512;
 thread_local! {
     static STAGED_DIRECTORIES: std::cell::RefCell<Option<BTreeSet<PathBuf>>> = const { std::cell::RefCell::new(None) };
     static OPEN_PACKS: std::cell::RefCell<Option<BTreeMap<PathBuf, (File, u64)>>> = const { std::cell::RefCell::new(None) };
+    static RESET_FIELDS: std::cell::RefCell<Option<ResetFields>> = const { std::cell::RefCell::new(None) };
+}
+
+#[derive(Default)]
+struct ResetFields {
+    connection: PathBuf,
+    decoded: BTreeMap<Body, Value>,
+    order: VecDeque<Body>,
+    bytes: usize,
+}
+
+pub(super) struct ResetReadScope {
+    _packs: ReadScope,
+}
+
+/// Repeated projections can share a body within this reset's SQLite snapshot.
+pub(super) fn reset_read_scope(conn: &Connection) -> ResetReadScope {
+    RESET_FIELDS.with_borrow_mut(|cache| {
+        debug_assert!(cache.is_none());
+        *cache = conn.path().map(|path| ResetFields {
+            connection: path.into(),
+            ..Default::default()
+        });
+    });
+    ResetReadScope {
+        _packs: read_scope(),
+    }
+}
+
+impl Drop for ResetReadScope {
+    fn drop(&mut self) {
+        RESET_FIELDS.with_borrow_mut(|cache| *cache = None);
+    }
 }
 
 pub(super) struct ReadScope(bool);
@@ -70,7 +103,7 @@ pub(super) const CONVERSATION_BYTES: &str =
     "CASE WHEN substr(content,1,20)=char(29)||'devdesk-payload/v1:'
           THEN CAST(substr(content,21) AS INTEGER) ELSE length(CAST(content AS BLOB)) END";
 
-#[derive(Clone, serde::Deserialize, Serialize)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize, Serialize)]
 struct Body {
     sha256: String,
     bytes: usize,
@@ -481,7 +514,44 @@ fn restore_field(conn: &Connection, value: &mut Value) -> Result<()> {
         && enabled(conn)?
     {
         let body = serde_json::from_value(pointer.clone()).map_err(storage)?;
-        *value = serde_json::from_slice(&read(conn, &body)?).map_err(storage)?;
+        let cached = RESET_FIELDS.with_borrow(|scope| {
+            scope
+                .as_ref()
+                .filter(|cache| {
+                    conn.path()
+                        .is_some_and(|path| Path::new(path) == cache.connection)
+                })
+                .and_then(|cache| cache.decoded.get(&body).cloned())
+        });
+        if let Some(decoded) = cached {
+            performance::record("payload.reset_field_cache_hit", 0.0);
+            *value = decoded;
+            return Ok(());
+        }
+        let decoded: Value = serde_json::from_slice(&read(conn, &body)?).map_err(storage)?;
+        const MAX_FIELD_BYTES: usize = 128 * 1024;
+        const MAX_CACHED_BYTES: usize = 16 * 1024 * 1024;
+        const MAX_FIELDS: usize = 1024;
+        if body.bytes <= MAX_FIELD_BYTES {
+            RESET_FIELDS.with_borrow_mut(|scope| {
+                if let Some(cache) = scope.as_mut().filter(|cache| {
+                    conn.path()
+                        .is_some_and(|path| Path::new(path) == cache.connection)
+                }) {
+                    while cache.bytes + body.bytes > MAX_CACHED_BYTES
+                        || cache.order.len() >= MAX_FIELDS
+                    {
+                        let oldest = cache.order.pop_front().unwrap();
+                        cache.bytes -= oldest.bytes;
+                        cache.decoded.remove(&oldest);
+                    }
+                    cache.bytes += body.bytes;
+                    cache.order.push_back(body.clone());
+                    cache.decoded.insert(body, decoded.clone());
+                }
+            });
+        }
+        *value = decoded;
     }
     Ok(())
 }

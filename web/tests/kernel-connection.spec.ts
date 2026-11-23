@@ -295,7 +295,7 @@ test("内核地址校验与连接失败保留当前设置及重试入口", async
   ).toContainText("无法连接内核");
   expect(page.url()).toBe(original);
   await expect(
-    page.getByRole("heading", { name: "全局并发额度", exact: true }),
+    page.getByRole("heading", { name: "并发额度设置", exact: true }),
   ).toBeVisible();
   await page.unroute(target + "/connection");
   await page.route(target + "/connection", (route) =>
@@ -312,6 +312,39 @@ test("内核地址校验与连接失败保留当前设置及重试入口", async
   await expect(
     page.getByRole("button", { name: "连接内核", exact: true }),
   ).toBeEnabled();
+});
+
+test("数据集正在打开时禁止重复提交并自动进入工作台", async ({ page }) => {
+  await settings(page);
+  let opening = true;
+  await page.route("**/capabilities", (route) =>
+    opening
+      ? route.fulfill({
+          json: {
+            protocol_version: 1,
+            setup_required: true,
+            lifecycle: {
+              instance_id: "fixture",
+              revision: 1,
+              status: "initializing",
+            },
+          },
+        })
+      : route.fallback(),
+  );
+  await page.reload();
+  await expect(page.getByRole("status")).toHaveText(
+    "正在打开数据集，完成后将自动进入工作台。",
+  );
+  await expect(
+    page.getByRole("button", { name: "初始化 / 打开数据集", exact: true }),
+  ).toBeDisabled();
+  await expect(page.getByLabel("数据目录", { exact: true })).toBeDisabled();
+
+  opening = false;
+  await expect(
+    page.getByRole("heading", { name: "数据与运行", exact: true }),
+  ).toBeVisible();
 });
 
 test("内核首次连接失败时仍提供连接入口", async ({ page }) => {

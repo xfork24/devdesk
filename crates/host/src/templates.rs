@@ -4,6 +4,15 @@ use std::collections::{BTreeMap, BTreeSet};
 
 impl Workspace {
     fn finish_template_reset(&self) -> Result<()> {
+        let discussion = self
+            .opened
+            .lock()
+            .map_err(|error| err("storage", error.to_string()))?
+            .get(GLOBAL_DISCUSSION_NAMESPACE)
+            .cloned();
+        if let Some(engine) = discussion {
+            self.sync_configuration(&engine)?;
+        }
         let mut offset = 0;
         loop {
             let (projects, total) = self.global.projects(offset, 100)?;
@@ -19,7 +28,8 @@ impl Workspace {
         Ok(())
     }
     fn template_snapshot_summary(&self) -> Result<Value> {
-        let global = self.global.snapshot()?;
+        let catalog = self.global.configuration_snapshot()?;
+        let global = catalog.state.as_ref();
         let mut fingerprints = Vec::new();
         let mut counts: BTreeMap<String, usize> = BTreeMap::new();
         let mut custom = 0usize;
@@ -48,6 +58,7 @@ impl Workspace {
                         n.r#type == r.r#type
                             && n.definition_id == r.definition_id
                             && n.version > r.version
+                            && !template_history_retained(s, n)
                     }) {
                         continue;
                     }
@@ -60,37 +71,28 @@ impl Workspace {
                     }
                 }
             };
-        inspect("global", &global);
+        inspect("global", global);
         let mut projects = Vec::new();
         let mut pristine =
-            template_catalog_pristine(&global) && !template_catalog_has_custom_history(&global)?;
-        let mut offset = 0;
-        loop {
-            let (page, total) = self.global.projects(offset, 100)?;
-            for p in &page {
-                let mut s =
-                    SqliteStore::read_project_snapshot(Path::new(&self.global.root()), &p.id)?;
-                // A read-only preview observes the global generation even for a project not yet synchronized.
-                copy_template_catalog(&global, &mut s)?;
-                inspect(&p.id, &s);
-                if s.governance
-                    .iter()
-                    .any(|r| r.r#type == "project_configuration" && r.definition_id == p.id)
-                {
-                    projects.push(json!({"id":p.id,"title":p.title}));
-                }
-                pristine &=
-                    template_catalog_pristine(&s) && !template_catalog_has_custom_history(&s)?;
+            template_catalog_pristine(global) && !template_catalog_has_custom_history(global)?;
+        self.visit_project_catalogs(|p, catalog| {
+            let mut s = catalog.state.as_ref().clone();
+            // A read-only preview observes the global generation even for a project not yet synchronized.
+            copy_template_catalog(global, &mut s)?;
+            inspect(&p.id, &s);
+            if s.governance
+                .iter()
+                .any(|r| r.r#type == "project_configuration" && r.definition_id == p.id)
+            {
+                projects.push(json!({"id":p.id,"title":p.title}));
             }
-            offset += page.len();
-            if offset >= total || page.is_empty() {
-                break;
-            }
-        }
+            pristine &= template_catalog_pristine(&s) && !template_catalog_has_custom_history(&s)?;
+            Ok(())
+        })?;
         fingerprints.sort_by_key(|v| v.to_string());
         let info = template_bundle_info()?;
         Ok(
-            json!({"generation":template_catalog_generation(&global),"bundle_version":info["bundle_version"],"bundle_hash":info["bundle_hash"],"restore_counts":template_factory_counts()?,"current_counts":counts,"custom_count":custom,"draft_count":drafts,"pinned_projects":projects,"scope":"dataset","catalog_fingerprint":configuration_hash(&json!({"generation":template_catalog_generation(&global),"records":fingerprints})),"pristine":pristine}),
+            json!({"generation":template_catalog_generation(global),"bundle_version":info["bundle_version"],"bundle_hash":info["bundle_hash"],"restore_counts":template_factory_counts()?,"current_counts":counts,"custom_count":custom,"draft_count":drafts,"pinned_projects":projects,"scope":"dataset","catalog_fingerprint":configuration_hash(&json!({"generation":template_catalog_generation(global),"records":fingerprints})),"pristine":pristine}),
         )
     }
     pub(super) fn template_dispatch(&self, method: &str, params: &Value) -> Option<Result<Value>> {
@@ -104,10 +106,11 @@ impl Workspace {
         }
         Some((|| {
             if method == "query.template_catalog" {
-                let s = self.global.snapshot()?;
+                let catalog = self.global.configuration_snapshot()?;
+                let s = catalog.state.as_ref();
                 let info = template_bundle_info()?;
                 return Ok(
-                    json!({"generation":template_catalog_generation(&s),"bundle_version":info["bundle_version"],"bundle_hash":info["bundle_hash"],"current_bundle_version":template_catalog_state(&s).map(|r|&r.data["bundle_version"]),"counts":template_catalog_counts(&s)}),
+                    json!({"generation":template_catalog_generation(s),"bundle_version":info["bundle_version"],"bundle_hash":info["bundle_hash"],"current_bundle_version":template_catalog_state(s).map(|r|&r.data["bundle_version"]),"counts":template_catalog_counts(s)}),
                 );
             }
             if method == "query.template_reset_preview" {
@@ -229,7 +232,7 @@ mod tests {
         assert_eq!(receipt["changed"], true);
         assert_eq!(
             current_template_defaults(&legacy).unwrap()["workflow_ref"],
-            "simplified-workflow-feature:9"
+            "builtin-workflow-feature-development:3"
         );
         for source in before.governance.iter().filter(|r| r.immutable) {
             assert_eq!(legacy.configuration(&source.id).unwrap(), source);
@@ -310,7 +313,7 @@ mod tests {
         let a = create(&w, "Project A");
         let b = create(&w, "Project B");
         read_project(&w, &a);
-        let local=write(&w,"delivery_type.create",None,json!({"name":"Local custom delivery","scope":format!("project:{a}"),"spec_refs":["builtin-spec-stage-prd:2"],"data":{"format":"markdown","body":"custom delivery"}}),Some(&a)).unwrap();
+        let local=write(&w,"delivery_type.create",None,json!({"name":"Local custom delivery","scope":format!("project:{a}"),"spec_refs":["builtin-spec-stage-prd:4"],"data":{"format":"markdown","body":"custom delivery"}}),Some(&a)).unwrap();
         let role=write(&w,"role.revise",Some(&default_role_id("analyst")),json!({"name":"Edited analyst","data":{"instructions":"custom responsibility","visibility":{"kind":"global"}}}),None).unwrap();
         let defaults = w
             .dispatch("query.configuration_defaults", json!({"project_id":a}))
@@ -338,9 +341,19 @@ mod tests {
         assert!(!saved.is_null());
         let before_project = engine.store.snapshot().unwrap();
         let command = reset_command(&w);
+        let trace = performance::Trace::start();
         let result = w
             .dispatch("configuration.templates.reset", command.clone())
             .unwrap();
+        let report = trace.finish();
+        assert!(
+            report["spans"]["project.full_snapshot"].is_null(),
+            "{report}"
+        );
+        assert!(
+            report["spans"]["global.full_snapshot"].is_null(),
+            "{report}"
+        );
         assert_eq!(result["generation"], 2);
         assert_eq!(
             w.dispatch("configuration.templates.reset", command)
@@ -472,6 +485,139 @@ mod tests {
         assert_eq!(revised["id"], role["id"]);
     }
     #[test]
+    fn historical_session_keeps_its_agent_and_role_after_reset() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = workspace(dir.path());
+        let project = create(&w, "Historical session");
+        let base_role = default_role_id("analyst");
+        let role = write(&w, "role.revise", Some(&base_role),
+            json!({"name":"Historical role","data":{"instructions":"Pinned instructions","visibility":{"kind":"global"}}}), None).unwrap();
+        let agent = write(&w, "agent.revise", Some("builtin-agent-gpt-6-2-sol-analyst:3"),
+            json!({"name":"Historical agent","role_ref":role["id"],"capability_ref":"builtin-capability-analyst-gpt-6-2-sol-codex:3","data":{}}), None).unwrap();
+        let engine = w.project_engine(Some(&project)).unwrap();
+        w.sync_configuration(&engine).unwrap();
+        let agent_ref = agent["id"].as_str().unwrap();
+        let (session, _) = crate::test_runtime::queue_conversation_for_agent(
+            &engine,
+            &project,
+            agent_ref,
+            |_, _| Ok(()),
+        );
+        let before = engine.store.snapshot().unwrap();
+        let original = before
+            .sessions
+            .iter()
+            .find(|row| row.id == session)
+            .unwrap();
+        w.dispatch("configuration.templates.reset", reset_command(&w))
+            .unwrap();
+        let after = engine.store.snapshot().unwrap();
+        assert_eq!(
+            json!(after.sessions.iter().find(|row| row.id == session).unwrap()),
+            json!(original)
+        );
+        let archived = after.configuration(agent_ref).unwrap();
+        assert!(template_history_retained(&after, archived));
+        assert!(!template_record_current(&after, archived));
+        assert_eq!(
+            after.resolve_agent(agent_ref).unwrap().role_ref.as_deref(),
+            role["id"].as_str()
+        );
+        assert!(!template_catalog_has_custom_history(&after).unwrap());
+        let preview = w
+            .dispatch("query.template_reset_preview", json!({}))
+            .unwrap();
+        assert_eq!(preview["pristine"], true);
+    }
+
+    #[test]
+    fn reset_reads_stay_consistent_until_each_store_adopts_the_new_catalog() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = workspace(dir.path());
+        let project = create(&w, "Catalog reset");
+        let engine = w.project_engine(Some(&project)).unwrap();
+        let discussion = w.initialize_global_discussion().unwrap();
+        let publish_reset = |params: Value,
+                             preview: &Value,
+                             contract: &dyn Fn(
+            &EngineeringState,
+            &PermissionTargetRef,
+        ) -> Result<String>| {
+            let command: Command = serde_json::from_value(params).unwrap();
+            w.configuration
+                .reset_factory_catalog(
+                    &command,
+                    &command_fingerprint("configuration.templates.reset", &command),
+                    preview,
+                    contract,
+                )
+                .unwrap()
+        };
+        let mut preview = w.template_snapshot_summary().unwrap();
+        preview["pristine"] = json!(false);
+        // Simulate an older installation's binding contract for the same Sandbox.
+        publish_reset(reset_command(&w), &preview, &|_, _| {
+            Ok("previous-permission-contract".into())
+        });
+        w.finish_template_reset().unwrap();
+        let role = write(&w, "role.revise", Some(&default_role_id("analyst")),
+            json!({"name":"Old catalog role","data":{"instructions":"Old catalog responsibilities","visibility":{"kind":"global"}}}), None).unwrap();
+        let role_id = role["id"].as_str().unwrap();
+        w.sync_configuration(&engine).unwrap();
+        let stale = engine.store.configuration_snapshot().unwrap();
+        assert!(stale.record(role_id).is_some());
+        let sandbox = current_template_defaults(&stale.state).unwrap()["sandbox_ref"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let binding_id = format!("permission-binding:{sandbox}:1");
+        let old_global = w.global.configuration_snapshot().unwrap();
+
+        // The global transaction has committed, while the project and discussion
+        // stores still have the previous catalog.
+        let command = reset_command(&w);
+        let receipt = publish_reset(
+            command.clone(),
+            &w.template_snapshot_summary().unwrap(),
+            &permission_profiles::permission_contract,
+        );
+        assert_eq!(receipt["changed"], true);
+        let global = w.global.configuration_snapshot().unwrap();
+        let old_binding = stale.record(&binding_id).unwrap();
+        let new_binding = global.record(&binding_id).unwrap();
+        assert_ne!(old_binding.content_hash, new_binding.content_hash);
+        let view = compose_configuration_catalog(&global, &stale, &project).unwrap();
+        assert_eq!(view.record(&binding_id), Some(old_binding));
+        assert!(view.record(role_id).is_some());
+        assert!(
+            compose_role_directory(&global, &[stale])
+                .unwrap()
+                .record(role_id)
+                .is_none()
+        );
+        w.dispatch("query.ui_bootstrap", json!({"project_id":project}))
+            .unwrap();
+
+        // Replaying a committed reset must finish synchronization and preserve its receipt.
+        assert_eq!(
+            w.dispatch("configuration.templates.reset", command)
+                .unwrap(),
+            receipt
+        );
+        for store in [&engine.store, &discussion.store] {
+            let catalog = store.configuration_snapshot().unwrap();
+            assert_eq!(catalog.record(&binding_id), Some(new_binding));
+            assert!(catalog.record(role_id).is_none());
+        }
+        let current = engine.store.configuration_snapshot().unwrap();
+        let view = compose_configuration_catalog(&old_global, &current, &project).unwrap();
+        assert_eq!(view.record(&binding_id), Some(new_binding));
+        assert!(view.record(role_id).is_none());
+        w.dispatch("query.ui_bootstrap", json!({"project_id":project}))
+            .unwrap();
+    }
+
+    #[test]
     fn stale_preview_and_stale_pages_cannot_publish_and_failed_transaction_rolls_back() {
         let dir = tempfile::tempdir().unwrap();
         let w = workspace(dir.path());
@@ -480,7 +626,7 @@ mod tests {
             &w,
             "delivery_type.create",
             None,
-            json!({"name":"Extra","spec_refs":["builtin-spec-stage-prd:2"],"data":{"format":"markdown","body":"extra"}}),
+            json!({"name":"Extra","spec_refs":["builtin-spec-stage-prd:4"],"data":{"format":"markdown","body":"extra"}}),
             None,
         )
         .unwrap();
@@ -502,7 +648,7 @@ mod tests {
         assert_eq!(json!(w.global.snapshot().unwrap()), json!(before));
         w.dispatch("configuration.templates.reset", reset_command(&w))
             .unwrap();
-        let stale=w.dispatch("delivery_type.create",json!({"command_id":id(),"expected_catalog_generation":1,"payload":{"name":"Stale","spec_refs":["builtin-spec-stage-prd:2"],"data":{"format":"markdown","body":"stale"}}})).unwrap_err();
+        let stale=w.dispatch("delivery_type.create",json!({"command_id":id(),"expected_catalog_generation":1,"payload":{"name":"Stale","spec_refs":["builtin-spec-stage-prd:4"],"data":{"format":"markdown","body":"stale"}}})).unwrap_err();
         assert_eq!(stale.code, "catalog_changed");
         assert_eq!(w.dispatch("role.revise",json!({"command_id":id(),"target":default_role_id("analyst"),"expected_revision":1,"expected_catalog_generation":1,"payload":{"name":"Stale edit","data":{"instructions":"old body","visibility":{"kind":"global"}}}})).unwrap_err().code,"catalog_changed");
     }

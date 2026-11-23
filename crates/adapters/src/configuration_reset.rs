@@ -4,7 +4,8 @@ use devdesk_core::concurrency::*;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn prepare(
-    store: &dyn ports::EngineeringStore,
+    pool: &connection_pool::ConnectionPool,
+    project: bool,
     records: &[ConfigurationRecord],
     expected_catalog: u64,
 ) -> Result<ConfigurationPublication> {
@@ -18,24 +19,42 @@ pub(super) fn prepare(
             format!("record-summary:{table}"),
         ));
     }
-    let guards = store.read_resources(&keys)?;
-    require(
-        guards[0].revision == expected_catalog,
-        "配置目录已变化，请重新预览",
-    )?;
-    let before = store.snapshot()?;
-    let mut next = EngineeringState {
-        governance: records.to_vec(),
-        projects: before.projects.clone(),
+    let _span = performance::Span::new("catalog.reset_prepare");
+    let conn = pool.read()?;
+    let transaction = conn.unchecked_transaction().map_err(storage)?;
+    let _payloads = payload_store::reset_read_scope(&transaction);
+    let guards = resource_commits::read_on(&transaction, &keys)?;
+    if guards[0].revision != expected_catalog {
+        return Err(err("revision_conflict", "配置目录已变化，请重新预览").technical_not_applied());
+    }
+    let mut before = EngineeringState {
+        governance: source_store::load_reset_records(&transaction)?,
         ..Default::default()
     };
-    next.refresh_configuration_views()?;
-    let available: BTreeSet<_> = next
-        .governance
+    if project {
+        before.projects = load_table(&transaction, "projects")?;
+        before.conversation_events = load_table_filtered(
+            &transaction,
+            "conversation_events",
+            "kind='user' AND turn_id IN (
+                SELECT definition_id FROM governance_records
+                WHERE type IN ('configured_execution_task','archived_configured_execution_task')
+            )",
+        )?;
+    }
+    before.refresh_configuration_views()?;
+    let sources = source_views::ResetSources::new(&before);
+    let mut memo = BTreeMap::new();
+    let available: BTreeSet<_> = records
         .iter()
         .filter(|r| r.is_definition())
         .map(|r| r.id.as_str())
         .collect();
+    let historical = if project {
+        historical_sources(&transaction, &before, records, &available)?
+    } else {
+        Vec::new()
+    };
     let mut bindings = BTreeMap::new();
     for row in before.governance.iter().filter(|r| {
         matches!(
@@ -51,17 +70,21 @@ pub(super) fn prepare(
             bindings.insert(key, row);
         }
     }
-    let retained = bindings
-        .into_values()
-        .filter(|row| {
-            configuration_edges(row).is_ok_and(|edges| {
-                edges
-                    .iter()
-                    .all(|edge| available.contains(edge.to.as_str()))
-            })
-        })
-        .cloned()
-        .collect::<Vec<_>>();
+    let mut retained = Vec::new();
+    for row in bindings.into_values() {
+        let mut row = row.clone();
+        if source_views::uses_source_codec(&row.data) {
+            row.data = sources.restore(&row.data, &mut memo)?;
+            row.content_hash = content_digest(&row.refs, &row.data);
+        }
+        if configuration_edges(&row).is_ok_and(|edges| {
+            edges
+                .iter()
+                .all(|edge| available.contains(edge.to.as_str()))
+        }) {
+            retained.push(row);
+        }
+    }
     let retained_ids = retained
         .iter()
         .map(|row| row.id.as_str())
@@ -76,33 +99,90 @@ pub(super) fn prepare(
         })
         .map(|row| row.id.as_str())
         .collect::<BTreeSet<_>>();
-    let mut evidence = Vec::new();
-    for row in before
-        .governance
-        .iter()
-        .filter(|r| !catalog_kind(&r.r#type) && r.r#type != "template_reset_receipt")
-    {
-        let mut row = row.clone();
-        if row.r#type == "workflow_instance"
-            && [
-                &row.data["workflow_ref"],
-                &row.data["plan"],
-                &row.data["role_agent_bindings"],
-            ]
-            .into_iter()
-            .any(|value| references_removed(value, &removed))
-            && !matches!(row.data["status"].as_str(), Some("completed" | "cancelled"))
+    let external_root = if payload_store::enabled(&transaction)? {
+        project_storage::connection_root(&transaction)
+    } else {
+        None
+    };
+    let evidence = payload_store::stage(|| -> Result<Vec<Value>> {
+        let mut evidence = Vec::new();
+        for original in before
+            .governance
+            .iter()
+            .filter(|row| !catalog_kind(&row.r#type) && row.r#type != "template_reset_receipt")
         {
-            row.data["paused"] = json!(true);
-            row.data["configuration_reset"] = json!(true);
-            row.revision += 1;
+            let may_pause = original.r#type == "workflow_instance"
+                && !matches!(
+                    original.data["status"].as_str(),
+                    Some("completed" | "cancelled")
+                );
+            if !may_pause && !source_views::uses_source_codec(&original.data) {
+                continue;
+            }
+            let mut row = original.clone();
+            let request = if matches!(
+                row.r#type.as_str(),
+                "workflow_pending_decision" | "workflow_human_decision"
+            ) {
+                row.data
+                    .as_object_mut()
+                    .and_then(|data| data.remove("request"))
+            } else {
+                None
+            };
+            let encoded = source_views::uses_source_codec(&row.data);
+            if encoded {
+                row.data = sources.restore(&row.data, &mut memo)?;
+            }
+            let pause = may_pause
+                && [
+                    &row.data["workflow_ref"],
+                    &row.data["plan"],
+                    &row.data["role_agent_bindings"],
+                ]
+                .into_iter()
+                .any(|value| references_removed(value, &removed));
+            if !encoded && !pause {
+                continue;
+            }
+            if pause {
+                row.data["paused"] = json!(true);
+                row.data["configuration_reset"] = json!(true);
+                row.revision += 1;
+            }
+            row.data = source_views::seal_reset_evidence(&row.data);
+            if let Some(request) = request {
+                row.data
+                    .as_object_mut()
+                    .ok_or_else(|| err("storage", "决定记录需要对象正文"))?
+                    .insert("request".into(), request);
+            }
+            row.content_hash = content_digest(&row.refs, &row.data);
+            if let Some(root) = &external_root {
+                payload_store::governance(root, &row.r#type, &mut row.data, None)?;
+            }
+            evidence.push(row.to_storage());
         }
-        row.data = source_views::seal_reset_evidence(&row.data);
-        row.content_hash = content_digest(&row.refs, &row.data);
-        evidence.push(row.to_storage());
-    }
+        Ok(evidence)
+    })?;
+
     let mut catalog = records.to_vec();
     catalog.extend(retained);
+    catalog.extend(historical);
+    let mut changes = json!({"records":catalog,"evidence":evidence});
+    if project {
+        for table in ["sessions", "turns", "executions", "snapshots"] {
+            let mut updated = Vec::new();
+            for row in load_rows::<Value>(&transaction, table, "1", &[], false)? {
+                if source_views::uses_source_codec(&row) {
+                    let restored = sources.restore(&row, &mut memo)?;
+                    updated.push(source_views::seal_reset_evidence(&restored));
+                }
+            }
+            changes[table] = json!(updated);
+        }
+    }
+    transaction.commit().map_err(storage)?;
     Ok(ConfigurationPublication {
         read_set: ReadSet::new(
             guards
@@ -115,13 +195,94 @@ pub(super) fn prepare(
         )?,
         changes: vec![ResourceChange {
             resource: ResourceKey::new("configuration_reset", "factory"),
-            value: json!({"records":catalog,"evidence":evidence,
-                "sessions":source_views::seal_reset_evidence(&json!(before.sessions)),
-                "turns":source_views::seal_reset_evidence(&json!(before.turns)),
-                "executions":source_views::seal_reset_evidence(&json!(before.executions)),
-                "snapshots":source_views::seal_reset_evidence(&json!(before.snapshots))}),
+            value: changes,
         }],
     })
+}
+
+/// Sessions keep their original Agent revision through an actual SQLite foreign key.
+/// Retain its source closure as historical catalog members so reopening can also
+/// resolve the original Role, Capability and their dependencies.
+fn historical_sources(
+    conn: &Connection,
+    before: &EngineeringState,
+    incoming: &[ConfigurationRecord],
+    available: &BTreeSet<&str>,
+) -> Result<Vec<ConfigurationRecord>> {
+    let mut statement = conn
+        .prepare("SELECT DISTINCT agent FROM sessions")
+        .map_err(storage)?;
+    let mut pending = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(storage)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(storage)?;
+    let mut retained = BTreeSet::new();
+    while let Some(reference) = pending.pop() {
+        if available.contains(reference.as_str()) || !retained.insert(reference.clone()) {
+            continue;
+        }
+        let source = before.configuration(&reference)?;
+        require(source.is_definition(), "历史会话引用的配置定义缺失")?;
+        pending.extend(configuration_edges(source)?.into_iter().map(|edge| edge.to));
+    }
+    let generation = incoming
+        .iter()
+        .find(|row| row.id == TEMPLATE_CATALOG_STATE)
+        .and_then(|row| row.data["generation"].as_u64())
+        .unwrap_or(TEMPLATE_INITIAL_GENERATION)
+        .saturating_sub(1);
+    let mut history = Vec::new();
+    for source in before
+        .governance
+        .iter()
+        .filter(|row| retained.contains(&row.id))
+    {
+        let kind = template_member_kind(&source.r#type);
+        let old = template_catalog_member(before, source);
+        let data = json!({
+            "kind":kind,"generation":generation,"retained_for_sessions":true,
+            "template_key":old.map(|row| &row.data["template_key"]),
+            "source_hash":old.map(|row| &row.data["source_hash"]),
+            "origin":old.map(|row| &row.data["origin"]),
+        });
+        let refs = References::new();
+        history.push(source.clone());
+        history.push(ConfigurationRecord {
+            id: format!(
+                "template-history-member:{}",
+                configuration_hash(&(kind, &source.id, generation))
+            ),
+            r#type: "template_catalog_member".into(),
+            definition_id: source.id.clone(),
+            scope: source.scope.clone(),
+            name: source.name.clone(),
+            version: 1,
+            supersedes: None,
+            content_hash: content_digest(&refs, &data),
+            refs,
+            data,
+            immutable: true,
+            revision: 1,
+            created_at: 0,
+        });
+    }
+    let incoming_ids = incoming
+        .iter()
+        .map(|row| row.id.as_str())
+        .collect::<BTreeSet<_>>();
+    history.extend(
+        before
+            .governance
+            .iter()
+            .filter(|row| {
+                row.r#type == "skill_package"
+                    && retained.contains(&row.definition_id)
+                    && !incoming_ids.contains(row.id.as_str())
+            })
+            .cloned(),
+    );
+    Ok(history)
 }
 
 pub(super) fn apply(conn: &Connection, value: &Value) -> Result<()> {
@@ -186,9 +347,8 @@ pub(super) fn apply(conn: &Connection, value: &Value) -> Result<()> {
         } else {
             table
         };
-        let rows: Vec<Value> = serde_json::from_value(value[field].clone()).map_err(storage)?;
-        if !rows.is_empty() {
-            write_rows(conn, table, &rows)?;
+        if let Some(rows) = value[field].as_array().filter(|rows| !rows.is_empty()) {
+            write_rows(conn, table, rows)?;
         }
     }
     for (_, sql) in guards {

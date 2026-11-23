@@ -1,0 +1,19 @@
+{
+  "type": "tool",
+  "identity": "builtin-tool-codex-native",
+  "revision": 2,
+  "name": "Codex Native Tools",
+  "scope": "global",
+  "data": {
+    "capabilities": [],
+    "implementation": "harness.native",
+    "input_schema": {
+      "description": "Native Codex tool contracts, constrained by the frozen role/work scope and Permission",
+      "type": "object"
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "qualified_name": "harness.native"
+  }
+}

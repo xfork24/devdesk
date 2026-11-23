@@ -110,11 +110,9 @@ impl GlobalStore {
             }
             HarnessProvider::Dsh => {
                 wire.rpc2();
-                let state = self.snapshot()?;
-                let route = state
-                    .governance
-                    .iter()
-                    .filter(|r| r.r#type == "model_provider")
+                let catalog = self.configuration_snapshot()?;
+                let route = catalog
+                    .records("model_provider")
                     .filter_map(|r| r.decode::<ProviderFacts>().ok())
                     .find(|facts| {
                         facts.harness == installation.key.provider.as_str() && facts.native

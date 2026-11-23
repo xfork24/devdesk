@@ -46,6 +46,8 @@ def usage_index(sources: list[dict]) -> dict:
             for i, step in enumerate(data["steps"]):
                 stage = stages.get(step["stage"])
                 node = {"key": step["key"], "name": step["name"]}
+                for j, spec_ref in enumerate(step.get("spec_refs", [])):
+                    add(spec_ref, f"/data/steps/{i}/spec_refs/{j}", "step_spec", stage, node)
                 for name, value in sorted(step.get("outputs", {}).items()):
                     add(value["delivery_ref"], f"/data/steps/{i}/outputs/{name}/delivery_ref", "step_output", stage, node, name)
                 for name, binding in sorted(step.get("inputs", {}).items()):
@@ -53,6 +55,7 @@ def usage_index(sources: list[dict]) -> dict:
                         add(target, f"/data/steps/{i}/inputs/{name}", "step_input", stage, node, name)
                 executor = step["executor"]
                 if executor["type"] == "tool":
+                    add(executor["tool_ref"], f"/data/steps/{i}/executor/tool_ref", "step_tool", stage, node)
                     for name, binding in sorted(executor.get("arguments", {}).items()):
                         if binding["type"] == "source" and (target := delivery(binding["source"])):
                             add(target, f"/data/steps/{i}/executor/arguments/{name}", "step_argument", stage, node, name)

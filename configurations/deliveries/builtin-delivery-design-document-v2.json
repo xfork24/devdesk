@@ -1,0 +1,16 @@
+{
+  "type": "delivery_type",
+  "identity": "builtin-delivery-design-document",
+  "revision": 2,
+  "name": "Design Document",
+  "scope": "global",
+  "spec_refs": [
+    "builtin-spec-design-document:2"
+  ],
+  "data": {
+    "format": "markdown",
+    "producer": {
+      "kind": "agent"
+    }
+  }
+}

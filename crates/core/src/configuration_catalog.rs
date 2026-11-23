@@ -176,6 +176,12 @@ impl ConfigurationCatalogSnapshot {
             .get(reference)
             .map(|index| &self.state.governance[*index])
     }
+    pub(crate) fn needs_factory_reset_from(&self, global: &Self) -> bool {
+        template_hard_reset_generation(&self.state) < template_hard_reset_generation(&global.state)
+    }
+    fn same_factory_reset_as(&self, other: &Self) -> bool {
+        template_hard_reset_generation(&self.state) == template_hard_reset_generation(&other.state)
+    }
     pub fn records(&self, kind: &str) -> impl Iterator<Item = &ConfigurationRecord> {
         self.kinds
             .get(kind)
@@ -331,7 +337,11 @@ pub fn compose_configuration_catalog(
     project: &str,
 ) -> Result<ConfigurationCatalogSnapshot> {
     let mut state = local.state.as_ref().clone();
-    if state.projects.iter().all(|p| p.execution_mode == "live") {
+    // A hard reset may recreate IDs such as permission bindings at revision one.
+    // The independent snapshots can straddle either side of the reset.
+    if local.same_factory_reset_as(global)
+        && state.projects.iter().all(|p| p.execution_mode == "live")
+    {
         for record in global.state.governance.iter().filter(|r| {
             r.immutable
                 && (r.r#type == "role"
@@ -369,7 +379,10 @@ pub fn compose_role_directory(
         .iter()
         .map(|r| (r.id.clone(), r.content_hash.clone()))
         .collect();
-    for project in projects {
+    for project in projects
+        .iter()
+        .filter(|project| project.same_factory_reset_as(global))
+    {
         for role in project
             .state
             .governance

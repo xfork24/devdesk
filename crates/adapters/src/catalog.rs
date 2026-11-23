@@ -71,7 +71,8 @@ impl GlobalStore {
         let conn = self.connection.read().map_err(storage)?;
         Ok(setting(&conn, "global_concurrency")?
             .and_then(|v| v.as_u64())
-            .unwrap_or(4) as usize)
+            .map(|limit| limit as usize)
+            .unwrap_or(devdesk_core::settings::DEFAULT_GLOBAL_CONCURRENCY))
     }
 
     pub fn set_concurrency(&self, value: usize) -> Result<()> {
@@ -444,7 +445,7 @@ impl EngineeringStore for GlobalStore {
         records: &[ConfigurationRecord],
         revision: u64,
     ) -> Result<ConfigurationPublication> {
-        configuration_reset::prepare(self, records, revision)
+        configuration_reset::prepare(&self.connection, false, records, revision)
     }
     fn configuration_snapshot(&self) -> Result<std::sync::Arc<ConfigurationCatalogSnapshot>> {
         self.catalog_cache.read(&*self.connection.read()?, false)

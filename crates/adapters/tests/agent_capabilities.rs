@@ -135,7 +135,7 @@ fn context_case(detached: bool) {
             .unwrap()
             .to_owned()
     };
-    let instance=e.execute("agent.instance.create",Command{command_id:id(),target:None,expected_revision:None,payload:json!({"name":"Identity","agent_revision_id":"simplified-agent-analyst:8","scope":if detached{"global".into()}else{format!("project:{project}")},"project_id":if detached{None}else{Some(&project)}})}).unwrap()["id"].as_str().unwrap().to_owned();
+    let instance=e.execute("agent.instance.create",Command{command_id:id(),target:None,expected_revision:None,payload:json!({"name":"Identity","agent_revision_id":"builtin-agent-gpt-6-2-sol-analyst:3","scope":if detached{"global".into()}else{format!("project:{project}")},"project_id":if detached{None}else{Some(&project)}})}).unwrap()["id"].as_str().unwrap().to_owned();
     e.store
         .seed_fixture_state(None, &mut |state| {
             let mut source = state.configuration("fixture-delivery-object:1")?.source();
@@ -146,7 +146,7 @@ fn context_case(detached: bool) {
         })
         .unwrap();
     let (session, turn) = runtime::queue_conversation_with(&e, &project, |state, binding| {
-        let agent = state.resolve_agent("simplified-agent-analyst:8")?;
+        let agent = state.resolve_agent("builtin-agent-gpt-6-2-sol-analyst:3")?;
         let model: ModelDefinition = state.configuration(&agent.model_ref)?.decode()?;
         let integration_lock = freeze_discussion_integrations(state, &agent, Some(&project))?;
         assert_eq!(integration_lock.platform_tools.len(), 2);
@@ -165,9 +165,9 @@ fn context_case(detached: bool) {
             context_protocol: Some(AGENT_CONTEXT_PROTOCOL.into()),
             integration_lock: Some(integration_lock),
             agent_instance_id: instance.clone(),
-            agent_revision_id: "simplified-agent-analyst:8".into(),
+            agent_revision_id: "builtin-agent-gpt-6-2-sol-analyst:3".into(),
             composition_hash: state
-                .configuration("simplified-agent-analyst:8")?
+                .configuration("builtin-agent-gpt-6-2-sol-analyst:3")?
                 .content_hash
                 .clone(),
             model_revision_id: agent.model_ref,
@@ -223,7 +223,7 @@ fn context_case(detached: bool) {
 fn agent_specs_are_exact_capability_references_and_survive_restart() {
     let dir = tempfile::tempdir().unwrap();
     let e = engine(dir.path());
-    let payload = json!({"name":"Analysis with norms","model_ref":"builtin-model-gpt-6-1-sol-high:1","harness_ref":"builtin-harness-codex-managed:1","tools":["builtin-tool-codex-native:1","builtin-tool-spec-lint:1"],"skills":["builtin-skill-prd:2"],"spec_refs":["fixture-spec:1"],"data":{}});
+    let payload = json!({"name":"Analysis with norms","model_ref":"builtin-model-gpt-6-2-sol-high:1","harness_ref":"builtin-harness-codex-managed:2","tools":["builtin-tool-codex-native:2","builtin-tool-spec-lint:2"],"skills":["builtin-skill-requirements-analysis:1"],"spec_refs":["fixture-spec:1"],"data":{}});
     let capability = e
         .execute(
             "capability.create",
@@ -237,7 +237,7 @@ fn agent_specs_are_exact_capability_references_and_survive_restart() {
         .unwrap();
     let agent=e.execute("agent.create",Command{command_id:id(),target:None,expected_revision:None,payload:json!({"name":"Analyst","role_ref":"builtin-role-analyst:1","capability_ref":capability["id"],"data":{}})}).unwrap();
     let mut invalid = payload;
-    invalid["spec_refs"] = json!(["builtin-tool-codex-native:1"]);
+    invalid["spec_refs"] = json!(["builtin-tool-codex-native:2"]);
     assert!(
         e.execute(
             "capability.create",
@@ -311,7 +311,7 @@ fn missing_external_account_keeps_the_declared_tool_available_for_discussion() {
     );
     let capability = command(
         "capability.create",
-        json!({"name":"Unbound capability","model_ref":"builtin-model-gpt-6-1-sol-high:1","harness_ref":"builtin-harness-codex-managed:1","tools":["builtin-tool-codex-native:1",tool["id"]],"skills":[],"data":{}}),
+        json!({"name":"Unbound capability","model_ref":"builtin-model-gpt-6-2-sol-high:1","harness_ref":"builtin-harness-codex-managed:2","tools":["builtin-tool-codex-native:2",tool["id"]],"skills":[],"data":{}}),
     );
     let agent = command(
         "agent.create",
@@ -344,7 +344,7 @@ fn historical_outputs_are_read_from_the_source_without_starting_its_workflow() {
     );
     shared.bootstrap().unwrap();
     let create_instance = || {
-        shared.execute("agent.instance.create", Command {command_id:id(),target:None,expected_revision:None,payload:json!({"name":"Historical reader","agent_revision_id":"simplified-agent-analyst:8","scope":"global"})}).unwrap()["id"].as_str().unwrap().to_owned()
+        shared.execute("agent.instance.create", Command {command_id:id(),target:None,expected_revision:None,payload:json!({"name":"Historical reader","agent_revision_id":"builtin-agent-gpt-6-2-sol-analyst:3","scope":"global"})}).unwrap()["id"].as_str().unwrap().to_owned()
     };
     let instance = create_instance();
     let other = create_instance();
@@ -380,14 +380,14 @@ fn historical_outputs_are_read_from_the_source_without_starting_its_workflow() {
         })
         .unwrap();
     let (session, _) = runtime::queue_conversation_with(&e, &project, |state, binding| {
-        let agent = state.resolve_agent("simplified-agent-analyst:8")?;
+        let agent = state.resolve_agent("builtin-agent-gpt-6-2-sol-analyst:3")?;
         binding.agent_configuration = Some(AgentExecutionConfiguration {
             context_protocol: Some(AGENT_CONTEXT_PROTOCOL.into()),
             integration_lock: None,
             agent_instance_id: instance.clone(),
-            agent_revision_id: "simplified-agent-analyst:8".into(),
+            agent_revision_id: "builtin-agent-gpt-6-2-sol-analyst:3".into(),
             composition_hash: state
-                .configuration("simplified-agent-analyst:8")?
+                .configuration("builtin-agent-gpt-6-2-sol-analyst:3")?
                 .content_hash
                 .clone(),
             model_revision_id: agent.model_ref,

@@ -23,7 +23,7 @@ fn harness(engine: &Engine) -> ConfigurationRecord {
         .configuration_snapshot()
         .unwrap()
         .state
-        .configuration("builtin-harness-codex-managed:1")
+        .configuration("builtin-harness-codex-managed:2")
         .unwrap()
         .clone()
 }

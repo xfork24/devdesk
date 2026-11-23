@@ -334,17 +334,19 @@ impl DockerSandbox {
         }
         Ok(sandbox)
     }
-    pub(crate) fn has_containers(&self) -> Result<bool> {
-        let result = self.call(vec![
-            "ps".into(),
-            "-a".into(),
-            "--filter".into(),
-            format!("label=devdesk.root={}", self.root.display()),
-            "--format".into(),
-            "{{.ID}}".into(),
-        ])?;
-        require(result.code == 0, "无法核对数据集容器")?;
-        Ok(!result.stdout.trim_ascii().is_empty())
+    pub(crate) fn dataset_containers_absent(&self) -> Result<bool> {
+        let result = capture_split(
+            "docker",
+            &[
+                "ps".into(),
+                "--all".into(),
+                "--filter".into(),
+                format!("label=devdesk.root={}", self.root.display()),
+                "--quiet".into(),
+            ],
+            Duration::from_secs(30),
+        );
+        classify_dataset_container_list(result)
     }
     pub fn with_runtime_cache(mut self, directory: PathBuf) -> Self {
         self.runtime_cache = Some(directory);
@@ -1144,9 +1146,72 @@ done"#;
     }
 }
 
+fn classify_dataset_container_list(result: Result<Output>) -> Result<bool> {
+    let output = match result {
+        Ok(output) => output,
+        Err(error) if error.code == "provider_unavailable" => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    if output.code == 0 {
+        return Ok(!output.truncated && output.stdout.trim_ascii().is_empty());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr).to_ascii_lowercase();
+    let disconnected = stderr.contains("cannot connect to the docker daemon")
+        || ((stderr.contains("failed to connect to the docker api")
+            || stderr.contains("error during connect"))
+            && (stderr.contains("no such file or directory")
+                || stderr.contains("connection refused")));
+    if disconnected {
+        return Ok(false);
+    }
+    Err(err(
+        "docker_inventory_failed",
+        format!(
+            "无法核对数据集容器：Docker 列表查询失败（退出码 {}）",
+            output.code
+        ),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn storage_maintenance_requires_an_authoritative_empty_container_list() {
+        let list = |code, stdout: &str, stderr: &str, truncated| {
+            classify_dataset_container_list(Ok(Output {
+                code,
+                stdout: stdout.as_bytes().to_vec(),
+                stderr: stderr.as_bytes().to_vec(),
+                truncated,
+            }))
+        };
+        assert!(list(0, "", "", false).unwrap());
+        assert!(!list(0, "c0701d1161b2\n", "", false).unwrap());
+        assert!(!list(0, "", "", true).unwrap());
+        assert!(!list(1, "", "Cannot connect to the Docker daemon", false).unwrap());
+        assert!(!list(
+            1,
+            "",
+            "failed to connect to the docker API at unix:///test/docker.sock: connect: no such file or directory",
+            false,
+        ).unwrap());
+        assert!(
+            !classify_dataset_container_list(Err(err("provider_unavailable", "fixture"))).unwrap()
+        );
+        assert_eq!(
+            list(
+                1,
+                "",
+                "failed to connect to the docker API: permission denied",
+                false
+            )
+            .unwrap_err()
+            .code,
+            "docker_inventory_failed"
+        );
+    }
 
     #[test]
     fn runtime_space_is_checked_and_project_caches_are_separate_by_default() {

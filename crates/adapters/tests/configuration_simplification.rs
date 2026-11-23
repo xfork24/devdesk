@@ -109,14 +109,14 @@ fn explicit_profiles_replace_defaults_without_requiring_a_default_binding() {
     let selection = ExecutionPermissionSelection {
         sandbox_ref: "builtin-sandbox-docker:2".into(),
         harness: PermissionSelection::Profile {
-            permission_revision_id: "builtin-permission-harness-read-only:1".into(),
+            permission_revision_id: "builtin-permission-harness-read-only:2".into(),
         },
         sandbox: PermissionSelection::Profile {
-            permission_revision_id: "builtin-permission-sandbox-full-access:1".into(),
+            permission_revision_id: "builtin-permission-sandbox-full-access:2".into(),
         },
     };
     let lock =
-        resolve_permission_lock(&state, "builtin-harness-codex-managed:1", &selection).unwrap();
+        resolve_permission_lock(&state, "builtin-harness-codex-managed:2", &selection).unwrap();
     let permissions = compile_permission_profiles(&state, &lock, None).unwrap();
     validate_frozen_permissions(&state, &permissions).unwrap();
     assert!(permissions.scope.writable_paths.is_empty());
@@ -176,7 +176,7 @@ fn installation_version_and_sandbox_inputs_both_determine_composed_content() {
     let engine = engine(directory.path(), false);
     let state = engine.store.snapshot().unwrap();
     let mut harness = state
-        .configuration("builtin-harness-codex-managed:1")
+        .configuration("builtin-harness-codex-managed:2")
         .unwrap()
         .clone();
     let mut sandbox = state
@@ -256,6 +256,11 @@ fn native_login_asset_is_shared_and_recovered_without_downloading_or_sharing_cre
             .iter()
             .any(|phase| phase.contains("复用已有"))
     );
+    let reused = a
+        .prepare_codex_auth(|phase| assert!(!phase.contains("下载")))
+        .unwrap();
+    assert_eq!(installed.id, reused.id);
+    assert_eq!(installed.artifact, reused.artifact);
     let shared = b
         .prepare_codex_auth(|phase| assert!(!phase.contains("下载")))
         .unwrap();
@@ -269,6 +274,18 @@ fn native_login_asset_is_shared_and_recovered_without_downloading_or_sharing_cre
     assert_eq!(installed.artifact, recovered.artifact);
     assert!(!second.path().join("credentials/codex/auth.json").exists());
     assert!(a.prepare_codex_auth_cancellable(|_| {}, &|| true).is_err());
+    #[cfg(unix)]
+    {
+        use std::{fs, os::unix::fs::PermissionsExt};
+        let RuntimeArtifact::Executable { canonical_path, .. } = installed.artifact else {
+            panic!("native installation must be executable");
+        };
+        let permissions = fs::metadata(&canonical_path).unwrap().permissions();
+        fs::set_permissions(&canonical_path, fs::Permissions::from_mode(0o600)).unwrap();
+        let result = a.prepare_codex_auth(|_| {});
+        fs::set_permissions(&canonical_path, permissions).unwrap();
+        assert_eq!(result.unwrap_err().message, "运行时文件不可执行");
+    }
 }
 
 #[test]
@@ -278,10 +295,11 @@ fn project_step_profile_can_restrict_a_global_harness_without_rebinding_it() {
     let mut state = engine.store.snapshot().unwrap();
     let defaults = engine.configuration_defaults(None).unwrap();
     let mut profile = state
-        .configuration("builtin-permission-harness-read-only:1")
+        .configuration("builtin-permission-harness-read-only:2")
         .unwrap()
         .source();
     profile.identity = "local-read-only".into();
+    profile.revision = 1;
     profile.scope = Scope::project("local");
     state.governance.push(profile.into_record().unwrap());
     let mut workflow = state
@@ -289,6 +307,7 @@ fn project_step_profile_can_restrict_a_global_harness_without_rebinding_it() {
         .unwrap()
         .source();
     workflow.identity = "local-workflow".into();
+    workflow.revision = 1;
     workflow.scope = Scope::project("local");
     let step = workflow.data["steps"]
         .as_array_mut()
@@ -329,7 +348,7 @@ fn frozen_materialization_uses_its_sandbox_after_the_project_default_changes() {
     let engine = engine(directory.path(), false);
     let state = engine.store.snapshot().unwrap();
     let harness = state
-        .configuration("builtin-harness-codex-managed:1")
+        .configuration("builtin-harness-codex-managed:2")
         .unwrap()
         .clone();
     let sandbox = state.configuration("builtin-sandbox-docker:2").unwrap();

@@ -51,16 +51,17 @@ export function configurationHref(
       record.id,
     );
     if (type === "tool") {
-      const native = record.data?.implementation === "harness.native";
-      params.set(
-        "config_tab",
-        native
+      const implementation = record.data?.implementation;
+      const tab =
+        implementation === "harness.native"
           ? "native"
-          : record.data?.implementation?.kind === "mcp"
-            ? "mcp"
-            : "http",
-      );
-      if (!native) {
+          : implementation === "platform"
+            ? "internal"
+            : implementation?.kind === "mcp"
+              ? "mcp"
+              : "http";
+      params.set("config_tab", tab);
+      if (tab === "http" || tab === "mcp") {
         params.set("tool_ref", record.id);
         if (record.data?.integration_ref)
           params.set("config_object", record.data.integration_ref);

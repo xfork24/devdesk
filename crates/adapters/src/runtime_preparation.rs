@@ -22,19 +22,39 @@ impl GlobalStore {
         &self,
         provider: HarnessProvider,
     ) -> Result<(ConfigurationRecord, ExecutionRecipe)> {
-        let state = self.snapshot()?;
+        let catalog = self.configuration_snapshot()?;
+        let state = catalog.state.as_ref();
         let packaged = factory_bundle::packaged_harness(provider)?;
-        let defaults = devdesk_core::current_template_defaults(&state).unwrap_or_default();
+        let defaults = devdesk_core::current_template_defaults(state).unwrap_or_default();
         let selected = defaults["harness_ref"]
             .as_str()
             .and_then(|id| state.configuration(id).ok())
             .filter(|r| r.data["provider"] == provider.as_str());
-        let harness = selected.unwrap_or(state.configuration(&packaged.id)?);
+        let harness = match selected {
+            Some(harness) => harness,
+            None => state.configuration(&packaged.id).or_else(|error| {
+                // An existing dataset can still be using an earlier factory bundle.
+                state
+                    .governance
+                    .iter()
+                    .filter(|record| {
+                        record.r#type == "harness"
+                            && record.definition_id == packaged.definition_id
+                            && record.version < packaged.version
+                            && template_record_current(state, record)
+                            && template_catalog_member(state, record).is_some_and(|member| {
+                                member.data["source_hash"] == template_source_hash(record)
+                            })
+                    })
+                    .max_by_key(|record| record.version)
+                    .ok_or(error)
+            })?,
+        };
         require(
-            template_record_current(&state, harness) && !configuration_retired(&state, harness),
+            template_record_current(state, harness) && !configuration_retired(state, harness),
             "默认 Harness 已退出当前目录或被停用",
         )?;
-        let selection = permission_selection(&state)?;
+        let selection = permission_selection(state)?;
         let sandbox = state.configuration(&selection.sandbox_ref)?.clone();
         Ok((
             sandbox.clone(),
@@ -371,14 +391,41 @@ impl GlobalStore {
         let executable_sha =
             executable_sha.ok_or_else(|| err("provider_io", "登录程序缓存校验失败"))?;
         progress("本地登录程序已就绪");
+        let key = RuntimeKey {
+            provider: HarnessProvider::Codex,
+            version: resource.version,
+            os: std::env::consts::OS.into(),
+            arch: std::env::consts::ARCH.into(),
+        };
+        // The cache content was hashed under the preparation lock. An exact match
+        // with an already validated installation needs no second registration hash.
+        let installation_id =
+            devdesk_core::runtime_registry::installation_id(&key, Some(&identity));
+        if let Some(prior) =
+            devdesk_core::runtime_registry::read_installation(self, &installation_id)?
+            && prior.key == key
+            && let RuntimeArtifact::Executable {
+                canonical_path,
+                sha256,
+            } = &prior.artifact
+            && *sha256 == executable_sha
+            && binary
+                .canonicalize()
+                .is_ok_and(|path| path == Path::new(canonical_path))
+        {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                require(
+                    fs::metadata(&binary).map_err(storage)?.permissions().mode() & 0o111 != 0,
+                    "运行时文件不可执行",
+                )?;
+            }
+            return Ok(prior);
+        }
         self.register_configured_runtime(
             RuntimeRegistration {
-                key: RuntimeKey {
-                    provider: HarnessProvider::Codex,
-                    version: resource.version,
-                    os: std::env::consts::OS.into(),
-                    arch: std::env::consts::ARCH.into(),
-                },
+                key,
                 artifact: RuntimeArtifact::Executable {
                     canonical_path: binary.to_string_lossy().into_owned(),
                     sha256: executable_sha,

@@ -568,6 +568,16 @@ fn load_table_filtered_params<T: DeserializeOwned>(
     predicate: &str,
     parameters: &[&dyn rusqlite::ToSql],
 ) -> Result<Vec<T>> {
+    load_rows(conn, table, predicate, parameters, true)
+}
+
+fn load_rows<T: DeserializeOwned>(
+    conn: &Connection,
+    table: &str,
+    predicate: &str,
+    parameters: &[&dyn rusqlite::ToSql],
+    hydrate_snapshot: bool,
+) -> Result<Vec<T>> {
     let _span = performance::Span::new("sqlite.table_read_decode");
     let _packs = payload_store::read_scope();
     let columns = columns(conn, table)?;
@@ -618,7 +628,7 @@ fn load_table_filtered_params<T: DeserializeOwned>(
         .map_err(storage)?;
     rows.map(|row| {
         let mut value = row.map_err(storage)?;
-        if table == "snapshots" {
+        if table == "snapshots" && hydrate_snapshot {
             project_storage::restore_snapshot(conn, &mut value)?;
         }
         if table == "events"
@@ -934,13 +944,15 @@ impl SqliteStore {
 }
 impl EngineeringStore for SqliteStore {
     fn operational_read(&self, method: &str, params: &Value) -> Result<Value> {
-        operational_reads::read(
-            &self.connection,
-            self.configuration_snapshot()?.as_ref(),
-            self.project_id.as_deref(),
-            method,
-            params,
-        )
+        workflow_details::with_catalog(self, |catalog| {
+            operational_reads::read(
+                &self.connection,
+                catalog,
+                self.project_id.as_deref(),
+                method,
+                params,
+            )
+        })
     }
     fn workspace_reading(&self, p: &Value) -> Result<Value> {
         workspace_read::read(self, p)
@@ -1531,7 +1543,7 @@ impl EngineeringStore for SqliteStore {
         records: &[ConfigurationRecord],
         revision: u64,
     ) -> Result<ConfigurationPublication> {
-        configuration_reset::prepare(self, records, revision)
+        configuration_reset::prepare(&self.connection, true, records, revision)
     }
     fn configuration_snapshot(&self) -> Result<std::sync::Arc<ConfigurationCatalogSnapshot>> {
         self.catalog_cache.read(&*self.connection.read()?, true)

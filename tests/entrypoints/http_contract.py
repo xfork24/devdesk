@@ -92,6 +92,9 @@ def run():
                 assert 'error' not in result, result
                 return result['result']
             assert rpc('query.workspace', {})['repository_ready'] is False
+            defaults = rpc('query.settings', {})
+            assert defaults['global_concurrency'] == 32
+            assert defaults['default_project_concurrency'] == 8
             def settings_command(payload, command_id):
                 versions = rpc('query.settings', {})['versions']
                 return {'command_id':command_id, 'preconditions':[v for v in versions if v['resource']['id'] in payload], 'payload':payload}
@@ -126,7 +129,11 @@ def run():
                 time.sleep(.05)
             rpc('document.revise', {'project_id':pid,'command_id':'a-doc','target':feature_a['id'],'expected_revision':rpc('query.workspace', {'project_id':pid,'feature_id':feature_a['id']})['detail']['feature']['revision'],'payload':{'kind':'requirement','title':'A 需求','body':'A 的独立产物'}})
             view_a = rpc('query.workspace', {'project_id':pid,'feature_id':feature_a['id']})
+            assert view_a['active_project']['concurrency'] == 8
             artifact_a = next(document['artifact_id'] for document in view_a['detail']['documents'] if document['title']=='A 需求')
+            rpc('settings.update', settings_command({'global_concurrency':7,'default_project_concurrency':11}, 'settings-concurrency'))
+            assert project == rpc('project.create', {'command_id':'same-id','payload':{'title':'HTTP 持久化'}})
+            assert rpc('query.workspace', {'project_id':pid})['active_project']['concurrency'] == 8
             project_b = rpc('project.create', {'command_id':'create-b','payload':{'title':'项目 B'}})['id']
             configure(project_b)
             feature_b = rpc('feature.create', {'project_id':project_b,'command_id':'same-feature-id','payload':{'project_id':project_b,'title':'仅属于 B'}})
@@ -144,8 +151,7 @@ def run():
             original = rpc('query.workspace', {'project_id':pid})['active_project']
             rpc('project.update', {'project_id':pid,'command_id':'independent-a','target':pid,
                 'expected_revision':original['revision'],'payload':{'concurrency':3}})
-            assert rpc('query.workspace', {'project_id':project_b})['active_project']['concurrency'] == 2
-            rpc('settings.update', settings_command({'global_concurrency':7}, 'settings-concurrency'))
+            assert rpc('query.workspace', {'project_id':project_b})['active_project']['concurrency'] == 11
             assert not (dataset / 'runtime.json').exists()
             with sqlite3.connect(dataset / 'global.sqlite3') as global_db:
                 assert json.loads(global_db.execute("SELECT value FROM settings WHERE key='global_concurrency'").fetchone()[0]) == 7
@@ -201,6 +207,8 @@ def run():
             assert restored['projects'][0]['title']=='HTTP 持久化'
             assert restored['active_project_id'] == pid
             assert restored['global_concurrency'] == 7
+            assert restored['default_project_concurrency'] == 11
+            assert restored['active_project']['concurrency'] == 3
             assert len(restored['features']) == 1
             # Ctrl+C must wake the same scheduler stop checks and terminate an idle SSE.
             stream = http.client.HTTPConnection(url.removeprefix('http://'), timeout=2)

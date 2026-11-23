@@ -254,8 +254,8 @@ pub(crate) fn maintain(data: &Path, root: &Path, connection: &Connection) -> Res
         return Ok(());
     }
     // A worker left behind by a previous Host may still own or later reopen
-    // its mounts. Leave that execution root to normal reconciliation.
-    if crate::docker::DockerSandbox::new(&execution)?.has_containers()? {
+    // its mounts. An unavailable Docker daemon cannot prove the root is idle.
+    if !crate::docker::DockerSandbox::new(&execution)?.dataset_containers_absent()? {
         return Ok(());
     }
     retire_sealed_protocols(root, connection)?;

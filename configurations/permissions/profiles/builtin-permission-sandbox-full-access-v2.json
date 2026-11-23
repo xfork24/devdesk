@@ -1,0 +1,19 @@
+{
+  "type": "permission_profile",
+  "identity": "builtin-permission-sandbox-full-access",
+  "revision": 2,
+  "name": "Sandbox Full Access",
+  "scope": "global",
+  "data": {
+    "policy": {
+      "filesystem": {
+        "mode": "full_access"
+      },
+      "network": {
+        "mode": "enabled"
+      }
+    },
+    "schema_version": 2,
+    "target_kind": "sandbox"
+  }
+}

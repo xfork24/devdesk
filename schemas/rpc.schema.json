@@ -170,6 +170,11 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 32
+            },
+            "default_project_concurrency": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32
             }
           },
           "additionalProperties": false

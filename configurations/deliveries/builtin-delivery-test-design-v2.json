@@ -1,0 +1,137 @@
+{
+  "type": "delivery_type",
+  "identity": "builtin-delivery-test-design",
+  "revision": 2,
+  "name": "Test Design",
+  "scope": "global",
+  "spec_refs": [
+    "builtin-spec-test-design:2"
+  ],
+  "data": {
+    "format": "json",
+    "producer": {
+      "kind": "agent"
+    },
+    "content_schema": {
+      "type": "object",
+      "required": [
+        "scope",
+        "cases",
+        "recipe",
+        "interfaces"
+      ],
+      "properties": {
+        "scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "acceptance",
+              "expected",
+              "files"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "acceptance": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "expected": {
+                "type": "string",
+                "minLength": 1
+              },
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 1
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "recipe": {
+          "type": "object",
+          "required": [
+            "runner",
+            "files",
+            "timeout_seconds"
+          ],
+          "properties": {
+            "runner": {
+              "enum": [
+                "node_test",
+                "python_unittest"
+              ]
+            },
+            "files": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "maxItems": 100,
+              "uniqueItems": true
+            },
+            "timeout_seconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 7200
+            }
+          },
+          "additionalProperties": false
+        },
+        "interfaces": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "runner",
+              "exports"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "runner": {
+                "enum": [
+                  "node_test",
+                  "python_unittest"
+                ]
+              },
+              "exports": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 32,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                }
+              }
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

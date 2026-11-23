@@ -75,9 +75,9 @@ try:
         runtime = client.rpc('runtime.prepare', {'provider': 'codex'})
         client.timeout = 180
         defaults = client.rpc('query.configuration_defaults')
-        assert defaults['workflow_ref'] == 'simplified-workflow-feature:9'
-        assert defaults['task_workflow_ref'] == 'simplified-workflow-task:4'
-        assert defaults['standard_ref'] == 'simplified-standard-engineering:9'
+        assert defaults['workflow_ref'] == 'builtin-workflow-feature-development:3'
+        assert defaults['task_workflow_ref'] == 'builtin-workflow-task-development:3'
+        assert defaults['standard_ref'] == 'builtin-standard-engineering-delivery:3'
         discovery = client.rpc('query.project_test_configuration')
         (out / 'test-discovery.json').write_text(json.dumps(discovery, ensure_ascii=False, indent=2))
         current = client.rpc('query.workspace')['active_project']

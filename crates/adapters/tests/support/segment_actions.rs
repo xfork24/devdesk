@@ -112,7 +112,7 @@ fn automated_delegation_does_not_wake_manager_for_ordinary_approval_or_completio
     let mut doc = document();
     doc["steps"][0]["confirmation"] = json!("human");
     let root = start(&e, doc);
-    let controller=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"simplified-agent-project-manager:11"})).unwrap()["id"].as_str().unwrap().to_owned();
+    let controller=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-gpt-6-2-sol-project-manager:4"})).unwrap()["id"].as_str().unwrap().to_owned();
     cmd(
         &e,
         "workflow.driver.select",

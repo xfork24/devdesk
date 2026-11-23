@@ -241,9 +241,9 @@ test("模型目录慢或失败时仍能编辑；切回复用，换账号隔离",
   await expect(
     panel.locator(".configuration-list button:has(strong)").first(),
   ).toBeVisible();
-  await panel.getByRole("button", { name: /GPT-6.1 Sol High/ }).click();
+  await panel.getByRole("button", { name: /GPT-6.2 Sol High/ }).click();
   await expect(panel.locator('button[aria-pressed="true"] strong')).toHaveText(
-    "GPT-6.1 Sol High",
+    "GPT-6.2 Sol High",
   );
   const select = page.getByLabel("模型标识", { exact: true });
   await expect(select).toBeEnabled();

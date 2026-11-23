@@ -725,7 +725,7 @@ mod tests {
                 json!({"target":permission_target(&s,PermissionTargetKind::Harness,DEFAULT_HARNESS_ID).unwrap(),"permission_revision_id":profile,"expected_revision":expected}),
             ];
             if false {
-                changes.push(json!({"target":permission_target(&s,PermissionTargetKind::Sandbox,DEFAULT_PERMISSION_SANDBOX).unwrap(),"permission_revision_id":"builtin-permission-sandbox-full-access:1","expected_revision":0}));
+                changes.push(json!({"target":permission_target(&s,PermissionTargetKind::Sandbox,DEFAULT_PERMISSION_SANDBOX).unwrap(),"permission_revision_id":"builtin-permission-sandbox-full-access:2","expected_revision":0}));
             }
             w.dispatch(
                 "permission.bindings.apply",
@@ -733,7 +733,7 @@ mod tests {
             )
             .unwrap()
         };
-        apply("builtin-permission-harness-full-access:1", 1);
+        apply("builtin-permission-harness-full-access:2", 1);
         let data = json!(
             w.global
                 .snapshot()
@@ -788,7 +788,7 @@ mod tests {
             .runtime_binding
             .clone()
             .unwrap();
-        apply("builtin-permission-harness-read-only:1", 2);
+        apply("builtin-permission-harness-read-only:2", 2);
         let params = json!({"project_id":project,"command_id":id(),"target":original,"expected_revision":1,"payload":{"input":"Use the new permissions","client_message_id":"one-message"}});
         let sent = w.dispatch("conversation.send", params.clone()).unwrap();
         assert_ne!(sent["effective_session_id"], original);
@@ -876,7 +876,7 @@ mod tests {
             .find(|r| r["target"]["revision_id"] == h["id"])
             .unwrap()["target"]
             .clone();
-        let params = json!({"project_id":project,"command_id":id(),"payload":{"bindings":[{"target":target,"permission_revision_id":"builtin-permission-harness-read-only:1","expected_revision":0}]}});
+        let params = json!({"project_id":project,"command_id":id(),"payload":{"bindings":[{"target":target,"permission_revision_id":"builtin-permission-harness-read-only:2","expected_revision":0}]}});
         let saved = w
             .dispatch("permission.bindings.apply", params.clone())
             .unwrap();
@@ -917,11 +917,11 @@ mod tests {
         let preflight = w
             .dispatch(
                 "permission.binding.preflight",
-                json!({"target":target,"permission_revision_id":"builtin-permission-harness-read-only:1"}),
+                json!({"target":target,"permission_revision_id":"builtin-permission-harness-read-only:2"}),
             )
             .unwrap();
         assert_eq!(preflight["scope_checked"], true);
-        let request = json!({"command_id":id(),"payload":{"bindings":[{"target":target,"permission_revision_id":"builtin-permission-harness-read-only:1","expected_revision":1}]}});
+        let request = json!({"command_id":id(),"payload":{"bindings":[{"target":target,"permission_revision_id":"builtin-permission-harness-read-only:2","expected_revision":1}]}});
         let first = w
             .dispatch("permission.bindings.apply", request.clone())
             .unwrap();

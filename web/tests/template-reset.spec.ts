@@ -231,7 +231,7 @@ test("操作后关闭弹窗，失败可重新打开并读取最新预览", async
   await rpc(page, appUrl, "delivery_type.create", {
     command_id: crypto.randomUUID(),
     payload: {
-      spec_refs: ["builtin-spec-stage-prd:2"],
+      spec_refs: ["builtin-spec-stage-prd:4"],
       name: "Concurrent delivery",
       data: { format: "markdown", body: "concurrent" },
     },
@@ -315,4 +315,70 @@ test("恢复默认配置失败时也关闭弹窗并在设置页显示错误", as
       .getByRole("region", { name: "模板与额度设置", exact: true })
       .getByRole("alert"),
   ).toContainText("恢复失败测试");
+});
+
+test("重置超时后按原命令核对已经提交的回执", async ({ page, appUrl }) => {
+  await page.addInitScript(() => {
+    const timeout = AbortSignal.timeout.bind(AbortSignal);
+    let shorten = true;
+    AbortSignal.timeout = (milliseconds) => {
+      if (shorten && milliseconds === 5 * 60 * 1000) {
+        shorten = false;
+        return timeout(500);
+      }
+      return timeout(milliseconds);
+    };
+  });
+  await page.goto(`${appUrl}/?tab=settings`);
+  await rpc(page, appUrl, "delivery_type.create", {
+    command_id: crypto.randomUUID(),
+    payload: {
+      spec_refs: ["builtin-spec-stage-prd:4"],
+      name: "Reset timeout fixture",
+      data: { format: "markdown", body: "will be reset" },
+    },
+  });
+  const attempts: unknown[] = [];
+  let release!: () => void;
+  const responseHeld = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    if (call.method !== "configuration.templates.reset")
+      return route.fallback();
+    attempts.push(call.params);
+    if (attempts.length !== 1) return route.fallback();
+    await route.fetch();
+    await responseHeld;
+    await route.abort().catch(() => {});
+  });
+
+  try {
+    await page
+      .getByRole("button", { name: "重置模板定义", exact: true })
+      .click();
+    await page.getByRole("button", { name: "重置配置", exact: true }).click();
+    await expect(
+      page.getByRole("alert").filter({ hasText: "操作结果待确认" }),
+    ).toBeVisible();
+    await expect
+      .poll(
+        async () =>
+          (await rpc(page, appUrl, "query.template_catalog")).generation,
+      )
+      .toBe(2);
+    await page
+      .getByRole("button", { name: "核对重置结果", exact: true })
+      .click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "模板定义已恢复默认" }),
+    ).toBeVisible();
+    expect(attempts).toHaveLength(2);
+    expect(attempts[1]).toEqual(attempts[0]);
+    expect((await rpc(page, appUrl, "query.template_catalog")).generation).toBe(
+      2,
+    );
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+  }
 });

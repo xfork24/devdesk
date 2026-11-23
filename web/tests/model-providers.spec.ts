@@ -28,7 +28,7 @@ test("DSH 服务商凭据独立，Ollama 免密且模型草稿可保存", async 
         json: {
           jsonrpc: "2.0",
           id: call.id,
-          result: { models: [{ model: "gpt-6.1-sol" }] },
+          result: { models: [{ model: "gpt-6.2-sol" }] },
         },
       });
     if (call.method === "models.list")

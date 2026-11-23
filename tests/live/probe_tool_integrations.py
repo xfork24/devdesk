@@ -20,7 +20,7 @@ class Fixture(http.server.BaseHTTPRequestHandler):
 service=http.server.ThreadingHTTPServer(('0.0.0.0',0),Fixture);threading.Thread(target=service.serve_forever,daemon=True).start();origin=f'http://host.docker.internal:{service.server_port}'
 mcp=subprocess.Popen(['node',str(REPO/'tests/fixtures/tool-integrations/mcp-service.mjs'),'--http'],stdout=subprocess.PIPE,text=True);mcp_port=json.loads(mcp.stdout.readline())['port']
 log=open(ROOT.parent/(ROOT.name+'.host.log'),'w');host=subprocess.Popen([str(args.host.resolve()),'--data',str(ROOT),'--port',str(PORT)],stdout=log,stderr=subprocess.STDOUT)
-report={'dataset':str(ROOT),'real_models':['codex/gpt-6.1-sol'],'dsh_calls':0};args.report.parent.mkdir(parents=True,exist_ok=True)
+report={'dataset':str(ROOT),'real_models':['codex/gpt-6.2-sol'],'dsh_calls':0};args.report.parent.mkdir(parents=True,exist_ok=True)
 try:
  c=Client(f'http://127.0.0.1:{PORT}');shutil.copyfile(auth,ROOT/'credentials/codex/auth.json');(ROOT/'credentials/codex/auth.json').chmod(0o600);assert c.rpc('codex.auth.status')['authenticated']
  pid=c.command('project.create',payload={'title':'External tools and Skill acceptance'})['id'];c.project=pid;scope='project:' + str(pid);defaults=c.rpc('query.configuration_defaults')
@@ -28,7 +28,7 @@ try:
  resources=c.rpc('query.permission_resources');changes=[]
  for resource in resources['targets']:
   if resource['target']['revision_id'] in [defaults['harness_ref'],'builtin-sandbox-docker:2']:
-   changes.append({'target':resource['target'],'permission_revision_id':'builtin-permission-harness-full-access:1' if resource['target']['type']=='harness' else 'builtin-permission-sandbox-full-access:1','expected_revision':resource.get('active',{}).get('revision',0) if resource.get('active') else 0})
+   changes.append({'target':resource['target'],'permission_revision_id':'builtin-permission-harness-full-access:2' if resource['target']['type']=='harness' else 'builtin-permission-sandbox-full-access:2','expected_revision':resource.get('active',{}).get('revision',0) if resource.get('active') else 0})
  c.command('permission.bindings.apply',payload={'bindings':changes})
  api=create('integration.create','Local canary API',{'source':{'kind':'http_api','base_url':origin}})
  t=create('integration.tool.create','lookup_http_canary',{'schema_version':2,'qualified_name':'lookup_http_canary','description':'Read the canary marker from the explicitly bound local acceptance service.','integration_ref':api['id'],'implementation':{'kind':'http_api','method':'GET','path':'/canary'},'input_schema':{'type':'object','properties':{},'additionalProperties':False},'output_schema':{'type':'object','properties':{'marker':{'type':'string'}},'required':['marker']},'effect':'read_only'})
@@ -40,7 +40,7 @@ try:
  # Actual static package import uses the same validated core adoption contract as ZIP/Git.
  body='---\nname: integration-canary\ndescription: Verify selected integrations with frozen evidence.\n---\n\n# Integration verification\n\nRead [the reference](references/canary.md), then invoke both selected external tools. Do not install packages.'
  skill=c.command('skill.import',payload={'name':'Integration canary Skill','scope':scope,'package':{'body':body,'description':'Read the selected reference and call the selected tools','files':[{'path':'references/canary.md','content':skill_marker+'\n'}],'requires_tools':[t['id'],published['id']],'source':'manual acceptance package','scripts_disabled':False}})
- native='builtin-tool-codex-native:1';cap=create('capability.create','Codex external tools verification',{'model_ref':defaults['model_ref'],'harness_ref':defaults['harness_ref'],'tools':[native,t['id'],published['id']],'skills':[skill['id']]})
+ native='builtin-tool-codex-native:2';cap=create('capability.create','Codex external tools verification',{'model_ref':defaults['model_ref'],'harness_ref':defaults['harness_ref'],'tools':[native,t['id'],published['id']],'skills':[skill['id']]})
  roles=c.rpc('query.configurations',{'kind':'role','include_history':True})['records'];role=max((r for r in roles if r['definition_id']=='builtin-role-analyst'),key=lambda r:r['version'])
  agent=create('agent.create','Codex integration verifier',{'role_ref':role['id'],'capability_ref':cap['id']})
  bindings=dict(defaults['role_agent_bindings']);bindings[role['id']]=agent['id'];workspace=c.rpc('query.workspace');c.command('project.configuration.update',pid,workspace['active_project']['revision'],{'workflow_ref':defaults['workflow_ref'],'role_agent_bindings':bindings})

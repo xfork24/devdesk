@@ -161,8 +161,8 @@ fn combined_history_sorts_before_paging_and_reuses_redacted_call_projections() {
         for (id, kind, delta) in [("new-call", "tool_call", 400), ("old-call", "tool_call", 150), ("platform-call", "platform_call", 250)] {
             let data = if kind == "platform_call" {
                 json!({"status":"succeeded","request":PlatformToolRequest {
-                    definition_ref:Some("builtin-tool-workspace-current:1".into()), execution_id:"fixture-execution".into(),instance_id:"fixture-instance".into(),owner_id:"fixture-owner".into(),project_id:"fixture-project".into(),
-                    definition:s.configuration("builtin-tool-workspace-current:1")?.decode()?, arguments:json!({}), runtime:None,permissions:None,caller:None,
+                    definition_ref:Some("builtin-tool-workspace-current:2".into()), execution_id:"fixture-execution".into(),instance_id:"fixture-instance".into(),owner_id:"fixture-owner".into(),project_id:"fixture-project".into(),
+                    definition:s.configuration("builtin-tool-workspace-current:2")?.decode()?, arguments:json!({}), runtime:None,permissions:None,caller:None,
                 },"receipt":{"path":"/work"}})
             } else {
                 json!({"status":"succeeded","invocation":{"tool":{"definition":{"sensitive_parameters":["/password"]}},"arguments":{"password":"secret-value","visible":"kept"}}})

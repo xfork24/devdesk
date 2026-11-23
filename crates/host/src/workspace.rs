@@ -102,15 +102,22 @@ impl Workspace {
         let configuration = engine(global.clone(), &adapters);
         configuration.bootstrap()?;
         configuration.recover_tool_receipts()?;
-        if template_catalog_generation(&global.snapshot()?) == TEMPLATE_INITIAL_GENERATION
-            && global.permission_preset_source()?.is_builtin
+        let catalog = global.configuration_snapshot()?;
+        // Built-in preset revisions may reference tools from the new bundle. Load
+        // them once the dataset has adopted that bundle's complete catalog.
+        if template_catalog_generation(&catalog.state) == TEMPLATE_INITIAL_GENERATION
+            && let Some(template) = template_catalog_state(&catalog.state)
+            && template.data["bundle_hash"] == template_bundle_info()?["bundle_hash"]
         {
-            global.initialize_permission_presets(&Command {
-                command_id: id(),
-                target: None,
-                expected_revision: Some(global.permission_preset_source()?.revision),
-                payload: json!({}),
-            })?;
+            let source = global.permission_preset_source()?;
+            if source.is_builtin {
+                global.initialize_permission_presets(&Command {
+                    command_id: id(),
+                    target: None,
+                    expected_revision: Some(source.revision),
+                    payload: json!({}),
+                })?;
+            }
         }
         workspace_defaults(&configuration)?;
         let workspace = Arc::new(Self {
@@ -195,6 +202,18 @@ impl Workspace {
             .insert(key, basis);
         Ok(())
     }
+    fn create_project_metadata(&self, engine: &Engine, command: &Command) -> Result<Value> {
+        self.sync_configuration(engine)?;
+        let settings = devdesk_core::settings::read(self.global.as_ref())?;
+        devdesk_core::project_creation::create_with_concurrency(
+            engine.store.as_ref(),
+            command,
+            &InvocationContext::human(engine.store.project_id()),
+            settings.default_project_concurrency,
+        )
+        .map(|receipt| receipt.result)
+    }
+
     fn load_project(&self, id: &str, creating: bool) -> Result<Arc<Engine>> {
         let _span = performance::Span::new("project.open");
         let root = PathBuf::from(self.global.root());
@@ -862,24 +881,15 @@ impl Workspace {
             let id = params["id"]
                 .as_str()
                 .ok_or_else(|| err("invalid_params", "需要 Harness 修订"))?;
-            let engine = if self
-                .global
-                .snapshot()?
-                .governance
-                .iter()
-                .any(|r| r.id == id)
-            {
-                self.configuration.clone()
+            let global = self.global.configuration_snapshot()?;
+            let (engine, catalog) = if global.record(id).is_some() {
+                (self.configuration.clone(), global)
             } else {
-                self.project_engine(params["project_id"].as_str())?
+                let engine = self.project_engine(params["project_id"].as_str())?;
+                let catalog = engine.store.configuration_snapshot()?;
+                (engine, catalog)
             };
-            let state = engine
-                .store
-                .configuration_snapshot()?
-                .state
-                .as_ref()
-                .clone();
-            let harness = state.configuration(id)?;
+            let harness = catalog.state.configuration(id)?;
             require(harness.r#type == "harness", "需要 Harness 修订")?;
             return Ok(json!(self.materialize_harness(&engine, harness)?));
         }
@@ -1025,19 +1035,13 @@ impl Workspace {
                 let status=vault.status_model_reference(&p,reference.as_deref()).ok();
                 json!({"id":p.id,"label":p.label,"configured":status.as_ref().is_some_and(|s|s.configured),"available":status.as_ref().is_some_and(|s|s.available),"auth_kind":if p.requires_key{"api_key"}else{"none"}})
             }).collect();
-            let recipe_state =
-                if let Ok(engine) = self.project_engine(params["project_id"].as_str()) {
-                    engine
-                        .store
-                        .configuration_snapshot()?
-                        .state
-                        .as_ref()
-                        .clone()
-                } else {
-                    self.global.snapshot()?
-                };
-            let recipes: Vec<_> = recipe_state.governance.iter().filter(|r|r.r#type == "harness" && !devdesk_core::configuration_retired(&recipe_state, r))
-                .filter_map(|r| harness_execution_recipe(&recipe_state,r).ok().map(|d|json!({"reference":r.id,"name":r.name,"provider":d.provider,"version":d.version,"recipe_digest":d.recipe_digest(),"os":"linux","arch":std::env::consts::ARCH}))).collect();
+            let catalog = if let Ok(engine) = self.project_engine(params["project_id"].as_str()) {
+                engine.store.configuration_snapshot()?
+            } else {
+                self.global.configuration_snapshot()?
+            };
+            let recipes: Vec<_> = catalog.records("harness").filter(|r| !devdesk_core::configuration_retired(&catalog.state, r))
+                .filter_map(|r| harness_execution_recipe(&catalog.state,r).ok().map(|d|json!({"reference":r.id,"name":r.name,"provider":d.provider,"version":d.version,"recipe_digest":d.recipe_digest(),"os":"linux","arch":std::env::consts::ARCH}))).collect();
             return Ok(
                 json!({"default_harness":self.global.default_harness()?,"host_os":std::env::consts::OS,"host_arch":std::env::consts::ARCH,
                 "installations":installations,"model_providers":providers,"recipes":recipes,"drivers":devdesk_core::driver_capabilities()}),
@@ -1056,8 +1060,7 @@ impl Workspace {
                 .global
                 .reserve_project(&command, &devdesk_core::InvocationContext::human(None))?;
             let e = self.load_project(&id, true)?;
-            self.sync_configuration(&e)?;
-            let result = e.execute(method, command)?;
+            let result = self.create_project_metadata(&e, &command)?;
             self.global.publish_project(&e.store.project_metadata()?)?;
             return Ok(result);
         }
@@ -1208,6 +1211,7 @@ impl Workspace {
                 result["data_root"] = json!(self.global.root());
                 let settings = devdesk_core::settings::read(self.global.as_ref())?;
                 result["global_concurrency"] = json!(settings.global_concurrency);
+                result["default_project_concurrency"] = json!(settings.default_project_concurrency);
                 result["default_harness"] = json!(settings.default_harness);
                 result["settings_versions"] = json!(settings.versions);
                 result["runtime_installations"] = json!(self.global.runtime_installations()?);
@@ -1623,7 +1627,7 @@ mod tests {
             Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
         let pid = create(&w, "Experience source");
         let instance = w.dispatch("agent.instance.create", json!({"command_id":id(),"payload":{
-            "name":"Experience Agent","agent_revision_id":"simplified-agent-analyst:8","scope":"global"
+            "name":"Experience Agent","agent_revision_id":"builtin-agent-gpt-6-2-sol-analyst:3","scope":"global"
         }})).unwrap();
         let engine = w.project_engine(Some(&pid)).unwrap();
         let snapshot = id();
@@ -1726,12 +1730,19 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let workspace =
             Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
-        workspace.global.set_concurrency(2).unwrap();
         let mut projects = [
             create(&workspace, "Broken scheduler fixture"),
             create(&workspace, "Healthy scheduler fixture"),
         ];
         projects.sort();
+        let broken_quota = workspace
+            .project_engine(Some(&projects[0]))
+            .unwrap()
+            .store
+            .project_metadata()
+            .unwrap()
+            .concurrency as usize;
+        workspace.global.set_concurrency(broken_quota).unwrap();
         let healthy = workspace.project_engine(Some(&projects[1])).unwrap();
         crate::test_runtime::queue_conversation(&healthy, &projects[1]);
         // Fault injection is confined to the disposable project database. It
@@ -1741,14 +1752,14 @@ mod tests {
             .join("engineering.sqlite3");
         let broken = rusqlite::Connection::open(path).unwrap();
         broken.execute_batch("DROP TABLE turns;").unwrap();
-        // Until the broken project's count is known, its two writer slots
+        // Until the broken project's count is known, all its writer slots
         // remain reserved; the scheduler must not over-admit globally.
         for _ in 0..3 {
             let _ = workspace.tick(|| false);
             let _ = workspace.background.drain(|| false);
         }
         assert_eq!(healthy.conversation_running().unwrap(), 0);
-        workspace.global.set_concurrency(4).unwrap();
+        workspace.global.set_concurrency(broken_quota + 1).unwrap();
         let mut diagnostics = None;
         for _ in 0..16 {
             if let Err(error) = workspace.tick(|| false) {
@@ -2602,7 +2613,7 @@ mod adapter_injection_tests {
         };
         let harness = create_resource(
             "harness.create",
-            json!({"name":"Explicit pinned Harness","model_providers":["builtin-model-provider-openai:1"],"data":w.project_engine(Some(&pid)).unwrap().store.snapshot().unwrap().configuration("builtin-harness-codex-managed:1").unwrap().data}),
+            json!({"name":"Explicit pinned Harness","model_providers":["builtin-model-provider-openai:1"],"data":w.project_engine(Some(&pid)).unwrap().store.snapshot().unwrap().configuration("builtin-harness-codex-managed:2").unwrap().data}),
         );
         let capability = create_resource(
             "capability.create",

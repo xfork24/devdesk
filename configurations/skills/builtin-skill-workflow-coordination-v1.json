@@ -1,0 +1,11 @@
+{
+  "type": "skill",
+  "identity": "builtin-skill-workflow-coordination",
+  "revision": 1,
+  "name": "Workflow Coordination",
+  "scope": "global",
+  "data": {
+    "rules": [],
+    "body_file": "workflow-coordination.md"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "type": "agent",
+  "identity": "builtin-agent-gpt-6-2-sol-project-manager",
+  "revision": 4,
+  "name": "Project Manager · GPT-6.2 Sol High",
+  "scope": "global",
+  "role_ref": "builtin-role-project-manager:1",
+  "capability_ref": "builtin-capability-project-manager-gpt-6-2-sol-codex:4",
+  "data": {}
+}

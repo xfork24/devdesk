@@ -1,0 +1,10 @@
+{
+  "type": "agent",
+  "identity": "builtin-agent-minimax-reviewer",
+  "revision": 8,
+  "name": "Independent Reviewer · MiniMax M3.1 Flash",
+  "scope": "global",
+  "capability_ref": "builtin-capability-reviewer-minimax-dsh:7",
+  "role_ref": "builtin-role-reviewer:1",
+  "data": {}
+}

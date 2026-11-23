@@ -25,7 +25,9 @@ type Usage = {
     | "step_input"
     | "step_argument"
     | "step_collection"
-    | "step_output";
+    | "step_output"
+    | "step_spec"
+    | "step_tool";
   stage?: { key: string; name: string };
   step?: { key: string; name: string };
   port?: string;
@@ -46,6 +48,8 @@ function usageDescription(location: Usage) {
       step_output: "输出",
       step_argument: "工具参数",
       step_collection: "遍历来源",
+      step_spec: "适用规范",
+      step_tool: "执行工具",
       reference: "引用",
     }[location.kind]
   }${location.port ? `：${location.port}` : ""}`;
@@ -121,10 +125,12 @@ function UsageDetails({
   );
   const label =
     kind === "spec"
-      ? "Delivery / Capability 引用"
+      ? "Delivery / Capability / Workflow 引用"
       : kind === "delivery_type"
         ? "Workflow 引用位置"
-        : "Capability 引用";
+        : kind === "tool"
+          ? "Capability / Workflow 引用"
+          : "Capability 引用";
   return (
     <aside
       className="configuration-usage full-width"

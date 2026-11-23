@@ -100,7 +100,7 @@ fn setup_agent(e: &Engine, role: &str) -> String {
         harness["id"].as_str().unwrap(),
     )
     .unwrap();
-    command(e,"permission.bindings.apply",None,json!({"bindings":[{"target":target,"permission_revision_id":"builtin-permission-harness-full-access:1","expected_revision":0,"enforcement_contract":devdesk_adapters::permission_profiles::permission_contract(&state,&target).unwrap()}]})).unwrap();
+    command(e,"permission.bindings.apply",None,json!({"bindings":[{"target":target,"permission_revision_id":"builtin-permission-harness-full-access:2","expected_revision":0,"enforcement_contract":devdesk_adapters::permission_profiles::permission_contract(&state,&target).unwrap()}]})).unwrap();
     let cap=command(e,"capability.create",None,json!({"name":"Fixture capability","model_ref":model["id"],"harness_ref":harness["id"],"tools":[tool["id"]],"skills":[],"data":{}})).unwrap();
     command(e,"agent.create",None,json!({"name":format!("{role} Agent"),"role_ref":default_role_id(role),"capability_ref":cap["id"],"data":{}})).unwrap()["id"].as_str().unwrap().into()
 }

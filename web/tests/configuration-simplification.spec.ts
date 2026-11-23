@@ -173,7 +173,7 @@ test("配置归属与权限工具行，Workflow 内嵌调度", async ({ page }, 
     fullPage: true,
   });
   await page.goto(
-    "/?tab=components&config_tab=harness&config_object=builtin-harness-codex-managed%3A1",
+    "/?tab=components&config_tab=harness&config_object=builtin-harness-codex-managed%3A2",
   );
   await expect(page.getByLabel("Harness 安装与登录组件")).toHaveValue(
     /@openai\/codex/,
@@ -841,7 +841,7 @@ test("项目默认调度与 Profile 保存恢复，已配置项目不提示默�
   const panel = page.getByRole("region", { name: "项目配置", exact: true });
   const mode = panel.getByLabel("默认调度模式", { exact: true });
   const profile = panel.getByLabel("Harness Profile", { exact: true });
-  const fullAccess = "builtin-permission-harness-full-access:1";
+  const fullAccess = "builtin-permission-harness-full-access:2";
   const defaultNotice = page.locator(".notice").filter({
     hasText: "默认配置已准备好",
   });
@@ -853,13 +853,13 @@ test("项目默认调度与 Profile 保存恢复，已配置项目不提示默�
   await expect(mode).toHaveValue("agent");
   await expect(profile).toHaveValue(fullAccess);
   await expect(profile.locator("option:checked")).toContainText(
-    "Harness 容器内全权限",
+    "Harness Full Access",
   );
   await expect(
     panel.getByLabel("Harness Profile（留空采用默认）", { exact: true }),
   ).toHaveCount(0);
   await mode.selectOption("manual");
-  await profile.selectOption("builtin-permission-harness-read-only:1");
+  await profile.selectOption("builtin-permission-harness-read-only:2");
   await adoptDefaults.click();
   await expect(mode).toHaveValue("agent");
   await expect(profile).toHaveValue(fullAccess);
@@ -890,11 +890,11 @@ test("项目默认调度与 Profile 保存恢复，已配置项目不提示默�
   await expect(profile).toHaveValue(fullAccess);
   await expect(defaultNotice).toHaveCount(0);
   await mode.selectOption("manual");
-  await profile.selectOption("builtin-permission-harness-read-only:1");
-  await saveProject("manual", "builtin-permission-harness-read-only:1");
+  await profile.selectOption("builtin-permission-harness-read-only:2");
+  await saveProject("manual", "builtin-permission-harness-read-only:2");
   await page.reload();
   await expect(mode).toHaveValue("manual");
-  await expect(profile).toHaveValue("builtin-permission-harness-read-only:1");
+  await expect(profile).toHaveValue("builtin-permission-harness-read-only:2");
   await expect(defaultNotice).toHaveCount(0);
   await expect(adoptDefaults).toHaveCount(0);
   await expect(

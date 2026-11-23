@@ -1,21 +1,21 @@
 {
-  "workflow_ref": "simplified-workflow-feature:9",
-  "task_workflow_ref": "simplified-workflow-task:4",
-  "model_ref": "builtin-model-gpt-6-1-sol-low:1",
-  "harness_ref": "builtin-harness-codex-managed:1",
+  "workflow_ref": "builtin-workflow-feature-development:3",
+  "task_workflow_ref": "builtin-workflow-task-development:3",
+  "model_ref": "builtin-model-gpt-6-2-sol-high:1",
+  "harness_ref": "builtin-harness-codex-managed:2",
   "sandbox_ref": "builtin-sandbox-docker:2",
-  "capability_ref": "simplified-capability-developer:8",
-  "standard_ref": "simplified-standard-engineering:9",
+  "capability_ref": "builtin-capability-developer-gpt-6-2-sol-codex:3",
+  "standard_ref": "builtin-standard-engineering-delivery:3",
   "role_agent_bindings": {
-    "builtin-role-analyst:1": "simplified-agent-analyst:8",
-    "builtin-role-architect:1": "simplified-agent-architect:8",
-    "builtin-role-project-manager:1": "simplified-agent-project-manager:11",
-    "builtin-role-developer:1": "simplified-agent-developer:8",
-    "builtin-role-tester:1": "simplified-agent-tester:9",
-    "builtin-role-reviewer:1": "simplified-agent-reviewer:8"
+    "builtin-role-analyst:1": "builtin-agent-gpt-6-2-sol-analyst:3",
+    "builtin-role-architect:1": "builtin-agent-gpt-6-2-sol-architect:3",
+    "builtin-role-project-manager:1": "builtin-agent-gpt-6-2-sol-project-manager:4",
+    "builtin-role-developer:1": "builtin-agent-gpt-6-2-sol-developer:3",
+    "builtin-role-tester:1": "builtin-agent-gpt-6-2-sol-tester:4",
+    "builtin-role-reviewer:1": "builtin-agent-gpt-6-2-sol-reviewer:4"
   },
-  "harness_permission_ref": "builtin-permission-harness-full-access:1",
-  "sandbox_permission_ref": "builtin-permission-sandbox-full-access:1",
+  "harness_permission_ref": "builtin-permission-harness-full-access:2",
+  "sandbox_permission_ref": "builtin-permission-sandbox-full-access:2",
   "orchestration": {
     "mode": "agent"
   },

@@ -439,6 +439,7 @@ pub fn template_catalog_has_custom_history(s: &EngineeringState) -> Result<bool>
     let factory = bundle()?;
     Ok(s.governance.iter().any(|row| {
         (template_definition_kind(&row.r#type)
+            && !template_history_retained(s, row)
             && !factory
                 .entries
                 .iter()
@@ -465,7 +466,10 @@ pub fn template_catalog_counts(s: &EngineeringState) -> BTreeMap<String, usize> 
             && !configuration::retired(s, r)
     }) {
         if !s.governance.iter().any(|n| {
-            n.r#type == r.r#type && n.definition_id == r.definition_id && n.version > r.version
+            n.r#type == r.r#type
+                && n.definition_id == r.definition_id
+                && n.version > r.version
+                && !template_history_retained(s, n)
         }) {
             *counts.entry(r.r#type.clone()).or_default() += 1;
         }
@@ -499,7 +503,10 @@ pub fn template_catalog_pristine(s: &EngineeringState) -> bool {
         .filter(|r| r.r#type != "workflow_draft" || r.data["published_revision_id"].is_null())
         .filter(|r| {
             !s.governance.iter().any(|n| {
-                n.r#type == r.r#type && n.definition_id == r.definition_id && n.version > r.version
+                n.r#type == r.r#type
+                    && n.definition_id == r.definition_id
+                    && n.version > r.version
+                    && !template_history_retained(s, n)
             })
         })
         .all(|r| {

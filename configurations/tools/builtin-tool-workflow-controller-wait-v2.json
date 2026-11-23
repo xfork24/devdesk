@@ -1,0 +1,51 @@
+{
+  "type": "tool",
+  "identity": "builtin-tool-workflow-controller-wait",
+  "revision": 2,
+  "name": "Wait for Workflow Events",
+  "scope": "global",
+  "data": {
+    "qualified_name": "workflow.controller.wait",
+    "implementation": "platform",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "instance_id": {
+          "type": "string"
+        },
+        "plan_revision_id": {
+          "type": "string"
+        },
+        "delivery_id": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 8192
+        },
+        "waiting_for": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
+        }
+      },
+      "required": [
+        "plan_revision_id",
+        "delivery_id",
+        "summary"
+      ],
+      "additionalProperties": false
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "capabilities": []
+  }
+}

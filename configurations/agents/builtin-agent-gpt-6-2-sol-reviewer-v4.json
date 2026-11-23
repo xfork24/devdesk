@@ -1,0 +1,10 @@
+{
+  "type": "agent",
+  "identity": "builtin-agent-gpt-6-2-sol-reviewer",
+  "revision": 4,
+  "name": "Independent Reviewer · GPT-6.2 Sol High",
+  "scope": "global",
+  "role_ref": "builtin-role-reviewer:1",
+  "capability_ref": "builtin-capability-reviewer-gpt-6-2-sol-codex:4",
+  "data": {}
+}

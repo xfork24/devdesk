@@ -26,12 +26,13 @@ import {
   RevisionSelect,
 } from "./configuration-ui";
 import { type Request, type Row } from "./rpc-types";
-const tabs = ["http", "mcp", "skills", "native", "calls"];
+const tabs = ["http", "mcp", "skills", "native", "internal", "calls"];
 const names: Record<string, string> = {
   http: "HTTP API",
   mcp: "MCP",
   skills: "Skills",
-  native: "原生工具",
+  native: "Harness Tools",
+  internal: "Internal Tools",
   calls: "调用记录",
 };
 const originOf = (value: string) => {
@@ -174,8 +175,8 @@ export function Integrations({
             ),
           }}
         />
-      ) : tab === "native" ? (
-        <NativeCatalog request={request} project={project} />
+      ) : tab === "native" || tab === "internal" ? (
+        <ToolCatalog key={tab} request={request} project={project} kind={tab} />
       ) : (
         <CallHistory
           key={`calls:${project?.id}`}
@@ -186,19 +187,23 @@ export function Integrations({
     </>
   );
 }
-function NativeCatalog({
+function ToolCatalog({
   request,
   project,
+  kind,
 }: {
   request: Request;
   project?: Row;
+  kind: "native" | "internal";
 }) {
+  const native = kind === "native";
+  const implementation = native ? "harness.native" : "platform";
   const { error, setError } = useActionFeedback();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<Row>();
   const [selection, setSelection] = useDraft(
-    `devdesk:native-tools:${project?.id || "global"}`,
+    `devdesk:${kind}-tools:${project?.id || "global"}`,
     () => ({ selected: "" }),
   );
   const selectedRef = useRef(selection.selected);
@@ -219,7 +224,7 @@ function NativeCatalog({
         if (controller.signal.aborted) return;
         if (
           record.type !== "tool" ||
-          record.data.implementation !== "harness.native"
+          record.data.implementation !== implementation
         )
           return;
         setRows((rows) => mergeConfigurationRecords(rows, [record]));
@@ -234,30 +239,37 @@ function NativeCatalog({
         if (!controller.signal.aborted) setError(String(error));
       }
     },
-    [request, project?.id, setSelection, setError],
+    [request, project?.id, implementation, setSelection, setError],
   );
   useEffect(() => {
     const controller = new AbortController();
     void loadCatalog(
-      (method, params, options) =>
-        request(method, params, { ...options, signal: controller.signal }),
+      request,
       project?.id,
+      false,
+      native ? undefined : "tool",
+      false,
+      controller.signal,
     )
       .then(async (rows) => {
         if (controller.signal.aborted) return;
         setRows(rows);
-        const target =
-          new URLSearchParams(location.search).get("config_object") ||
-          selectedRef.current;
-        if (target) {
-          const row = rows.find((row) => row.id === target);
-          if (
-            !row ||
-            (row.type === "tool" &&
-              row.data.implementation === "harness.native")
-          ) {
-            await choose(row || { id: target, _index: true });
-          }
+        const target = new URLSearchParams(location.search).get(
+          "config_object",
+        );
+        const tools = rows.filter(
+          (row) =>
+            row.type === "tool" && row.data.implementation === implementation,
+        );
+        const row = target
+          ? tools.find((row) => row.id === target) || {
+              id: target,
+              _index: true,
+            }
+          : tools.find((row) => row.id === selectedRef.current) ||
+            latest(tools)[0];
+        if (row) {
+          await choose(row);
         }
         if (!controller.signal.aborted) setLoading(false);
       })
@@ -268,55 +280,64 @@ function NativeCatalog({
         }
       });
     return () => controller.abort();
-  }, [request, project?.id, choose, setError]);
+  }, [request, project?.id, native, implementation, choose, setError]);
   const selected = detail?.id === selection.selected ? detail : undefined;
-  const nativeTools = latest(
+  const tools = latest(
     rows.filter(
       (row) =>
-        row.type === "tool" && row.data.implementation === "harness.native",
+        row.type === "tool" && row.data.implementation === implementation,
     ),
   ).map((row) =>
     selected && selected.definition_id === row.definition_id ? selected : row,
   );
-  const harnesses = selected
-    ? latest(
-        rows.filter(
-          (row) =>
-            row.type === "harness" &&
-            row.data.provider === (selected.data.harness_provider || "codex"),
-        ),
-      )
-    : [];
+  const harnesses =
+    native && selected
+      ? latest(
+          rows.filter(
+            (row) =>
+              row.type === "harness" &&
+              row.data.provider === (selected.data.harness_provider || "codex"),
+          ),
+        )
+      : [];
   return (
-    <section className="panel" aria-label="原生工具目录">
+    <section
+      className="panel"
+      aria-label={native ? "原生工具目录" : "Internal Tools"}
+    >
       <div className="panel-heading">
-        <h2>Harness 原生工具</h2>
+        <h2>{native ? "Harness Tools" : "Internal Tools"}</h2>
       </div>
       <div className="configuration-layout">
         <ConfigurationList
-          records={nativeTools}
+          records={tools}
           selectedId={selection.selected}
           ready={!loading}
-          autoSelectFirst={
-            !selection.selected &&
-            !new URLSearchParams(location.search).has("config_object")
-          }
+          autoSelectFirst={false}
           onSelect={choose}
-          emptyMessage="尚无 Harness 原生工具。"
+          emptyMessage={native ? "尚无 Harness 原生工具。" : "尚无内部工具。"}
         />
-        <div className="native-tool-detail">
-          <p role="note" aria-label="原生工具组说明">
-            原生工具随 Harness 提供，无需手工配置输入或输出
-            Schema。可访问范围以实际生效的 Permission 为准。
-          </p>
+        <div className="tool-catalog-detail">
+          {native && (
+            <p role="note" aria-label="原生工具组说明">
+              原生工具随 Harness 提供，无需手工配置输入或输出
+              Schema。可访问范围以实际生效的 Permission 为准。
+            </p>
+          )}
           {selected ? (
             <article
-              className="native-tool-group"
-              id={`configuration-native:${selected.id}`}
-              aria-label="原生工具详情"
+              className={native ? "native-tool-group" : undefined}
+              id={`configuration-${kind}:${selected.id}`}
+              aria-label={native ? "原生工具详情" : "内部工具详情"}
             >
               <h3>{displayText(selected.name)}</h3>
               <p>
+                {!native && (
+                  <>
+                    <code>{displayText(selected.data.qualified_name)}</code>{" "}
+                    ·{" "}
+                  </>
+                )}
                 v{selected.version} · {displayText(selected.scope)}
               </p>
               <ConfigurationUsage
@@ -341,19 +362,45 @@ function NativeCatalog({
                   {displayText(harness.data.runtime_version || "尚未定义")}
                 </p>
               ))}
-              {!harnesses.length ? (
+              {native && !harnesses.length ? (
                 <p className="muted">尚未定义匹配的 Harness。</p>
               ) : null}
+              {!native && <ToolContract tool={selected} />}
             </article>
           ) : (
             <p className="muted">
-              {loading ? "正在读取原生工具…" : "请选择左侧的原生工具。"}
+              {loading ? "正在读取工具…" : "请选择左侧的工具。"}
             </p>
           )}
           {error ? <p role="alert">{displayText(error)}</p> : null}
         </div>
       </div>
     </section>
+  );
+}
+function ToolContract({ tool }: { tool: Row }) {
+  const { input_schema, output_schema, runtime } = tool.data;
+  return (
+    <>
+      {runtime && (
+        <p>
+          执行环境 · Harness <code>{displayText(runtime.harness_ref)}</code> ·
+          Sandbox <code>{displayText(runtime.sandbox_ref)}</code>
+        </p>
+      )}
+      <details>
+        <summary>工具输入与输出合同</summary>
+        <pre>
+          {displayText(
+            JSON.stringify(
+              { input: input_schema, output: output_schema },
+              null,
+              2,
+            ),
+          )}
+        </pre>
+      </details>
+    </>
   );
 }
 function LinkedToolDefinition({
@@ -403,21 +450,7 @@ function LinkedToolDefinition({
               kind="tool"
             />
             <MarkdownPreview text={tool.data.description || ""} />
-            <details>
-              <summary>工具输入与输出合同</summary>
-              <pre>
-                {displayText(
-                  JSON.stringify(
-                    {
-                      input: tool.data.input_schema,
-                      output: tool.data.output_schema,
-                    },
-                    null,
-                    2,
-                  ),
-                )}
-              </pre>
-            </details>
+            <ToolContract tool={tool} />
           </>
         ) : (
           <p>{error ? displayText(error) : "正在读取工具定义…"}</p>

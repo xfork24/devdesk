@@ -707,8 +707,22 @@ impl Engine {
         {
             return None;
         }
+        if method == "query.project_workflow_summary" {
+            return Some(self.store.operational_read(method, p));
+        }
         Some((|| {
-            let s = self.store.snapshot()?;
+            let catalog;
+            let operational_state;
+            let s = if method == "query.configurations"
+                && p["kind"].as_str().is_some_and(|kind| !catalog_kind(kind))
+            {
+                // This compatibility query can return arbitrary historical record bodies.
+                operational_state = self.store.snapshot()?;
+                &operational_state
+            } else {
+                catalog = self.store.configuration_snapshot()?;
+                catalog.state.as_ref()
+            };
             let _span = self.store.observe_query("catalog.filter_and_project");
             if method == "query.roles" {
                 let all = s
@@ -716,10 +730,10 @@ impl Engine {
                     .iter()
                     .filter(|r| {
                         r.r#type == "role"
-                            && (p["include_archived"] == true || template_record_current(&s, r))
-                            && crate::configuration::visible(&s, r, p["project_id"].as_str())
+                            && (p["include_archived"] == true || template_record_current(s, r))
+                            && crate::configuration::visible(s, r, p["project_id"].as_str())
                             && (p["include_deleted"] == true
-                                || !crate::builtin_defaults::role_deleted(&s, r))
+                                || !crate::builtin_defaults::role_deleted(s, r))
                     })
                     .collect::<Vec<_>>();
                 let mut rows = all
@@ -764,26 +778,26 @@ impl Engine {
                         })
                         .max_by_key(|r| r.version);
                     let pinned = crate::templates::pinned_template_records(
-                        &s,
+                        s,
                         configuration.map(|r| &r.data),
                     );
-                    json!({"configuration":configuration,"pinned_records":pinned,"uses_archived_templates":pinned.iter().any(|r|!template_record_current(&s,r)),"standards":s.definitions.iter().filter(|d|d.family=="standard").collect::<Vec<_>>()})
+                    json!({"configuration":configuration,"pinned_records":pinned,"uses_archived_templates":pinned.iter().any(|r|!template_record_current(s,r)),"standards":s.definitions.iter().filter(|d|d.family=="standard").collect::<Vec<_>>()})
                 });
             }
             let rows: Vec<_> = s
                 .governance
                 .iter()
-                .filter(|r| p["include_archived"] == true || template_record_current(&s, r))
-                .filter(|r| crate::configuration::visible(&s, r, p["project_id"].as_str()))
+                .filter(|r| p["include_archived"] == true || template_record_current(s, r))
+                .filter(|r| crate::configuration::visible(s, r, p["project_id"].as_str()))
                 .rev()
-                .filter(|r| p["include_deleted"] == true || !crate::configuration::retired(&s, r))
+                .filter(|r| p["include_deleted"] == true || !crate::configuration::retired(s, r))
                 .filter(|r| {
                     p["include_history"] == true
                         || !s.governance.iter().any(|n| {
                             n.r#type == r.r#type
                                 && n.definition_id == r.definition_id
                                 && n.version > r.version
-                                && (p["include_archived"] == true || template_record_current(&s, n))
+                                && (p["include_archived"] == true || template_record_current(s, n))
                         })
                 })
                 .filter(|r| match method {
@@ -791,14 +805,11 @@ impl Engine {
                         ["workflow", "workflow_draft"].contains(&r.r#type.as_str())
                     }
                     "query.agent_instances" => r.r#type == "agent_instance",
-                    "query.project_workflow_summary" => {
-                        r.r#type == "workflow_instance" && r.data["parent_execution_id"].is_null()
-                    }
                     _ => p["kind"].as_str().map_or(
                         r.is_definition() || r.r#type == "agent_instance",
                         |kind| {
                             r.r#type == kind
-                                && (p["include_archived"] == true || template_record_current(&s, r))
+                                && (p["include_archived"] == true || template_record_current(s, r))
                         },
                     ),
                 })

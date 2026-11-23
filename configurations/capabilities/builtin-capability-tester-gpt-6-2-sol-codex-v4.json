@@ -1,0 +1,24 @@
+{
+  "type": "capability",
+  "identity": "builtin-capability-tester-gpt-6-2-sol-codex",
+  "revision": 4,
+  "name": "Test Engineering Capability · GPT-6.2 Sol High",
+  "scope": "global",
+  "harness_ref": "builtin-harness-codex-managed:2",
+  "model_ref": "builtin-model-gpt-6-2-sol-high:1",
+  "skills": [
+    "builtin-skill-engineering-context:4",
+    "builtin-skill-test-design:3",
+    "builtin-skill-deliverable-validation:1",
+    "builtin-skill-release-verification:3"
+  ],
+  "tools": [
+    "builtin-tool-codex-native:2",
+    "builtin-tool-workflow-outputs-read:3",
+    "builtin-tool-spec-lint:2"
+  ],
+  "spec_refs": [
+    "builtin-spec-test-design:2"
+  ],
+  "data": {}
+}

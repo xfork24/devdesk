@@ -78,7 +78,7 @@ pub fn queue_conversation_with(
     project: &str,
     configure: impl Fn(&EngineeringState, &mut RuntimeBinding) -> Result<()>,
 ) -> (Id, Id) {
-    queue_conversation_for_agent(e, project, "simplified-agent-analyst:8", configure)
+    queue_conversation_for_agent(e, project, "builtin-agent-gpt-6-2-sol-analyst:3", configure)
 }
 pub fn queue_conversation_for_agent(
     e: &Engine,
@@ -209,17 +209,22 @@ pub fn bind_default_permissions(e: &Engine) {
         (
             PermissionTargetKind::Harness,
             DEFAULT_HARNESS_ID,
-            "builtin-permission-harness-full-access:1",
+            "builtin-permission-harness-full-access:2",
         ),
         (
             PermissionTargetKind::Harness,
-            "builtin-harness-dsh-multi-provider:1",
-            "builtin-permission-harness-full-access:1",
+            "builtin-harness-dsh-multi-provider:2",
+            "builtin-permission-harness-full-access:2",
+        ),
+        (
+            PermissionTargetKind::Harness,
+            "builtin-harness-codex-managed:1",
+            "builtin-permission-harness-full-access:2",
         ),
         (
             PermissionTargetKind::Sandbox,
             DEFAULT_PERMISSION_SANDBOX,
-            "builtin-permission-sandbox-full-access:1",
+            "builtin-permission-sandbox-full-access:2",
         ),
     ] {
         if s.configuration(id).is_err() {

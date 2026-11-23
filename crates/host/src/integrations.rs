@@ -178,8 +178,9 @@ impl Workspace {
         } else {
             self.configuration.clone()
         };
-        let s = e.store.snapshot()?;
-        let binding: IntegrationBinding = s.configuration(&flow.binding_ref)?.decode()?;
+        let catalog = e.store.configuration_snapshot()?;
+        let binding: IntegrationBinding =
+            catalog.state.configuration(&flow.binding_ref)?.decode()?;
         let (permissions, image) = self.integration_permissions(&e, &binding)?;
         let executor = NativeTools::new(e.store.root())?;
         let vault = credentials::CredentialVault::new(&root)?;
@@ -264,15 +265,26 @@ impl Workspace {
                 self.sync_configuration(&e)?;
             }
             if method == "tool.call.artifact" {
-                let s = e.store.snapshot()?;
-                let r = s.configuration(params["target"].as_str().unwrap_or(""))?;
+                let id = params["target"].as_str().unwrap_or("");
+                let row = e
+                    .store
+                    .read_resources(&[concurrency::ResourceKey::new("governance", id)])?;
+                let record = row
+                    .into_iter()
+                    .next()
+                    .and_then(|r| r.value)
+                    .ok_or_else(|| err("not_found", format!("配置不存在: {id}")))?;
+                let r = ConfigurationRecord::from_storage(record)?;
                 require(
                     r.r#type == "tool_call"
-                        && configuration_visible(&s, r, e.store.project_id().as_deref()),
+                        && e.store
+                            .project_id()
+                            .is_none_or(|project| r.scope.visible_from(&Scope::project(project))),
                     "文件结果不属于当前作用域",
                 )?;
-                let receipt: ToolReceipt = serde_json::from_value(r.data["receipt"].clone())
-                    .map_err(|_| err("not_found", "文件调用尚无回执"))?;
+                let receipt: ToolReceipt =
+                    serde_json::from_value(e.store.restore_runtime_value(&r.data["receipt"])?)
+                        .map_err(|_| err("not_found", "文件调用尚无回执"))?;
                 let (bytes, mime) =
                     NativeTools::new(e.store.root())?.read_artifact(&r.id, &receipt)?;
                 use base64::Engine;
@@ -320,7 +332,8 @@ impl Workspace {
                         json!({"state":flow.id,"status":flow.status,"credential_ref":flow.credential_ref,"account":flow.account,"scopes":flow.scopes}),
                     );
                 }
-                let s = e.store.snapshot()?;
+                let catalog = e.store.configuration_snapshot()?;
+                let s = &catalog.state;
                 let binding_id = text(&params["payload"], "binding_ref")?;
                 let b = s.configuration(&binding_id)?;
                 let binding: IntegrationBinding = b.decode()?;
@@ -404,8 +417,9 @@ impl Workspace {
                     c.payload.get("operations").cloned().unwrap_or(json!([])),
                 )
                 .map_err(|_| err("invalid_params", "operations 无效"))?;
-                let state = e.store.snapshot()?;
-                let definition: IntegrationDefinition = state.configuration(&source)?.decode()?;
+                let catalog = e.store.configuration_snapshot()?;
+                let definition: IntegrationDefinition =
+                    catalog.state.configuration(&source)?.decode()?;
                 if let Some(servers) = document["servers"].as_array()
                     && !servers.is_empty()
                 {
@@ -486,10 +500,11 @@ impl Workspace {
                     };
                     if c.payload["markdown"].is_string()
                         && let Some(previous) = c.payload["source_revision_id"].as_str()
-                        && let Some(old) =
-                            e.store.snapshot()?.governance.iter().find(|r| {
-                                r.r#type == "skill_package" && r.definition_id == previous
-                            })
+                        && let Some(old) = e
+                            .store
+                            .configuration_snapshot()?
+                            .records("skill_package")
+                            .find(|r| r.r#type == "skill_package" && r.definition_id == previous)
                     {
                         let original: SkillPackage = old.decode()?;
                         package.files = original.files;
@@ -512,14 +527,15 @@ impl Workspace {
                 return result;
             }
             if method == "integration.discover" || method == "integration.test" {
-                let state = e.store.snapshot()?;
+                let catalog = e.store.configuration_snapshot()?;
+                let state = catalog.state.as_ref();
                 let key = text(&c.payload, "binding_ref")?;
                 let record = state.configuration(&key)?;
                 require(record.r#type == "integration_binding", "需要接入绑定修订")?;
                 let binding: IntegrationBinding = record.decode()?;
                 require(
                     devdesk_core::configuration_visible(
-                        &state,
+                        state,
                         record,
                         e.store.project_id().as_deref(),
                     ),
@@ -586,7 +602,8 @@ impl Workspace {
                 return Ok(result);
             }
             if method == "integration.publish_tools" {
-                let s = e.store.snapshot()?;
+                let catalog = e.store.configuration_snapshot()?;
+                let s = &catalog.state;
                 let discovery = s.configuration(&text(&c.payload, "discovery_ref")?)?;
                 require(discovery.r#type == "integration_discovery", "需要发现记录")?;
                 let requested: Scope = serde_json::from_value(
@@ -655,30 +672,20 @@ impl Workspace {
                 return e.execute_resolved("integration.tools.publish", c, &fp);
             }
             if method == "integration.delete" {
-                let state = e.store.snapshot()?;
+                let catalog = e.store.configuration_snapshot()?;
+                let state = catalog.state.as_ref();
                 let source = state.configuration(c.target.as_deref().unwrap_or(""))?;
-                let targets = devdesk_core::integration_deletion_targets(&state, source)?;
-                let mut offset = 0;
-                loop {
-                    let (projects, total) = self.global.projects(offset, 100)?;
-                    for project in &projects {
-                        let snapshot = SqliteStore::read_project_snapshot(
-                            Path::new(&self.global.root()),
-                            &project.id,
+                let targets = devdesk_core::integration_deletion_targets(state, source)?;
+                self.visit_project_catalogs(|project, catalog| {
+                    for target in &targets {
+                        require(
+                            devdesk_core::project_configuration_references(&catalog.state, target)
+                                .is_empty(),
+                            format!("项目 {} 仍引用 {}，请先换绑", project.title, target.name),
                         )?;
-                        for target in &targets {
-                            require(
-                                devdesk_core::project_configuration_references(&snapshot, target)
-                                    .is_empty(),
-                                format!("项目 {} 仍引用 {}，请先换绑", project.title, target.name),
-                            )?;
-                        }
                     }
-                    offset += projects.len();
-                    if offset >= total || projects.is_empty() {
-                        break;
-                    }
-                }
+                    Ok(())
+                })?;
             }
             e.execute(method, c)
         })())

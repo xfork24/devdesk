@@ -6,6 +6,7 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
+| [出厂模型与工程规范整理](default-configuration-refresh/PLAN.md) | [实施与验收](default-configuration-refresh/EXECUTION.md) | 完成。三种出厂 Model、隔离重置、真实 Feature 与三个 Task 闭环通过 |
 | [工作流故障恢复与升级](workflow-recovery/PLAN.md) | 实施中 | Agent 自修、经理接手、实际重跑预算、历史与人工升级 |
 | [工程库存储改造与百万级容量评估](project-payload-storage/PLAN.md) | [实施与验收](project-payload-storage/EXECUTION.md)、[容量与 I/O 报告](project-payload-storage/PERFORMANCE.md) | 正式工程库已迁移至 project 61，达到 120 MB 容量目标。部分相对 P95 探针仍有差距，百万级使用现有数据推算 |
 | [架构与代码文档重写](architecture-documentation-rewrite/PLAN.md) | [实施与验证](architecture-documentation-rewrite/EXECUTION.md) | 2026-11-19：P0–P5 完成；重写架构和代码手册，24 篇旧页合并删除，文件索引独立；文档/架构检查与 8 项检查器回归通过 |

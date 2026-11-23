@@ -1,0 +1,20 @@
+{
+  "type": "tool",
+  "identity": "builtin-tool-dsh-native",
+  "revision": 2,
+  "name": "DeepSeek Native Tools",
+  "scope": "global",
+  "data": {
+    "capabilities": [],
+    "harness_provider": "dsh",
+    "implementation": "harness.native",
+    "input_schema": {
+      "description": "DSH native tools; constrained by frozen permissions and work scope",
+      "type": "object"
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "qualified_name": "dsh.native"
+  }
+}

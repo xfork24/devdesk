@@ -2197,7 +2197,7 @@ fn dsh_native_group_is_available_and_rejects_cross_harness_composition() {
         json!({"name":"DSH model","data":{"provider":"deepseek","model":"deepseek-chat"}}),
     )
     .unwrap();
-    command(&e,"capability.create",None,json!({"name":"DSH native","model_ref":model["id"],"harness_ref":"builtin-harness-dsh-multi-provider:1","tools":[DEFAULT_DSH_NATIVE_TOOL_ID],"skills":[],"data":{}})).unwrap();
+    command(&e,"capability.create",None,json!({"name":"DSH native","model_ref":model["id"],"harness_ref":"builtin-harness-dsh-multi-provider:2","tools":[DEFAULT_DSH_NATIVE_TOOL_ID],"skills":[],"data":{}})).unwrap();
     assert!(command(&e,"capability.create",None,json!({"name":"Wrong harness","model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"tools":[DEFAULT_DSH_NATIVE_TOOL_ID],"skills":[],"data":{}})).unwrap_err().message.contains("原生工具组不适用"));
 }
 

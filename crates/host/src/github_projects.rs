@@ -111,8 +111,7 @@ impl Workspace {
                 .global
                 .reserve_project(&create, &devdesk_core::InvocationContext::human(None))?;
             let e = self.load_project(&pid, true)?;
-            self.sync_configuration(&e)?;
-            e.execute("project.create", create)?;
+            self.create_project_metadata(&e, &create)?;
             (pid, e)
         };
         self.sync_configuration(&e)?;
@@ -197,6 +196,16 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let w =
             Workspace::open_with_adapters(temp.path(), crate::test_runtime::adapters()).unwrap();
+        let defaults = devdesk_core::settings::read(w.global.as_ref()).unwrap();
+        let guards: Vec<_> = defaults
+            .versions
+            .into_iter()
+            .filter(|version| version.resource.id == "default_project_concurrency")
+            .collect();
+        w.dispatch(
+            "settings.update",
+            json!({"command_id":"project-quota","preconditions":guards,"payload":{"default_project_concurrency":11}}),
+        ).unwrap();
         let first = w
             .dispatch(
                 "project.open_github",
@@ -227,6 +236,7 @@ mod tests {
             .store
             .snapshot()
             .unwrap();
+        assert_eq!(state.projects[0].concurrency, 11);
         assert_eq!(state.repository_operations.len(), 1);
         assert!(matches!(
             state.repository_operations[0].action,

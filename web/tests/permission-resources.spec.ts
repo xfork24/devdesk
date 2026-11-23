@@ -324,7 +324,8 @@ test("Sandbox 版本独立绑定权限，范围预览固定当前目标并可查
     "MCP",
     "Skills",
     "Tools",
-    "Harness原生工具",
+    "Harness Tools",
+    "Internal Tools",
   ]);
   const editor = page.getByRole("region", {
     name: "Sandbox 管理",
@@ -362,7 +363,7 @@ test("Sandbox 版本独立绑定权限，范围预览固定当前目标并可查
   ).toBe(true);
   await panel
     .getByLabel("目标资源权限")
-    .selectOption("builtin-permission-sandbox-full-access:1");
+    .selectOption("builtin-permission-sandbox-full-access:2");
   await panel
     .getByRole("button", { name: "预检目标绑定", exact: true })
     .click();
@@ -452,7 +453,7 @@ test("Sandbox 版本独立绑定权限，范围预览固定当前目标并可查
     "sandbox",
   );
   await expect(page.getByLabel("版本化权限修订")).toHaveValue(
-    "builtin-permission-sandbox-full-access:1",
+    "builtin-permission-sandbox-full-access:2",
   );
   await page.getByRole("button", { name: "设置", exact: true }).click();
   await expect(

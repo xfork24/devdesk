@@ -248,6 +248,7 @@ export function WorkflowManager({
       : editorRef.current;
     if (target) {
       scrolledLocation.current = key;
+      if (target instanceof HTMLDetailsElement) target.open = true;
       target.scrollIntoView({ block: "center" });
     }
   }, [draft.selected, draft.view, draft.node]);
@@ -414,10 +415,10 @@ export function WorkflowManager({
     }));
   }
   function renameOutput(previous: string, next: string) {
-    if (!step || previous === next) return;
+    if (!step || previous === next) return false;
     if (!/^[A-Za-z0-9_-]{1,80}$/.test(next) || next in step.outputs) {
       setError("输出名称需唯一，使用字母、数字、下划线或连字符。");
-      return;
+      return false;
     }
     const steps = document.steps.map((item: Row) =>
       item.key === step.key
@@ -435,6 +436,7 @@ export function WorkflowManager({
     update(
       replacePort({ ...document, steps }, step.key, previous, next) as Row,
     );
+    return true;
   }
   const visibleRows = rows;
   return (
@@ -1493,6 +1495,7 @@ export function WorkflowManager({
                       </ActionSelect>
                     </label>
                     <WorkflowDeliveries
+                      key={`${draft.selected}:${step.key}`}
                       document={document}
                       step={step}
                       records={records}

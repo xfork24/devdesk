@@ -1,7 +1,7 @@
 import { displayText } from "../display-text";
 import { useEffect, useRef, useState } from "react";
 import { ActionButton } from "./ActionFeedback";
-import { type Request, type Row } from "./rpc-types";
+import { RpcResponseTimeout, type Request, type Row } from "./rpc-types";
 import { observeCatalogGeneration } from "../template-catalog";
 
 const names: Record<string, string> = {
@@ -22,6 +22,8 @@ const names: Record<string, string> = {
   integration_binding: "接入绑定",
   permission_profile: "Permission",
 };
+type ResetCommand = { command_id: string; payload: Row };
+
 export function TemplateSettings({
   request,
   refresh,
@@ -34,10 +36,8 @@ export function TemplateSettings({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [pending, setPending] = useState<ResetCommand>();
   const dialog = useRef<HTMLDialogElement>(null);
-  const command = useRef<{ command_id: string; payload: Row } | undefined>(
-    undefined,
-  );
   useEffect(() => {
     let active = true;
     void request("query.template_catalog")
@@ -58,7 +58,6 @@ export function TemplateSettings({
     try {
       const value = await request("query.template_reset_preview");
       setPreview(value);
-      command.current = undefined;
       if (!dialog.current?.open) dialog.current?.showModal();
     } catch (e) {
       setError(String(e));
@@ -66,80 +65,58 @@ export function TemplateSettings({
       setBusy(false);
     }
   }
-  async function updateFactory() {
+  async function applyReset(preserveCustom: boolean, retry?: ResetCommand) {
     if (busy) return;
+    const basis = preview;
     dialog.current?.close();
     setPreview(undefined);
     setBusy(true);
     setError("");
     setMessage("");
     try {
-      const basis = await request("query.template_reset_preview");
-      const result = await request("configuration.templates.reset", {
-        command_id: crypto.randomUUID(),
-        payload: {
-          expected_catalog_generation: basis.generation,
-          catalog_fingerprint: basis.catalog_fingerprint,
-          bundle_hash: basis.bundle_hash,
-          preserve_custom: true,
-        },
-      });
+      let command = retry;
+      if (!command) {
+        const preview = preserveCustom
+          ? await request("query.template_reset_preview")
+          : basis;
+        if (!preview) return;
+        command = {
+          command_id: crypto.randomUUID(),
+          payload: {
+            expected_catalog_generation: preview.generation,
+            catalog_fingerprint: preview.catalog_fingerprint,
+            bundle_hash: preview.bundle_hash,
+            ...(preserveCustom ? { preserve_custom: true } : {}),
+          },
+        };
+      }
+      setPending(command);
+      const result = await request("configuration.templates.reset", command);
+      setPending(undefined);
+      if (!preserveCustom) {
+        const params = new URLSearchParams(location.search);
+        params.delete("standard_id");
+        params.delete("standard_history");
+        history.replaceState(null, "", `?${params}`);
+      }
       observeCatalogGeneration(result.generation);
-      dialog.current?.close();
-      setPreview(undefined);
-      command.current = undefined;
       setMessage(
-        result.changed
-          ? "默认配置已恢复；自定义定义和已保存项目选择保留。"
-          : "已是当前默认配置；自定义定义保留。",
+        preserveCustom
+          ? result.changed
+            ? "默认配置已恢复，自定义定义和已保存项目选择保留。"
+            : "已是当前默认配置，自定义定义保留。"
+          : result.changed
+            ? `模板定义已恢复默认，共 ${Object.values(result.counts as Record<string, number>).reduce((a, b) => a + b, 0)} 项。`
+            : "模板定义已是当前默认版本。",
       );
-      setCatalog(await request("query.template_catalog"));
-      await refresh();
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function reset() {
-    if (!preview || busy) return;
-    setBusy(true);
-    setError("");
-    command.current ??= {
-      command_id: crypto.randomUUID(),
-      payload: {
-        expected_catalog_generation: preview.generation,
-        catalog_fingerprint: preview.catalog_fingerprint,
-        bundle_hash: preview.bundle_hash,
-      },
-    };
-    dialog.current?.close();
-    setPreview(undefined);
-    try {
-      const result = await request(
-        "configuration.templates.reset",
-        command.current,
-      );
-      const params = new URLSearchParams(location.search);
-      params.delete("standard_id");
-      params.delete("standard_history");
-      history.replaceState(null, "", `?${params}`);
-      observeCatalogGeneration(result.generation);
-      dialog.current?.close();
-      setPreview(undefined);
-      command.current = undefined;
-      setMessage(
-        result.changed
-          ? `模板定义已恢复默认，共 ${Object.values(result.counts as Record<string, number>).reduce((a, b) => a + b, 0)} 项。`
-          : "模板定义已是当前默认版本。",
-      );
-      setCatalog(await request("query.template_catalog"));
       try {
+        setCatalog(await request("query.template_catalog"));
         await refresh();
       } catch {
         setError("重置已提交，页面刷新失败，请重新载入。");
       }
     } catch (e) {
+      if (!(e instanceof RpcResponseTimeout)) setPending(undefined);
       setError(String(e));
     } finally {
       setBusy(false);
@@ -156,6 +133,7 @@ export function TemplateSettings({
         <p className="muted">
           可在弹窗中选择保留自定义定义并恢复默认配置，或完全重置配置。
         </p>
+        {busy && pending && <p role="status">正在更新模板定义…</p>}
         {message && <p role="status">{displayText(message)}</p>}
         {error && !preview && (
           <p role="alert" className="error">
@@ -163,8 +141,15 @@ export function TemplateSettings({
           </p>
         )}
       </div>
-      <ActionButton disabled={busy} onClick={openPreview}>
-        重置模板定义
+      <ActionButton
+        disabled={busy}
+        onClick={() =>
+          pending
+            ? applyReset(pending.payload.preserve_custom === true, pending)
+            : openPreview()
+        }
+      >
+        {pending && !busy ? "核对重置结果" : "重置模板定义"}
       </ActionButton>
       <dialog
         ref={dialog}
@@ -228,10 +213,14 @@ export function TemplateSettings({
           >
             取消
           </ActionButton>
-          <ActionButton disabled={busy} onClick={updateFactory}>
+          <ActionButton disabled={busy} onClick={() => applyReset(true)}>
             恢复默认配置
           </ActionButton>
-          <ActionButton className="primary" disabled={busy} onClick={reset}>
+          <ActionButton
+            className="primary"
+            disabled={busy}
+            onClick={() => applyReset(false)}
+          >
             {displayText(busy ? "正在重置…" : "重置配置")}
           </ActionButton>
         </div>

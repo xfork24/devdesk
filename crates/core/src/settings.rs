@@ -1,9 +1,13 @@
 //! Global preferences use independent resource revisions, never a project revision.
 use crate::{concurrency::*, *};
 
+pub const DEFAULT_GLOBAL_CONCURRENCY: usize = 32;
+pub(crate) const DEFAULT_PROJECT_CONCURRENCY: u32 = 8;
+
 #[derive(Debug, Clone, Serialize)]
 pub struct SettingsView {
     pub global_concurrency: usize,
+    pub default_project_concurrency: u32,
     pub default_harness: HarnessProvider,
     pub versions: Vec<ResourceVersion>,
 }
@@ -13,6 +17,8 @@ pub struct SettingsView {
 struct SettingsPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     global_concurrency: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    default_project_concurrency: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     default_harness: Option<HarnessProvider>,
 }
@@ -29,6 +35,7 @@ pub fn read(store: &dyn EngineeringStore) -> Result<SettingsView> {
     let keys = [
         ResourceKey::new("setting", "global_concurrency"),
         ResourceKey::new("setting", "default_harness"),
+        ResourceKey::new("setting", "default_project_concurrency"),
     ];
     let rows = store.read_resources(&keys)?;
     require(
@@ -40,7 +47,7 @@ pub fn read(store: &dyn EngineeringStore) -> Result<SettingsView> {
         "设置读取不完整",
     )?;
     let concurrency = match &rows[0].value {
-        None => 4,
+        None => DEFAULT_GLOBAL_CONCURRENCY,
         Some(value) => value
             .as_u64()
             .filter(|n| (1..=32).contains(n))
@@ -53,8 +60,17 @@ pub fn read(store: &dyn EngineeringStore) -> Result<SettingsView> {
             serde_json::from_value(value.clone()).map_err(|e| err("storage", e.to_string()))?
         }
     };
+    let default_project_concurrency = match &rows[2].value {
+        None => DEFAULT_PROJECT_CONCURRENCY,
+        Some(value) => value
+            .as_u64()
+            .filter(|n| (1..=32).contains(n))
+            .ok_or_else(|| err("storage", "已保存的单项目默认并发设置无效"))?
+            as u32,
+    };
     Ok(SettingsView {
         global_concurrency: concurrency,
+        default_project_concurrency,
         default_harness: provider,
         versions: rows
             .into_iter()
@@ -91,6 +107,9 @@ pub fn save(
         .map_err(|e| err("invalid_params", e.to_string()))?;
     if let Some(limit) = patch.global_concurrency {
         require((1..=32).contains(&limit), "全局并发额度需为 1—32")?;
+    }
+    if let Some(limit) = patch.default_project_concurrency {
+        require((1..=32).contains(&limit), "单项目默认并发额度需为 1—32")?;
     }
     let result = serde_json::to_value(&patch).map_err(|e| err("invalid_params", e.to_string()))?;
     let changes: Vec<_> = result

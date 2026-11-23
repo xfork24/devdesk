@@ -20,6 +20,46 @@ import {
   type ReactNode,
 } from "react";
 const RenderMarkdown = lazy(() => import("./MarkdownPreview"));
+
+export function ConfigurationDisclosure({
+  id,
+  name,
+  description,
+  defaultOpen = false,
+  children,
+}: {
+  id?: string;
+  name: string;
+  description?: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  // After mount, leave expansion to the browser so edits keep the row open.
+  const [initiallyOpen] = useState(defaultOpen);
+  return (
+    <details
+      id={id}
+      className="configuration-disclosure"
+      open={initiallyOpen}
+      onInvalid={(event) => {
+        event.currentTarget.open = true;
+      }}
+    >
+      <summary>
+        <span title={displayText(name)}>{displayText(name)}</span>
+        {description && (
+          <span title={displayText(description)}>
+            {displayText(description)}
+          </span>
+        )}
+      </summary>
+      <div className="form-grid configuration-disclosure-fields">
+        {children}
+      </div>
+    </details>
+  );
+}
+
 type RevisionSelectProps = {
   label: string;
   records: Row[];

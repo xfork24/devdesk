@@ -92,11 +92,12 @@ fn two_external_recipes_are_valid_and_forged_driver_capability_is_rejected() {
     let (_, e) = setup(dir.path());
     let state = e.store.snapshot().unwrap();
     let template = state
-        .configuration("builtin-harness-codex-managed:1")
+        .configuration("builtin-harness-codex-managed:2")
         .unwrap();
     for label in ["alpha", "beta"] {
         let mut source = template.source();
         source.identity = format!("h-{label}");
+        source.revision = 1;
         source.name = label.into();
         source.data["runtime_version"] = json!(label);
         let change = json!({"operations":[{"type":"create","source":source}]});

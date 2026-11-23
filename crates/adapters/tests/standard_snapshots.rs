@@ -166,7 +166,7 @@ fn child(e: &Engine, marker: &str) -> String {
     publish(
         e,
         json!({"schema_version":6,"stages":[{"key":"work","name":"材料处理"}],"inputs":{"item":{"delivery_ref":"fixture-delivery-object:1"}},"steps":[
-        {"key":"capture","name":"封存材料","stage":"work","spec_refs":[spec["id"]],"executor":{"type":"tool","tool_ref":"builtin-tool-materials-capture:1","arguments":{"marker":{"type":"constant","value":marker},"item":{"type":"source","source":{"step":"$input","port":"item"}}}},"outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}},
+        {"key":"capture","name":"封存材料","stage":"work","spec_refs":[spec["id"]],"executor":{"type":"tool","tool_ref":"builtin-tool-materials-capture:2","arguments":{"marker":{"type":"constant","value":marker},"item":{"type":"source","source":{"step":"$input","port":"item"}}}},"outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}},
         {"key":"finish","name":"结束核对","stage":"work","dependencies":["capture"],"executor":{"type":"control"}}
     ],"outputs":{"result":{"step":"capture","port":"result"}}}),
     )
@@ -255,7 +255,7 @@ fn tasks_in_one_feature_execute_distinct_standards_and_keep_history_after_switch
     let parent = publish(
         &e,
         json!({"schema_version":6,"stages":[{"key":"work","name":"工作"}],"steps":[
-            {"key":"create","name":"创建两项工作","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-tasks-create:1","arguments":{"tasks":{"type":"constant","value":[{"key":"a","title":"Task A","instructions":"按当前规范处理材料","dependencies":[]},{"key":"b","title":"Task B","instructions":"按当前规范处理材料","dependencies":[]}]}}},"outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}},
+            {"key":"create","name":"创建两项工作","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-tasks-create:2","arguments":{"tasks":{"type":"constant","value":[{"key":"a","title":"Task A","instructions":"按当前规范处理材料","dependencies":[]},{"key":"b","title":"Task B","instructions":"按当前规范处理材料","dependencies":[]}]}}},"outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}},
             {"key":"call","name":"逐工作采用规范","stage":"work","dependencies":["create"],"executor":{"type":"workflow","workflow_ref":a,"work_binding":{"input":"item","pointer":"/work_ref"},"foreach":{"source":{"step":"create","port":"result","pointer":"/tasks"},"item_input":"item","max_concurrency":2,"min_items":2}},"outputs":{"result":{"delivery_ref":"fixture-standard-collection:1"}}}
         ]}),
     );
@@ -511,10 +511,10 @@ fn input_and_agent_binding_changes_preserve_the_normative_snapshot() {
         json!({"title":"同一规范下的执行选择"}),
     )
     .unwrap();
-    let root=command(&e,"workflow.start",project["id"].as_str(),json!({"workflow_ref":workflow,"role_agent_bindings":{"builtin-role-analyst:1":"simplified-agent-analyst:8"},"inputs":{"data":{"value":"before"}}})).unwrap()["id"].as_str().unwrap().to_owned();
+    let root=command(&e,"workflow.start",project["id"].as_str(),json!({"workflow_ref":workflow,"role_agent_bindings":{"builtin-role-analyst:1":"builtin-agent-gpt-6-2-sol-analyst:3"},"inputs":{"data":{"value":"before"}}})).unwrap()["id"].as_str().unwrap().to_owned();
     let initial = row(&e, &root);
     let standard = initial.data["plan"]["standard_ref"].clone();
-    let source_record = row(&e, "simplified-agent-analyst:8");
+    let source_record = row(&e, "builtin-agent-gpt-6-2-sol-analyst:3");
     let mut payload = json!({"name":"同职责的另一执行者","scope":format!("project:{}", project["id"].as_str().unwrap()),"data":source_record.data});
     for (key, value) in &source_record.refs {
         payload[key] = value.clone();

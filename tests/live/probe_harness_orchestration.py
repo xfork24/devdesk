@@ -74,7 +74,7 @@ try:
         {"key":"optional","name":"可选检查","stage":"optional_check","executor":{"type":"control"},"dependencies":["calculate"]},
         {"key":"finish","name":"确认交接","stage":"handoff","executor":{"type":"control"},"dependencies":["optional"],"inputs":{"analysis":{"type":"source","source":{"step":"calculate","port":"result"}}}}
     ],"outputs":{"result":{"step":"calculate","port":"result"}}}
-    base_profile=next(r for r in defaults['records'] if r['id']=='builtin-permission-harness-read-only:1')
+    base_profile=next(r for r in defaults['records'] if r['id']=='builtin-permission-harness-read-only:2')
     policy={**base_profile['data']['policy'],'tool_refs':[capture]}
     permission=c.command('permission.profile.create',payload={'name':'Native calculation Profile','identity':'native-step-'+project,'target_kind':'harness','policy':policy})
     profile_ref=f"{permission['identity']}:{permission['revision']}"

@@ -345,7 +345,7 @@ fn discovery_intent_guards_the_exact_binding_and_service_sources_before_admissio
     );
     let binding = create(
         "integration.binding.create",
-        json!({"name":"Fixture binding","data":{"integration_ref":source["id"],"harness_ref":"builtin-harness-codex-managed:1","sandbox_ref":"builtin-sandbox-docker:2","allowed_origins":["https://example.test"],"allowed_tools":[]}}),
+        json!({"name":"Fixture binding","data":{"integration_ref":source["id"],"harness_ref":"builtin-harness-codex-managed:2","sandbox_ref":"builtin-sandbox-docker:2","allowed_origins":["https://example.test"],"allowed_tools":[]}}),
     );
     let c = Command {
         command_id: "discovery".into(),
@@ -461,7 +461,7 @@ fn discovery_sources(engine: &Engine) -> (Value, Value) {
     );
     let binding = create(
         "integration.binding.create",
-        json!({"name":"Discovery binding","data":{"integration_ref":source["id"],"harness_ref":"builtin-harness-codex-managed:1","sandbox_ref":"builtin-sandbox-docker:2","allowed_origins":["https://discovery.example.test"],"allowed_tools":[]}}),
+        json!({"name":"Discovery binding","data":{"integration_ref":source["id"],"harness_ref":"builtin-harness-codex-managed:2","sandbox_ref":"builtin-sandbox-docker:2","allowed_origins":["https://discovery.example.test"],"allowed_tools":[]}}),
     );
     (source, binding)
 }

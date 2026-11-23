@@ -15,6 +15,8 @@ export type Request = (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ) => Promise<any>;
 
+export class RpcResponseTimeout extends Error {}
+
 export type ResourceVersion = {
   resource: { kind: string; id: string };
   revision: number;

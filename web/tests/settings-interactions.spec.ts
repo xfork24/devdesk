@@ -52,7 +52,7 @@ test("MiniMax 默认选择、行左侧反馈、自动模型目录与原生工具
     else if (call.method === "codex.auth.models") {
       requested.push("openai");
       result = {
-        models: [{ model: "gpt-6.1-sol", displayName: "GPT-6.1 Sol" }],
+        models: [{ model: "gpt-6.2-sol", displayName: "GPT-6.2 Sol" }],
       };
     } else if (call.method === "models.list") {
       const provider = call.params.model_provider;
@@ -108,13 +108,13 @@ test("MiniMax 默认选择、行左侧反馈、自动模型目录与原生工具
   const model = page.getByRole("combobox", { name: "模型标识", exact: true });
   await expect(
     page.locator('.configuration-list button[aria-pressed="true"] strong'),
-  ).toHaveText("GLM 5.3 Flash");
+  ).toHaveText("GLM 5.3");
   await backend.selectOption("openai");
-  await expect(model.locator('option[value="gpt-6.1-sol"]')).toHaveCount(1);
+  await expect(model.locator('option[value="gpt-6.2-sol"]')).toHaveCount(1);
   await expect(
     page.getByRole("textbox", { name: "模型标识", exact: true }),
   ).toHaveCount(0);
-  await model.selectOption("gpt-6.1-sol");
+  await model.selectOption("gpt-6.2-sol");
   await backend.selectOption("minimax-cn");
   await expect(model).toHaveValue("");
   await expect(model.locator('option[value="MiniMax-M2.7"]')).toHaveCount(1);
@@ -162,7 +162,7 @@ test("MiniMax 默认选择、行左侧反馈、自动模型目录与原生工具
     path: info.outputPath("harness-provider-rows.png"),
     fullPage: true,
   });
-  await page.getByRole("tab", { name: "Harness原生工具", exact: true }).click();
+  await page.getByRole("tab", { name: "Harness Tools", exact: true }).click();
   const native = page.getByRole("region", {
     name: "原生工具目录",
     exact: true,
@@ -171,23 +171,26 @@ test("MiniMax 默认选择、行左侧反馈、自动模型目录与原生工具
     native.getByRole("heading", { name: "适用 Harness", exact: true }),
   ).toHaveCount(0);
   const dsh = native.locator(".native-tool-group").filter({
-    has: page.getByRole("heading", { name: "DSH 原生工具组", exact: true }),
+    has: page.getByRole("heading", {
+      name: "DeepSeek Native Tools",
+      exact: true,
+    }),
   });
   await native
     .locator(".configuration-list")
-    .getByRole("button", { name: /DSH 原生工具组/ })
+    .getByRole("button", { name: /DeepSeek Native Tools/ })
     .click();
   await expect(dsh).toContainText("适用 Harness：DeepSeek Harness 0.2.2-rc.1");
   await dsh
-    .getByRole("heading", { name: "DSH 原生工具组", exact: true })
+    .getByRole("heading", { name: "DeepSeek Native Tools", exact: true })
     .click();
   await expect(
-    page.getByRole("tab", { name: "Harness原生工具", exact: true }),
+    page.getByRole("tab", { name: "Harness Tools", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
   await page.getByRole("tab", { name: "Harness", exact: true }).click();
   await page
     .locator(".configuration-list")
-    .getByRole("button", { name: /DeepSeek Harness 多模型服务商/ })
+    .getByRole("button", { name: /DeepSeek Harness/ })
     .click();
   await expect(page.getByLabel("运行时后端", { exact: true })).toHaveValue(
     "dsh",
@@ -434,7 +437,7 @@ test("角色页使用 Agent 入口且可在讨论内创建身份", async ({ page
   const role = page.getByLabel("讨论角色", { exact: true });
   // Select an agent explicitly: the catalog now mixes codex and dsh stacks, so the
   // default option must not be relied on.
-  await role.selectOption("simplified-agent-analyst:8");
+  await role.selectOption("builtin-agent-gpt-6-2-sol-analyst:3");
   await expect(role).not.toHaveValue("");
   const agentId = await role.inputValue();
   const created = page.waitForResponse(
@@ -470,7 +473,7 @@ test("角色页使用 Agent 入口且可在讨论内创建身份", async ({ page
     page.getByRole("tab", { name: "Agent", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
   await expect(page.getByLabel("名称", { exact: true })).toHaveValue(
-    "精简版analyst Agent",
+    "Requirements Analyst · GPT-6.2 Sol High",
   );
   await expect(page).toHaveURL(
     new RegExp(`config_object=${encodeURIComponent(agentId)}(?:&|$)`),

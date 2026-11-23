@@ -26,7 +26,7 @@ def main():
     parser.add_argument('--binary', type=Path, required=True)
     parser.add_argument('--auth-file', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--model', default='gpt-6.1-sol')
+    parser.add_argument('--model', default='gpt-6.2-sol')
     args = parser.parse_args()
     report = {'passed': False, 'provider': 'codex', 'model': args.model,
               'platform': platform.system(), 'architecture': platform.machine()}
@@ -67,7 +67,7 @@ def main():
                 c.project = project
                 resources = c.rpc('query.permission_resources')
                 harness = next(t['target'] for t in resources['targets']
-                               if t['target']['revision_id'] == 'builtin-harness-codex-managed:1')
+                               if t['target']['revision_id'] == 'builtin-harness-codex-managed:2')
                 sandbox = next(t['target'] for t in resources['targets']
                                if t['target']['revision_id'] == resources['default_sandbox_ref'])
 
@@ -76,10 +76,10 @@ def main():
                                 'expected_revision': expected}]
                     if expected == 0:
                         changes.append({'target': sandbox, 'permission_revision_id':
-                                        'builtin-permission-sandbox-full-access:1', 'expected_revision': 0})
+                                        'builtin-permission-sandbox-full-access:2', 'expected_revision': 0})
                     return c.command('permission.bindings.apply', payload={'bindings': changes})
 
-                bind('builtin-permission-harness-full-access:1', 1)
+                bind('builtin-permission-harness-full-access:2', 1)
                 model = c.command('model.create', payload={'name': 'Controlled permission probe model', 'data': {
                     'provider': 'openai', 'model': args.model,
                     'parameters': {'reasoning_effort': 'low'}, 'capabilities': []}})['id']

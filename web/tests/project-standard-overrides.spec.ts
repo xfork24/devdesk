@@ -43,7 +43,7 @@ test("Standard 决定入口，项目覆盖保存来源与差异并在重载后�
     project_id: project.id,
   });
   const spec = catalog.records.find(
-    (r: any) => r.id === "builtin-spec-stage-prd:2",
+    (r: any) => r.id === "builtin-spec-stage-prd:4",
   );
   const generation = await rpc(page, "query.template_catalog");
   const replacement = await rpc(page, "spec.revise", {

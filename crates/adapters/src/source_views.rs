@@ -4,6 +4,57 @@ use std::collections::BTreeMap;
 const SOURCE_TEXT: &str = "\u{1e}devdesk-source-text:";
 const SNAPSHOT_PERMISSIONS: &str = "snapshot-permissions:";
 
+pub(super) struct ResetSources<'a> {
+    state: &'a EngineeringState,
+    records: BTreeMap<&'a str, &'a ConfigurationRecord>,
+    tasks: BTreeMap<&'a str, &'a ConfigurationRecord>,
+}
+
+impl<'a> ResetSources<'a> {
+    pub(super) fn new(state: &'a EngineeringState) -> Self {
+        let mut records = BTreeMap::new();
+        let mut tasks = BTreeMap::new();
+        for row in &state.governance {
+            records.entry(row.id.as_str()).or_insert(row);
+            if matches!(
+                row.r#type.as_str(),
+                "configured_execution_task" | "archived_configured_execution_task"
+            ) {
+                tasks.entry(row.definition_id.as_str()).or_insert(row);
+            }
+        }
+        Self {
+            state,
+            records,
+            tasks,
+        }
+    }
+
+    pub(super) fn restore(
+        &self,
+        value: &Value,
+        memo: &mut BTreeMap<String, Value>,
+    ) -> Result<Value> {
+        restore_value(self.state, value, memo, Some(self))
+    }
+}
+
+/// Plain rows and existing literal envelopes do not depend on the source catalog.
+pub(super) fn uses_source_codec(value: &Value) -> bool {
+    match value {
+        Value::String(text) => text.starts_with(SOURCE_TEXT),
+        Value::Array(items) => items.iter().any(uses_source_codec),
+        Value::Object(items) => match value["$source"].as_str() {
+            Some("literal") => false,
+            Some(_) => true,
+            None => items
+                .iter()
+                .any(|(key, item)| !factual_field(key) && uses_source_codec(item)),
+        },
+        _ => false,
+    }
+}
+
 /// Preserve literal protocol data without introducing references to removed sources.
 pub(super) fn seal_reset_evidence(value: &Value) -> Value {
     if let Some(text) = value.as_str().filter(|text| text.starts_with(SOURCE_TEXT)) {
@@ -326,6 +377,15 @@ pub(super) fn restore_with(
     value: &Value,
     memo: &mut BTreeMap<String, Value>,
 ) -> Result<Value> {
+    restore_value(state, value, memo, None)
+}
+
+fn restore_value(
+    state: &EngineeringState,
+    value: &Value,
+    memo: &mut BTreeMap<String, Value>,
+    index: Option<&ResetSources<'_>>,
+) -> Result<Value> {
     if let Value::String(text) = value
         && let Some(encoded) = text.strip_prefix(SOURCE_TEXT)
     {
@@ -333,10 +393,12 @@ pub(super) fn restore_with(
         if let Some(literal) = encoded["literal"].as_str() {
             return Ok(json!(literal));
         }
-        return Ok(json!(restore_with(state, &encoded, memo)?.to_string()));
+        return Ok(json!(
+            restore_value(state, &encoded, memo, index)?.to_string()
+        ));
     }
     if value["$source"].is_string() {
-        return restore_reference(state, value, memo);
+        return restore_reference(state, value, memo, index);
     }
     match value {
         Value::Object(items) => {
@@ -348,7 +410,7 @@ pub(super) fn restore_with(
                         if factual_field(k) {
                             v.clone()
                         } else {
-                            restore_with(state, v, memo)?
+                            restore_value(state, v, memo, index)?
                         },
                     ))
                 })
@@ -369,7 +431,7 @@ pub(super) fn restore_with(
         }
         Value::Array(items) => items
             .iter()
-            .map(|v| restore_with(state, v, memo))
+            .map(|v| restore_value(state, v, memo, index))
             .collect::<Result<Vec<_>>>()
             .map(Value::Array),
         _ => Ok(value.clone()),
@@ -381,14 +443,23 @@ fn restore_reference(
     state: &EngineeringState,
     value: &Value,
     memo: &mut BTreeMap<String, Value>,
+    index: Option<&ResetSources<'_>>,
 ) -> Result<Value> {
     let _span = performance::Span::new("source.restore_reference");
+    let lookup = |reference: &str| match index {
+        Some(index) => index
+            .records
+            .get(reference)
+            .copied()
+            .ok_or_else(|| err("not_found", format!("配置不存在: {reference}"))),
+        None => state.configuration(reference),
+    };
     match value["$source"].as_str() {
         Some("tool_definition") => {
             let reference = value["ref"]
                 .as_str()
                 .ok_or_else(|| err("storage", "工具定义缺少确切源引用"))?;
-            let source = state.configuration(reference)?;
+            let source = lookup(reference)?;
             require(source.r#type == "tool", "工具定义引用类型无效")?;
             source
                 .decode::<ToolDefinition>()
@@ -405,11 +476,9 @@ fn restore_reference(
                 .map(|d| json!(d))
         }
         Some("literal") => Ok(value["value"].clone()),
-        Some("source_definition") => Ok(json!(
-            state
-                .configuration(value["ref"].as_str().unwrap_or(""))?
-                .source()
-        )),
+        Some("source_definition") => {
+            Ok(json!(lookup(value["ref"].as_str().unwrap_or(""))?.source()))
+        }
         Some("task") => {
             // A delivered task is an immutable execution fact, including its actual
             // protocol contract. Re-rendering it with today's kernel rewrites history.
@@ -423,14 +492,16 @@ fn restore_reference(
                 if event.kind != ConversationEventKind::User {
                     continue;
                 }
-                let Some(record) = state.governance.iter().find(|r| {
-                    [
-                        "configured_execution_task",
-                        "archived_configured_execution_task",
-                    ]
-                    .contains(&r.r#type.as_str())
-                        && r.definition_id == event.turn_id
-                }) else {
+                let record = match index {
+                    Some(index) => index.tasks.get(event.turn_id.as_str()).copied(),
+                    None => state.governance.iter().find(|r| {
+                        matches!(
+                            r.r#type.as_str(),
+                            "configured_execution_task" | "archived_configured_execution_task"
+                        ) && r.definition_id == event.turn_id
+                    }),
+                };
+                let Some(record) = record else {
                     continue;
                 };
                 if value["task_digest"].is_string() && value["task_digest"] != record.data["digest"]
@@ -452,21 +523,20 @@ fn restore_reference(
                 }
             }
             let source = &value["source"];
-            let plan_record =
-                state.configuration(source["plan_revision_id"].as_str().unwrap_or(""))?;
-            let plan = restore_with(state, &plan_record.data["plan"], memo)?;
+            let plan_record = lookup(source["plan_revision_id"].as_str().unwrap_or(""))?;
+            let plan = restore_value(state, &plan_record.data["plan"], memo, index)?;
             devdesk_core::frozen_views::restore_task(state, value, plan)
         }
         Some("runtime_binding") => {
-            let configuration: AgentExecutionConfiguration =
-                serde_json::from_value(restore_with(state, &value["agent_configuration"], memo)?)
-                    .map_err(storage)?;
-            let model: ModelDefinition = state
-                .configuration(&configuration.model_revision_id)?
-                .decode()?;
-            let harness_record = state
-                .configuration(&configuration.harness_revision_id)?
-                .clone();
+            let configuration: AgentExecutionConfiguration = serde_json::from_value(restore_value(
+                state,
+                &value["agent_configuration"],
+                memo,
+                index,
+            )?)
+            .map_err(storage)?;
+            let model: ModelDefinition = lookup(&configuration.model_revision_id)?.decode()?;
+            let harness_record = lookup(&configuration.harness_revision_id)?.clone();
             let connection = state.resolve_model_connection(&model, &harness_record)?;
             let profile_digest = connection
                 .as_ref()
@@ -476,7 +546,7 @@ fn restore_reference(
                 })
                 .transpose()?;
             let permissions: Option<ExecutionPermissions> =
-                serde_json::from_value(restore_with(state, &value["permissions"], memo)?)
+                serde_json::from_value(restore_value(state, &value["permissions"], memo, index)?)
                     .map_err(storage)?;
             let writable = permissions
                 .as_ref()
@@ -527,13 +597,13 @@ fn restore_reference(
         Some("agent_execution") => {
             let reference = value["agent_ref"].as_str().unwrap_or("");
             let agent = state.resolve_agent(reference)?;
-            let model: ModelDefinition = state.configuration(&agent.model_ref)?.decode()?;
-            let lock = restore_with(state, &value["integration_lock"], memo)?;
+            let model: ModelDefinition = lookup(&agent.model_ref)?.decode()?;
+            let lock = restore_value(state, &value["integration_lock"], memo, index)?;
             Ok(json!(AgentExecutionConfiguration {
                 context_protocol: value["context_protocol"].as_str().map(str::to_owned),
                 agent_instance_id: value["instance_ref"].as_str().unwrap_or("").into(),
                 agent_revision_id: reference.into(),
-                composition_hash: state.configuration(reference)?.content_hash.clone(),
+                composition_hash: lookup(reference)?.content_hash.clone(),
                 model_revision_id: agent.model_ref,
                 harness_revision_id: agent.harness_ref,
                 model_provider: model.provider,
@@ -571,21 +641,16 @@ fn restore_reference(
             }
             Ok(compiled)
         }
-        Some("skill_package") => Ok(state
-            .configuration(value["ref"].as_str().unwrap_or(""))?
-            .data
-            .clone()),
-        Some("source") => Ok(json!(
-            state.configuration(value["ref"].as_str().unwrap_or(""))?
-        )),
+        Some("skill_package") => Ok(lookup(value["ref"].as_str().unwrap_or(""))?.data.clone()),
+        Some("source") => Ok(json!(lookup(value["ref"].as_str().unwrap_or(""))?)),
         Some("bound_permission") => Ok(json!(
             devdesk_core::frozen_views::restore_permission_choice(state, &value["choice"])?
         )),
         Some("bound_tool") => {
-            let tool = state.configuration(value["tool_ref"].as_str().unwrap_or(""))?;
-            let binding = state.configuration(value["binding_ref"].as_str().unwrap_or(""))?;
+            let tool = lookup(value["tool_ref"].as_str().unwrap_or(""))?;
+            let binding = lookup(value["binding_ref"].as_str().unwrap_or(""))?;
             let definition: ExternalTool = tool.decode()?;
-            let integration = state.configuration(&definition.integration_ref)?;
+            let integration = lookup(&definition.integration_ref)?;
             Ok(json!(BoundTool {
                 revision_id: tool.id.clone(),
                 content_hash: tool.content_hash.clone(),
@@ -624,10 +689,10 @@ mod tests {
         let selection = ExecutionPermissionSelection {
             sandbox_ref: defaults["sandbox_ref"].as_str().unwrap().into(),
             harness: PermissionSelection::Profile {
-                permission_revision_id: "builtin-permission-harness-full-access:1".into(),
+                permission_revision_id: "builtin-permission-harness-full-access:2".into(),
             },
             sandbox: PermissionSelection::Profile {
-                permission_revision_id: "builtin-permission-sandbox-full-access:1".into(),
+                permission_revision_id: "builtin-permission-sandbox-full-access:2".into(),
             },
         };
         let lock = resolve_permission_lock(

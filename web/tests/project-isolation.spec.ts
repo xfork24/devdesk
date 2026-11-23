@@ -12,7 +12,7 @@ async function rpc(page: Page, method: string, params: object = {}) {
   return value.result;
 }
 
-test("两个前端独立切换和编辑项目，刷新继续使用标签页 URL", async ({
+test("两个前端独立显示项目仓库位置，刷新继续使用标签页 URL", async ({
   page,
   browser,
 }) => {
@@ -27,13 +27,17 @@ test("两个前端独立切换和编辑项目，刷新继续使用标签页 URL"
   await expect(
     page.getByRole("button", { name: "设置", exact: true }),
   ).toBeVisible();
+  const paths = ["A", "B"].map((name) =>
+    join(tmpdir(), `devdesk-isolated-${name}`, "repository"),
+  );
   const projects = await Promise.all(
-    ["A", "B"].map((name) =>
+    ["A", "B"].map((name, index) =>
       rpc(page, "project.create", {
         command_id: crypto.randomUUID(),
         payload: {
           title: `独立项目 ${name}`,
           repository: `fixture/isolated-${name}`,
+          workspace: paths[index],
         },
       }),
     ),
@@ -48,62 +52,45 @@ test("两个前端独立切换和编辑项目，刷新继续使用标签页 URL"
         opens.push(method);
     }
   });
+  const dataPanel = (front: Page) =>
+    front.locator("section").filter({
+      has: front.getByRole("heading", { name: "数据与运行", exact: true }),
+    });
+  const repositoryRow = (front: Page) =>
+    dataPanel(front).locator(".setting-row").last();
   try {
     const second = await other.newPage();
     await Promise.all([
       page.goto(`/?tab=settings&project_id=${a}`),
       second.goto(`/?tab=settings&project_id=${b}`),
     ]);
-    await expect(
-      page.getByRole("heading", { name: "独立项目 A · Project 设置" }),
-    ).toBeVisible();
-    await expect(
-      second.getByRole("heading", { name: "独立项目 B · Project 设置" }),
-    ).toBeVisible();
+    for (const [front, path] of [
+      [page, paths[0]],
+      [second, paths[1]],
+    ] as const) {
+      const row = repositoryRow(front);
+      await expect(
+        row.getByRole("heading", { name: "repository 位置", exact: true }),
+      ).toBeVisible();
+      await expect(row.locator("code")).toHaveText(path);
+      await expect(row.getByRole("button")).toHaveCount(0);
+      await expect(row).not.toContainText("并发");
+    }
     for (const id of [b, a, b, a]) {
       await page.getByLabel("当前项目", { exact: true }).selectOption(id);
       await expect(page).toHaveURL(new RegExp(`project_id=${id}`));
+      await expect(repositoryRow(page).locator("code")).toHaveText(
+        id === a ? paths[0] : paths[1],
+      );
       await expect(second.getByLabel("当前项目", { exact: true })).toHaveValue(
         b,
       );
       await expect(second).toHaveURL(new RegExp(`project_id=${b}`));
+      await expect(repositoryRow(second).locator("code")).toHaveText(paths[1]);
     }
-    await expect(
-      page.getByRole("heading", { name: "独立项目 A · Project 设置" }),
-    ).toBeVisible();
-    for (const [front, name] of [
-      [page, "A"],
-      [second, "B"],
-    ] as const) {
-      const row = front.locator(".setting-row").filter({
-        has: front.getByRole("heading", {
-          name: `独立项目 ${name} · Project 设置`,
-          exact: true,
-        }),
-      });
-      await row.getByRole("button", { name: "编辑", exact: true }).click();
-      await front
-        .getByRole("dialog", { name: "编辑 Project" })
-        .getByLabel("名称", { exact: true })
-        .fill(`已编辑 ${name}`);
-    }
-    await Promise.all(
-      [page, second].map(async (front) => {
-        const dialog = front.getByRole("dialog", { name: "编辑 Project" });
-        await dialog.getByRole("button", { name: "确认", exact: true }).click();
-        await expect(dialog).toHaveCount(0);
-      }),
-    );
-    expect(
-      (await rpc(page, "query.ui_bootstrap", { project_id: a })).active_project
-        .title,
-    ).toBe("已编辑 A");
-    expect(
-      (await rpc(page, "query.ui_bootstrap", { project_id: b })).active_project
-        .title,
-    ).toBe("已编辑 B");
     await page.reload();
     await expect(page.getByLabel("当前项目", { exact: true })).toHaveValue(a);
+    await expect(repositoryRow(page).locator("code")).toHaveText(paths[0]);
     await expect(second.getByLabel("当前项目", { exact: true })).toHaveValue(b);
     const blank = await other.newPage();
     await blank.goto("/?tab=settings");
@@ -119,7 +106,7 @@ test("两个前端独立切换和编辑项目，刷新继续使用标签页 URL"
         .locator(`option[value="${b}"]`),
     ).toHaveCount(1);
     await expect(
-      blank.getByRole("heading", { name: /· Project 设置$/ }),
+      blank.getByRole("heading", { name: "repository 位置", exact: true }),
     ).toHaveCount(0);
     await blank.close();
     expect(opens).toEqual([]);

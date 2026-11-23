@@ -1,0 +1,10 @@
+{
+  "type": "agent",
+  "identity": "builtin-agent-minimax-developer",
+  "revision": 6,
+  "name": "Software Developer · MiniMax M3.1 Flash",
+  "scope": "global",
+  "capability_ref": "builtin-capability-developer-minimax-dsh:6",
+  "role_ref": "builtin-role-developer:1",
+  "data": {}
+}

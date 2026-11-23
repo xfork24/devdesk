@@ -29,7 +29,8 @@ const foundationTabs = [
   ["mcp", "MCP"],
   ["skills", "Skills"],
   ["http", "Tools"],
-  ["native", "Harness原生工具"],
+  ["native", "Harness Tools"],
+  ["internal", "Internal Tools"],
 ];
 
 export function ConfigurationPage({

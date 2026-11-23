@@ -29,6 +29,27 @@ pub(super) fn directory_query(method: &str) -> bool {
 }
 
 impl Workspace {
+    pub(super) fn visit_project_catalogs(
+        &self,
+        mut visit: impl FnMut(&Project, &ConfigurationCatalogSnapshot) -> Result<()>,
+    ) -> Result<()> {
+        let root = PathBuf::from(self.global.root());
+        let mut offset = 0;
+        loop {
+            crate::check_read_cancelled()?;
+            let (projects, total) = self.global.projects(offset, 100)?;
+            for project in &projects {
+                crate::check_read_cancelled()?;
+                let catalog = SqliteStore::read_project_catalog(&root, &project.id)?;
+                visit(project, &catalog)?;
+            }
+            offset += projects.len();
+            if offset >= total || projects.is_empty() {
+                return Ok(());
+            }
+        }
+    }
+
     fn configuration_bundle(&self) -> Result<(Arc<ConfigurationCatalogSnapshot>, String, Value)> {
         let global = self.global.configuration_snapshot()?;
         let engines: Vec<_> = self
@@ -154,6 +175,7 @@ impl Workspace {
         result["catalog_version"] = self.configuration_version(&engine)?;
         let settings = devdesk_core::settings::read(self.global.as_ref())?;
         result["global_concurrency"] = json!(settings.global_concurrency);
+        result["default_project_concurrency"] = json!(settings.default_project_concurrency);
         result["default_harness"] = json!(settings.default_harness);
         result["settings_versions"] = json!(settings.versions);
         result["data_root"] = json!(self.global.root());
@@ -219,6 +241,7 @@ impl Workspace {
         result["runtime_installations"] = json!(self.global.runtime_installations()?);
         let settings = devdesk_core::settings::read(self.global.as_ref())?;
         result["global_concurrency"] = json!(settings.global_concurrency);
+        result["default_project_concurrency"] = json!(settings.default_project_concurrency);
         result["default_harness"] = json!(settings.default_harness);
         result["settings_versions"] = json!(settings.versions);
         result["data_root"] = json!(self.global.root());
@@ -377,7 +400,7 @@ impl Workspace {
     }
 }
 
-fn local_directory(
+pub(super) fn local_directory(
     view: &ConfigurationCatalogSnapshot,
     global: &ConfigurationCatalogSnapshot,
     method: &str,
@@ -511,7 +534,7 @@ mod tests {
         let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
         let project = create(&w, "usage owner");
         let other = create(&w, "usage other");
-        let skill = "builtin-skill-engineering-context:3";
+        let skill = "builtin-skill-engineering-context:4";
         let params = json!({"id":skill,"project_id":project});
         let before = w
             .dispatch("query.configuration_usage", params.clone())
@@ -524,8 +547,8 @@ mod tests {
             .unwrap();
         assert_eq!(before["users"], factory["users"]);
         let payload = json!({"name":"Scoped usage","scope":format!("project:{project}"),
-            "model_ref":"builtin-model-gpt-6-1-sol-high:1","harness_ref":"builtin-harness-codex-managed:1",
-            "skills":[skill],"tools":["builtin-tool-codex-native:1"],"data":{}});
+            "model_ref":"builtin-model-gpt-6-2-sol-high:1","harness_ref":"builtin-harness-codex-managed:2",
+            "skills":[skill],"tools":["builtin-tool-codex-native:2"],"data":{}});
         let capability = w
             .dispatch(
                 "capability.create",
@@ -578,7 +601,7 @@ mod tests {
         let delivery = w
             .dispatch(
                 "query.configuration_usage",
-                json!({"id":"builtin-delivery-prd:3"}),
+                json!({"id":"builtin-delivery-prd:5"}),
             )
             .unwrap();
         let locations = delivery["users"].as_array().unwrap();
@@ -593,7 +616,7 @@ mod tests {
         let recipe = w
             .dispatch(
                 "query.configuration_usage",
-                json!({"id":"simplified-delivery-test-recipe:1"}),
+                json!({"id":"builtin-delivery-test-design:2"}),
             )
             .unwrap();
         assert!(
@@ -608,7 +631,7 @@ mod tests {
         let trace = performance::Trace::start();
         w.dispatch(
             "query.configuration_usage",
-            json!({"id":"builtin-delivery-prd:3"}),
+            json!({"id":"builtin-delivery-prd:5"}),
         )
         .unwrap();
         let measured = trace.finish();

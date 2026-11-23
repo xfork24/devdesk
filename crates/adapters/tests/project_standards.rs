@@ -141,7 +141,7 @@ fn project_override_rewrites_the_graph_and_permissions_without_changing_frozen_f
         .into_iter()
         .find(|r| r.r#type == "workflow_instance" && r.data["owner_id"] == fid)
         .unwrap();
-    let old_spec = original.configuration("builtin-spec-stage-prd:2").unwrap();
+    let old_spec = original.configuration("builtin-spec-stage-prd:4").unwrap();
     let mut data = old_spec.data.clone();
     data["body"] = json!(format!(
         "{}\n项目新增检查要求。",
@@ -323,9 +323,9 @@ fn project_standard_rejects_stale_duplicate_and_wrong_type_overrides_atomically(
             .contains("预览")
     );
     for overrides in [
-        json!([{"source_ref":"builtin-spec-stage-prd:2","replacement_ref":defaults["workflow_ref"]}]),
-        json!([{"source_ref":"not-in-snapshot:1","replacement_ref":"builtin-spec-stage-prd:2"}]),
-        json!([{"source_ref":"builtin-spec-stage-prd:2","replacement_ref":"builtin-spec-stage-architecture:2"},{"source_ref":"builtin-spec-stage-prd:2","replacement_ref":"builtin-spec-stage-architecture:2"}]),
+        json!([{"source_ref":"builtin-spec-stage-prd:4","replacement_ref":defaults["workflow_ref"]}]),
+        json!([{"source_ref":"not-in-snapshot:1","replacement_ref":"builtin-spec-stage-prd:4"}]),
+        json!([{"source_ref":"builtin-spec-stage-prd:4","replacement_ref":"builtin-spec-design-document:2"},{"source_ref":"builtin-spec-stage-prd:4","replacement_ref":"builtin-spec-design-document:2"}]),
     ] {
         assert!(
             cmd(

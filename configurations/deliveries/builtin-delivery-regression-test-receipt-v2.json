@@ -1,0 +1,19 @@
+{
+  "type": "delivery_type",
+  "identity": "builtin-delivery-regression-test-receipt",
+  "revision": 2,
+  "name": "Regression Test Receipt",
+  "scope": "global",
+  "data": {
+    "format": "json",
+    "producer": {
+      "kind": "platform",
+      "tools": [
+        "tests.project"
+      ]
+    }
+  },
+  "spec_refs": [
+    "builtin-spec-platform-evidence:2"
+  ]
+}
