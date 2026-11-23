@@ -1,9 +1,9 @@
 //! Versioned publication uses a test-only OS vault port. No system key is stored.
-use devdesk_adapters::{FileArtifacts, GlobalStore, SqliteStore};
+use devdesk_adapters::{FileArtifacts, GlobalStore, SqliteStore, permission_profiles};
 use devdesk_core::{
-    Engine, EngineeringStore, InvocationContext, concurrency::*, credential_updates::*,
+    Command, Engine, EngineeringStore, InvocationContext, concurrency::*, credential_updates::*,
 };
-use devdesk_domain::{ProviderFacts, Result, configuration_hash, err};
+use devdesk_domain::{ProviderFacts, Result, configuration_hash, err, template_catalog_generation};
 use serde_json::json;
 use std::{
     collections::BTreeMap,
@@ -85,6 +85,67 @@ fn fixture(root: &std::path::Path) -> (Arc<GlobalStore>, String) {
 fn command(id: &str, provider: &str, revision: u64) -> ConfigureCredential {
     parse(&json!({"command_id":id,"expected_revision":revision,"provider":"dsh","model_provider":"minimax-cn","provider_ref":provider,"api_key":"dummy-test-key-12345"})).unwrap()
 }
+#[test]
+fn factory_reset_preserves_the_provider_reference_but_fences_an_in_flight_save() {
+    let root = tempfile::tempdir().unwrap();
+    let (store, provider) = fixture(root.path());
+    let engine = Engine::new(
+        store.clone(),
+        Arc::new(FileArtifacts::new(root.path().to_owned())),
+        runtime::adapters(),
+    );
+    let reset = move |command_id: &str| {
+        let before = engine.store.configuration_snapshot().unwrap();
+        let reset: Command = serde_json::from_value(json!({
+            "command_id":command_id,"payload":{"preserve_custom":false}
+        }))
+        .unwrap();
+        let result = engine
+            .reset_factory_catalog(
+                &reset,
+                command_id,
+                &json!({"generation":template_catalog_generation(&before.state),"pristine":false}),
+                &permission_profiles::permission_contract,
+            )
+            .unwrap();
+        assert_eq!(result["changed"], true);
+    };
+    reset("first-reset");
+    let (identity, _) = provider.rsplit_once(':').unwrap();
+    let head = store
+        .read_resources(&[ResourceKey::new("source_head", identity)])
+        .unwrap()
+        .remove(0);
+    let logical_head = head.value.unwrap();
+    assert_eq!(logical_head["reference"], provider);
+    assert!(head.revision > logical_head["revision"].as_u64().unwrap());
+
+    let vault = Vault::default();
+    let save = |request: &ConfigureCredential| {
+        configure(
+            store.as_ref(),
+            &vault,
+            request,
+            &InvocationContext::human(None),
+        )
+    };
+    let first = save(&command("save-after-reset", &provider, 0)).unwrap();
+    assert_eq!(first.result["credential_version"]["revision"], 1);
+
+    *vault.after_store.lock().unwrap() = Some(Box::new(move || reset("second-reset")));
+    let in_flight = command("save-during-reset", &provider, 1);
+    assert_eq!(save(&in_flight).unwrap_err().code, "revision_conflict");
+    let calls = vault.calls.load(Ordering::Relaxed);
+    assert_eq!(save(&in_flight).unwrap_err().code, "revision_conflict");
+    assert_eq!(vault.calls.load(Ordering::Relaxed), calls);
+    let binding = store.read_resources(&[binding_key("minimax-cn")]).unwrap();
+    assert_eq!(binding[0].revision, 1);
+    assert_eq!(binding[0].value.as_ref(), Some(&first.result["reference"]));
+
+    let refreshed = save(&command("save-after-second-reset", &provider, 1)).unwrap();
+    assert_eq!(refreshed.result["credential_version"]["revision"], 2);
+}
+
 #[test]
 fn one_hundred_original_version_publications_have_one_winner() {
     let root = tempfile::tempdir().unwrap();

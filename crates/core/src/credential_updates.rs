@@ -128,14 +128,14 @@ pub fn configure(
         if rows[0].revision != command.expected_revision {
             return Err(err("revision_conflict", "凭据引用已被修改"));
         }
-        if rows[3].revision != source_revision
-            || rows[3]
-                .value
-                .as_ref()
-                .and_then(|value| value["reference"].as_str())
-                != Some(command.provider_ref.as_str())
-        {
-            return Err(err("revision_conflict", "模型服务商源已变化"));
+        let provider_changed = || err("revision_conflict", "模型服务商源已变化");
+        // The public source revision describes the head's value. A factory
+        // reset can recreate that same reference while advancing its CAS epoch.
+        if !rows[3].value.as_ref().is_some_and(|head| {
+            head["reference"].as_str() == Some(command.provider_ref.as_str())
+                && head["revision"].as_u64() == Some(source_revision)
+        }) {
+            return Err(provider_changed());
         }
         let definition: SourceDefinition = serde_json::from_value(
             rows[2]
@@ -167,15 +167,27 @@ pub fn configure(
             &token[16..20],
             &token[20..32]
         );
-        let prepared = json!({"status":"prepared","fingerprint":fingerprint,"candidate_id":candidate_id,"provider_ref":command.provider_ref,"expected_revision":command.expected_revision});
-        if let Some(previous) = &rows[1].value {
+        let mut prepared = json!({"status":"prepared","fingerprint":fingerprint,"candidate_id":candidate_id,"provider_ref":command.provider_ref,"expected_revision":command.expected_revision});
+        let previous = rows[1].value.as_ref();
+        let provider_epochs = json!({"source":rows[2].revision,"head":rows[3].revision});
+        if previous.is_none_or(|intent| intent.get("provider_epochs").is_some()) {
+            prepared["provider_epochs"] = provider_epochs;
+        } else if rows[3].revision != source_revision {
+            // Older intents were admitted only when the head epoch matched the
+            // public revision. Keep that guard when resuming those intents.
+            return Err(provider_changed());
+        }
+        if let Some(previous) = previous {
+            if previous.get("provider_epochs") != prepared.get("provider_epochs") {
+                return Err(provider_changed());
+            }
             require(previous == &prepared, "凭据意图与原始命令不符")?;
             require(rows[1].revision == 1, "凭据意图状态无效")?;
         }
         let dependencies = vec![
             version(binding.clone(), command.expected_revision),
             version(source, rows[2].revision),
-            version(head, source_revision),
+            version(head, rows[3].revision),
         ];
         if rows[1].value.is_none() {
             let mut guards = dependencies.clone();
