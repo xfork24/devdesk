@@ -6,7 +6,7 @@ pub const DEFAULT_HARNESS_ID: &str = "builtin-harness-codex-managed:2";
 
 pub const DEFAULT_SANDBOX_ID: &str = "builtin-sandbox-docker:2";
 
-pub const DEFAULT_STANDARD_ID: &str = "builtin-standard-engineering-delivery:3";
+pub const DEFAULT_STANDARD_ID: &str = "builtin-standard-engineering-delivery:5";
 
 pub const DEFAULT_DSH_NATIVE_TOOL_ID: &str = "builtin-tool-dsh-native:2";
 

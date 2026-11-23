@@ -69,6 +69,11 @@ pub fn configuration_edges(record: &ConfigurationRecord) -> Result<Vec<Configura
     match record.r#type.as_str() {
         "workflow" => {
             let _: WorkflowDefinition = record.decode()?;
+            add(
+                "/data/orchestrator_role_ref".into(),
+                "role",
+                &data["orchestrator_role_ref"],
+            )?;
             for (i, stage) in data["stages"].as_array().into_iter().flatten().enumerate() {
                 add(
                     format!("/data/stages/{i}/default_role_ref"),

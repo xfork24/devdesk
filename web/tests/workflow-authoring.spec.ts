@@ -364,6 +364,11 @@ test("Workflow 通用步骤保存发布并恢复草稿，执行确认绑定确�
   const editor = page.getByRole("region", { name: "工作流程管理" });
   const name = "业务确认 " + crypto.randomUUID().slice(0, 6);
   await editor.getByLabel("流程名称", { exact: true }).fill(name);
+  const orchestrator = editor.getByLabel("编排角色", { exact: true });
+  await orchestrator.selectOption("builtin-role-project-manager:1");
+  await expect(
+    orchestrator.locator("option[value]:not([value=''])"),
+  ).toHaveText([/项目经理/]);
   await editor.getByRole("button", { name: "添加步骤", exact: true }).click();
   await editor.getByLabel("步骤名称", { exact: true }).fill("确认调查范围");
   await editor.getByLabel("执行方式", { exact: true }).selectOption("control");
@@ -394,6 +399,9 @@ test("Workflow 通用步骤保存发布并恢复草稿，执行确认绑定确�
     (r: any) => r.type === "workflow" && r.name === name,
   );
   expect(workflow.data.schema_version).toBe(6);
+  expect(workflow.data.orchestrator_role_ref).toBe(
+    "builtin-role-project-manager:1",
+  );
   expect(workflow.data.steps[0].executor.type).toBe("control");
   const project = await rpc(page, "project.create", {
     command_id: crypto.randomUUID(),

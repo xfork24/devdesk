@@ -11,6 +11,17 @@ import {
 } from "./configuration-state";
 import { RevisionSelect } from "./configuration-ui";
 import { type Row, type Request } from "./rpc-types";
+
+const isHarnessProfile = (row: Row) =>
+  row.type === "permission_profile" && row.data?.target_kind === "harness";
+const isSandboxProfile = (row: Row) =>
+  row.type === "permission_profile" && row.data?.target_kind === "sandbox";
+const isSandbox = (row: Row) => row.type === "sandbox";
+const roleIdentity = (reference: string) => reference.replace(/:[1-9]\d*$/, "");
+const agentForRole = (role: string) => (row: Row) =>
+  row.type === "agent" &&
+  typeof row.role_ref === "string" &&
+  roleIdentity(row.role_ref) === roleIdentity(role);
 export function ProjectManager({
   request: parentRequest,
   project,
@@ -58,7 +69,6 @@ export function ProjectManager({
   const [draft, setDraft] = useDraft(
     `devdesk:standard-project-v2:${project?.id || "global"}`,
     () => ({
-      orchestrator_role_ref: "",
       harness_permission_ref: "",
       sandbox_ref: "",
       sandbox_permission_ref: "",
@@ -132,7 +142,6 @@ export function ProjectManager({
     const selection = {
       sandbox_ref: data?.sandbox_ref || "",
       sandbox_permission_ref: data?.sandbox_permission_ref || "",
-      orchestrator_role_ref: data?.orchestrator_role_ref || "",
       harness_permission_ref: harnessProfile,
       workflow_ref: data?.workflow_ref || "",
       standard_ref:
@@ -242,9 +251,28 @@ export function ProjectManager({
     draft.standard_overrides,
     draft.harness_permission_ref,
   ]);
-  const managerRole = records.find(
-    (r) => r.type === "role" && r.id === defaults?.orchestrator_role_ref,
-  );
+  const orchestrationRoles = new Map<
+    string,
+    { name: string; workflows: string[] }
+  >();
+  for (const workflow of requirements?.orchestration ?? []) {
+    const role = orchestrationRoles.get(workflow.role_id);
+    if (role) role.workflows.push(workflow.workflow_name);
+    else
+      orchestrationRoles.set(workflow.role_id, {
+        name: workflow.role_name,
+        workflows: [workflow.workflow_name],
+      });
+  }
+  function bindAgent(role: string, agent: string) {
+    captureFeedback();
+    setDraft((current) => {
+      const bindings = { ...current.role_agent_bindings };
+      if (agent) bindings[role] = agent;
+      else delete bindings[role];
+      return { ...current, role_agent_bindings: bindings };
+    });
+  }
   const standards = records.filter(
     (r) => r.type === "standard" && Array.isArray(r.root_workflow_refs),
   );
@@ -267,7 +295,6 @@ export function ProjectManager({
           test_configuration: draft.test_configuration?.trim()
             ? JSON.parse(draft.test_configuration)
             : null,
-          orchestrator_role_ref: draft.orchestrator_role_ref || null,
           harness_permission_ref: draft.harness_permission_ref,
           sandbox_ref: draft.sandbox_ref || undefined,
           sandbox_permission_ref: draft.sandbox_permission_ref || undefined,
@@ -343,7 +370,6 @@ export function ProjectManager({
                     sandbox_ref: defaults.sandbox_ref || "",
                     sandbox_permission_ref:
                       defaults.sandbox_permission_ref || "",
-                    orchestrator_role_ref: defaults.orchestrator_role_ref,
                     harness_permission_ref:
                       defaults.harness_permission_ref || "",
                     workflow_ref: defaults.workflow_ref,
@@ -737,11 +763,9 @@ export function ProjectManager({
               </label>
               <RevisionSelect
                 label="Harness Profile"
-                records={records.filter(
-                  (r) =>
-                    r.type === "permission_profile" &&
-                    r.data.target_kind === "harness",
-                )}
+                records={records.filter(isHarnessProfile)}
+                accepts={isHarnessProfile}
+                historyKind="permission_profile"
                 value={draft.harness_permission_ref}
                 onChange={(harness_permission_ref) =>
                   setDraft({
@@ -752,83 +776,50 @@ export function ProjectManager({
               />
               <RevisionSelect
                 label="Sandbox"
-                records={records.filter((r) => r.type === "sandbox")}
+                records={records.filter(isSandbox)}
+                accepts={isSandbox}
                 value={draft.sandbox_ref}
                 onChange={(sandbox_ref) => setDraft({ ...draft, sandbox_ref })}
               />
               <RevisionSelect
                 label="Sandbox Profile"
-                records={records.filter(
-                  (r) =>
-                    r.type === "permission_profile" &&
-                    r.data.target_kind === "sandbox",
-                )}
+                records={records.filter(isSandboxProfile)}
+                accepts={isSandboxProfile}
+                historyKind="permission_profile"
                 value={draft.sandbox_permission_ref}
                 onChange={(sandbox_permission_ref) =>
                   setDraft({ ...draft, sandbox_permission_ref })
                 }
               />
-              <div className="project-configuration-row project-orchestration-agent-fields">
-                <label>
-                  编排角色
-                  <select
-                    aria-label="编排角色"
-                    value={draft.orchestrator_role_ref}
-                    onChange={(e) =>
-                      setDraft({
-                        ...draft,
-                        orchestrator_role_ref: e.target.value,
-                      })
-                    }
-                  >
-                    <option value="">仅手动操作工作流</option>
-                    {records
-                      .filter(
-                        (r) =>
-                          r.type === "role" &&
-                          managerRole &&
-                          r.definition_id === managerRole.definition_id,
-                      )
-                      .map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {displayText(r.name)}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                {draft.orchestrator_role_ref && (
-                  <RevisionSelect
-                    label="编排 Agent"
-                    records={records.filter(
-                      (r) =>
-                        r.type === "agent" &&
-                        records.some(
-                          (role) =>
-                            role.type === "role" &&
-                            role.id === r.role_ref &&
-                            role.id === draft.orchestrator_role_ref,
-                        ),
-                    )}
-                    value={
-                      draft.role_agent_bindings[draft.orchestrator_role_ref] ||
-                      ""
-                    }
-                    onChange={(value) =>
-                      setDraft({
-                        ...draft,
-                        role_agent_bindings: {
-                          ...draft.role_agent_bindings,
-                          [draft.orchestrator_role_ref]: value,
-                        },
-                      })
-                    }
-                  />
-                )}
-              </div>
+              {orchestrationRoles.size > 0 && (
+                <div className="project-configuration-row project-orchestration-agent-fields">
+                  {[...orchestrationRoles].map(([roleId, role]) => {
+                    const accepts = agentForRole(roleId);
+                    return (
+                      <div key={roleId}>
+                        <RevisionSelect
+                          label={
+                            orchestrationRoles.size === 1
+                              ? "编排 Agent"
+                              : `${role.workflows.join(" / ")} 编排 Agent`
+                          }
+                          records={records.filter(accepts)}
+                          accepts={accepts}
+                          historyKind="agent"
+                          required={orchestration.mode === "agent"}
+                          value={draft.role_agent_bindings[roleId] || ""}
+                          onChange={(value) => bindAgent(roleId, value)}
+                        />
+                        <p className="muted">
+                          {displayText(role.workflows.join(" / "))} ·{" "}
+                          {displayText(role.name)}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-            <p className="muted">
-              项目管理与流程编排仅由项目经理角色承担；其他角色负责流程中的专业步骤。
-            </p>
             {requirements && (
               <>
                 <h3>流程所需 Role → Agent</h3>
@@ -838,33 +829,17 @@ export function ProjectManager({
                   aria-label="流程所需 Role → Agent"
                 >
                   {requirements.roles.map((item: Row) => {
-                    const agents = records.filter(
-                      (r) =>
-                        r.type === "agent" &&
-                        records.some(
-                          (role) =>
-                            role.type === "role" &&
-                            role.id === r.role_ref &&
-                            role.id === item.role_id,
-                        ),
-                    );
+                    const accepts = agentForRole(item.role_id);
                     return (
                       <RevisionSelect
                         key={item.role_id}
                         label={`${item.role.name} 的 Agent`}
-                        records={agents}
+                        records={records.filter(accepts)}
+                        accepts={accepts}
+                        historyKind="agent"
                         required
                         value={draft.role_agent_bindings[item.role_id] || ""}
-                        onChange={(value) => {
-                          captureFeedback();
-                          return setDraft({
-                            ...draft,
-                            role_agent_bindings: {
-                              ...draft.role_agent_bindings,
-                              [item.role_id]: value,
-                            },
-                          });
-                        }}
+                        onChange={(value) => bindAgent(item.role_id, value)}
                       />
                     );
                   })}

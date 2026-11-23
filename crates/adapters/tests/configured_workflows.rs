@@ -7571,15 +7571,15 @@ fn actual_defaults_compile_the_streamlined_suite_and_freeze_project_tests() {
     let defaults = e.configuration_defaults(None).unwrap();
     assert_eq!(
         defaults["workflow_ref"],
-        "builtin-workflow-feature-development:3"
+        "builtin-workflow-feature-development:5"
     );
     assert_eq!(
         defaults["task_workflow_ref"],
-        "builtin-workflow-task-development:3"
+        "builtin-workflow-task-development:4"
     );
     assert_eq!(
         defaults["standard_ref"],
-        "builtin-standard-engineering-delivery:3"
+        "builtin-standard-engineering-delivery:5"
     );
     let state = e.store.snapshot().unwrap();
     let bindings = serde_json::from_value(defaults["role_agent_bindings"].clone()).unwrap();
@@ -7595,9 +7595,31 @@ fn actual_defaults_compile_the_streamlined_suite_and_freeze_project_tests() {
                 Some(&bindings),
             )
             .unwrap();
+        assert_eq!(
+            plan.document.orchestrator_role_ref.as_deref(),
+            Some("builtin-role-project-manager:1")
+        );
         assert_eq!(plan.document.stages.len(), 5);
         assert_eq!(plan.document.steps.len(), count);
         assert!(plan.document.delivery_policy.is_some());
+        if reference == &defaults["workflow_ref"] {
+            let review = plan
+                .document
+                .steps
+                .iter()
+                .find(|step| step.key == "review")
+                .unwrap();
+            assert_eq!(
+                review.inputs.get("plan"),
+                Some(&InputBinding::Source {
+                    source: PortSource {
+                        step: "planning".into(),
+                        port: "result".into(),
+                        pointer: String::new(),
+                    },
+                })
+            );
+        }
         for removed in [
             "documentation",
             "verify",
@@ -7683,7 +7705,7 @@ fn actual_defaults_compile_the_streamlined_suite_and_freeze_project_tests() {
         .unwrap();
     assert!(
         matches!(&tasks.executor,StepExecutor::Workflow{workflow_ref,foreach:Some(collection),..}
-        if workflow_ref=="builtin-workflow-task-development:3" && collection.max_concurrency==4)
+        if workflow_ref=="builtin-workflow-task-development:4" && collection.max_concurrency==4)
     );
     assert!(
         tasks.budget.timeout_seconds >= 7200,

@@ -66,7 +66,7 @@ Codex 的六类业务 Agent Capability 和 DSH 的两个 Project Management Capa
 
 ## 默认流程与出厂升级
 
-实际默认引用为 `builtin-workflow-feature-development:3`、`builtin-workflow-task-development:3` 和 `builtin-standard-engineering-delivery:3`，Sandbox 使用 `builtin-sandbox-docker:2`。工程源定义和正文使用对应的英文工程名称，正文规范使用中文。兼容性回归使用 `tests/fixtures/configuration` 中的测试夹具。
+实际默认引用为 `builtin-workflow-feature-development:5`、`builtin-workflow-task-development:4` 和 `builtin-standard-engineering-delivery:5`，Sandbox 使用 `builtin-sandbox-docker:2`。工程源定义和正文使用对应的英文工程名称，正文规范使用中文。兼容性回归使用 `tests/fixtures/configuration` 中的测试夹具。
 
 出厂资源嵌入 Host。重新构建并启动新版 Host 后，在设置的「重置模板定义」弹窗中选择「恢复默认配置」会更新默认选择并保留自定义定义与已保存项目配置。选择「重置配置」会以新版出厂目录重建活动模板，并清理自定义定义、草稿和失效选择。需要重新配置的项目应采用新版 Standard 与 Agent 绑定。
 

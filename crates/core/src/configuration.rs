@@ -26,6 +26,21 @@ pub(crate) fn project_manager_role<'a>(
     )?;
     Ok(role)
 }
+
+pub(crate) fn workflow_orchestration_role<'a>(
+    state: &'a EngineeringState,
+    workflow: &ConfigurationRecord,
+    legacy_role: Option<&str>,
+) -> Result<&'a ConfigurationRecord> {
+    if let Some(role) = workflow.data["orchestrator_role_ref"]
+        .as_str()
+        .or(legacy_role)
+    {
+        return project_manager_role(state, role);
+    }
+    let defaults = current_template_defaults(state).unwrap_or(Value::Null);
+    project_manager_role(state, &text(&defaults, "orchestrator_role_ref")?)
+}
 pub fn visible(s: &EngineeringState, r: &ConfigurationRecord, project: Option<&str>) -> bool {
     if project.is_none() {
         return true;

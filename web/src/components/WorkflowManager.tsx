@@ -31,6 +31,7 @@ type Props = {
 };
 const emptyDocument = () => ({
   schema_version: 6,
+  orchestrator_role_ref: undefined as string | undefined,
   scheduling: {
     max_concurrency: 4,
     max_actions_per_tick: 16,
@@ -271,6 +272,10 @@ export function WorkflowManager({
   const roles = records
     .filter((row) => row.type === "role")
     .map((row) => ({ ...row, id: row.id }));
+  const isOrchestratorRole = (row: Row) =>
+    row.type === "role" &&
+    (row.workflow_orchestrator === true ||
+      row.id === document.orchestrator_role_ref);
   const stage = draft.node.startsWith("stage:")
     ? document.stages.find((stage: Row) => stage.key === draft.node.slice(6))
     : undefined;
@@ -775,6 +780,23 @@ export function WorkflowManager({
                 {draft.node === "workflow" ? (
                   <>
                     <legend>流程配置</legend>
+                    <RevisionSelect
+                      label="编排角色"
+                      records={roles.filter(isOrchestratorRole)}
+                      accepts={isOrchestratorRole}
+                      historyKind="role"
+                      value={document.orchestrator_role_ref || ""}
+                      onChange={(orchestrator_role_ref) =>
+                        setDraft((current) => ({
+                          ...current,
+                          document: {
+                            ...current.document,
+                            orchestrator_role_ref:
+                              orchestrator_role_ref || undefined,
+                          },
+                        }))
+                      }
+                    />
                     <JsonField
                       label="调度配置"
                       value={document.scheduling || emptyDocument().scheduling}

@@ -27,6 +27,8 @@
 | rust | 程序按配置推进可执行步骤 | 相同规则；不能伪造人工决定 |
 | agent | 经理通过平台工具检查和调度 | 相同规则，另需会话及工具调用授权 |
 
+Feature Development 和 Task Development 各自在 Workflow 修订中声明编排 Role。项目从所选 Standard 读取对应角色，再为它绑定 Agent。启动流程时冻结角色和 Agent 的选择。已有流程可以继续使用原先发布的配置。
+
 经理可以派发、查看、请求决定和发起受限返工。它不能靠一句“已完成”替代规则检查，也不能把自己声明为 Human。
 
 ## 步骤完成包含哪些检查
@@ -86,4 +88,4 @@ Agent 驱动中，Agent 声称需要人工输入时，经理先读取原执行�
 
 收到 `needs_manager` 后，经理还可以将经过核对的技术处理方案补充到原执行会话。原工作区检查点、权限和轮次预算继续生效。普通业务澄清仍使用真实人工回复或确切的平台材料转交。
 
-实现入口：[工作流代码](../crates/devdesk-core/workflow-execution.md)、[当前 Feature 定义](../../configurations/workflows/builtin-workflow-feature-development-v3.json)。
+实现入口：[工作流代码](../crates/devdesk-core/workflow-execution.md)、[当前 Feature 定义](../../configurations/workflows/builtin-workflow-feature-development-v5.json)。

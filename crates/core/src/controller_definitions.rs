@@ -28,9 +28,32 @@ pub(crate) fn controller_definition(
         .iter()
         .filter(|r| r.r#type == "project_configuration" && r.definition_id == project)
         .max_by_key(|r| r.version);
-    let role = p["role_ref"]
-        .as_str()
-        .or_else(|| {
+    let pending_work = if !workspace_only && root.is_none() {
+        crate::standards::work_configuration(catalog, owner)
+    } else {
+        None
+    };
+    let declared_role = if workspace_only {
+        None
+    } else if let Some((_, instance)) = root {
+        instance.plan.document.orchestrator_role_ref.as_deref()
+    } else {
+        pending_work
+            .or(config)
+            .and_then(|selection| selection.data["workflow_ref"].as_str())
+            .and_then(|reference| catalog.configuration(reference).ok())
+            .and_then(|workflow| workflow.data["orchestrator_role_ref"].as_str())
+    };
+    if let Some(declared_role) = declared_role {
+        require(
+            p["role_ref"]
+                .as_str()
+                .is_none_or(|role| role == declared_role),
+            "编排 Role 由工作流修订指定",
+        )?;
+    }
+    let role = declared_role
+        .or(p["role_ref"].as_str().or_else(|| {
             workspace_only
                 .then(|| {
                     p["agent_ref"]
@@ -39,18 +62,29 @@ pub(crate) fn controller_definition(
                         .and_then(|r| r.refs["role_ref"].as_str())
                 })
                 .flatten()
-        })
+        }))
         .or_else(|| config.and_then(|r| r.data["orchestrator_role_ref"].as_str()))
-        .or_else(|| {
-            workspace_only
-                .then(|| defaults["orchestrator_role_ref"].as_str())
-                .flatten()
-        })
+        .or_else(|| defaults["orchestrator_role_ref"].as_str())
         .ok_or_else(|| err("configuration_required", "项目需要明确编排 Role"))?;
     let role = crate::configuration::project_manager_role(catalog, role)?;
     let agent = p["agent_ref"]
         .as_str()
-        .or_else(|| config.and_then(|r| r.data["role_agent_bindings"][&role.id].as_str()))
+        .or_else(|| {
+            root.and_then(|(_, instance)| {
+                instance
+                    .role_agent_bindings
+                    .get(&role.id)
+                    .map(String::as_str)
+            })
+        })
+        .or_else(|| pending_work.and_then(|r| r.data["role_agent_bindings"][&role.id].as_str()))
+        .or_else(|| {
+            if root.is_some() && declared_role.is_some() {
+                None
+            } else {
+                config.and_then(|r| r.data["role_agent_bindings"][&role.id].as_str())
+            }
+        })
         .or_else(|| {
             workspace_only
                 .then(|| defaults["role_agent_bindings"][&role.id].as_str())
@@ -193,6 +227,15 @@ impl Engine {
                         .as_ref()
                         .is_none_or(|id| id == &root.id),
                 "已有经理需要先通过原版本生命周期建立后继",
+            )?;
+            require(
+                instance
+                    .plan
+                    .document
+                    .orchestrator_role_ref
+                    .as_ref()
+                    .is_none_or(|role| role == &controller.role_ref),
+                "已有控制器的 Role 与工作流指定的编排 Role 不一致",
             )?;
             if controller.root_instance_id.is_none() {
                 controller.root_instance_id = Some(root.id.clone());

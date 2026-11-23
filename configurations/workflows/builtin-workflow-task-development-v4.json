@@ -1,11 +1,12 @@
 {
   "type": "workflow",
   "identity": "builtin-workflow-task-development",
-  "revision": 3,
+  "revision": 4,
   "name": "Task Development",
   "scope": "global",
   "data": {
     "schema_version": 6,
+    "orchestrator_role_ref": "builtin-role-project-manager:1",
     "stages": [
       {
         "key": "tests",

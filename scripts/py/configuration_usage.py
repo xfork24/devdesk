@@ -33,6 +33,8 @@ def usage_index(sources: list[dict]) -> dict:
                     add(target, f"/{field}/{i}")
         elif source["type"] == "workflow":
             data = source["data"]
+            if role := data.get("orchestrator_role_ref"):
+                add(role, "/data/orchestrator_role_ref")
             inputs = data.get("inputs", {})
             steps = {s["key"]: s for s in data["steps"]}
             stages = {s["key"]: {"key": s["key"], "name": s["name"]} for s in data.get("stages", [])}

@@ -4554,6 +4554,9 @@
     "WorkflowDefinition": {
       "type": "object",
       "properties": {
+        "orchestrator_role_ref": {
+          "$ref": "source-reference.schema.json"
+        },
         "schema_version": {
           "type": "integer",
           "minimum": 1

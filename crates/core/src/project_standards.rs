@@ -386,10 +386,35 @@ impl Engine {
             &Scope::project(&project),
             None,
         )?;
+        let legacy_role = state
+            .governance
+            .iter()
+            .filter(|record| {
+                record.r#type == "project_configuration" && record.definition_id == project
+            })
+            .max_by_key(|record| record.version)
+            .and_then(|record| record.data["orchestrator_role_ref"].as_str());
+        let orchestration = result
+            .snapshot
+            .root_workflow_refs
+            .iter()
+            .map(|workflow_ref| {
+                let workflow = state.configuration(workflow_ref)?;
+                let role = crate::configuration::workflow_orchestration_role(
+                    &state,
+                    workflow,
+                    legacy_role,
+                )?;
+                Ok(
+                    json!({"workflow_ref":workflow.id,"workflow_name":workflow.name,
+                    "role_id":role.id,"role_name":role.name}),
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
         let hash = configuration_hash(&(&result.entry, &result.provenance, &context));
         Ok(
             json!({"standard_ref":result.standard.id,"baseline":baseline,"default_workflow_ref":result.entry,"snapshot":result.snapshot,"provenance":result.provenance,"preview_hash":hash,"harness_permission_ref":context,
-            "requirements":{"roles":plan.roles.values().collect::<Vec<_>>(),"specification_view":plan.specification_view}}),
+            "requirements":{"roles":plan.roles.values().collect::<Vec<_>>(),"orchestration":orchestration,"specification_view":plan.specification_view}}),
         )
     }
 }

@@ -226,6 +226,29 @@ impl Engine {
                 let bindings: BTreeMap<Id, Id> =
                     serde_json::from_value(p["role_agent_bindings"].clone())
                         .map_err(|e| err("invalid_params", e.to_string()))?;
+                let old = state
+                    .governance
+                    .iter()
+                    .filter(|r| {
+                        r.r#type == "project_configuration" && r.definition_id == project.id
+                    })
+                    .max_by_key(|r| r.version)
+                    .cloned();
+                let legacy_role = p.get("orchestrator_role_ref").map_or_else(
+                    || {
+                        old.as_ref()
+                            .and_then(|r| r.data["orchestrator_role_ref"].as_str())
+                    },
+                    Value::as_str,
+                );
+                if let Some(role) = legacy_role {
+                    crate::configuration::project_manager_role(state, role)?;
+                }
+                let orchestration = p
+                    .get("orchestration")
+                    .cloned()
+                    .unwrap_or(json!({"mode":"manual"}));
+                crate::workflow_driver::validate_selection(state, &orchestration, &scope)?;
                 let context_ref = if let Some(standard) = &project_standard {
                     crate::project_standards::project_standard_permissions(
                         state,
@@ -262,35 +285,50 @@ impl Engine {
                     json!({"harness_permission_ref":p["harness_permission_ref"],"sandbox_ref":p["sandbox_ref"],"sandbox_permission_ref":p["sandbox_permission_ref"]}),
                     true,
                 ));
-                if let Some(role_ref) = p["orchestrator_role_ref"].as_str() {
-                    let role = crate::configuration::project_manager_role(state, role_ref)?;
-                    let agent = bindings
-                        .get(&role.id)
-                        .ok_or_else(|| err("configuration_required", "编排 Role 未绑定 Agent"))?;
-                    let composition =
-                        state.resolve_agent(&reference(state, agent, "agent", &scope)?.id)?;
-                    require(composition.role == role.definition_id, "编排身份不匹配")?;
-                    require(
-                        driver_supports(
-                            state.configuration(&composition.harness_ref)?.data["provider"]
-                                .as_str()
-                                .unwrap_or(""),
-                            "orchestration",
-                        ),
-                        "此 Harness 尚不支持编排原生工具桥",
-                    )?;
-                    let policy = profile_control_policy(&selected_state, &context_ref, None)?;
-                    policy.validate()?;
-                    require(
-                        composition.tools.iter().any(|id| {
-                            state.configuration(id).is_ok_and(|r| {
-                                r.data["qualified_name"]
+                let workflows = project_standard
+                    .as_ref()
+                    .map_or(std::slice::from_ref(&workflow.id), |standard| {
+                        standard.snapshot.root_workflow_refs.as_slice()
+                    });
+                if orchestration["mode"] == "agent" || p["orchestrator_role_ref"].is_string() {
+                    let mut validated = std::collections::BTreeSet::new();
+                    for workflow_ref in workflows {
+                        let role = crate::configuration::workflow_orchestration_role(
+                            state,
+                            state.configuration(workflow_ref)?,
+                            legacy_role,
+                        )?;
+                        if !validated.insert(&role.id) {
+                            continue;
+                        }
+                        let agent = bindings.get(&role.id).ok_or_else(|| {
+                            err("configuration_required", "编排 Role 未绑定 Agent")
+                        })?;
+                        let composition =
+                            state.resolve_agent(&reference(state, agent, "agent", &scope)?.id)?;
+                        require(composition.role == role.definition_id, "编排身份不匹配")?;
+                        require(
+                            driver_supports(
+                                state.configuration(&composition.harness_ref)?.data["provider"]
                                     .as_str()
-                                    .is_some_and(|n| crate::controllers::CONTROL_TOOLS.contains(&n))
-                            })
-                        }),
-                        "编排能力缺少控制工具",
-                    )?;
+                                    .unwrap_or(""),
+                                "orchestration",
+                            ),
+                            "此 Harness 尚不支持编排原生工具桥",
+                        )?;
+                        let policy = profile_control_policy(&selected_state, &context_ref, None)?;
+                        policy.validate()?;
+                        require(
+                            composition.tools.iter().any(|id| {
+                                state.configuration(id).is_ok_and(|r| {
+                                    r.data["qualified_name"].as_str().is_some_and(|n| {
+                                        crate::controllers::CONTROL_TOOLS.contains(&n)
+                                    })
+                                })
+                            }),
+                            "编排能力缺少控制工具",
+                        )?;
+                    }
                 }
                 self.compile_configured_workflow(
                     &selected_state,
@@ -309,19 +347,6 @@ impl Engine {
                     )?
                     .id
                 };
-                let old = state
-                    .governance
-                    .iter()
-                    .filter(|r| {
-                        r.r#type == "project_configuration" && r.definition_id == project.id
-                    })
-                    .max_by_key(|r| r.version)
-                    .cloned();
-                let orchestration = p
-                    .get("orchestration")
-                    .cloned()
-                    .unwrap_or(json!({"mode":"manual"}));
-                crate::workflow_driver::validate_selection(state, &orchestration, &scope)?;
                 let test_configuration = match p.get("test_configuration").filter(|v| !v.is_null())
                 {
                     Some(value) => value.clone(),
@@ -337,9 +362,9 @@ impl Engine {
                     scope,
                     project.title,
                     old.as_ref().map_or(1, |r| r.version + 1),
-                    old.map(|r| r.id),
+                    old.as_ref().map(|r| r.id.clone()),
                     json!({"test_configuration":test_configuration,"orchestration":orchestration,"schema_version":4,"workflow_ref":workflow.id,"role_agent_bindings":bindings,"standard_ref":standard_ref,
-                    "orchestrator_role_ref":p["orchestrator_role_ref"],"harness_permission_ref":p["harness_permission_ref"],"sandbox_ref":permission_selection(&selected_state)?.sandbox_ref,"sandbox_permission_ref":p["sandbox_permission_ref"]}),
+                    "orchestrator_role_ref":legacy_role,"harness_permission_ref":p["harness_permission_ref"],"sandbox_ref":permission_selection(&selected_state)?.sandbox_ref,"sandbox_permission_ref":p["sandbox_permission_ref"]}),
                     true,
                 );
                 let result = json!(row);
@@ -443,6 +468,9 @@ impl Engine {
                 let typed: WorkflowDefinition =
                     serde_json::from_value(old.data["document"].clone())
                         .map_err(|e| err("invalid_workflow", e.to_string()))?;
+                if let Some(role) = &typed.orchestrator_role_ref {
+                    crate::configuration::project_manager_role(state, role)?;
+                }
                 candidate.data = json!(typed);
                 self.compile_configured_workflow(state, &candidate, &old.scope, None)?;
                 require(
@@ -747,6 +775,15 @@ pub fn compile_workflow_sources(
         require(*count <= WORKFLOW_STEP_LIMIT, "展开流程超过 1000 个步骤")?;
         plan.definitions
             .insert(workflow.id.clone(), workflow.clone());
+        if let Some(role) = &doc.orchestrator_role_ref {
+            let role = crate::configuration::role_record(state, role)?;
+            require(
+                crate::configuration::visible(state, role, scope.project_id())
+                    && !crate::configuration::retired(state, role),
+                "编排 Role 不适用于当前范围",
+            )?;
+            plan.definitions.insert(role.id.clone(), role.clone());
+        }
         for step in &doc.steps {
             for (selected, kind) in [
                 (&step.harness_permission_ref, PermissionTargetKind::Harness),

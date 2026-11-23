@@ -63,6 +63,8 @@ export function ConfigurationDisclosure({
 type RevisionSelectProps = {
   label: string;
   records: Row[];
+  accepts?: (row: Row) => boolean;
+  historyKind?: string;
   required?: boolean;
   showReferenceLinks?: boolean;
 } & (
@@ -73,13 +75,15 @@ export function RevisionSelect(props: RevisionSelectProps) {
   const {
     label,
     records,
+    accepts,
+    historyKind,
     value,
     multiple = false,
     required = false,
     showReferenceLinks = true,
   } = props;
   const scope = useContext(ConfigurationScope);
-  const family = records[0]?.type;
+  const family = historyKind ?? records[0]?.type;
   const [focused, setFocused] = useState(false);
   const [history, setHistory] = useState<Row[]>([]);
   const [historyError, setHistoryError] = useState("");
@@ -103,12 +107,7 @@ export function RevisionSelect(props: RevisionSelectProps) {
     };
   }, [scope?.request, scope?.projectId, family]);
   const loadHistory = useCallback(async () => {
-    if (
-      !scope ||
-      !records.length ||
-      history.length ||
-      historyOwner.current.controller
-    )
+    if (!scope || !family || history.length || historyOwner.current.controller)
       return;
     const owner = historyOwner.current;
     const controller = new AbortController();
@@ -123,7 +122,7 @@ export function RevisionSelect(props: RevisionSelectProps) {
           }),
         scope.projectId,
         records.some((r) => r.archived || r.template_archived),
-        records[0].type,
+        family,
         true,
       );
       if (owner.active && ticket === owner.ticket) setHistory(rows);
@@ -137,18 +136,16 @@ export function RevisionSelect(props: RevisionSelectProps) {
     } finally {
       owner.controller = undefined;
     }
-  }, [scope, records, history.length]);
+  }, [scope, records, family, history.length]);
   useEffect(() => {
     if (focused) void loadHistory();
   }, [focused, loadHistory]);
   const ids = Array.isArray(value) ? value : [value];
   const options = [
     ...new Map([...history, ...records].map((row) => [row.id, row])).values(),
-  ].sort(compareConfigurationRecords);
-  for (const id of ids) {
-    const old = records.find((r) => r.id === id);
-    if (old && !options.some((r) => r.id === id)) options.push(old);
-  }
+  ]
+    .filter((row) => !accepts || accepts(row))
+    .sort(compareConfigurationRecords);
   return (
     <label>
       <span className="configuration-field-title">

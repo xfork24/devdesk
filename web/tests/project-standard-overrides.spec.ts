@@ -101,6 +101,7 @@ test("Standard 决定入口，项目覆盖保存来源与差异并在重载后�
   expect(sandbox.records).toHaveLength(1);
   expect(sandbox.records[0].name).toBe("Docker Sandbox");
 
+  await expect(panel.getByLabel("编排 Agent", { exact: true })).toBeVisible();
   const orchestration = panel.locator(".project-orchestration-fields select");
   const orchestrationBoxes = await orchestration.evaluateAll((nodes) =>
     nodes.map((node) => {
@@ -108,7 +109,7 @@ test("Standard 决定入口，项目覆盖保存来源与差异并在重载后�
       return { x, y, width };
     }),
   );
-  expect(orchestrationBoxes).toHaveLength(6);
+  expect(orchestrationBoxes).toHaveLength(5);
   expect(new Set(orchestrationBoxes.slice(0, 4).map((box) => box.y)).size).toBe(
     1,
   );

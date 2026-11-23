@@ -1,11 +1,12 @@
 {
   "type": "workflow",
   "identity": "builtin-workflow-feature-development",
-  "revision": 3,
+  "revision": 5,
   "name": "Feature Development",
   "scope": "global",
   "data": {
     "schema_version": 6,
+    "orchestrator_role_ref": "builtin-role-project-manager:1",
     "stages": [
       {
         "key": "requirements",
@@ -486,7 +487,7 @@
         ],
         "executor": {
           "type": "workflow",
-          "workflow_ref": "builtin-workflow-task-development:3",
+          "workflow_ref": "builtin-workflow-task-development:4",
           "foreach": {
             "source": {
               "step": "tasks",
@@ -639,6 +640,14 @@
             "type": "source",
             "source": {
               "step": "design",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "plan": {
+            "type": "source",
+            "source": {
+              "step": "planning",
               "port": "result",
               "pointer": ""
             }

@@ -95,6 +95,16 @@ pub fn configuration_usage_index<'a>(
             }
             "workflow" => {
                 let workflow: WorkflowDefinition = record.decode()?;
+                if let Some(role) = &workflow.orchestrator_role_ref {
+                    add(
+                        role,
+                        "/data/orchestrator_role_ref".into(),
+                        ConfigurationUsageKind::Reference,
+                        None,
+                        None,
+                        None,
+                    );
+                }
                 let steps: BTreeMap<_, _> =
                     workflow.steps.iter().map(|s| (s.key.as_str(), s)).collect();
                 let stages: BTreeMap<_, _> = workflow

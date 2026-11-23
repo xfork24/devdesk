@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "bundle_version": "2026.11.23-independent-review-and-spec-links",
+  "bundle_version": "2026.11.23-feature-review-plan-input",
   "usage_index": "reference-usage.json",
   "types": {
     "role": [
@@ -44,11 +44,11 @@
       "specs/builtin-spec-platform-evidence-v2.json"
     ],
     "standard": [
-      "standards/builtin-standard-engineering-delivery-v3.json"
+      "standards/builtin-standard-engineering-delivery-v5.json"
     ],
     "workflow": [
-      "workflows/builtin-workflow-task-development-v3.json",
-      "workflows/builtin-workflow-feature-development-v3.json"
+      "workflows/builtin-workflow-task-development-v4.json",
+      "workflows/builtin-workflow-feature-development-v5.json"
     ],
     "delivery_type": [
       "deliveries/builtin-delivery-prd-v5.json",

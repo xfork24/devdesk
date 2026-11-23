@@ -803,6 +803,21 @@ fn deferred_feature_creation_freezes_inputs_and_configuration_until_explicit_sta
     .unwrap();
     let project_id = project["id"].as_str().unwrap();
     let defaults = e.configuration_defaults(Some(project_id)).unwrap();
+    let legacy_role = defaults["orchestrator_role_ref"].as_str().unwrap();
+    let state = e.store.snapshot().unwrap();
+    let mut successor = state.configuration(legacy_role).unwrap().source();
+    successor.revision += 1;
+    successor.name = "Revised manager".into();
+    let revised_role = successor.into_record().unwrap();
+    e.store
+        .seed_fixture_state(None, &mut |state| {
+            state.governance.push(revised_role.clone());
+            Ok(Value::Null)
+        })
+        .unwrap();
+    let role = revised_role.id.as_str();
+    let mut bindings = defaults["role_agent_bindings"].clone();
+    bindings[role] = bindings[legacy_role].clone();
     let spec = command(&e, "spec.create", None, json!({
         "name":"Start input content", "scope":format!("project:{project_id}"),
         "data":{"schema_version":3,"body":"提供明确的业务背景。","checks":[{"key":"brief","name":"业务背景","instructions":"说明工作目标。"}]}
@@ -823,6 +838,7 @@ fn deferred_feature_creation_freezes_inputs_and_configuration_until_explicit_sta
         None,
         json!({
             "name":"Explicit start", "document":{"schema_version":6,
+                "orchestrator_role_ref":role,
                 "inputs":{"brief":{"delivery_ref":delivery["id"],"required":true}},
                 "stages":[{"key":"work","name":"Work"}],
                 "steps":[{"key":"done","name":"Done","stage":"work","executor":{"type":"control"}}]
@@ -831,10 +847,16 @@ fn deferred_feature_creation_freezes_inputs_and_configuration_until_explicit_sta
     )
     .unwrap();
     let workflow = command(&e, "workflow.publish", draft["id"].as_str(), json!({})).unwrap();
-    let selected = command(&e, "project.configuration.update", Some(project_id), json!({
-        "workflow_ref":workflow["id"], "role_agent_bindings":defaults["role_agent_bindings"],
-        "orchestrator_role_ref":defaults["orchestrator_role_ref"], "orchestration":{"mode":"agent"}
-    })).unwrap();
+    let selected = command(
+        &e,
+        "project.configuration.update",
+        Some(project_id),
+        json!({
+            "workflow_ref":workflow["id"], "role_agent_bindings":bindings,
+            "orchestration":{"mode":"agent"}
+        }),
+    )
+    .unwrap();
     let mut payload = json!({
         "project_id":project_id, "title":"Draft Feature", "initial_requirement":"保存需求后显式启动。",
         "configuration_revision_id":selected["id"], "start_workflow":false
@@ -861,10 +883,16 @@ fn deferred_feature_creation_freezes_inputs_and_configuration_until_explicit_sta
     assert_eq!(frozen.data["source_configuration_ref"], selected["id"]);
     drop(e);
     let e = project_engine(dir.path());
-    command(&e, "project.configuration.update", Some(project_id), json!({
-        "workflow_ref":workflow["id"], "role_agent_bindings":defaults["role_agent_bindings"],
-        "orchestrator_role_ref":defaults["orchestrator_role_ref"], "orchestration":{"mode":"manual"}
-    })).unwrap();
+    command(
+        &e,
+        "project.configuration.update",
+        Some(project_id),
+        json!({
+            "workflow_ref":workflow["id"], "role_agent_bindings":defaults["role_agent_bindings"],
+            "orchestration":{"mode":"manual"}
+        }),
+    )
+    .unwrap();
     let started = command(&e, "workflow.start", Some(feature_id), json!({})).unwrap();
     let state = e.store.snapshot().unwrap();
     let root = state
@@ -886,6 +914,11 @@ fn deferred_feature_creation_freezes_inputs_and_configuration_until_explicit_sta
         .find(|r| r.r#type == "workflow_driver" && r.definition_id == root.id)
         .unwrap();
     assert_eq!(driver.data["mode"], "agent");
+    let controller = state
+        .configuration(driver.data["controller_id"].as_str().unwrap())
+        .unwrap();
+    assert_eq!(controller.data["role_ref"], role);
+    assert_eq!(controller.data["agent_revision_id"], bindings[role]);
     assert!(command(&e, "workflow.start", Some(feature_id), json!({})).is_err());
 }
 

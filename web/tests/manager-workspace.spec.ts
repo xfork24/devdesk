@@ -49,10 +49,60 @@ test("项目管理只保存配置并统一设置项目经理", async ({ page }) 
   await expect(
     configuration.getByLabel("编排 Agent", { exact: true }),
   ).toBeVisible();
+  await expect(configuration.getByLabel("编排角色")).toHaveCount(0);
   await expect(
-    configuration.getByLabel("编排角色").locator("option"),
-  ).toHaveText(["仅手动操作工作流", "项目经理"]);
+    configuration.getByText(
+      "Feature Development / Task Development · 项目经理",
+    ),
+  ).toBeVisible();
   await expect(configuration.getByLabel("流程所需 Role → Agent")).toBeVisible();
+  const historyRequested = (kind: string) =>
+    page.waitForResponse((response) => {
+      const request = response.request();
+      if (!request.url().endsWith("/rpc") || request.method() !== "POST")
+        return false;
+      const call = request.postDataJSON();
+      return (
+        call.method === "query.configuration_index" &&
+        call.params.kind === kind &&
+        call.params.include_history === true
+      );
+    });
+  const profileHistory = historyRequested("permission_profile");
+  const harness = configuration.getByLabel("Harness Profile", { exact: true });
+  await harness.focus();
+  await profileHistory;
+  const sandbox = configuration.getByLabel("Sandbox Profile", { exact: true });
+  await sandbox.focus();
+  await expect(harness.locator("option")).not.toContainText(["Sandbox"]);
+  await expect(sandbox.locator("option")).not.toContainText(["Harness"]);
+
+  const agentHistory = historyRequested("agent");
+  const controller = configuration.getByLabel("编排 Agent", { exact: true });
+  await controller.focus();
+  await agentHistory;
+  await expect(controller.locator("option")).not.toContainText(["Architect"]);
+  const stepRoles = configuration.getByRole("group", {
+    name: "流程所需 Role → Agent",
+  });
+  const stepAgents = stepRoles.getByRole("combobox");
+  await expect(stepAgents).toHaveCount(6);
+  for (const [index, name] of [
+    "Requirements Analyst",
+    "Software Architect",
+    "Software Developer",
+    "Project Manager",
+    "Independent Reviewer",
+    "Test Engineer",
+  ].entries()) {
+    const choices = stepAgents.nth(index);
+    await choices.focus();
+    const labels = await choices
+      .locator("option[value]:not([value=''])")
+      .allTextContents();
+    expect(labels.length).toBeGreaterThan(0);
+    expect(labels.every((label) => label.startsWith(name))).toBe(true);
+  }
   const starts: string[] = [];
   page.on("request", (request) => {
     if (!request.url().endsWith("/rpc") || request.method() !== "POST") return;

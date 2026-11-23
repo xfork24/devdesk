@@ -3,10 +3,10 @@
   "references": {
     "builtin-delivery-code-checkpoint:2": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/10/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -21,10 +21,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/11/inputs/workspace",
         "kind": "step_input",
@@ -39,10 +39,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/12/executor/arguments/workspace",
         "kind": "step_argument",
@@ -57,10 +57,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/13/executor/arguments/workspace",
         "kind": "step_argument",
@@ -75,10 +75,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/14/executor/arguments/workspace",
         "kind": "step_argument",
@@ -93,10 +93,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/15/executor/arguments/workspace",
         "kind": "step_argument",
@@ -111,10 +111,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/18/executor/arguments/workspace",
         "kind": "step_argument",
@@ -129,10 +129,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/10/executor/arguments/workspace",
         "kind": "step_argument",
@@ -147,10 +147,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/11/executor/arguments/workspace",
         "kind": "step_argument",
@@ -165,10 +165,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/13/executor/arguments/workspace",
         "kind": "step_argument",
@@ -183,10 +183,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/2/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -201,10 +201,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/3/executor/arguments/workspace",
         "kind": "step_argument",
@@ -219,10 +219,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/4/inputs/workspace",
         "kind": "step_input",
@@ -237,10 +237,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/5/executor/arguments/workspace",
         "kind": "step_argument",
@@ -255,10 +255,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/5/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -273,10 +273,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/6/executor/arguments/workspace",
         "kind": "step_argument",
@@ -291,10 +291,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/7/inputs/changes",
         "kind": "step_input",
@@ -309,10 +309,10 @@
         "port": "changes"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/7/inputs/workspace",
         "kind": "step_input",
@@ -327,10 +327,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/8/executor/arguments/workspace",
         "kind": "step_argument",
@@ -345,10 +345,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/9/executor/arguments/workspace",
         "kind": "step_argument",
@@ -365,10 +365,10 @@
     ],
     "builtin-delivery-design-document:2": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/11/inputs/design",
         "kind": "step_input",
@@ -383,10 +383,10 @@
         "port": "design"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/3/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -401,10 +401,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/4/inputs/design",
         "kind": "step_input",
@@ -419,10 +419,10 @@
         "port": "design"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/5/inputs/design",
         "kind": "step_input",
@@ -437,10 +437,10 @@
         "port": "design"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/6/inputs/design",
         "kind": "step_input",
@@ -455,10 +455,10 @@
         "port": "design"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/8/inputs/design",
         "kind": "step_input",
@@ -473,20 +473,20 @@
         "port": "design"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/inputs/design/delivery_ref",
         "kind": "workflow_input",
         "port": "design"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/1/inputs/design",
         "kind": "step_input",
@@ -501,10 +501,10 @@
         "port": "design"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/4/inputs/design",
         "kind": "step_input",
@@ -521,10 +521,10 @@
     ],
     "builtin-delivery-git-diff:2": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/10/outputs/diff/delivery_ref",
         "kind": "step_output",
@@ -539,10 +539,10 @@
         "port": "diff"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/10/outputs/scope_diff/delivery_ref",
         "kind": "step_output",
@@ -557,10 +557,10 @@
         "port": "scope_diff"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/11/inputs/diff",
         "kind": "step_input",
@@ -575,10 +575,10 @@
         "port": "diff"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/2/outputs/diff/delivery_ref",
         "kind": "step_output",
@@ -593,10 +593,10 @@
         "port": "diff"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/5/outputs/diff/delivery_ref",
         "kind": "step_output",
@@ -611,10 +611,10 @@
         "port": "diff"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/5/outputs/scope_diff/delivery_ref",
         "kind": "step_output",
@@ -629,10 +629,10 @@
         "port": "scope_diff"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/7/inputs/diff",
         "kind": "step_input",
@@ -649,10 +649,10 @@
     ],
     "builtin-delivery-implementation-report:2": [
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/4/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -667,10 +667,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/7/inputs/implementation",
         "kind": "step_input",
@@ -687,10 +687,10 @@
     ],
     "builtin-delivery-independent-test-report:2": [
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/3/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -705,10 +705,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/4/inputs/red",
         "kind": "step_input",
@@ -723,10 +723,10 @@
         "port": "red"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/6/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -741,10 +741,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/7/inputs/green",
         "kind": "step_input",
@@ -759,10 +759,10 @@
         "port": "green"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/7/inputs/red",
         "kind": "step_input",
@@ -779,10 +779,10 @@
     ],
     "builtin-delivery-merge-approval-packet:2": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/17/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -799,20 +799,20 @@
     ],
     "builtin-delivery-merge-sync:2": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/outputs/result",
         "kind": "workflow_output",
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/18/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -827,20 +827,20 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/outputs/result",
         "kind": "workflow_output",
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/13/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -857,10 +857,10 @@
     ],
     "builtin-delivery-prd:5": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/0/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -875,10 +875,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/1/inputs/work",
         "kind": "step_input",
@@ -893,10 +893,10 @@
         "port": "work"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/11/inputs/requirements",
         "kind": "step_input",
@@ -911,10 +911,10 @@
         "port": "requirements"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/3/inputs/requirements",
         "kind": "step_input",
@@ -929,10 +929,10 @@
         "port": "requirements"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/4/inputs/requirements",
         "kind": "step_input",
@@ -947,10 +947,10 @@
         "port": "requirements"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/5/inputs/requirements",
         "kind": "step_input",
@@ -965,10 +965,10 @@
         "port": "requirements"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/6/inputs/requirements",
         "kind": "step_input",
@@ -985,20 +985,20 @@
     ],
     "builtin-delivery-project-test-configuration:2": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/inputs/test_configuration/delivery_ref",
         "kind": "workflow_input",
         "port": "test_configuration"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/3/inputs/test_configuration",
         "kind": "step_input",
@@ -1013,10 +1013,10 @@
         "port": "test_configuration"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/4/inputs/test_configuration",
         "kind": "step_input",
@@ -1031,10 +1031,10 @@
         "port": "test_configuration"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/5/inputs/test_configuration",
         "kind": "step_input",
@@ -1049,10 +1049,10 @@
         "port": "test_configuration"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/6/inputs/test_configuration",
         "kind": "step_input",
@@ -1067,10 +1067,10 @@
         "port": "test_configuration"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/8/inputs/test_configuration",
         "kind": "step_input",
@@ -1085,20 +1085,20 @@
         "port": "test_configuration"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/inputs/test_configuration/delivery_ref",
         "kind": "workflow_input",
         "port": "test_configuration"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/1/inputs/test_configuration",
         "kind": "step_input",
@@ -1113,10 +1113,10 @@
         "port": "test_configuration"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/4/inputs/test_configuration",
         "kind": "step_input",
@@ -1133,10 +1133,10 @@
     ],
     "builtin-delivery-pull-request:2": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/15/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1151,10 +1151,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/16/executor/arguments/workspace",
         "kind": "step_argument",
@@ -1169,10 +1169,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/17/executor/arguments/publication",
         "kind": "step_argument",
@@ -1187,10 +1187,10 @@
         "port": "publication"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/17/inputs/publication",
         "kind": "step_input",
@@ -1205,10 +1205,10 @@
         "port": "publication"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/18/executor/arguments/publication",
         "kind": "step_argument",
@@ -1223,10 +1223,10 @@
         "port": "publication"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/11/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1241,10 +1241,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/12/executor/arguments/workspace",
         "kind": "step_argument",
@@ -1259,10 +1259,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/13/executor/arguments/publication",
         "kind": "step_argument",
@@ -1279,10 +1279,10 @@
     ],
     "builtin-delivery-regression-test-receipt:2": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/12/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1297,10 +1297,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/16/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1315,10 +1315,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/17/executor/arguments/merge_regression",
         "kind": "step_argument",
@@ -1333,10 +1333,10 @@
         "port": "merge_regression"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/17/executor/arguments/source_regression",
         "kind": "step_argument",
@@ -1351,10 +1351,10 @@
         "port": "source_regression"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/17/inputs/merge_regression",
         "kind": "step_input",
@@ -1369,10 +1369,10 @@
         "port": "merge_regression"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/17/inputs/source_regression",
         "kind": "step_input",
@@ -1387,10 +1387,10 @@
         "port": "source_regression"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/12/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1405,10 +1405,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/8/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1425,10 +1425,10 @@
     ],
     "builtin-delivery-review:4": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/1/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1443,10 +1443,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/11/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1461,10 +1461,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/17/executor/arguments/review",
         "kind": "step_argument",
@@ -1479,10 +1479,10 @@
         "port": "review"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/17/inputs/review",
         "kind": "step_input",
@@ -1497,10 +1497,10 @@
         "port": "review"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/4/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1515,10 +1515,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/6/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1533,10 +1533,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/7/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1553,10 +1553,10 @@
     ],
     "builtin-delivery-source-branch-publication:2": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/13/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1571,10 +1571,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/9/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1591,10 +1591,10 @@
     ],
     "builtin-delivery-target-branch-baseline:2": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/14/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1609,10 +1609,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/15/executor/arguments/target",
         "kind": "step_argument",
@@ -1627,10 +1627,10 @@
         "port": "target"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/10/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1645,10 +1645,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/11/executor/arguments/target",
         "kind": "step_argument",
@@ -1665,10 +1665,10 @@
     ],
     "builtin-delivery-task-creation-report:3": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/7/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1683,10 +1683,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/8/executor/foreach/source",
         "kind": "step_collection",
@@ -1702,10 +1702,10 @@
     ],
     "builtin-delivery-task-merge-receipts:2": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/11/inputs/tasks",
         "kind": "step_input",
@@ -1720,10 +1720,10 @@
         "port": "tasks"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/8/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1740,10 +1740,28 @@
     ],
     "builtin-delivery-task-plan:2": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/11/inputs/plan",
+        "kind": "step_input",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "review",
+          "name": "Review Feature Changes"
+        },
+        "port": "plan"
+      },
+      {
+        "reference": "builtin-workflow-feature-development:5",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/5/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1758,10 +1776,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/6/inputs/plan",
         "kind": "step_input",
@@ -1776,10 +1794,10 @@
         "port": "plan"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/7/executor/arguments/tasks",
         "kind": "step_argument",
@@ -1796,20 +1814,20 @@
     ],
     "builtin-delivery-task-record:3": [
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/inputs/item/delivery_ref",
         "kind": "workflow_input",
         "port": "item"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/0/executor/arguments/owner_id",
         "kind": "step_argument",
@@ -1824,10 +1842,10 @@
         "port": "owner_id"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/1/inputs/task",
         "kind": "step_input",
@@ -1842,10 +1860,10 @@
         "port": "task"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/4/inputs/task",
         "kind": "step_input",
@@ -1860,10 +1878,10 @@
         "port": "task"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/7/inputs/task",
         "kind": "step_input",
@@ -1880,10 +1898,10 @@
     ],
     "builtin-delivery-test-design:2": [
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/1/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -1898,10 +1916,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/2/executor/arguments/interfaces",
         "kind": "step_argument",
@@ -1916,10 +1934,10 @@
         "port": "interfaces"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/3/executor/arguments/recipe",
         "kind": "step_argument",
@@ -1934,10 +1952,10 @@
         "port": "recipe"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/4/inputs/recipe",
         "kind": "step_input",
@@ -1952,10 +1970,10 @@
         "port": "recipe"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/6/executor/arguments/recipe",
         "kind": "step_argument",
@@ -1972,10 +1990,10 @@
     ],
     "builtin-delivery-workspace-snapshot:3": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/10/executor/arguments/diff_base",
         "kind": "step_argument",
@@ -1990,10 +2008,10 @@
         "port": "diff_base"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/10/executor/arguments/workspace",
         "kind": "step_argument",
@@ -2008,10 +2026,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/11/inputs/baseline",
         "kind": "step_input",
@@ -2026,10 +2044,10 @@
         "port": "baseline"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/2/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2044,10 +2062,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/3/inputs/workspace",
         "kind": "step_input",
@@ -2062,10 +2080,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/5/inputs/workspace",
         "kind": "step_input",
@@ -2080,10 +2098,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/9/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2098,10 +2116,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/0/outputs/result/delivery_ref",
         "kind": "step_output",
@@ -2116,10 +2134,10 @@
         "port": "result"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/1/inputs/workspace",
         "kind": "step_input",
@@ -2134,10 +2152,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/2/executor/arguments/workspace",
         "kind": "step_argument",
@@ -2152,10 +2170,10 @@
         "port": "workspace"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/5/executor/arguments/diff_base",
         "kind": "step_argument",
@@ -2168,6 +2186,26 @@
           "name": "Capture Implementation Checkpoint and Diff"
         },
         "port": "diff_base"
+      }
+    ],
+    "builtin-role-project-manager:1": [
+      {
+        "reference": "builtin-workflow-feature-development:5",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/orchestrator_role_ref",
+        "kind": "reference"
+      },
+      {
+        "reference": "builtin-workflow-task-development:4",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 4,
+        "scope": "global",
+        "path": "/data/orchestrator_role_ref",
+        "kind": "reference"
       }
     ],
     "builtin-skill-code-review:1": [
@@ -3004,10 +3042,10 @@
         "kind": "reference"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/3/spec_refs/0",
         "kind": "step_spec",
@@ -3021,10 +3059,10 @@
         }
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/4/spec_refs/0",
         "kind": "step_spec",
@@ -3040,10 +3078,10 @@
     ],
     "builtin-spec-feature-code-review:2": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/11/spec_refs/0",
         "kind": "step_spec",
@@ -3095,10 +3133,10 @@
         "kind": "reference"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/4/spec_refs/0",
         "kind": "step_spec",
@@ -3233,10 +3271,10 @@
         "kind": "reference"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/0/spec_refs/0",
         "kind": "step_spec",
@@ -3250,10 +3288,10 @@
         }
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/1/spec_refs/0",
         "kind": "step_spec",
@@ -3269,10 +3307,10 @@
     ],
     "builtin-spec-task-code-review:2": [
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/7/spec_refs/0",
         "kind": "step_spec",
@@ -3324,10 +3362,10 @@
         "kind": "reference"
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/5/spec_refs/0",
         "kind": "step_spec",
@@ -3341,10 +3379,10 @@
         }
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/6/spec_refs/0",
         "kind": "step_spec",
@@ -3396,10 +3434,10 @@
         "kind": "reference"
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/1/spec_refs/0",
         "kind": "step_spec",
@@ -3869,10 +3907,10 @@
     ],
     "builtin-tool-materials-capture:2": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/17/executor/tool_ref",
         "kind": "step_tool",
@@ -4107,10 +4145,10 @@
     ],
     "builtin-tool-tasks-create:2": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/7/executor/tool_ref",
         "kind": "step_tool",
@@ -4876,10 +4914,10 @@
     ],
     "builtin-tool-workspace-current:2": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/2/executor/tool_ref",
         "kind": "step_tool",
@@ -4893,10 +4931,10 @@
         }
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/9/executor/tool_ref",
         "kind": "step_tool",
@@ -4910,10 +4948,10 @@
         }
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/0/executor/tool_ref",
         "kind": "step_tool",
@@ -4929,10 +4967,10 @@
     ],
     "simplified-tool-checkpoint:2": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/10/executor/tool_ref",
         "kind": "step_tool",
@@ -4946,10 +4984,10 @@
         }
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/2/executor/tool_ref",
         "kind": "step_tool",
@@ -4963,10 +5001,10 @@
         }
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/5/executor/tool_ref",
         "kind": "step_tool",
@@ -4982,10 +5020,10 @@
     ],
     "simplified-tool-delivery-merge:2": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/18/executor/tool_ref",
         "kind": "step_tool",
@@ -4999,10 +5037,10 @@
         }
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/13/executor/tool_ref",
         "kind": "step_tool",
@@ -5018,10 +5056,10 @@
     ],
     "simplified-tool-delivery-open:3": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/15/executor/tool_ref",
         "kind": "step_tool",
@@ -5035,10 +5073,10 @@
         }
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/11/executor/tool_ref",
         "kind": "step_tool",
@@ -5054,10 +5092,10 @@
     ],
     "simplified-tool-project-tests:3": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/12/executor/tool_ref",
         "kind": "step_tool",
@@ -5071,10 +5109,10 @@
         }
       },
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/16/executor/tool_ref",
         "kind": "step_tool",
@@ -5088,10 +5126,10 @@
         }
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/12/executor/tool_ref",
         "kind": "step_tool",
@@ -5105,10 +5143,10 @@
         }
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/8/executor/tool_ref",
         "kind": "step_tool",
@@ -5124,10 +5162,10 @@
     ],
     "simplified-tool-source-publish:2": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/13/executor/tool_ref",
         "kind": "step_tool",
@@ -5141,10 +5179,10 @@
         }
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/9/executor/tool_ref",
         "kind": "step_tool",
@@ -5160,10 +5198,10 @@
     ],
     "simplified-tool-target:2": [
       {
-        "reference": "builtin-workflow-feature-development:3",
+        "reference": "builtin-workflow-feature-development:5",
         "name": "Feature Development",
         "type": "workflow",
-        "version": 3,
+        "version": 5,
         "scope": "global",
         "path": "/data/steps/14/executor/tool_ref",
         "kind": "step_tool",
@@ -5177,10 +5215,10 @@
         }
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/10/executor/tool_ref",
         "kind": "step_tool",
@@ -5196,10 +5234,10 @@
     ],
     "simplified-tool-tests-run:3": [
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/3/executor/tool_ref",
         "kind": "step_tool",
@@ -5213,10 +5251,10 @@
         }
       },
       {
-        "reference": "builtin-workflow-task-development:3",
+        "reference": "builtin-workflow-task-development:4",
         "name": "Task Development",
         "type": "workflow",
-        "version": 3,
+        "version": 4,
         "scope": "global",
         "path": "/data/steps/6/executor/tool_ref",
         "kind": "step_tool",

@@ -72,6 +72,11 @@ pub fn configuration_summary(
     r: &ConfigurationRecord,
 ) -> Value {
     let mut row = json!({"id":r.id,"type":r.r#type,"name":r.name,"scope":r.scope,"version":r.version,"revision":r.revision,"hash":r.content_hash});
+    if r.r#type == "role"
+        && crate::configuration::project_manager_role(&catalog.state, &r.id).is_ok()
+    {
+        row["workflow_orchestrator"] = json!(true);
+    }
     if r.id != format!("{}:{}", r.definition_id, r.version) && r.id != r.definition_id {
         row["identity"] = json!(r.definition_id);
     }

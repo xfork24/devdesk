@@ -13,6 +13,8 @@ pub const WORKFLOW_INSTANCE_SCHEMA: u64 = 6;
 #[serde(deny_unknown_fields)]
 pub struct WorkflowDefinition {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub orchestrator_role_ref: Option<Id>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delivery_policy: Option<WorkflowDeliveryPolicy>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub rework_policies: BTreeMap<String, ReworkPolicy>,
