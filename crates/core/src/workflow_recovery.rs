@@ -44,33 +44,6 @@ fn red_without_assertion(arguments: &Value, receipt: &Value) -> bool {
         })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn passing_red_candidate_needs_coverage_audit() {
-        let arguments = json!({"expect_assertion_failure":true});
-        let receipt = json!({"status":"succeeded","exit_code":0,"assertion_failed":false,
-            "expected_failure":false,"counts":{"tests":4,"passed":4,"failed":0}});
-        assert!(red_without_assertion(&arguments, &receipt));
-        assert!(!red_without_assertion(&json!({}), &receipt));
-        for (key, value) in [
-            ("expected_failure", json!(true)),
-            ("failure_type", json!("environment")),
-            ("counts", json!({"tests":0,"passed":0,"failed":0})),
-            (
-                "counts",
-                json!({"tests":4,"passed":3,"failed":0,"skipped":1}),
-            ),
-        ] {
-            let mut invalid = receipt.clone();
-            invalid[key] = value;
-            assert!(!red_without_assertion(&arguments, &invalid));
-        }
-    }
-}
-
 impl Engine {
     pub(crate) fn test_recovery(
         &self,
@@ -721,5 +694,32 @@ impl Engine {
             }
         }
         Ok(if remaining == u64::MAX { 1 } else { remaining })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn passing_red_candidate_needs_coverage_audit() {
+        let arguments = json!({"expect_assertion_failure":true});
+        let receipt = json!({"status":"succeeded","exit_code":0,"assertion_failed":false,
+            "expected_failure":false,"counts":{"tests":4,"passed":4,"failed":0}});
+        assert!(red_without_assertion(&arguments, &receipt));
+        assert!(!red_without_assertion(&json!({}), &receipt));
+        for (key, value) in [
+            ("expected_failure", json!(true)),
+            ("failure_type", json!("environment")),
+            ("counts", json!({"tests":0,"passed":0,"failed":0})),
+            (
+                "counts",
+                json!({"tests":4,"passed":3,"failed":0,"skipped":1}),
+            ),
+        ] {
+            let mut invalid = receipt.clone();
+            invalid[key] = value;
+            assert!(!red_without_assertion(&arguments, &invalid));
+        }
     }
 }

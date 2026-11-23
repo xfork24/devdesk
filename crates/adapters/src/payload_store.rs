@@ -401,9 +401,9 @@ pub(super) fn governance(
         if kind == "command_context" {
             // Retain the exact audit text while sharing its large literal parameters.
             let canonical = value.as_str().and_then(|s| {
-                serde_json::from_str::<Value>(s)
-                    .ok()
-                    .filter(|v| v.is_array() && v.to_string() == s)
+                serde_json::from_str::<Value>(s).ok().filter(|v| {
+                    v.is_array() && serde_json::to_string(v).is_ok_and(|encoded| encoded == s)
+                })
             });
             if let Some(mut command) = canonical {
                 fields(root, &mut command, COMMAND_BODIES)?;

@@ -12,6 +12,9 @@ pub(crate) fn repair_attempt_id(execution: &StepExecution) -> String {
 
 pub(crate) const REPAIR_INPUT_PREFIX: &str = "devdesk-repair:";
 
+/// Pending (execution id, step revision) and exhausted recovery executions.
+pub(crate) type RecoveryAttention = (Vec<(Id, u64)>, Vec<Id>);
+
 pub(crate) fn action_digest(input_digest: &str, action: &str) -> String {
     let normalized = action
         .split_whitespace()
@@ -83,7 +86,7 @@ impl Engine {
         commit: &mut WorkflowCommit<'_>,
         target: &WorkflowHeaderFacts,
         include_in_flight: bool,
-    ) -> Result<(Vec<(Id, u64)>, Vec<Id>)> {
+    ) -> Result<RecoveryAttention> {
         let root_id = &target.instance.root_instance_id;
         let event = one(self.store.as_ref(), "workflow_root_event", root_id)?;
         commit.witness([version(&event)])?;

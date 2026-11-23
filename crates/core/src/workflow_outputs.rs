@@ -72,42 +72,6 @@ fn preserves_test_contract(
         })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn red_coverage_can_add_a_frozen_case_without_replacing_existing_cases() {
-        let acceptance = json!([{"id":"AC-1"},{"id":"AC-2"}]);
-        let original = json!({"interfaces":[],"recipe":{"files":["test.cjs"]},
-            "cases":[{"id":"first","acceptance":["AC-1"],"files":["test.cjs"],"expected":"retained"}]});
-        let mut revised = original.clone();
-        revised["cases"].as_array_mut().unwrap().push(
-            json!({"id":"second","acceptance":["AC-2"],"files":["test.cjs"],"expected":"covered"}),
-        );
-        assert!(preserves_test_contract(
-            &original,
-            &revised,
-            Some(&acceptance)
-        ));
-        assert!(!preserves_test_contract(&original, &revised, None));
-        for (index, field, value) in [
-            (0, "expected", json!("changed")),
-            (1, "id", json!("first")),
-            (1, "acceptance", json!(["unrelated"])),
-            (1, "files", json!(["undispatched.cjs"])),
-        ] {
-            let mut invalid = revised.clone();
-            invalid["cases"][index][field] = value;
-            assert!(!preserves_test_contract(
-                &original,
-                &invalid,
-                Some(&acceptance)
-            ));
-        }
-    }
-}
-
 fn validate_checkpoint_inputs(
     plan: &ConfiguredWorkflowPlan,
     producer: &StepDefinition,
@@ -586,5 +550,41 @@ impl Engine {
             });
         }
         Ok((reads, changes))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn red_coverage_can_add_a_frozen_case_without_replacing_existing_cases() {
+        let acceptance = json!([{"id":"AC-1"},{"id":"AC-2"}]);
+        let original = json!({"interfaces":[],"recipe":{"files":["test.cjs"]},
+            "cases":[{"id":"first","acceptance":["AC-1"],"files":["test.cjs"],"expected":"retained"}]});
+        let mut revised = original.clone();
+        revised["cases"].as_array_mut().unwrap().push(
+            json!({"id":"second","acceptance":["AC-2"],"files":["test.cjs"],"expected":"covered"}),
+        );
+        assert!(preserves_test_contract(
+            &original,
+            &revised,
+            Some(&acceptance)
+        ));
+        assert!(!preserves_test_contract(&original, &revised, None));
+        for (index, field, value) in [
+            (0, "expected", json!("changed")),
+            (1, "id", json!("first")),
+            (1, "acceptance", json!(["unrelated"])),
+            (1, "files", json!(["undispatched.cjs"])),
+        ] {
+            let mut invalid = revised.clone();
+            invalid["cases"][index][field] = value;
+            assert!(!preserves_test_contract(
+                &original,
+                &invalid,
+                Some(&acceptance)
+            ));
+        }
     }
 }
