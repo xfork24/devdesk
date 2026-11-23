@@ -3023,8 +3023,38 @@ pre {
   margin: 10px 0;
 }
 .permission-target-binding details,
-.permission-definitions details {
+.permission-detail details {
   margin: 14px 0;
+}
+.permission-profile-groups .configuration-list {
+  max-height: none;
+  overflow: visible;
+}
+.permission-profile-groups summary > span {
+  color: inherit;
+  font-size: inherit;
+}
+@media (max-width: 760px) {
+  .permission-profile-groups {
+    max-height: none;
+    overflow: visible;
+  }
+  .permission-profile-groups .configuration-list {
+    max-height: 200px;
+    overflow: auto;
+  }
+}
+.permission-detail {
+  min-width: 0;
+}
+.permission-detail > fieldset {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+}
+.permission-detail h4 {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 .permission-history-entry {
   display: flex;
@@ -3121,20 +3151,6 @@ pre {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 16px;
-}
-
-.permission-definition-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-:root .permission-definition-toolbar > label:has(> select) {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0;
 }
 
 /* Keep execution tabs, readers, and nested cards on consistent content insets. */

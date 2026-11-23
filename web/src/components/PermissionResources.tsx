@@ -1,12 +1,13 @@
 import { displayText } from "../display-text";
 import { useReadRequest } from "./use-read-request";
-import { ActionButton, ActionSelect, ActionInput } from "./ActionFeedback";
+import { ActionButton, ActionInput } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
 import { useEffect, useRef, useState } from "react";
 import { DirectoryPicker } from "./DirectoryPicker";
 import { type Request } from "./rpc-types";
 import { PermissionProfileHistory } from "./PermissionProfileHistory";
 import { compareConfigurationRecords } from "./configuration-state";
+import { ConfigurationList } from "./ConfigurationList";
 import {
   profileView,
   profileSource,
@@ -20,6 +21,11 @@ type Props = {
   refresh: () => Promise<void>;
   projectId?: string;
 };
+
+const permissionGroups = [
+  ["harness", "Harness"],
+  ["sandbox", "Sandbox"],
+] as const;
 
 export function PermissionResources({
   request: parentRequest,
@@ -51,6 +57,7 @@ export function PermissionResources({
   );
   const [selected, setSelected] = useState(linkedProfile);
   const [kind, setKind] = useState<PermissionKind>("harness");
+  const [expanded, setExpanded] = useState({ harness: true, sandbox: false });
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [choosingSource, setChoosingSource] = useState(false);
@@ -60,15 +67,18 @@ export function PermissionResources({
   const profile = catalog?.profiles.find((p) => p.id === selected);
   useEffect(() => {
     if (hydrated.current || !catalog) return;
+    const profiles = [...catalog.profiles].sort(compareConfigurationRecords);
     const profile = linkedProfile
-      ? catalog.profiles.find((p) => p.id === linkedProfile)
-      : catalog.profiles
-          .filter((p) => p.target_kind === "harness")
-          .sort(compareConfigurationRecords)[0];
+      ? profiles.find((p) => p.id === linkedProfile)
+      : (profiles.find((p) => p.target_kind === "harness") ?? profiles[0]);
     hydrated.current = true;
     if (profile) {
       setSelected(profile.id);
       setKind(profile.target_kind);
+      setExpanded({
+        harness: profile.target_kind === "harness",
+        sandbox: profile.target_kind === "sandbox",
+      });
       setDraft(JSON.stringify(profileSource(profile), null, 2));
     }
   }, [catalog, linkedProfile]);
@@ -121,14 +131,16 @@ export function PermissionResources({
   function edit(p: Profile) {
     setSelected(p.id);
     setKind(p.target_kind);
+    setExpanded((current) => ({ ...current, [p.target_kind]: true }));
     setDraft(JSON.stringify(profileSource(p), null, 2));
     const params = new URLSearchParams(location.search);
     params.set("permission_ref", p.id);
     history.replaceState(null, "", `?${params}`);
   }
-  function fresh() {
+  function fresh(kind: PermissionKind) {
     hydrated.current = true;
     setSelected("");
+    setKind(kind);
     const params = new URLSearchParams(location.search);
     params.delete("permission_ref");
     history.replaceState(null, "", `?${params}`);
@@ -166,13 +178,68 @@ export function PermissionResources({
       </section>
     );
   return (
-    <>
-      <section
-        className="panel permission-definitions"
-        aria-label="Permission 定义"
-      >
-        <div className="integration-content">
-          <h3>Permission 定义</h3>
+    <section
+      className="panel permission-definitions"
+      aria-label="Permission 定义"
+    >
+      <div className="panel-heading">
+        <h3>Permission 定义</h3>
+      </div>
+      <div className="configuration-layout">
+        <aside
+          className="configuration-list permission-profile-groups"
+          aria-label="权限列表"
+        >
+          {permissionGroups.map(([group, label]) => (
+            <details
+              key={group}
+              className="configuration-disclosure"
+              aria-label={label}
+              open={expanded[group]}
+              onToggle={(event) => {
+                const open = event.currentTarget.open;
+                setExpanded((current) =>
+                  current[group] === open
+                    ? current
+                    : { ...current, [group]: open },
+                );
+              }}
+            >
+              <summary>
+                <span>{label}</span>
+              </summary>
+              <div className="configuration-disclosure-fields">
+                <ConfigurationList
+                  records={catalog.profiles.filter(
+                    (p) => p.target_kind === group,
+                  )}
+                  selectedId={selected}
+                  autoSelectFirst={false}
+                  disabled={busy}
+                  onSelect={(row) => {
+                    const match = catalog.profiles.find((p) => p.id === row.id);
+                    if (match) edit(match);
+                  }}
+                  newAction={{
+                    label: `新建 ${label} 权限`,
+                    selected: !selected && !!draft && kind === group,
+                    onClick: () => fresh(group),
+                  }}
+                />
+              </div>
+            </details>
+          ))}
+        </aside>
+        <section className="permission-detail" aria-label="权限详情">
+          {profile ? (
+            <h4>
+              {displayText(profile.name)} · v{profile.version}
+            </h4>
+          ) : (
+            draft && (
+              <h4>{kind === "harness" ? "Harness" : "Sandbox"} 权限草稿</h4>
+            )
+          )}
           <p className="muted">
             保存产生独立修订。应用后，追随目标的新讨论采用新权限，已有讨论在下一轮切换；工程冻结与固定选择保留原版本。
           </p>
@@ -181,61 +248,7 @@ export function PermissionResources({
               {displayText(error)}
             </p>
           )}
-          <fieldset disabled={busy}>
-            <legend>权限定义</legend>
-            <div className="permission-definition-toolbar">
-              <label>
-                权限类型
-                <ActionSelect
-                  aria-label="权限类型"
-                  value={kind}
-                  onChange={(e) => {
-                    const kind = e.target.value as PermissionKind;
-                    const first = catalog.profiles
-                      .filter((profile) => profile.target_kind === kind)
-                      .sort(compareConfigurationRecords)[0];
-                    setKind(kind);
-                    if (first) edit(first);
-                    else {
-                      setSelected("");
-                      setDraft("");
-                    }
-                  }}
-                >
-                  <option value="harness">Harness</option>
-                  <option value="sandbox">Sandbox</option>
-                </ActionSelect>
-              </label>
-              <label>
-                权限修订
-                <ActionSelect
-                  aria-label="版本化权限修订"
-                  value={selected}
-                  onChange={(e) => {
-                    captureFeedback();
-
-                    const p = catalog.profiles.find(
-                      (p) => p.id === e.target.value,
-                    );
-                    if (p) edit(p);
-                  }}
-                >
-                  <option value="">选择权限</option>
-                  {catalog.profiles
-                    .filter((p) => p.target_kind === kind)
-                    .sort(compareConfigurationRecords)
-                    .map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {displayText(p.name)} · {displayText(p.target_kind)} · v
-                        {p.version}
-                      </option>
-                    ))}
-                </ActionSelect>
-              </label>
-              <ActionButton type="button" onClick={fresh}>
-                新建权限草稿
-              </ActionButton>
-            </div>
+          <fieldset disabled={busy} aria-label="权限定义">
             <label>
               统一权限 JSON
               <textarea
@@ -457,8 +470,8 @@ export function PermissionResources({
             </pre>
           </details>
           <p role="status">{displayText(message)}</p>
-        </div>
-      </section>
-    </>
+        </section>
+      </div>
+    </section>
   );
 }

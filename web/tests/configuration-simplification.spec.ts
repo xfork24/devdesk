@@ -154,24 +154,43 @@ test("OAuth 登录组件诊断与执行镜像分别展示", async ({
     fullPage: true,
   });
 });
-test("配置归属与权限工具行，Workflow 内嵌调度", async ({ page }, info) => {
+test("配置归属与权限分栏，Workflow 内嵌调度", async ({ page }, info) => {
   await page.goto("/?tab=components&config_tab=permission");
   await expect(page.getByLabel("统一权限 JSON")).toBeVisible();
   for (const name of ["运行资源", "调度策略"])
     await expect(page.getByRole("tab", { name, exact: true })).toHaveCount(0);
   await expect(page.getByText("执行授权", { exact: true })).toHaveCount(0);
-  const select = await page.getByLabel("版本化权限修订").boundingBox();
-  const button = await page
-    .getByRole("button", { name: "新建权限草稿", exact: true })
-    .boundingBox();
-  expect(
-    Math.abs(select!.y + select!.height - button!.y - button!.height),
-  ).toBeLessThan(2);
+  const list = page.getByRole("complementary", { name: "权限列表" });
+  const detail = page.getByRole("region", { name: "权限详情" });
+  const listAtDesktop = (await list.boundingBox())!;
+  const detailAtDesktop = (await detail.boundingBox())!;
+  expect(detailAtDesktop.x).toBeGreaterThan(
+    listAtDesktop.x + listAtDesktop.width,
+  );
   await expect(page.getByLabel("ExecutionScope JSON")).toHaveCount(0);
   await page.screenshot({
-    path: info.outputPath("permission-toolbar.png"),
+    path: info.outputPath("permission-layout.png"),
     fullPage: true,
   });
+  const desktop = page.viewportSize()!;
+  await page.setViewportSize({ width: 390, height: 850 });
+  const listAtMobile = (await list.boundingBox())!;
+  const detailAtMobile = (await detail.boundingBox())!;
+  const sandboxAtMobile = (await list
+    .getByRole("group", { name: "Sandbox", exact: true })
+    .boundingBox())!;
+  expect(sandboxAtMobile.y + sandboxAtMobile.height).toBeLessThanOrEqual(
+    listAtMobile.y + listAtMobile.height,
+  );
+  expect(detailAtMobile.y).toBeGreaterThan(
+    listAtMobile.y + listAtMobile.height,
+  );
+  expect(detailAtMobile.x + detailAtMobile.width).toBeLessThanOrEqual(390);
+  await page.screenshot({
+    path: info.outputPath("permission-layout-mobile.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize(desktop);
   await page.goto(
     "/?tab=components&config_tab=harness&config_object=builtin-harness-codex-managed%3A2",
   );

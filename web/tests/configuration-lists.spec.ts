@@ -322,33 +322,55 @@ test("配置各 Tab 的共享目录按名称排序并默认选中首个已有条
   const workflowNames = await workflows.locator("strong").allTextContents();
   expect(workflowNames).toEqual([...workflowNames].sort(names.compare));
 
-  for (const [pageTab, tab, label] of [
-    ["workflows", "standard", "查看 Standard"],
-    ["components", "permission", "版本化权限修订"],
-  ]) {
-    await page.goto(`/?tab=${pageTab}&config_tab=${tab}`);
-    const select = page.getByLabel(label, { exact: true });
-    await expect(select).not.toHaveValue("");
-    const options = select.locator('option:not([value=""])');
-    await expect(select).toHaveValue(
-      (await options.first().getAttribute("value"))!,
-    );
-    const labels = await options.allTextContents();
-    expect(labels).toEqual([...labels].sort(names.compare));
-    if (tab === "permission") {
-      await expect(options).toHaveText([
-        "Harness Full Access · harness · v2",
-        "Harness Read-Only · harness · v2",
-        "Implementation Workspace · harness · v3",
-        "Read-Only Workflow Step · harness · v2",
-        "Test Authoring · harness · v3",
-      ]);
-      await page
-        .getByLabel("权限类型", { exact: true })
-        .selectOption("sandbox");
-      await expect(options).toHaveText(["Sandbox Full Access · sandbox · v2"]);
-    }
-  }
+  await page.goto("/?tab=workflows&config_tab=standard");
+  const select = page.getByLabel("查看 Standard", { exact: true });
+  await expect(select).not.toHaveValue("");
+  const options = select.locator('option:not([value=""])');
+  await expect(select).toHaveValue(
+    (await options.first().getAttribute("value"))!,
+  );
+  const labels = await options.allTextContents();
+  expect(labels).toEqual([...labels].sort(names.compare));
+
+  await page.goto("/?tab=components&config_tab=permission");
+  const harness = page.getByRole("group", { name: "Harness", exact: true });
+  const sandbox = page.getByRole("group", { name: "Sandbox", exact: true });
+  const harnessEntries = harness.locator("button:has(strong)");
+  await expect(harnessEntries.first()).toHaveAttribute("aria-pressed", "true");
+  await expect(harnessEntries.locator("strong")).toHaveText([
+    "Harness Full Access",
+    "Harness Read-Only",
+    "Implementation Workspace",
+    "Read-Only Workflow Step",
+    "Test Authoring",
+  ]);
+  await expect(sandbox).toHaveJSProperty("open", false);
+  await sandbox.getByText("Sandbox", { exact: true }).click();
+  const sandboxEntry = sandbox.getByRole("button", {
+    name: "Sandbox Full Access v2 · Global",
+  });
+  await expect(sandbox.locator("button strong")).toHaveText([
+    "Sandbox Full Access",
+  ]);
+  await sandboxEntry.click();
+  await expect(sandboxEntry).toHaveAttribute("aria-pressed", "true");
+  await expect(harnessEntries.first()).toHaveAttribute("aria-pressed", "false");
+  const editor = page.getByLabel("统一权限 JSON");
+  await expect(editor).toHaveValue(/"target_kind": "sandbox"/);
+  const draft = (await editor.inputValue()) + "\n";
+  await editor.fill(draft);
+  await sandbox.getByText("Sandbox", { exact: true }).click();
+  await expect(sandboxEntry).toBeHidden();
+  await expect(editor).toHaveValue(draft);
+  await sandbox.getByText("Sandbox", { exact: true }).click();
+  await expect(sandboxEntry).toHaveAttribute("aria-pressed", "true");
+  await sandbox.getByRole("button", { name: "新建 Sandbox 权限" }).click();
+  await expect(editor).toHaveValue(/"target_kind": "sandbox"/);
+  await expect(sandboxEntry).toHaveAttribute("aria-pressed", "false");
+  await expect(
+    sandbox.getByRole("button", { name: "新建 Sandbox 权限" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  expect(new URL(page.url()).searchParams.has("permission_ref")).toBe(false);
   await page.goto("/?tab=components&config_tab=native");
   const native = page
     .getByRole("region", { name: "原生工具目录" })
