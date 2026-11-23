@@ -124,7 +124,7 @@ def main() -> None:
     args = parser.parse_args()
     errors = []
     for crate in sorted((ROOT / 'crates').iterdir()):
-        if crate.is_dir():
+        if (crate / 'Cargo.toml').is_file():
             errors.extend(check_inventory(crate, args.write))
     errors.extend(check_links(current_documents()))
     if errors:

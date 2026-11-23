@@ -15,7 +15,6 @@
 | [core](devdesk-core/overview.md) | 应用流程怎样检查、执行并提交状态？ |
 | [adapters](devdesk-adapters/overview.md) | 外部系统和存储怎样实现？ |
 | [host](devdesk-host/overview.md) | 服务如何启动、装配、接收请求和调度？ |
-| [tools](devdesk-tools/overview.md) | 独立辅助程序如何运行和构建？ |
 | [Web 与 Host](web-integration.md) | 页面怎样查询、发送命令并更新？ |
 
 源码链接配合符号名使用。源码移动后更新链接，函数变化后重查调用路径，不把文档中的行号当作稳定接口。

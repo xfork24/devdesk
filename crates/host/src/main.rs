@@ -749,7 +749,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     if args.iter().any(|a| a == "--help") {
         println!(
-            "DevDesk 0.2\nUsage: devdesk-host [--data PATH] [--host IP] [--port 4317] [--public-url http(s)://HOST:PORT]\n       devdesk-host --update-credential-helper (macOS bundle, explicit upgrade)\nDefault host: 127.0.0.1. Remote listening requires DEVDESK_ACCESS_TOKEN (32+ characters).\nWithout --data, choose a dataset in the Web setup page. Web UI opens GitHub projects with native Codex/DSH execution."
+            "DevDesk 0.2\nUsage: devdesk-host [--data PATH] [--host IP] [--port 4317] [--public-url http(s)://HOST:PORT]\n       devdesk-host --data PATH --authorize-credential REFERENCE\nDefault host: 127.0.0.1. Remote listening requires DEVDESK_ACCESS_TOKEN (32+ characters).\nWithout --data, choose a dataset in the Web setup page. Web UI opens GitHub projects with native Codex/DSH execution."
         );
         return Ok(());
     }
@@ -781,17 +781,17 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     if args.iter().any(|a| a == "--update-credential-helper") {
-        devdesk_adapters::credentials::CredentialVault::update_bundled_helper()?;
-        println!(
-            "credential_helper_updated; use the explicit settings authorization action if required"
-        );
-        return Ok(());
+        return Err("devdesk-host now uses Keychain directly. Use --data PATH --authorize-credential REFERENCE when macOS requests authorization.".into());
     }
-    if let Some(reference) = option("--authorize-credential") {
+    if args.iter().any(|a| a == "--authorize-credential") {
+        let reference = option("--authorize-credential")
+            .ok_or("credential authorization requires a reference")?;
         let dataset =
             option("--data").ok_or("credential authorization requires an existing dataset")?;
-        devdesk_adapters::credentials::CredentialVault::new(&PathBuf::from(dataset))?
-            .authorize_interactively(&reference)?;
+        devdesk_adapters::credentials::CredentialVault::authorize_for_dataset(
+            &PathBuf::from(dataset),
+            &reference,
+        )?;
         println!("credential_authorized");
         return Ok(());
     }

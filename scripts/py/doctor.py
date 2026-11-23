@@ -41,9 +41,7 @@ if platform.system()=='Linux':
  check('default_collection_unlocked',unlocked,'unlock the desktop default collection; preflight never prompts or unlocks it')
 elif platform.system()=='Darwin':
  identity=Path.home()/'Library/Application Support/DevDesk/signing/identity.txt';check('stable_signing_identity',identity.is_file() or bool(os.environ.get('DEVDESK_CODESIGN_IDENTITY')),'configure a stable code signing identity once')
- helper=Path.home()/'Library/Application Support/DevDesk/credential-helper/v1/devdesk-credential-helper'
- check('shared_credential_helper',helper.is_file() and executes(['/usr/bin/codesign','--verify','--strict',str(helper)]),'one fixed signed helper per user; Host builds reuse it')
- if a.binary:check('binary_signature',executes(['/usr/bin/codesign','--verify','--strict',str(a.binary.resolve())]),'signature integrity only; repeated-build Keychain access needs the actual credential acceptance test')
+ if a.binary:check('binary_signature',executes(['/usr/bin/codesign','--verify','--strict','-R','=identifier "dev.devdesk.host" and certificate leaf[subject.CN] exists',str(a.binary.resolve())]),'certificate-signed Host required for macOS Keychain')
 r['passed']=all(x['passed'] for x in r['checks']);value=json.dumps(r,indent=2)+'\n'
 if a.output:a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(value)
 print(value);raise SystemExit(0 if r['passed'] else 1)

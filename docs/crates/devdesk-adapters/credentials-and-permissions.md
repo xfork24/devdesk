@@ -4,11 +4,11 @@
 
 ## 凭据读取路径
 
-[credentials.rs](../../../crates/adapters/src/credentials.rs) 提供 CredentialVault 等平台访问，macOS 的安装、签名和协议检查在 [credentials_macos.rs](../../../crates/adapters/src/credentials_macos.rs)。
+[credentials.rs](../../../crates/adapters/src/credentials.rs) 提供 CredentialVault 等平台访问。[credentials_macos.rs](../../../crates/adapters/src/credentials_macos.rs) 核对 Host 的代码签名和账户范围，并调用 macOS Security Framework。
 
-配置保存不透明引用，适配器按供应商和数据集范围访问凭据。macOS 请求固定签名助手；Linux 使用 Secret Service。Codex OAuth 则通过 [codex_auth.rs](../../../crates/adapters/src/codex_auth.rs) 管理自己的私有认证材料。
+配置保存不透明引用，适配器按供应商和数据集范围访问凭据。macOS 由 Host 访问钥匙串。Linux 使用 Secret Service。Codex OAuth 通过 [codex_auth.rs](../../../crates/adapters/src/codex_auth.rs) 管理数据集私有认证材料。
 
-普通查询或后台运行不能自动触发交互授权。需要用户确认时返回明确错误，由设置页发起授权操作。助手程序细节见 [tools 手册](../devdesk-tools/overview.md)。
+显式授权独占进程内的钥匙串调用，后台读写期间关闭授权弹窗。需要用户确认时，读写操作返回错误，用户可从设置页或命令行发起[授权](signing-and-keychain.md)。
 
 ## 权限编译路径
 
@@ -20,8 +20,8 @@ Harness 权限限制程序和原生工具，Sandbox 权限限制容器边界。�
 
 ## 常见修改风险
 
-新增服务商凭据需同时检查 namespace、助手允许的账户、版本/内容检查及授权 UI。只改 Model 的 key 字段可能无法在系统凭据库中读取。
+新增服务商凭据需同步核对账户命名空间、允许的钥匙串账户、凭据版本检查及授权入口。
 
 新增文件权限需同时检查路径规范化、符号链接、读写挂载和实际工具后端。UI 显示“只读”不能替代容器和程序实际的只读限制。
 
-验证入口：[permissions.rs](../../../crates/adapters/tests/permissions.rs)、[permission_profiles.rs](../../../crates/adapters/tests/permission_profiles.rs)、[credential_updates.rs](../../../crates/adapters/tests/credential_updates.rs)、[credential_helper_runtime.py](../../../tests/entrypoints/credential_helper_runtime.py)。
+验证入口见 [permissions.rs](../../../crates/adapters/tests/permissions.rs)、[permission_profiles.rs](../../../crates/adapters/tests/permission_profiles.rs)、[credential_updates.rs](../../../crates/adapters/tests/credential_updates.rs) 和 [credentials_macos.rs](../../../crates/adapters/src/credentials_macos.rs)。

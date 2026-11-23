@@ -275,6 +275,7 @@ dependencies = [
  "jsonschema",
  "libc",
  "rusqlite",
+ "security-framework",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -324,16 +325,6 @@ dependencies = [
  "tokio",
  "url",
  "uuid",
-]
-
-[[package]]
-name = "devdesk-tools"
-version = "1.0.0"
-dependencies = [
- "libc",
- "security-framework",
- "serde",
- "serde_json",
 ]
 
 [[package]]

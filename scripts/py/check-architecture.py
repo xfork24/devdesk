@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 metadata = json.loads(subprocess.check_output(
     ['cargo', 'metadata', '--no-deps', '--format-version', '1', '--locked'], cwd=ROOT))
 ranks = {'devdesk-domain': 0, 'devdesk-core': 1, 'devdesk-adapters': 2,
-         'devdesk-host': 3, 'devdesk-tools': 3}
+         'devdesk-host': 3}
 errors = []
 for package in metadata['packages']:
     for dependency in package['dependencies']:

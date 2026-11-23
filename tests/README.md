@@ -100,9 +100,7 @@ python3 tests/live/probe_streamlined_workflow.py --binary target/release/devdesk
 
 `probe_permission_package.py` 检查解包发布程序的权限资产、配置发布、当前任务预览、数据库结构及独立运行，不调用模型。其他有效的 `tests/live/` 探针分别覆盖凭据、供应商协议、安装、经验和外部接入，使用前阅读其参数和外部依赖。
 
-macOS 凭据助手专项入口为 `tests/entrypoints/credential_helper_startup.py` 与 `credential_helper_runtime.py`；它们使用隔离签名探针，不读取或保存模型凭据，不替换共享助手。Linux Secret Service 与权限后端须在 Linux 实机单独验证。
-
-两个入口均支持 `--helper-dir <目录>`，可验证 `scripts/platform/macos/install-macos-credential-helper.sh --bundle <目录>` 从 `devdesk-tools` 构建的签名助手及清单，省略时验证当前用户已安装的助手。
+macOS 钥匙串的后台调用和显式授权隔离由 `cargo test -p devdesk-adapters --lib credentials_macos` 检查。签名后的 Host 可用独立测试数据集验证系统钥匙串访问。Linux Secret Service 与权限后端须在 Linux 实机单独验证。
 
 日志、JSON/JSONL、截图和临时脚本写入临时目录；计划目录只保留 Markdown 计划、合同和执行报告。
 

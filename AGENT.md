@@ -15,7 +15,6 @@
 | `crates/core` | 配置编译、冻结选择、命令/查询、会话、工作流、驱动及权威终态；外部依赖通过 `ports.rs` 注入。 |
 | `crates/adapters` | SQLite/Artifact codec、出厂资源、Git/GitHub、Docker、Harness、安装、凭据及权限后端。 |
 | `crates/host` | HTTP/SSE、认证、显式项目路由、跨项目调度与端口装配；不直接写业务事实。 |
-| `crates/tools` | 独立工具程序，按 `src/bin/` 组织；当前包含 macOS 固定签名 Keychain 助手。 |
 | `web/src` / `web/tests` | React/TypeScript 工作台与浏览器回归；界面不裁定业务终态。 |
 | `configurations` | manifest 管理的源修订、默认选择、正文、Harness/Sandbox 安装输入及权限预设。 |
 | `permissions` / `containers` | 权限后端资产与项目测试 Dockerfile；执行配方由 Harness/Sandbox 组合生成。 |
@@ -49,7 +48,7 @@
 
 ## 构建与验证
 
-Rust **1.99.1** 由工具链文件固定，前端使用 Node **24**。脚本需要 Python **3.10+** 与 C 工具链。macOS 签名/助手见 [签名与助手安装](docs/crates/devdesk-tools/signing-and-keychain.md)。
+Rust **1.99.1** 由工具链文件固定，前端使用 Node **24**。脚本需要 Python **3.10+** 与 C 工具链。macOS 构建见 [Host 签名与钥匙串](docs/crates/devdesk-adapters/signing-and-keychain.md)。
 
 ```bash
 python3 -m venv .venv

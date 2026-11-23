@@ -26,17 +26,17 @@ DevDesk 使用 Rust 内核管理配置与工程事实，React 提供 Web 工作�
 |---|---|
 | 源码构建 | Rust **1.99.1**（`rust-toolchain.toml`）、Node **24**、npm、Python **3.10+**、C 编译工具链 |
 | 工程执行 | 运行中的 Docker、Git、GitHub CLI，以及 GitHub 和选定模型服务商的认证 |
-| 本机凭据 | macOS 固定签名 Keychain 助手；Linux Secret Service 和可访问的用户 D-Bus |
+| 本机凭据 | macOS 由签名后的 Host 访问钥匙串。Linux 使用 Secret Service 和用户 D-Bus |
 | 完整回归 | Python Schema 校验依赖、Chromium、Docker 与镜像/包源网络 |
 
-macOS 首次构建先按[签名与助手安装说明](docs/crates/devdesk-tools/signing-and-keychain.md)设置固定签名身份。Python 依赖建议安装到虚拟环境：
+macOS 首次构建先按[Host 签名与钥匙串说明](docs/crates/devdesk-adapters/signing-and-keychain.md)设置固定签名身份。可以在虚拟环境中安装构建依赖。
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install -r scripts/check/requirements.txt
 ./scripts/dev/build.sh
-python3 scripts/dev/run-host.py target/release/devdesk-host --data ./data --port 4317
+./target/release/devdesk-host --data ./data --port 4317
 ```
 
 打开终端显示的地址，默认是 `http://127.0.0.1:4317`。省略 `--data` 时，由初始化页选择数据目录。构建脚本会安装前端依赖、构建 Web 和 release Host。
@@ -61,7 +61,7 @@ python3 scripts/dev/run-host.py target/release/devdesk-host --data ./data --port
 ./scripts/release/package.sh
 ```
 
-输出为 `dist/devdesk-0.2.0-<rust-host-target>.tar.gz` 及 SHA-256 文件。解压后运行 `./devdesk-host`，无需 Rust、宿主 Node 或源码；实际工程仍需 Docker、Git、GitHub CLI 及认证。远程连接、访问密钥和平台设置见[运行包说明](docs/design/run-binary.md)。
+输出为 `dist/devdesk-0.2.0-<rust-host-target>.tar.gz` 及 SHA-256 文件。macOS 压缩包只包含签名后的 `devdesk-host`。解压后运行 `./devdesk-host`，无需 Python、Rust、宿主 Node 或源码。实际工程仍需 Docker、Git、GitHub CLI 及认证。远程连接、访问密钥和平台设置见[运行包说明](docs/design/run-binary.md)。
 
 ## 开发与验证
 
@@ -98,7 +98,6 @@ python3 scripts/py/check-docs.py
 | `crates/core` | 配置编译、命令/查询、会话与工作流、权威回执接纳 |
 | `crates/adapters` | SQLite、产物存储、Git/GitHub、Docker、Harness 与凭据 |
 | `crates/host` | HTTP/SSE、认证、项目路由、调度与 Web 嵌入 |
-| `crates/tools` | 独立工具程序；当前包含 macOS 独立签名 Keychain 助手 |
 | `web` / `tests` | Web 工作台、浏览器回归及跨进程/原生测试入口 |
 | `resources` / `permissions` / `containers` | 出厂配置、权限后端资产与项目测试容器 |
 | `schemas` / `sql` | JSON 结构合同与 SQLite 初始化基线 |

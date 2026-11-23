@@ -1,6 +1,6 @@
 # DevDesk 运行指南
 
-本页可在独立运行包中阅读。Host 已嵌入 Web 工作台和出厂配置；启动工作台不需要 Rust、Node 或单独的数据库服务。
+Host 已嵌入 Web 工作台和出厂配置，启动工作台无需 Python、Rust、Node 或单独的数据库服务。
 
 ## 启动
 
@@ -18,7 +18,7 @@
 
 工程执行还需要可用的 Linux Docker Engine/Desktop、Git，以及 GitHub CLI。GitHub 和模型认证可在设置中完成。执行安装由所选 Harness/Sandbox 配置准备，不必手工猜测镜像标签。
 
-macOS 包是包含凭据助手的签名命令行程序，不是已公证的 App 安装器。
+macOS 压缩包只包含签名后的 `devdesk-host` 命令行程序。
 
 ## 数据与退出
 
@@ -47,15 +47,7 @@ Ollama 可填写本机服务根地址。容器必须实际访问到该服务；L
 
 ## 系统凭据
 
-macOS 通过固定签名的 `devdesk-credential-helper` 访问 Keychain。Host 检查助手协议、内容和签名；普通读取不会自动弹出授权窗口。需要授权时，在设置中执行明确的钥匙串授权操作。
-
-若运行包携带了需要升级的助手，显式执行：
-
-```bash
-./devdesk-host --update-credential-helper
-```
-
-当前助手要求协议 2。普通构建和正常启动不会任意替换已授权安装。安装目录名称不代表协议版本。
+macOS 由签名后的 `devdesk-host` 直接访问钥匙串。旧版创建的条目可以继续使用。若 macOS 要求确认新的访问者，可在模型服务商设置中执行钥匙串授权。GitHub 和其他集成的显式授权命令见 [Host 签名与钥匙串](../crates/devdesk-adapters/signing-and-keychain.md)。
 
 Linux 需要 `secret-tool` 和已解锁的 Secret Service/D-Bus 会话，例如 libsecret-tools 与 GNOME Keyring。不降级为明文 API key 文件。Codex OAuth 使用数据集私有认证文件，Ollama 默认免密。
 

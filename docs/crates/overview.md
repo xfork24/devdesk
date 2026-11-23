@@ -10,7 +10,6 @@
 | devdesk-core | [lib.rs](../../crates/core/src/lib.rs)、[ports.rs](../../crates/core/src/ports.rs) | Engine、命令/查询、状态变化和外部能力接口 |
 | devdesk-adapters | [lib.rs](../../crates/adapters/src/lib.rs) | SqliteStore、FileArtifacts、execution_adapters 及外部协议 |
 | devdesk-host | [main.rs](../../crates/host/src/main.rs)、[workspace.rs](../../crates/host/src/workspace.rs) | HTTP、生命周期、项目路由、装配和调度 |
-| devdesk-tools | [Cargo.toml](../../crates/tools/Cargo.toml) | 独立 bin；当前是 macOS 凭据助手 |
 
 编译依赖是 host 使用 adapters/core/domain，adapters 使用 core/domain，core 只依赖 domain。运行时 Engine 通过 trait 调用具体适配器，详细解释见[分层设计](../design/layers.md)。
 

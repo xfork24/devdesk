@@ -16,7 +16,7 @@ pub struct CredentialVault {
     service: String,
 }
 
-// The GitHub entry uses the existing helper protocol under a separate service.
+// GitHub uses a fixed integration account under a separate service.
 const GITHUB_REFERENCE: &str = "integration-secret:6e331880-bdcc-4be3-bac8-2588f6b6af3d";
 
 #[cfg(target_os = "linux")]
@@ -25,16 +25,6 @@ fn secret_tool() -> Result<PathBuf> {
         .ok_or_else(|| err("credential_store_unavailable", "Linux 需要 Secret Service 与 secret-tool；Ubuntu 安装 libsecret-tools 并使用已解锁的桌面凭据库"))
 }
 impl CredentialVault {
-    pub fn update_bundled_helper() -> Result<()> {
-        #[cfg(target_os = "macos")]
-        {
-            crate::credentials_macos::update_bundled_helper()
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            Err(err("unsupported", "仅 macOS 使用凭据助手"))
-        }
-    }
     fn integration_account(reference: &str) -> Result<String> {
         let id = reference
             .strip_prefix("integration-secret:")
@@ -55,7 +45,7 @@ impl CredentialVault {
         let account = Self::integration_account(reference)?;
         #[cfg(target_os = "macos")]
         {
-            crate::credentials_macos::call("store", &self.service, &account, Some(secret))?;
+            crate::credentials_macos::store(&self.service, &account, secret)?;
         }
         #[cfg(target_os = "linux")]
         {
@@ -85,11 +75,13 @@ impl CredentialVault {
         let account = Self::integration_account(reference)?;
         #[cfg(target_os = "macos")]
         {
-            let value = crate::credentials_macos::call("read", &self.service, &account, None)?;
-            value["secret"]
-                .as_str()
-                .map(str::to_owned)
-                .ok_or_else(|| err("credential_missing", "接入凭据不可用"))
+            String::from_utf8(crate::credentials_macos::read(&self.service, &account)?).map_err(
+                |error| {
+                    let mut bytes = error.into_bytes();
+                    bytes.fill(0);
+                    err("credential_store", "接入凭据编码无效")
+                },
+            )
         }
         #[cfg(target_os = "linux")]
         {
@@ -157,23 +149,15 @@ impl CredentialVault {
         }
         #[cfg(target_os = "macos")]
         {
-            if crate::credentials_macos::helper_path().is_err() {
+            if !crate::credentials_macos::available() {
                 return Ok(None);
             }
-            let configured = crate::credentials_macos::call(
-                "status",
-                &self.service,
-                &account,
-                None,
-            )?["configured"]
-                .as_bool()
-                .ok_or_else(|| err("credential_store", "凭据助手缺少存在性结果"))?;
-            configured
-                .then(|| {
-                    self.read_integration(GITHUB_REFERENCE)
-                        .map(String::into_bytes)
-                })
-                .transpose()
+            crate::credentials_macos::lookup(&self.service, &account).map_err(|mut error| {
+                if error.code == "authentication_required" {
+                    error.message.push_str("。可用 devdesk-host --data <数据目录> --authorize-credential github 为此 Host 授权");
+                }
+                error
+            })
         }
         #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         {
@@ -209,7 +193,7 @@ impl CredentialVault {
             available: {
                 #[cfg(target_os = "macos")]
                 {
-                    crate::credentials_macos::helper_path().is_ok()
+                    crate::credentials_macos::available()
                 }
                 #[cfg(not(target_os = "macos"))]
                 {
@@ -257,7 +241,7 @@ impl CredentialVault {
         )?;
         let account = format!("{}{candidate_id}", facts.credential_account);
         #[cfg(target_os = "macos")]
-        crate::credentials_macos::call("store", &self.service, &account, Some(secret))?;
+        crate::credentials_macos::store(&self.service, &account, secret)?;
         #[cfg(target_os = "linux")]
         {
             let mut command = std::process::Command::new(secret_tool()?);
@@ -296,18 +280,8 @@ impl CredentialVault {
     fn candidate_secret(&self, account: &str, reference: &str) -> Result<Option<Vec<u8>>> {
         #[cfg(target_os = "macos")]
         {
-            let configured = crate::credentials_macos::call(
-                "status",
-                &self.service,
-                account,
-                None,
-            )?["configured"]
-                .as_bool()
-                .ok_or_else(|| err("credential_store", "凭据助手缺少存在性结果"))?;
-            if !configured {
-                return Ok(None);
-            }
-            self.read_reference(reference).map(Some)
+            let _ = reference;
+            crate::credentials_macos::lookup(&self.service, account)
         }
         #[cfg(target_os = "linux")]
         {
@@ -409,10 +383,8 @@ impl CredentialVault {
         let account = self.model_account(facts, reference)?;
 
         #[cfg(target_os = "macos")]
-        let configured = if crate::credentials_macos::helper_path().is_ok() {
-            crate::credentials_macos::call("status", &self.service, &account, None)?["configured"]
-                .as_bool()
-                .unwrap_or(false)
+        let configured = if crate::credentials_macos::available() {
+            crate::credentials_macos::configured(&self.service, &account)?
         } else {
             true
         };
@@ -493,11 +465,7 @@ impl CredentialVault {
         let account = self.reference_account(reference)?;
         #[cfg(target_os = "macos")]
         {
-            let value = crate::credentials_macos::call("read", &self.service, &account, None)?;
-            value["secret"]
-                .as_str()
-                .map(|v| v.as_bytes().to_vec())
-                .ok_or_else(|| err("credential_store", "凭据助手未返回秘密"))
+            crate::credentials_macos::read(&self.service, &account)
         }
         #[cfg(target_os = "linux")]
         {
@@ -536,20 +504,34 @@ impl CredentialVault {
             ))
         }
     }
-    /// Only the explicit settings action allows UI in the immutable signed helper.
-    /// Its private response is consumed here; HTTP never returns a secret.
+    /// Only an explicit authorization action allows the vault to show system UI.
     pub fn authorize_interactively(&self, reference: &str) -> Result<()> {
         let account = self.reference_account(reference)?;
         #[cfg(target_os = "macos")]
         {
-            crate::credentials_macos::call("authorize", &self.service, &account, None)?;
-            Ok(())
+            crate::credentials_macos::authorize(&self.service, &account)
         }
         #[cfg(not(target_os = "macos"))]
         {
             let _ = account;
             self.verify_reference(reference)
         }
+    }
+    pub fn authorize_for_dataset(dataset: &Path, reference: &str) -> Result<()> {
+        #[cfg(target_os = "macos")]
+        {
+            if reference == "github" {
+                let vault = Self::github(dataset)?;
+                let account = Self::integration_account(GITHUB_REFERENCE)?;
+                return crate::credentials_macos::authorize(&vault.service, &account);
+            }
+            if reference.starts_with("integration-secret:") {
+                let vault = Self::new(dataset)?;
+                let account = Self::integration_account(reference)?;
+                return crate::credentials_macos::authorize(&vault.service, &account);
+            }
+        }
+        Self::new(dataset)?.authorize_interactively(reference)
     }
     pub fn verify_reference(&self, reference: &str) -> Result<()> {
         let mut bytes = self.read_reference(reference)?;

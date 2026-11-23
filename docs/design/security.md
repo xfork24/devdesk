@@ -31,9 +31,9 @@ Docker 隔离不等于默认只读或默认禁网；实际权限由所选 Profil
 
 API key 和工具 token 存入系统凭据库，配置中只保存不透明引用。Host 为授权的运行读取相应凭据，按驱动要求注入受控的运行环境，不把它作为普通项目材料传给模型。
 
-macOS 使用 `devdesk-credential-helper` 访问 Keychain。助手检查请求范围及父进程签名，普通读取关闭系统弹窗，只有显式 authorize 操作允许用户授权。Host 构建与共享助手安装分离，避免每次重编 Host 都替换已授权主体。
+macOS 由证书签名的 `devdesk-host` 直接访问钥匙串。Host 验证自身签名并检查凭据的服务名和账户范围。后台读写关闭弹窗，显式授权期间暂停其他钥匙串调用。
 
-源码开发的首次签名、助手安装和稳定运行副本说明见[签名与 Keychain](../crates/devdesk-tools/signing-and-keychain.md)。
+源码开发签名、运行副本和旧版授权见[Host 签名与钥匙串](../crates/devdesk-adapters/signing-and-keychain.md)。
 
 Linux 使用 Secret Service，要求可用且解锁的 D-Bus 会话。Codex OAuth 使用单独的数据集私有认证文件。不同认证方式的存储边界不能混为一谈。
 
@@ -45,4 +45,4 @@ Linux 使用 Secret Service，要求可用且解锁的 D-Bus 会话。Codex OAut
 
 HTTP/MCP 工具还要检查目标地址、认证注入、重定向和项目绑定。发现一个工具并不等于任何项目都获准调用它。外部写入失败时也不能假定远端回滚，未知效果需要核对。
 
-实现与测试：[凭据和权限后端](../crates/devdesk-adapters/credentials-and-permissions.md)、[独立助手](../crates/devdesk-tools/overview.md)、[权限资产](../../permissions/README.md)。
+实现与测试见[凭据和权限后端](../crates/devdesk-adapters/credentials-and-permissions.md)和[权限资产](../../permissions/README.md)。
