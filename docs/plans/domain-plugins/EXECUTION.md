@@ -85,6 +85,24 @@ Linux x86_64 的 Core Host、Web Core 和软件开发 0.4.0 分别打包并生�
 
 CI 包含 Linux 和 macOS 的独立构建以及 Linux 双端、回切与重启验收。本轮在 Linux 本地执行。原 Feature/Task 的 `delivery_policy` 仍参与冻结门禁和恢复。正式 100 个活跃前端的持续负载矩阵需要独立负载机，本轮覆盖并发目录读。
 
+## 0.5.0 交付证据迁移与三种调度验收
+
+软件开发 ZIP 的 Feature Development 第 6 修订和 Task Development 第 5 修订使用显式 `operation_evidence`。Host 在冻结平台操作意图中记录证据来源、步骤执行、摘要及回执版本，Docker 中的领域验证器检查对应操作。完成条件要求已接纳的真实合入和同步回执。0.3.0、0.4.0 及旧版内置流程保留原冻结合同。
+
+同一 0.5.0 ZIP 在三个独立 Linux Core Host 数据目录和专用 GitHub 测试分支运行。每条是具有真实 Codex 功能角色、一个 Task、源发布、候选回归和远端合入的 Feature 开发工作流。人工模式用已认证的验收客户端调用公开派发和接纳接口。审批在核对冻结材料、精确回执及最终 GitHub Diff 后，以独立操作者请求提交。
+
+| 调度 | Task PR | Feature PR | Task 独立 Red / Green |
+| --- | --- | --- | --- |
+| 人工 | [#39](https://github.com/xfork24/devdesk-default-workflow-test-20261118/pull/39) | [#41](https://github.com/xfork24/devdesk-default-workflow-test-20261118/pull/41) | 4 个预期断言失败 / 5 个用例通过 |
+| Rust | [#42](https://github.com/xfork24/devdesk-default-workflow-test-20261118/pull/42) | [#44](https://github.com/xfork24/devdesk-default-workflow-test-20261118/pull/44) | 5 个预期断言失败 / 5 个用例通过 |
+| Agent | [#40](https://github.com/xfork24/devdesk-default-workflow-test-20261118/pull/40) | [#43](https://github.com/xfork24/devdesk-default-workflow-test-20261118/pull/43) | 5 个预期断言失败 / 6 个用例通过 |
+
+三条流程各实际执行六次 Docker 测试。审计核对新包的八次持久化交付授权、两份 GitHub PR 的创建计划、源和候选提交、GitHub 合入 tree、目标父提交及干净的本地同步。三个 Feature 在签署前的合入派发均被拒绝，实际远端目标仍为原提交。另用该包处理真实 Task 回执的修改副本，确认过期候选、写租约未撤销及错误 Green 生产者均被拒绝。
+
+Rust 线路保留同一执行做了一次真实的独立评审返工。已补充 Host 的返工预演公开路由。Agent 线路在重启后核对并停止旧的待核对轮次，通过原工作流恢复 Agent 调度。审计从持久化派发记录读到人工 33 次、Rust driver 35 次和 Agent 授权 segment 33 次。Agent 根流程完成且经理关闭。
+
+实仓运行使用调试 Host。解包后的 Linux 发行 Host 通过目录与热切换双端回归，并在三个原数据集重新读出完整执行及合入同步回执。Rust 全量回归 766 个通过，39 个忽略。0.5.0 发行 ZIP 与三个活动 ZIP 字节一致，SHA-256 为 `3bed78151ba2feabee787ce053816cf0c9f170de80d341824b8c2161359997c3`。合并验收记录位于 `/tmp/devdesk-domain-evidence.gD22zd/three-mode-acceptance.json`。
+
 ## 基线和后续范围
 
 原基线 `2458a06` 的 `actual_git_docker_workflow_handoffs` 在启动 Docker 前停于 `builtin-tool-workspace-snapshot:2` 的配置读取。探针把项目级源用于全局草稿，并引用了退役 Harness 的测试工具修订。只修正探针的草稿作用域和工具引用后，真实 Git/Docker 流程在 18.210 秒内完成。证据存于 `/tmp/devdesk-domain-p0.O6iSOB/evidence`。
