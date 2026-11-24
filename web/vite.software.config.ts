@@ -16,12 +16,12 @@ export default defineConfig({
     ],
   },
   build: {
-    outDir: "dist/software",
+    outDir: "../target/web/software",
     emptyOutDir: true,
     modulePreload: false,
     rollupOptions: {
       preserveEntrySignatures: "strict",
-      input: resolve("../configurations/software-development/web/entry.tsx"),
+      input: resolve("../plugins/software-development/web/entry.tsx"),
       external: (id) => shared.has(id),
       output: {
         paths: () => sdk,

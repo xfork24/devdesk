@@ -25,7 +25,7 @@ python3 tests/entrypoints/template_reset.py target/fixtures/debug/devdesk-host
 python3 tests/entrypoints/dataset_protocol.py target/fixtures/debug/devdesk-host
 python3 tests/entrypoints/runtime_preparation.py target/fixtures/debug/devdesk-host
 python3 tests/entrypoints/prepare_browser_runtime.py
-(cd web && npx playwright test)
+npm --prefix web run test:e2e
 cargo build --release --locked -p devdesk-host --features fixture-catalog --target-dir target/fixtures
 ./scripts/platform/macos/sign-macos.sh target/fixtures/release/devdesk-host
 python3 tests/entrypoints/lifecycle_contract.py target/fixtures/release/devdesk-host
@@ -34,4 +34,4 @@ python3 tests/entrypoints/http_contract.py target/fixtures/release/devdesk-host 
 python3 tests/entrypoints/template_reset.py target/fixtures/release/devdesk-host
 python3 tests/entrypoints/dataset_protocol.py target/fixtures/release/devdesk-host
 python3 tests/entrypoints/runtime_preparation.py target/fixtures/release/devdesk-host
-(cd web && DEVDESK_E2E_PROFILE=release npx playwright test)
+DEVDESK_E2E_PROFILE=release npm --prefix web run test:e2e

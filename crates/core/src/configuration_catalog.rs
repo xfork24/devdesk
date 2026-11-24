@@ -46,6 +46,20 @@ pub fn package_role_identity(record: &ConfigurationRecord) -> Option<&str> {
     identity.contains('.').then_some(identity)
 }
 
+fn legacy_software_role(record: &ConfigurationRecord) -> bool {
+    record.scope.is_global()
+        && record.r#type == "role"
+        && matches!(
+            record.definition_id.as_str(),
+            "builtin-role-analyst"
+                | "builtin-role-architect"
+                | "builtin-role-developer"
+                | "builtin-role-project-manager"
+                | "builtin-role-reviewer"
+                | "builtin-role-tester"
+        )
+}
+
 /// An adapter may attach its memory reservation to the view's complete lifetime.
 /// Old views can remain pinned by readers after eviction from the current cache.
 pub trait SnapshotAllocation: Send + Sync {}
@@ -61,6 +75,8 @@ pub struct ConfigurationCatalogSnapshot {
     origins: BTreeMap<String, Value>,
     current: BTreeSet<String>,
     automation_sources: Arc<BTreeSet<Id>>,
+    domain_catalog: bool,
+    historical_sources: BTreeSet<Id>,
     all_heads: BTreeMap<(String, String), u64>,
     retired_identities: BTreeSet<String>,
     retired_sources: BTreeSet<(String, String)>,
@@ -88,6 +104,8 @@ impl ConfigurationCatalogSnapshot {
             origins: BTreeMap::new(),
             current: Default::default(),
             automation_sources: Default::default(),
+            domain_catalog: false,
+            historical_sources: BTreeSet::new(),
             all_heads: Default::default(),
             retired_identities: Default::default(),
             retired_sources: Default::default(),
@@ -195,6 +213,29 @@ impl ConfigurationCatalogSnapshot {
         !self.automation_sources.contains(&record.id)
     }
 
+    fn with_historical_sources(mut self, sources: BTreeSet<Id>) -> Self {
+        if !sources.is_empty() {
+            self.fingerprint = configuration_hash(&(&self.fingerprint, &sources));
+            for id in &sources {
+                if let Some(origin) = self.origins.get_mut(id) {
+                    origin["origin"] = json!("archived");
+                }
+            }
+            self.historical_sources = sources;
+        }
+        self
+    }
+
+    pub fn archive_legacy_software_roles(self) -> Self {
+        let mut sources = self.historical_sources.clone();
+        sources.extend(
+            self.records("role")
+                .filter(|r| legacy_software_role(r))
+                .map(|r| r.id.clone()),
+        );
+        self.with_historical_sources(sources)
+    }
+
     pub fn with_allocation(mut self, allocation: impl SnapshotAllocation + 'static) -> Self {
         self._allocation = Some(Box::new(allocation));
         self
@@ -237,9 +278,13 @@ impl ConfigurationCatalogSnapshot {
                 .contains(&(record.r#type.clone(), record.definition_id.clone()))
     }
     pub fn is_archived(&self, record: &ConfigurationRecord) -> bool {
-        !self.is_current(record)
+        self.is_historical_domain_source(record)
+            || !self.is_current(record)
             || (record.r#type == "standard"
                 && self.archived_standards.get(&record.id) == Some(&true))
+    }
+    pub fn is_historical_domain_source(&self, record: &ConfigurationRecord) -> bool {
+        self.historical_sources.contains(&record.id)
     }
     pub fn origin(&self, reference: &str) -> Option<&Value> {
         self.origins.get(reference)
@@ -407,8 +452,23 @@ pub fn compose_configuration_catalog(
         }
     }
 
-    ConfigurationCatalogSnapshot::new(state, local.revision, local.repository_ready)
-        .map(|catalog| catalog.with_automation_sources(global.automation_sources.clone()))
+    let historical_sources = state
+        .governance
+        .iter()
+        .filter(|r| {
+            global.historical_sources.contains(&r.id)
+                || (global.domain_catalog
+                    && r.is_definition()
+                    && r.scope.is_global()
+                    && global.record(&r.id).is_none())
+        })
+        .map(|r| r.id.clone())
+        .collect();
+    Ok(
+        ConfigurationCatalogSnapshot::new(state, local.revision, local.repository_ready)?
+            .with_automation_sources(global.automation_sources.clone())
+            .with_historical_sources(historical_sources),
+    )
 }
 
 /// Include active domain sources and discoverable project Roles in one read view.
@@ -459,6 +519,10 @@ pub fn compose_configuration_directory(
             .filter(|r| package_role_identity(r).is_none())
             .filter(|r| visible(r))
         {
+            if !domain_sources.is_empty() && role.scope.is_global() && !known.contains_key(&role.id)
+            {
+                continue;
+            }
             if let Some(hash) = known.get(&role.id) {
                 require(hash == &role.content_hash, "Role 目录摘要冲突")?;
             } else {
@@ -473,13 +537,81 @@ pub fn compose_configuration_directory(
             }
         }
     }
-    ConfigurationCatalogSnapshot::new(state, global.revision, false)
+    let mut catalog = ConfigurationCatalogSnapshot::new(state, global.revision, false)?;
+    catalog.domain_catalog = !domain_sources.is_empty();
+    Ok(catalog)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::governance::record;
+
+    #[test]
+    fn imported_global_sources_remain_readable_as_history_in_a_domain_project() {
+        let role = |id: &str, scope| {
+            record(
+                "role",
+                id.into(),
+                scope,
+                "Reviewer".into(),
+                1,
+                None,
+                json!({"instructions":"Review the result."}),
+                true,
+            )
+        };
+        let legacy = role("builtin-role-reviewer", Scope::global());
+        let project_copy = role("old-project-global-reviewer", Scope::global());
+        let project_role = role("project-reviewer", Scope::project("project"));
+        let packaged = role("software-development.role-reviewer", Scope::global());
+        let global = ConfigurationCatalogSnapshot::new(
+            EngineeringState {
+                governance: vec![legacy.clone()],
+                ..Default::default()
+            },
+            1,
+            false,
+        )
+        .unwrap();
+        let local = Arc::new(
+            ConfigurationCatalogSnapshot::new(
+                EngineeringState {
+                    governance: vec![legacy.clone(), project_copy.clone(), project_role.clone()],
+                    ..Default::default()
+                },
+                1,
+                true,
+            )
+            .unwrap(),
+        );
+        let directory = compose_configuration_directory(
+            &global,
+            std::slice::from_ref(&packaged),
+            std::slice::from_ref(&local),
+            |_| true,
+        )
+        .unwrap()
+        .archive_legacy_software_roles();
+        assert!(directory.record(&project_copy.id).is_none());
+        let view = compose_configuration_catalog(&directory, &local, "project").unwrap();
+        let sources =
+            crate::configuration_index(&view, &json!({"kind":"role"}), Some("project")).unwrap();
+        let ids = sources["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["id"].as_str().unwrap())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            ids,
+            BTreeSet::from([packaged.id.as_str(), project_role.id.as_str()])
+        );
+        assert_eq!(view.record(&legacy.id), Some(&legacy));
+        assert_eq!(view.record(&project_copy.id), Some(&project_copy));
+        assert!(view.is_archived(&legacy));
+        assert!(view.is_archived(&project_copy));
+    }
 
     #[test]
     fn packaged_role_composition_preserves_project_membership() {

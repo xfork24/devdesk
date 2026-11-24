@@ -84,8 +84,24 @@ fn value(conn: &Connection, key: &ResourceKey) -> Result<Option<Value>> {
             Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT id FROM governance_records WHERE type='permission_switch' AND definition_id=?1 AND ((?2 IS NULL AND json_extract(data,'$.status')!='adopted') OR (?2 IS NOT NULL AND json_extract(data,'$.status')='adopted' AND json_extract(data,'$.command.payload.client_message_id')=?2)) ORDER BY rowid DESC LIMIT 1)",&[&session,&client])?.into_iter().next())
         }
         "repository_pending_page"|"tasks_need_worktree_page"=>{
-            let (after,):(String,)=serde_json::from_str(&key.id).map_err(storage)?;let sql=if key.kind=="repository_pending_page"{"SELECT id FROM repository_operations WHERE id>?1 AND (status IN ('prepared','dispatched','observed') OR (status='needs_reconciliation' AND (reason='reconcile_requested' OR (json_extract(action,'$.kind')='connect' AND reason='原物理观察已保留，原业务接纳版本冲突')))) ORDER BY id LIMIT 16"}else{"SELECT t.id FROM tasks t WHERE t.id>?1 AND t.worktree='' AND t.status!='completed' AND NOT EXISTS(SELECT 1 FROM repository_operations o WHERE json_extract(o.action,'$.kind')='create_worktree' AND json_extract(o.action,'$.owner')=t.id) ORDER BY t.id LIMIT 16"};
-            let mut q=conn.prepare_cached(sql).map_err(storage)?;let ids=q.query_map([&after],|r|r.get::<_,String>(0)).map_err(storage)?.collect::<rusqlite::Result<Vec<_>>>().map_err(storage)?;Ok(Some(json!(ids)))
+            let (after,):(String,)=serde_json::from_str(&key.id).map_err(storage)?;
+            let repository_sql;
+            let sql = if key.kind == "repository_pending_page" {
+                repository_sql = format!(
+                    "SELECT id FROM repository_operations WHERE id>?1 AND ({}) ORDER BY id LIMIT 16",
+                    repository_contexts::RUNNABLE_OPERATION,
+                );
+                repository_sql.as_str()
+            } else {
+                "SELECT t.id FROM tasks t WHERE t.id>?1 AND t.worktree='' AND t.status!='completed'
+                    AND NOT EXISTS(SELECT 1 FROM repository_operations o
+                        WHERE json_extract(o.action,'$.kind')='create_worktree'
+                          AND json_extract(o.action,'$.owner')=t.id) ORDER BY t.id LIMIT 16"
+            };
+            let mut query = conn.prepare_cached(sql).map_err(storage)?;
+            let ids = query.query_map([&after], |r| r.get::<_, String>(0)).map_err(storage)?
+                .collect::<rusqlite::Result<Vec<_>>>().map_err(storage)?;
+            Ok(Some(json!(ids)))
         }
         "repository_worktree_operation"=>Ok(load_table_filtered_params::<Value>(conn,"repository_operations","id=(SELECT id FROM repository_operations WHERE json_extract(action,'$.kind')='create_worktree' AND json_extract(action,'$.owner')=?1 ORDER BY id LIMIT 1)",&[&key.id])?.into_iter().next()),
         "repository_project_state"=>conn.query_row("SELECT json_object('connect_pending',json(CASE WHEN EXISTS(SELECT 1 FROM repository_operations WHERE project_id=?1 AND json_extract(action,'$.kind')='connect' AND status!='completed') THEN 'true' ELSE 'false' END),'connect_exists',json(CASE WHEN EXISTS(SELECT 1 FROM repository_operations WHERE project_id=?1 AND json_extract(action,'$.kind')='connect') THEN 'true' ELSE 'false' END),'pending',json(CASE WHEN EXISTS(SELECT 1 FROM repository_operations WHERE project_id=?1 AND status!='completed') THEN 'true' ELSE 'false' END),'git_pending',json(CASE WHEN EXISTS(SELECT 1 FROM governance_records WHERE type='platform_call' AND owner_project=?1 AND json_extract(data,'$.handler') LIKE 'git.%' AND json_extract(data,'$.status') IN ('prepared','running','needs_reconciliation')) THEN 'true' ELSE 'false' END),'worktree_exists',json(CASE WHEN EXISTS(SELECT 1 FROM repository_worktrees WHERE project_id=?1) THEN 'true' ELSE 'false' END))",[&key.id],|r|r.get::<_,String>(0)).map_err(storage).and_then(|s|serde_json::from_str(&s).map(Some).map_err(storage)),
@@ -358,7 +374,9 @@ fn value(conn: &Connection, key: &ResourceKey) -> Result<Option<Value>> {
         "workflow_change_pending"=>Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT c.id FROM governance_records c JOIN governance_records i ON i.id=c.definition_id AND i.type='workflow_instance' JOIN governance_records target ON target.id=?1 AND target.type='workflow_instance' WHERE c.type='workflow_change' AND json_extract(c.data,'$.status') IN ('prepared','waiting_quiescence') AND json_extract(i.data,'$.root_instance_id')=json_extract(target.data,'$.root_instance_id') ORDER BY c.id LIMIT 1)",&[&key.id])?.into_iter().next()),
         "workflow_governed"=>conn.query_row("SELECT EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_instance' AND json_extract(data,'$.root_instance_id')=?1 AND json_extract(data,'$.human_governance')=1)",[&key.id],|r|r.get::<_,bool>(0)).map(|governed|Some(json!({"governed":governed}))).map_err(storage),
         "workflow_active_owner"=>conn.query_row("SELECT EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_instance' AND json_extract(data,'$.owner_id')=?1 AND json_extract(data,'$.parent_execution_id') IS NULL AND json_extract(data,'$.status') NOT IN ('completed','cancelled'))",[&key.id],|r|r.get::<_,bool>(0)).map(|active|Some(json!({"active":active}))).map_err(storage),
-        "domain_project_busy"=>conn.query_row("SELECT EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_instance' AND json_extract(data,'$.project_id')=?1 AND json_extract(data,'$.parent_execution_id') IS NULL AND json_extract(data,'$.status') NOT IN ('completed','cancelled')) OR EXISTS(SELECT 1 FROM repository_operations WHERE project_id=?1 AND status IN ('prepared','dispatched','observed','needs_reconciliation'))",[&key.id],|r|r.get::<_,bool>(0)).map(|active|Some(json!({"active":active}))).map_err(storage),
+        "domain_project_busy"=>repository_contexts::domain_project_activity(conn,&key.id).map(Some),
+        "domain_project_running_workflow"=>runtime_queries::domain_workflow_running(conn,&key.id)
+            .map(|active|Some(json!({"active":active}))),
         "workflow_active_pause"=>Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT id FROM governance_records WHERE type='workflow_pause_interval' AND definition_id=?1 AND json_extract(data,'$.finished') IS NULL ORDER BY id LIMIT 1)",&[&key.id])?.into_iter().next()),
         "driver_lease_active"=>{
             let (driver,epoch):(String,u64)=serde_json::from_str(&key.id).map_err(storage)?;
@@ -785,7 +803,10 @@ fn current_revision(conn: &Connection, key: &ResourceKey) -> Result<u64> {
     }
     if matches!(
         key.kind.as_str(),
-        "workflow_active_owner" | "workflow_any_active_owner" | "domain_project_busy"
+        "workflow_active_owner"
+            | "workflow_any_active_owner"
+            | "domain_project_busy"
+            | "domain_project_running_workflow"
     ) {
         return Ok(u64::from(
             value(conn, key)?.is_some_and(|v| v["active"] == true),
@@ -1778,6 +1799,23 @@ fn commit_once(
                 }
             }
             if let Some(write) = write {
+                // Workbench directory reads use the configuration catalog version.
+                if change.resource.kind == "setting"
+                    && change
+                        .resource
+                        .id
+                        .starts_with(catalog::REMOVED_PROJECT_PREFIX)
+                    && (catalog::setting(&transaction, &change.resource.id)?
+                        == Some(Value::Bool(true)))
+                        != (change.value == Value::Bool(true))
+                {
+                    transaction
+                        .execute(
+                            "UPDATE catalog_clock SET revision=revision+1 WHERE id=1",
+                            [],
+                        )
+                        .map_err(sqlite_error)?;
+                }
                 transaction
                     .prepare_cached(&write.sql)
                     .map_err(sqlite_error)?

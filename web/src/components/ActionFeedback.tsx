@@ -1,5 +1,9 @@
 import { displayText } from "../display-text";
 import {
+  discussionRoleOptions,
+  HistoricalDiscussionAgents,
+} from "./discussion-role-options";
+import {
   actionTargetFor,
   useActionTarget,
   withActionTarget,
@@ -12,6 +16,7 @@ import {
   SelectHTMLAttributes,
   forwardRef,
   useCallback,
+  useContext,
   useLayoutEffect,
   useRef,
   useState,
@@ -99,11 +104,14 @@ function useControlName<T extends HTMLInputElement | HTMLSelectElement>(
   }, [explicit]);
   return { ref, name: explicit || name };
 }
+
 export function ActionSelect({
+  children,
   onChange,
   ...props
 }: SelectHTMLAttributes<HTMLSelectElement>) {
   const target = useActionTarget();
+  const historicalAgents = useContext(HistoricalDiscussionAgents);
   const { ref, name } = useControlName<HTMLSelectElement>(props["aria-label"]);
   return (
     <>
@@ -113,7 +121,11 @@ export function ActionSelect({
         ref={ref}
         data-feedback-id={target.id}
         onChange={(event) => withActionTarget(target, () => onChange?.(event))}
-      />
+      >
+        {props["aria-label"] === "讨论角色"
+          ? discussionRoleOptions(children, props.value, historicalAgents)
+          : children}
+      </select>
       <Feedback target={target} />
     </>
   );

@@ -4,7 +4,7 @@ Web 是 Rust 服务的客户端。本页补齐从界面动作到 RPC、SSE 和�
 
 ## 请求入口
 
-[core-main.tsx](../../web/src/core-main.tsx) 挂载 Web Core，[DomainWorkbench.tsx](../../web/src/DomainWorkbench.tsx) 读取活动代次并加载贡献。[软件领域入口](../../configurations/software-development/web/entry.tsx) 用 [SDK](../../web/src/domain-sdk.ts) 获取项目上下文，在共享布局中渲染 [App.tsx](../../web/src/App.tsx) 的业务页面。组件通过传入的 request 调用 Host，统一处理超时、错误和作用域。
+[core-main.tsx](../../web/src/core-main.tsx) 挂载 Web Core，[DomainWorkbench.tsx](../../web/src/DomainWorkbench.tsx) 读取活动代次并加载贡献。[软件领域入口](../../plugins/software-development/web/entry.tsx) 用 [SDK](../../web/src/domain-sdk.ts) 获取项目上下文，在共享布局中渲染 [App.tsx](../../web/src/App.tsx) 的业务页面。组件通过传入的 request 调用 Host，统一处理超时、错误和作用域。
 
 请求和未完全类型化的数据边界定义在 [rpc-types.ts](../../web/src/components/rpc-types.ts)。Row/Request 是现有宽类型边界；新组件已知的 Props、状态和返回结构应使用具体类型，不能把 Row 当作已经通过校验的证明。
 
@@ -30,4 +30,4 @@ configuration 的目录版本、runtime 的显示 generation 和业务修改 exp
 
 新增查询时确认数据范围与大小；新增 mutation 时确认版本来源、草稿保留、忙碌和失败显示；新增事件处理时确认不会使每条 token 消息都触发全页面查询。
 
-测试入口：[project-isolation.spec.ts](../../web/tests/project-isolation.spec.ts)、[workspace-refresh.spec.ts](../../web/tests/workspace-refresh.spec.ts)、[settings-concurrency.spec.ts](../../web/tests/settings-concurrency.spec.ts)、[workflow-approvals.spec.ts](../../web/tests/workflow-approvals.spec.ts)。风格与异步约定见[Web 规范](standards/web.md)。
+测试入口：[project-isolation.spec.ts](../../tests/browser/project-isolation.spec.ts)、[workspace-refresh.spec.ts](../../tests/browser/workspace-refresh.spec.ts)、[settings-concurrency.spec.ts](../../tests/browser/settings-concurrency.spec.ts)、[workflow-approvals.spec.ts](../../tests/browser/workflow-approvals.spec.ts)。风格与异步约定见[Web 规范](standards/web.md)。

@@ -30,7 +30,7 @@ try {
   const softwareZip = packagedSoftware ?? path.join(tmp, "software-development.zip");
   if (!packagedSoftware) {
     await execFile("npm", ["--prefix", path.join(root, "web"), "run", "build:software"]);
-    await execFile("python3", [path.join(root, "configurations/software-development/build.py"), softwareZip]);
+    await execFile("python3", [path.join(root, "plugins/software-development/build.py"), softwareZip]);
   }
   const digests = await Promise.all([gitZip, manuscriptZip, softwareZip].map(async (file) =>
     createHash("sha256").update(await readFile(file)).digest("hex"),
@@ -183,7 +183,7 @@ try {
   await second.getByLabel("领域处理器").waitFor();
   assert.match(hostLog, /Runtime:/);
   const pid = host.pid;
-  await native("unload");
+  const waiting = await native("unload");
   await second.getByText("当前激活的领域：空领域", { exact: true }).waitFor();
   await writeFile(path.join(repository, "package.json"), JSON.stringify({ scripts: { test: "no test specified" } }));
   await activate(softwareZip);
@@ -195,6 +195,18 @@ try {
       assert.equal(await tab.getByRole("button", { name, exact: true }).count(), 0, name);
     }
   }
+  await softwareNav(page).getByRole("button", { name: "角色讨论", exact: true }).click();
+  await page.waitForFunction(() => Boolean(document.querySelector('select[aria-label="Agent"]')?.value));
+  await page.getByLabel("讨论角色", { exact: true }).selectOption("software-development.role-analyst");
+  const discussionAgent = page.getByLabel("Agent", { exact: true });
+  await discussionAgent.selectOption("software-development.agent-gpt-6-2-sol-analyst:3");
+  assert.equal(await discussionAgent.locator("option").count(), 4);
+  await page.getByRole("heading", { name: "Agent能力", exact: true }).waitFor();
+  assert.equal(await page.getByText("Agent定义", { exact: true }).count(), 0);
+  await page.getByText("角色经验", { exact: true }).click();
+  await page.getByText("0 条经验", { exact: true }).waitFor();
+  assert(await page.getByRole("button", { name: "开始 / 续用讨论", exact: true }).isEnabled());
+  await softwareNav(page).getByRole("button", { name: "工作总览", exact: true }).click();
   await page.getByRole("button", { name: "领域管理", exact: true }).click();
   await page.getByRole("heading", { name: "领域管理", exact: true }).waitFor();
   await page.getByText("当前激活的领域：software-development", { exact: true }).waitFor();
@@ -286,6 +298,26 @@ try {
   assert((await rpc(page, "query.project_directory", scope)).projects.some((row) => row.id === project));
   assert((await rpc(page, "query.configuration_index", scopedProject)).records.every((row) => !automation.has(row.id)));
   assert((await rpc(page, "query.workflows", scopedProject)).records.every((row) => !automation.has(row.id)));
+  const githubRepo = process.env.DEVDESK_DOMAIN_TEST_GITHUB_REPO;
+  const retainedRepository = "fixture/keep-test";
+  if (!githubRepo) {
+    const retained = await rpc(page, "domain.project.create", {
+      epoch: active.epoch,
+      command_id: crypto.randomUUID(),
+      title: "Retained project",
+    });
+    const retainedScope = { ...scope, project_id: retained.id };
+    const current = (await rpc(page, "query.workspace", retainedScope)).active_project;
+    await rpc(page, "project.update", {
+      ...retainedScope,
+      target: retained.id,
+      command_id: crypto.randomUUID(),
+      expected_revision: current.revision,
+      payload: {
+        workspace_definition: { repository: retainedRepository, mainline: "main", path: "" },
+      },
+    });
+  }
   const projectRole = await rpc(page, "role.create", {
     ...scopedProject,
     command_id: crypto.randomUUID(),
@@ -375,7 +407,6 @@ try {
     "software-development.branches", "software-development.delivery", settingsId,
   ]);
   let feature;
-  const githubRepo = process.env.DEVDESK_DOMAIN_TEST_GITHUB_REPO;
   if (githubRepo) {
     assert.match(githubRepo, /^(?!.*(?:^|\/)\.\.?\/)[a-z0-9_.-]+\/[a-z0-9_.-]*test[a-z0-9_.-]*$/i);
     const rpcReply = (method, matches = () => true) => page.waitForResponse(
@@ -452,6 +483,13 @@ try {
   const entity = await native("read-entity", result.project_id, result.entity_id);
   assert.equal(entity.revision, 2);
   assert.equal(entity.data.title, "  Local manuscript  ");
+  const restoredWaiting = await native("read", waiting.project_id, waiting.execution_id);
+  assert.equal(restoredWaiting.runtime.steps[0].status, "waiting_confirmation");
+  const reinstalled = await rpc(page, "query.domain.active");
+  assert.equal((await rpc(page, "domain.uninstall", {
+    epoch: reinstalled.epoch, digest: reinstalled.active.digest,
+  })).active, null);
+  await page.getByText("当前激活的领域：空领域", { exact: true }).waitFor();
   await page.getByRole("listitem").filter({ hasText: `software-development ${software.version}` })
     .getByRole("button", { name: "激活", exact: true }).click();
   await softwareNav(second).waitFor();
@@ -496,10 +534,16 @@ try {
     });
     const projectUrl = new URL(page.url());
     projectUrl.searchParams.set("project_id", project);
+    projectUrl.searchParams.set("tab", "projects");
     await Promise.all([page.goto(projectUrl.href), second.goto(projectUrl.href)]);
+    const projectCard = (tab, repository = connection.repository) =>
+      tab.locator(".project-list").getByRole("button").filter({ hasText: repository });
+    const projectOption = (tab) => tab.getByRole("combobox", { name: "当前项目" })
+      .locator(`option[value="${project}"]`);
+    await Promise.all([page, second].map((tab) => projectCard(tab).waitFor()));
+    await Promise.all([page, second].map((tab) => projectOption(tab).waitFor({ state: "attached" })));
     const removed = page.waitForResponse((response) =>
       response.request().postDataJSON()?.method === "domain.project.remove");
-    await softwareNav(page).getByRole("button", { name: "项目管理", exact: true }).click();
     const projectActions = page.locator(".action-control").filter({
       has: page.getByRole("button", { name: "保存项目配置", exact: true }),
     });
@@ -508,6 +552,15 @@ try {
     assert.equal((await removalReply.json()).result?.id, project);
     await Promise.all([page, second].map((tab) =>
       tab.waitForURL((url) => !url.searchParams.has("project_id"))));
+    await page.waitForURL((url) => url.searchParams.get("tab") === "overview");
+    await page.getByRole("heading", { name: "工作总览", exact: true }).waitFor();
+    await projectCard(second, retainedRepository).waitFor();
+    await projectCard(second).waitFor({ state: "detached" });
+    await Promise.all([page, second].map((tab) => projectOption(tab).waitFor({ state: "detached" })));
+    await softwareNav(page).getByRole("button", { name: "项目管理", exact: true }).click();
+    await projectCard(page, retainedRepository).waitFor();
+    await projectCard(page).waitFor({ state: "detached" });
+    await softwareNav(page).getByRole("button", { name: "工作总览", exact: true }).click();
     assert(!(await rpc(page, "query.project_directory", { domain_epoch: removalEpoch }))
       .projects.some((entry) => entry.id === project));
     await assert.rejects(rpc(page, "query.workspace", reopenedScope), /not_found/);
@@ -521,12 +574,51 @@ try {
     await open.getByRole("button", { name: "确认", exact: true }).click();
     assert.equal((await (await reopened).json()).result?.id, project);
     await page.waitForURL((url) => url.searchParams.get("project_id") === project);
+    await projectCard(second).waitFor();
+    await projectOption(second).waitFor({ state: "attached" });
     assert.equal((await rpc(page, "query.workspace", reopenedScope)).project_database, database);
     const retained = await native("read", project, software.run.execution_id);
     assert.equal(retained.domain_submission.entities.test_configuration, software.proof_id);
     await rpc(page, "domain.project.remove", removalReply.request().postDataJSON().params);
     assert((await rpc(page, "query.project_directory", { domain_epoch: removalEpoch }))
       .projects.some((entry) => entry.id === project));
+
+    // Reopen the same repository after uninstalling the release that created it.
+    const nextZip = path.join(tmp, "software-next.zip");
+    await execFile("python3", ["-c", `
+import json, sys
+from zipfile import ZIP_DEFLATED, ZipFile
+with ZipFile(sys.argv[1]) as original, ZipFile(sys.argv[2], 'w', ZIP_DEFLATED) as next_release:
+    for name in original.namelist():
+        data = original.read(name)
+        if name == 'manifest.json':
+            manifest = json.loads(data)
+            manifest['version'] += '-project-reuse'
+            data = json.dumps(manifest).encode()
+        next_release.writestr(name, data)
+`, softwareZip, nextZip]);
+    const countBeforeUpgrade = (await rpc(page, "query.project_directory", { domain_epoch: removalEpoch })).total_projects;
+    const oldProof = await native("read-entity", project, software.proof_id);
+    await rpc(page, "domain.uninstall", { epoch: removalEpoch, digest: digests[2] });
+    await page.getByText("当前激活的领域：空领域", { exact: true }).waitFor();
+    await activate(nextZip);
+    const upgraded = await rpc(page, "query.domain.active");
+    assert.equal(upgraded.active.id, "software-development");
+    assert.notEqual(upgraded.active.digest, digests[2]);
+    const reopenedOnUpgrade = await rpc(page, "domain.project.create", {
+      epoch: upgraded.epoch, command_id: crypto.randomUUID(), title: "Reopened across releases",
+      connection, reuse_connection: true,
+    });
+    assert.equal(reopenedOnUpgrade.id, project);
+    const upgradedScope = { project_id: project, domain_epoch: upgraded.epoch };
+    assert.equal((await rpc(page, "query.workspace", upgradedScope)).project_database, database);
+    assert.equal((await rpc(page, "query.project_directory", upgradedScope)).total_projects, countBeforeUpgrade);
+    const oldRun = await native("read", project, software.run.execution_id);
+    assert.equal(oldRun.domain_submission.entities.test_configuration, software.proof_id);
+    assert.deepEqual(await native("read-entity", project, software.proof_id), oldProof);
+    await assert.rejects(rpc(page, "query.domain.workflow", {
+      epoch: upgraded.epoch, project_id: result.project_id, execution_id: result.execution_id,
+    }), /项目不属于当前领域/);
   }
   assert.equal(host.pid, pid);
   assert.equal(host.exitCode, null);

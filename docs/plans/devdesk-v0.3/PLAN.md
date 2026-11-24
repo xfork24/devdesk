@@ -245,7 +245,7 @@ Artifact 密封后保存 SHA256，读取验证路径和摘要。跨项目历史�
 
 Workflow 与工作台结果记录于 [执行记录](../workflow-and-workbench/EXECUTION.md)，后续默认套件、Role CRUD 与数据重新初始化记录于 [默认套件与 Role 执行记录](../builtin-defaults-and-roles/EXECUTION.md)。历史 v0.2、Ubuntu 和 Permission 报告是其执行日期的事实，不自动证明 v0.3 的新能力已在那些平台重跑。
 
-所有计划目录只保留 Markdown。日志、JSON、截图和临时测试脚本已按用户要求清理；源码回归测试继续位于 crates、tests、web/tests。历史报告里的临时路径或 SHA 仅记录当时执行，原中间文件不再作为交付物。
+所有计划目录只保留 Markdown。日志、JSON、截图和临时测试脚本已按用户要求清理；源码回归测试继续位于 crates、tests、tests/browser。历史报告里的临时路径或 SHA 仅记录当时执行，原中间文件不再作为交付物。
 
 ## 23 后续边界
 

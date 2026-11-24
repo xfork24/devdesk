@@ -522,8 +522,7 @@ test("流式回复只有一条消息，工具正文与技术回执在新标签�
     await route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
   });
   await page.getByRole("button", { name: "角色讨论", exact: true }).click();
-  await page.getByLabel("讨论角色", { exact: true }).selectOption(agent);
-  await page.getByLabel("Agent", { exact: true }).selectOption(instance.id);
+  await page.getByLabel("Agent", { exact: true }).selectOption(agent);
   await page
     .getByRole("button", { name: "开始 / 续用讨论", exact: true })
     .click();

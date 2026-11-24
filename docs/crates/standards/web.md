@@ -41,6 +41,6 @@ npm --prefix web run build
 
 lint 使用零警告门禁；hooks/refresh 约束保持启用，不增加数量预算。typecheck 覆盖 src 与 tests。当前 refresh 规则约束模块边界，不据此声称运行时已经验证热更新状态保留。
 
-Playwright 用例位于 web/tests，标题描述用户可见行为，夹具放 support。新增交互覆盖加载、失败、取消、项目切换和草稿保留中与改动相关的分支；浏览器测试不代替真实模型验收。
+Playwright 用例位于 tests/browser，标题描述用户可见行为，夹具放 support。新增交互覆盖加载、失败、取消、项目切换和草稿保留中与改动相关的分支；浏览器测试不代替真实模型验收。
 
 前后端路径见[Web 与 Host](../web-integration.md)，检查前置条件见[测试索引](../../../tests/README.md)。

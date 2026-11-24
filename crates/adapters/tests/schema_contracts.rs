@@ -54,7 +54,7 @@ fn all_published_schemas_and_definitions_resolve_offline() {
 #[test]
 fn template_manifest_rejects_unrecognized_source_categories() {
     let mut manifest: Value =
-        serde_json::from_str(include_str!("../../../configurations/core/manifest.json")).unwrap();
+        serde_json::from_str(include_str!("../../../plugins/core/manifest.json")).unwrap();
     SCHEMAS.assert_valid("template-manifest.schema.json", &manifest);
     manifest["types"]["workfow"] = json!([]);
     assert!(
@@ -309,7 +309,7 @@ fn standalone_permission_contract_matches_rpc_and_preserves_null_rejection() {
     }
     for file in std::fs::read_dir(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../configurations/core/permissions/profiles"
+        "/../../plugins/core/permissions/profiles"
     ))
     .unwrap()
     {
@@ -713,8 +713,7 @@ fn business_metadata_versions_do_not_gate_structurally_valid_definitions() {
         .unwrap();
     SCHEMAS.assert_valid("template-manifest.schema.json", &{
         let mut manifest: Value =
-            serde_json::from_str(include_str!("../../../configurations/core/manifest.json"))
-                .unwrap();
+            serde_json::from_str(include_str!("../../../plugins/core/manifest.json")).unwrap();
         manifest["schema_version"] = json!(999);
         manifest
     });

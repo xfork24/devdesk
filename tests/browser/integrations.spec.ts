@@ -418,7 +418,10 @@ test("MCP 页面实际发现 stdio 服务、只授权选中工具并查看 Docke
         "--input-type=module",
         "-e",
         readFileSync(
-          "../tests/fixtures/tool-integrations/mcp-service.mjs",
+          new URL(
+            "../fixtures/tool-integrations/mcp-service.mjs",
+            import.meta.url,
+          ),
           "utf8",
         ),
       ]),

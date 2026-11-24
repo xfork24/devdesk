@@ -5,10 +5,10 @@ import { ConversationContent } from "./ConversationContent";
 import { ActionButton, ActionForm, ActionSelect } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
 import { ExecutionTaskDetails } from "./WorkflowTaskPreview";
-import { loadCatalog, decodeConfigurationIndex } from "./configuration-state";
+import { loadCatalog } from "./configuration-state";
 import { MarkdownField } from "./configuration-ui";
 import { type Request, type Row } from "./rpc-types";
-import { AgentExperience } from "./AgentExperience";
+import { RoleExperience } from "./RoleExperience";
 import { experienceKey } from "./experience-reference";
 import { configurationHref } from "./configuration-links";
 import { ConfigurationLink } from "./ConfigurationLink";
@@ -27,7 +27,6 @@ type Props = {
   project?: Row;
   feature?: Row;
   tasks: Row[];
-  agents: Row[];
   configurations?: Row[];
   onLocateExperience?: (entry: Row) => void;
   onDiscussionDeleted?: (session: string, turn?: string) => void;
@@ -38,13 +37,23 @@ type Props = {
   refresh: () => Promise<void>;
 };
 const globalOwner = { id: "global", title: "全局 / 跨项目", revision: 0 };
-const createAgentInstanceOption = "__create_agent_instance__";
+const migratedRoles = new Set([
+  "analyst",
+  "architect",
+  "developer",
+  "project-manager",
+  "reviewer",
+  "tester",
+]);
+
+function roleIdentity(ref: string | undefined) {
+  return ref?.replace(/:[1-9]\d*$/, "") || "";
+}
 
 export function RoleConversation({
   project = globalOwner,
   feature,
   tasks,
-  agents,
   configurations = [],
   onLocateExperience,
   onDiscussionDeleted,
@@ -65,7 +74,7 @@ export function RoleConversation({
 
   const [owner, setOwner] = useState(initialOwner || project.id);
   const [catalog, setCatalog] = useState<Row[]>([]);
-  const [instanceId, setInstanceId] = useState("");
+  const [selectedRole, setSelectedRole] = useState("");
   const [agent, setAgent] = useState("");
   const [editing, setEditing] = useState<Row>();
   const [sessions, setSessions] = useState<Row[]>([]);
@@ -143,9 +152,6 @@ export function RoleConversation({
       : owner === feature?.id
         ? feature
         : tasks.find((t) => t.id === owner);
-  const workLock = configurations
-    .filter((r) => r.type === "work_configuration" && r.definition_id === owner)
-    .at(-1);
   const runtime = configurations
     .filter(
       (r) =>
@@ -164,76 +170,73 @@ export function RoleConversation({
   const recommended = plan?.steps?.find(
     (s: Row) => s.key === recommendedExecution?.step,
   );
-  const boundAgents = useMemo(
-    () =>
-      runtime?.data.plan?.definitions
-        ? Object.values(runtime.data.plan.definitions as Row)
-            .filter((row: Row) => row.type === "agent")
-            .map((row: Row) => row.id as string)
-        : (Object.values(
-            runtime?.data.role_agent_bindings ||
-              workLock?.data.role_agent_bindings ||
-              {},
-          ) as string[]),
-    [
-      runtime?.data.plan?.definitions,
-      runtime?.data.role_agent_bindings,
-      workLock?.data.role_agent_bindings,
-    ],
-  );
   const composite = catalog.find((r) => r.id === agent && r.type === "agent");
-  // Agent instances pin the exact revision they were created with; a Role
-  // selection offers the latest revision of that definition. Match instances
-  // by agent definition so superseded revisions still load their instances.
-  const definitionOf = useCallback(
-    (id: string | undefined) => {
-      if (!id) return "";
-      return (
-        catalog.find((r) => r.id === id && r.type === "agent")?.definition_id ||
-        id.slice(0, id.lastIndexOf(":"))
-      );
-    },
+  const capability = catalog.find((r) => r.id === composite?.capability_ref);
+  const [exactCapability, setExactCapability] = useState<Row>();
+  const capabilityRef = composite?.capability_ref;
+  useEffect(() => {
+    if (!capabilityRef || capability?.skills) return;
+    const controller = new AbortController();
+    request(
+      "query.configuration_records",
+      {
+        refs: [capabilityRef],
+        project_id: global ? undefined : project.id,
+        local: !global,
+      },
+      { signal: controller.signal },
+    )
+      .then(({ records }) => {
+        if (!controller.signal.aborted) setExactCapability(records[0]);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [capabilityRef, capability?.skills, request, global, project.id]);
+  const displayedCapability =
+    exactCapability?.id === capabilityRef ? exactCapability : capability;
+  const roles = useMemo(
+    () => catalog.filter((r) => r.type === "role" && !r.archived),
     [catalog],
   );
-  const selectedDefinition = definitionOf(agent);
-  const instances = useMemo(
-    () =>
-      catalog.filter(
-        (r) =>
-          r.type === "agent_instance" &&
-          definitionOf(r.data.agent_revision_id) === selectedDefinition,
-      ),
-    [catalog, definitionOf, selectedDefinition],
+  const roleOf = useCallback(
+    (record: Row | undefined) => {
+      const identity = roleIdentity(record?.role_ref);
+      const legacy = identity.startsWith("builtin-role-")
+        ? identity.slice("builtin-role-".length)
+        : "";
+      const packaged = `software-development.role-${legacy}`;
+      return migratedRoles.has(legacy) &&
+        roles.some((r) => r.definition_id === packaged)
+        ? packaged
+        : identity;
+    },
+    [roles],
   );
-  const pinnedRevision = instances.find((r) => r.id === instanceId)?.data
-    .agent_revision_id;
-  // Sessions execute the revision pinned by the instance, not the latest one.
-  const running = catalog.find(
-    (r) => r.id === (pinnedRevision || agent) && r.type === "agent",
+  const roleId =
+    roleOf(composite) || selectedRole || roles[0]?.definition_id || "";
+  const pinned = detail?.session.agent === agent || Boolean(sessionAnchor);
+  const roleChoices =
+    roles.some((r) => r.definition_id === roleId) || !roleId || !pinned
+      ? roles
+      : [...roles, { definition_id: roleId, name: roleId }];
+  const agentChoices = catalog.filter(
+    (row) =>
+      row.type === "agent" &&
+      roleOf(row) === roleId &&
+      ((row.id === agent && pinned) ||
+        (!row.archived && (!global || row.scope === "global"))),
   );
-  const capability = catalog.find((r) => r.id === running?.capability_ref);
-
+  const canOpen =
+    composite &&
+    !composite.archived &&
+    agentChoices.some((row) => row.id === composite.id);
   useEffect(() => {
-    if (!workLock || owner === project.id || global || sessionId) return;
-    if (!boundAgents.includes(agent)) {
-      setAgent(recommendation || "");
-      setInstanceId("");
-    }
-  }, [
-    workLock,
-    runtime?.data.active_plan_revision_id,
-    owner,
-    recommendation,
-    sessionId,
-    project.id,
-    global,
-    boundAgents,
-    agent,
-  ]);
-  useEffect(() => {
-    let current = true;
     if (!agent || catalog.some((r) => r.id === agent)) return;
-    request("query.agent_revision", { id: agent, project_id: project.id })
+    let current = true;
+    request("query.agent_revision", {
+      id: agent,
+      project_id: global ? undefined : project.id,
+    })
       .then((row) => {
         if (current)
           setCatalog((old) =>
@@ -244,124 +247,60 @@ export function RoleConversation({
     return () => {
       current = false;
     };
-  }, [agent, request, project.id, catalog]);
+  }, [agent, request, project.id, global, catalog]);
   useEffect(() => {
-    if (detail?.session.id && detailGeneration.current === generation.current) {
+    if (detail?.session.id && detailGeneration.current === generation.current)
       setAgent(detail.session.agent);
-      setInstanceId(
-        currentBinding?.agent_configuration?.agent_instance_id ||
-          detail.agent_instance_id ||
-          "",
-      );
-    }
-  }, [
-    currentBinding?.agent_configuration?.agent_instance_id,
-    detail?.agent_instance_id,
-    detail?.session.agent,
-    detail?.session.id,
-  ]);
-
-  const choices: Row[] = [
-    ...agents,
-    ...catalog
-      .filter((r) => r.type == "agent" && !agents.some((a) => a.id === r.id))
-      .map((r) => ({
-        ...r,
-        agent_profile: {
-          role: catalog.find((role) => role.id === r.role_ref)?.definition_id,
-        },
-      })),
-  ];
-  const roles = choices.filter(
-    (a) =>
-      a.agent_profile &&
-      (catalog.some((r) => r.id === a.id && r.type === "agent") ||
-        detail?.session.agent === a.id) &&
-      (detail?.session.agent === a.id ||
-        (workLock && owner !== project.id && !global
-          ? boundAgents.includes(a.id)
-          : !choices.some((d) => d.supersedes === a.id))),
-  );
+  }, [detail?.session.agent, detail?.session.id]);
   useEffect(() => {
-    if (sessionId || composite || !catalog.length) return;
-    const candidates = catalog.filter(
-      (r) =>
-        r.type == "agent" &&
-        (!workLock ||
-          owner === project.id ||
-          global ||
-          boundAgents.includes(r.id)),
-    );
-    const selected =
-      candidates.find((r) => r.id === recommendation) ||
-      candidates.find(
-        (r) =>
-          r.definition_id === "builtin-agent-gpt-6-2-sol-project-manager" &&
-          !candidates.some((next) => next.supersedes === r.id),
-      ) ||
-      candidates.find(
-        (r) => !candidates.some((next) => next.supersedes === r.id),
-      );
-    if (selected)
-      setAgent((current) =>
-        candidates.some((candidate) => candidate.id === current)
-          ? current
-          : selected.id,
-      );
-  }, [
-    catalog,
-    owner,
-    runtime?.data.active_plan_revision_id,
-    workLock?.id,
-    recommendation,
-    sessionId,
-    composite,
-    workLock,
-    project.id,
-    global,
-    boundAgents,
-  ]);
-  useEffect(() => {
-    if (!sessionId && !instances.some((r) => r.id === instanceId))
-      setInstanceId(instances[0]?.id || "");
-  }, [instances, sessionId, instanceId]);
-  useEffect(() => {
-    let current = true;
-    (async () => {
-      const rows = await loadCatalog(request, global ? undefined : project?.id);
-      if (global) {
-        let offset = 0;
-        for (;;) {
-          const page = await request("query.discussion_agents", {
-            offset,
-            limit: 100,
-            view: "index",
-          });
-          for (const row of page.records)
-            if (!rows.some((r) => r.id === row.id))
-              rows.push(decodeConfigurationIndex(row));
-          offset += page.records.length;
-          if (offset >= page.total || !page.records.length) break;
-        }
-      }
-      return rows;
-    })()
+    const controller = new AbortController();
+    loadCatalog(
+      request,
+      global ? undefined : project.id,
+      false,
+      undefined,
+      false,
+      controller.signal,
+    )
       .then((rows) => {
-        if (current) setCatalog(rows);
+        if (!controller.signal.aborted) setCatalog(rows);
       })
       .catch((e) => {
-        if (current) setError(String(e));
+        if (!controller.signal.aborted) setError(String(e));
       });
-    return () => {
-      current = false;
-    };
-  }, [request, project?.id, global, setError]);
+    return () => controller.abort();
+  }, [request, project.id, global, setError]);
   useEffect(() => {
-    if (recommendation && !sessionId) {
-      setAgent(recommendation);
-      setInstanceId("");
-    }
-  }, [recommendation, owner, sessionId]);
+    if (sessionId || sessionAnchor || !catalog.length) return;
+    if (agent && catalog.some((r) => r.id === agent && !r.archived)) return;
+    const candidates = catalog.filter(
+      (row) =>
+        row.type === "agent" &&
+        !row.archived &&
+        (!global || row.scope === "global") &&
+        roles.some((role) => role.definition_id === roleOf(row)) &&
+        (!selectedRole || roleOf(row) === selectedRole),
+    );
+    const selected =
+      candidates.find((row) => row.id === recommendation) ||
+      candidates.find(
+        (row) =>
+          row.definition_id ===
+          "software-development.agent-gpt-6-2-sol-project-manager",
+      ) ||
+      candidates[0];
+    if (selected) setAgent(selected.id);
+  }, [
+    agent,
+    catalog,
+    global,
+    recommendation,
+    roleOf,
+    roles,
+    selectedRole,
+    sessionAnchor,
+    sessionId,
+  ]);
   const active = detail?.turns.find(
     (t: Row) => !["completed", "failed", "cancelled"].includes(t.status),
   );
@@ -432,13 +371,14 @@ export function RoleConversation({
       expected_revision,
       payload,
     });
-  const recommendedStepId = recommendedExecution?.id;
+  const recommendedStepId =
+    agent === recommendation ? recommendedExecution?.id : undefined;
   const loadSessions = useCallback(
     async (anchor = sessionAnchor, removed?: string) => {
+      if (!anchor && !agent) return;
       const current = ++listGeneration.current;
       const result = await scopedRequest("query.sessions", {
         owner_id: owner,
-        agent_instance_id: anchor ? undefined : instanceId || undefined,
         workflow_session_id: anchor || undefined,
         step_execution_id: anchor ? undefined : recommendedStepId,
         agent: anchor ? undefined : agent || undefined,
@@ -454,21 +394,13 @@ export function RoleConversation({
           if (!manualSession.current) setSessionId(anchor);
           return;
         }
-        if (!manualSession.current && (instanceId || agent)) {
-          const latest = visible.find((s: Row) =>
-            instanceId
-              ? (s.agent_instance_id ||
-                  s.runtime_binding?.agent_configuration?.agent_instance_id) ===
-                instanceId
-              : agent
-                ? s.agent === agent
-                : false,
-          );
+        if (!manualSession.current) {
+          const latest = visible.find((s: Row) => s.agent === agent);
           setSessionId(latest?.id || "");
         }
       }
     },
-    [scopedRequest, owner, instanceId, sessionAnchor, agent, recommendedStepId],
+    [scopedRequest, owner, sessionAnchor, agent, recommendedStepId],
   );
   useEffect(() => {
     ++generation.current;
@@ -555,39 +487,21 @@ export function RoleConversation({
       setBusy(false);
     }
   }
-  async function createAgentInstance() {
-    if (!composite) return;
-    await action(async () => {
-      const created = await request("agent.instance.create", {
-        project_id: global ? undefined : project.id,
-        command_id: crypto.randomUUID(),
-        payload: {
-          name: composite.name,
-          agent_revision_id: composite.id,
-          ...(!global &&
-          owner !== project.id &&
-          runtime?.data.role_agent_bindings &&
-          boundAgents.includes(composite.id)
-            ? { frozen_work_id: owner }
-            : {}),
-          scope: global ? "global" : `project:${project.id}`,
-        },
-      });
-      clearSelectedSession();
-      setCatalog(await loadCatalog(request, global ? undefined : project?.id));
-      setInstanceId(created.id);
-    });
-  }
   async function open(forceNew = false) {
     captureFeedback();
 
-    if (!selectedOwner) return;
+    if (!selectedOwner || !canOpen) return;
     if (recommendedExecution && agent === recommendation) {
       if (recommendedExecution.session_id) {
         setSessionId(recommendedExecution.session_id);
         return;
       }
       setError("步骤会话正在由 Workflow 调度，请稍后查看执行状态。");
+      return;
+    }
+    if (!forceNew && detail?.session.agent === agent) {
+      if (requiresContinuation) return continueDiscussion();
+      composer.current?.scrollIntoView({ block: "nearest" });
       return;
     }
     manualSession.current = true;
@@ -597,9 +511,7 @@ export function RoleConversation({
         owner,
         selectedOwner.revision,
         {
-          // The backend freezes the composition pinned by the instance.
-          agent: pinnedRevision || agent,
-          ...(instanceId ? { agent_instance_id: instanceId } : {}),
+          agent,
           ...(forceNew ? { force_new: true } : {}),
         },
       );
@@ -738,6 +650,7 @@ export function RoleConversation({
                 experience_refs: references.map((entry) => ({
                   source_project_id: entry.project_id,
                   snapshot_id: entry.snapshot_id,
+                  ...(entry.excerpt ? { excerpt: entry.excerpt } : {}),
                 })),
               }
             : {}),
@@ -808,8 +721,7 @@ export function RoleConversation({
         <div>
           <h2>角色讨论</h2>
           <p className="muted">
-            与选定 Agent 直接沟通，并查看它积累的工作与快照。Agent
-            的经验范围由其定义确定；全局讨论可跨项目保留。
+            选择角色及其 Agent 开始讨论，并查看该角色积累的经验。
           </p>
         </div>
       </div>
@@ -822,7 +734,10 @@ export function RoleConversation({
             value={owner}
             onChange={(e) => {
               captureFeedback();
-              return setOwner(e.target.value);
+              clearSelectedSession();
+              setSelectedRole("");
+              setAgent("");
+              setOwner(e.target.value);
             }}
           >
             <option value="global">全局 / 跨项目</option>
@@ -847,146 +762,75 @@ export function RoleConversation({
           角色
           <ActionSelect
             aria-label="讨论角色"
-            disabled={busy}
-            value={agent}
+            disabled={busy || !roleChoices.length}
+            value={roleId}
             onChange={(e) => {
               captureFeedback();
-              if (e.target.value === agent) return;
               clearSelectedSession();
-              setAgent(e.target.value);
-              setInstanceId("");
+              setSelectedRole(e.target.value);
+              setAgent("");
             }}
           >
-            {roles.map((a) => (
-              <option key={a.id} value={a.id}>
-                {displayText(a.name)} v{displayText(a.version)}
+            <option value="" disabled>
+              请选择角色
+            </option>
+            {roleChoices.map((role) => (
+              <option key={role.definition_id} value={role.definition_id}>
+                {displayText(role.name)}
               </option>
             ))}
           </ActionSelect>
         </label>
-        {!composite && (
-          <p className="notice">
-            {displayText(
-              detail?.session
-                ? "历史会话保留原运行绑定；请选择完整 Agent 组合开启新会话。"
-                : "请先在基础组件中准备资源，并在角色与代理中组合所需能力，再选择讨论实例。",
-            )}
-          </p>
-        )}
-        {composite && (
-          <>
-            <label>
-              Agent
-              <ActionSelect
-                aria-label="Agent"
-                disabled={busy}
-                value={instanceId}
-                onChange={(e) => {
-                  captureFeedback();
-                  if (e.target.value === instanceId) return;
-                  if (e.target.value === createAgentInstanceOption) {
-                    void createAgentInstance();
-                    return;
-                  }
-                  clearSelectedSession();
-                  setInstanceId(e.target.value);
-                }}
-              >
-                <option value="" disabled>
-                  请选择已创建的 Agent
-                </option>
-                {instances.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {displayText(
-                      r.name.replace(/\s*·\s*(?:项目|全局)讨论\s*\d+$/u, ""),
-                    )}{" "}
-                    ·{" "}
-                    {displayText(
-                      r.origin_project_name ||
-                        (r.scope === "global" ? "全局身份" : "项目身份"),
-                    )}{" "}
-                    · v
-                    {displayText(
-                      catalog.find((c) => c.id === r.data.agent_revision_id)
-                        ?.version,
-                    )}{" "}
-                    · {displayText(shortId(r.id))}
-                  </option>
-                ))}
-                <option value={createAgentInstanceOption}>新建Agent实例</option>
-              </ActionSelect>
-            </label>
-            {!instances.length && (
-              <p className="muted">
-                在 Agent 下拉列表中选择“新建Agent实例”，即可独立保留会话与经验。
-              </p>
-            )}
-            {instanceId && (
-              <p className="muted">
-                该 Agent 的经验范围：
-                {displayText(
-                  instances.find((r) => r.id === instanceId)?.scope === "global"
-                    ? "全局 / 跨项目"
-                    : instances.find((r) => r.id === instanceId)
-                        ?.origin_project_name || "来源项目",
-                )}
-                ；已有工作按此身份保留。
-              </p>
-            )}
-          </>
-        )}
-        <div className="agent-information-row" aria-label="Agent信息">
+        <label>
+          Agent
+          <ActionSelect
+            aria-label="Agent"
+            disabled={busy || !agentChoices.length}
+            value={agent}
+            onChange={(e) => {
+              captureFeedback();
+              clearSelectedSession();
+              setSelectedRole(roleId);
+              setAgent(e.target.value);
+            }}
+          >
+            <option value="" disabled>
+              请选择 Agent
+            </option>
+            {agentChoices.map((row) => (
+              <option key={row.id} value={row.id}>
+                {displayText(row.name)} v{displayText(row.version)}
+              </option>
+            ))}
+          </ActionSelect>
+        </label>
+        <div className="discussion-agent-info" aria-label="Agent信息">
           {composite && (
-            <>
-              <details
-                onToggle={(event) => {
-                  const target = running || composite;
-                  if (!event.currentTarget.open || !target?._index) return;
-                  void request(
-                    global
-                      ? "query.discussion_agents"
-                      : "query.configuration_records",
-                    {
-                      refs: [target.id],
-                      ...(global
-                        ? {}
-                        : { project_id: project.id, local: true }),
-                    },
-                  )
-                    .then((result) =>
-                      setCatalog((rows) =>
-                        rows.map(
-                          (row) =>
-                            result.records.find((r: Row) => r.id === row.id) ||
-                            row,
-                        ),
-                      ),
-                    )
-                    .catch((error) => setError(String(error)));
-                }}
-              >
-                <summary>Agent定义</summary>
-                <div className="agent-information-content">
-                  <pre>
-                    {displayText(JSON.stringify(running || composite, null, 2))}
-                  </pre>
-                </div>
-              </details>
-              <details className="agent-capabilities">
-                <summary>Agent能力</summary>
-                <div className="agent-information-content">
-                  <div className="agent-capability-lists">
-                    {(
-                      [
-                        ["skills", "Skills"],
-                        ["tools", "Tools"],
-                        ["spec_refs", "Agent Specs"],
-                      ] as const
-                    ).map(([key, label]) => (
-                      <div key={key}>
-                        <strong>{displayText(label)}</strong>
-                        <ul>
-                          {(capability?.[key] || []).map((id: string) => (
+            <section aria-label="Agent能力">
+              <h3>Agent能力</h3>
+              <div className="agent-information-content">
+                <p>
+                  {["model_ref", "harness_ref"]
+                    .map((key) => {
+                      const id = displayedCapability?.[key];
+                      return catalog.find((row) => row.id === id)?.name || id;
+                    })
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+                <div className="agent-capability-lists">
+                  {(
+                    [
+                      ["skills", "Skills"],
+                      ["tools", "Tools"],
+                      ["spec_refs", "Agent Specs"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <div key={key}>
+                      <strong>{displayText(label)}</strong>
+                      <ul>
+                        {(displayedCapability?.[key] || []).map(
+                          (id: string) => (
                             <li key={id}>
                               {displayText(
                                 catalog.find((row) => row.id === id)?.name ||
@@ -1018,27 +862,22 @@ export function RoleConversation({
                                 </span>
                               )}
                             </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ))}
-                  </div>
-                  <p>Agent 经验：检索与读取，可在当前讨论中按需使用。</p>
+                          ),
+                        )}
+                      </ul>
+                    </div>
+                  ))}
                 </div>
-              </details>
-            </>
+              </div>
+            </section>
           )}
-          <AgentExperience
+          <RoleExperience
             revision={lastCompleted?.id}
-            key={`${global ? "global" : project.id}:${instanceId || detail?.session.id || owner}`}
+            key={`${global ? "global" : project.id}:${roleId}`}
             request={request}
             projectId={global ? "global" : project.id}
-            instanceId={
-              instanceId ||
-              detail?.session.runtime_binding?.agent_configuration
-                ?.agent_instance_id ||
-              ""
-            }
+            roleId={roleId}
+            currentInstance={continuationAgent}
             owner={selectedOwner || project}
             references={experienceRefs}
             onReference={
@@ -1064,19 +903,14 @@ export function RoleConversation({
           />
         </div>
         <ActionButton
-          disabled={busy || !selectedOwner || !composite || !instanceId}
+          disabled={busy || !selectedOwner || !canOpen}
           onClick={() => open()}
         >
           开始 / 续用讨论
         </ActionButton>
         <ActionButton
           disabled={
-            busy ||
-            !selectedOwner ||
-            !composite ||
-            !instanceId ||
-            formalOutput ||
-            !!active
+            busy || !selectedOwner || !canOpen || formalOutput || !!active
           }
           onClick={() => open(true)}
         >
@@ -1086,7 +920,7 @@ export function RoleConversation({
       {recommended && (
         <p className="notice">
           工作流推荐：{displayText(recommended.name)} ·{" "}
-          {displayText(roles.find((r) => r.id === recommendation)?.name)}
+          {displayText(catalog.find((r) => r.id === recommendation)?.name)}
           。目标：
           {displayText(recommended.task_instructions)}；产物：
           {displayText(
@@ -1137,15 +971,7 @@ export function RoleConversation({
         >
           <option value="">选择会话</option>
           {sessions
-            .filter(
-              (s) =>
-                s.id === sessionId ||
-                (instanceId
-                  ? (s.agent_instance_id ||
-                      s.runtime_binding?.agent_configuration
-                        ?.agent_instance_id) === instanceId
-                  : s.agent === agent),
-            )
+            .filter((s) => s.id === sessionId || s.agent === agent)
             .map((s) => (
               <option key={s.id} value={s.id}>
                 {displayText(s.runtime_binding.installation.key.provider)} ·{" "}

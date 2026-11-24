@@ -1,6 +1,9 @@
 import { resolve } from "node:path";
 
-export const fixtureWebDir = resolve(import.meta.dirname, "../../dist/fixture");
+export const fixtureWebDir = resolve(
+  import.meta.dirname,
+  "../../../target/web/fixture",
+);
 export const fixtureHost = resolve(
   import.meta.dirname,
   "../../../target/fixtures",

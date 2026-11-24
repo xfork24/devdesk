@@ -28,4 +28,4 @@
 
 修改返工规则时检查：同一拒绝是否可重复消费、额度是否共享、执行范围是否扩大、人工决定是否匹配、旧回执是否被保留。修改恢复时覆盖“动作已发生但提交未完成”，不能只测动作尚未开始的情况。
 
-测试入口：[workflow_resource_concurrency.rs](../../../crates/adapters/tests/workflow_resource_concurrency.rs)、[publication_retry.rs](../../../crates/adapters/tests/publication_retry.rs)、[delivery_migration.rs](../../../crates/adapters/tests/delivery_migration.rs)，界面用例见 [review-rework.spec.ts](../../../web/tests/review-rework.spec.ts)。
+测试入口：[workflow_resource_concurrency.rs](../../../crates/adapters/tests/workflow_resource_concurrency.rs)、[publication_retry.rs](../../../crates/adapters/tests/publication_retry.rs)、[delivery_migration.rs](../../../crates/adapters/tests/delivery_migration.rs)，界面用例见 [review-rework.spec.ts](../../../tests/browser/review-rework.spec.ts)。

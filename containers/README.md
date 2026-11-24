@@ -7,6 +7,6 @@ Codex 和 DSH 的执行 Dockerfile 由
 [`compose_execution_recipe`](../crates/domain/src/execution_recipe.rs)
 根据选定的 Harness 安装输入与 Sandbox 构建输入生成，不再另存静态副本。
 版本、基础镜像、系统包、环境变量及安装文件来自
-[`configurations/core/manifest.json`](../configurations/core/manifest.json)
+[`plugins/core/manifest.json`](../plugins/core/manifest.json)
 列出的源修订。实际准备、内容摘要和镜像身份核验见
 [运行时准备](../docs/crates/devdesk-adapters/runtime-preparation.md)。

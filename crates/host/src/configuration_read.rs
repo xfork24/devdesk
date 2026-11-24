@@ -125,6 +125,9 @@ impl Workspace {
                         .is_none_or(|scope| scope.includes(project))
                 },
             )?;
+            if visibility.is_some() {
+                view = view.archive_legacy_software_roles();
+            }
             if let Some(sources) = domain_sources {
                 view = view.with_automation_sources(sources.automation);
             }
@@ -288,7 +291,7 @@ impl Workspace {
         result["configuration_status"] = health;
         result["catalog_generation"] = json!(template_catalog_generation(&global.state));
         result["catalog_version"] = json!({"host":self.catalog_instance,"global":global.revision,"project":if project_id.is_some(){view.revision}else{0},"project_sources":clock,"source_epochs":source_epochs});
-        result["definitions"]=json!(view.state.definitions.iter().filter(|d|template_projection_current(&view.state,d)).map(|d|json!({"id":d.id,"name":d.name,"family":d.family,"version":d.version,"supersedes":d.supersedes,"agent_profile":d.agent_profile})).collect::<Vec<_>>());
+        result["definitions"]=json!(view.state.definitions.iter().filter(|d|template_projection_current(&view.state,d) && view.record(&d.id).is_none_or(|r|!view.is_archived(r))).map(|d|json!({"id":d.id,"name":d.name,"family":d.family,"version":d.version,"supersedes":d.supersedes,"agent_profile":d.agent_profile})).collect::<Vec<_>>());
         result["configurations"] = json!(
             view.state
                 .governance
@@ -505,7 +508,7 @@ pub(super) fn local_directory(
     }
     rows.retain(|r| {
         view.is_listed(r)
-            && (params["include_archived"] == true || template_record_current(state, r))
+            && (params["include_archived"] == true || !view.is_archived(r))
             && configuration_visible(state, r, project)
             && (params["include_deleted"] == true || !configuration_retired(state, r))
             && (params["include_history"] == true
@@ -534,6 +537,51 @@ pub(super) fn local_directory(
 mod tests {
     use super::*;
     use crate::workspace::tests::create;
+
+    #[test]
+    fn discussion_agent_lookup_returns_one_exact_revision_in_its_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
+        let project = create(&w, "discussion owner");
+        let other = create(&w, "other project");
+        let defaults = w
+            .dispatch("query.configuration_defaults", json!({}))
+            .unwrap();
+        let reference = &defaults["role_agent_bindings"]["builtin-role-analyst:1"];
+        let template = defaults["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == *reference)
+            .unwrap();
+        let agent = w.dispatch("agent.create",json!({"project_id":project,"command_id":id(),"payload":{
+            "name":"Historical discussion agent","scope":format!("project:{project}"),
+            "role_ref":template["role_ref"],"capability_ref":template["capability_ref"],"data":{}
+        }})).unwrap();
+        let result = w
+            .dispatch(
+                "query.agent_revision",
+                json!({"project_id":project,"id":agent["id"]}),
+            )
+            .unwrap();
+        assert_eq!(result["id"], agent["id"]);
+        assert_eq!(result["type"], "agent");
+        assert_eq!(result["capability_ref"], template["capability_ref"]);
+        assert!(
+            w.dispatch(
+                "query.agent_revision",
+                json!({"project_id":other,"id":agent["id"]}),
+            )
+            .is_err()
+        );
+        assert!(
+            w.dispatch(
+                "query.agent_revision",
+                json!({"project_id":project,"id":template["role_ref"]}),
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn thin_catalog_exact_records_and_memo_respect_committed_versions() {

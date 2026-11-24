@@ -55,8 +55,7 @@ fn test_request(
 ) -> TestRequest {
     let operation_id = id();
     let environment = id();
-    let reporter =
-        include_str!("../../../configurations/software-development/runtime/node-reporter.mjs");
+    let reporter = include_str!("../../../plugins/software-development/runtime/node-reporter.mjs");
     TestRequest {
         reporter: Some(TestReporter {
             digest: format!("{:x}", Sha256::digest(reporter.as_bytes())),

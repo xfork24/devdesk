@@ -10,7 +10,7 @@ DevDesk 是一个可加载领域包的工作台。Rust Host 管理配置、领�
 |---|---|
 | `devdesk-core-host-0.5.0-<target>.tar.gz` | Rust Host、核心配置及运行资产。支持空领域和纯 API 运行 |
 | `devdesk-core-web-0.5.0.tar.gz` | Web Core、共享 React 布局与 UI SDK、领域包 Schema |
-| `software-development-0.5.1.zip` | 软件开发配置、Node.js 运行时扩展和 Web 页面 |
+| `software-development-0.5.2.zip` | 软件开发配置、Node.js 运行时扩展和 Web 页面 |
 
 解压 Host 和 Web Core，将路径替换为实际目录。启动空领域仅需前两个制品。
 
@@ -20,7 +20,7 @@ DevDesk 是一个可加载领域包的工作台。Rust Host 管理配置、领�
 
 打开终端显示的地址，默认是 `http://127.0.0.1:4317`。空领域工作台提供基础组件、全局历史、设置和领域包管理。省略 `--web-dir` 时，Host 提供客户端协议。
 
-接入软件开发时，在已经启动的工作台打开「领域包」，选择 `software-development-0.5.1.zip` 导入，再点击「激活」进入软件开发工作台。领域包可在 Host 运行时加载、切换和卸载。浏览器在同一工作台内渲染领域页面，共用导航、布局和会话。安装、数据目录和远程连接设置见[运行指南](docs/design/run-binary.md)。
+接入软件开发时，在已经启动的工作台打开「领域管理」，选择 `software-development-0.5.2.zip` 导入，再点击「激活」进入软件开发工作台。领域包可在 Host 运行时加载、切换和卸载。浏览器在同一工作台内渲染领域页面，共用导航、布局和会话。安装、数据目录和远程连接设置见[运行指南](docs/design/run-binary.md)。
 
 ### 开始软件开发工作流
 
@@ -43,9 +43,9 @@ DevDesk 是一个可加载领域包的工作台。Rust Host 管理配置、领�
 独立生成发行制品及校验文件：
 
 ```bash
-./scripts/release/package-core.sh host
-./scripts/release/package-core.sh web
-./scripts/release/package-core.sh software
+./scripts/release/package.sh host
+./scripts/release/package.sh web
+./scripts/release/package.sh software
 ```
 
 默认输出在 `dist/`。Host 可独立于 Node、Web 构建产物和领域源码构建。Web Core 构建只需要前端工具链。领域 ZIP 的运行机器需要 Docker，安装时使用已打包的 JavaScript 与静态资产。
@@ -67,8 +67,8 @@ npm --prefix web ci
 |---|---|
 | `crates/{domain,core,adapters,host}` | Rust 领域模型、应用层、执行与持久化适配器、Host |
 | `web/` | Web Core、共享 SDK、软件领域使用的 UI 组件、浏览器测试 |
-| `configurations/core/` | 随 Host 发布的领域无关默认配置 |
-| `configurations/software-development/` | 软件开发目录、运行端、Web 贡献及 ZIP 构建入口 |
+| `plugins/core/` | 随 Host 发布的领域无关默认配置 |
+| `plugins/software-development/` | 软件开发目录、运行端、Web 贡献及 ZIP 构建入口 |
 | `schemas/` · `sql/` | 结构合同和 SQLite 基线 |
 | `docs/` · `scripts/` · `tests/` | 设计、代码手册、构建、发布和验收 |
 

@@ -220,28 +220,26 @@ def run(origin, action, args):
     if action == "unload":
         active_projects = client.call("query.project_directory", domain_epoch=epoch)
         assert active_projects["total_projects"] > 0, active_projects
-        # Start a manual root that stays active until a human sends a control command.
         pending = start_for(client, epoch, prepare_document(client, epoch), "manual")
+        details = lookup(client, epoch, pending)
+        step = details["runtime"]["steps"][0]
+        client.call("workflow.step.dispatch", command_id=uuid.uuid4().hex, domain_epoch=epoch,
+                    project_id=pending["project_id"], target=pending["execution_id"],
+                    expected_revision=details["record"]["revision"],
+                    payload={"execution_id": step["id"], "step": "title"})
+        waiting = wait_view(
+            client, epoch, pending,
+            lambda view: view["runtime"]["steps"][0]["status"] == "waiting_confirmation",
+        )
+        # The header still says running while its completed worker waits for a human.
+        assert waiting["record"]["data"]["status"] == "running"
         try:
-            client.call("domain.uninstall", epoch=epoch, digest=active["active"]["digest"])
+            client.call("domain.deactivate", epoch=epoch, digest=active["active"]["digest"])
         except RuntimeError as failure:
             assert "domain_busy" in str(failure), failure
         else:
-            raise AssertionError("active domain workflow did not block unload")
+            raise AssertionError("the stricter deactivation guard accepted an unfinished workflow")
         assert client.call("query.domain.active")["epoch"] == epoch
-        details = client.call("query.domain.workflow", epoch=epoch, **pending)
-        client.call("workflow.cancel", command_id=uuid.uuid4().hex,
-                    domain_epoch=epoch,
-                    project_id=pending["project_id"], target=pending["execution_id"],
-                    expected_revision=details["record"]["revision"], payload={})
-        end = time.monotonic() + 12
-        while time.monotonic() < end:
-            details = client.call("query.domain.workflow", epoch=epoch, **pending)
-            if details["record"]["data"]["status"] == "cancelled":
-                break
-            time.sleep(0.2)
-        else:
-            raise AssertionError(details)
         old = epoch
         project_events = f"/events?project_id={pending['project_id']}&domain_epoch={epoch}"
         with (client.request("/domain-events") as events,
@@ -262,7 +260,7 @@ def run(origin, action, args):
             assert "domain_epoch_conflict" in str(failure), failure
         else:
             raise AssertionError("stale epoch was accepted")
-        return result
+        return pending
     if action == "read":
         return client.call("query.domain.workflow", epoch=epoch, project_id=args[0], execution_id=args[1])
     if action == "read-entity":
@@ -295,7 +293,7 @@ def run(origin, action, args):
         defaults = active["defaults"]
         assert {defaults["workflow_ref"], defaults["task_workflow_ref"]} <= set(active["agent_workflows"])
         assert defaults["standard_ref"].rsplit(":", 1)[0] == "software-development.standard-engineering-delivery"
-        if active["active"]["version"] in ("0.5.0", "0.5.1"):
+        if active["active"]["version"] in ("0.5.0", "0.5.1", "0.5.2"):
             assert defaults["workflow_ref"] == "software-development.workflow-feature-development:6"
             assert defaults["task_workflow_ref"] == "software-development.workflow-task-development:5"
             for row in active["sources"]:

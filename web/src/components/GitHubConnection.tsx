@@ -73,8 +73,11 @@ export function GitHubConnection({ request }: { request: Request }) {
       <div className="panel-heading">
         <h2 id="github-connection-heading">GitHub 连接</h2>
       </div>
-      <div className="setting-row">
-        <div>
+      <ActionForm
+        className="setting-row github-connection-form"
+        onSubmit={(event) => void act(event)}
+      >
+        <div className="github-connection-row">
           <p role="status">
             {connection
               ? [
@@ -88,24 +91,29 @@ export function GitHubConnection({ request }: { request: Request }) {
                 ? "暂时无法读取连接"
                 : "正在检查 GitHub 连接"}
           </p>
-          {connection?.message && <p className="muted">{connection.message}</p>}
-          {error && <p role="alert">{error}</p>}
+          <ActionButton
+            type="button"
+            disabled={busy || (!connection && !error)}
+            onClick={() => void act()}
+          >
+            检查连接
+          </ActionButton>
+          {connection?.message && (
+            <p className="muted full-width">{connection.message}</p>
+          )}
+          {error && (
+            <p className="full-width" role="alert">
+              {error}
+            </p>
+          )}
         </div>
-        <ActionButton
-          type="button"
-          disabled={busy || (!connection && !error)}
-          onClick={() => void act()}
-        >
-          检查连接
-        </ActionButton>
-      </div>
-      <ActionForm className="setting-row" onSubmit={(event) => void act(event)}>
-        <div>
-          <label>
-            GitHub Token
+        <div className="github-connection-row">
+          <label className="github-connection-token">
+            <span>GitHub Token</span>
             <input
               type="password"
               autoComplete="new-password"
+              aria-describedby="github-token-help"
               spellCheck={false}
               disabled={busy || !connection}
               required
@@ -124,7 +132,7 @@ export function GitHubConnection({ request }: { request: Request }) {
               }}
             />
           </label>
-          <p className="muted">
+          <p id="github-token-help" className="muted">
             使用对目标仓库有权限的个人访问令牌。{" "}
             <a
               href="https://github.com/settings/personal-access-tokens"
@@ -134,11 +142,15 @@ export function GitHubConnection({ request }: { request: Request }) {
               管理 GitHub Token
             </a>
           </p>
-          {message && <p role="status">{message}</p>}
+          <ActionButton type="submit" disabled={busy || !draft?.token.trim()}>
+            验证并保存 Token
+          </ActionButton>
+          {message && (
+            <p className="full-width" role="status">
+              {message}
+            </p>
+          )}
         </div>
-        <ActionButton type="submit" disabled={busy || !draft?.token.trim()}>
-          验证并保存 Token
-        </ActionButton>
       </ActionForm>
     </section>
   );

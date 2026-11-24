@@ -42,8 +42,8 @@ case "${1:-}" in
   software)
     npm --prefix web ci
     npm --prefix web run build:software
-    artifact="software-development-$(python3 configurations/software-development/build.py --version).zip"
-    python3 configurations/software-development/build.py "$stage/$artifact"
+    artifact="software-development-$(python3 plugins/software-development/build.py --version).zip"
+    python3 plugins/software-development/build.py "$stage/$artifact"
     ;;
   *)
     printf 'Usage: %s host|web|software\n' "$0" >&2

@@ -31,7 +31,7 @@ def source_fingerprint():
     names = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard'], cwd=ROOT, text=True).splitlines()
     digest = hashlib.sha256()
     for name in sorted(set(names)):
-        if name in {'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml'} or name.startswith(('crates/', 'configurations/', 'permissions/', 'containers/', 'tests/', 'sql/')):
+        if name in {'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml'} or name.startswith(('crates/', 'plugins/', 'permissions/', 'containers/', 'tests/', 'sql/')):
             path = ROOT / name
             if path.is_file():
                 digest.update(name.encode() + b'\0' + path.read_bytes() + b'\0')

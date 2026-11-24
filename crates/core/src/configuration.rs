@@ -316,7 +316,7 @@ impl Engine {
                 .iter()
                 .filter(|r| {
                     r.r#type == "capability"
-                        && (p["include_archived"] == true || template_record_current(s, r))
+                        && (p["include_archived"] == true || !catalog.is_archived(r))
                         && !retired(s, r)
                         && visible(s, r, p["project_id"].as_str())
                 })

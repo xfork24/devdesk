@@ -63,7 +63,7 @@
 | H20 | [模型服务商描述](../../../crates/domain/src/model_provider.rs)、[模型入口](../../../crates/host/src/model_providers.rs) | 名称、默认服务商和默认端点与 SDK 路由、协议绑定在同一代码分支。 | 可变展示和选择元数据归入现有配置；实际协议、SDK 路由支持、认证与端点安全校验留在适配层。 |
 | H21 | [共享 Status](../../../crates/domain/src/lib.rs)、[工程状态推进](../../../crates/core/src/lib.rs) | Planning、Developing、Validating 等业务阶段与运行、排队、资源释放状态混在同一枚举。 | 业务进度由 Workflow/Stage 投影；技术对象使用明确生命周期，不用业务阶段驱动调度。 |
 
-已有 [configurations](../../../configurations/README.md) 是正确的默认来源。此次继续使用其资源嵌入、数据库可编辑副本和重置机制，清理残留的默认身份回退和重复派生，不另建第二套配置文件系统。
+已有 [configurations](../../../plugins/README.md) 是正确的默认来源。此次继续使用其资源嵌入、数据库可编辑副本和重置机制，清理残留的默认身份回退和重复派生，不另建第二套配置文件系统。
 
 ## 4 目标概念与配置归属
 

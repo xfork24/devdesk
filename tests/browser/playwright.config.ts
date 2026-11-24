@@ -1,4 +1,5 @@
 import { defineConfig } from "@playwright/test";
+import { resolve } from "node:path";
 const profile = process.env.DEVDESK_E2E_PROFILE ?? "debug";
 const port = Number(process.env.DEVDESK_E2E_PORT ?? "4318");
 if (!Number.isInteger(port) || port < 1024 || port > 65535)
@@ -7,7 +8,8 @@ if (profile !== "debug" && profile !== "release") {
   throw new Error("DEVDESK_E2E_PROFILE must be debug or release");
 }
 export default defineConfig({
-  testDir: "./tests",
+  testDir: ".",
+  outputDir: "../../target/web/test-results",
   workers: 1,
   timeout: 120000,
   expect: { timeout: 15000 },
@@ -20,7 +22,8 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   webServer: {
-    command: `../target/fixtures/${profile}/devdesk-host --port ${port} --web-dir dist/fixture`,
+    cwd: resolve(import.meta.dirname, "../.."),
+    command: `./target/fixtures/${profile}/devdesk-host --port ${port} --web-dir target/web/fixture`,
     url: `http://127.0.0.1:${port}`,
     reuseExistingServer: false,
     timeout: 30000,

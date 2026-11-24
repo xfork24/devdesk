@@ -13,7 +13,7 @@
 | MiniMax 国内订阅 | Anthropic Messages 兼容端点 | 账号、密钥与目录独立 |
 | Ollama | 本机服务的 OpenAI 兼容 API | 默认免密，需指定实际存在的模型与容量 |
 
-具体端点见[出厂服务商源](../../../configurations/core/model-providers)，驱动转换见 [model_providers.rs](../../../crates/adapters/src/model_providers.rs)。未知模型需要明确容量声明；填写容量不会修改服务端限制。
+具体端点见[出厂服务商源](../../../plugins/core/model-providers)，驱动转换见 [model_providers.rs](../../../crates/adapters/src/model_providers.rs)。未知模型需要明确容量声明；填写容量不会修改服务端限制。
 
 ### 本机 Ollama 与容器
 

@@ -20,7 +20,7 @@
 - 增加 **GLM 5.3**，使用 `glm-5.3` 和现有 Z.AI Coding 连接。DSH 目录已有精确标识和容量数据。把原 GLM Flash 能力和 Agent 迁到新模型，然后从出厂清单移除 GLM 5.3 Flash。 [DSH 模型目录](../../../configurations/harnesses/builtin-model-catalog-dsh-v1.json)
 - 增加 **GPT-6.2 Sol High**，通过 Codex 使用 `gpt-6.2-sol` 和 `reasoning_effort=high`。本机 Codex 目录缓存已列出该标识与档位，实施时用当前 Harness 核对账号可用性，并实际检查原生请求。迁移 `defaults.model_ref`、六个默认角色能力和通用 Codex 能力，移除 GPT-6.1 Sol 的 Low、Medium、High 三条出厂定义。
 - **MiniMax M3.1 Flash** 继续使用现有 MiniMax 连接和 DSH。Model 管理只发布这三个预定义 Model。Harness 提供的候选目录供自建配置使用，按现有协议独立维护。
-- 保留六个角色及三种模型各自的角色绑定，保留三个可供自建 Agent 选用的通用 Capability。默认六角色均使用 Codex；GLM 和 MiniMax 仍可用于现有 DSH 场景。根工作流编排由当前 Codex 驱动提供。按角色核对技能、Spec 和工具清单，保留各驱动的能力边界、环境及权限绑定。 [配置职责](../../../configurations/README.md) · [驱动能力注册](../../../crates/adapters/src/harness.rs)
+- 保留六个角色及三种模型各自的角色绑定，保留三个可供自建 Agent 选用的通用 Capability。默认六角色均使用 Codex；GLM 和 MiniMax 仍可用于现有 DSH 场景。根工作流编排由当前 Codex 驱动提供。按角色核对技能、Spec 和工具清单，保留各驱动的能力边界、环境及权限绑定。 [配置职责](../../../plugins/README.md) · [驱动能力注册](../../../crates/adapters/src/harness.rs)
 - Agent 使用 `Requirements Analyst`、`Software Architect`、`Software Developer`、`Test Engineer`、`Code Reviewer`、`Project Manager`。Agent 和 Capability 名称附对应模型全名以便区分，如 `Code Reviewer · GLM 5.3` 与 `Code Review Capability · GLM 5.3`。Agent 定义表达 Role 与 Capability 的组合，Capability 集中表达模型、工具、技能和 Spec 引用。
 
 ## 2. Skill 的合并与重写

@@ -404,20 +404,36 @@ impl Workspace {
     }
 
     pub(super) fn domain_project_busy(&self, project: &str) -> Result<bool> {
+        let activity = self.domain_project_activity(project, "domain_project_busy")?;
+        // Removing a project hides its reconciliation controls. Its idle
+        // connection review can wait until reopening.
+        Ok(activity["active"] == true
+            && (activity["active_when_removed"] != false
+                || !self.global.project_removed(project)?))
+    }
+
+    pub(super) fn domain_project_has_running_workflow(&self, project: &str) -> Result<bool> {
+        Ok(
+            self.domain_project_activity(project, "domain_project_running_workflow")?["active"]
+                == true,
+        )
+    }
+
+    fn domain_project_activity(&self, project: &str, kind: &str) -> Result<Value> {
         if self.global.project(project)?.is_none()
             || self.global.removed_project_missing(project)?
         {
-            return Ok(false);
+            return Ok(Value::Null);
         }
         let engine = self.project_engine(Some(project))?;
-        let key = devdesk_core::concurrency::ResourceKey::new("domain_project_busy", project);
+        let key = devdesk_core::concurrency::ResourceKey::new(kind, project);
         Ok(engine
             .store
             .read_resources(&[key])?
             .into_iter()
             .next()
             .and_then(|row| row.value)
-            .is_some_and(|value| value["active"] == true))
+            .unwrap_or_default())
     }
 
     fn load_project(&self, id: &str, creating: bool) -> Result<Arc<Engine>> {
@@ -615,6 +631,12 @@ impl Workspace {
         }
         if method == "session.open" {
             require(params["target"] == "global", "全局讨论必须以 global 为目标")?;
+            if params["payload"]["agent_instance_id"].is_null()
+                && let Some(agent) = params["payload"]["agent"].as_str()
+            {
+                let (catalog, _, _) = self.configuration_bundle(domain_epoch)?;
+                e.import_discussion_agent_revision(&catalog, agent)?;
+            }
             return self.open_conversation(
                 &e,
                 serde_json::from_value(params).map_err(|e| err("invalid_params", e.to_string()))?,
@@ -753,6 +775,20 @@ impl Workspace {
                 ),
             });
         }
+        if method == "query.role_experience" {
+            let project = self.role_experience_project(&params, &params, domain_epoch)?;
+            let visibility = self.project_visibility(domain_epoch)?;
+            let value = experience::query_role(
+                Path::new(&self.global.root()),
+                project,
+                visibility.as_ref(),
+                &params,
+            )?;
+            return Ok(RpcOutcome {
+                value,
+                commit: None,
+            });
+        }
         if method == "query.agent_experience" {
             let pid = self.experience_scope(&params, &params, domain_epoch)?;
             return experience::query(Path::new(&self.global.root()), &pid, &params).map(|value| {
@@ -765,8 +801,15 @@ impl Workspace {
         if method == "experience.delete" {
             let command: Command = serde_json::from_value(params.clone())
                 .map_err(|e| err("invalid_params", e.to_string()))?;
-            let pid = self.experience_scope(&params, &command.payload, domain_epoch)?;
             let root = PathBuf::from(self.global.root());
+            let by_role = command.payload["role_id"].is_string();
+            let pid = if by_role {
+                self.role_experience_project(&params, &command.payload, domain_epoch)?
+                    .unwrap_or(GLOBAL_DISCUSSION_NAMESPACE)
+                    .to_owned()
+            } else {
+                self.experience_scope(&params, &command.payload, domain_epoch)?
+            };
             let receipt = devdesk_core::experience_directory::delete(
                 self.global.as_ref(),
                 if params["scope"] == "global" {
@@ -775,7 +818,18 @@ impl Workspace {
                     &pid
                 },
                 &command,
-                || experience::entry_visible(&root, &pid, &command.payload),
+                || {
+                    if by_role {
+                        experience::role_entry_visible(
+                            &root,
+                            (pid != GLOBAL_DISCUSSION_NAMESPACE).then_some(pid.as_str()),
+                            self.project_visibility(domain_epoch)?.as_ref(),
+                            &command.payload,
+                        )
+                    } else {
+                        experience::entry_visible(&root, &pid, &command.payload)
+                    }
+                },
             )?;
             return Ok(RpcOutcome {
                 value: receipt.result,
@@ -1902,6 +1956,79 @@ mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;
     #[test]
+    fn role_experience_uses_historical_agent_revisions_and_keeps_project_scope() {
+        let root = tempfile::tempdir().unwrap();
+        let w =
+            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
+        let one = create(&w, "First experience project");
+        let two = create(&w, "Second experience project");
+        let analyst = default_configured_agent_id("analyst");
+        let alternate = "builtin-agent-glm-analyst:6";
+        let reviewer = default_configured_agent_id("reviewer");
+        assert_ne!(analyst, alternate);
+        let snapshot = id();
+        for (project, agent, instance, capture) in [
+            (&one, analyst.as_str(), "first-identity", snapshot.clone()),
+            (&one, alternate, "second-identity", id()),
+            (&one, reviewer.as_str(), "different-role", id()),
+            (&two, alternate, "other-project", id()),
+        ] {
+            let e = w.project_engine(Some(project)).unwrap();
+            // Imported workflow experience can outlive the Agent instance row.
+            e.store
+                .seed_fixture_state(None, &mut |state| {
+                    let data = json!({"project_id": project,"agent_instance_id":instance,
+                    "agent_revision_id":agent,"feature_id":"same-feature",
+                    "project_name":project,"feature_name":"Fixture work",
+                    "snapshot_id":capture,"session_id":id(),"captured_at":1});
+                    state.governance.push(ConfigurationRecord {
+                        id: id(),
+                        r#type: "experience".into(),
+                        definition_id: capture.clone(),
+                        scope: Scope::project(project),
+                        name: "Workflow experience".into(),
+                        version: 1,
+                        supersedes: None,
+                        content_hash: content_digest(&References::new(), &data),
+                        refs: References::new(),
+                        data,
+                        immutable: true,
+                        revision: 1,
+                        created_at: 1,
+                    });
+                    Ok(Value::Null)
+                })
+                .unwrap();
+        }
+        let pid = &one;
+        let role = "builtin-role-analyst";
+        let project = json!({"project_id": pid, "role_id": role, "limit": 1});
+        let result = w
+            .dispatch("query.role_experience", project.clone())
+            .unwrap();
+        assert_eq!(result["total"], 2);
+        assert_eq!(result["next_offset"], 1);
+        assert_eq!(result["records"][0]["restorable"], false);
+        let global = json!({"scope":"global","role_id":role});
+        assert_eq!(
+            w.dispatch("query.role_experience", global.clone()).unwrap()["total"],
+            3
+        );
+        let command = json!({"scope":"global","command_id":id(),"target":snapshot,"expected_revision":0,
+            "payload":{"role_id":role,"agent_instance_id":"first-identity",
+                "source_project_id":pid,"snapshot_id":snapshot}});
+        w.dispatch("experience.delete", command).unwrap();
+        assert_eq!(
+            w.dispatch("query.role_experience", project).unwrap()["total"],
+            1
+        );
+        assert_eq!(
+            w.dispatch("query.role_experience", global).unwrap()["total"],
+            2
+        );
+    }
+
+    #[test]
     fn experience_can_be_deleted_from_global_discussion_before_opening_a_session() {
         let root = tempfile::tempdir().unwrap();
         let w =
@@ -2998,6 +3125,49 @@ mod adapter_injection_tests {
 #[cfg(test)]
 mod global_discussion_tests {
     use super::*;
+    #[test]
+    fn discussion_open_resolves_an_instance_from_the_agent_definition() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace =
+            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
+        let engine = workspace.initialize_global_discussion().unwrap();
+        let (catalog, _, _) = workspace.configuration_bundle(None).unwrap();
+        let agent = default_configured_agent_id("analyst");
+        engine
+            .import_discussion_agent_revision(&catalog, &agent)
+            .unwrap();
+        let resources = crate::test_runtime::ResourceFixture {
+            store: engine.store.as_ref(),
+        };
+        let open = |force_new: bool| {
+            engine
+                .open_prepared_session(
+                    &resources,
+                    Command {
+                        command_id: id(),
+                        target: Some("global".into()),
+                        expected_revision: Some(0),
+                        payload: json!({"agent":agent,"force_new":force_new}),
+                    },
+                )
+                .unwrap()
+        };
+        let first = open(false);
+        assert_eq!(open(false)["id"], first["id"]);
+        let next = open(true);
+        assert_ne!(first["id"], next["id"]);
+        let before = engine
+            .query("query.session", &json!({"id":first["id"]}), 1)
+            .unwrap();
+        let after = engine
+            .query("query.session", &json!({"id":next["id"]}), 1)
+            .unwrap();
+        assert_eq!(before["session"]["agent"], agent);
+        let instance = &before["agent_instance_id"];
+        assert!(instance.is_string());
+        assert_eq!(after["agent_instance_id"], *instance);
+    }
+
     #[test]
     fn dataset_discussions_are_separate_from_project_selection_and_require_an_unambiguous_scope() {
         let root = tempfile::tempdir().unwrap();

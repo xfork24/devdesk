@@ -23,7 +23,7 @@
 
 ## 出厂资源与模板
 
-[templates.rs](../../../crates/core/src/templates.rs)、[builtin_defaults.rs](../../../crates/core/src/builtin_defaults.rs) 处理模板和默认安装的应用语义；实际文件读取、嵌入和源编码由 adapters 完成。发布集合分别来自[核心 manifest](../../../configurations/core/manifest.json)和[软件领域 manifest](../../../configurations/software-development/catalog/manifest.json)。领域配置在安装 ZIP 时读取，执行按冻结的包摘要解析。
+[templates.rs](../../../crates/core/src/templates.rs)、[builtin_defaults.rs](../../../crates/core/src/builtin_defaults.rs) 处理模板和默认安装的应用语义；实际文件读取、嵌入和源编码由 adapters 完成。发布集合分别来自[核心 manifest](../../../plugins/core/manifest.json)和[软件领域 manifest](../../../plugins/software-development/catalog/manifest.json)。领域配置在安装 ZIP 时读取，执行按冻结的包摘要解析。
 
 目录缓存的版本令牌帮助判断显示是否过时，不等于允许执行或保存的凭证。修改命令仍要使用自己的原版本条件。
 

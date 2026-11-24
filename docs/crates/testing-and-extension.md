@@ -14,7 +14,7 @@
 | Harness/Docker | harness、jsonl、docker | 内联协议测试、[docker_resources](../../crates/adapters/tests/docker_resources.rs)、[native_acceptance](../../tests/entrypoints/native_acceptance.py) |
 | 外部工具/认证 | integrations、tool-worker、integration_oauth | [tool_integrations](../../crates/adapters/tests/tool_integrations.rs)、[integration_operations](../../crates/adapters/tests/integration_operations.rs) |
 | HTTP/生命周期 | main、workspace、lifecycle | [http_contract](../../tests/entrypoints/http_contract.py)、[lifecycle_contract](../../tests/entrypoints/lifecycle_contract.py) |
-| Web 交互 | App、查询客户端和组件 | web/tests 下对应行为用例 |
+| Web 交互 | App、查询客户端和组件 | tests/browser 下对应行为用例 |
 | 文档/索引 | 当前说明与 check-docs | 文档检查及检查器定向测试 |
 
 ## 新增平台工具

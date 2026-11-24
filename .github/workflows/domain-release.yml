@@ -31,7 +31,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-bin: false
-      - run: ./scripts/release/package-core.sh host
+      - run: ./scripts/release/package.sh host
       - uses: actions/upload-artifact@v4
         with:
           name: core-host-${{ matrix.os }}
@@ -54,22 +54,29 @@ jobs:
         with:
           name: core-host-ubuntu-latest
           path: dist
-      - run: ./scripts/release/package-core.sh web
-      - run: ./scripts/release/package-core.sh software
+      - run: ./scripts/release/package.sh web
+      - name: Build the software domain archive
+        id: software
+        run: |
+          ./scripts/release/package.sh software
+          version=$(python3 plugins/software-development/build.py --version)
+          printf 'archive=dist/software-development-%s.zip\n' "$version" >> "$GITHUB_OUTPUT"
       - run: ./web/node_modules/.bin/playwright install --with-deps chromium
       - run: docker pull node@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced307cf4b6f
       - run: node --test tests/entrypoints/domain_delivery_evidence.mjs
       - name: Validate the published archives and version rollback
         run: node tests/entrypoints/domain_release.mjs dist
       - name: Validate hot loading from empty Core with both clients
+        env:
+          SOFTWARE_ARCHIVE: ${{ steps.software.outputs.archive }}
         run: |
           mkdir -p /tmp/devdesk-release-test
           tar -C /tmp/devdesk-release-test -xzf dist/devdesk-core-host-*.tar.gz
           tar -C /tmp/devdesk-release-test -xzf dist/devdesk-core-web-*.tar.gz
-          node tests/entrypoints/domain_packages.mjs /tmp/devdesk-release-test/devdesk-core-host-*/devdesk-host /tmp/devdesk-release-test/devdesk-core-web-* dist/software-development-0.5.1.zip
+          node tests/entrypoints/domain_packages.mjs /tmp/devdesk-release-test/devdesk-core-host-*/devdesk-host /tmp/devdesk-release-test/devdesk-core-web-* "$SOFTWARE_ARCHIVE"
       - uses: actions/upload-artifact@v4
         with:
           name: domain-and-web-core
           path: |
             dist/devdesk-core-web-*.tar.gz*
-            dist/software-development-0.5.1.zip*
+            ${{ steps.software.outputs.archive }}*

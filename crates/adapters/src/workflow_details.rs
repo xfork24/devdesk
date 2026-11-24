@@ -621,10 +621,6 @@ pub(super) fn task(
         conn.execute_batch("COMMIT;").map_err(storage)?;
         return Ok(None);
     };
-    let delivered=conn.query_row("SELECT content FROM conversation_events WHERE turn_id=?1 AND kind='user' AND EXISTS(SELECT 1 FROM sessions WHERE sessions.id=conversation_events.session_id AND sessions.project_id=?2) ORDER BY rowid LIMIT 1",params![turn,project],|r|r.get::<_,String>(0)).optional().map_err(storage)?;
-    let delivered = delivered
-        .map(|body| payload_store::unpack_text(&conn, body))
-        .transpose()?;
     let current_feature = conn
         .query_row(
             "SELECT f.id,f.title FROM turns t
@@ -636,27 +632,42 @@ pub(super) fn task(
         )
         .optional()
         .map_err(storage)?;
-    let descriptor = record.data["task"].clone();
-    let execution = descriptor["source"]["execution_id"]
-        .as_str()
-        .ok_or_else(|| err("storage", "原任务缺少执行引用"))?;
-    let facts = workflow_intents::task_source_facts(
-        &conn,
-        &record.scope,
-        execution,
-        descriptor.clone(),
-        delivered.map(|body| (body, record.data["digest"].as_str().unwrap_or("").into())),
-    )?;
+    let descriptor = &record.data["task"];
+    let facts = if descriptor["$source"] == "task" {
+        let execution = descriptor["source"]["execution_id"]
+            .as_str()
+            .ok_or_else(|| err("storage", "原任务缺少执行引用"))?;
+        let delivered=conn.query_row("SELECT content FROM conversation_events WHERE turn_id=?1 AND kind='user' AND EXISTS(SELECT 1 FROM sessions WHERE sessions.id=conversation_events.session_id AND sessions.project_id=?2) ORDER BY rowid LIMIT 1",params![turn,project],|r|r.get::<_,String>(0)).optional().map_err(storage)?;
+        let delivered = delivered
+            .map(|body| payload_store::unpack_text(&conn, body))
+            .transpose()?;
+        Some(workflow_intents::task_source_facts(
+            &conn,
+            &record.scope,
+            execution,
+            descriptor.clone(),
+            delivered.map(|body| (body, record.data["digest"].as_str().unwrap_or("").into())),
+        )?)
+    } else {
+        None
+    };
     conn.execute_batch("COMMIT;").map_err(storage)?;
     drop(conn);
-    let mut memo = Default::default();
-    let body = workflow_intents::restore_task(catalog, facts, &mut memo)?;
-    let mut data = record.data.clone();
-    data.as_object_mut().unwrap().remove("task");
-    data.as_object_mut().unwrap().remove("rendered_input");
-    let mut data = source_views::restore_with(&catalog.state, &data, &mut memo)?;
-    data["task"] = serde_json::from_str(&body).map_err(storage)?;
-    data["rendered_input"] = json!(body);
+    let mut data = record.data;
+    if let Some(facts) = facts {
+        let mut memo = Default::default();
+        let body = workflow_intents::restore_task(catalog, facts, &mut memo)?;
+        let fields = data
+            .as_object_mut()
+            .ok_or_else(|| err("storage", "原任务正文无效"))?;
+        fields.remove("task");
+        fields.remove("rendered_input");
+        data = source_views::restore_with(&catalog.state, &data, &mut memo)?;
+        data["task"] = serde_json::from_str(&body).map_err(storage)?;
+        data["rendered_input"] = json!(body);
+    }
+    // Older databases sealed the complete task and rendered input together.
+    // Read that immutable pair using the same digest and renderer checks.
     let task: ConfiguredAgentTask = serde_json::from_value(data.clone()).map_err(storage)?;
     task.validate()?;
     require(task.turn_id == turn, "原任务轮次不符")?;

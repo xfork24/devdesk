@@ -727,13 +727,29 @@ impl Engine {
                 &operational_state
             };
             let _span = self.store.observe_query("catalog.filter_and_project");
+            if method == "query.agent_revision" {
+                let agent = s.configuration(&text(p, "id")?)?;
+                if agent.r#type != "agent"
+                    || !crate::configuration::visible(s, agent, p["project_id"].as_str())
+                {
+                    return Err(err("not_found", "当前范围没有此 Agent 修订"));
+                }
+                let mut revision = json!(agent);
+                if catalog.as_ref().is_some_and(|view| view.is_archived(agent)) {
+                    revision["archived"] = json!(true);
+                }
+                return Ok(revision);
+            }
             if method == "query.roles" {
                 let all = s
                     .governance
                     .iter()
                     .filter(|r| {
                         r.r#type == "role"
-                            && (p["include_archived"] == true || template_record_current(s, r))
+                            && (p["include_archived"] == true
+                                || catalog
+                                    .as_ref()
+                                    .is_none_or(|catalog| !catalog.is_archived(r)))
                             && crate::configuration::visible(s, r, p["project_id"].as_str())
                             && (p["include_deleted"] == true
                                 || !crate::builtin_defaults::role_deleted(s, r))
@@ -791,7 +807,13 @@ impl Engine {
                 .governance
                 .iter()
                 .filter(|r| catalog.as_ref().is_none_or(|catalog| catalog.is_listed(r)))
-                .filter(|r| p["include_archived"] == true || template_record_current(s, r))
+                .filter(|r| {
+                    p["include_archived"] == true
+                        || catalog.as_ref().map_or_else(
+                            || template_record_current(s, r),
+                            |catalog| !catalog.is_archived(r),
+                        )
+                })
                 .filter(|r| crate::configuration::visible(s, r, p["project_id"].as_str()))
                 .rev()
                 .filter(|r| p["include_deleted"] == true || !crate::configuration::retired(s, r))

@@ -40,6 +40,6 @@
 ## 5. 全量检查与未尽事项
 
 - `./scripts/check/check.sh` **全量通过**（2026-11-12，exit 0）：check-permissions、check-defaults（146 定义自洽）、web 构建、Rust 全量（26 套件）、debug/release 双档签名构建、HTTP 合同、template_reset、dataset_protocol、runtime_preparation、Playwright debug 50/50 + release 50/50。
-- 检查过程中修复一处本次改动引出的 e2e 依赖：`settings-interactions.spec.ts` 的角色讨论测试依赖"目录默认第一个 agent 是 codex"，dsh agent 入目录后默认项变化 → 改为显式选择 `builtin-agent-sol-high-analyst:4`（web/tests/settings-interactions.spec.ts:397-400）。另 `workflow-authoring` 曾在全量并发下出现一次 `expected_revision` 偶发（单独复跑 2×10/10 通过，最终全量 50/50 通过，非本次改动引起）。
+- 检查过程中修复一处本次改动引出的 e2e 依赖：`settings-interactions.spec.ts` 的角色讨论测试依赖"目录默认第一个 agent 是 codex"，dsh agent 入目录后默认项变化 → 改为显式选择 `builtin-agent-sol-high-analyst:4`（tests/browser/settings-interactions.spec.ts:397-400）。另 `workflow-authoring` 曾在全量并发下出现一次 `expected_revision` 偶发（单独复跑 2×10/10 通过，最终全量 50/50 通过，非本次改动引起）。
 - codex 额度不足：实跑 feature 开发闭环仍未做（需真实凭据），与静态/自动化验证互补。
 - dsh 栈不能跑出厂流程（§2.3）——依赖 p14 工具桥，配置层无法单独解决。

@@ -52,7 +52,7 @@ test("内置 Delivery 全部关联内容标准并可查看确切规范", async (
   const manifest = JSON.parse(
     readFileSync(
       new URL(
-        "../../tests/fixtures/configuration/engineering-catalog.json",
+        "../fixtures/configuration/engineering-catalog.json",
         import.meta.url,
       ),
       "utf8",

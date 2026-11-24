@@ -1,7 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 import { test } from "./support/kernel";
 import { useMockCodexCatalog } from "./support/model-catalog";
-import type { Row } from "../src/components/rpc-types";
+import type { Row } from "../../web/src/components/rpc-types";
 
 useMockCodexCatalog();
 

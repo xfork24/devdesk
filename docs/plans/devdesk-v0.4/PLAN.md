@@ -124,7 +124,7 @@ Capability 固定 Model、Harness、Skills 和 Tools，Agent 引用精确 Role �
 
 默认采用 GPT-6.1 Sol High（`gpt-6.1-sol`、`reasoning_effort=high`）及固定 Codex `0.167.0`，提供六个 Role：需求分析师、架构师、项目经理、开发、测试、独立评审。项目经理独立使用规划 Skill/Capability，底层执行职责复用 architect；五种底层执行职责继续服务 TDD 和独立评审门禁。
 
-默认资源以普通不可变定义播种，项目页可直接采用并保存；Role 编辑不自动生成其他资源。Skill、阶段 Spec、任务及权限的具体目录见 [默认配置说明](../../../configurations/README.md)。
+默认资源以普通不可变定义播种，项目页可直接采用并保存；Role 编辑不自动生成其他资源。Skill、阶段 Spec、任务及权限的具体目录见 [默认配置说明](../../../plugins/README.md)。
 
 ### HTTP、MCP 与静态 Skill
 
@@ -359,7 +359,7 @@ cargo test -p devdesk-adapters --test agent_tasks --locked
 cargo test -p devdesk-adapters --test schema_contracts --locked
 ```
 
-浏览器内容 Approve 回归为 `web/tests/model-approvals.spec.ts`。原生与平台探针使用独立数据集、明确外部前提和专用测试仓库；入口及事实边界见 [测试索引](../../../tests/README.md)。全局 Rust 格式检查在既有代码中存在历史差异，不能据标准检查通过推断 `cargo fmt --all -- --check` 已通过。
+浏览器内容 Approve 回归为 `tests/browser/model-approvals.spec.ts`。原生与平台探针使用独立数据集、明确外部前提和专用测试仓库；入口及事实边界见 [测试索引](../../../tests/README.md)。全局 Rust 格式检查在既有代码中存在历史差异，不能据标准检查通过推断 `cargo fmt --all -- --check` 已通过。
 
 ## 22 本轮实施与证据
 
@@ -371,7 +371,7 @@ v0.4 汇总 v0.3 之后的配置重构、权限确切绑定、HTTP/MCP/Skill 接
 
 Ubuntu 报告记录其当时版本：Rust 165 项、debug/release 浏览器各 31 项、16 项忽略用例另行通过、真实 Codex 完整工程和独立 Linux 包通过；MiniMax 完整闭环未通过。该报告早于本次双重 Approve，范围和原结论均保留。
 
-各实现入口、回归对应关系和后续待验内容列于 [基线核对与验证记录](EXECUTION.md)。计划目录只保存 Markdown；源码回归仍位于 crates、tests、web/tests，临时日志和截图不作为计划交付物。
+各实现入口、回归对应关系和后续待验内容列于 [基线核对与验证记录](EXECUTION.md)。计划目录只保存 Markdown；源码回归仍位于 crates、tests、tests/browser，临时日志和截图不作为计划交付物。
 
 ## 23 后续边界
 

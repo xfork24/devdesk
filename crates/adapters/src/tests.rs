@@ -12,9 +12,9 @@ const PROJECT_REPORTER_DIGEST: &str =
 #[cfg(any(feature = "fixture-catalog", feature = "test-fixtures", test))]
 fn legacy_reporter(runner: &TestRunner) -> Result<&'static [u8]> {
     Ok(if *runner == TestRunner::NodeTest {
-        include_bytes!("../../../configurations/software-development/runtime/node-reporter.mjs")
+        include_bytes!("../../../plugins/software-development/runtime/node-reporter.mjs")
     } else {
-        include_bytes!("../../../configurations/software-development/runtime/project-tests.py")
+        include_bytes!("../../../plugins/software-development/runtime/project-tests.py")
     })
 }
 

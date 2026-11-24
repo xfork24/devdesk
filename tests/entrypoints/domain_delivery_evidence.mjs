@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { authorizeDelivery } from "../../configurations/software-development/runtime/worker.mjs";
+import { authorizeDelivery } from "../../plugins/software-development/runtime/worker.mjs";
 
 const source = "a".repeat(40);
 const candidate = "b".repeat(40);

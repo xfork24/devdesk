@@ -10,7 +10,7 @@ import tseslint from "typescript-eslint";
 import prettier from "eslint-config-prettier";
 
 export default tseslint.config(
-  { ignores: ["dist", "node_modules", "test-results", "playwright-report"] },
+  { ignores: ["web/dist/", "**/node_modules/"] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],
@@ -33,7 +33,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["src/**/*.{ts,tsx}"],
+    files: ["web/src/**/*.{ts,tsx}"],
     plugins: {
       "react-hooks": reactHooks,
       "react-refresh": reactRefresh,
@@ -50,7 +50,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["tests/**/*.ts", "playwright.config.ts"],
+    files: ["tests/browser/**/*.ts"],
     languageOptions: { globals: globals.node },
     rules: {
       // Spec helpers ferry untyped kernel JSON rows; the kernel contract, not
@@ -59,7 +59,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["*.js"],
+    files: ["web/*.js"],
     extends: [js.configs.recommended],
     languageOptions: { globals: globals.node },
   },

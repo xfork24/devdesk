@@ -1251,7 +1251,7 @@ test("manager context pins its session through delayed role discovery and accept
           formal_execution: true,
         };
         break;
-      case "query.agent_experience":
+      case "query.role_experience":
         result = { records: [], total: 0, unavailable: [] };
         break;
       case "orchestration.input":
@@ -1273,11 +1273,8 @@ test("manager context pins its session through delayed role discovery and accept
   await expect(page.getByRole("log", { name: "讨论记录" })).toContainText(
     "经理会话已正确加载",
   );
-  await expect(page.getByLabel("讨论角色", { exact: true })).toHaveValue(
-    manager.id,
-  );
   await expect(page.getByLabel("Agent", { exact: true })).toHaveValue(
-    instance.id,
+    manager.id,
   );
   await expect(page.getByLabel("讨论会话", { exact: true })).toHaveValue(
     session.id,
@@ -2273,7 +2270,7 @@ test("流程、材料、步骤上下文、Agent 讨论和审计定位同一执�
           executions: [],
         };
         break;
-      case "query.agent_experience":
+      case "query.role_experience":
         result = { records: [], total: 0, unavailable: [] };
         break;
       default:

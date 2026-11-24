@@ -1699,6 +1699,15 @@
       ]
     },
     {
+      "method": "query.role_experience",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
       "method": "query.roles",
       "access": "read",
       "scope": "explicit",

@@ -1,4 +1,4 @@
-//! Domain-owned object data is scoped to a single project and package version.
+//! Domain-owned object data is scoped to its project across package versions.
 use crate::{
     concurrency::*, governance::record, platform_facts::one, workflow_commits::WorkflowCommit,
     workflow_resources::version, *,
@@ -48,7 +48,6 @@ fn relations(value: Option<&Value>) -> Result<Relations> {
 fn relation_versions(
     store: &dyn EngineeringStore,
     project: &str,
-    digest: &str,
     id: &str,
     rules: &BTreeMap<String, DomainRelation>,
     links: &Relations,
@@ -93,7 +92,7 @@ fn relation_versions(
             "领域对象关系超出遍历预算",
         )?;
         let row = one(store, "governance", &domain_entity_key(project, &target))?;
-        let entity = extract(&row, project, digest)?
+        let entity = extract(&row, project)?
             .ok_or_else(|| err("not_found", "领域对象关系目标不在当前项目"))?;
         let kind = text(&entity, "type_ref")?;
         require(
@@ -113,14 +112,14 @@ fn relation_versions(
 }
 
 impl Engine {
-    pub fn read_domain_entity(&self, digest: &str, id: &str) -> Result<Value> {
+    pub fn read_domain_entity(&self, id: &str) -> Result<Value> {
         let project = self.domain_entity_project()?;
         let row = one(
             self.store.as_ref(),
             "governance",
             &domain_entity_key(&project, id),
         )?;
-        let entity = extract(&row, &project, digest)?;
+        let entity = extract(&row, &project)?;
         entity.ok_or_else(|| err("not_found", "领域对象不存在"))
     }
 
@@ -174,7 +173,7 @@ impl Engine {
             return Err(err("revision_conflict", "领域对象修订已变化"));
         }
         let type_ref = text(&command.payload, "type_ref")?;
-        let previous = extract(&row, &project, digest)?;
+        let previous = extract(&row, &project)?;
         require(
             previous
                 .as_ref()
@@ -192,7 +191,6 @@ impl Engine {
         versions.extend(relation_versions(
             self.store.as_ref(),
             &project,
-            digest,
             id,
             rules,
             &links,
@@ -304,8 +302,8 @@ impl WorkflowCommit<'_> {
             "governance",
             &domain_entity_key(&root.project_id, &root.owner_id),
         )?;
-        let entity = extract(&owner, &root.project_id, &binding.digest)?
-            .ok_or_else(|| err("not_found", "原领域对象缺失"))?;
+        let entity =
+            extract(&owner, &root.project_id)?.ok_or_else(|| err("not_found", "原领域对象缺失"))?;
         require(
             entity["type_ref"] == binding.owner_type
                 && entity["revision"] == row["data"]["owner_revision"],
@@ -401,20 +399,14 @@ impl WorkflowCommit<'_> {
     }
 }
 
-pub(crate) fn extract(
-    row: &ResourceSnapshot,
-    project: &str,
-    digest: &str,
-) -> Result<Option<Value>> {
+pub(crate) fn extract(row: &ResourceSnapshot, project: &str) -> Result<Option<Value>> {
     let Some(value) = row.value.as_ref() else {
         return Ok(None);
     };
     let record = ConfigurationRecord::from_storage(value.clone())?;
     require(
-        record.r#type == KIND
-            && record.scope == Scope::project(project)
-            && record.data["digest"] == digest,
-        "领域对象不属于当前项目和包版本",
+        record.r#type == KIND && record.scope == Scope::project(project),
+        "领域对象不属于当前项目",
     )?;
     let payload = record.data["payload"]
         .as_str()

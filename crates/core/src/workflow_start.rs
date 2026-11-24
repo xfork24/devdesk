@@ -93,7 +93,7 @@ impl Engine {
         context.require_project(&owner.project)?;
         let frozen_entity = match domain {
             Some(binding) => {
-                let entity = extract(&owner.owner, &owner.project, &binding.digest)?
+                let entity = extract(&owner.owner, &owner.project)?
                     .ok_or_else(|| err("not_found", "原领域对象缺失"))?;
                 require(
                     entity["type_ref"] == binding.owner_type,

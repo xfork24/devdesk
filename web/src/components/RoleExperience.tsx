@@ -13,7 +13,8 @@ type Props = {
   revision?: string;
   request: Request;
   projectId: string;
-  instanceId: string;
+  roleId: string;
+  currentInstance?: string;
   owner: Row;
   onRestored: (id: string) => void;
   onLocate?: (entry: Row) => void;
@@ -21,11 +22,12 @@ type Props = {
   onReference?: (entry: Row) => void;
   onDeleted: (entry: Row) => void;
 };
-export function AgentExperience({
+export function RoleExperience({
   request,
   revision,
   projectId,
-  instanceId,
+  roleId,
+  currentInstance,
   owner,
   onRestored,
   onLocate,
@@ -41,6 +43,7 @@ export function AgentExperience({
     endFeedback,
   } = useActionFeedback();
 
+  const [open, setOpen] = useState(false);
   const [project, setProject] = useState("");
   const [feature, setFeature] = useState("");
   const [workflow, setWorkflow] = useState("");
@@ -61,16 +64,16 @@ export function AgentExperience({
   const selected = new Set(references.map(experienceKey));
 
   useEffect(() => {
-    if (!instanceId) return;
+    if (!open || !roleId) return;
     const controller = new AbortController();
     const options = { signal: controller.signal };
     request(
-      "query.agent_experience",
+      "query.role_experience",
       {
         ...(projectId === "global"
           ? { scope: "global" }
           : { project_id: projectId }),
-        agent_instance_id: instanceId,
+        role_id: roleId,
         project_name: project,
         feature_name: feature,
         workflow_instance_id: workflow || undefined,
@@ -94,7 +97,8 @@ export function AgentExperience({
   }, [
     request,
     projectId,
-    instanceId,
+    open,
+    roleId,
     project,
     feature,
     workflow,
@@ -111,12 +115,12 @@ export function AgentExperience({
     const key = experienceKey(expanded);
     const controller = new AbortController();
     request(
-      "query.agent_experience",
+      "query.role_experience",
       {
         ...(projectId === "global"
           ? { scope: "global" }
           : { project_id: projectId }),
-        agent_instance_id: instanceId,
+        role_id: roleId,
         snapshot_id: expanded.snapshot_id,
         source_project_id: expanded.project_id,
       },
@@ -130,7 +134,7 @@ export function AgentExperience({
           setDetailResult({ key, error: String(e) });
       });
     return () => controller.abort();
-  }, [expanded, instanceId, projectId, request]);
+  }, [expanded, roleId, projectId, request]);
 
   async function change(work: () => Promise<void>) {
     beginFeedback();
@@ -212,17 +216,19 @@ export function AgentExperience({
     </div>
   );
   return (
-    <details className="experience-panel">
-      <summary>Agent经验</summary>
+    <details
+      className="experience-panel"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary>角色经验</summary>
       <div className="agent-information-content">
-        {!instanceId ? (
-          <p>选择 Agent 后查看该实例的工作履历。</p>
+        {!roleId ? (
+          <p>选择角色后查看经验。</p>
         ) : (
           <>
             {filters}
             <p>
-              {displayText(data?.total || 0)} 条经验 · 同一 Feature
-              持续更新一条记录 · 时间按当前时区显示
+              {data ? `${displayText(data.total)} 条经验` : "正在读取角色经验…"}
             </p>
             {data?.records.map((entry: Row) => {
               const key = experienceKey(entry);
@@ -246,7 +252,9 @@ export function AgentExperience({
                   <strong>{displayText(title)}</strong>
                   <p>
                     {displayText(new Date(entry.captured_at).toLocaleString())}{" "}
-                    · {displayText(entry.kind)} ·{" "}
+                    {entry.agent_name && ` · ${displayText(entry.agent_name)}`}
+                    {" · "}
+                    {displayText(entry.kind)} ·{" "}
                     {displayText(
                       entry.task_id
                         ? `Task ${shortId(entry.task_id)}`
@@ -270,7 +278,31 @@ export function AgentExperience({
                           (!referenced &&
                             references.length >= experienceReferenceLimit)
                         }
-                        onClick={() => onReference(entry)}
+                        onClick={() => {
+                          if (
+                            referenced ||
+                            entry.agent_instance_id === currentInstance
+                          ) {
+                            onReference(entry);
+                            return;
+                          }
+                          return change(async () => {
+                            const source =
+                              detail ||
+                              (await request("query.role_experience", {
+                                ...scoped,
+                                role_id: roleId,
+                                source_project_id: entry.project_id,
+                                snapshot_id: entry.snapshot_id,
+                              }));
+                            const excerpt = Array.from(
+                              snapshotSummary(source.snapshot.content),
+                            )
+                              .slice(0, 1600)
+                              .join("");
+                            onReference({ ...entry, excerpt });
+                          });
+                        }}
                       >
                         {referenced ? "已引用" : "引用到当前讨论"}
                       </ActionButton>
@@ -306,7 +338,8 @@ export function AgentExperience({
                             target: entry.snapshot_id,
                             expected_revision: 0,
                             payload: {
-                              agent_instance_id: instanceId,
+                              role_id: roleId,
+                              agent_instance_id: entry.agent_instance_id,
                               snapshot_id: entry.snapshot_id,
                               source_project_id: entry.project_id,
                             },
@@ -354,7 +387,15 @@ export function AgentExperience({
                             </pre>
                           </details>
                           <ActionButton
-                            disabled={busy || owner.revision === undefined}
+                            disabled={
+                              busy ||
+                              entry.restorable === false ||
+                              owner.revision === undefined ||
+                              (detail.entry.work_owner?.kind === "entity" &&
+                                (detail.entry.work_owner.id !== owner.id ||
+                                  detail.entry.work_owner.project !==
+                                    projectId))
+                            }
                             onClick={() =>
                               change(async () => {
                                 const result = await request(
@@ -365,7 +406,8 @@ export function AgentExperience({
                                     target: owner.id,
                                     expected_revision: owner.revision,
                                     payload: {
-                                      agent_instance_id: instanceId,
+                                      agent_instance_id:
+                                        entry.agent_instance_id,
                                       snapshot_id: entry.snapshot_id,
                                       source_project_id: entry.project_id,
                                     },

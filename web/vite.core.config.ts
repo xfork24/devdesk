@@ -1,5 +1,7 @@
-import { defineConfig } from "vite";
+import { defineConfig, normalizePath } from "vite";
 import { resolve } from "node:path";
+
+const pluginRoot = `${normalizePath(resolve("../plugins"))}/`;
 
 export default defineConfig({
   root: "core",
@@ -11,7 +13,8 @@ export default defineConfig({
           if (output.type !== "chunk") continue;
           for (const id of Object.keys(output.modules)) {
             if (
-              /\/configurations\/|\/src\/(?:App\.tsx|components\/(?:FeatureBranchQueue|RepositorySettings)\.tsx)$/.test(
+              id.startsWith(pluginRoot) ||
+              /\/src\/(?:App\.tsx|components\/(?:FeatureBranchQueue|RepositorySettings)\.tsx)$/.test(
                 id,
               )
             ) {

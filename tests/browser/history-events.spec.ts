@@ -1,7 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 import { test } from "./support/kernel";
 import { useMockCodexCatalog } from "./support/model-catalog";
-import { displayText } from "../src/display-text";
+import { displayText } from "../../web/src/display-text";
 
 useMockCodexCatalog();
 

@@ -34,4 +34,4 @@
 
 ## 验证入口
 
-[http_contract.py](../../../tests/entrypoints/http_contract.py) 验证协议与来源，[event_tail_contract.py](../../../tests/entrypoints/event_tail_contract.py) 验证事件流，[project-isolation.spec.ts](../../../web/tests/project-isolation.spec.ts) 验证浏览器项目隔离。完整参数见[RPC 参考](../../design/reference/rpc.md)。
+[http_contract.py](../../../tests/entrypoints/http_contract.py) 验证协议与来源，[event_tail_contract.py](../../../tests/entrypoints/event_tail_contract.py) 验证事件流，[project-isolation.spec.ts](../../../tests/browser/project-isolation.spec.ts) 验证浏览器项目隔离。完整参数见[RPC 参考](../../design/reference/rpc.md)。

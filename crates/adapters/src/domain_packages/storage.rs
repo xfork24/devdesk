@@ -10,6 +10,58 @@ pub const SCHEMA: &str = "
     CREATE TABLE IF NOT EXISTS domain_project_storage(
         project TEXT PRIMARY KEY REFERENCES domain_projects(project), data_root TEXT NOT NULL);";
 
+/// Older registries discarded the manifest on uninstall. An external project's
+/// pinned root still carries the original domain ID in its ownership marker.
+pub(super) fn restore_package_identities(db: &Connection, host: &Path) -> Result<()> {
+    let tx = db.unchecked_transaction().map_err(storage)?;
+    let candidates = {
+        let mut query = tx
+            .prepare(
+                "SELECT DISTINCT d.digest,s.data_root FROM domain_projects d
+             JOIN domain_project_storage s ON s.project=d.project
+             LEFT JOIN domain_package_identities p ON p.digest=d.digest WHERE p.digest IS NULL",
+            )
+            .map_err(storage)?;
+        query
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(storage)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(storage)?
+    };
+    let mut recovered = BTreeMap::<String, Option<String>>::new();
+    for (digest, path) in candidates {
+        let Ok(owner) = read_owner(Path::new(&path)) else {
+            continue;
+        };
+        let Some(id) = owner["package_id"].as_str().filter(|id| is_identifier(id)) else {
+            continue;
+        };
+        if owner["host_root"].as_str() != host.to_str() {
+            continue;
+        }
+        recovered
+            .entry(digest)
+            .and_modify(|previous| {
+                if previous.as_deref() != Some(id) {
+                    *previous = None;
+                }
+            })
+            .or_insert_with(|| Some(id.to_owned()));
+    }
+    for (digest, id) in recovered {
+        if let Some(id) = id {
+            tx.execute(
+                "INSERT INTO domain_package_identities VALUES(?,?)",
+                params![digest, id],
+            )
+            .map_err(storage)?;
+        }
+    }
+    tx.commit().map_err(storage)
+}
+
 impl DomainPackages {
     /// Called under the active package lease held by the project opener.
     pub fn project_import_root(&self, digest: &str) -> Result<PathBuf> {
@@ -91,7 +143,7 @@ impl DomainPackages {
             .prepare(
                 "SELECT coalesce(s.data_root, ?1) AS root, count(*)
              FROM domain_projects d
-             JOIN domain_packages p ON p.digest=d.digest
+             JOIN domain_package_identities p ON p.digest=d.digest
              LEFT JOIN domain_project_storage s ON s.project=d.project
              WHERE p.id=?2 GROUP BY root ORDER BY root",
             )
@@ -218,4 +270,49 @@ pub(crate) fn externally_stored_projects(host: &Path) -> Result<Vec<Id>> {
         .map_err(storage)?
         .collect::<rusqlite::Result<_>>()
         .map_err(storage)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_external_projects_recover_their_domain_after_the_zip_was_removed() {
+        let host_dir = tempfile::tempdir().unwrap();
+        let host = host_dir.path().canonicalize().unwrap();
+        let project_dir = tempfile::tempdir().unwrap();
+        let external = claim_root(&host, "software-development", project_dir.path()).unwrap();
+        let digest = "ab".repeat(32);
+        {
+            let packages = DomainPackages::open(&host).unwrap();
+            let db = packages.db.lock().unwrap();
+            db.execute(
+                "INSERT INTO domain_projects VALUES('old-project',?)",
+                [&digest],
+            )
+            .unwrap();
+            db.execute(
+                "INSERT INTO domain_project_storage VALUES('old-project',?)",
+                [external.to_str().unwrap()],
+            )
+            .unwrap();
+        }
+        let packages = DomainPackages::open(&host).unwrap();
+        assert_eq!(packages.installed().unwrap(), json!([]));
+        assert_eq!(
+            packages.projects("software-development").unwrap(),
+            ["old-project"]
+        );
+        assert!(packages.projects("manuscript").unwrap().is_empty());
+        assert!(
+            !packages
+                .project_visibility(None)
+                .unwrap()
+                .includes("old-project")
+        );
+        assert_eq!(
+            project_storage_root(&host, "old-project").unwrap(),
+            Some(external)
+        );
+    }
 }

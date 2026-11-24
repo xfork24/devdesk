@@ -128,3 +128,36 @@
 .repository-settings > .panel-heading {
   border-bottom: 0;
 }
+.setting-row.github-connection-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+.github-connection-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+.github-connection-row > .action-control > button {
+  margin-inline-start: auto;
+}
+.github-connection-form .github-connection-row > p {
+  margin: 0;
+}
+:root .github-connection-row > .github-connection-token {
+  flex: 1 1 240px;
+  min-width: 0;
+  max-width: 340px;
+  margin: 0;
+  flex-direction: row;
+  align-items: center;
+}
+.github-connection-token span {
+  white-space: nowrap;
+}
+:root .github-connection-token > input[type="password"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  align-self: auto;
+}

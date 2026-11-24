@@ -173,7 +173,7 @@ flowchart LR
 | P4 设置与配置 UI | 新增 TemplateSettings，接入 main.tsx；更新 configuration-ui、Role/Agent/Workflow/Integrations 编辑器和 ProjectManager | 预览、确认、错误与成功反馈完整；旧草稿失效；目录、下拉框和预填值一致。 |
 | P5 验收与文档 | Rust、Schema、HTTP、浏览器及发布包验证；更新资源说明、协议和计划索引 | 下列验收通过，完成 EXECUTION.md 并记录真实检查结果。 |
 
-主要代码边界是 `crates/domain/src/configuration.rs`、core 的配置/默认/Workflow/接入模块、`crates/adapters/src/catalog.rs` 与项目存储、`crates/host/src/workspace.rs` 及对应 API，以及 Web 配置编辑器与设置页。同步更新 `schemas/rpc.schema.json`、模板 Schema、`docs/design/protocol.md` 和 `configurations/README.md`。
+主要代码边界是 `crates/domain/src/configuration.rs`、core 的配置/默认/Workflow/接入模块、`crates/adapters/src/catalog.rs` 与项目存储、`crates/host/src/workspace.rs` 及对应 API，以及 Web 配置编辑器与设置页。同步更新 `schemas/rpc.schema.json`、模板 Schema、`docs/design/protocol.md` 和 `plugins/README.md`。
 
 ## 9 验收标准
 

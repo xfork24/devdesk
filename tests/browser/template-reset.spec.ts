@@ -71,7 +71,7 @@ async function rpc(page: Page, url: string, method: string, params = {}) {
   return value.result;
 }
 function resourceDigest() {
-  const root = resolve("../configurations"),
+  const root = resolve(import.meta.dirname, "../../plugins"),
     hash = createHash("sha256");
   function visit(path: string) {
     for (const entry of readdirSync(path, { withFileTypes: true }).sort(

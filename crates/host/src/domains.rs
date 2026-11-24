@@ -174,9 +174,17 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
             packages.install(&bytes)
         }
         "domain.activate" | "domain.deactivate" | "domain.uninstall" => {
+            let uninstall = name == "domain.uninstall";
             let quiescent = |projects: Vec<String>| {
                 for project in projects {
-                    if workspace.domain_project_busy(&project)? {
+                    if uninstall {
+                        if workspace.domain_project_has_running_workflow(&project)? {
+                            return Err(err(
+                                "domain_busy",
+                                format!("项目 {project} 中仍有工作流正在执行"),
+                            ));
+                        }
+                    } else if workspace.domain_project_busy(&project)? {
                         return Err(err(
                             "domain_busy",
                             format!("请先结束项目 {project} 的在途领域工作流或核对仓库操作"),
@@ -188,7 +196,7 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
             let epoch = if name == "domain.activate" {
                 packages.activate(digest()?, epoch()?, quiescent)?
             } else {
-                packages.deactivate(digest()?, epoch()?, name == "domain.uninstall", quiescent)?
+                packages.deactivate(digest()?, epoch()?, uninstall, quiescent)?
             };
             publish(app, epoch);
             Ok(packages.status())
@@ -348,7 +356,7 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
                     "role_agent_bindings":package.role_agent_bindings,"inputs":inputs});
                 if let Some((project, entity, revision)) = owner {
                     let engine = workspace.project_engine(Some(project))?;
-                    let entity_record = engine.read_domain_entity(package.digest, entity)?;
+                    let entity_record = engine.read_domain_entity(entity)?;
                     let kind = entity_record["type_ref"].as_str().ok_or_else(|| err("storage", "对象缺少类型"))?;
                     let binding = package.entity_bindings.get(kind)
                         .ok_or_else(|| err("blocked", "此领域对象类型未声明该工作流"))?;
@@ -430,10 +438,10 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
         "query.domain.entity" => {
             let project = text("project_id")?;
             let id = entity()?;
-            packages.with_project(project, epoch()?, |digest| {
+            packages.with_project(project, epoch()?, |_| {
                 workspace
                     .project_engine(Some(project))?
-                    .read_domain_entity(digest, id)
+                    .read_domain_entity(id)
             })
         }
         "query.domain.contribution" => {
@@ -534,5 +542,112 @@ pub(super) async fn asset(
         )
             .into_response(),
         _ => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use devdesk_core::id;
+    use devdesk_domain::{
+        RepositoryAction, RepositoryOperation, RepositoryOperationStatus, WorktreeKind,
+        configuration_hash,
+    };
+
+    #[test]
+    fn removed_project_only_ignores_parked_repository_connections() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace =
+            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
+        let opened = workspace
+            .dispatch(
+                "project.open_github",
+                json!({"command_id":id(),"payload":{"repository":"fixture/failed-connect"}}),
+            )
+            .unwrap();
+        let project = opened["id"].as_str().unwrap();
+        let set_removed = |removed| {
+            project_directory_change(
+                &workspace,
+                id(),
+                configuration_hash(&(project, removed)),
+                project,
+                removed,
+                Value::Null,
+            )
+            .unwrap();
+        };
+        set_removed(true);
+        assert!(
+            workspace.domain_project_busy(project).unwrap(),
+            "prepared connection"
+        );
+        assert!(
+            !workspace
+                .domain_project_has_running_workflow(project)
+                .unwrap()
+        );
+
+        // The fixture Git adapter fails without external I/O.
+        workspace.tick_fixture(|| false).unwrap();
+        let engine = workspace.project_engine(Some(project)).unwrap();
+        let operation = engine.store.snapshot().unwrap().repository_operations[0].clone();
+        assert_eq!(
+            operation.status,
+            RepositoryOperationStatus::NeedsReconciliation
+        );
+        assert!(!engine.store.has_pending_work().unwrap());
+        assert!(
+            !workspace.domain_project_busy(project).unwrap(),
+            "removed project with an idle connection"
+        );
+
+        set_removed(false);
+        assert!(
+            workspace.domain_project_busy(project).unwrap(),
+            "visible project awaiting review"
+        );
+        workspace
+            .dispatch(
+                "repository.reconcile",
+                json!({"project_id":project,"command_id":id(),"target":operation.id,
+                    "expected_revision":operation.revision,"payload":{}}),
+            )
+            .unwrap();
+        set_removed(true);
+        assert!(
+            workspace.domain_project_busy(project).unwrap(),
+            "requested reconciliation"
+        );
+        workspace.tick_fixture(|| false).unwrap();
+        assert!(
+            !workspace.domain_project_busy(project).unwrap(),
+            "connection is idle again"
+        );
+
+        engine
+            .store
+            .seed_fixture_state(None, &mut |state| {
+                state.repository_operations.push(RepositoryOperation {
+                    id: id(),
+                    project_id: project.to_owned(),
+                    action: RepositoryAction::CreateWorktree {
+                        owner: id(),
+                        worktree_kind: WorktreeKind::Feature,
+                        base: "a".repeat(40),
+                        branch: None,
+                    },
+                    status: RepositoryOperationStatus::NeedsReconciliation,
+                    receipt: None,
+                    reason: "原仓库操作结果未知".into(),
+                    revision: 1,
+                });
+                Ok(Value::Null)
+            })
+            .unwrap();
+        assert!(
+            workspace.domain_project_busy(project).unwrap(),
+            "unresolved worktree effect"
+        );
     }
 }

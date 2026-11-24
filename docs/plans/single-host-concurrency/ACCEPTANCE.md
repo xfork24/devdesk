@@ -165,7 +165,7 @@ C4–C8 使用至少 30 组独立目标/种子重复执行，不能仅靠顺序�
 |---|---|
 | `crates/adapters/tests/` | 连接池、CAS、幂等、创建唯一性、批次原子性、写偏差、SQLite busy 与故障恢复测试。 |
 | `crates/host/src/` 与 `tests/entrypoints/` | 完整入口清单检查、明确作用域、Host 生命周期、SSE 分发/回放和跨项目边界。 |
-| `web/tests/` | 双/多标签页独立选择、草稿冲突、迟到响应、资源失效、折叠/后台页面行为。 |
+| `tests/browser/` | 双/多标签页独立选择、草稿冲突、迟到响应、资源失效、折叠/后台页面行为。 |
 | `tests/performance/` | 数据生成/备份、固定速率 100 客户端、100 BrowserContext 队列、指标汇总与失败门禁。 |
 | `tests/live/` | 专用 Docker/Git 工作流下的 100 前端测量，保存真实执行、Artifact、原生回执和资源身份。 |
 

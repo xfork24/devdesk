@@ -11,7 +11,7 @@
 | P0 声明与执行者 | Workflow/编译器 v3、Agent 动作合同 v2；共享动作目录明确 Agent、配方和系统执行者。Agent Step 与六类 Agent 节点任务必填，系统测试和 merge.prepare 不接收 Agent 任务 |
 | P1 编译与冻结 | 任务原文、渲染器、阶段、精确修订及完整路径进入 Feature 闭包和差异；旧 v1/v2 与旧锁不补写字段，升级产生显式草稿和诊断 |
 | P2 组装与派发 | 共享预览/执行任务段；逐轮持久化 execution_task 与 Artifact，统一编码给 Codex/DSH。冻结有效 Agent、声明顺序 Skill、Spec、Context、材料和授权；历史 Snapshot 有来源及截取标记。摘要与来源关系、正文、输出合同、Spec 和授权均校验 |
-| P3 默认资源 | 22 份 Markdown 任务编译嵌入新的 Feature/Task Workflow v3 修订；讨论、验证、测试编写、实现、文档和两类评审都有独立正文。旧字符串只服务旧编译锁；迁移清单见 configurations/README.md |
+| P3 默认资源 | 22 份 Markdown 任务编译嵌入新的 Feature/Task Workflow v3 修订；讨论、验证、测试编写、实现、文档和两类评审都有独立正文。旧字符串只服务旧编译锁；迁移清单见 plugins/README.md |
 | P4 UI 与查询 | Step 公共任务与 Agent 节点任务 Markdown 编辑、保存、发布、只读预览、实际 Turn 任务查询；Role/Agent、Skill、Spec、阶段及输出合同分开展示。缺绑定显示具体诊断，不准备环境或调用模型 |
 | P5 验证 | 真实 SQLite/Artifact、RPC Schema、浏览器、HTTP、DSH 原生 SDK、真实 Codex 与独立包检查；具体覆盖和边界如下 |
 

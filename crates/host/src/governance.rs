@@ -1,6 +1,37 @@
 use super::*;
 
 impl Workspace {
+    pub(super) fn role_experience_project<'a>(
+        &self,
+        params: &'a Value,
+        selection: &Value,
+        domain_epoch: Option<u64>,
+    ) -> Result<Option<&'a str>> {
+        if params["scope"] == "global" {
+            require(params["project_id"].is_null(), "全局经验不能同时指定项目")?;
+            let role = devdesk_core::read_models::identifier(selection, "role_id")?;
+            let (catalog, _, _) = self.configuration_bundle(domain_epoch)?;
+            require(
+                catalog.records("role").any(|record| {
+                    record.definition_id == role
+                        && !catalog.is_archived(record)
+                        && record.scope.is_global()
+                }),
+                "当前工作台没有此 Role",
+            )?;
+            return Ok(None);
+        }
+        let project = params["project_id"]
+            .as_str()
+            .ok_or_else(|| err("project_required", "角色经验查询需要当前项目"))?;
+        self.require_listed_project(project)?;
+        require(
+            self.global.project(project)?.is_some(),
+            "经验查询需要已登记项目",
+        )?;
+        Ok(Some(project))
+    }
+
     pub(super) fn experience_scope(
         &self,
         params: &Value,

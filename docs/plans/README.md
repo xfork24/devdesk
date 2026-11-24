@@ -1,6 +1,6 @@
 # 计划与验收索引
 
-每个计划使用 `docs/plans/<计划名>/PLAN.md`，同目录只保留 Markdown 契约、执行报告和验收说明。日志、JSON、截图、补丁和临时测试文件不保存为计划交付物；源码回归测试仍在 crates、tests、web/tests。
+每个计划使用 `docs/plans/<计划名>/PLAN.md`，同目录只保留 Markdown 契约、执行报告和验收说明。日志、JSON、截图、补丁和临时测试文件不保存为计划交付物；源码回归测试仍在 crates、tests、tests/browser。
 
 待实施方案必须明确标注状态，不能作为已实现的 API 或已通过的验收；核心设计约束同时记录在 [架构设计](../design/overview.md) 和 [仓库指南](../../AGENT.md)。
 
@@ -69,7 +69,7 @@
 | `scripts/package-source.py` | `scripts/py/package-source.py`，当前入口为 `scripts/release/package-source.sh` |
 | `scripts/build.sh`、`scripts/dev.sh` | `scripts/dev/` 中的同名文件 |
 | `scripts/check.sh`、`scripts/check-live.sh`、`scripts/check-permissions.sh`、`scripts/doctor.sh` | `scripts/check/` 中的同名文件 |
-| `scripts/package.sh` | 已退役，由 `scripts/release/package-core.sh` 分别生成三种制品 |
+| `scripts/package.sh` | 已退役，由 `scripts/release/package.sh` 分别生成三种制品 |
 | `scripts/setup-macos-signing.sh`、`scripts/install-macos-credential-helper.sh`、`scripts/sign-macos.sh` | `scripts/platform/macos/` 中的同名文件 |
 | `scripts/install-linux-sandbox-policy.sh` | `scripts/platform/linux/install-linux-sandbox-policy.sh` |
 | `sql/NNN_*.sql` | `sql/project/<职责>/` 中的同编号文件，见 [迁移索引](../../sql/README.md) |

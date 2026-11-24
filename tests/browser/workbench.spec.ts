@@ -111,6 +111,8 @@ async function githubFixture(page: Page) {
             {
               id: "configured-analyst",
               type: "agent",
+              role_ref: "configured-role:1",
+              capability_ref: "configured-capability",
               name: "配置的需求分析师",
               version: 1,
               scope: "global",
@@ -122,6 +124,13 @@ async function githubFixture(page: Page) {
                 tools: [],
                 permissions: [],
               },
+            },
+            {
+              id: "configured-role:1",
+              definition_id: "configured-role",
+              type: "role",
+              name: "需求分析",
+              scope: "global",
             },
             {
               id: "configured-model",
@@ -141,7 +150,7 @@ async function githubFixture(page: Page) {
               data: { agent_revision_id: "configured-analyst" },
             },
           ],
-          total: 4,
+          total: 5,
         };
         break;
       case "query.repository":
@@ -150,7 +159,7 @@ async function githubFixture(page: Page) {
       case "runtime.preparation_status":
         result = { preparations };
         break;
-      case "query.agent_experience":
+      case "query.role_experience":
         result = {
           records: [],
           total: 0,
@@ -325,7 +334,7 @@ test("完整 Agent 无需手工登记安装，显示准备及失败原因", asyn
   fixture.ready();
   await page.reload();
   await page.getByRole("button", { name: "角色讨论", exact: true }).click();
-  await expect(page.getByLabel("讨论角色", { exact: true })).toHaveValue(
+  await expect(page.getByLabel("Agent", { exact: true })).toHaveValue(
     "configured-analyst",
   );
   await expect(

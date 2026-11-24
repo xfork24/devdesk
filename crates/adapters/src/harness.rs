@@ -105,7 +105,7 @@ pub fn provider_turn_text(r: &ports::TurnDispatch) -> Result<String> {
         return Ok(r.turn.input.clone());
     }
     Ok(format!(
-        "{}\n\nReferenced Agent experience (source references only; use agent.experience.read to verify and read): {}",
+        "{}\n\nReferenced experience (use the supplied excerpts as context and agent.experience.read for sources available to this Agent): {}",
         r.turn.input,
         serde_json::to_string(&r.context_references).map_err(storage)?
     ))

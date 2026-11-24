@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 fn main() {
-    let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("../../configurations");
+    let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("../../plugins");
     let core = root.join("core");
     let fixture = root.join("../tests/fixtures/configuration/engineering-catalog.json");
     println!("cargo:rerun-if-changed={}", core.display());

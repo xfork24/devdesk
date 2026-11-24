@@ -314,13 +314,18 @@ impl Workspace {
                         historical_profiles
                             .push(s.configuration(profile_ref)?.definition_id.clone());
                     }
+                    let current = |r: &ConfigurationRecord| {
+                        template_record_current(&s, r)
+                            && catalog
+                                .as_ref()
+                                .is_none_or(|view| !view.is_historical_domain_source(r))
+                    };
                     let profile_visible = |r: &ConfigurationRecord| {
                         r.scope.visible_from(&scope)
-                            && (template_record_current(&s, r)
-                                || historical_profiles.contains(&r.definition_id))
+                            && (current(r) || historical_profiles.contains(&r.definition_id))
                     };
                     let installations = self.global.runtime_installations()?;
-                    let targets:Vec<_>=s.governance.iter().filter(|r|["harness","sandbox"].contains(&r.r#type.as_str()) && r.immutable && r.scope.visible_from(&scope) && (template_record_current(&s,r) || target_ref.as_deref() == Some(r.id.as_str())))
+                    let targets:Vec<_>=s.governance.iter().filter(|r|["harness","sandbox"].contains(&r.r#type.as_str()) && r.immutable && r.scope.visible_from(&scope) && (current(r) || target_ref.as_deref() == Some(r.id.as_str())))
                         .filter_map(|r| {
                             let kind=if r.r#type=="harness" {PermissionTargetKind::Harness}else{PermissionTargetKind::Sandbox};
                             let resolved=permission_target(&s,kind,&r.id);

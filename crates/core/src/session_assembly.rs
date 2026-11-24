@@ -11,6 +11,39 @@ impl Engine {
             .iter()
             .find(|r| r.r#type == "agent_instance" && r.id == instance)
             .ok_or_else(|| err("not_found", "Agent 实例不存在"))?;
+        self.import_discussion_source(
+            records,
+            instance,
+            vec![
+                instance.to_owned(),
+                text(&selected.data, "agent_revision_id")?,
+            ],
+        )
+    }
+
+    pub fn import_discussion_agent_revision(
+        &self,
+        catalog: &ConfigurationCatalogSnapshot,
+        agent: &str,
+    ) -> Result<()> {
+        let selected = catalog
+            .record(agent)
+            .filter(|r| {
+                r.r#type == "agent"
+                    && r.scope.is_global()
+                    && !catalog.is_archived(r)
+                    && !catalog.is_retired(r)
+            })
+            .ok_or_else(|| err("not_found", "此工作台没有可供全局讨论的 Agent 修订"))?;
+        self.import_discussion_source(&catalog.state.governance, agent, vec![selected.id.clone()])
+    }
+
+    fn import_discussion_source(
+        &self,
+        records: &[ConfigurationRecord],
+        selection: &str,
+        mut pending: Vec<Id>,
+    ) -> Result<()> {
         let before = self.store.configuration_snapshot()?;
         require(
             before.state.projects.is_empty(),
@@ -18,10 +51,6 @@ impl Engine {
         )?;
         let mut candidate = before.state.as_ref().clone();
         let state = &mut candidate;
-        let mut pending = vec![
-            selected.id.clone(),
-            text(&selected.data, "agent_revision_id")?,
-        ];
         let mut visited = std::collections::BTreeSet::new();
         while let Some(id) = pending.pop() {
             if !visited.insert(id.clone()) {
@@ -64,7 +93,7 @@ impl Engine {
                 "discussion-source-import/v1",
                 self.store.namespace(),
                 self.store.root(),
-                instance,
+                selection,
                 before.revision,
                 &candidate.fingerprint,
             ));

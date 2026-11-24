@@ -149,7 +149,10 @@ pub(super) fn experience_domains(root: &Path) -> Result<BTreeMap<Id, String>> {
     let db = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(storage)?;
     let mut query = db
-        .prepare("SELECT project,digest FROM domain_projects")
+        .prepare(
+            "SELECT d.project, coalesce(p.id, ':' || d.digest) FROM domain_projects d
+                  LEFT JOIN domain_package_identities p ON p.digest=d.digest",
+        )
         .map_err(storage)?;
     query
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
@@ -623,6 +626,7 @@ struct Active {
 pub struct ProjectVisibility {
     pub active_digest: Option<Id>,
     pub(super) projects: BTreeSet<Id>,
+    pub(super) unidentified_projects: BTreeSet<Id>,
 }
 
 impl ProjectVisibility {
@@ -653,6 +657,9 @@ impl DomainPackages {
              CREATE TABLE IF NOT EXISTS domain_packages(
                 digest TEXT PRIMARY KEY, id TEXT NOT NULL, version TEXT NOT NULL,
                 zip BLOB NOT NULL, UNIQUE(id, version));
+             CREATE TABLE IF NOT EXISTS domain_package_identities(
+                digest TEXT PRIMARY KEY, id TEXT NOT NULL);
+             INSERT OR IGNORE INTO domain_package_identities SELECT digest,id FROM domain_packages;
              CREATE TABLE IF NOT EXISTS domain_projects(
                 project TEXT PRIMARY KEY, digest TEXT NOT NULL);
              CREATE INDEX IF NOT EXISTS domain_projects_digest ON domain_projects(digest);
@@ -663,6 +670,7 @@ impl DomainPackages {
         )
         .map_err(storage)?;
         db.execute_batch(storage::SCHEMA).map_err(storage)?;
+        storage::restore_package_identities(&db, root)?;
         let (epoch, installed_digest, archive): (u64, Option<String>, Option<Vec<u8>>) = db
             .query_row(
                 "SELECT a.epoch, a.digest, p.zip FROM active_domain a
@@ -731,8 +739,9 @@ impl DomainPackages {
 
     pub fn install(&self, bytes: &[u8]) -> Result<Value> {
         let package = Package::read(bytes)?;
-        let db = self.db.lock().unwrap();
-        db.execute(
+        let mut db = self.db.lock().unwrap();
+        let tx = db.transaction().map_err(storage)?;
+        tx.execute(
             "INSERT INTO domain_packages VALUES(?,?,?,?) ON CONFLICT(digest) DO NOTHING",
             params![
                 package.digest,
@@ -748,6 +757,13 @@ impl DomainPackages {
                 storage(e)
             }
         })?;
+        // Project membership outlives the installed archive.
+        tx.execute(
+            "INSERT INTO domain_package_identities VALUES(?,?) ON CONFLICT(digest) DO UPDATE SET id=excluded.id",
+            params![package.digest, package.manifest.id],
+        )
+        .map_err(storage)?;
+        tx.commit().map_err(storage)?;
         Ok(package.summary())
     }
 
@@ -783,7 +799,7 @@ impl DomainPackages {
             return Ok(active.epoch);
         }
         if let Some(previous) = &active.package {
-            quiescent(self.projects(&previous.digest)?)?;
+            quiescent(self.projects(&previous.manifest.id)?)?;
         }
         let db = self.db.lock().unwrap();
         let epoch = next_epoch(expected)?;
@@ -808,14 +824,14 @@ impl DomainPackages {
     ) -> Result<u64> {
         let mut active = self.active.write().unwrap();
         check_epoch(expected, active.epoch)?;
-        let stopping = active.package.as_ref().is_some_and(|p| p.digest == digest);
-        if stopping {
-            quiescent(self.projects(digest)?)?;
+        let stopping = active.package.as_ref().filter(|p| p.digest == digest);
+        if let Some(package) = stopping {
+            quiescent(self.projects(&package.manifest.id)?)?;
         }
         let mut db = self.db.lock().unwrap();
         let tx = db.transaction().map_err(storage)?;
         let mut epoch = active.epoch;
-        if stopping {
+        if stopping.is_some() {
             epoch = next_epoch(expected)?;
             tx.execute(
                 "UPDATE active_domain SET epoch=?,digest=NULL WHERE singleton=1",
@@ -913,7 +929,7 @@ impl DomainPackages {
         kind: WorktreeKind,
     ) -> Result<Option<String>> {
         let active = self.active.read().unwrap();
-        if self.project_package(project)?.is_none() {
+        if self.project_domain(project)?.is_none() {
             return Ok(None);
         }
         let package = self.require_project(&active, project)?;
@@ -945,7 +961,7 @@ impl DomainPackages {
         request: &PullRequestRequest,
     ) -> Result<Option<PullRequestCreation>> {
         let active = self.active.read().unwrap();
-        if self.project_package(&request.project)?.is_none() {
+        if self.project_domain(&request.project)?.is_none() {
             return Ok(None);
         }
         let package = self.require_project(&active, &request.project)?;
@@ -972,7 +988,7 @@ impl DomainPackages {
         runner: &TestRunner,
     ) -> Result<Option<ports::TestReporter>> {
         let active = self.active.read().unwrap();
-        if self.project_package(project)?.is_none() {
+        if self.project_domain(project)?.is_none() {
             return Ok(None);
         }
         let package = self.require_project(&active, project)?;
@@ -995,7 +1011,7 @@ impl DomainPackages {
         project: &str,
         mainline: &str,
     ) -> Result<Option<ProjectTestDiscovery>> {
-        if self.project_package(project)?.is_none() {
+        if self.project_domain(project)?.is_none() {
             return Ok(None);
         }
         // Project RPCs can already own a read lease. A concurrent switch
@@ -1120,13 +1136,14 @@ impl DomainPackages {
         action(&package.digest, &package.sources, plan)
     }
 
-    fn projects(&self, digest: &str) -> Result<Vec<String>> {
+    fn projects(&self, domain: &str) -> Result<Vec<String>> {
         let db = self.db.lock().unwrap();
         let mut query = db
-            .prepare("SELECT project FROM domain_projects WHERE digest=? ORDER BY project")
+            .prepare("SELECT d.project FROM domain_projects d
+                      JOIN domain_package_identities p ON p.digest=d.digest WHERE p.id=? ORDER BY d.project")
             .map_err(storage)?;
         query
-            .query_map([digest], |row| row.get(0))
+            .query_map([domain], |row| row.get(0))
             .map_err(storage)?
             .collect::<rusqlite::Result<_>>()
             .map_err(storage)
@@ -1136,31 +1153,49 @@ impl DomainPackages {
     /// caller already pins an active domain for a project RPC.
     pub fn project_visibility(&self, domain_epoch: Option<u64>) -> Result<ProjectVisibility> {
         let db = self.db.lock().unwrap();
-        let digest = if let Some(expected) = domain_epoch {
-            let (epoch, digest): (u64, Option<String>) = db
+        let (active_digest, domain) = if let Some(expected) = domain_epoch {
+            let (epoch, digest, domain): (u64, Option<String>, Option<String>) = db
                 .query_row(
-                    "SELECT epoch,digest FROM active_domain WHERE singleton=1",
+                    "SELECT a.epoch,a.digest,p.id FROM active_domain a
+                     LEFT JOIN domain_packages p ON p.digest=a.digest WHERE a.singleton=1",
                     [],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                 )
                 .map_err(storage)?;
             check_epoch(expected, epoch)?;
-            Some(digest.ok_or_else(|| err("domain_inactive", "当前没有活动领域"))?)
+            (
+                digest,
+                Some(domain.ok_or_else(|| err("domain_inactive", "当前没有活动领域"))?),
+            )
         } else {
-            None
+            (None, None)
         };
-        let active = digest.as_deref();
         let mut query = db
-            .prepare("SELECT project FROM domain_projects WHERE ?1 IS NULL OR digest=?1")
+            .prepare(
+                "SELECT d.project,p.id FROM domain_projects d
+                      LEFT JOIN domain_package_identities p ON p.digest=d.digest
+                      WHERE ?1 IS NULL OR p.id=?1 OR p.id IS NULL",
+            )
             .map_err(storage)?;
-        let projects = query
-            .query_map([active], |row| row.get(0))
-            .map_err(storage)?
-            .collect::<rusqlite::Result<_>>()
+        let mut projects = BTreeSet::new();
+        let mut unidentified_projects = BTreeSet::new();
+        let rows = query
+            .query_map([&domain], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+            })
             .map_err(storage)?;
+        for row in rows {
+            let (project, owner) = row.map_err(storage)?;
+            if domain.is_none() || owner.is_some() {
+                projects.insert(project);
+            } else {
+                unidentified_projects.insert(project);
+            }
+        }
         Ok(ProjectVisibility {
-            active_digest: digest,
+            active_digest,
             projects,
+            unidentified_projects,
         })
     }
 
@@ -1190,21 +1225,22 @@ impl DomainPackages {
 
     pub fn permits_project(&self, project: &str) -> Result<bool> {
         let active = self.active.read().unwrap();
-        let saved = self.project_package(project)?;
-        Ok(saved.is_none_or(|digest| {
+        let saved = self.project_domain(project)?;
+        Ok(saved.is_none_or(|domain| {
             active
                 .package
                 .as_ref()
-                .is_some_and(|package| package.digest == digest)
+                .is_some_and(|package| package.manifest.id == domain)
         }))
     }
 
-    fn project_package(&self, project: &str) -> Result<Option<String>> {
+    fn project_domain(&self, project: &str) -> Result<Option<String>> {
         self.db
             .lock()
             .unwrap()
             .query_row(
-                "SELECT digest FROM domain_projects WHERE project=?",
+                "SELECT coalesce(p.id, '') FROM domain_projects d
+                 LEFT JOIN domain_package_identities p ON p.digest=d.digest WHERE d.project=?",
                 [project],
                 |row| row.get(0),
             )
@@ -1213,17 +1249,10 @@ impl DomainPackages {
     }
 
     pub fn project_package_namespace(&self, project: &str) -> Result<Option<String>> {
-        self.db
-            .lock()
-            .unwrap()
-            .query_row(
-                "SELECT p.id || '.' FROM domain_projects d
-                 JOIN domain_packages p ON p.digest=d.digest WHERE d.project=?",
-                [project],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(storage)
+        Ok(self
+            .project_domain(project)?
+            .filter(|id| !id.is_empty())
+            .map(|id| format!("{id}.")))
     }
 
     pub fn bind_project(&self, project: &str, digest: &str) -> Result<()> {
@@ -1243,14 +1272,17 @@ impl DomainPackages {
                 params![project, digest],
             )
             .map_err(storage)?;
-        let saved: String = tx
+        let same_domain: bool = tx
             .query_row(
-                "SELECT digest FROM domain_projects WHERE project=?",
-                [project],
+                "SELECT EXISTS(SELECT 1 FROM domain_projects d
+                 JOIN domain_package_identities p ON p.digest=d.digest
+                 JOIN domain_packages active ON active.id=p.id
+                 WHERE d.project=?1 AND active.digest=?2)",
+                params![project, digest],
                 |row| row.get(0),
             )
             .map_err(storage)?;
-        require(saved == digest, "项目已冻结到其他领域包版本")?;
+        require(same_domain, "项目已登记到其他领域")?;
         if inserted == 1 {
             tx.execute(
                 "INSERT INTO domain_project_storage(project,data_root)
@@ -1317,14 +1349,18 @@ impl DomainPackages {
         action: impl FnOnce(Option<u64>) -> Result<T>,
     ) -> Result<T> {
         let active = self.active.read().unwrap();
-        let Some(saved) = self.project_package(project)? else {
+        let Some(saved) = self.project_domain(project)? else {
             drop(active);
             if epoch.is_some() {
                 return Err(err("domain_inactive", "项目未绑定领域包"));
             }
             return action(None);
         };
-        if active.package.as_ref().is_none_or(|p| p.digest != saved) {
+        if active
+            .package
+            .as_ref()
+            .is_none_or(|p| p.manifest.id != saved)
+        {
             return Err(err("domain_inactive", "项目所属领域当前不可用"));
         }
         let epoch = epoch.ok_or_else(|| err("invalid_params", "领域项目请求需要 domain_epoch"))?;
@@ -1337,10 +1373,10 @@ impl DomainPackages {
             .package
             .as_deref()
             .ok_or_else(|| err("domain_inactive", "当前没有活动领域"))?;
-        let saved = self.project_package(project)?;
+        let saved = self.project_domain(project)?;
         require(
-            saved.as_deref() == Some(&package.digest),
-            "项目不属于当前领域版本",
+            saved.as_deref() == Some(&package.manifest.id),
+            "项目不属于当前领域",
         )?;
         Ok(package)
     }

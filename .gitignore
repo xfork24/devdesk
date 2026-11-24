@@ -9,8 +9,6 @@
 /dist/
 /.idea/
 /.zcode/
-/web/test-results/
-/web/playwright-report/
 /web/*.tsbuildinfo
 
 .DS_Store

@@ -76,6 +76,9 @@ impl Engine {
             matches!(r.r#type.as_str(), "role" | "role_retirement")
                 && package_role_identity(r).is_none()
                 && !template_history_retained(&existing.state, r)
+                && (package_namespace.is_none()
+                    || !r.scope.is_global()
+                    || known.record(&r.id).is_some())
         }) {
             if let Some(old) = known.record(&role.id) {
                 require(old.content_hash == role.content_hash, "Role 目录摘要冲突")?;

@@ -421,7 +421,7 @@ test("项目与 Global 历史合并事件和工具调用，统一排序分页并
   await page.unrouteAll({ behavior: "wait" });
 });
 
-test("角色页使用 Agent 入口且可在讨论内创建身份", async ({ page }) => {
+test("角色讨论使用 Role 与 Agent 定义并直接选择开始讨论", async ({ page }) => {
   await setup(page);
   await page.goto("/?tab=actors&config_tab=agent");
   await expect(
@@ -435,49 +435,36 @@ test("角色页使用 Agent 入口且可在讨论内创建身份", async ({ page
   await page.getByRole("button", { name: "角色讨论", exact: true }).click();
   await page.getByLabel("讨论范围", { exact: true }).selectOption("global");
   const role = page.getByLabel("讨论角色", { exact: true });
-  // Select an agent explicitly: the catalog now mixes codex and dsh stacks, so the
-  // default option must not be relied on.
-  await role.selectOption("builtin-agent-gpt-6-2-sol-analyst:3");
-  await expect(role).not.toHaveValue("");
-  const agentId = await role.inputValue();
-  const created = page.waitForResponse(
-    (response) =>
-      response.url().endsWith("/rpc") &&
-      response.request().postDataJSON()?.method === "agent.instance.create",
-  );
+  await role.selectOption("builtin-role-analyst");
+  const agentId = "builtin-agent-gpt-6-2-sol-analyst:3";
+  const agent = page.getByLabel("Agent", { exact: true });
+  await agent.selectOption(agentId);
+  await expect(agent).toHaveValue(agentId);
   await expect(
-    page.getByRole("button", { name: "新建讨论身份", exact: true }),
+    agent.getByRole("option", { name: /新建Agent实例/ }),
   ).toHaveCount(0);
-  const instance = page.getByLabel("Agent", { exact: true });
-  await instance.selectOption({ label: "新建Agent实例" });
-  const response = await created;
-  const result = await response.json();
-  expect(result.error).toBeUndefined();
-  expect(
-    response.request().postDataJSON().params.payload.agent_revision_id,
-  ).toBe(agentId);
-  expect(response.request().postDataJSON().params.payload.scope).toEqual(
-    "global",
+  const request = page.waitForRequest(
+    (request) =>
+      request.url().endsWith("/rpc") &&
+      request.postDataJSON()?.method === "session.open",
   );
-  await expect(instance).toHaveValue(result.result.id);
-  await expect(
-    instance.locator(`option[value="${result.result.id}"]`),
-  ).toHaveCount(1);
-  await expect(
-    instance.getByRole("option", { name: "新建Agent实例", exact: true }),
-  ).toHaveCount(1);
-  await page.goto(
-    `/?tab=actors&config_tab=agent&config_object=${result.result.id}`,
-  );
-  await expect(
-    page.getByRole("tab", { name: "Agent", exact: true }),
-  ).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByLabel("名称", { exact: true })).toHaveValue(
-    "Requirements Analyst · GPT-6.2 Sol High",
-  );
-  await expect(page).toHaveURL(
-    new RegExp(`config_object=${encodeURIComponent(agentId)}(?:&|$)`),
-  );
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    if (call.method !== "session.open") return route.fallback();
+    await route.fulfill({
+      json: {
+        jsonrpc: "2.0",
+        id: call.id,
+        result: { id: "discussion-session" },
+      },
+    });
+  });
+  await page
+    .getByRole("button", { name: "开始 / 续用讨论", exact: true })
+    .click();
+  expect((await request).postDataJSON().params.payload).toEqual({
+    agent: agentId,
+  });
 });
 
 test("清理项目后旧链接返回可用工作台", async ({ page }) => {

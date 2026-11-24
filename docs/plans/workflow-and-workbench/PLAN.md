@@ -644,7 +644,7 @@ W3 分三个可验收增量：先贯通需求讨论、采纳、需求交付/评�
 
 ## 十三 交付物与范围
 
-本目录只保存本计划、`CONTRACT.md`、`EXECUTION.md` 及其他 Markdown 验收记录。日志、JSON、截图和临时测试文件写入临时目录，不作为计划交付物保存；源码回归测试保留在 crates、tests、web/tests。CONTRACT 包含 Agent/Model/Harness/Skill/Tool/Permission 组合与实例样例、动作目录和流程 JSON、SQL 约束、草稿/发布与运行状态机、API 字段和页面线框；实现时同步更新领域、ADR、协议、Schema、使用说明及计划索引。阶段完成以行为及证据为准。
+本目录只保存本计划、`CONTRACT.md`、`EXECUTION.md` 及其他 Markdown 验收记录。日志、JSON、截图和临时测试文件写入临时目录，不作为计划交付物保存；源码回归测试保留在 crates、tests、tests/browser。CONTRACT 包含 Agent/Model/Harness/Skill/Tool/Permission 组合与实例样例、动作目录和流程 JSON、SQL 约束、草稿/发布与运行状态机、API 字段和页面线框；实现时同步更新领域、ADR、协议、Schema、使用说明及计划索引。阶段完成以行为及证据为准。
 
 首版包含统一 Scope、配置独立版本与精确依赖、Project 动态默认绑定、Feature 创建时配置冻结、结构化工作流编辑及推进策略版本化、实际调度与交互约束、分作用域实例经验、跨项目只读查询、渐进式披露、场景恢复和完整工作台。跨账号经验共享、远程多租户、通用脚本/BPMN 编排与向量基础设施留待独立需求；已有 Feature 的治理配置重新绑定不属于本方案允许的操作。
 

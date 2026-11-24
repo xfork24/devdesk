@@ -1588,6 +1588,18 @@ select[multiple] {
   border: 0;
   border-radius: 0;
 }
+.discussion-agent-info {
+  display: grid;
+  gap: 16px;
+  flex-basis: 100%;
+  min-width: 0;
+}
+.discussion-agent-info h3 {
+  margin-block: 0 8px;
+}
+.discussion-agent-info > details > summary {
+  cursor: pointer;
+}
 .agent-information-row {
   display: grid;
   grid-template-columns: max-content max-content minmax(0, 1fr);

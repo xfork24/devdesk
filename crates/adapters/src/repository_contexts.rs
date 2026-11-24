@@ -2,6 +2,33 @@
 use crate::{connection_pool::ConnectionPool, *};
 use devdesk_core::{concurrency::*, repository_updates::*};
 
+// A failed connection is idle unless its original attempt is queued for
+// reconciliation or compatible recovery. Keep this in step with dispatch.
+pub(super) const RUNNABLE_OPERATION: &str = "status IN ('prepared','dispatched','observed')
+    OR (status='needs_reconciliation' AND (reason='reconcile_requested'
+        OR (json_extract(action,'$.kind')='connect' AND reason='原物理观察已保留，原业务接纳版本冲突')))";
+
+pub(super) fn domain_project_activity(conn: &Connection, project: &str) -> Result<Value> {
+    let sql = format!(
+        "SELECT
+            EXISTS(SELECT 1 FROM governance_records
+                WHERE type='workflow_instance' AND json_extract(data,'$.project_id')=?1
+                  AND json_extract(data,'$.parent_execution_id') IS NULL
+                  AND json_extract(data,'$.status') NOT IN ('completed','cancelled')),
+            EXISTS(SELECT 1 FROM repository_operations
+                WHERE project_id=?1 AND ({RUNNABLE_OPERATION}
+                    OR (status='needs_reconciliation' AND json_extract(action,'$.kind') IS NOT 'connect'))),
+            EXISTS(SELECT 1 FROM repository_operations WHERE project_id=?1
+                AND status='needs_reconciliation' AND json_extract(action,'$.kind')='connect')"
+    );
+    conn.query_row(&sql, [project], |row| {
+        let active_when_removed = row.get::<_, bool>(0)? || row.get::<_, bool>(1)?;
+        let connection_review = row.get::<_, bool>(2)?;
+        Ok(json!({"active": active_when_removed || connection_review, "active_when_removed": active_when_removed}))
+    })
+    .map_err(storage)
+}
+
 pub(super) fn registration(
     pool: &ConnectionPool,
     project: &str,

@@ -13,7 +13,7 @@
 | `check/` | `check-style.sh` | 风格与构建门禁：rustfmt、clippy `-D warnings`、ESLint、TypeScript、Prettier 与 Web 构建；规范见 `docs/crates/standards/` |
 | `check/` | `check-permissions.sh` | 校验权限预设、后端 manifest 与不可变文件摘要 |
 | `check/` | `doctor.sh` | 检查宿主环境、Docker、GitHub CLI 和所选权限后端 |
-| `release/` | `package-core.sh` | 按 `host`、`web`、`software` 分别生成独立制品及 SHA-256 |
+| `release/` | `package.sh` | 按 `host`、`web`、`software` 分别生成独立制品及 SHA-256 |
 | `release/` | `package-source.sh` | 打包当前工作区源码与文件清单，排除运行数据和构建产物 |
 | `platform/macos/` | `setup-macos-signing.sh` | 准备或导入 DevDesk 本地稳定签名身份 |
 | `platform/macos/` | `sign-macos.sh` | 对 Host 应用配置好的签名身份 |
@@ -28,9 +28,9 @@
 ./scripts/dev/build.sh
 ./scripts/dev/dev.sh --data ./data --port 4317
 ./scripts/check/check.sh
-./scripts/release/package-core.sh host
-./scripts/release/package-core.sh web
-./scripts/release/package-core.sh software
+./scripts/release/package.sh host
+./scripts/release/package.sh web
+./scripts/release/package.sh software
 ./scripts/release/package-source.sh
 ```
 

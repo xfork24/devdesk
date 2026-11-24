@@ -6,14 +6,14 @@
   "scripts": {
     "build": "npm run build:core && npm run build:software",
     "build:core": "tsc --noEmit -p tsconfig.core.json && vite build --config vite.core.config.ts",
-    "test:e2e": "playwright test",
-    "lint": "eslint . --max-warnings 0",
-    "lint:fix": "eslint . --fix",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
+    "test:e2e": "cd .. && playwright test --config tests/browser/playwright.config.ts",
+    "lint": "cd .. && eslint --config web/eslint.config.js web tests/browser tests/fixtures/workbench --max-warnings 0",
+    "lint:fix": "cd .. && eslint --config web/eslint.config.js web tests/browser tests/fixtures/workbench --fix",
+    "format": "prettier --write . ../tests/browser ../tests/fixtures/workbench",
+    "format:check": "prettier --check . ../tests/browser ../tests/fixtures/workbench",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p ../tests/browser/tsconfig.json",
     "build:software": "vite build --config vite.software.config.ts",
-    "build:fixture": "vite build --config vite.fixture.config.ts"
+    "build:fixture": "vite build --config ../tests/fixtures/workbench/vite.config.ts"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

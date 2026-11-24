@@ -20,7 +20,10 @@ assert(releaseDir, "Pass a directory containing the release archives");
 const temp = await mkdtemp(path.join(os.tmpdir(), "devdesk-domain-release-"));
 const data = path.join(temp, "data");
 const pythonClient = path.join(root, "tests/entrypoints/domain_client.py");
-const candidate = path.join(releaseDir, "software-development-0.5.1.zip");
+const domainVersion = (await execFile("python3", [
+  path.join(root, "plugins/software-development/build.py"), "--version",
+])).stdout.trim();
+const candidate = path.join(releaseDir, `software-development-${domainVersion}.zip`);
 const legacy = path.join(
   baselineDir ?? path.join(root, "tests/fixtures/domain-packages"),
   "software-development-0.3.0.zip",
@@ -215,7 +218,7 @@ with ZipFile(sys.argv[1]) as original, ZipFile(sys.argv[2], "w", ZIP_DEFLATED) a
     assert.equal((await client.active()).active.id, "manuscript");
     await client.rejected(incompatible);
     const upgraded = await client.install(candidate);
-    assert.equal(upgraded.version, "0.5.1");
+    assert.equal(upgraded.version, domainVersion);
     await client.activate(upgraded.digest);
     await client.canRender("software-development.engineering-settings", (page) => page.getByRole("heading", { name: "数据与运行" }));
     const samples = await Promise.all(Array.from({ length: 100 }, () => client.active()));
@@ -231,7 +234,7 @@ with ZipFile(sys.argv[1]) as original, ZipFile(sys.argv[2], "w", ZIP_DEFLATED) a
   }, { crashAfter: true });
 
   await withHost(current.host, current.web, async (client) => {
-    assert.equal((await client.active()).active.version, "0.5.1");
+    assert.equal((await client.active()).active.version, domainVersion);
     const read = await client.native("read", upgraded.run.project_id, upgraded.run.execution_id);
     assert.equal(read.record.data.status, "completed");
     assert.equal(read.domain_submission.entities.test_configuration, upgraded.proof_id);

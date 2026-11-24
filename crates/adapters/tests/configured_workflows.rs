@@ -775,13 +775,13 @@ fn custom_agent_executes_actual_task_through_ports_and_persists_typed_artifact()
     assert_eq!(raw_task["task"]["$source"], "task");
     assert!(raw_task["task"].get("task_instructions").is_none());
     let expected_task = task.task.clone();
+    let legacy_record = json!(task);
+    let turn = task.turn_id.clone();
     drop(calls);
     drop(conn);
     drop(engine);
-    let restored = SqliteStore::open_fixture(dir.path())
-        .unwrap()
-        .snapshot()
-        .unwrap();
+    let store = SqliteStore::open_fixture(dir.path()).unwrap();
+    let restored = store.snapshot().unwrap();
     assert_eq!(restored.configuration(&row.id).unwrap().data, row.data);
     assert_eq!(
         restored
@@ -791,6 +791,41 @@ fn custom_agent_executes_actual_task_through_ports_and_persists_typed_artifact()
             .unwrap()
             .data["task"],
         expected_task
+    );
+
+    // Before source descriptors, projects stored the original body and rendering together.
+    let conn = rusqlite::Connection::open(dir.path().join("engineering.sqlite3")).unwrap();
+    conn.execute_batch("DROP TRIGGER governance_immutable_update;")
+        .unwrap();
+    let write_legacy = |body: &Value| {
+        assert_eq!(
+            conn.execute(
+                "UPDATE governance_records SET data=?2,content_hash=?3
+                 WHERE type='configured_execution_task' AND definition_id=?1",
+                rusqlite::params![
+                    turn,
+                    body.to_string(),
+                    content_digest(&References::new(), body)
+                ],
+            )
+            .unwrap(),
+            1
+        );
+    };
+    write_legacy(&legacy_record);
+    assert_eq!(
+        store.execution_task_detail(&turn).unwrap().unwrap()["task"],
+        legacy_record
+    );
+    let mut mismatched = legacy_record;
+    mismatched["digest"] = json!("wrong-digest");
+    write_legacy(&mismatched);
+    assert!(
+        store
+            .execution_task_detail(&turn)
+            .unwrap_err()
+            .message
+            .contains("通用任务摘要或渲染合同不匹配")
     );
 }
 

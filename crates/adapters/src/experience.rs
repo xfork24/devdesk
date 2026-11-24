@@ -1,13 +1,21 @@
-//! Read-only, AgentID-scoped projection over authoritative project stores.
+//! Read-only experience projection over authoritative project stores.
 use super::*;
 
 fn projects(root: &Path) -> Result<Vec<Project>> {
+    project_sources(root, true)
+}
+fn project_sources(root: &Path, include_removed: bool) -> Result<Vec<Project>> {
     let conn = connection_pool::ManagedConnection::read_only(&root.join("global.sqlite3"))?;
     let mut query = conn
-        .prepare("SELECT project FROM project_catalog WHERE project IS NOT NULL ORDER BY id")
+        .prepare(&format!(
+            "SELECT project FROM project_catalog WHERE project IS NOT NULL
+           AND (?1 OR NOT EXISTS(SELECT 1 FROM settings
+               WHERE key='{}'||project_catalog.id AND value='true')) ORDER BY id",
+            crate::catalog::REMOVED_PROJECT_PREFIX
+        ))
         .map_err(storage)?;
     query
-        .query_map([], |row| row.get::<_, String>(0))
+        .query_map([include_removed], |row| row.get::<_, String>(0))
         .map_err(storage)?
         .map(|row| serde_json::from_str(&row.map_err(storage)?).map_err(storage))
         .collect()
@@ -41,7 +49,22 @@ fn instance(root: &Path, current_project: &str, id: &str) -> Result<AgentInstanc
     Ok(i)
 }
 pub fn query(root: &Path, current_project: &str, params: &Value) -> Result<Value> {
-    let (i, mut rows, unavailable) = visible_entries(root, current_project, params)?;
+    let (i, rows, unavailable) = visible_entries(root, current_project, params)?;
+    let mut result = experience_result(root, params, rows, unavailable, false)?;
+    if params["snapshot_id"].as_str().is_none() {
+        result["scope"] = json!(i.scope);
+        result["agent_revision_id"] = json!(i.agent_revision_id);
+    }
+    Ok(result)
+}
+
+fn experience_result(
+    root: &Path,
+    params: &Value,
+    mut rows: Vec<Value>,
+    unavailable: Vec<Value>,
+    by_role: bool,
+) -> Result<Value> {
     rows.retain(|r| {
         ["feature_id", "task_id", "workflow_instance_id"]
             .iter()
@@ -105,13 +128,30 @@ pub fn query(root: &Path, current_project: &str, params: &Value) -> Result<Value
                         .as_str()
                         .is_none_or(|pid| r["project_id"] == pid)
             })
-            .ok_or_else(|| err("not_found", "该 Agent 没有此快照"))?;
+            .ok_or_else(|| {
+                err(
+                    "not_found",
+                    if by_role {
+                        "该角色没有此快照"
+                    } else {
+                        "该 Agent 没有此快照"
+                    },
+                )
+            })?;
         return read_snapshot(root, entry, snapshot_id);
     }
     let mut features = std::collections::BTreeSet::new();
     rows.retain(|row| {
         row["feature_id"].as_str().is_none_or(|feature| {
-            features.insert((row["project_id"].to_string(), feature.to_owned()))
+            features.insert((
+                if by_role {
+                    row["agent_instance_id"].to_string()
+                } else {
+                    String::new()
+                },
+                row["project_id"].to_string(),
+                feature.to_owned(),
+            ))
         })
     });
     for row in &mut rows {
@@ -125,7 +165,7 @@ pub fn query(root: &Path, current_project: &str, params: &Value) -> Result<Value
     let offset = params["offset"].as_u64().unwrap_or(0) as usize;
     let limit = params["limit"].as_u64().unwrap_or(50).clamp(1, 100) as usize;
     Ok(
-        json!({"records":rows.iter().skip(offset).take(limit).collect::<Vec<_>>(),"total":rows.len(),"next_offset":if offset.saturating_add(limit)<rows.len(){Some(offset.saturating_add(limit))}else{None},"unavailable":unavailable,"scope":i.scope,"agent_revision_id":i.agent_revision_id}),
+        json!({"records":rows.iter().skip(offset).take(limit).collect::<Vec<_>>(),"total":rows.len(),"next_offset":if offset.saturating_add(limit)<rows.len(){Some(offset.saturating_add(limit))}else{None},"unavailable":unavailable}),
     )
 }
 
@@ -144,7 +184,7 @@ fn visible_entries(root: &Path, current_project: &str, params: &Value) -> Result
             && (project == GLOBAL_DISCUSSION_NAMESPACE
                 || instance.scope.project_id().is_none_or(|pid| pid == project))
     };
-    let cached = experience_index::entries(root, None, &id, false, snapshot)?;
+    let cached = experience_index::entries(root, None, Some(&id), None, false, snapshot)?;
     let deleted = experience_index::deleted(root, &id)?;
     let mut rows = cached
         .into_iter()
@@ -159,7 +199,7 @@ fn visible_entries(root: &Path, current_project: &str, params: &Value) -> Result
         if !visible(pid) {
             return;
         }
-        match experience_index::entries(root, Some(pid), &id, enrich, snapshot) {
+        match experience_index::entries(root, Some(pid), Some(&id), None, enrich, snapshot) {
             Ok(entries) => {
                 // A reachable source supersedes its cached head, even if the
                 // projection has not caught up with the latest capture.
@@ -196,6 +236,93 @@ fn visible_entries(root: &Path, current_project: &str, params: &Value) -> Result
             ))
     });
     Ok((instance, rows, unavailable))
+}
+
+pub fn query_role(
+    root: &Path,
+    project: Option<&str>,
+    visibility: Option<&domain_packages::ProjectVisibility>,
+    params: &Value,
+) -> Result<Value> {
+    let (rows, unavailable) = role_entries(root, project, visibility, params)?;
+    experience_result(root, params, rows, unavailable, true)
+}
+
+pub fn role_entry_visible(
+    root: &Path,
+    project: Option<&str>,
+    visibility: Option<&domain_packages::ProjectVisibility>,
+    params: &Value,
+) -> Result<bool> {
+    let (rows, _) = role_entries(root, project, visibility, params)?;
+    Ok(!rows.is_empty())
+}
+
+fn role_entries(
+    root: &Path,
+    project: Option<&str>,
+    visibility: Option<&domain_packages::ProjectVisibility>,
+    params: &Value,
+) -> Result<(Vec<Value>, Vec<Value>)> {
+    use std::collections::BTreeSet;
+
+    let role = devdesk_core::read_models::identifier(params, "role_id")?;
+    let source = params["source_project_id"].as_str();
+    let snapshot = params["snapshot_id"].as_str();
+    let agent = params["agent_instance_id"].as_str();
+    let mut rows = Vec::new();
+    let mut unavailable = Vec::new();
+    let mut add_source = |pid: &str, title: &str| {
+        if source.is_some_and(|id| id != pid) {
+            return;
+        }
+        match experience_index::entries(
+            root,
+            Some(pid),
+            agent,
+            Some(&role),
+            pid != GLOBAL_DISCUSSION_NAMESPACE,
+            snapshot,
+        ) {
+            Ok(entries) => rows.extend(entries),
+            Err(_) if pid != GLOBAL_DISCUSSION_NAMESPACE => unavailable
+                .push(json!({"project_id":pid,"project_name":title,"availability":"unavailable"})),
+            Err(_) => {}
+        }
+    };
+    let projects = project_sources(root, false)?;
+    for entry in projects.iter().filter(|p| {
+        project.is_none_or(|pid| pid == p.id)
+            && visibility.is_none_or(|scope| scope.includes(&p.id))
+    }) {
+        add_source(&entry.id, &entry.title);
+    }
+    if project.is_none() {
+        add_source(GLOBAL_DISCUSSION_NAMESPACE, "全局 / 跨项目");
+    }
+    let tombstones = experience_index::role_tombstones(root)?;
+    let mut seen = BTreeSet::new();
+    let mut visible = Vec::new();
+    for row in rows.into_iter().rev() {
+        let (Some(instance), Some(pid), Some(snapshot)) = (
+            row["agent_instance_id"].as_str(),
+            row["project_id"].as_str(),
+            row["snapshot_id"].as_str(),
+        ) else {
+            continue;
+        };
+        if row["origin_project_id"].as_str().is_some_and(|origin| {
+            visibility.is_some_and(|scope| !scope.includes(origin))
+                || !projects.iter().any(|project| project.id == origin)
+        }) {
+            continue;
+        }
+        let key = (instance.to_owned(), pid.to_owned(), snapshot.to_owned());
+        if !tombstones.contains(&key) && seen.insert(key) {
+            visible.push(row);
+        }
+    }
+    Ok((visible, unavailable))
 }
 
 pub fn entry_visible(root: &Path, current_project: &str, params: &Value) -> Result<bool> {

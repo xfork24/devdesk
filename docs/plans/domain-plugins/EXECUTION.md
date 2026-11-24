@@ -13,7 +13,7 @@
 
 ## 验收入口
 
-Host 和 Web 分别由 `scripts/release/package-core.sh host` 和 `scripts/release/package-core.sh web` 打包。解压后，传入全新数据目录、Web 制品目录和受信任的 ZIP SHA-256。Linux x86_64 上运行领域 worker 前，Docker 需要具备固定的 Node 镜像。
+Host 和 Web 分别由 `scripts/release/package.sh host` 和 `scripts/release/package.sh web` 打包。解压后，传入全新数据目录、Web 制品目录和受信任的 ZIP SHA-256。Linux x86_64 上运行领域 worker 前，Docker 需要具备固定的 Node 镜像。
 
 ```bash
 docker pull node@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced307cf4b6f
@@ -52,7 +52,7 @@ Harness 按会话、操作、所有者及版本接收工作区租约。Git 继�
 
 仓库测试入口识别和工作副本分支策略已纳入软件开发 ZIP。预检使用 Git 提交里的跟踪内容，识别逻辑在 Docker 中运行。使用空仓库、Node、Rust、Go、pytest、unittest、自定义测试合同七类仓库对照旧实现，结果一致。
 
-Feature 和 Task 的真实 Git worktree 验证了分支策略在物理调用前写入操作意图。对已写入的 Feature 操作注入回执丢失后，`repository.reconcile` 只读取原工作副本和回执，物理写入计数保持不变。源发布、PR、合入和同步的验证见本节后续记录。[候选包](../../../configurations/software-development/README.md)
+Feature 和 Task 的真实 Git worktree 验证了分支策略在物理调用前写入操作意图。对已写入的 Feature 操作注入回执丢失后，`repository.reconcile` 只读取原工作副本和回执，物理写入计数保持不变。源发布、PR、合入和同步的验证见本节后续记录。[候选包](../../../plugins/software-development/README.md)
 
 两个独立发行件解压后，再次通过双端及热切换验收。软件包预检执行为 `65002759-b374-283b-0a1a-537a04e66552`，证据位于 `/tmp/devdesk-p4-release.2bfC1L/result.json`。同一 Host 发行件的真实 Codex 复验执行为 `ec056394-3eae-392e-2053-42c897e5d2bd`，证据位于 `/tmp/devdesk-p4-live-agent.RWWiq2/evidence/result.json`。
 

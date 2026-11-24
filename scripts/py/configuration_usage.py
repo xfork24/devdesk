@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2] / "configurations/core"
+ROOT = Path(__file__).resolve().parents[2] / "plugins/core"
 
 
 def usage_index(sources: list[dict]) -> dict:

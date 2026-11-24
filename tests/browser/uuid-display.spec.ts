@@ -95,7 +95,7 @@ test("UUID 统一显示八位，同前缀轮次仍使用完整 ID 选择、请�
     return route.fallback();
   });
   await page.goto("/?tab=discussion");
-  await page.getByLabel("讨论角色", { exact: true }).selectOption(agent);
+  await page.getByLabel("Agent", { exact: true }).selectOption(agent);
   const role = page.getByLabel("讨论轮次", { exact: true });
   await expect(role).toBeVisible();
   await expect(role.locator("option")).toHaveText([

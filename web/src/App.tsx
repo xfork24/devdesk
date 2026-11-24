@@ -911,9 +911,6 @@ function App({
   const features: FeatureQueueItem[] = selectedProjectMatches
     ? loadedData?.features || []
     : [];
-  const definitions: Row[] = (data?.definitions || []).filter(
-    (d: Row) => d.family !== "agent" || d.agent_profile,
-  );
   const project = loadedData?.active_project?.workspace_definition?.repository
     ? loadedData.active_project
     : undefined;
@@ -1706,7 +1703,6 @@ function App({
               project={project}
               feature={f}
               tasks={detail?.tasks || []}
-              agents={definitions}
               configurations={data.configurations || []}
               onLocateExperience={(entry) => {
                 const global =

@@ -10,12 +10,12 @@
 | `crates/adapters/tests/conversations.rs` | 原生轮次、消费及停止证明、不可变绑定、未知结果不重发、通用材料提案与输入引用。 |
 | `crates/adapters/tests/schema_contracts.rs` | 离线编译全部 Schema / `$defs`，检查当前配置、Serde、实际冻结计划及 StepExecution。 |
 | 其他 `crates/adapters/tests/` | SQLite、Artifact、配置修订、Git、运行安装、Tool/Skill、权限及 Docker 资源边界。 |
-| `web/tests/` | 浏览器编辑/保存/发布/重载、任务上下文、输入输出引用、阶段与真实子流程、确认规则、配置导航、权限、接入和历史。 |
+| `tests/browser/` | 浏览器编辑/保存/发布/重载、任务上下文、输入输出引用、阶段与真实子流程、确认规则、配置导航、权限、接入和历史。 |
 | `tests/entrypoints/` | 真实 Host 的 HTTP、安全、SQLite 分库、幂等、模板重置、延迟环境准备、退出与重启。 |
 | `tests/entrypoints/test_docs_checker.py` | 离线文档检查器回归：独立文件索引、增删检测、生成稳定性、忽略本地构建产物、二进制资源和链接/锚点。 |
 | `tests/entrypoints/lifecycle_contract.py` | 100 次同版本初始化竞争、Host 实例围栏、原回执重放、失败重试及响应丢失恢复；独立临时数据，不代表 100 前端容量验收。 |
 | `tests/fixtures/` / `tests/support/` | 协议样本、固定数据和只编译进测试的接口替身。业务示例不是产品限制。 |
-| `configurations/software-development/runtime/node-reporter.mjs` | 软件开发包的 Node 测试报告器，返回真实分类、错误消息/堆栈/原因链及隔离测试的 stdout/stderr；测试输出始终作为数据封装，不能伪造顶层分类。 |
+| `plugins/software-development/runtime/node-reporter.mjs` | 软件开发包的 Node 测试报告器，返回真实分类、错误消息/堆栈/原因链及隔离测试的 stdout/stderr；测试输出始终作为数据封装，不能伪造顶层分类。 |
 
 ## 默认检查
 
@@ -26,7 +26,7 @@ python3 -m pip install -r scripts/check/requirements.txt
 ./scripts/check/check.sh
 ```
 
-入口执行 Permission/出厂/架构检查、CI 依赖门禁的离线测试、风格/类型/Web 构建、Rust、debug/release Host HTTP/数据集/环境准备与 Chromium。接入浏览器用例使用逐测试独立 Host，避免运行准备状态污染其他规格。可使用 `DEVDESK_E2E_PORT=4329` 避免占用日常开发端口。HTTP standalone 检查会将二进制复制到临时空目录，验证运行不依赖源码。
+入口执行 Permission/出厂/架构检查、CI 依赖门禁的离线测试、风格/类型/Web 构建、Rust、debug/release Host HTTP/数据集/环境准备与 Chromium。浏览器测试位于 `tests/browser/`，测试工作台源码位于 `tests/fixtures/workbench/`。工作台构建输出和 Playwright 截图分别写入 `target/web/fixture/` 和 `target/web/test-results/`。接入浏览器用例使用逐测试独立 Host，避免运行准备状态污染其他规格。可使用 `DEVDESK_E2E_PORT=4329` 避免占用日常开发端口。HTTP standalone 检查会将二进制复制到临时空目录，验证运行不依赖源码。
 
 工作流专项：
 
@@ -43,9 +43,9 @@ DEVDESK_E2E_PORT=4329 npm --prefix web run test:e2e
 
 ```bash
 export DEVDESK_RELEASE_OUT="$(mktemp -d)"
-./scripts/release/package-core.sh host
-./scripts/release/package-core.sh web
-./scripts/release/package-core.sh software
+./scripts/release/package.sh host
+./scripts/release/package.sh web
+./scripts/release/package.sh software
 node --test tests/entrypoints/domain_delivery_evidence.mjs
 node tests/entrypoints/domain_release.mjs "$DEVDESK_RELEASE_OUT"
 ```
@@ -111,7 +111,7 @@ DEVDESK_DSH_MOCK_IMAGE=sha256:… cargo test -p devdesk-adapters --features test
 ```bash
 python3 tests/live/probe_configured_workflow.py --binary target/debug/devdesk-host --codex-auth-source /专用/auth.json
 python3 tests/live/probe_streamlined_workflow.py --binary target/release/devdesk-host \
-  --domain-zip dist/software-development-0.5.1.zip --mode agent \
+  --domain-zip dist/software-development-0.5.2.zip --mode agent \
   --codex-auth-source /专用/auth.json --github-repo owner/dedicated-test-repo \
   --requirement-file /专用/requirement.md --report-directory /新的证据目录 --performance
 ```

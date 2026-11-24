@@ -19,7 +19,7 @@
 
 默认目录包含六个职责 Agent、相应 Capability、七个专用 Markdown Skill、八个阶段 Spec、分阶段 Feature/Task 工作流，使用 GPT-6.1 Sol High、固定 Codex Harness、现有原生工具及 Docker 默认权限。架构师产出 Design Doc，独立项目经理负责 Task Plan；两者身份和能力不同。需求产出 PRD，测试/开发/评审按阶段能力和 Spec 执行。
 
-资源正文见 [默认配置目录](../../../configurations/README.md)。本轮真实模型只调用 Codex，未调用 DSH。
+资源正文见 [默认配置目录](../../../plugins/README.md)。本轮真实模型只调用 Codex，未调用 DSH。
 
 ## 自动化与实机检查
 

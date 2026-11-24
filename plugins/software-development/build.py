@@ -9,7 +9,7 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 PACKAGE = Path(__file__).resolve().parent
 REPO = PACKAGE.parents[1]
 DOMAIN = "software-development"
-VERSION = "0.5.1"
+VERSION = "0.5.2"
 DISCOVER = f"{DOMAIN}.tests.discover"
 BRANCH = f"{DOMAIN}.branch.plan"
 CONNECT = f"{DOMAIN}.project.connect"
@@ -220,6 +220,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--version", action="version", version=VERSION)
     parser.add_argument("target", type=Path)
-    parser.add_argument("--web-dir", type=Path, default=REPO / "web/dist/software")
+    parser.add_argument("--web-dir", type=Path, default=REPO / "target/web/software")
     args = parser.parse_args()
     build(args.target, args.web_dir)

@@ -34,7 +34,7 @@ def lifecycle_command(req):
 def run():
     with tempfile.TemporaryDirectory(prefix='devdesk-http-') as directory:
         binary = BINARY
-        web_dir = ROOT / "web/dist/fixture"
+        web_dir = ROOT / "target/web/fixture"
         if '--standalone' in sys.argv:
             binary = Path(directory) / 'devdesk-host'
             shutil.copy2(BINARY, binary)
@@ -261,7 +261,7 @@ def connection_contract():
         denied = subprocess.run([str(BINARY),'--host','192.0.2.10','--data',str(rejected_data)], env=clean_env, capture_output=True, text=True, timeout=10)
         assert denied.returncode != 0 and 'DEVDESK_ACCESS_TOKEN' in denied.stderr
         assert not rejected_data.exists()
-        child = subprocess.Popen([str(BINARY),'--host','127.0.0.1','--data',str(Path(directory)/'data'),'--port','0','--web-dir',str(ROOT/'web/dist/fixture')], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        child = subprocess.Popen([str(BINARY),'--host','127.0.0.1','--data',str(Path(directory)/'data'),'--port','0','--web-dir',str(ROOT/'target/web/fixture')], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         peer = None
         try:
             child.stdout.readline()

@@ -15,8 +15,8 @@
 | `crates/adapters` | SQLite、产物、Git、Docker、Harness、凭据及外部执行能力 |
 | `crates/host` | HTTP、SSE、认证、项目作用域、领域代次和端口装配 |
 | `web/src/core-main.tsx` | Web Core 入口。领域组件通过客户端贡献和公开 SDK 加载 |
-| `configurations/core` | 随 Host 构建的核心配置 |
-| `configurations/software-development` | 独立的软件目录、运行时处理器及 Web 入口 |
+| `plugins/core` | 随 Host 构建的核心配置 |
+| `plugins/software-development` | 独立的软件目录、运行时处理器及 Web 入口 |
 
 依赖方向为 `host → adapters → core → domain`。Host 可独立构建并从空领域启动。业务配置在 ZIP 内发布，安装时校验包完整性，激活后由 Web Core 同文档渲染领域页面。程序通过领域的实际声明选择处理器。Web 和非浏览器客户端使用相同的项目、对象、运行和贡献标识。
 
@@ -33,7 +33,7 @@
 ## 数据与并发
 
 - 一个数据集由一个 Host 独占，全局、项目与全局讨论分库。生产布局为 `single-host-domain-packages-v1`，数据标记为 `devdesk-profile-runtime-v2`，SQLite 基线为 global 24、project 62。
-- 同一工作台有一个活动领域，可为空。客户端按代次访问，过期代次由 Host 拒绝。项目与运行保留所用包摘要。每个标签页独立选择项目。
+- 同一工作台有一个活动领域，可为空。客户端按代次访问，过期代次由 Host 拒绝。项目按领域 ID 归属并保留登记时的包摘要。每个标签页独立选择项目。
 - 普通读使用已提交快照或有界版本视图。业务写带上原版本、读写集合与幂等身份，版本检查和事实提交保持原子。
 - SQLite 短事务的物理竞争允许有界重试。副作用重发需要单独的核对。显示和缓存允许最终一致。编辑冲突保留草稿与原版本。
 - 摘要、详情与事件按需有界读取，共享 SSE 失效尾流。并发容量以独立验收判据为准。见[并发合同](docs/plans/single-host-concurrency/ACCEPTANCE.md)。
@@ -47,7 +47,7 @@ cargo test --workspace --locked
 python3 scripts/py/check-docs.py
 ```
 
-运行完整 `./scripts/check/check.sh` 前安装 `scripts/check/requirements.txt`、Web 依赖和 Chromium。正式制品验证使用 `scripts/release/package-core.sh` 的 `host`、`web`、`software` 入口。单体时代的测试数据和浏览器入口仅供回归，显式使用 `fixture-catalog` 和 `npm --prefix web run build:fixture`。跨端验收以正式制品为输入。见[测试索引](tests/README.md)。
+运行完整 `./scripts/check/check.sh` 前安装 `scripts/check/requirements.txt`、Web 依赖和 Chromium。正式制品验证使用 `scripts/release/package.sh` 的 `host`、`web`、`software` 入口。单体时代的测试数据和浏览器入口仅供回归，显式使用 `fixture-catalog` 和 `npm --prefix web run build:fixture`。浏览器用例与夹具放在 `tests/`，生成的测试工作台、截图和报告放在忽略的 `target/web/`。跨端验收以正式制品为输入。见[测试索引](tests/README.md)。
 
 Rust 使用 rustfmt、clippy `-D warnings`，Web 使用 ESLint、TypeScript 和 Prettier。修改行为时同步更新合同和当前文档。调整 crate 文件后运行 `python3 scripts/py/check-docs.py --write` 更新索引。
 

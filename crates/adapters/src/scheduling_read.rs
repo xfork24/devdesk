@@ -15,6 +15,14 @@ fn stages(
 ) -> Result<Vec<devdesk_core::SchedulingStage>> {
     use devdesk_core::SchedulingStage as S;
     let segments = runtime_queries::segments_pending_sql();
+    let repositories = format!(
+        "EXISTS(SELECT 1 FROM repository_operations WHERE {}) OR EXISTS(SELECT 1 FROM tasks
+            WHERE status!='completed' AND worktree=''
+              AND EXISTS(SELECT 1 FROM heads WHERE id=tasks.feature_id AND revision!='')
+              AND NOT EXISTS(SELECT 1 FROM repository_operations
+                WHERE json_extract(action,'$.kind')='create_worktree' AND json_extract(action,'$.owner')=tasks.id))",
+        repository_contexts::RUNNABLE_OPERATION,
+    );
     let work = &[
         (
             S::Conversations,
@@ -36,10 +44,7 @@ fn stages(
             S::Platform,
             "EXISTS(SELECT 1 FROM governance_records WHERE (type IN ('platform_call','platform_test_cleanup','agent_context_call') AND json_extract(data,'$.status') IN ('prepared','running')) OR (type='platform_reply_work' AND json_extract(data,'$.status')='pending'))",
         ),
-        (
-            S::Repositories,
-            "EXISTS(SELECT 1 FROM repository_operations WHERE status IN ('prepared','dispatched','observed') OR (status='needs_reconciliation' AND (reason='reconcile_requested' OR (json_extract(action,'$.kind')='connect' AND reason='原物理观察已保留，原业务接纳版本冲突')))) OR EXISTS(SELECT 1 FROM tasks WHERE status!='completed' AND worktree='' AND EXISTS(SELECT 1 FROM heads WHERE id=tasks.feature_id AND revision!='') AND NOT EXISTS(SELECT 1 FROM repository_operations WHERE json_extract(action,'$.kind')='create_worktree' AND json_extract(action,'$.owner')=tasks.id))",
-        ),
+        (S::Repositories, repositories.as_str()),
         (
             S::PlanChanges,
             "EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_change' AND json_extract(data,'$.status') IN ('prepared','waiting_quiescence'))",

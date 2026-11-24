@@ -3,7 +3,7 @@ use super::*;
 use rusqlite::{OptionalExtension, params};
 
 const DOMAIN_DATASET_LAYOUT: &str = "single-host-domain-packages-v1";
-const REMOVED_PROJECT_PREFIX: &str = "project.removed:";
+pub(super) const REMOVED_PROJECT_PREFIX: &str = "project.removed:";
 
 pub struct GlobalStore {
     pub(super) connection: connection_pool::ConnectionPool,
@@ -275,17 +275,31 @@ impl GlobalStore {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })
             .map_err(storage)?;
+        let mut unidentified = None;
         for row in rows {
             let (id, body) = row.map_err(storage)?;
-            if visibility.includes(&id)
-                && (setting(&conn, &Self::project_removal_key(&id).id)? != Some(json!(true))
-                    || SqliteStore::project_path(&self.root, &id)?
-                        .join("engineering.sqlite3")
-                        .try_exists()
-                        .map_err(storage)?)
+            let visible = visibility.includes(&id);
+            if !visible && !visibility.unidentified_projects.contains(&id) {
+                continue;
+            }
+            if setting(&conn, &Self::project_removal_key(&id).id)? == Some(json!(true))
+                && !SqliteStore::project_path(&self.root, &id)?
+                    .join("engineering.sqlite3")
+                    .try_exists()
+                    .map_err(storage)?
             {
+                continue;
+            }
+            if visible {
                 return serde_json::from_str(&body).map(Some).map_err(storage);
             }
+            unidentified = Some(id);
+        }
+        if let Some(id) = unidentified {
+            return Err(err(
+                "domain_package_required",
+                format!("已有项目 {id} 的领域身份缺失，请导入该项目原来的领域 ZIP 以恢复登记"),
+            ));
         }
         Ok(None)
     }

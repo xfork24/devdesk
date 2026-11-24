@@ -493,34 +493,29 @@ impl Engine {
                     p["view"] != "selection",
                 );
             }
-            let state = match method {
-                "query.work_standard_diff" => self.store.standard_work_snapshot(None)?,
-                "query.standard_usage" => {
-                    self.store.standard_work_snapshot(Some(&text(p, "id")?))?
-                }
-                _ => self.store.configuration_snapshot()?.state.as_ref().clone(),
-            };
-            if method == "query.project_standard_preview" {
-                return self.project_standard_preview(state, p);
-            }
             let scope = project.map(Scope::project).unwrap_or(Scope::global());
             let limit = p["limit"].as_u64().unwrap_or(100).clamp(1, 1000) as usize;
             let offset = p["offset"].as_u64().unwrap_or(0) as usize;
             if method == "query.standard_catalog" {
+                let catalog = self.store.configuration_snapshot()?;
+                let state = catalog.state.as_ref();
+                let archived = |r: &ConfigurationRecord| {
+                    standard_archived(state, &r.id) || catalog.is_historical_domain_source(r)
+                };
                 let rows = state
                     .governance
                     .iter()
                     .filter(|r| r.r#type == "standard" && r.scope.visible_from(&scope))
-                    .filter(|r| p["include_archived"] == true || !standard_archived(&state, &r.id))
+                    .filter(|r| p["include_archived"] == true || !archived(r))
                     .map(|r| {
                         let mut value = json!(r);
-                        value["archived"] = json!(standard_archived(&state, &r.id));
+                        value["archived"] = json!(archived(r));
                         value["default_workflow_ref"] =
-                            standard_default_workflow(&state, &r.id, &scope)
+                            standard_default_workflow(state, &r.id, &scope)
                                 .ok()
                                 .map_or(Value::Null, |id| json!(id));
                         value["workflow_refs"] = json!(
-                            standard_snapshot(&state, &r.id, &scope)?
+                            standard_snapshot(state, &r.id, &scope)?
                                 .nodes
                                 .into_iter()
                                 .filter(|n| n.kind == "workflow")
@@ -531,6 +526,16 @@ impl Engine {
                     })
                     .collect::<Result<Vec<_>>>()?;
                 return Ok(json!({"records":rows}));
+            }
+            let state = match method {
+                "query.work_standard_diff" => self.store.standard_work_snapshot(None)?,
+                "query.standard_usage" => {
+                    self.store.standard_work_snapshot(Some(&text(p, "id")?))?
+                }
+                _ => self.store.configuration_snapshot()?.state.as_ref().clone(),
+            };
+            if method == "query.project_standard_preview" {
+                return self.project_standard_preview(state, p);
             }
             if method == "standard.capture.preview" {
                 if let Some(base) = p["base_standard_ref"].as_str() {

@@ -16,19 +16,13 @@ test("没有项目时可以选择 Agent 并查看完整能力和经验入口", a
   await page.goto("/");
   const defaults = await rpc(page, "query.configuration_defaults");
   const agent = defaults.role_agent_bindings["builtin-role-analyst:1"];
-  const instance = await rpc(page, "agent.instance.create", {
-    command_id: crypto.randomUUID(),
-    payload: {
-      name: "独立需求分析师",
-      agent_revision_id: agent,
-      scope: "global",
-    },
-  });
   await page.reload();
   await page.getByRole("button", { name: "角色讨论", exact: true }).click();
   await expect(page.getByLabel("讨论角色", { exact: true })).toBeEnabled();
-  await page.getByLabel("讨论角色", { exact: true }).selectOption(agent);
-  await page.getByLabel("Agent", { exact: true }).selectOption(instance.id);
+  await page
+    .getByLabel("讨论角色", { exact: true })
+    .selectOption("builtin-role-analyst");
+  await page.getByLabel("Agent", { exact: true }).selectOption(agent);
   await expect(page.getByLabel("讨论范围", { exact: true })).toHaveValue(
     "global",
   );
@@ -36,31 +30,22 @@ test("没有项目时可以选择 Agent 并查看完整能力和经验入口", a
     page.getByRole("button", { name: "开始 / 续用讨论", exact: true }),
   ).toBeEnabled();
   const information = page.getByLabel("Agent信息", { exact: true });
-  const summaries = information.locator(":scope > details > summary");
-  await expect(summaries).toHaveText(["Agent定义", "Agent能力", "Agent经验"]);
-  const positions = await summaries.evaluateAll((nodes) =>
-    nodes.map((node) => node.getBoundingClientRect().top),
+  await expect(information.getByText("Agent定义", { exact: true })).toHaveCount(
+    0,
   );
-  expect(Math.max(...positions) - Math.min(...positions)).toBeLessThan(2);
+  const capability = information.getByRole("heading", {
+    name: "Agent能力",
+    exact: true,
+  });
+  const experience = information.getByText("角色经验", { exact: true });
+  await expect(capability).toBeVisible();
   await expect(
-    page
-      .locator(".conversation-panel > .actions > p")
-      .filter({ hasText: /^Model / }),
-  ).toHaveCount(0);
-  await expect(information.locator(".experience-panel")).toHaveCSS(
-    "border-top-width",
-    "0px",
-  );
-  await information.getByText("Agent定义", { exact: true }).click();
-  await expect(information.locator("pre").first()).toContainText(agent);
-  await page.getByText("Agent能力", { exact: true }).click();
-  await expect(page.getByText("Agent Specs", { exact: true })).toBeVisible();
-  await expect(
-    page.getByText("Agent 经验：检索与读取，可在当前讨论中按需使用。", {
-      exact: true,
-    }),
+    information.getByText("Agent Specs", { exact: true }),
   ).toBeVisible();
-  await page.getByText("Agent经验", { exact: true }).click();
+  expect((await experience.boundingBox())!.y).toBeGreaterThan(
+    (await capability.boundingBox())!.y,
+  );
+  await page.getByText("角色经验", { exact: true }).click();
   await expect(page.getByText(/0\s*条经验/)).toBeVisible();
   const workspace = await rpc(page, "query.workspace");
   expect(workspace.active_project).toBeNull();
@@ -69,21 +54,16 @@ test("没有项目时可以选择 Agent 并查看完整能力和经验入口", a
     fullPage: true,
   });
   await page.setViewportSize({ width: 430, height: 932 });
-  const mobilePositions = await summaries.evaluateAll((nodes) =>
-    nodes.map((node) => node.getBoundingClientRect().top),
+  expect((await experience.boundingBox())!.y).toBeGreaterThan(
+    (await capability.boundingBox())!.y,
   );
-  expect(
-    Math.max(...mobilePositions) - Math.min(...mobilePositions),
-  ).toBeLessThan(2);
   await page.screenshot({
     path: info.outputPath("detached-agent-mobile.png"),
     fullPage: true,
   });
 });
 
-test("全局讨论选择来源项目的原 Agent 实例时保留本页项目选择", async ({
-  page,
-}) => {
+test("全局讨论使用全局 Agent 定义并保留本页项目选择", async ({ page }) => {
   await page.goto("/");
   const defaults = await rpc(page, "query.configuration_defaults");
   const template = defaults.records.find(
@@ -105,15 +85,6 @@ test("全局讨论选择来源项目的原 Agent 实例时保留本页项目选�
       data: {},
     },
   });
-  const instance = await rpc(page, "agent.instance.create", {
-    project_id: source.id,
-    command_id: crypto.randomUUID(),
-    payload: {
-      name: "保留原经验的分析师",
-      agent_revision_id: agent.id,
-      scope: `project:${source.id}`,
-    },
-  });
   const current = await rpc(page, "project.create", {
     command_id: crypto.randomUUID(),
     payload: { title: "本页选择项目", repository: "fixture/current" },
@@ -124,16 +95,12 @@ test("全局讨论选择来源项目的原 Agent 实例时保留本页项目选�
   await page.getByRole("button", { name: "角色讨论", exact: true }).click();
   await expect(page.getByLabel("讨论角色", { exact: true })).toBeEnabled();
   await page.getByLabel("讨论范围", { exact: true }).selectOption("global");
-  await page.getByLabel("讨论角色", { exact: true }).selectOption(agent.id);
-  await page.getByLabel("Agent", { exact: true }).selectOption(instance.id);
-  await expect(page.getByLabel("Agent", { exact: true })).toHaveValue(
-    instance.id,
-  );
-  await expect(
-    page
-      .getByLabel("Agent", { exact: true })
-      .locator(`option[value="${instance.id}"]`),
-  ).toContainText("经验来源项目");
+  await page
+    .getByLabel("讨论角色", { exact: true })
+    .selectOption("builtin-role-analyst");
+  const choice = page.getByLabel("Agent", { exact: true });
+  await choice.selectOption(template.id);
+  await expect(choice.locator(`option[value="${agent.id}"]`)).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "开始 / 续用讨论", exact: true }),
   ).toBeEnabled();
@@ -150,8 +117,8 @@ test("全局讨论选择来源项目的原 Agent 实例时保留本页项目选�
       data: {
         jsonrpc: "2.0",
         id: 1,
-        method: "query.agent_experience",
-        params: { scope: "global", agent_instance_id: instance.id },
+        method: "query.role_experience",
+        params: { scope: "global", role_id: "builtin-role-analyst" },
       },
     })
     .then((r) => r.json());
@@ -162,17 +129,9 @@ test("来源不可用时明确显示经验目录为历史摘要", async ({ page 
   await page.goto("/");
   const defaults = await rpc(page, "query.configuration_defaults");
   const agent = defaults.role_agent_bindings["builtin-role-analyst:1"];
-  const instance = await rpc(page, "agent.instance.create", {
-    command_id: crypto.randomUUID(),
-    payload: {
-      name: "目录摘要分析师",
-      agent_revision_id: agent,
-      scope: "global",
-    },
-  });
   await page.route("**/rpc", async (route) => {
     const call = route.request().postDataJSON();
-    if (call.method !== "query.agent_experience") return route.fallback();
+    if (call.method !== "query.role_experience") return route.fallback();
     return route.fulfill({
       json: {
         jsonrpc: "2.0",
@@ -202,10 +161,11 @@ test("来源不可用时明确显示经验目录为历史摘要", async ({ page 
   });
   await page.reload();
   await page.getByRole("button", { name: "角色讨论", exact: true }).click();
-  await page.getByLabel("讨论角色", { exact: true }).selectOption(agent);
-  await page.getByLabel("Agent", { exact: true }).selectOption(instance.id);
-  await page.getByText("Agent能力", { exact: true }).click();
-  await page.getByText("Agent经验", { exact: true }).click();
+  await page
+    .getByLabel("讨论角色", { exact: true })
+    .selectOption("builtin-role-analyst");
+  await page.getByLabel("Agent", { exact: true }).selectOption(agent);
+  await page.getByText("角色经验", { exact: true }).click();
   await expect(
     page.getByText("来源暂不可用，当前显示缓存的历史摘要。", { exact: true }),
   ).toBeVisible();
@@ -233,6 +193,7 @@ test("经验分页、引用、展开、删除及来源会话", async ({ page }, 
   ]);
   const records = Array.from({ length: 11 }, (_, i) => ({
     project_id: source.id,
+    agent_instance_id: i === 1 ? "other-agent-instance" : instance.id,
     project_name: "历史项目",
     feature_name: `工作 ${i + 1}`,
     session_id: `source-session-${i + 1}`,
@@ -262,7 +223,8 @@ test("经验分页、引用、展开、删除及来源会话", async ({ page }, 
     const { method, params, id } = route.request().postDataJSON();
     let result;
     switch (method) {
-      case "query.agent_experience": {
+      case "query.role_experience": {
+        expect(params.role_id).toBe("builtin-role-analyst");
         const entry = records.find(
           (row) => row.snapshot_id === params.snapshot_id,
         );
@@ -337,10 +299,12 @@ test("经验分页、引用、展开、删除及来源会话", async ({ page }, 
     await route.fulfill({ json: { jsonrpc: "2.0", id, result } });
   });
   await page.goto(`/?tab=discussion&project_id=${current.id}`);
-  await page.getByLabel("讨论角色", { exact: true }).selectOption(agent);
-  await page.getByLabel("Agent", { exact: true }).selectOption(instance.id);
+  await page
+    .getByLabel("讨论角色", { exact: true })
+    .selectOption("builtin-role-analyst");
+  await page.getByLabel("Agent", { exact: true }).selectOption(agent);
   await page.getByLabel("讨论会话", { exact: true }).selectOption("discussion");
-  await page.getByText("Agent经验", { exact: true }).click();
+  await page.getByText("角色经验", { exact: true }).click();
   const entries = page.locator(".experience-entry");
   await expect(entries).toHaveCount(10);
   const first = entries.filter({
@@ -375,13 +339,27 @@ test("经验分页、引用、展开、删除及来源会话", async ({ page }, 
   await entries.getByRole("button", { name: "删除经验" }).click();
   await expect(entries).toHaveCount(10);
   await expect(first).toHaveClass(/referenced/);
+  const otherAgent = entries.filter({
+    has: page.getByText("历史项目 / 工作 2", { exact: true }),
+  });
+  await otherAgent.getByRole("button", { name: "引用到当前讨论" }).click();
+  await expect(
+    otherAgent.getByRole("button", { name: "已引用" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "讨论输入", exact: true }).click();
   await page.getByRole("textbox", { name: "讨论输入" }).fill("读取引用的经验");
   await page.getByRole("button", { name: "发送", exact: true }).click();
   await expect
     .poll(() => sent)
-    .toEqual([{ source_project_id: source.id, snapshot_id: "snapshot-1" }]);
-  await expect(references.getByRole("listitem")).toHaveCount(1);
+    .toEqual([
+      { source_project_id: source.id, snapshot_id: "snapshot-1" },
+      {
+        source_project_id: source.id,
+        snapshot_id: "snapshot-2",
+        excerpt: "已核对的快照正文",
+      },
+    ]);
+  await expect(references.getByRole("listitem")).toHaveCount(2);
   await page.getByText("Agent 在本次讨论中读取的经验").click();
   await expect(
     page.getByText("历史项目 / 工作 1 · 已读取", { exact: true }),
@@ -412,6 +390,70 @@ test("经验分页、引用、展开、删除及来源会话", async ({ page }, 
     "source-session-1",
   );
   expect(errors).toEqual([]);
+});
+
+test("从历史会话切换角色后归档 Agent 退出候选列表", async ({ page }) => {
+  await page.goto("/");
+  const defaults = await rpc(page, "query.configuration_defaults");
+  const current = defaults.role_agent_bindings["builtin-role-analyst:1"];
+  const template = defaults.records.find(
+    (row: { id: string }) => row.id === current,
+  );
+  const project = await rpc(page, "project.create", {
+    command_id: crypto.randomUUID(),
+    payload: { title: "归档 Agent 历史讨论", repository: "fixture/history" },
+  });
+  const historical = {
+    ...template,
+    id: "historical-reviewer:8",
+    definition_id: "historical-reviewer",
+    name: "历史评审 Agent",
+    version: 8,
+    archived: true,
+  };
+  const session = {
+    id: "historical-session",
+    owner_id: project.id,
+    agent: historical.id,
+    revision: 1,
+    lifecycle: "closed",
+    runtime_binding: {
+      model: "fixture",
+      installation: { key: { provider: "codex" } },
+    },
+  };
+  await page.route("**/rpc", async (route) => {
+    const { id, method, params } = route.request().postDataJSON();
+    let result;
+    if (method === "query.agent_revision" && params.id === historical.id) {
+      result = historical;
+    } else if (method === "query.session" && params.id === session.id) {
+      result = {
+        session,
+        turns: [],
+        events: [],
+        next_cursor: 0,
+        executions: [],
+        interactions: [],
+        proposals: [],
+      };
+    } else if (method === "query.sessions") {
+      result = { sessions: [session], total: 1 };
+    } else {
+      return route.fallback();
+    }
+    await route.fulfill({ json: { jsonrpc: "2.0", id, result } });
+  });
+  await page.goto(
+    `/?tab=discussion&project_id=${project.id}&session_id=${session.id}`,
+  );
+  const agents = page.getByLabel("Agent", { exact: true });
+  const historicalOption = agents.locator(`option[value="${historical.id}"]`);
+  await expect(agents).toHaveValue(historical.id);
+  await expect(historicalOption).toHaveCount(1);
+  await agents.selectOption(current);
+  await expect(agents).toHaveValue(current);
+  await expect(historicalOption).toHaveCount(0);
 });
 
 test("已结束的会话可继承续聊并可删除历史轮次或会话", async ({ page }, info) => {

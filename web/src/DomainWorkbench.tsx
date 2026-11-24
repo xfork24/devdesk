@@ -22,6 +22,7 @@ import {
   Settings,
 } from "lucide-react";
 import { ActionButton, ActionForm } from "./components/ActionFeedback";
+import { HistoricalDiscussionAgents } from "./components/discussion-role-options";
 import { WorkbenchLayout } from "./workbench-layout";
 import { KernelAuthentication } from "./components/KernelConnection";
 import type { Data, DomainContext } from "./domain-sdk";
@@ -90,6 +91,16 @@ function message(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+function clearProjectRoute(url: URL, tab = url.searchParams.get("tab")) {
+  const next = new URLSearchParams();
+  const view = url.searchParams.get("view");
+  if (view) next.set("view", view);
+  if (tab) next.set("tab", tab);
+  url.search = next.toString();
+  history.replaceState(null, "", url);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
 function DomainProjectRemoval({
   epoch,
   project,
@@ -106,6 +117,7 @@ function DomainProjectRemoval({
         disabled={busy}
         title="再次打开同一仓库和主分支即可恢复"
         onClick={async () => {
+          const current = new URLSearchParams(location.search);
           setBusy(true);
           setError("");
           try {
@@ -115,15 +127,12 @@ function DomainProjectRemoval({
               command_id: crypto.randomUUID(),
             });
             const url = new URL(location.href);
-            if (url.searchParams.get("project_id") === project) {
-              const next = new URLSearchParams();
-              for (const key of ["view", "tab"]) {
-                const value = url.searchParams.get(key);
-                if (value) next.set(key, value);
-              }
-              url.search = next.toString();
-              history.replaceState(null, "", url);
-              window.dispatchEvent(new PopStateEvent("popstate"));
+            if (
+              url.searchParams.get("view") === current.get("view") &&
+              url.searchParams.get("tab") === current.get("tab") &&
+              (url.searchParams.get("project_id") ?? project) === project
+            ) {
+              clearProjectRoute(url, "overview");
             }
           } catch (failure) {
             setError(message(failure));
@@ -134,7 +143,11 @@ function DomainProjectRemoval({
       >
         <FolderMinus size={15} aria-hidden="true" /> 移除项目
       </ActionButton>
-      {error && <span className="error" role="alert">{error}</span>}
+      {error && (
+        <span className="error" role="alert">
+          {error}
+        </span>
+      )}
     </span>
   );
 }
@@ -197,6 +210,9 @@ function DomainPage({
     [entry, exportName],
   );
   const lifetime = useRef<AbortController | null>(null);
+  const [historicalAgents, setHistoricalAgents] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   useLayoutEffect(() => {
     const controller = new AbortController();
     lifetime.current = controller;
@@ -221,17 +237,32 @@ function DomainPage({
         const projection = directory.contributions?.find(
           (item) => item.projection && item.query === method,
         );
-        return projection
-          ? rpc(
-              "query.domain.contribution",
-              {
-                epoch,
-                contribution: projection.id,
-                input: params,
-              },
-              signal,
-            )
-          : rpc(method, { ...params, domain_epoch: epoch }, signal);
+        if (projection)
+          return rpc(
+            "query.domain.contribution",
+            { epoch, contribution: projection.id, input: params },
+            signal,
+          );
+        const result = rpc<Data>(
+          method,
+          { ...params, domain_epoch: epoch },
+          signal,
+        );
+        if (method !== "query.agent_revision") return result;
+        return result.then((revision) => {
+          const id = revision.id;
+          if (typeof id === "string") {
+            const archived = revision.archived === true;
+            setHistoricalAgents((known) => {
+              if (known.has(id) === archived) return known;
+              const updated = new Set(known);
+              if (archived) updated.add(id);
+              else updated.delete(id);
+              return updated;
+            });
+          }
+          return revision;
+        });
       },
       events: (projectId) => {
         const params = new URLSearchParams({
@@ -253,11 +284,13 @@ function DomainPage({
   if (target?.api === 2 && Page)
     return (
       <DomainProvider.Provider value={context}>
-        <PageBoundary>
-          <Suspense fallback={<p role="status">正在载入领域页面…</p>}>
-            <Page />
-          </Suspense>
-        </PageBoundary>
+        <HistoricalDiscussionAgents.Provider value={historicalAgents}>
+          <PageBoundary>
+            <Suspense fallback={<p role="status">正在载入领域页面…</p>}>
+              <Page />
+            </Suspense>
+          </PageBoundary>
+        </HistoricalDiscussionAgents.Provider>
       </DomainProvider.Provider>
     );
   return (
@@ -629,15 +662,41 @@ export function AppRoot() {
   }, []);
   useEffect(() => {
     const events = new EventSource("/domain-events");
-    const reload = () =>
-      void refresh().catch((failure: unknown) => {
+    const reload = async (checkProject: boolean) => {
+      try {
+        const next = await refresh();
+        const url = new URL(location.href);
+        const project = url.searchParams.get("project_id");
+        const view = url.searchParams.get("view");
+        if (
+          !checkProject ||
+          !project ||
+          !next.contributions?.some(({ id }) => id === view)
+        )
+          return;
+        try {
+          // Project-scoped streams may disconnect once the selected project is removed.
+          await rpc("query.project_directory", {
+            project_id: project,
+            domain_epoch: next.epoch,
+            limit: 1,
+          });
+        } catch (failure) {
+          if (
+            message(failure).startsWith("not_found ·") &&
+            location.href === url.href
+          )
+            clearProjectRoute(url);
+        }
+      } catch (failure) {
         const detail = message(failure);
         if (detail === "HTTP 401") setAuth(true);
         else if (detail.startsWith("setup_required ·")) setNeedsDataset(true);
         else setError(detail);
-      });
-    events.addEventListener("domain", reload);
-    reload();
+      }
+    };
+    events.addEventListener("domain", () => void reload(true));
+    void reload(false);
     const pop = () =>
       setSelected(new URLSearchParams(location.search).get("view"));
     window.addEventListener("popstate", pop);

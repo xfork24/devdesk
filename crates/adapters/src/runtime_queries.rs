@@ -117,6 +117,40 @@ pub(super) fn workflow_observations(
     conn.query_row(&format!("SELECT EXISTS(SELECT 1 FROM governance_records c WHERE c.type='workflow_instance' AND json_extract(c.data,'$.status') IN ('queued','running','failed','needs_reconciliation') AND ({WORKFLOW_READY} OR {WORKFLOW_TIME_READY}))"), rusqlite::params![clock.wall_ms,clock.process_epoch,clock.monotonic_ms], |r|r.get(0)).map_err(storage)
 }
 
+pub(super) fn domain_workflow_running(conn: &Connection, project: &str) -> Result<bool> {
+    // A workflow header stays running between steps and while a human is
+    // deciding. A running subflow wrapper represents its child, not a worker.
+    conn.query_row(
+        "SELECT EXISTS(
+            SELECT 1 FROM governance_records i
+            WHERE i.type='workflow_instance' AND json_extract(i.data,'$.project_id')=?1
+              AND json_extract(i.data,'$.status') NOT IN ('completed','cancelled','skipped')
+              AND (
+                (json_extract(i.data,'$.status')='running'
+                    AND coalesce(json_extract(i.data,'$.paused'),0)=0
+                    AND coalesce(json_array_length(i.data,'$.steps'),0)=0)
+                OR EXISTS(SELECT 1 FROM json_each(i.data,'$.steps') s
+                    WHERE json_extract(s.value,'$.status')='running'
+                      AND NOT EXISTS(SELECT 1 FROM governance_records child
+                          WHERE child.type='workflow_instance'
+                            AND json_extract(child.data,'$.project_id')=?1
+                            AND json_extract(child.data,'$.parent_execution_id')=json_extract(s.value,'$.id')))
+              )
+        ) OR EXISTS(
+            SELECT 1 FROM governance_records c
+            JOIN governance_records i ON i.id=json_extract(c.data,'$.root_instance_id')
+            JOIN turns t ON t.session_id=json_extract(c.data,'$.session_id')
+            WHERE c.type='workflow_controller' AND json_extract(c.data,'$.project_id')=?1
+              AND i.type='workflow_instance' AND json_extract(i.data,'$.project_id')=?1
+              AND json_extract(i.data,'$.status') NOT IN ('completed','cancelled','skipped')
+              AND t.status IN ('dispatching','running')
+        )",
+        [project],
+        |row| row.get(0),
+    )
+    .map_err(storage)
+}
+
 pub(super) fn running(conn: &Connection) -> Result<usize> {
     let _span = performance::Span::new("runtime.running_count");
     conn.query_row("SELECT count(*) FROM turns t
@@ -411,5 +445,91 @@ mod tests {
         )
         .unwrap();
         assert!(!pending(&conn, Controllers).unwrap());
+    }
+}
+
+#[cfg(test)]
+mod domain_uninstall_tests {
+    use super::*;
+
+    #[test]
+    fn uninstall_activity_tracks_running_steps_and_controller_turns() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE governance_records (id TEXT, type TEXT, data TEXT);
+             CREATE TABLE turns (session_id TEXT, status TEXT);",
+        )
+        .unwrap();
+        let workflow = |status: &str, steps: Value| json!({"project_id":"project","status":status,"steps":steps});
+        let set_workflows = |rows: &[Value]| {
+            conn.execute("DELETE FROM governance_records", []).unwrap();
+            for row in rows {
+                conn.execute(
+                    "INSERT INTO governance_records VALUES (json_extract(?1,'$.id'), 'workflow_instance', ?1)",
+                    [row.to_string()],
+                )
+                .unwrap();
+            }
+        };
+        for status in [
+            "queued",
+            "blocked",
+            "waiting_input",
+            "waiting_confirmation",
+            "failed",
+            "needs_reconciliation",
+            "completed",
+            "cancelled",
+        ] {
+            set_workflows(&[workflow(status, json!([]))]);
+            assert!(
+                !domain_workflow_running(&conn, "project").unwrap(),
+                "{status}"
+            );
+        }
+        let wrapper = workflow("running", json!([{"id":"parent","status":"running"}]));
+        set_workflows(std::slice::from_ref(&wrapper));
+        assert!(domain_workflow_running(&conn, "project").unwrap());
+        let mut child = workflow(
+            "running",
+            json!([{"id":"worker","status":"waiting_confirmation"}]),
+        );
+        child["parent_execution_id"] = json!("parent");
+        set_workflows(&[wrapper.clone(), child.clone()]);
+        assert!(!domain_workflow_running(&conn, "project").unwrap());
+
+        child["steps"][0]["status"] = json!("running");
+        child["paused"] = json!(true);
+        set_workflows(&[wrapper, child]);
+        assert!(domain_workflow_running(&conn, "project").unwrap());
+        assert!(!domain_workflow_running(&conn, "another-project").unwrap());
+
+        let mut root = workflow("running", json!([{"id":"step","status":"blocked"}]));
+        root["id"] = json!("root");
+        root["paused"] = json!(true);
+        set_workflows(&[root]);
+        assert!(!domain_workflow_running(&conn, "project").unwrap());
+        conn.execute(
+            "INSERT INTO governance_records VALUES ('controller', 'workflow_controller', ?1)",
+            [
+                json!({"project_id":"project","root_instance_id":"root","session_id":"manager"})
+                    .to_string(),
+            ],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO turns VALUES ('manager','running')", [])
+            .unwrap();
+        assert!(domain_workflow_running(&conn, "project").unwrap());
+        conn.execute("UPDATE governance_records SET data=json_set(data,'$.status','completed') WHERE id='root'", [])
+            .unwrap();
+        assert!(!domain_workflow_running(&conn, "project").unwrap());
+        conn.execute(
+            "UPDATE governance_records SET data=json_set(data,'$.status','queued') WHERE id='root'",
+            [],
+        )
+        .unwrap();
+        conn.execute("UPDATE turns SET status='waiting_interaction'", [])
+            .unwrap();
+        assert!(!domain_workflow_running(&conn, "project").unwrap());
     }
 }

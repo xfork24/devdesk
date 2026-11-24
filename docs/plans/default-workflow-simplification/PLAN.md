@@ -262,7 +262,7 @@ PR 创建、远端合入、本地同步分别保存意图与观察。网络中�
 | DAG：[workflow_children.rs](../../../crates/core/src/workflow_children.rs)、[workflow_dispatch.rs](../../../crates/core/src/workflow_dispatch.rs)、[workflow_eligibility.rs](../../../crates/core/src/workflow_eligibility.rs)、[repository_runtime.rs](../../../crates/core/src/repository_runtime.rs) | 就绪派发、有效基线、完成/汇合及同步资格 |
 | 审核与驱动：[workflow_controls.rs](../../../crates/core/src/workflow_controls.rs)、[workflow_review.rs](../../../crates/core/src/workflow_review.rs)、[workflow_driver.rs](../../../crates/core/src/workflow_driver.rs) | 最终人工门禁、决定绑定、现有返工和例外适配、各驱动一致性 |
 | adapters：[tests.rs](../../../crates/adapters/src/tests.rs)、[git.rs](../../../crates/adapters/src/git.rs)、[github.rs](../../../crates/adapters/src/github.rs) | 项目入口、临时验证、受约束 PR 合入、保护规则及实际结果 |
-| [默认源配置](../../../configurations/README.md)、[manifest](../../../configurations/manifest.json)、[defaults](../../../configurations/defaults.json) | 发布两套定义及各自资源闭包，建立精简版带前缀的资源，切换实际默认引用 |
+| [默认源配置](../../../plugins/README.md)、[manifest](../../../configurations/manifest.json)、[defaults](../../../configurations/defaults.json) | 发布两套定义及各自资源闭包，建立精简版带前缀的资源，切换实际默认引用 |
 | [模板目录](../../../crates/core/src/templates.rs)、[配置默认值](../../../crates/core/src/builtin_defaults.rs)、[项目 Standard](../../../crates/core/src/project_standards.rs) | 新安装默认、兼容目录的出厂默认启用、项目显式选择和两套引用匹配 |
 | [项目配置 Schema](../../../schemas/project-configuration.schema.json)、[Workflow Schema](../../../schemas/workflow.schema.json)、[project_updates.rs](../../../crates/core/src/project_updates.rs) | 执行配置、冻结、编辑及编译校验 |
 | Web：[ProjectManager.tsx](../../../web/src/components/ProjectManager.tsx)、[WorkflowController.tsx](../../../web/src/components/WorkflowController.tsx)、[WorkflowDecision.tsx](../../../web/src/components/WorkflowDecision.tsx)、[WorkflowStageProgress.tsx](../../../web/src/components/WorkflowStageProgress.tsx) | 测试入口、并发进展、PR/合入/同步状态和真实人工审核 |
@@ -320,7 +320,7 @@ P1/P2 中无依赖的实现部分可在 P0 后并行。各阶段实施及验收�
 ### 11.2 验证层次
 
 - 领域及配置测试覆盖规则、DAG、两套源闭包、默认引用、权限和修订。集成测试通过正式 core/SQLite/端口及故障注入覆盖状态和幂等。显式固定详细版用于兼容测试，让默认路径测试验证精简版，避免改用旧引用掩盖默认切换问题。
-- 浏览器通过既有 web/tests 覆盖配置、子进展、材料定位、人工决定和返工。
+- 浏览器通过既有 tests/browser 覆盖配置、子进展、材料定位、人工决定和返工。
 - 真实 Git/Docker 使用专用空数据集及仓库，验证实际入口、worktree、试合并、竞争和同步。
 - 真实远端使用已授权的专用仓库/认证，验证 PR、Task 自动合入、Feature 人审、分支保护及最终内容；不接管用户正在运行的工作流。
 - 实施后运行必要定向检查及完整 `./scripts/check/check.sh`。真实服务参数以届时已实现入口为准，不编造命令；付费模型、真实 GitHub、协议夹具及本地结果分别报告。

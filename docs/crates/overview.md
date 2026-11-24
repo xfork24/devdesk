@@ -18,7 +18,7 @@
 | 目录 | 与运行的关系 |
 |---|---|
 | [web](../../web) | 独立发布的 Web Core、SDK 与领域页面组件 |
-| [configurations](../../configurations/README.md) | manifest 发布的源定义、正文、安装资源和默认选择 |
+| [plugins](../../plugins/README.md) | manifest 发布的源定义、正文、安装资源和默认选择 |
 | [crates/adapters/runtime](../../crates/adapters/runtime) | 适配器使用的工具 worker；当前 HTTP/MCP 实现在 tool-worker.mjs |
 | [schemas](../../schemas/README.md) | 数据形状及协议合同 |
 | [sql](../../sql/README.md) | 当前数据库基线和结构 |

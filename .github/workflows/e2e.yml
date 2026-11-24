@@ -94,6 +94,6 @@ jobs:
         with:
           name: e2e-evidence-${{ github.event.workflow_run.head_sha }}
           path: |
-            web/test-results/
+            target/web/test-results/
             /tmp/devdesk-native-acceptance/
           retention-days: 7

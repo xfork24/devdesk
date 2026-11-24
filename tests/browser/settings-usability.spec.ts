@@ -29,11 +29,16 @@ async function createGlobalAgent(page: Page, name: string) {
   const definition = defaults.records.find(
     (r: any) => r.id === defaults.role_agent_bindings["builtin-role-analyst:1"],
   );
-  const created = await rpc(page, "agent.instance.create", {
+  return rpc(page, "agent.create", {
     command_id: crypto.randomUUID(),
-    payload: { name, scope: "global", agent_revision_id: definition.id },
+    payload: {
+      name,
+      scope: "global",
+      role_ref: definition.role_ref,
+      capability_ref: definition.capability_ref,
+      data: {},
+    },
   });
-  return { instance: created.id, agent: definition.id };
 }
 async function rowFeedback(button: Locator, text: string) {
   const box = button.locator("..");
@@ -137,41 +142,41 @@ test("反馈位于当前行左侧且无背景框，新建入口位于左侧顶�
     page.getByRole("heading", { name: "DeepSeek Native Tools", exact: true }),
   ).toBeVisible();
 });
-test("全局角色讨论按 Agent 确定经验归属，无重复经验范围选择", async ({
-  page,
-}, info) => {
+test("同一角色切换 Agent 时角色经验保持展开", async ({ page }) => {
   await setup(page);
-  const created = await createGlobalAgent(
-    page,
-    "Global agent " + crypto.randomUUID(),
-  );
+  const template = await rpc(page, "query.configuration_defaults");
+  const first = template.role_agent_bindings["builtin-role-analyst:1"];
+  const second = await createGlobalAgent(page, "同角色的另一个 Agent");
+  const queries: any[] = [];
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    if (call.method !== "query.role_experience") return route.fallback();
+    queries.push(call.params);
+    await route.fulfill({
+      json: {
+        jsonrpc: "2.0",
+        id: call.id,
+        result: { records: [], total: 0, unavailable: [] },
+      },
+    });
+  });
   await page.getByRole("button", { name: "角色讨论", exact: true }).click();
   await page.getByLabel("讨论范围", { exact: true }).selectOption("global");
   await page
     .getByLabel("讨论角色", { exact: true })
-    .selectOption(created.agent);
-  await page
-    .getByLabel("Agent", { exact: true })
-    .selectOption(created.instance);
-  await expect(page.getByText("新实例经验范围", { exact: true })).toHaveCount(
-    0,
-  );
-  await expect(page.getByRole("button", { name: /创建.*Agent/ })).toHaveCount(
-    0,
-  );
-  await expect(
-    page.getByText(
-      "该 Agent 的经验范围：全局 / 跨项目；已有工作按此身份保留。",
-      { exact: true },
-    ),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "开始 / 续用讨论", exact: true }),
-  ).toBeEnabled();
-  await page.screenshot({
-    path: info.outputPath("global-discussion.png"),
-    fullPage: true,
+    .selectOption("builtin-role-analyst");
+  const agent = page.getByLabel("Agent", { exact: true });
+  await agent.selectOption(first);
+  await page.getByText("角色经验", { exact: true }).click();
+  await expect(page.getByText("0 条经验", { exact: true })).toBeVisible();
+  await agent.selectOption(second.id);
+  await expect(page.getByText("0 条经验", { exact: true })).toBeVisible();
+  expect(queries).toHaveLength(1);
+  expect(queries[0]).toMatchObject({
+    scope: "global",
+    role_id: "builtin-role-analyst",
   });
+  expect(queries[0].agent_instance_id).toBeUndefined();
 });
 test("创建 Feature 提供全部同项目的前序选项，并说明关联语义", async ({
   page,
@@ -247,7 +252,7 @@ test("创建 Feature 提供全部同项目的前序选项，并说明关联语�
   ).toBeVisible();
 });
 
-test("会话绑定更新同步 Agent，切换身份后隔离迟到历史", async ({ page }) => {
+test("切换 Agent 定义时隔离迟到的会话查询", async ({ page }) => {
   await setup(page);
   const firstCreated = await createGlobalAgent(
     page,
@@ -261,14 +266,12 @@ test("会话绑定更新同步 Agent，切换身份后隔离迟到历史", async
   await page.getByLabel("讨论范围", { exact: true }).selectOption("global");
   await page
     .getByLabel("讨论角色", { exact: true })
-    .selectOption(firstCreated.agent);
+    .selectOption("builtin-role-analyst");
   const identity = page.getByLabel("Agent", { exact: true });
-  await identity.selectOption(firstCreated.instance);
-  const first = firstCreated.instance;
-  const agent = firstCreated.agent;
+  await identity.selectOption(firstCreated.id);
+  const first = firstCreated.id;
   const requests: any[] = [];
   const sessions: any[] = [];
-  let currentInstance: string | undefined;
   let holdSecondList = true;
   let releaseSecondList!: () => void;
   const secondListReady = new Promise<void>((resolve) => {
@@ -281,23 +284,19 @@ test("会话绑定更新同步 Agent，切换身份后隔离迟到历史", async
       requests.push(c);
       let session =
         !c.params.payload.force_new &&
-        sessions.findLast(
-          (s) =>
-            s.runtime_binding.agent_configuration.agent_instance_id ===
-            c.params.payload.agent_instance_id,
-        );
+        sessions.findLast((s) => s.agent === c.params.payload.agent);
       if (!session) {
         session = {
           id: crypto.randomUUID(),
           owner_id: "global",
           scope: "global",
-          agent,
+          agent: c.params.payload.agent,
           revision: 1,
           lifecycle: "idle",
           runtime_binding: {
             installation: { key: { provider: "codex" } },
             agent_configuration: {
-              agent_instance_id: c.params.payload.agent_instance_id,
+              agent_instance_id: c.params.payload.agent + "-runtime",
             },
             work_type: "discussion",
           },
@@ -307,30 +306,16 @@ test("会话绑定更新同步 Agent，切换身份后隔离迟到历史", async
       result = { id: session.id };
     } else if (c.method === "query.sessions" && c.params.scope === "global") {
       requests.push(c);
-      if (
-        holdSecondList &&
-        c.params.agent_instance_id === secondCreated.instance
-      )
+      if (holdSecondList && c.params.agent === secondCreated.id)
         await secondListReady;
       const selected = sessions.filter(
-        (s) =>
-          !c.params.agent_instance_id ||
-          s.runtime_binding.agent_configuration.agent_instance_id ===
-            c.params.agent_instance_id,
+        (s) => !c.params.agent || s.agent === c.params.agent,
       );
       result = { sessions: selected.toReversed(), total: selected.length };
     } else if (c.method === "query.session" && c.params.scope === "global") {
       const session = sessions.find((s) => s.id === c.params.id);
       result = {
         session,
-        ...(currentInstance
-          ? {
-              current_runtime_binding: {
-                ...session.runtime_binding,
-                agent_configuration: { agent_instance_id: currentInstance },
-              },
-            }
-          : {}),
         events: c.params.cursor
           ? []
           : [
@@ -338,8 +323,7 @@ test("会话绑定更新同步 Agent，切换身份后隔离迟到历史", async
                 id: "answer",
                 kind: "assistant",
                 content:
-                  session.runtime_binding.agent_configuration
-                    .agent_instance_id === first
+                  session.agent === first
                     ? "第一个身份的已完成工作"
                     : "第二个身份的新会话",
                 mode: "full",
@@ -377,17 +361,7 @@ test("会话绑定更新同步 Agent，切换身份后隔离迟到历史", async
     latestSession,
   );
   expect(sessions).toHaveLength(2);
-  // The session ID stays fixed while a newer authoritative binding arrives.
-  // Depending only on detail.session.id leaves the displayed Agent stale.
-  currentInstance = secondCreated.instance;
-  await expect(identity).toHaveValue(secondCreated.instance);
-  await expect(page.getByLabel("讨论会话", { exact: true })).toHaveValue(
-    latestSession,
-  );
-  currentInstance = first;
-  await expect(identity).toHaveValue(first);
-  currentInstance = undefined;
-  await identity.selectOption(secondCreated.instance);
+  await identity.selectOption(secondCreated.id);
   await expect(
     page
       .getByLabel("讨论会话", { exact: true })
@@ -406,9 +380,7 @@ test("会话绑定更新同步 Agent，切换身份后隔离迟到历史", async
   await expect
     .poll(() =>
       requests.some(
-        (r) =>
-          r.method === "query.sessions" &&
-          r.params.agent_instance_id === second,
+        (r) => r.method === "query.sessions" && r.params.agent === second,
       ),
     )
     .toBe(true);
@@ -418,7 +390,7 @@ test("会话绑定更新同步 Agent，切换身份后隔离迟到历史", async
   ).toBeVisible();
   expect(
     requests.filter((r) => r.method === "session.open").at(-1).params.payload
-      .agent_instance_id,
+      .agent,
   ).toBe(second);
   await expect(identity).toHaveValue(second);
 });
