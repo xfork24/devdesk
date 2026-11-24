@@ -285,9 +285,9 @@ impl WorkflowCommit<'_> {
         {
             return Ok(());
         }
-        let (view, reads) =
+        let (view, _, reads) =
             self.engine
-                .formal_input_code_view(&resources.instance, execution, step)?;
+                .formal_workspace(&resources.instance, execution, step)?;
         self.witness(reads.versions().iter().cloned())?;
         if let Some(view) = view {
             self.engine

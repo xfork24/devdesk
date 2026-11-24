@@ -101,8 +101,8 @@ impl Engine {
                 .iter()
                 .find(|s| s.key == resources.execution.step)
                 .ok_or_else(|| err("storage", "正式步骤定义缺失"))?;
-            let (_, workspace) =
-                self.formal_input_code_view(&resources.instance, &resources.execution, step)?;
+            let (_, _, workspace) =
+                self.formal_workspace(&resources.instance, &resources.execution, step)?;
             basis = basis
                 .merge(resources.reads.versions().iter().cloned())?
                 .merge(guards.versions().iter().cloned())?

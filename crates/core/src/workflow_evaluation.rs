@@ -177,8 +177,9 @@ impl Engine {
                                     )?,
                                 )
                                 .map_err(|e| err("storage", e.to_string()))?;
+                                let (owner, owner_guard) = self.session_work_owner(&actual)?;
                                 require(
-                                    actual.owner_id == resources.instance.owner_id
+                                    owner == resources.instance.owner_id
                                         && actual.project_id.as_deref()
                                             == Some(resources.instance.project_id.as_str())
                                         && actual.agent
@@ -191,7 +192,11 @@ impl Engine {
                                         }),
                                     "正式会话不是原步骤的实际接纳结果",
                                 )?;
-                                commit.witness([version(&session), version(&association)])?;
+                                commit.witness([
+                                    version(&session),
+                                    version(&association),
+                                    owner_guard,
+                                ])?;
                                 failure_source = text(raw, "id")?;
                                 observed_effect = Some(ExecutionFailureEffect::NotApplied);
                                 next.session_id = Some(sid.clone());

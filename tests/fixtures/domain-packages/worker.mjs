@@ -8,6 +8,8 @@ if (request.method === "describe") {
   result = { api: 1, handlers };
 } else if (name.endsWith(".repository.head")) {
   result = { head: request.params.core.head, observedBy: "domain-worker" };
+} else if (name.endsWith(".artifact.create")) {
+  result = { kind: "artifact", title: String(request.params.input.title ?? "").trim() };
 } else {
   result = { title: String(request.params.input.title ?? "").trim(), observedBy: "domain-worker" };
 }

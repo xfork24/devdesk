@@ -4341,6 +4341,7 @@
       "type": "object",
       "properties": {
         "workspace_input": {
+          "description": "Names a frozen input. An input with kind artifact must come from an accepted step output of this Workflow and is mounted read-only at /work/artifact.",
           "anyOf": [
             {
               "type": "string",

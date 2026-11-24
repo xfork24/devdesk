@@ -15,7 +15,7 @@ import uuid
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tests" / "entrypoints"))
-from domain_client import Client, lookup, prepare_document, start_for, submitted_proof
+from domain_client import Client, lookup, prepare_document, start_for, submitted_proof, wait_view
 
 
 def wait_for_host(host, log):
@@ -86,7 +86,37 @@ def verify_discussion(client, epoch, entity, agent_instance):
     raise TimeoutError("Entity discussion or experience was not completed")
 
 
-def verify(client, archive, digest, report):
+def verify_resource_workspace(client, epoch, entity, dataset):
+    pid = entity["project_id"]
+    run = client.call("domain.workflow.start", epoch=epoch, project_id=pid, entity_id=entity["id"],
+                      expected_revision=entity["revision"], command_id=uuid.uuid4().hex, mode="rust",
+                      workflow_ref="manuscript.resource-workflow:1")
+    result = wait_view(client, epoch, run, lambda view: view["record"]["data"]["status"] == "completed",
+                       timeout=150)
+    proof = client.call("query.domain.entity", epoch=epoch, project_id=pid,
+                        entity_id=result["domain_submission"]["entities"]["proof"])
+    assert proof["data"] == {"title": "Local manuscript", "observedBy": "native-resource-reader"}
+    assert proof["origin"]["producer"]["kind"] == "agent" and proof["relations"] == {"manuscript": [entity["id"]]}
+    seal, read = result["runtime"]["steps"]
+    original = result["outputs"][seal["outputs"]["sealed"]]
+    source_file = dataset / "projects" / pid / "execution/sessions" / read["session_id"] / "work/artifact"
+    assert json.loads(source_file.read_bytes()) == {"kind": "artifact", "title": "Local manuscript"}
+    with client.request(f"/artifacts/{original['artifact_id']}?project_id={pid}&domain_epoch={epoch}") as archive:
+        assert source_file.read_bytes() == archive.read()
+    discussion = client.call("query.session", domain_epoch=epoch, project_id=pid, id=read["session_id"])
+    command = next((item for event in discussion["events"] if event["kind"] == "tool"
+                    and event["content"].startswith("{")
+                    for item in [json.loads(event["content"])]
+                    if item.get("type") == "commandExecution" and item.get("status") == "completed"
+                    and item.get("exitCode") == 0 and "/work/artifact" in item["command"]
+                    and item.get("aggregatedOutput", "").encode() == source_file.read_bytes()), None)
+    assert command, "No native command read the exact mounted material"
+    return {"workflow_execution_id": run["execution_id"], "session_id": read["session_id"],
+            "source_artifact_id": original["artifact_id"], "proof_id": proof["id"],
+            "read_command_id": command["id"], "material_sha256": hashlib.sha256(source_file.read_bytes()).hexdigest()}
+
+
+def verify(client, archive, digest, report, dataset):
     client.call("runtime.prepare_harness", id="builtin-harness-codex-managed:2")
     installed = client.call("domain.install", archive=base64.b64encode(archive).decode())
     assert installed["digest"] == digest
@@ -149,7 +179,8 @@ def verify(client, archive, digest, report):
     assert session["current_runtime_binding"]["model"] and session["executions"], "native runtime evidence missing"
     assert session["session"]["work_owner"] == {"kind": "entity", "id": entity["id"], "project": entity["project_id"]}
     discussion = verify_discussion(client, epoch, entity, session["agent_instance_id"])
-    return {"run": run, "discussion": discussion, "proof": proof, "human_decision": decision, "session_id": session_id,
+    workspace = verify_resource_workspace(client, epoch, entity, dataset)
+    return {"run": run, "workspace": workspace, "discussion": discussion, "proof": proof, "human_decision": decision, "session_id": session_id,
             "successful_native_calls": calls}
 
 
@@ -178,7 +209,7 @@ def main():
                 auth.parent.mkdir(parents=True, exist_ok=True)
                 auth.touch(mode=0o600, exist_ok=False)
                 shutil.copyfile(args.codex_auth_source.resolve(), auth)
-                result = verify(client, archive, digest, args.report_directory)
+                result = verify(client, archive, digest, args.report_directory, dataset)
                 (args.report_directory / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2))
             finally:
                 host.terminate()

@@ -12,8 +12,9 @@ ROOT = Path(__file__).parent
 def package(target, identity, title, handler, core):
     method = f"{identity}.{handler}"
     contribution = f"{identity}.overview"
+    artifact_method = f"{identity}.artifact.create" if identity == "manuscript" else None
     worker = (ROOT / "worker.mjs").read_text().replace(
-        '["PLACEHOLDER_HANDLER"]', json.dumps([method])
+        '["PLACEHOLDER_HANDLER"]', json.dumps(sorted([method] + ([artifact_method] if artifact_method else [])))
     )
     files = {
         "runtime/worker.mjs": worker.encode(),
@@ -39,6 +40,9 @@ def package(target, identity, title, handler, core):
                 "workflows": {"manuscript.workflow:1": {
                     "input": "manuscript", "outputs": {"observation": "manuscript.proof:1"},
                     "owner_relations": {"observation": ["manuscript"]},
+                }, "manuscript.resource-workflow:1": {
+                    "input": "manuscript", "outputs": {"proof": "manuscript.proof:1"},
+                    "owner_relations": {"proof": ["manuscript"]},
                 }}},
             "manuscript.proof:1": {"name": "Proof",
                 "relations": {"manuscript": {"target": "manuscript.document:1", "min_items": 1, "max_items": 1}},
@@ -106,6 +110,51 @@ def package(target, identity, title, handler, core):
                 "outputs": {"observation": {"step": "title", "port": "observation"}},
             }),
         ]
+        artifact_schema = {"type": "object", "required": ["kind", "title"], "additionalProperties": False,
+                           "properties": {"kind": {"const": "artifact"}, "title": {"type": "string"}}}
+        sources.extend([
+            source("tool", "seal-material", {
+                "qualified_name": "domain.read", "implementation": "platform",
+                "input_schema": {"type": "object", "required": ["handler", "input"]},
+                "output_schema": artifact_schema}),
+            source("delivery_type", "sealed-material", {"format": "json", "content_schema": artifact_schema,
+                   "producer": {"kind": "platform", "tools": ["domain.read"]}},
+                   spec_refs=[f"{identity}.observation-spec:1"]),
+            source("delivery_type", "read-material", {"format": "json",
+                   "content_schema": {"type": "object", "required": ["title", "observedBy"]},
+                   "producer": {"kind": "agent"}}, spec_refs=[f"{identity}.observation-spec:1"]),
+            source("role", "proof-reader", {"instructions": (
+                "Read exactly /work/artifact with the native shell tool using cat. "
+                "This required input is a read-only material staged by the platform. "
+                "Use its title and return the Workflow JSON result with status completed, a summary, "
+                "and outputs.proof containing title and observedBy set to native-resource-reader. "
+                "Do not write any files."
+            )}),
+            source("capability", "proof-reader-capability", {}, harness_ref="builtin-harness-codex-managed:2",
+                   model_ref="builtin-model-gpt-6-2-sol-high:1", skills=[], tools=["builtin-tool-codex-native:2"]),
+            source("agent", "proof-reader-agent", {}, role_ref=f"{identity}.proof-reader:1",
+                   capability_ref=f"{identity}.proof-reader-capability:1"),
+            source("workflow", "resource-workflow", {
+                "schema_version": 6, "inputs": {"manuscript": {"delivery_ref": f"{identity}.input:1"}},
+                "stages": [{"key": "workspace", "name": "Read sealed material"}],
+                "steps": [{
+                    "key": "seal", "name": "Seal material", "stage": "workspace",
+                    "executor": {"type": "tool", "tool_ref": f"{identity}.seal-material:1", "arguments": {
+                        "handler": {"type": "constant", "value": artifact_method},
+                        "input": {"type": "source", "source": {"step": "$input", "port": "manuscript"}},
+                    }},
+                    "outputs": {"sealed": {"delivery_ref": f"{identity}.sealed-material:1"}},
+                }, {
+                    "key": "read", "name": "Read frozen workspace", "stage": "workspace", "dependencies": ["seal"],
+                    "task_instructions": "Read /work/artifact using the native shell tool and return the exact title in proof.",
+                    "inputs": {"material": {"type": "source", "source": {"step": "seal", "port": "sealed"}}},
+                    "access": {"workspace_input": "material"},
+                    "harness_permission_ref": "builtin-permission-harness-read-only:2",
+                    "executor": {"type": "agent", "role_ref": f"{identity}.proof-reader:1"},
+                    "outputs": {"proof": {"delivery_ref": f"{identity}.read-material:1"}},
+                }], "outputs": {"proof": {"step": "read", "port": "proof"}},
+            }),
+        ])
         usage = runpy.run_path(str(ROOT.parents[2] / "scripts/py/configuration_usage.py"))["usage_index"]
         types = {}
         for record in sources:
@@ -117,7 +166,8 @@ def package(target, identity, title, handler, core):
             "defaults": "defaults.json", "usage_index": "usage.json",
         }).encode()
         files["configurations/defaults.json"] = json.dumps({
-            "role_agent_bindings": {f"{identity}.editor:1": f"{identity}.editor-agent:1"},
+            "role_agent_bindings": {f"{identity}.editor:1": f"{identity}.editor-agent:1",
+                                    f"{identity}.proof-reader:1": f"{identity}.proof-reader-agent:1"},
         }).encode()
         files["configurations/usage.json"] = json.dumps({"references": usage(sources)}).encode()
     manifest = {
@@ -130,7 +180,10 @@ def package(target, identity, title, handler, core):
                 **({"core": core} if core else {}),
                 "input_schema": {"type": "object", "required": ["path" if core else "title"]},
                 "output_schema": {"type": "object", "required": ["head" if core else "title", "observedBy"]},
-            }},
+            }, **({artifact_method: {
+                "input_schema": {"type": "object", "required": ["title"]},
+                "output_schema": artifact_schema,
+            }} if artifact_method else {})},
         },
         "ui": {
             "contributions": "ui/contributions.json",

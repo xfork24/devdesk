@@ -348,18 +348,11 @@ impl Engine {
                 "conversation-turn",
             )?);
             changes.push(resources.changed_step(self.store.as_ref(), &execution)?);
-            let (resource, resource_guards) =
-                self.formal_input_resource(&resources.instance, &execution, definition)?;
-            workspace = resource;
-            let (view, guards) = if workspace.is_none() {
-                self.formal_input_code_view(&resources.instance, &execution, definition)?
-            } else {
-                (None, ReadSet::default())
-            };
-            read_set = read_set
-                .merge(resource_guards.versions().iter().cloned())?
-                .merge(guards.versions().iter().cloned())?;
+            let (view, resource, guards) =
+                self.formal_workspace(&resources.instance, &execution, definition)?;
+            read_set = read_set.merge(guards.versions().iter().cloned())?;
             code_view = view;
+            workspace = resource;
             source = Some(binding);
         } else {
             let raw = selected[1]
@@ -466,8 +459,22 @@ impl Engine {
         )
     }
 
+    pub(crate) fn formal_workspace(
+        &self,
+        instance: &ConfiguredWorkflowInstance,
+        execution: &StepExecution,
+        step: &StepDefinition,
+    ) -> Result<(Option<FrozenCode>, Option<FrozenResourceHandle>, ReadSet)> {
+        let (resource, reads) = self.formal_input_resource(instance, execution, step)?;
+        if resource.is_some() {
+            return Ok((None, resource, reads));
+        }
+        let (git, reads) = self.formal_input_code_view(instance, execution, step)?;
+        Ok((git, None, reads))
+    }
+
     /// Only an accepted output of this frozen execution plan can supply an artifact workspace.
-    pub(crate) fn formal_input_resource(
+    fn formal_input_resource(
         &self,
         instance: &ConfiguredWorkflowInstance,
         execution: &StepExecution,
@@ -493,13 +500,13 @@ impl Engine {
                 "封存资源需要实际步骤输出作为来源",
             ));
         };
-        let output_id = instance
+        let (previous, output_id) = instance
             .steps
             .iter()
             .find(|previous| {
                 previous.step == source.step && previous.status == StepExecutionStatus::Completed
             })
-            .and_then(|previous| previous.outputs.get(&source.port))
+            .and_then(|previous| previous.outputs.get(&source.port).map(|id| (previous, id)))
             .ok_or_else(|| {
                 err(
                     "input_unavailable",
@@ -512,7 +519,9 @@ impl Engine {
             .as_ref()
             .ok_or_else(|| err("not_found", "原输出不存在"))?;
         require(
-            raw["type"] == "workflow_output" && raw["data"]["port"] == source.port,
+            raw["type"] == "workflow_output"
+                && raw["data"]["execution_id"] == previous.id
+                && raw["data"]["port"] == source.port,
             "工作区资源必须使用原步骤产物",
         )?;
         let id = text(&raw["data"], "artifact_id")?;
@@ -535,7 +544,7 @@ impl Engine {
         ))
     }
 
-    pub(crate) fn formal_input_code_view(
+    fn formal_input_code_view(
         &self,
         instance: &ConfiguredWorkflowInstance,
         execution: &StepExecution,

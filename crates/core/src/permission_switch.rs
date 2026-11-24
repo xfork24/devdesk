@@ -557,14 +557,8 @@ impl Engine {
                 &execution,
                 Some(&text(&c.payload, "input")?),
             )?;
-            let (workspace, guards) =
-                self.formal_input_resource(&resources.instance, &execution, step)?;
-            reads = reads.merge(guards.versions().iter().cloned())?;
-            let (view, guards) = if workspace.is_none() {
-                self.formal_input_code_view(&resources.instance, &execution, step)?
-            } else {
-                (None, ReadSet::default())
-            };
+            let (view, workspace, guards) =
+                self.formal_workspace(&resources.instance, &execution, step)?;
             reads = reads.merge(guards.versions().iter().cloned())?;
             changes.push(resources.changed_step(self.store.as_ref(), &execution)?);
             let mut association = record(
