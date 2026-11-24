@@ -6,6 +6,7 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
+| [领域插件化改造](domain-plugins/PLAN.md) | 方案内含代码依据、阶段出口和发布验收矩阵 | 待实施。Rust Host 与核心 Web 独立发行，空领域可用，领域 ZIP 热加载与卸载。客户端共用领域协议，首版实现 Web 呈现 |
 | [工作台与存储性能优化](workbench-storage-performance/PLAN.md) | [工作台延迟评估](../design/performance/workbench-latency-2026-11-23.md)、[阶段验收](workbench-storage-performance/VALIDATION.md) | P0、P1 及 Web 分包已验收。完成本机负载诊断，继续使用 SQLite。正式 100 前端容量验收待独立负载环境 |
 | [出厂模型与工程规范整理](default-configuration-refresh/PLAN.md) | [实施与验收](default-configuration-refresh/EXECUTION.md) | 完成。三种出厂 Model、隔离重置、真实 Feature 与三个 Task 闭环通过 |
 | [工作流故障恢复与升级](workflow-recovery/PLAN.md) | 实施中 | Agent 自修、经理接手、实际重跑预算、历史与人工升级 |
