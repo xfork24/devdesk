@@ -123,7 +123,7 @@ impl CliGit {
         conn.busy_timeout(Duration::from_secs(5)).map_err(storage)?;
         // The core has already reserved a unique writer and frozen its original
         // startup request. Merely having an old Session is not admission.
-        let mut q = conn.prepare("SELECT o.data FROM governance_records o JOIN turns t ON t.id=o.definition_id AND t.status='dispatching' JOIN executions e ON e.id=json_extract(o.data,'$.execution_id') AND e.writer_revoked=0 AND e.status='prepared' WHERE o.type='conversation_open_intent' AND json_extract(o.data,'$.status')='prepared' AND json_extract(o.data,'$.request.code_view.context.source.worktree')=?1 LIMIT 2").map_err(storage)?;
+        let mut q = conn.prepare("SELECT o.data FROM governance_records o JOIN turns t ON t.id=o.definition_id AND t.status='dispatching' JOIN executions e ON e.id=json_extract(o.data,'$.execution_id') AND e.writer_revoked=0 AND e.status='prepared' WHERE o.type='conversation_open_intent' AND json_extract(o.data,'$.status')='prepared' AND coalesce(json_extract(o.data,'$.request.workspace.handle.source.view.context.source.worktree'),json_extract(o.data,'$.request.code_view.context.source.worktree'))=?1 LIMIT 2").map_err(storage)?;
         let requests = q
             .query_map([&c.source.worktree], |r| r.get::<_, String>(0))
             .map_err(storage)?
@@ -135,10 +135,21 @@ impl CliGit {
         let pending: Value = serde_json::from_str(&requests[0]).map_err(storage)?;
         let request = &pending["request"];
         let view = json!({"context":c,"revision":revision});
+        let original_view = if request["workspace"].is_object() {
+            if request["workspace"]["exclusive_write"] != true
+                || request["workspace"]["operation_id"] != pending["worker_operation_id"]
+                || request["workspace"]["session_id"] != pending["session_id"]
+            {
+                return Ok(false);
+            }
+            &request["workspace"]["handle"]["source"]["view"]
+        } else {
+            &request["code_view"]
+        };
         let authority = &pending["authority"]["workflow"];
         let scope = &request["session"]["runtime_binding"]["permissions"]["scope"];
         if !scope.is_object()
-            || request["code_view"] != view
+            || *original_view != view
             || !authority.is_object()
             || request["session"]["id"] != pending["session_id"]
             || request["session"]["id"] != authority["session_id"]

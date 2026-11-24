@@ -812,7 +812,9 @@ impl Engine {
         // Once the native open is admitted, dispatch resumes from the original
         // Turn and Worker. The worktree checkpoint needs only this subset.
         data["request"] = json!({
-            "code_view": request["code_view"],
+            "code_view": request["code_view"].as_object()
+                .map(|_| request["code_view"].clone())
+                .unwrap_or_else(|| request["workspace"]["handle"]["source"]["view"].clone()),
             "workspace": request["workspace"]["handle"].as_object().map(|handle| json!({
                 "project_id":handle["project_id"],"owner_id":handle["owner_id"],
                 "version":handle["version"],"kind":handle["source"]["kind"]

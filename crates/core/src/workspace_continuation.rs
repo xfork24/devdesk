@@ -27,11 +27,16 @@ impl Engine {
         }
         let seed = ConfigurationRecord::from_storage(selected.value.clone().unwrap())?;
         let request = &seed.data["request"];
-        if !request["configured_task"].is_object() || request["code_view"].is_null() {
+        let code = if request["code_view"].is_null() {
+            &request["workspace"]["handle"]["source"]["view"]
+        } else {
+            &request["code_view"]
+        };
+        if !request["configured_task"].is_object() || code.is_null() {
             return Ok(None);
         }
-        let view: FrozenCode = serde_json::from_value(request["code_view"].clone())
-            .map_err(|e| err("storage", e.to_string()))?;
+        let view: FrozenCode =
+            serde_json::from_value(code.clone()).map_err(|e| err("storage", e.to_string()))?;
         let binding: RuntimeBinding = serde_json::from_value(
             self.store
                 .restore_runtime_value(&request["session"]["runtime_binding"])?,
