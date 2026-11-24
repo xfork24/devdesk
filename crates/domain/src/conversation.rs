@@ -95,7 +95,7 @@ pub struct FrozenResourceHandle {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum FrozenResourceSource {
     Artifact { id: Id },
-    GitWorktree { view: FrozenCode },
+    GitWorktree { view: Box<FrozenCode> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

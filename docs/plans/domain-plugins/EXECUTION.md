@@ -46,17 +46,30 @@ P3 扩展验收使用同一个文稿包。Web 启动人工流程，Python 派发
 
 讨论和经验使用确切的对象归属。相同对象及 Agent 可以复用讨论，其他对象无法继承该讨论或按自身范围读回原经验。真实 Codex 讨论 `95d8f08e-3986-8a30-1f93-4ca079de65ed` 步骤结束后生成经验 `fd3f81f3-495c-10d1-b7c1-a635287b4234`，并通过了隔离断言。
 
-Harness 按会话、操作、所有者及版本接收工作区租约。Git 继续使用已冻结的提交和独占写入检查。只读 Artifact 取自同一流程中已接纳的步骤输出，验证摘要后挂载为 `/work/artifact`。适配器测试覆盖错误操作、写权限和内容变化。P3 联合验收再次完成真实 Codex 编排、对象讨论与经验隔离。证据位于 `/tmp/devdesk-p3-final.z3hG6K/evidence/result.json`。
+Harness 按会话、操作、所有者及版本接收工作区租约。Git 继续使用已冻结的提交和独占写入检查。只读 Artifact 取自同一流程中已接纳的步骤输出，验证摘要后挂载为 `/work/artifact`。适配器测试覆盖错误操作、写权限和内容变化。P3 联合验收再次完成真实 Codex 编排、对象讨论与经验隔离。证据位于 `/tmp/devdesk-p3-final.z3hG6K/evidence/result.json`。非 Git 工作区也经过真实 Codex 验收。Rust 驱动将同一流程前一步封存的 Artifact 只读挂载，Codex 的实际命令读取了原字节，产出的校样仍关联原文稿。执行和内容摘要见 `/tmp/devdesk-p3-full-mounted.RX94tB/evidence/result.json`。
 
 ## P4 软件开发候选包
 
 仓库测试入口识别和工作副本分支策略已纳入软件开发 ZIP。预检使用 Git 提交里的跟踪内容，识别逻辑在 Docker 中运行。使用空仓库、Node、Rust、Go、pytest、unittest、自定义测试合同七类仓库对照旧实现，结果一致。
 
-Feature 和 Task 的真实 Git worktree 验证了分支策略在物理调用前写入操作意图。对已写入的 Feature 操作注入回执丢失后，`repository.reconcile` 只读取原工作副本和回执，物理写入计数保持不变。本轮远端 PR、合入、保护分支和同步仍待迁移及验收。[候选包](../../../configurations/software-development/README.md)
+Feature 和 Task 的真实 Git worktree 验证了分支策略在物理调用前写入操作意图。对已写入的 Feature 操作注入回执丢失后，`repository.reconcile` 只读取原工作副本和回执，物理写入计数保持不变。源发布、PR、合入和同步的验证见本节后续记录。[候选包](../../../configurations/software-development/README.md)
 
 两个独立发行件解压后，再次通过双端及热切换验收。软件包预检执行为 `65002759-b374-283b-0a1a-537a04e66552`，证据位于 `/tmp/devdesk-p4-release.2bfC1L/result.json`。同一 Host 发行件的真实 Codex 复验执行为 `ec056394-3eae-392e-2053-42c897e5d2bd`，证据位于 `/tmp/devdesk-p4-live-agent.RWWiq2/evidence/result.json`。
 
-软件开发包 0.2.0 增加了原 Feature→Task 的命名空间化配置目录。包内处理器解析 GitHub 连接坐标，Host 从已绑定包的项目发出原生仓库连接意图。空领域 Host 已验证安装、激活与项目配置装配。远端验证使用单独的目标分支。
+软件开发包增加了 Feature→Task 的命名空间化配置目录。包内处理器解析 GitHub 连接坐标，Host 从已绑定包的项目发出原生仓库连接意图。空领域 Host 已验证安装、激活与项目配置装配。
+
+专用 GitHub 仓库的 `devdesk/domain-p4-20261124` 分支从确切的 Node 测试基线启动。0.2.0 的 Task 和 Feature 均通过源发布、候选、两类真实 Docker 回归、PR 合入及本地同步。Task 的 Red 有 5 个预期断言失败，Green 有 6 个通过。签署前派发 Feature 合入被 `dependencies` 拒绝，原 GitHub 目标引用仍指向基线。签署、合入后，候选 tree、远端目标和干净本地工作树通过逐项核对。原 Task PR 使用相同的标记做实仓回读，重复请求返回同一 PR。完整核对记录位于 `/tmp/devdesk-p4-domain-live.p9xrZP/run-core/delivery-audit.json`。[Task PR #35](https://github.com/xfork24/devdesk-default-workflow-test-20261118/pull/35) · [Feature PR #36](https://github.com/xfork24/devdesk-default-workflow-test-20261118/pull/36)
+
+0.3.0 在软件包内提供测试报告器、候选分支策略和 GitHub PR 创建请求生成。Host 保存冻结报告器及 PR 请求，在通用 Docker、Git 和 GitHub 端口执行。GitHub 适配器继续处理远端保护、目标 CAS、合入观察及同步。独立解包的 Host 和 Web 通过了空领域、安装、加载、卸载及同一协议的 Web 和 Python 验收。
+
+软件开发 0.3.0 的完整验收使用同一专用仓库的 `devdesk/domain-p4-package-20261124` 分支。Task Red 出现 4 个预期断言失败，Green 通过相同的 4 个用例。两个流程共执行六次 Docker 测试，回执保留 ZIP 内报告器的摘要。核对了两份远端 PR 的标题和正文、源发布修订、候选 tree、目标父提交、合入和本地同步。Feature 合入在人工签署前被依赖门禁拒绝。对 PR #37 回读并重放原标记得到同一个 PR。实仓使用普通测试分支，保护分支拒绝及目标变化由适配器回归覆盖。[Task PR #37](https://github.com/xfork24/devdesk-default-workflow-test-20261118/pull/37) · [Feature PR #38](https://github.com/xfork24/devdesk-default-workflow-test-20261118/pull/38)
+
+正式包位于 `dist/software-development-0.3.0.zip`，SHA-256 为 `dacee6dca95abaefab62af7194c86c7089726e3299a039e6afc8dd9f2fc4cf34`。重建后的 ZIP 与实仓加载的 ZIP 字节一致。端到端证据位于 `/tmp/devdesk-p4-domain-pkg.VQIVQc/run/delivery-audit.json`。下列命令可从验收数据再次核对冻结记录、实仓 PR 与本地 Git 状态。
+
+```bash
+python3 tests/live/audit_domain_delivery.py /tmp/devdesk-p4-domain-pkg.VQIVQc/run \
+  --github-repo xfork24/devdesk-default-workflow-test-20261118 --require-packaged-handlers
+```
 
 ## 基线和后续范围
 

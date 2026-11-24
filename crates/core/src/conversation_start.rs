@@ -495,7 +495,9 @@ impl Engine {
                     project_id: view.context.project.clone(),
                     owner_id: view.context.source.owner.clone(),
                     version: view.revision.clone(),
-                    source: FrozenResourceSource::GitWorktree { view: view.clone() },
+                    source: FrozenResourceSource::GitWorktree {
+                        view: Box::new(view.clone()),
+                    },
                 },
                 operation_id: request.execution.operation_id.clone(),
                 session_id: session.id.clone(),

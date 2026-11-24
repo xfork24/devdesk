@@ -50,7 +50,7 @@ pub(super) fn prepare(
                         && view.context.source.owner == lease.handle.owner_id,
                     "代码租约与原资源不符",
                 )?;
-                Some(view)
+                Some(view.as_ref())
             }
         }
     } else {

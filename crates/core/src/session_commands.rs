@@ -716,23 +716,22 @@ impl Engine {
     pub(crate) fn session_work_owner(&self, session: &Session) -> Result<(Id, ResourceVersion)> {
         let link = self.session_owner_source(&session.id)?;
         let mut owner = session.owner_id.clone();
-        if let Some(row) = &link.value {
-            if let Some(reference) = row["data"]
+        if let Some(row) = &link.value
+            && let Some(reference) = row["data"]
                 .get("work_owner")
                 .filter(|value| !value.is_null())
-            {
-                let reference: WorkReference = serde_json::from_value(reference.clone())
-                    .map_err(|error| err("storage", error.to_string()))?;
-                match reference {
-                    WorkReference::Entity { id, project } => {
-                        require(
-                            session.project_id.as_deref() == Some(project.as_str()),
-                            "会话对象范围跨项目",
-                        )?;
-                        owner = id;
-                    }
-                    other => require(other.id() == owner, "会话归属与冻结来源不符")?,
+        {
+            let reference: WorkReference = serde_json::from_value(reference.clone())
+                .map_err(|error| err("storage", error.to_string()))?;
+            match reference {
+                WorkReference::Entity { id, project } => {
+                    require(
+                        session.project_id.as_deref() == Some(project.as_str()),
+                        "会话对象范围跨项目",
+                    )?;
+                    owner = id;
                 }
+                other => require(other.id() == owner, "会话归属与冻结来源不符")?,
             }
         }
         Ok((owner, version(&link)))

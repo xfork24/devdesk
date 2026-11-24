@@ -418,7 +418,7 @@ impl ports::Harness for RecordingAgent {
                     .workspace
                     .as_ref()
                     .and_then(|lease| match &lease.handle.source {
-                        FrozenResourceSource::GitWorktree { view } => Some(view),
+                        FrozenResourceSource::GitWorktree { view } => Some(view.as_ref()),
                         _ => None,
                     })
                     .or(request.code_view.as_ref()),

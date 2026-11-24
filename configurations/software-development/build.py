@@ -1,4 +1,4 @@
-"""Build the software-development domain release candidate."""
+"""Build the software-development domain release ZIP."""
 import argparse
 import hashlib
 import json
