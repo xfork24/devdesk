@@ -110,6 +110,7 @@ try {
   const webResult = JSON.parse(await page.locator("output").innerText());
   assert.deepEqual(webResult, await native("git", repository));
   assert.equal(webResult.head, head);
+  assert.equal((await native("install-contract", gitZip)).digest, digests[0]);
 
   await activate(manuscriptZip);
   await second.getByRole("button", { name: "Manuscript", exact: true }).waitFor();
@@ -124,6 +125,17 @@ try {
   const body = JSON.parse(await execution.innerText());
   assert.equal(body.record.id, result.execution_id);
   assert.equal(body.record.data.status, "completed");
+
+  const mode = page.getByLabel("调度方式");
+  await mode.locator('option[value="agent"]').waitFor({ state: "attached" });
+  await mode.selectOption("manual");
+  const starting = page.waitForResponse(
+    (r) => r.url().endsWith("/rpc") && r.request().postDataJSON()?.method === "domain.workflow.start",
+  );
+  await page.getByRole("button", { name: "启动工作流" }).click();
+  const started = await (await starting).json();
+  assert(!started.error, JSON.stringify(started.error));
+  const manual = await native("manual", started.result.project_id, started.result.execution_id);
 
   await second.getByRole("button", { name: "Manuscript", exact: true }).click();
   await second.getByLabel("领域处理器").waitFor();
@@ -142,7 +154,7 @@ try {
   assert.equal(host.pid, pid);
   assert.equal(host.exitCode, null);
   assert.deepEqual(pageErrors, []);
-  console.log(JSON.stringify({ pid, head, image: ready.result.artifact.image_id, execution: result, unloaded: true }));
+  console.log(JSON.stringify({ pid, head, image: ready.result.artifact.image_id, execution: result, manual, unloaded: true }));
 } catch (error) {
   console.error(hostLog);
   throw error;

@@ -32,14 +32,49 @@ pub(crate) fn workflow_orchestration_role<'a>(
     workflow: &ConfigurationRecord,
     legacy_role: Option<&str>,
 ) -> Result<&'a ConfigurationRecord> {
-    if let Some(role) = workflow.data["orchestrator_role_ref"]
-        .as_str()
-        .or(legacy_role)
-    {
-        return project_manager_role(state, role);
+    if let Some(role) = workflow.data["orchestrator_role_ref"].as_str() {
+        return declared_workflow_role(state, role, &workflow.scope);
     }
     let defaults = current_template_defaults(state).unwrap_or(Value::Null);
-    project_manager_role(state, &text(&defaults, "orchestrator_role_ref")?)
+    let role = legacy_role
+        .or_else(|| defaults["orchestrator_role_ref"].as_str())
+        .ok_or_else(|| err("configuration_required", "工作流尚未声明编排 Role"))?;
+    project_manager_role(state, role)
+}
+
+pub(crate) fn declared_workflow_role<'a>(
+    state: &'a EngineeringState,
+    reference: &str,
+    scope: &Scope,
+) -> Result<&'a ConfigurationRecord> {
+    let role = role_record(state, reference)?;
+    let available = if scope.is_global() {
+        role.scope.is_global()
+    } else {
+        visible(state, role, scope.project_id())
+    };
+    require(
+        available && !retired(state, role),
+        "工作流声明的编排 Role 对此范围不可用",
+    )?;
+    Ok(role)
+}
+
+/// A workflow controller freezes its admitted Role at creation. Workspace-only
+/// management continues to require the separately configured manager.
+pub(crate) fn admitted_controller_role<'a>(
+    state: &'a EngineeringState,
+    controller: &WorkflowController,
+) -> Result<&'a ConfigurationRecord> {
+    if controller.workspace_only {
+        project_manager_role(state, &controller.role_ref)
+    } else {
+        declared_workflow_role(
+            state,
+            &controller.role_ref,
+            &Scope::project(&controller.project_id),
+        )
+    }
 }
 pub fn visible(s: &EngineeringState, r: &ConfigurationRecord, project: Option<&str>) -> bool {
     if project.is_none() {

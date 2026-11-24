@@ -197,8 +197,7 @@ impl Engine {
                 "控制器会话的原授权已失效",
             )?;
             let composition = catalog.state.resolve_agent(&agent)?;
-            let role =
-                crate::configuration::project_manager_role(&catalog.state, &actual.role_ref)?;
+            let role = crate::configuration::admitted_controller_role(&catalog.state, &actual)?;
             require(
                 composition.role == role.definition_id,
                 "编排 Agent 角色不匹配",

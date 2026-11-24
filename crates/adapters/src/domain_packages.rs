@@ -170,6 +170,8 @@ struct Package {
     files: BTreeMap<String, Vec<u8>>,
     contributions: Vec<Contribution>,
     sources: Vec<ConfigurationRecord>,
+    role_agent_bindings: BTreeMap<Id, Id>,
+    agent_workflows: BTreeSet<Id>,
 }
 
 impl Package {
@@ -299,34 +301,50 @@ impl Package {
                 }
             }
         }
-        let sources = if files.contains_key("configurations/manifest.json") {
-            let bundle = factory_bundle::read_bundle(|path| {
-                files
-                    .get(&format!("configurations/{path}"))
-                    .and_then(|body| std::str::from_utf8(body).ok())
-                    .ok_or_else(|| invalid("领域源文件缺失或编码无效"))
-            })?;
-            if configuration_usage_index(&bundle.entries)? != bundle.usage_index
-                || bundle.entries.iter().any(|record| {
-                    !record.scope.is_global() || !record.definition_id.starts_with(&prefix)
-                })
-            {
-                return Err(invalid("领域源定义命名空间或引用索引不符"));
-            }
-            let mut catalog = EngineeringState::default();
-            devdesk_core::initialize_template_catalog(&mut catalog)?;
-            catalog.governance.extend(bundle.entries.iter().cloned());
-            validate_source_closure(&catalog, &bundle.entries)?;
-            bundle.entries
-        } else {
-            vec![]
-        };
+        let (sources, role_agent_bindings, agent_workflows) =
+            if files.contains_key("configurations/manifest.json") {
+                let bundle = factory_bundle::read_bundle(|path| {
+                    files
+                        .get(&format!("configurations/{path}"))
+                        .and_then(|body| std::str::from_utf8(body).ok())
+                        .ok_or_else(|| invalid("领域源文件缺失或编码无效"))
+                })?;
+                if configuration_usage_index(&bundle.entries)? != bundle.usage_index
+                    || bundle.entries.iter().any(|record| {
+                        !record.scope.is_global() || !record.definition_id.starts_with(&prefix)
+                    })
+                {
+                    return Err(invalid("领域源定义命名空间或引用索引不符"));
+                }
+                let mut catalog = EngineeringState::default();
+                devdesk_core::initialize_template_catalog(&mut catalog)?;
+                catalog.governance.extend(bundle.entries.iter().cloned());
+                let bindings: BTreeMap<Id, Id> = match bundle.defaults.get("role_agent_bindings") {
+                    Some(value) => serde_json::from_value(value.clone())
+                        .map_err(|_| invalid("领域默认 Role 与 Agent 绑定无效"))?,
+                    None => BTreeMap::new(),
+                };
+                for (role, agent) in &bindings {
+                    let role = catalog.configuration(role)?;
+                    let agent = catalog.resolve_agent(agent)?;
+                    require(
+                        role.r#type == "role" && agent.role == role.definition_id,
+                        "领域默认 Agent 必须属于绑定的 Role",
+                    )?;
+                }
+                let workflows = validate_source_closure(&catalog, &bundle.entries, &bindings)?;
+                (bundle.entries, bindings, workflows)
+            } else {
+                (vec![], BTreeMap::new(), BTreeSet::new())
+            };
         Ok(Self {
             digest: digest(bytes),
             manifest,
             files,
             contributions,
             sources,
+            role_agent_bindings,
+            agent_workflows,
         })
     }
 
@@ -342,22 +360,57 @@ impl Package {
 fn validate_source_closure(
     catalog: &EngineeringState,
     sources: &[ConfigurationRecord],
-) -> Result<()> {
+    bindings: &BTreeMap<Id, Id>,
+) -> Result<BTreeSet<Id>> {
+    let mut agent_workflows = BTreeSet::new();
     for source in sources {
         for edge in configuration_edges(source)? {
             let target = catalog.configuration(&edge.to)?;
             require(target.r#type == edge.expected_type, "领域源引用类型不匹配")?;
         }
         if source.r#type == "workflow" {
-            devdesk_core::compile_workflow_sources(None, catalog, source, &Scope::global(), None)?;
+            let plan = devdesk_core::compile_workflow_sources(
+                None,
+                catalog,
+                source,
+                &Scope::global(),
+                Some(bindings),
+            )?;
+            if let Some(agent) = plan
+                .document
+                .orchestrator_role_ref
+                .as_ref()
+                .and_then(|role| bindings.get(role))
+            {
+                let composition = catalog.resolve_agent(agent)?;
+                let harness = catalog.configuration(&composition.harness_ref)?;
+                require(
+                    harness.data["provider"].as_str().is_some_and(|provider| {
+                        devdesk_core::driver_supports(provider, "orchestration")
+                    }),
+                    "领域 Workflow 的编排 Agent 需要支持编排工具的 Harness",
+                )?;
+                agent_workflows.insert(source.id.clone());
+            }
         }
     }
-    Ok(())
+    Ok(agent_workflows)
 }
 
 struct Active {
     epoch: u64,
     package: Option<Arc<Package>>,
+}
+
+pub struct ProjectVisibility {
+    pub(super) domain_active: bool,
+    pub(super) projects: BTreeSet<Id>,
+}
+
+impl ProjectVisibility {
+    pub fn includes(&self, project: &str) -> bool {
+        self.projects.contains(project) == self.domain_active
+    }
 }
 
 /// Serializes only activation lifecycle. Invocations pin their read lease until
@@ -368,6 +421,10 @@ pub struct DomainPackages {
 }
 
 impl DomainPackages {
+    pub fn registry_exists(root: &Path) -> bool {
+        root.join("domain-packages.sqlite3").exists()
+    }
+
     pub fn open(root: &Path) -> Result<Self> {
         let path = root.join("domain-packages.sqlite3");
         reject_symlink(&path)?;
@@ -379,6 +436,7 @@ impl DomainPackages {
                 zip BLOB NOT NULL, UNIQUE(id, version));
              CREATE TABLE IF NOT EXISTS domain_projects(
                 project TEXT PRIMARY KEY, digest TEXT NOT NULL);
+             CREATE INDEX IF NOT EXISTS domain_projects_digest ON domain_projects(digest);
              CREATE TABLE IF NOT EXISTS active_domain(
                 singleton INTEGER PRIMARY KEY CHECK(singleton=1),
                 epoch INTEGER NOT NULL, digest TEXT REFERENCES domain_packages(digest));
@@ -423,6 +481,7 @@ impl DomainPackages {
             "contributions":package.map(|p| &p.contributions),
             "targets":package.and_then(|p| p.manifest.ui.as_ref()).map(|ui| &ui.targets),
             "sources":package.map(|p| &p.sources),
+            "agent_workflows":package.map(|p| &p.agent_workflows),
         })
     }
 
@@ -612,8 +671,9 @@ impl DomainPackages {
         &self,
         epoch: u64,
         reference: &str,
+        mode: &str,
         trusted: &BTreeSet<String>,
-        start: impl FnOnce(&str, &[ConfigurationRecord]) -> Result<T>,
+        start: impl FnOnce(&str, &[ConfigurationRecord], &BTreeMap<Id, Id>) -> Result<T>,
     ) -> Result<T> {
         let active = self.active.read().unwrap();
         check_epoch(epoch, active.epoch)?;
@@ -629,7 +689,17 @@ impl DomainPackages {
                 .any(|row| row.r#type == "workflow" && row.id == reference),
             "当前领域没有该 Workflow 修订",
         )?;
-        start(&package.digest, &package.sources)
+        if mode == "agent" && !package.agent_workflows.contains(reference) {
+            return Err(err(
+                "configuration_required",
+                "此 Workflow 未配置编排 Agent",
+            ));
+        }
+        start(
+            &package.digest,
+            &package.sources,
+            &package.role_agent_bindings,
+        )
     }
 
     fn projects(&self, digest: &str) -> Result<Vec<String>> {
@@ -642,6 +712,32 @@ impl DomainPackages {
             .map_err(storage)?
             .collect::<rusqlite::Result<_>>()
             .map_err(storage)
+    }
+
+    /// A directory view follows the committed pointer, including while the
+    /// caller already pins an active domain for a project RPC.
+    pub fn project_visibility(&self, trusted: &BTreeSet<String>) -> Result<ProjectVisibility> {
+        let db = self.db.lock().unwrap();
+        let digest: Option<String> = db
+            .query_row(
+                "SELECT digest FROM active_domain WHERE singleton=1",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        let active = digest.as_deref().filter(|digest| trusted.contains(*digest));
+        let mut query = db
+            .prepare("SELECT project FROM domain_projects WHERE ?1 IS NULL OR digest=?1")
+            .map_err(storage)?;
+        let projects = query
+            .query_map([active], |row| row.get(0))
+            .map_err(storage)?
+            .collect::<rusqlite::Result<_>>()
+            .map_err(storage)?;
+        Ok(ProjectVisibility {
+            domain_active: active.is_some(),
+            projects,
+        })
     }
 
     pub fn permits_project(&self, project: &str, trusted: &BTreeSet<String>) -> Result<bool> {
@@ -697,6 +793,27 @@ impl DomainPackages {
         check_epoch(epoch, active.epoch)?;
         self.require_project(&active, project, trusted)?;
         action()
+    }
+
+    /// Pins existing public project endpoints to the current domain.
+    pub fn with_public_project<T>(
+        &self,
+        project: &str,
+        epoch: Option<u64>,
+        trusted: &BTreeSet<String>,
+        action: impl FnOnce(Option<u64>) -> Result<T>,
+    ) -> Result<T> {
+        let active = self.active.read().unwrap();
+        let Some(saved) = self.project_package(project)? else {
+            drop(active);
+            return action(None);
+        };
+        if !trusted.contains(&saved) || active.package.as_ref().is_none_or(|p| p.digest != saved) {
+            return Err(err("domain_inactive", "项目所属领域当前不可用"));
+        }
+        let epoch = epoch.ok_or_else(|| err("invalid_params", "领域项目请求需要 domain_epoch"))?;
+        check_epoch(epoch, active.epoch)?;
+        action(Some(epoch))
     }
 
     fn require_project<'a>(

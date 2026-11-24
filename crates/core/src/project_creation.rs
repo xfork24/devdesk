@@ -2,6 +2,8 @@
 //! registration/provisioning lifecycle is separate from this atomic metadata.
 use crate::{concurrency::*, *};
 
+pub const INITIAL_PROJECT_REVISION: u64 = 1;
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CreateProject {
@@ -92,7 +94,7 @@ pub fn create_with_concurrency(
         }),
         execution_mode: "live".into(),
         concurrency,
-        revision: 1,
+        revision: INITIAL_PROJECT_REVISION,
     };
     let initial_context = Context {
         id: context_id(&project, &command.command_id),

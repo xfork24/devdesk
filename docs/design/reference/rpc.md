@@ -25,13 +25,15 @@
 | `domain.activate`、`domain.deactivate`、`domain.uninstall` | 提交 `digest` 和原 `epoch`。激活检查允许执行的包摘要。活动根流程尚未结束时返回 `domain_busy` |
 | `query.domain.installed` | 列出安装的版本和摘要 |
 | `query.domain.invoke` | 提交当前 `epoch`、声明的 `handler` 和 `input`。返回领域只读运行端的结果 |
-| `domain.workflow.start` | 提交 `epoch`、确切的 `workflow_ref` 和 `command_id`。可传 `mode`，支持 `manual`、`rust`。返回 `project_id` 与 `execution_id` |
+| `domain.workflow.start` | 提交 `epoch`、确切的 `workflow_ref` 和 `command_id`。默认 `rust`，也可选 `manual`。活动目录的 `agent_workflows` 列出可由 `agent` 调度的修订。返回 `project_id` 与 `execution_id` |
 | `query.domain.workflow` | 按原项目、执行 ID 及当前 `epoch` 读取内核的流程详情 |
 | `GET /domain-events` | 连接时收到当前代次，后续收到 `domain` 事件。客户端据此重读活动目录 |
 | `GET /domain-assets/{epoch}/{digest}/{path}` | Web 读取活动包的渲染资源。当前代次和摘要都需匹配 |
 | `query.core.git.head`、`query.core.git.diff` | 读取指定宿主本地仓库的 HEAD 或通过两个完整 OID 比较修订 |
 
 包及客户端目录的结构分别见 [领域包合同](../../../schemas/domain-package.schema.json) 和 [呈现贡献合同](../../../schemas/domain-contributions.schema.json)。[`domains.rs` 调用入口](../../../crates/host/src/domains.rs)
+
+领域项目复用 `workflow.step.dispatch`、`workflow.cancel` 等平台 RPC，并在参数中携带 `project_id` 与活动的 `domain_epoch`。领域项目的 `/events` 和 `/artifacts` 在 URL 查询中携带同样两个参数。项目事件订阅在活动代次变化后结束。领域包在 `configurations/defaults.json` 中通过 `role_agent_bindings` 绑定确切的 Role 和 Agent 修订。Workflow 声明 `orchestrator_role_ref` 并采用支持原生编排工具的 Harness 后开放 Agent 调度。
 
 ## RPC 请求与响应
 

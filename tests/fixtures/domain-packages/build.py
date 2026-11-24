@@ -53,7 +53,8 @@ def package(target, identity, title, handler, core):
             source("agent", "editor-agent", {}, role_ref=f"{identity}.editor:1",
                    capability_ref=f"{identity}.editor-capability:1"),
             source("workflow", "workflow", {
-                "schema_version": 6, "stages": [{"key": "read", "name": "Read"}],
+                "schema_version": 6, "orchestrator_role_ref": f"{identity}.editor:1",
+                "stages": [{"key": "read", "name": "Read"}],
                 "steps": [{
                     "key": "title", "name": "Read title", "stage": "read",
                     "executor": {"type": "tool", "tool_ref": tool, "arguments": {
@@ -75,7 +76,9 @@ def package(target, identity, title, handler, core):
             "schema_version": 1, "bundle_version": "manuscript-1", "types": types,
             "defaults": "defaults.json", "usage_index": "usage.json",
         }).encode()
-        files["configurations/defaults.json"] = b"{}"
+        files["configurations/defaults.json"] = json.dumps({
+            "role_agent_bindings": {f"{identity}.editor:1": f"{identity}.editor-agent:1"},
+        }).encode()
         files["configurations/usage.json"] = json.dumps({"references": usage(sources)}).encode()
     manifest = {
         "format": 1, "id": identity, "version": "1",

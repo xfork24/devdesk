@@ -29,6 +29,7 @@ type Directory = {
   contributions: Contribution[] | null;
   targets: { renderer: string; api: number; bindings: Binding[] }[] | null;
   sources: CoreRecord[] | null;
+  agent_workflows?: string[] | null;
 };
 type CoreRecord = { id: string; name: string; type: string; data: Data };
 
@@ -321,6 +322,7 @@ function CoreConfiguration() {
 
 function WorkflowLookup({ directory }: { directory: Directory }) {
   const [run, setRun] = useState({ project_id: "", execution_id: "" });
+  const [selection, setSelection] = useState({ workflow: "", mode: "rust" });
   const [value, setValue] = useState<unknown>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -339,6 +341,10 @@ function WorkflowLookup({ directory }: { directory: Directory }) {
 
   const workflows =
     directory.sources?.filter((row) => row.type === "workflow") ?? [];
+  const workflow = selection.workflow || workflows[0]?.id || "";
+  const canUseAgent = directory.agent_workflows?.includes(workflow) ?? false;
+  const mode =
+    canUseAgent || selection.mode !== "agent" ? selection.mode : "rust";
   return (
     <section className="panel">
       <h2>领域工作流</h2>
@@ -346,11 +352,11 @@ function WorkflowLookup({ directory }: { directory: Directory }) {
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            const data = new FormData(event.currentTarget);
             void submit(async () => {
               const receipt = await rpc<typeof run>("domain.workflow.start", {
                 epoch: directory.epoch,
-                workflow_ref: data.get("workflow_ref"),
+                workflow_ref: workflow,
+                mode,
                 command_id: crypto.randomUUID(),
               });
               setRun(receipt);
@@ -360,12 +366,31 @@ function WorkflowLookup({ directory }: { directory: Directory }) {
         >
           <label>
             工作流
-            <select name="workflow_ref">
+            <select
+              name="workflow_ref"
+              value={workflow}
+              onChange={(event) =>
+                setSelection({ ...selection, workflow: event.target.value })
+              }
+            >
               {workflows.map((row) => (
                 <option key={row.id} value={row.id}>
                   {row.name}
                 </option>
               ))}
+            </select>
+          </label>
+          <label>
+            调度方式
+            <select
+              value={mode}
+              onChange={(event) =>
+                setSelection({ ...selection, mode: event.target.value })
+              }
+            >
+              <option value="rust">Rust</option>
+              <option value="manual">人工</option>
+              {canUseAgent && <option value="agent">Agent</option>}
             </select>
           </label>
           <button disabled={busy}>启动工作流</button>

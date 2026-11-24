@@ -52,12 +52,14 @@ impl Workspace {
 
     fn configuration_bundle(&self) -> Result<(Arc<ConfigurationCatalogSnapshot>, String, Value)> {
         let global = self.global.configuration_snapshot()?;
+        let visibility = self.project_visibility()?;
         let engines: Vec<_> = self
             .opened
             .lock()
             .unwrap()
             .iter()
             .filter(|(id, _)| id.as_str() != GLOBAL_DISCUSSION_NAMESPACE)
+            .filter(|(id, _)| visibility.as_ref().is_none_or(|scope| scope.includes(id)))
             .map(|(id, e)| (id.clone(), e.clone()))
             .collect();
         let mut projects = vec![];
@@ -114,12 +116,14 @@ impl Workspace {
     }
     pub(crate) fn configuration_version(&self, engine: &Engine) -> Result<Value> {
         let global = self.global.catalog_revision()?;
+        let visibility = self.project_visibility()?;
         let engines: Vec<_> = self
             .opened
             .lock()
             .map_err(|e| err("storage", e.to_string()))?
             .iter()
             .filter(|(id, _)| id.as_str() != GLOBAL_DISCUSSION_NAMESPACE)
+            .filter(|(id, _)| visibility.as_ref().is_none_or(|scope| scope.includes(id)))
             .map(|(id, engine)| (id.clone(), engine.clone()))
             .collect();
         let mut clocks = Vec::with_capacity(engines.len());
@@ -147,11 +151,13 @@ impl Workspace {
     pub(super) fn project_directory(&self, params: &Value) -> Result<Value> {
         let offset = params["project_offset"].as_u64().unwrap_or(0) as usize;
         let limit = params["limit"].as_u64().unwrap_or(50).clamp(1, 100) as usize;
-        let (projects, total) = if params["github_only"] == true {
-            self.global.github_projects(offset, limit)?
-        } else {
-            self.global.projects(offset, limit)?
-        };
+        let visibility = self.project_visibility()?;
+        let (projects, total) = self.global.projects_visible(
+            offset,
+            limit,
+            params["github_only"] == true,
+            visibility.as_ref(),
+        )?;
         let mut projects = projects;
         for summary in &mut projects {
             let engine = self

@@ -165,16 +165,17 @@ impl GlobalStore {
     }
 
     pub fn projects(&self, offset: usize, limit: usize) -> Result<(Vec<Project>, usize)> {
-        self.projects_filtered(offset, limit, false)
+        self.projects_visible(offset, limit, false, None)
     }
     pub fn github_projects(&self, offset: usize, limit: usize) -> Result<(Vec<Project>, usize)> {
-        self.projects_filtered(offset, limit, true)
+        self.projects_visible(offset, limit, true, None)
     }
-    fn projects_filtered(
+    pub fn projects_visible(
         &self,
         offset: usize,
         limit: usize,
         github_only: bool,
+        visibility: Option<&domain_packages::ProjectVisibility>,
     ) -> Result<(Vec<Project>, usize)> {
         let conn = self.connection.read().map_err(storage)?;
         let filter = if github_only {
@@ -182,18 +183,33 @@ impl GlobalStore {
         } else {
             "project IS NOT NULL"
         };
+        let (filter, projects) = match visibility {
+            Some(visibility) if !visibility.projects.is_empty() || visibility.domain_active => {
+                let operator = if visibility.domain_active {
+                    "IN"
+                } else {
+                    "NOT IN"
+                };
+                (
+                    format!("{filter} AND id {operator} (SELECT value FROM json_each(?1))"),
+                    Some(serde_json::to_string(&visibility.projects).map_err(storage)?),
+                )
+            }
+            _ => (format!("{filter} AND ?1 IS NULL"), None),
+        };
         let count = conn
             .query_row(
                 &format!("SELECT count(*) FROM project_catalog WHERE {filter}"),
-                [],
+                [&projects],
                 |r| r.get(0),
             )
             .map_err(storage)?;
-        let mut q = conn.prepare(&format!("SELECT project FROM project_catalog WHERE {filter} ORDER BY rowid LIMIT ?1 OFFSET ?2")).map_err(storage)?;
+        let mut q = conn.prepare(&format!("SELECT project FROM project_catalog WHERE {filter} ORDER BY rowid LIMIT ?2 OFFSET ?3")).map_err(storage)?;
         let bodies = q
-            .query_map(params![limit.min(100) as i64, offset as i64], |r| {
-                r.get::<_, String>(0)
-            })
+            .query_map(
+                params![projects, limit.min(100) as i64, offset as i64],
+                |r| r.get::<_, String>(0),
+            )
             .map_err(storage)?;
         let mut projects = vec![];
         for body in bodies {

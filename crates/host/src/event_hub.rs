@@ -253,6 +253,7 @@ pub(super) fn events(
     hub: Arc<EventHub>,
     cursor: Option<u64>,
     configuration: Option<Arc<ConfigurationClock>>,
+    domain_changed: impl Future<Output = ()> + Send + 'static,
 ) -> Response {
     let receiver = hub.window.subscribe();
     let subscriber = Subscriber {
@@ -347,7 +348,7 @@ pub(super) fn events(
             }
         }
     });
-    Sse::new(stream)
+    Sse::new(stream.take_until(domain_changed))
         .keep_alive(KeepAlive::default())
         .into_response()
 }

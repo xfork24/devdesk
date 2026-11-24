@@ -23,7 +23,7 @@ use axum::{
 };
 use devdesk_core::EngineeringStore;
 use devdesk_domain::{Error, HARNESS_PROVIDERS, err};
-use futures_util::stream;
+use futures_util::{StreamExt, stream};
 use serde_json::{Value, json};
 use std::{
     collections::{HashMap, VecDeque},
@@ -354,11 +354,7 @@ async fn rpc(
             } else if domains::method(&method) {
                 domains::dispatch(&app, &method, params).map(|value| workspace::RpcOutcome { value, commit: None })
             } else {
-                app.workspace().and_then(|w| {
-                    w.validate_domain_project(params["project_id"].as_str()
-                        .or_else(|| params["payload"]["project_id"].as_str()))?;
-                    w.dispatch_display_read(&method, params)
-                })
+                app.workspace().and_then(|w| w.dispatch_public_rpc(&method, params))
             }
         };
         let dispatch_ms = dispatch_started.elapsed().as_secs_f64()*1000.0;
@@ -523,12 +519,14 @@ async fn artifact(
     let result = (|| {
         let workspace = app.workspace()?;
         let project = p.get("project_id").map(String::as_str);
-        workspace.validate_domain_project(project)?;
-        let e = workspace.project_engine(project)?;
-        let v = e.query("query.artifact", &json!({"id":id}), 4)?;
-        let a: devdesk_domain::Artifact =
-            serde_json::from_value(v).map_err(|e| err("internal", e.to_string()))?;
-        e.artifacts.read(&a)
+        let epoch = p.get("domain_epoch").and_then(|value| value.parse().ok());
+        workspace.with_public_project(project, epoch, |_| {
+            let e = workspace.project_engine(project)?;
+            let v = e.query("query.artifact", &json!({"id":id}), 4)?;
+            let a: devdesk_domain::Artifact =
+                serde_json::from_value(v).map_err(|e| err("internal", e.to_string()))?;
+            e.artifacts.read(&a)
+        })
     })();
     match result {
         Ok(bytes) => (
@@ -552,10 +550,12 @@ async fn events(
         Err(e) => return (StatusCode::CONFLICT, Json(failure(e))).into_response(),
     };
     let project = p.get("project_id").map(String::as_str);
-    let pinned = workspace
-        .validate_domain_project(project)
-        .and_then(|()| workspace.event_engine(project));
-    let (scope, engine) = match pinned {
+    let epoch = p.get("domain_epoch").and_then(|value| value.parse().ok());
+    let pinned = workspace.with_public_project(project, epoch, |epoch| {
+        let (scope, engine) = workspace.event_engine(project)?;
+        Ok((scope, engine, domains::until_epoch_changes(&app, epoch)))
+    });
+    let (scope, engine, changed) = match pinned {
         Ok(pinned) => pinned,
         Err(e) => return (StatusCode::CONFLICT, Json(failure(e))).into_response(),
     };
@@ -575,7 +575,7 @@ async fn events(
             Ok((hub, clock))
         });
         return match tail {
-            Ok((hub, clock)) => event_hub::events(app, hub, resume, clock),
+            Ok((hub, clock)) => event_hub::events(app, hub, resume, clock, changed),
             Err(e) => (StatusCode::CONFLICT, Json(failure(e))).into_response(),
         };
     }
@@ -668,7 +668,7 @@ async fn events(
             }
         },
     );
-    Sse::new(stream)
+    Sse::new(stream.take_until(changed))
         .keep_alive(KeepAlive::default())
         .into_response()
 }

@@ -100,14 +100,49 @@ impl Workspace {
             .map_err(Clone::clone)
     }
 
-    /// Existing project RPCs and subscriptions share the same active package boundary.
-    pub(super) fn validate_domain_project(&self, project: Option<&str>) -> Result<()> {
-        if let (Some(project), Some(Ok(packages))) = (project, self.domains.get())
-            && !packages.permits_project(project, &self.domain_trust)?
-        {
-            return Err(err("domain_inactive", "项目所属领域当前不可用"));
+    pub(super) fn project_visibility(&self) -> Result<Option<domain_packages::ProjectVisibility>> {
+        self.domains
+            .get()
+            .map(|packages| {
+                packages
+                    .as_ref()
+                    .map_err(Clone::clone)?
+                    .project_visibility(&self.domain_trust)
+            })
+            .transpose()
+    }
+
+    pub(super) fn with_public_project<T>(
+        &self,
+        project: Option<&str>,
+        epoch: Option<u64>,
+        action: impl FnOnce(Option<u64>) -> Result<T>,
+    ) -> Result<T> {
+        if let (Some(project), Some(packages)) = (project, self.domains.get()) {
+            return packages
+                .as_ref()
+                .map_err(Clone::clone)?
+                .with_public_project(project, epoch, &self.domain_trust, action);
         }
-        Ok(())
+        action(None)
+    }
+
+    pub(super) fn dispatch_public_rpc(
+        &self,
+        method: &str,
+        mut params: Value,
+    ) -> Result<RpcOutcome> {
+        let epoch = params
+            .as_object_mut()
+            .and_then(|fields| fields.remove("domain_epoch"))
+            .and_then(|raw| raw.as_u64());
+        let project = params["project_id"]
+            .as_str()
+            .or_else(|| params["payload"]["project_id"].as_str())
+            .map(str::to_owned);
+        self.with_public_project(project.as_deref(), epoch, |_| {
+            self.dispatch_display_read(method, params)
+        })
     }
 
     fn open_conversation(&self, e: &Engine, command: Command) -> Result<Value> {
@@ -180,6 +215,11 @@ impl Workspace {
             runtime_reads: Default::default(),
             background: Default::default(),
         });
+        if !workspace.domain_trust.is_empty()
+            || domain_packages::DomainPackages::registry_exists(Path::new(&workspace.global.root()))
+        {
+            workspace.domain_packages()?;
+        }
         workspace
             .global
             .subscribe_changes(workspace.background.wake.listener());
@@ -305,6 +345,36 @@ impl Workspace {
         .map(|receipt| receipt.result)
     }
 
+    pub(super) fn create_project(
+        &self,
+        command: Command,
+        prepare: impl FnOnce(&str) -> Result<()>,
+    ) -> Result<Value> {
+        let id = self
+            .global
+            .reserve_project(&command, &InvocationContext::human(None))?;
+        prepare(&id)?;
+        let engine = self.load_project(&id, true)?;
+        let result = self.create_project_metadata(&engine, &command)?;
+        self.publish_new_project(&engine)?;
+        Ok(result)
+    }
+
+    pub(super) fn domain_project_has_active_root(&self, project: &str) -> Result<bool> {
+        if self.global.project(project)?.is_none() {
+            return Ok(false);
+        }
+        let engine = self.project_engine(Some(project))?;
+        let key = devdesk_core::concurrency::ResourceKey::new("workflow_active_owner", project);
+        Ok(engine
+            .store
+            .read_resources(&[key])?
+            .into_iter()
+            .next()
+            .and_then(|row| row.value)
+            .is_some_and(|value| value["active"] == true))
+    }
+
     fn load_project(&self, id: &str, creating: bool) -> Result<Arc<Engine>> {
         let _span = performance::Span::new("project.open");
         let root = PathBuf::from(self.global.root());
@@ -373,12 +443,17 @@ impl Workspace {
         self.sync_configuration(&e)?;
         e.bootstrap()?;
         e.recover_tool_receipts()?;
-        if e.store
-            .project_metadata()
-            .is_ok_and(|p| p.execution_mode == "live")
-        {
-            // Re-evaluate native facts once on reopen before the idle-project filter.
-            e.evaluate_workflows()?;
+        if !creating && e.store.project_metadata()?.execution_mode == "live" {
+            let allowed = self.domains.get().map_or(Ok(true), |packages| {
+                packages
+                    .as_ref()
+                    .map_err(Clone::clone)?
+                    .permits_project(id, &self.domain_trust)
+            })?;
+            if allowed {
+                // Re-evaluate native facts once on reopen before the idle-project filter.
+                e.evaluate_workflows()?;
+            }
         }
         // Repair a stale directory summary after a crash between the two independent commits.
         match e.store.project_metadata() {
@@ -1158,13 +1233,7 @@ impl Workspace {
         if method == "project.create" {
             let command: Command =
                 serde_json::from_value(params).map_err(|e| err("invalid_params", e.to_string()))?;
-            let id = self
-                .global
-                .reserve_project(&command, &devdesk_core::InvocationContext::human(None))?;
-            let e = self.load_project(&id, true)?;
-            let result = self.create_project_metadata(&e, &command)?;
-            self.publish_new_project(&e)?;
-            return Ok(result);
+            return self.create_project(command, |_| Ok(()));
         }
         if method == "project.open" {
             return Err(err(
@@ -1271,25 +1340,14 @@ impl Workspace {
                 result["permission_status"] = self.permission_session_status(&e, sid)?;
             }
             if method == "query.workspace" {
-                let offset = params["project_offset"].as_u64().unwrap_or(0) as usize;
-                let limit = params["limit"].as_u64().unwrap_or(50).clamp(1, 100) as usize;
-                let (mut projects, total) = if params["github_only"] == true {
-                    self.global.github_projects(offset, limit)?
-                } else {
-                    self.global.projects(offset, limit)?
-                };
-                let current = if e.store.project_id().is_some() {
-                    Some(e.store.project_metadata()?)
-                } else {
-                    None
-                };
-                if let Some(project) = &current
-                    && let Some(row) = projects.iter_mut().find(|p| p.id == project.id)
-                {
-                    *row = project.clone();
-                }
-                result["projects"] = json!(projects);
-                result["total_projects"] = json!(total);
+                let mut directory = self.project_directory(&params)?;
+                result["projects"] = directory["projects"].take();
+                result["total_projects"] = directory["total_projects"].take();
+                let current = e
+                    .store
+                    .project_id()
+                    .map(|_| e.store.project_metadata())
+                    .transpose()?;
                 result["active_project_id"] = json!(e.store.project_id());
                 result["execution_mode"] = json!(
                     current

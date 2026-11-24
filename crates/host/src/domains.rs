@@ -2,7 +2,7 @@
 use super::*;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use devdesk_adapters::domain_packages::{DomainPackages, MAX_ARCHIVE, is_digest};
-use devdesk_core::{concurrency::ResourceKey, ports::DomainReader};
+use devdesk_core::{Command, ports::DomainReader};
 
 pub(super) struct ProjectReader {
     pub packages: Arc<DomainPackages>,
@@ -75,13 +75,7 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
         "domain.activate" | "domain.deactivate" | "domain.uninstall" => {
             let quiescent = |projects: Vec<String>| {
                 for project in projects {
-                    let engine = workspace.project_engine(Some(&project))?;
-                    let key = ResourceKey::new("workflow_active_owner", &project);
-                    let active = engine.store.read_resources(&[key])?.into_iter().next();
-                    if active
-                        .and_then(|row| row.value)
-                        .is_some_and(|row| row["active"] == true)
-                    {
+                    if workspace.domain_project_has_active_root(&project)? {
                         return Err(err(
                             "domain_busy",
                             format!("请先结束项目 {project} 的在途领域工作流"),
@@ -104,33 +98,56 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
             if command.is_empty() || command.len() > 256 {
                 return Err(err("invalid_params", "需要有效的工作流命令身份"));
             }
-            let mode = params["mode"].as_str().unwrap_or("rust");
-            if !matches!(mode, "manual" | "rust") {
-                return Err(err("invalid_params", "当前领域入口支持 manual 和 rust"));
+            let mode = if params.get("mode").is_some() {
+                text("mode")?
+            } else {
+                "rust"
+            };
+            if !matches!(mode, "manual" | "rust" | "agent") {
+                return Err(err(
+                    "invalid_params",
+                    "领域工作流需要 manual、rust 或 agent 模式",
+                ));
             }
-            packages.with_workflow(epoch()?, reference, trusted, |digest, sources| {
-                let identity = devdesk_domain::configuration_hash(&(digest, command));
-                let project = run(
-                    "project.create",
-                    json!({
-                        "command_id":format!("domain-project:{identity}"),
-                        "payload":{"title":format!("Domain workflow {reference}")},
-                    }),
-                )?;
-                let project = project["id"]
-                    .as_str()
-                    .ok_or_else(|| err("storage", "项目回执缺少 ID"))?;
-                packages.bind_project(project, digest)?;
-                let engine = workspace.project_engine(Some(project))?;
-                engine.adopt_domain_sources(sources)?;
-                let result = run("workflow.start", json!({
-                    "project_id":project,"command_id":format!("domain-start:{identity}"),
-                    "target":project,"expected_revision":engine.store.project_metadata()?.revision,
-                    "payload":{"workflow_ref":reference,"orchestration":{"mode":mode},
-                        "inputs":params.get("inputs").cloned().unwrap_or(json!({}))},
-                }))?;
-                Ok(json!({"project_id":project,"execution_id":result["id"]}))
-            })
+            let inputs = params.get("inputs").cloned().unwrap_or(json!({}));
+            if !inputs.is_object() {
+                return Err(err("invalid_params", "工作流输入必须是 JSON 对象"));
+            }
+            packages.with_workflow(
+                epoch()?,
+                reference,
+                mode,
+                trusted,
+                |digest, sources, bindings| {
+                    let identity = devdesk_domain::configuration_hash(&(digest, command));
+                let created = workspace.create_project(
+                    Command {
+                        command_id: format!("domain-project:{identity}"),
+                        target: None,
+                        expected_revision: None,
+                        payload: json!({"title":format!("Domain workflow {reference}")}),
+                    },
+                    |project| packages.bind_project(project, digest),
+                    )?;
+                    let project = created["id"]
+                        .as_str()
+                        .ok_or_else(|| err("storage", "项目回执缺少 ID"))?;
+                    let engine = workspace.project_engine(Some(project))?;
+                    engine.adopt_domain_sources(sources)?;
+                    let result = run(
+                        "workflow.start",
+                        json!({
+                            "project_id":project,"command_id":format!("domain-start:{identity}"),
+                    "target":project,
+                    "expected_revision":devdesk_core::project_creation::INITIAL_PROJECT_REVISION,
+                            "payload":{"workflow_ref":reference,"orchestration":{"mode":mode},
+                                "role_agent_bindings":bindings,
+                                "inputs":inputs},
+                        }),
+                    )?;
+                    Ok(json!({"project_id":project,"execution_id":result["id"]}))
+                },
+            )
         }
         "query.domain.workflow" => {
             let project = text("project_id")?;
@@ -158,6 +175,22 @@ fn publish(app: &App, epoch: u64) {
         *seen = epoch;
         true
     });
+}
+
+pub(super) fn until_epoch_changes(
+    app: &App,
+    pinned: Option<u64>,
+) -> impl Future<Output = ()> + use<> {
+    let mut updates = app.domain_epoch.subscribe();
+    if let Some(epoch) = pinned {
+        publish(app, epoch);
+    }
+    async move {
+        let Some(epoch) = pinned else {
+            return std::future::pending().await;
+        };
+        let _ = updates.wait_for(|seen| *seen != epoch).await;
+    }
 }
 
 pub(super) async fn events(State(app): State<Arc<App>>) -> Response {

@@ -170,10 +170,7 @@ impl Engine {
                             && controller.project_id == poll.turn.project_id,
                         "Controller 原会话授权已撤销",
                     )?;
-                    crate::configuration::project_manager_role(
-                        &catalog.state,
-                        &controller.role_ref,
-                    )?;
+                    crate::configuration::admitted_controller_role(&catalog.state, &controller)?;
                     let instance = catalog
                         .state
                         .configuration(&configuration.agent_instance_id)?;

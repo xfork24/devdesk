@@ -1,6 +1,6 @@
 # 领域插件化实施与验证
 
-实现工作位于 `codex/domain-plugins`。计划基线为 `2458a06`。首条可验收路径覆盖 P0 的本地基线、P1 空领域和 P2 真实运行时及双端协议。P3 的切换屏障已开始接入。
+实现工作位于 `codex/domain-plugins`。计划基线为 `2458a06`，P0–P2 首条发行和双端路径为 `8c5f011`。P3 已接入工作流编排 Role 与领域项目的活动代次。
 
 ## 已接通的路径
 
@@ -8,6 +8,7 @@
 - ZIP 清单、内容摘要、路径边界、源闭包和呈现绑定在安装时检查。激活以全局代次切换，SSE 驱动 Web 与无浏览器客户端重新发现。已激活的 React 组件动态进入同一个 React 根。
 - 领域读处理器在固定 Node 镜像的临时 Docker 容器中通过 JSON-RPC 执行。Git 读取由平台适配器执行。文稿 Workflow 的工具步骤走既有 Rust 调度、持久化调用和回执接纳，Web 可按无浏览器端返回的执行 ID 读回状态和输出。
 - 切换及卸载核对包绑定项目中的活动根流程。正在工作的包需要先结束在途流程。包停用期间，其绑定项目不领取后台调度。重装相同摘要后可读取原有执行。
+- 包内 Workflow 声明编排 Role，配合包默认的 Role→Agent 精确绑定，经活动目录向各端发布 Agent 调度选项。工作流控制器和全局项目管理使用各自的 Role 资格。领域项目的 RPC、Artifact 下载和事件流检查活动代次，切包时结束原领域项目事件流。
 
 ## 验收入口
 
@@ -21,6 +22,10 @@ node tests/entrypoints/domain_packages.mjs target/debug/devdesk-host web/dist/co
 验收使用独立数据目录、自建 Git 仓库、固定 Linux Docker 镜像、两个 Chromium 标签页和 Python 标准库 HTTP 客户端。记录真实提交和执行 ID，检查空领域中新增的模型、真实 Codex Harness/Docker 准备回执、核心 Git 读取、同一提交的双端读取、文稿 Workflow 持久化输出、未结束流程阻塞卸载、取消后卸载、SSE 代次、旧代次拒绝以及重装后的原运行。容器内的文稿处理和本地 Git 查询为实际执行。现有 Agent 定义用于配置发现，模型调用和 GitHub 写入属于后续验收。
 
 独立发行件解压后的完整脚本通过。该次记录的镜像为 `sha256:328e96db04cc428bec67d1e8ef06837041c3c147ce5940c7e86c251f9809b84b`，流程执行为 `d3eab70c-c437-db47-e175-329274fc50d2`。证据位于 `/tmp/devdesk-domain-release-verification.B1Vzff/result.json`。
+
+P3 扩展验收使用同一个文稿包。Web 启动人工流程，Python 派发步骤、读取其 Artifact、接纳确切产物并结束流程。Python 也检查命令重放、损坏 ZIP、重复导入、旧代次写入、卸载后的项目目录，以及两类旧项目事件订阅结束。独立发行件复验的 Rust 执行为 `7d889430-9d55-2c00-15e8-f2fd4ba0c941`，人工执行为 `7fd78589-e7f2-7bec-d4e2-0d0ffe2260a7`。证据位于 `/tmp/devdesk-domain-p3-release.3h1AAp/result.json`。
+
+脚本化 Harness 通过原生工具派发编辑角色负责的流程，并记录来自 Human 的步骤批准。该 Role 无法开启项目管理控制器。测试使用脚本化 Agent 行为，真实模型调用单独验收。
 
 ## 基线和后续范围
 

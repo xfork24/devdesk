@@ -469,7 +469,7 @@ impl Engine {
                     serde_json::from_value(old.data["document"].clone())
                         .map_err(|e| err("invalid_workflow", e.to_string()))?;
                 if let Some(role) = &typed.orchestrator_role_ref {
-                    crate::configuration::project_manager_role(state, role)?;
+                    crate::configuration::declared_workflow_role(state, role, &old.scope)?;
                 }
                 candidate.data = json!(typed);
                 self.compile_configured_workflow(state, &candidate, &old.scope, None)?;

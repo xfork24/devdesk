@@ -986,3 +986,134 @@ fn skill_package_and_permission_binding_share_preview_validation_without_executi
     apply(&e, change.operations);
     assert!(active_permission_binding(&e.store.snapshot().unwrap(), &target).is_some());
 }
+
+#[test]
+fn a_workflow_declared_role_owns_its_controller_but_not_the_manager_workspace() {
+    let dir = tempfile::tempdir().unwrap();
+    let (engine, harness, project) = setup(dir.path());
+    let role = source(
+        "role",
+        "editor-controller",
+        &project,
+        json!({"instructions":"Coordinate this workflow."}),
+    );
+    let catalog = engine.store.configuration_snapshot().unwrap();
+    let defaults = current_template_defaults(&catalog.state).unwrap();
+    let default_role = defaults["orchestrator_role_ref"].as_str().unwrap();
+    let default_agent = defaults["role_agent_bindings"][default_role]
+        .as_str()
+        .unwrap();
+    let manager = catalog.state.configuration(default_agent).unwrap();
+    let mut agent = source("agent", "editor-agent", &project, json!({}));
+    agent
+        .refs
+        .insert("role_ref".into(), json!("editor-controller:1"));
+    agent.refs.insert(
+        "capability_ref".into(),
+        manager.refs["capability_ref"].clone(),
+    );
+    apply(&engine, vec![create(role), create(agent)]);
+
+    let draft = cmd(
+        &engine,
+        "workflow.create",
+        None,
+        json!({
+            "scope": format!("project:{project}"),
+            "name":"Editorial controller",
+            "document":{
+                "schema_version":6,"orchestrator_role_ref":"editor-controller:1",
+                "stages":[{"key":"work","name":"Work"}],
+                "steps":[{
+                    "key":"one","name":"One","stage":"work",
+                    "executor":{"type":"control"},"confirmation":"human"
+                }]
+            }
+        }),
+    );
+    let workflow = cmd(&engine, "workflow.publish", draft["id"].as_str(), json!({}));
+    let root = cmd(
+        &engine,
+        "workflow.start",
+        Some(&project),
+        json!({
+            "workflow_ref":workflow["id"],"orchestration":{"mode":"agent"},
+            "role_agent_bindings":{"editor-controller:1":"editor-agent:1"}
+        }),
+    );
+    let state = engine.store.snapshot().unwrap();
+    let controller = state
+        .governance
+        .iter()
+        .find(|row| {
+            row.r#type == "workflow_controller" && row.data["root_instance_id"] == root["id"]
+        })
+        .expect("initial controller belongs to this workflow");
+    assert_eq!(controller.data["role_ref"], "editor-controller:1");
+    assert_eq!(controller.data["agent_revision_id"], "editor-agent:1");
+    let root_id = root["id"].as_str().unwrap();
+    let view = engine
+        .query("query.workflow_control", &json!({"id":root_id}), 0)
+        .unwrap();
+    let execution_id = view["runtime"]["steps"][0]["id"].as_str().unwrap();
+    let dispatch = json!({
+        "instance_id":root_id, "expected_revision":view["record"]["revision"],
+        "plan_revision_id":view["runtime"]["active_plan_revision_id"],
+        "control_version":view["runtime"]["control_version"],
+        "expected_step_revision":view["steps"][0]["step_revision"],
+        "execution_id":execution_id, "step":"one",
+    });
+    harness.actions.lock().unwrap().extend([
+        (
+            "workflow.inspect".into(),
+            json!({"id":root_id,"view":"summary"}),
+        ),
+        ("workflow.step.dispatch".into(), dispatch),
+    ]);
+    drive(&engine, 18);
+    let replies = harness.replies.lock().unwrap();
+    assert_eq!(replies.len(), 2);
+    for reply in replies.iter() {
+        assert!(reply.success, "{:?}", reply.error);
+    }
+    drop(replies);
+    let view = engine
+        .query("query.workflow_control", &json!({"id":root_id}), 0)
+        .unwrap();
+    let step = &view["runtime"]["steps"][0];
+    let decision = json!({
+        "execution_id":execution_id,"step":"one",
+        "input_digest":step["input_digest"],"outputs":step["outputs"],
+        "reason":"Reviewed the exact editorial output",
+    });
+    cmd(
+        &engine,
+        "workflow.step.confirm",
+        Some(root_id),
+        decision.clone(),
+    );
+    cmd(&engine, "workflow.step.accept", Some(root_id), decision);
+    cmd(&engine, "workflow.complete", Some(root_id), json!({}));
+    let finished = engine.store.snapshot().unwrap();
+    assert_eq!(
+        finished.configuration(root_id).unwrap().data["status"],
+        "completed"
+    );
+    assert!(finished.governance.iter().any(|row| {
+        row.r#type == "workflow_confirmation"
+            && row.definition_id == execution_id
+            && row.data["actor"]["kind"] == "human"
+    }));
+    let error = engine
+        .execute(
+            "manager.open",
+            Command {
+                command_id: id(),
+                target: Some(project),
+                expected_revision: Some(state.projects[0].revision),
+                payload: json!({"role_ref":"editor-controller:1","agent_ref":"editor-agent:1"}),
+            },
+        )
+        .unwrap_err();
+    assert!(error.message.contains("只有项目经理角色"), "{error}");
+}

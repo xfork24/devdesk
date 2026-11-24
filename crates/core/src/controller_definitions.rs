@@ -66,7 +66,11 @@ pub(crate) fn controller_definition(
         .or_else(|| config.and_then(|r| r.data["orchestrator_role_ref"].as_str()))
         .or_else(|| defaults["orchestrator_role_ref"].as_str())
         .ok_or_else(|| err("configuration_required", "项目需要明确编排 Role"))?;
-    let role = crate::configuration::project_manager_role(catalog, role)?;
+    let role = if declared_role.is_some() {
+        crate::configuration::declared_workflow_role(catalog, role, &Scope::project(project))?
+    } else {
+        crate::configuration::project_manager_role(catalog, role)?
+    };
     let agent = p["agent_ref"]
         .as_str()
         .or_else(|| {

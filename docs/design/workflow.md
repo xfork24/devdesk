@@ -27,7 +27,7 @@
 | rust | 程序按配置推进可执行步骤 | 相同规则；不能伪造人工决定 |
 | agent | 经理通过平台工具检查和调度 | 相同规则，另需会话及工具调用授权 |
 
-Feature Development 和 Task Development 各自在 Workflow 修订中声明编排 Role。项目从所选 Standard 读取对应角色，再为它绑定 Agent。启动流程时冻结角色和 Agent 的选择。已有流程可以继续使用原先发布的配置。
+Workflow 修订可以声明适用于当前项目的编排 Role。项目从所选 Standard 读取对应角色，再为它绑定 Agent。启动流程时冻结角色和 Agent，控制器持该 Role 调用流程工具。项目经理工作台的权限仍从项目经理入口取得。Feature Development 和 Task Development 各自声明角色，已有流程继续读取原先发布的配置。
 
 经理可以派发、查看、请求决定和发起受限返工。它不能靠一句“已完成”替代规则检查，也不能把自己声明为 Human。
 
