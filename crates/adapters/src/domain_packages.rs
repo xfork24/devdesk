@@ -38,6 +38,10 @@ struct Runtime {
     test_discovery: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     project_connection: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    test_reporters: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pull_request_creation: Option<String>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -340,6 +344,19 @@ impl Package {
             return Err(invalid("领域运行入口或处理器无效"));
         }
         if let Some(runtime) = &manifest.runtime {
+            for (runner, path) in &runtime.test_reporters {
+                let extension = if runner == "node_test" { ".mjs" } else { ".py" };
+                require(
+                    path.starts_with("runtime/")
+                        && path.ends_with(extension)
+                        && files.get(path).is_some_and(|body| {
+                            !body.is_empty()
+                                && body.len() <= 64 * 1024
+                                && std::str::from_utf8(body).is_ok()
+                        }),
+                    "领域测试报告器需要对应运行器的有界文本资源",
+                )?;
+            }
             if let Some(handler) = &runtime.test_discovery {
                 require(
                     runtime.handlers.get(handler).is_some_and(|handler| {
@@ -350,9 +367,13 @@ impl Package {
                     "项目测试识别需要声明输入输出的 Git 快照处理器",
                 )?;
             }
-            for name in [&runtime.worktree_branch, &runtime.project_connection]
-                .into_iter()
-                .flatten()
+            for name in [
+                &runtime.worktree_branch,
+                &runtime.project_connection,
+                &runtime.pull_request_creation,
+            ]
+            .into_iter()
+            .flatten()
             {
                 require(
                     runtime.handlers.get(name).is_some_and(|handler| {
@@ -360,7 +381,7 @@ impl Package {
                             && handler.input_schema.is_some()
                             && handler.output_schema.is_some()
                     }),
-                    "领域项目接入和分支策略需要声明输入输出的纯处理器",
+                    "领域项目接入、分支和 PR 策略需要声明输入输出的纯处理器",
                 )?;
             }
             for handler in runtime.handlers.values() {
@@ -815,6 +836,58 @@ impl DomainPackages {
             })
             .map(|value| Some(value.to_owned()))
             .ok_or_else(|| invalid("领域策略返回了无效的分支"))
+    }
+
+    pub fn pull_request_creation(
+        &self,
+        request: &PullRequestRequest,
+        trusted: &BTreeSet<String>,
+    ) -> Result<Option<PullRequestCreation>> {
+        let active = self.active.read().unwrap();
+        if self.project_package(&request.project)?.is_none() {
+            return Ok(None);
+        }
+        let package = self.require_project(&active, &request.project, trusted)?;
+        let Some(handler) = package
+            .runtime()
+            .and_then(|runtime| runtime.pull_request_creation.as_deref())
+        else {
+            return Ok(None);
+        };
+        let result = Self::run_handler(
+            package,
+            handler,
+            json!({"request":request,"marker":request.marker()}),
+        )?;
+        let creation: PullRequestCreation = serde_json::from_value(result)
+            .map_err(|error| err("domain_contract", error.to_string()))?;
+        creation.validate(request)?;
+        Ok(Some(creation))
+    }
+
+    pub fn test_reporter(
+        &self,
+        project: &str,
+        runner: &TestRunner,
+        trusted: &BTreeSet<String>,
+    ) -> Result<Option<ports::TestReporter>> {
+        let active = self.active.read().unwrap();
+        if self.project_package(project)?.is_none() {
+            return Ok(None);
+        }
+        let package = self.require_project(&active, project, trusted)?;
+        let key = json!(runner);
+        let Some(path) = package
+            .runtime()
+            .and_then(|runtime| key.as_str().and_then(|key| runtime.test_reporters.get(key)))
+        else {
+            return Ok(None);
+        };
+        let content = std::str::from_utf8(&package.files[path]).map_err(storage)?;
+        Ok(Some(ports::TestReporter {
+            digest: package.manifest.files[path].clone(),
+            content: content.to_owned(),
+        }))
     }
 
     pub fn project_test_discovery(

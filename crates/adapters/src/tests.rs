@@ -3,6 +3,28 @@ use super::*;
 use crate::docker::{ContainerPurpose, ContainerSpec, DockerSandbox};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+const NODE_REPORTER_DIGEST: &str =
+    "4da4a17d61d5f3aa2baced84a43a7fbcc719babb8fc8e8ee02fd6c22d22fdafb";
+const PROJECT_REPORTER_DIGEST: &str =
+    "9538ce6eb3cabe73f2238cff30dbf961c2f2a0b4b66b70768d143f5df49cfe84";
+
+#[cfg(any(feature = "engineering-defaults", feature = "test-fixtures", test))]
+fn legacy_reporter(runner: &TestRunner) -> Result<&'static [u8]> {
+    Ok(if *runner == TestRunner::NodeTest {
+        include_bytes!("../../../configurations/software-development/runtime/node-reporter.mjs")
+    } else {
+        include_bytes!("../../../configurations/software-development/runtime/project-tests.py")
+    })
+}
+
+#[cfg(not(any(feature = "engineering-defaults", feature = "test-fixtures", test)))]
+fn legacy_reporter(_runner: &TestRunner) -> Result<&'static [u8]> {
+    Err(err(
+        "configuration_required",
+        "请选择提供该测试运行器报告器的领域包",
+    ))
+}
 fn timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -197,15 +219,18 @@ impl CommandTests {
             fs::create_dir_all(&state_dir).map_err(storage)?;
             let reporter = job.join("reporter.mjs");
             reject_symlink(&reporter)?;
-            fs::write(
-                &reporter,
-                if recipe.runner == TestRunner::NodeTest {
-                    include_bytes!("../../../tests/reporters/node-reporter.mjs").as_slice()
-                } else {
-                    include_bytes!("../../../tests/reporters/project-tests.py").as_slice()
-                },
-            )
-            .map_err(storage)?;
+            let content = if let Some(source) = &r.reporter {
+                require(
+                    source.content.len() <= 64 * 1024
+                        && format!("{:x}", Sha256::digest(source.content.as_bytes()))
+                            == source.digest,
+                    "测试报告器与冻结摘要不符",
+                )?;
+                source.content.as_bytes()
+            } else {
+                legacy_reporter(&recipe.runner)?
+            };
+            fs::write(&reporter, content).map_err(storage)?;
             let command = Self::command(&recipe)?;
             let session = r
                 .runtime
@@ -496,9 +521,7 @@ impl CommandTests {
 impl ports::Tests for CommandTests {
     fn identity(&self) -> String {
         format!(
-            "devdesk_adapters::CommandTests/v3+node.{:x}+project.{:x}",
-            Sha256::digest(include_bytes!("../../../tests/reporters/node-reporter.mjs")),
-            Sha256::digest(include_bytes!("../../../tests/reporters/project-tests.py")),
+            "devdesk_adapters::CommandTests/v3+node.{NODE_REPORTER_DIGEST}+project.{PROJECT_REPORTER_DIGEST}",
         )
     }
 
@@ -506,10 +529,7 @@ impl ports::Tests for CommandTests {
         let current = self.identity();
         identity == current
             || identity
-                == format!(
-                    "devdesk_adapters::CommandTests/v2+reporter.{:x}",
-                    Sha256::digest(include_bytes!("../../../tests/reporters/node-reporter.mjs"))
-                )
+                == format!("devdesk_adapters::CommandTests/v2+reporter.{NODE_REPORTER_DIGEST}")
     }
     fn poll_test(&self, r: &TestRequest) -> Result<Option<Value>> {
         self.poll(r)
@@ -570,11 +590,7 @@ mod reporter_tests {
     fn node_reporter_classifies_failures_and_ignores_forged_stdout() {
         let dir = tempfile::tempdir().unwrap();
         let reporter = dir.path().join("reporter.mjs");
-        fs::write(
-            &reporter,
-            include_bytes!("../../../tests/reporters/node-reporter.mjs"),
-        )
-        .unwrap();
+        fs::write(&reporter, legacy_reporter(&TestRunner::NodeTest).unwrap()).unwrap();
         let test = dir.path().join("contract.test.mjs");
         fs::write(
             &test,

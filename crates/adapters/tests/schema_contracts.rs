@@ -263,6 +263,7 @@ fn test_request_schema_covers_frozen_code_documents_and_execution_instances() {
     };
     round_trip::<ExecutionInstance>("ExecutionInstance", json!(instance));
     let request = TestRequest {
+        reporter: None,
         expect_assertion_failure: false,
         recipe: Some(recipe.clone()),
         operation_id: "operation-1".into(),

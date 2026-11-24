@@ -119,7 +119,13 @@ impl Engine {
             .map(|_| restored(self, state))
             .transpose()?;
         let previous = previous.as_ref().map(|row| &row.data["publication"]);
-        let branch = format!("devdesk/candidates/{delivery}");
+        let branch = self.delivery_candidate_branch(
+            effect,
+            "projected-ref",
+            &context.project,
+            delivery,
+            inspect,
+        )?;
         let id =
             crate::material_commands::stable_object_id(self.store.as_ref(), op, "projected-ref")?;
         let publish = operation(

@@ -12,6 +12,7 @@ DOMAIN = "software-development"
 DISCOVER = f"{DOMAIN}.tests.discover"
 BRANCH = f"{DOMAIN}.branch.plan"
 CONNECT = f"{DOMAIN}.project.connect"
+PR_CREATE = f"{DOMAIN}.pull-request.create"
 
 
 def source(kind, key, data, **references):
@@ -130,8 +131,26 @@ def build(target):
         "properties": {**connection_input["properties"],
                        "repository": {"type": "string", "pattern": r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"}},
     }
+    pr_request = {
+        "type": "object", "additionalProperties": False, "required": ["request", "marker"],
+        "properties": {
+            "marker": {"type": "string", "minLength": 1, "maxLength": 256},
+            "request": {"type": "object",
+                        "required": ["merge", "head_branch", "base_branch", "candidate", "expected_target"],
+                        "properties": {key: {"type": "string", "minLength": 1}
+                                       for key in ("merge", "head_branch", "base_branch", "candidate", "expected_target")}},
+        },
+    }
+    pr_result = {"type": "object", "additionalProperties": False,
+                 "required": ["head", "base", "title", "body"],
+                 "properties": {key: {"type": "string", "minLength": 1}
+                                for key in ("head", "base", "title", "body")}}
     types = {}
     files = {"runtime/worker.mjs": (PACKAGE / "runtime/worker.mjs").read_bytes()}
+    reporters = {"node_test": "runtime/node-reporter.mjs",
+                 "python_unittest": "runtime/project-tests.py", "command": "runtime/project-tests.py"}
+    for path in set(reporters.values()):
+        files[path] = (PACKAGE / path).read_bytes()
     for record in entries:
         filename = f"{record['identity']}-v{record['revision']}.json"
         types.setdefault(record["type"], []).append(filename)
@@ -151,10 +170,12 @@ def build(target):
             result_type: {"name": "Test configuration", "schema": output},
         }).encode(),
     })
-    manifest = {"format": 1, "id": DOMAIN, "version": "0.2.0", "entity_types": entity_types,
+    manifest = {"format": 1, "id": DOMAIN, "version": "0.3.0", "entity_types": entity_types,
                 "files": {path: hashlib.sha256(contents).hexdigest() for path, contents in files.items()},
                 "runtime": {"entry": "runtime/worker.mjs", "worktree_branch": BRANCH, "test_discovery": DISCOVER,
-                            "project_connection": CONNECT, "handlers": {
+                            "project_connection": CONNECT, "test_reporters": reporters,
+                            "pull_request_creation": PR_CREATE, "handlers": {
+                    PR_CREATE: {"input_schema": pr_request, "output_schema": pr_result},
                     CONNECT: {"input_schema": connection_input, "output_schema": connection_result},
                     BRANCH: {"input_schema": branch_request, "output_schema": branch_result},
                     DISCOVER: {"core": "git_snapshot", "input_schema": coordinate, "output_schema": output,

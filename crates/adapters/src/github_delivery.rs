@@ -74,8 +74,9 @@ impl GitHubPullRequests {
         &self,
         request: &PullRequestRequest,
         inspect: bool,
+        creation: Option<&PullRequestCreation>,
     ) -> Result<Option<PullRequestReceipt>> {
-        self.with_delivery(|client| client.delivery_ensure(request, inspect))
+        self.with_delivery(|client| client.delivery_ensure(request, inspect, creation))
     }
     pub(crate) fn observe_delivery_candidate(
         &self,
@@ -334,8 +335,12 @@ impl DeliveryClient<'_> {
         &self,
         r: &PullRequestRequest,
         inspect: bool,
+        creation: Option<&PullRequestCreation>,
     ) -> Result<Option<PullRequestReceipt>> {
         self.delivery_request(r)?;
+        if let Some(creation) = creation {
+            creation.validate(r)?;
+        }
         if r.number.is_some() {
             return self.receipt(r, &self.delivery_pr(r)?).map(Some);
         }
@@ -402,15 +407,20 @@ impl DeliveryClient<'_> {
                 "源分支已变化，不能用旧版本创建 PR",
             )
             .map_err(|error| error.technical_not_applied())?;
-            let source = r
-                .projection
-                .as_ref()
-                .map_or(r.candidate.as_str(), |p| p.source_revision.as_str());
-            let publication = r.projection.as_ref().map_or_else(
+            let body = if let Some(creation) = creation {
+                json!(creation)
+            } else {
+                let source = r
+                    .projection
+                    .as_ref()
+                    .map_or(r.candidate.as_str(), |p| p.source_revision.as_str());
+                let publication = r.projection.as_ref().map_or_else(
                 || "The Task source branch is used directly; its exact PR test-merge commit is retained in the owning DevDesk workflow.".to_owned(),
                 |p| format!("A code-only Feature delivery is used. Workflow validation changes are excluded at: {}. The original Feature and Task branches retain their materials.", p.validation_paths.join(", ")));
-            self.delivery_api("POST",&format!("repos/{}/pulls",r.repository),Some(json!({"title":format!("DevDesk delivery {}",r.merge),
-                "head":r.head_branch,"base":r.base_branch,"body":format!("{}\n\nSource revision: `{source}`\nDelivery revision: `{}`\nValidated target: `{}`\n\n{publication}\n\nReviews, exact test receipts and the final Human decision remain bound to these versions. Existing repository merge requirements apply.",r.marker(),r.candidate,r.expected_target)})))?
+                json!({"title":format!("DevDesk delivery {}",r.merge),
+                "head":r.head_branch,"base":r.base_branch,"body":format!("{}\n\nSource revision: `{source}`\nDelivery revision: `{}`\nValidated target: `{}`\n\n{publication}\n\nReviews, exact test receipts and the final Human decision remain bound to these versions. Existing repository merge requirements apply.",r.marker(),r.candidate,r.expected_target)})
+            };
+            self.delivery_api("POST", &format!("repos/{}/pulls", r.repository), Some(body))?
         };
         self.receipt(r, &row).map(Some)
     }
@@ -612,6 +622,12 @@ mod tests {
             request.head_branch = format!("devdesk/features/{}", uuid::Uuid::new_v4());
             let exists = Cell::new(false);
             let writes = RefCell::new(Vec::new());
+            let creation = PullRequestCreation {
+                title: "Packaged delivery".into(),
+                body: format!("{}\n\nFrozen candidate", request.marker()),
+                head: request.head_branch.clone(),
+                base: request.base_branch.clone(),
+            };
             let api = |method: &str, endpoint: &str, input: Option<Value>| match (method, endpoint)
             {
                 ("GET", "repos/owner/repo/branches/main") => {
@@ -628,7 +644,7 @@ mod tests {
                 }),
                 ("GET", "repos/owner/repo/pulls/7") => Ok(pr(&request, false, "blocked")),
                 ("POST", "repos/owner/repo/pulls") => {
-                    assert_eq!(input.unwrap()["base"], "main");
+                    assert_eq!(input.unwrap(), json!(creation));
                     writes.borrow_mut().push(endpoint.to_owned());
                     exists.set(true);
                     Ok(pr(&request, false, "blocked"))
@@ -640,10 +656,24 @@ mod tests {
                 client.delivery_target("owner/repo", "main").unwrap()["protected"],
                 protected
             );
-            assert!(client.delivery_ensure(&request, true).unwrap().is_none());
-            let created = client.delivery_ensure(&request, false).unwrap().unwrap();
-            let recovered = client.delivery_ensure(&request, true).unwrap().unwrap();
-            let repeated = client.delivery_ensure(&request, false).unwrap().unwrap();
+            assert!(
+                client
+                    .delivery_ensure(&request, true, Some(&creation))
+                    .unwrap()
+                    .is_none()
+            );
+            let created = client
+                .delivery_ensure(&request, false, Some(&creation))
+                .unwrap()
+                .unwrap();
+            let recovered = client
+                .delivery_ensure(&request, true, Some(&creation))
+                .unwrap()
+                .unwrap();
+            let repeated = client
+                .delivery_ensure(&request, false, Some(&creation))
+                .unwrap()
+                .unwrap();
             assert_eq!(created.number, recovered.number);
             assert_eq!(created.number, repeated.number);
             assert_eq!(writes.borrow().as_slice(), &["repos/owner/repo/pulls"]);
@@ -669,7 +699,7 @@ mod tests {
         let client = DeliveryClient { api: &api };
         assert_eq!(
             client
-                .delivery_ensure(&request, true)
+                .delivery_ensure(&request, true, None)
                 .unwrap()
                 .unwrap()
                 .number,
@@ -1029,13 +1059,13 @@ mod tests {
         let client = DeliveryClient { api: &api };
         assert!(
             client
-                .delivery_ensure(&request, false)
+                .delivery_ensure(&request, false, None)
                 .unwrap()
                 .unwrap()
                 .merged
         );
         exists.set(false);
-        let error = client.delivery_ensure(&request, false).unwrap_err();
+        let error = client.delivery_ensure(&request, false, None).unwrap_err();
         assert_eq!(
             error.execution_failure.unwrap().effect,
             ExecutionFailureEffect::NotApplied
@@ -1074,7 +1104,7 @@ mod tests {
         let client = DeliveryClient { api: &api };
         assert_eq!(
             client
-                .delivery_ensure(&request, false)
+                .delivery_ensure(&request, false, None)
                 .unwrap()
                 .unwrap()
                 .head,
@@ -1083,7 +1113,7 @@ mod tests {
         assert_eq!(writes.get(), 1);
         let mut invalid = request.clone();
         invalid.projection.as_mut().unwrap().target_revision = "d".repeat(40);
-        assert!(client.delivery_ensure(&invalid, false).is_err());
+        assert!(client.delivery_ensure(&invalid, false, None).is_err());
         assert_eq!(writes.get(), 1);
     }
     #[test]

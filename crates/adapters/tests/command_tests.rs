@@ -75,6 +75,7 @@ fn fixture(root: &Path, body: &str, phase: &str) -> TestRequest {
     let operation = id();
     let environment = id();
     TestRequest {
+        reporter: None,
         expect_assertion_failure: phase == "red",
         recipe: Some(recipe.clone()),
         operation_id: operation.clone(),

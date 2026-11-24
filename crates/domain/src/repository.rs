@@ -320,6 +320,35 @@ impl PullRequestRequest {
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PullRequestCreation {
+    pub title: String,
+    pub body: String,
+    pub head: String,
+    pub base: String,
+}
+
+impl PullRequestCreation {
+    pub fn validate(&self, request: &PullRequestRequest) -> Result<()> {
+        require(
+            self.head == request.head_branch
+                && self.base == request.base_branch
+                && !self.title.trim().is_empty()
+                && self.title.len() <= 256
+                && self.body.len() <= 16 * 1024
+                && self.body.matches("<!-- devdesk:project=").count() == 1
+                && self
+                    .body
+                    .lines()
+                    .filter(|line| *line == request.marker())
+                    .count()
+                    == 1,
+            "PR 创建策略必须绑定原分支和唯一操作标记",
+        )
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PullRequestReceipt {
     pub repository: String,
     pub number: u64,

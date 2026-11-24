@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 const discover = "software-development.tests.discover";
 const planBranch = "software-development.branch.plan";
 const connect = "software-development.project.connect";
+const createPullRequest = "software-development.pull-request.create";
 
 function regression(runner, files, argv = null) {
   return {
@@ -126,11 +127,34 @@ export function connectProject(input) {
   return { repository, mainline };
 }
 
+export function pullRequestCreation({ request, marker }) {
+  const projection = request.projection;
+  const source = projection?.source_revision ?? request.candidate;
+  const publication = projection
+    ? "A code-only Feature delivery is used. Workflow validation changes are excluded at: "
+      + projection.validation_paths.join(", ")
+      + ". The original Feature and Task branches retain their materials."
+    : "The Task source branch is used directly; its exact PR test-merge commit is retained in the owning DevDesk workflow.";
+  return {
+    title: "DevDesk delivery " + request.merge,
+    head: request.head_branch,
+    base: request.base_branch,
+    body: [
+      marker,
+      "Source revision: `" + source + "`\nDelivery revision: `" + request.candidate
+        + "`\nValidated target: `" + request.expected_target + "`",
+      publication,
+      "Reviews, exact test receipts and the final Human decision remain bound to these versions. Existing repository merge requirements apply.",
+    ].join("\n\n"),
+  };
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const request = JSON.parse(readFileSync(0, "utf8"));
   const handlers = new Map([
     [planBranch, ({ input }) => worktreeBranch(input)],
     [connect, ({ input }) => connectProject(input)],
+    [createPullRequest, ({ input }) => pullRequestCreation(input)],
     [discover, ({ core }) => discoverTests(core)],
   ]);
   try {

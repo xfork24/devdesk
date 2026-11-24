@@ -661,7 +661,16 @@ impl Engine {
                             let recipe: TestRecipe = serde_json::from_value(recipe)
                                 .map_err(|e| err("invalid_params", e.to_string()))?;
                             recipe.validate()?;
+                            let reporter = self
+                                .domain_reader
+                                .as_ref()
+                                .map(|domain| {
+                                    domain.test_reporter(&context.project, &recipe.runner)
+                                })
+                                .transpose()?
+                                .flatten();
                             PlatformAction::Test(ports::TestRequest {
+                                reporter,
                                 operation_id: runtime.operation_id.clone(),
                                 session_id: None,
                                 candidate: text(&p["workspace"], "revision")?,

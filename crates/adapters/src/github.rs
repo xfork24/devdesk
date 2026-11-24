@@ -293,7 +293,15 @@ impl ports::PullRequests for GitHubPullRequests {
         r: &PullRequestRequest,
         inspect: bool,
     ) -> Result<Option<PullRequestReceipt>> {
-        self.delivery_ensure(r, inspect)
+        self.delivery_ensure(r, inspect, None)
+    }
+    fn ensure_planned_delivery(
+        &self,
+        request: &PullRequestRequest,
+        creation: &PullRequestCreation,
+        inspect: bool,
+    ) -> Result<Option<PullRequestReceipt>> {
+        self.delivery_ensure(request, inspect, Some(creation))
     }
     fn delivery_candidate(
         &self,

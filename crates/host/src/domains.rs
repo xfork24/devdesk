@@ -25,6 +25,21 @@ impl DomainReader for ProjectReader {
             .worktree_branch(project, owner, kind, &self.trusted)
     }
 
+    fn pull_request_creation(
+        &self,
+        request: &devdesk_domain::PullRequestRequest,
+    ) -> devdesk_domain::Result<Option<devdesk_domain::PullRequestCreation>> {
+        self.packages.pull_request_creation(request, &self.trusted)
+    }
+
+    fn test_reporter(
+        &self,
+        project: &str,
+        runner: &devdesk_domain::TestRunner,
+    ) -> devdesk_domain::Result<Option<devdesk_core::ports::TestReporter>> {
+        self.packages.test_reporter(project, runner, &self.trusted)
+    }
+
     fn project_test_discovery(
         &self,
         project: &str,

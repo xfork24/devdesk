@@ -277,6 +277,9 @@ def run(origin, action, args):
     if action == "software":
         assert active["active"]["id"] == "software-development"
         path, revision = args
+        assert {"software-development.workflow-feature-development:5",
+                "software-development.workflow-task-development:4"} <= set(active["agent_workflows"])
+        assert active["defaults"]["standard_ref"] == "software-development.standard-engineering-delivery:5"
         coordinate = {"path": path, "revision": revision}
         actual = client.call("query.domain.invoke", epoch=epoch,
                              handler="software-development.tests.discover", input=coordinate)
@@ -291,6 +294,16 @@ def run(origin, action, args):
         branch = client.call("query.domain.invoke", epoch=epoch,
                              handler="software-development.branch.plan", input={"owner": owner, "kind": "feature"})
         assert branch["branch"] == f"devdesk/features/{owner}"
+        candidate = client.call("query.domain.invoke", epoch=epoch,
+                                handler="software-development.branch.plan", input={"owner": owner, "kind": "candidate"})
+        assert candidate["branch"] == f"devdesk/candidates/{owner}"
+        marker = f"<!-- devdesk:project={project}:merge={owner} -->"
+        plan = client.call("query.domain.invoke", epoch=epoch, handler="software-development.pull-request.create",
+                           input={"marker": marker, "request": {
+                               "merge": owner, "head_branch": branch["branch"], "base_branch": "main",
+                               "candidate": revision, "expected_target": revision}})
+        assert plan["head"] == branch["branch"] and plan["base"] == "main"
+        assert plan["body"].splitlines()[0] == marker and revision in plan["body"]
         run = client.call("domain.workflow.start", epoch=epoch, project_id=project, entity_id=owner,
                           expected_revision=1, command_id=uuid.uuid4().hex,
                           workflow_ref="software-development.repository-preflight:1")

@@ -8,7 +8,7 @@ use devdesk_adapters::{
 use devdesk_core::id;
 use devdesk_core::{
     Command, Engine,
-    ports::{Git, TestRequest, Tests, ToolExecutor},
+    ports::{Git, TestReporter, TestRequest, Tests, ToolExecutor},
 };
 use devdesk_domain::*;
 use serde_json::{Value, json};
@@ -55,7 +55,13 @@ fn test_request(
 ) -> TestRequest {
     let operation_id = id();
     let environment = id();
+    let reporter =
+        include_str!("../../../configurations/software-development/runtime/node-reporter.mjs");
     TestRequest {
+        reporter: Some(TestReporter {
+            digest: format!("{:x}", Sha256::digest(reporter.as_bytes())),
+            content: reporter.into(),
+        }),
         operation_id: operation_id.clone(),
         session_id: None,
         candidate: revision.into(),

@@ -15,7 +15,7 @@
 | `tests/entrypoints/test_docs_checker.py` | 离线文档检查器回归：独立文件索引、增删检测、生成稳定性、忽略本地构建产物、二进制资源和链接/锚点。 |
 | `tests/entrypoints/lifecycle_contract.py` | 100 次同版本初始化竞争、Host 实例围栏、原回执重放、失败重试及响应丢失恢复；独立临时数据，不代表 100 前端容量验收。 |
 | `tests/fixtures/` / `tests/support/` | 协议样本、固定数据和只编译进测试的接口替身。业务示例不是产品限制。 |
-| `tests/reporters/node-reporter.mjs` | 随产品嵌入的 Node 测试报告器，返回真实分类、错误消息/堆栈/原因链及隔离测试的 stdout/stderr；测试输出始终作为数据封装，不能伪造顶层分类。 |
+| `configurations/software-development/runtime/node-reporter.mjs` | 软件开发包的 Node 测试报告器，返回真实分类、错误消息/堆栈/原因链及隔离测试的 stdout/stderr；测试输出始终作为数据封装，不能伪造顶层分类。 |
 
 ## 默认检查
 

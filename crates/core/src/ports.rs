@@ -276,6 +276,21 @@ pub trait DomainReader: Send + Sync {
         Ok(None)
     }
 
+    fn pull_request_creation(
+        &self,
+        _request: &PullRequestRequest,
+    ) -> Result<Option<devdesk_domain::PullRequestCreation>> {
+        Ok(None)
+    }
+
+    fn test_reporter(
+        &self,
+        _project: &str,
+        _runner: &devdesk_domain::TestRunner,
+    ) -> Result<Option<TestReporter>> {
+        Ok(None)
+    }
+
     fn project_test_discovery(
         &self,
         _project: &str,
@@ -465,7 +480,16 @@ pub trait Git: Send + Sync {
     ) -> Result<String>;
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TestReporter {
+    pub digest: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reporter: Option<TestReporter>,
     #[serde(default)]
     pub expect_assertion_failure: bool,
     #[serde(default)]
@@ -547,6 +571,14 @@ pub trait PullRequests: Send + Sync {
         _inspect_only: bool,
     ) -> Result<Option<PullRequestReceipt>> {
         Err(err("unsupported", "PR 适配器未实现精简交付发布"))
+    }
+    fn ensure_planned_delivery(
+        &self,
+        _request: &PullRequestRequest,
+        _creation: &devdesk_domain::PullRequestCreation,
+        _inspect_only: bool,
+    ) -> Result<Option<PullRequestReceipt>> {
+        Err(err("unsupported", "PR 适配器未实现已冻结的创建请求"))
     }
     fn delivery_candidate(
         &self,

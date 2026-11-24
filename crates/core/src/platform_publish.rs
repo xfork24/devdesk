@@ -20,6 +20,10 @@ pub(crate) enum PublishAction {
         context: GitContext,
     },
     DeliveryPullRequest(PullRequestRequest),
+    PlannedDeliveryPullRequest {
+        request: PullRequestRequest,
+        creation: PullRequestCreation,
+    },
     DeliveryStatus(PullRequestMergeRequest),
     DeliveryCandidate(PullRequestRequest),
     DeliveryMerge(PullRequestMergeRequest),
@@ -31,6 +35,48 @@ pub(crate) enum PublishAction {
     },
 }
 impl Engine {
+    pub(crate) fn delivery_candidate_branch(
+        &self,
+        effect: &ConfigurationRecord,
+        phase: &str,
+        project: &str,
+        candidate: &str,
+        inspect_only: bool,
+    ) -> Result<String> {
+        let previous = one(
+            self.store.as_ref(),
+            "governance",
+            &format!("platform-publish-stage:{}:{phase}", effect.id),
+        )?;
+        if previous.value.is_some() {
+            let saved = restored(self, &previous)?;
+            require(
+                saved.r#type == "platform_publish_stage"
+                    && saved.definition_id == effect.id
+                    && saved.data["parent_effect"] == effect.id,
+                "候选分支缺少原发布意图",
+            )?;
+            let action: PublishAction = serde_json::from_value(saved.data["action"].clone())
+                .map_err(|error| err("storage", error.to_string()))?;
+            if let PublishAction::Repository(operation) = action
+                && operation.project_id == project
+                && let RepositoryAction::PublishRef { branch, merge, .. } = operation.action
+                && merge == candidate
+            {
+                return Ok(branch);
+            }
+            return Err(err("storage", "候选分支与原发布身份不符"));
+        }
+        if !inspect_only
+            && let Some(domain) = &self.domain_reader
+            && let Some(branch) =
+                domain.worktree_branch(project, candidate, WorktreeKind::Candidate)?
+        {
+            return Ok(branch);
+        }
+        Ok(format!("devdesk/candidates/{candidate}"))
+    }
+
     pub(crate) fn platform_publish_stage(
         &self,
         effect: &ConfigurationRecord,
@@ -43,6 +89,36 @@ impl Engine {
             format!("platform-publish-stage:{}:{name}", effect.id),
         );
         let previous = one(self.store.as_ref(), "governance", &key.id)?;
+        let original = previous
+            .value
+            .as_ref()
+            .map(|_| restored(self, &previous))
+            .transpose()?;
+        let action = if let PublishAction::DeliveryPullRequest(request) = action {
+            let creation = if let Some(saved) = &original {
+                match serde_json::from_value::<PublishAction>(saved.data["action"].clone())
+                    .map_err(|error| err("storage", error.to_string()))?
+                {
+                    PublishAction::PlannedDeliveryPullRequest { creation, .. } => Some(creation),
+                    _ => None,
+                }
+            } else if !inspect_only
+                && request.number.is_none()
+                && let Some(domain) = &self.domain_reader
+            {
+                domain.pull_request_creation(&request)?
+            } else {
+                None
+            };
+            if let Some(creation) = creation {
+                creation.validate(&request)?;
+                PublishAction::PlannedDeliveryPullRequest { request, creation }
+            } else {
+                PublishAction::DeliveryPullRequest(request)
+            }
+        } else {
+            action
+        };
         let mut stage = record(
             "platform_publish_stage",
             effect.id.clone(),
@@ -54,8 +130,7 @@ impl Engine {
             true,
         );
         stage.id = key.id.clone();
-        let fresh = if previous.value.is_some() {
-            let saved = restored(self, &previous)?;
+        let fresh = if let Some(saved) = original {
             require(
                 saved.r#type == stage.r#type
                     && saved.definition_id == effect.id
@@ -123,6 +198,12 @@ impl Engine {
                 .ok_or_else(|| err("unsupported", "未配置 PR 适配器"))?
                 .ensure_delivery(request, !fresh)
                 .map(|v| v.map(|v| json!(v))),
+            PublishAction::PlannedDeliveryPullRequest { request, creation } => self
+                .pull_requests
+                .as_ref()
+                .ok_or_else(|| err("unsupported", "未配置 PR 适配器"))?
+                .ensure_planned_delivery(request, creation, !fresh)
+                .map(|value| value.map(|receipt| json!(receipt))),
             PublishAction::DeliveryCandidate(request) => self
                 .pull_requests
                 .as_ref()
@@ -215,7 +296,13 @@ impl Engine {
             operation,
             "publication",
         )?;
-        let candidate_branch = format!("devdesk/candidates/{physical}");
+        let candidate_branch = self.delivery_candidate_branch(
+            effect,
+            "candidate",
+            &context.project,
+            &physical,
+            inspect_only,
+        )?;
         for (name, branch, revision, stage) in [
             (
                 "base",

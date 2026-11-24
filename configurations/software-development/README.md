@@ -14,4 +14,4 @@ python3 configurations/software-development/build.py dist/software-development-c
 
 连接项目时，调用 `domain.project.create` 并传入 `connection`，其中包含 GitHub `repository` 和目标分支 `mainline`。Docker 内的包处理器解析连接坐标，Host 记录这些坐标并执行仓库操作。活动包的项目默认值可通过 `query.domain.active` 读取。
 
-当前各阶段通过原生效果端口执行。GitHub 交付逻辑的迁移及远端完整验收仍在推进。[领域插件化计划](../../docs/plans/domain-plugins/PLAN.md)
+包提供 Node 与 Python 测试报告器。工具冻结报告器摘要和原始内容，Docker 从确切 Git 修订执行测试并保留结构化回执。包内处理器还生成候选分支和 GitHub PR 创建请求，Host 保存这些请求以便中断后核对，并执行远端保护、目标校验和同步。[领域插件化计划](../../docs/plans/domain-plugins/PLAN.md)

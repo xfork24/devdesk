@@ -24,6 +24,12 @@
         "worktree_branch": { "$ref": "#/$defs/identifier" },
         "test_discovery": { "$ref": "#/$defs/identifier" },
         "project_connection": { "$ref": "#/$defs/identifier" },
+        "pull_request_creation": { "$ref": "#/$defs/identifier" },
+        "test_reporters": {
+          "type": "object",
+          "propertyNames": { "enum": ["node_test", "python_unittest", "command"] },
+          "additionalProperties": { "$ref": "#/$defs/path", "pattern": "^runtime/" }
+        },
         "handlers": {
           "type": "object",
           "minProperties": 1,
