@@ -560,6 +560,23 @@ impl Engine {
                 for source in root.instance.plan.document.outputs.values() {
                     selection.source(source);
                 }
+                let evidence = root
+                    .instance
+                    .plan
+                    .document
+                    .operation_evidence
+                    .values()
+                    .filter_map(|contract| {
+                        contract
+                            .checks
+                            .get("$completion")
+                            .map(|names| (contract, names))
+                    })
+                    .flat_map(|(contract, names)| names.iter().map(|name| &contract.sources[name]))
+                    .collect::<Vec<_>>();
+                for entry in &evidence {
+                    selection.source(&entry.source);
+                }
                 let facts = resources.selected_facts(self.store.as_ref(), &selection)?;
                 commit.witness(facts.reads.versions().iter().cloned())?;
                 let keys = root
@@ -597,6 +614,28 @@ impl Engine {
                         .all(|source| facts.facts.value(source).is_some()),
                     "整体完成条件或最终交付未满足",
                 )?;
+                for entry in evidence {
+                    let proof = facts
+                        .facts
+                        .value(&entry.source)
+                        .ok_or_else(|| err("blocked", "流程完成需要已接纳的证据"))?;
+                    let operation = entry.platform_operation.as_deref().ok_or_else(|| {
+                        err("configuration_required", "完成证据需要声明平台生产操作")
+                    })?;
+                    let execution = root
+                        .instance
+                        .steps
+                        .iter()
+                        .find(|step| step.step == entry.source.step)
+                        .ok_or_else(|| err("storage", "完成证据生产步骤缺失"))?;
+                    commit.witness(self.witnessed_platform_evidence(
+                        &root.record.id,
+                        &root.instance.root_instance_id,
+                        execution,
+                        operation,
+                        proof,
+                    )?)?;
+                }
                 let decision = commit.decision(&root, None, "complete", reason)?;
                 let submitted =
                     commit.commit_domain_outputs(&root.instance, &facts.facts, &decision)?;
@@ -617,6 +656,8 @@ impl Engine {
                         "精简流程必须在真实 PR 合入并同步后完成",
                     )?;
                     commit.witness([version(&delivery)])?;
+                }
+                if next.plan.document.uses_repository_delivery() {
                     let task = one(self.store.as_ref(), "task", &next.owner_id)?;
                     if let Some(raw) = &task.value {
                         let mut completed = raw.clone();

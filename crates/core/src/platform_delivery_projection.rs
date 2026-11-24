@@ -12,16 +12,14 @@ impl Engine {
             .instance
             .plan
             .document
-            .delivery_policy
-            .as_ref()
-            .and_then(|p| p.children_step.as_ref())
+            .delivery_evidence_step("children")
             .ok_or_else(|| err("configuration_required", "正式交付需要冻结的 Task 汇合步骤"))?;
         self.delivery_step_result(resources, key, plan)?;
         let parent = resources
             .instance
             .steps
             .iter()
-            .find(|step| &step.step == key)
+            .find(|step| step.step == key)
             .ok_or_else(|| err("storage", "Task 汇合执行缺失"))?;
         let collection = one(self.store.as_ref(), "workflow_children_source", &parent.id)?;
         plan.basis = plan.basis.merge([version(&collection)])?;

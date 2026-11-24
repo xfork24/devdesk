@@ -106,13 +106,12 @@ impl Engine {
         root: &WorkflowHeaderFacts,
         failed: &WorkflowResources,
     ) -> Result<StepExecution> {
-        let policy = root
-            .instance
-            .plan
-            .document
-            .delivery_policy
-            .as_ref()
-            .ok_or_else(|| err("configuration_required", "目标刷新需要冻结交付政策"))?;
+        let document = &root.instance.plan.document;
+        let candidate_regression =
+            document.require_delivery_evidence_step("candidate_regression")?;
+        let source_publication = document.require_delivery_evidence_step("source_publication")?;
+        let source_regression = document.require_delivery_evidence_step("source_regression")?;
+        let review = document.require_delivery_evidence_step("review")?;
         require(
             matches!(
                 failed.execution.status,
@@ -121,11 +120,10 @@ impl Engine {
             "目标刷新必须先停止并核对原操作",
         )?;
         self.release_failed_delivery_fence(commit, failed)?;
-        let document = &root.instance.plan.document;
         let regression = document
             .steps
             .iter()
-            .find(|s| s.key == policy.merge_regression_step)
+            .find(|s| s.key == candidate_regression)
             .ok_or_else(|| err("storage", "合并回归步骤缺失"))?;
         let StepExecutor::Tool { arguments, .. } = &regression.executor else {
             return Err(err("configuration_required", "合并回归必须为平台工具"));
@@ -161,8 +159,8 @@ impl Engine {
         let affected = document.impacted_nodes(&BTreeSet::from([target.execution.step.clone()]));
         require(
             affected.contains(&failed.execution.step)
-                && !affected.contains(&policy.code_review_step)
-                && !affected.contains(&policy.source_regression_step)
+                && !affected.contains(review)
+                && !affected.contains(source_regression)
                 && affected.iter().all(|key| {
                     document.steps.iter().any(|s| {
                         &s.key == key
@@ -179,12 +177,12 @@ impl Engine {
             "governance",
             &format!("workflow-delivery:{}", root.record.id),
         )?;
-        let published = root.step(self, &policy.source_publication_step)?;
+        let published = root.step(self, source_publication)?;
         require(
             published.execution.status == StepExecutionStatus::Completed,
             "目标刷新必须保留已接纳的源发布",
         )?;
-        let reviewed = root.step(self, &policy.code_review_step)?;
+        let reviewed = root.step(self, review)?;
         require(
             reviewed.execution.status == StepExecutionStatus::Completed,
             "目标刷新必须保留已接纳的代码评审",

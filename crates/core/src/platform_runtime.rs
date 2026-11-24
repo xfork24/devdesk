@@ -508,7 +508,12 @@ impl PlatformCall {
         }
         let result = match &plan.action {
             PlatformAction::Publish { .. } => engine.drive_platform_publish(&effect, &plan.action),
-            PlatformAction::Delivery(action) => engine.drive_delivery(&effect, action, false),
+            PlatformAction::Delivery(action) => {
+                let verified = plan.domain_check.as_ref().map_or(Ok(()), |check| {
+                    engine.verify_domain_operation(&effect, &self.request.project_id, check)
+                });
+                verified.and_then(|()| engine.drive_delivery(&effect, action, false))
+            }
             PlatformAction::Test(test) => {
                 let (active, _, _) = self.active(engine)?;
                 match engine.tests.inspect_test(test)? {

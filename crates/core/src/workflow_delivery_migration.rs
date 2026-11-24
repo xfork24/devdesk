@@ -36,20 +36,19 @@ impl Engine {
             ),
             "已结束流程保留历史交付，不重建 PR",
         )?;
-        let policy = root
-            .instance
-            .plan
-            .document
-            .delivery_policy
-            .as_ref()
-            .ok_or_else(|| err("configuration_required", "迁移需要冻结交付政策"))?;
+        let document = &root.instance.plan.document;
+        let candidate_regression =
+            document.require_delivery_evidence_step("candidate_regression")?;
+        let source_publication = document.require_delivery_evidence_step("source_publication")?;
+        let source_regression = document.require_delivery_evidence_step("source_regression")?;
+        let review = document.require_delivery_evidence_step("review")?;
         let regression = root
             .instance
             .plan
             .document
             .steps
             .iter()
-            .find(|step| step.key == policy.merge_regression_step)
+            .find(|step| step.key == candidate_regression)
             .ok_or_else(|| err("storage", "缺少合并回归步骤"))?;
         let StepExecutor::Tool { arguments, .. } = &regression.executor else {
             return Err(err("configuration_required", "合并回归不是平台步骤"));
@@ -98,11 +97,7 @@ impl Engine {
             "原 PR 或候选已变化，请刷新后重试",
         )?;
         let mut preserved = vec![];
-        for key in [
-            &policy.source_publication_step,
-            &policy.source_regression_step,
-            &policy.code_review_step,
-        ] {
+        for key in [source_publication, source_regression, review] {
             let resource = root.step(self, key)?;
             require(
                 resource.execution.status == StepExecutionStatus::Completed,
@@ -123,9 +118,9 @@ impl Engine {
             .document
             .impacted_nodes(&BTreeSet::from([publication_step.execution.step.clone()]));
         require(
-            !affected.contains(&policy.source_publication_step)
-                && !affected.contains(&policy.source_regression_step)
-                && !affected.contains(&policy.code_review_step)
+            !affected.contains(source_publication)
+                && !affected.contains(source_regression)
+                && !affected.contains(review)
                 && affected.iter().all(|key| {
                     root.instance.plan.document.steps.iter().any(|step| {
                         &step.key == key

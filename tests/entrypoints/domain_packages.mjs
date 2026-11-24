@@ -222,13 +222,13 @@ try {
     await page.getByRole("button", { name: "项目管理", exact: true }).click();
     await page.getByLabel("基础 Standard", { exact: true }).waitFor();
     assert.equal(await page.getByLabel("基础 Standard", { exact: true }).inputValue(),
-      "software-development.standard-engineering-delivery:5");
+      software.standard_ref);
     const saving = rpcReply("project.configuration.update");
     await page.getByRole("button", { name: "保存项目配置", exact: true }).click();
     await accepted(saving);
     await page.getByRole("button", { name: "恢复领域默认配置", exact: true }).click();
     assert.equal(await page.getByLabel("基础 Standard", { exact: true }).inputValue(),
-      "software-development.standard-engineering-delivery:5");
+      software.standard_ref);
     await page.getByText("集成新项目", { exact: true }).click();
     await page.getByLabel("GitHub 仓库", { exact: true }).fill(githubRepo);
     await page.getByLabel("主分支", { exact: true }).fill(process.env.DEVDESK_DOMAIN_TEST_GITHUB_BRANCH || "main");
@@ -269,14 +269,14 @@ try {
   const entity = await native("read-entity", result.project_id, result.entity_id);
   assert.equal(entity.revision, 2);
   assert.equal(entity.data.title, "  Local manuscript  ");
-  await page.getByRole("listitem").filter({ hasText: "software-development 0.4.0" })
+  await page.getByRole("listitem").filter({ hasText: `software-development ${software.version}` })
     .getByRole("button", { name: "激活", exact: true }).click();
   await settingsButton(second).waitFor();
   const preserved = await native("read", project, software.run.execution_id);
   assert.equal(preserved.record.data.status, "completed");
   assert.equal(preserved.domain_submission.entities.test_configuration, software.proof_id);
 
-  await page.getByRole("listitem").filter({ hasText: "software-development 0.4.0" })
+  await page.getByRole("listitem").filter({ hasText: `software-development ${software.version}` })
     .getByRole("button", { name: "卸载", exact: true }).click();
   await second.getByText("空领域", { exact: true }).waitFor();
   await settingsButton(second).waitFor({ state: "detached" });

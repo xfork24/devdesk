@@ -102,10 +102,7 @@ impl Engine {
         {
             return Ok(None);
         }
-        let independent_green = document
-            .delivery_policy
-            .as_ref()
-            .is_some_and(|p| p.independent_green_step.as_deref() == Some(step.key.as_str()));
+        let independent_green = document.delivery_evidence_step("green") == Some(step.key.as_str());
         let red_without_assertion =
             red_without_assertion(&row.data["request"]["arguments"], receipt);
         let failed = receipt["status"] == "failed";
@@ -208,10 +205,8 @@ impl Engine {
         }
         let document = &root.instance.plan.document;
         let Some(green) = document
-            .delivery_policy
-            .as_ref()
-            .and_then(|p| p.independent_green_step.as_ref())
-            .and_then(|key| document.steps.iter().find(|s| s.key == *key))
+            .delivery_evidence_step("green")
+            .and_then(|key| document.steps.iter().find(|s| s.key == key))
         else {
             return Ok(None);
         };

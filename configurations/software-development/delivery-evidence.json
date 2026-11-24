@@ -1,0 +1,163 @@
+{
+  "feature": {
+    "verifier": "software-development.delivery.authorize",
+    "sources": {
+      "review": {
+        "source": {
+          "step": "review",
+          "port": "result",
+          "pointer": ""
+        }
+      },
+      "source_publication": {
+        "source": {
+          "step": "source_publish",
+          "port": "result",
+          "pointer": ""
+        },
+        "platform_operation": "git.source.publish"
+      },
+      "source_regression": {
+        "source": {
+          "step": "regression",
+          "port": "result",
+          "pointer": ""
+        },
+        "platform_operation": "tests.project"
+      },
+      "candidate_regression": {
+        "source": {
+          "step": "merge_regression",
+          "port": "result",
+          "pointer": ""
+        },
+        "platform_operation": "tests.project"
+      },
+      "delivery_receipt": {
+        "source": {
+          "step": "merge",
+          "port": "result",
+          "pointer": ""
+        },
+        "platform_operation": "git.delivery.merge"
+      },
+      "approval": {
+        "source": {
+          "step": "approval",
+          "port": "result",
+          "pointer": ""
+        },
+        "human_confirmation": true
+      },
+      "children": {
+        "source": {
+          "step": "implementation",
+          "port": "result",
+          "pointer": ""
+        }
+      }
+    },
+    "checks": {
+      "workspace.target": [
+        "review"
+      ],
+      "git.source.publish": [
+        "review",
+        "source_regression"
+      ],
+      "git.delivery.open": [
+        "review",
+        "source_publication",
+        "source_regression",
+        "children"
+      ],
+      "git.delivery.merge": [
+        "review",
+        "source_publication",
+        "source_regression",
+        "children",
+        "candidate_regression",
+        "approval"
+      ],
+      "$completion": [
+        "delivery_receipt"
+      ]
+    }
+  },
+  "task": {
+    "verifier": "software-development.delivery.authorize",
+    "sources": {
+      "review": {
+        "source": {
+          "step": "review",
+          "port": "result",
+          "pointer": ""
+        }
+      },
+      "source_publication": {
+        "source": {
+          "step": "source_publish",
+          "port": "result",
+          "pointer": ""
+        },
+        "platform_operation": "git.source.publish"
+      },
+      "source_regression": {
+        "source": {
+          "step": "regression",
+          "port": "result",
+          "pointer": ""
+        },
+        "platform_operation": "tests.project"
+      },
+      "candidate_regression": {
+        "source": {
+          "step": "merge_regression",
+          "port": "result",
+          "pointer": ""
+        },
+        "platform_operation": "tests.project"
+      },
+      "delivery_receipt": {
+        "source": {
+          "step": "merge",
+          "port": "result",
+          "pointer": ""
+        },
+        "platform_operation": "git.delivery.merge"
+      },
+      "green": {
+        "source": {
+          "step": "green",
+          "port": "result",
+          "pointer": ""
+        },
+        "platform_operation": "tests.run"
+      }
+    },
+    "checks": {
+      "workspace.target": [
+        "review"
+      ],
+      "git.source.publish": [
+        "review",
+        "source_regression"
+      ],
+      "git.delivery.open": [
+        "review",
+        "source_publication",
+        "source_regression"
+      ],
+      "git.delivery.merge": [
+        "review",
+        "source_publication",
+        "source_regression",
+        "candidate_regression",
+        "green"
+      ],
+      "$completion": [
+        "delivery_receipt"
+      ]
+    }
+  }
+}

@@ -3,7 +3,7 @@
 use crate::{
     concurrency::*,
     governance::{record, update_record},
-    platform_facts::{PlatformAction, PlatformPlan, one, restored},
+    platform_facts::{DomainEvidenceCheck, PlatformAction, PlatformPlan, one, restored},
     platform_publish::PublishAction,
     workflow_resources::{WorkflowResources, version},
     *,
@@ -187,19 +187,196 @@ impl Engine {
         )?])?;
         Ok(())
     }
+    pub(crate) fn verify_domain_operation(
+        &self,
+        effect: &ConfigurationRecord,
+        project: &str,
+        check: &DomainEvidenceCheck,
+    ) -> Result<()> {
+        const PHASE: &str = "domain-authorization";
+        let result = if let Some((_, result)) = self.platform_observed(effect, PHASE)? {
+            result
+        } else {
+            let result = (|| {
+                let reader = self
+                    .domain_reader
+                    .as_ref()
+                    .ok_or_else(|| err("domain_inactive", "缺少原领域运行端"))?;
+                let decision = reader.read(project, &check.handler, check.input.clone())?;
+                if decision["allowed"] != true {
+                    return Err(err(
+                        "domain_evidence_rejected",
+                        decision["reason"].as_str().unwrap_or("领域拒绝交付证据"),
+                    ));
+                }
+                Ok(Some(decision))
+            })()
+            .map_err(|error: Error| error.technical_not_applied());
+            self.platform_observe(effect, PHASE, &result)?;
+            result
+        };
+        result.map(|_| ())
+    }
+
+    fn witnessed_human_delivery(
+        &self,
+        resources: &WorkflowResources,
+        execution: &StepExecution,
+        publication: &Value,
+        plan: &mut PlatformPlan,
+    ) -> Result<String> {
+        require(
+            execution.status == StepExecutionStatus::Completed
+                && execution.inputs.values().any(|value| value == publication),
+            "人工审核未绑定当前确切交付",
+        )?;
+        let confirmations = one(self.store.as_ref(), "workflow_confirmations", &execution.id)?;
+        plan.basis = plan.basis.merge([version(&confirmations)])?;
+        let confirmation = confirmations
+            .value
+            .as_ref()
+            .and_then(Value::as_array)
+            .and_then(|rows| {
+                rows.iter().find(|row| {
+                    row["data"]["actor"]["kind"] == "human"
+                        && row["data"]["input_digest"] == execution.input_digest
+                        && row["data"]["outputs"] == json!(execution.outputs)
+                        && row["data"]["override_completion"] != true
+                })
+            })
+            .ok_or_else(|| err("permission_denied", "缺少办法核对当前版本的 Human 决定"))?;
+        // The accepted decision belongs to this execution in the frozen plan.
+        require(
+            resources
+                .instance
+                .steps
+                .iter()
+                .any(|step| step.id == execution.id),
+            "人工决定执行身份不符",
+        )?;
+        text(confirmation, "id")
+    }
+
+    pub(crate) fn witnessed_platform_evidence(
+        &self,
+        instance: &str,
+        root: &str,
+        execution: &StepExecution,
+        operation: &str,
+        result: &Value,
+    ) -> Result<[ResourceVersion; 2]> {
+        let proof = self.platform_receipt_proof(root, operation, result)?;
+        let call_id = execution
+            .tool_call_id
+            .as_deref()
+            .ok_or_else(|| err("scope_violation", "证据缺少原平台调用身份"))?;
+        let call = one(self.store.as_ref(), "governance", call_id)?;
+        let row = restored(self, &call)?;
+        require(
+            execution.status == StepExecutionStatus::Completed
+                && row.r#type == "platform_call"
+                && row.data["status"] == "succeeded"
+                && row.data["request"]["execution_id"] == execution.id
+                && row.data["request"]["instance_id"] == instance
+                && row.data["handler"] == operation
+                && row.data["receipt"] == *result,
+            "平台证据不属于所声明的生产步骤",
+        )?;
+        Ok([proof, version(&call)])
+    }
+
+    fn prepare_delivery_evidence(
+        &self,
+        binding: &OperationEvidence,
+        request: &PlatformToolRequest,
+        resources: &WorkflowResources,
+        context: &GitContext,
+        plan: &mut PlatformPlan,
+    ) -> Result<()> {
+        use crate::workflow_facts::FactSelection;
+        let operation = &request.definition.qualified_name;
+        let names = binding
+            .checks
+            .get(operation)
+            .ok_or_else(|| err("configuration_required", "操作缺少冻结的领域证据声明"))?;
+        let mut selection = FactSelection::default();
+        for name in names {
+            selection.source(&binding.sources[name].source);
+        }
+        let selected = resources.selected_facts(self.store.as_ref(), &selection)?;
+        plan.basis = plan
+            .basis
+            .merge(selected.reads.versions().iter().cloned())?;
+        let mut facts = serde_json::Map::new();
+        for name in names {
+            let evidence = &binding.sources[name];
+            let execution = resources
+                .instance
+                .steps
+                .iter()
+                .find(|step| step.step == evidence.source.step)
+                .filter(|step| step.status == StepExecutionStatus::Completed)
+                .ok_or_else(|| err("blocked", "交付要求的步骤尚未接纳"))?;
+            let result = selected
+                .facts
+                .value(&evidence.source)
+                .ok_or_else(|| err("blocked", "交付缺少已封存结果"))?;
+            let mut fact = json!({"step":execution.step,"execution_id":execution.id,
+                "input_digest":execution.input_digest,"output_digest":configuration_hash(result),
+                "workspace_revision":execution.inputs.get("workspace").and_then(|value| value.get("revision")),
+                "result":result});
+            if let Some(producer) = &evidence.platform_operation {
+                plan.basis = plan.basis.merge(self.witnessed_platform_evidence(
+                    &resources.record.id,
+                    &resources.instance.root_instance_id,
+                    execution,
+                    producer,
+                    result,
+                )?)?;
+                fact["platform_operation"] = json!(producer);
+                fact["platform_call_id"] = json!(execution.tool_call_id);
+            }
+            if evidence.human_confirmation {
+                fact["human_confirmation"] = json!(self.witnessed_human_delivery(
+                    resources,
+                    execution,
+                    &request.arguments["publication"],
+                    plan,
+                )?);
+            }
+            facts.insert(name.clone(), fact);
+        }
+        if names.contains("children") {
+            self.delivery_children_gate(resources, plan)?;
+        }
+        plan.domain_check = Some(DomainEvidenceCheck {
+            handler: binding.verifier.clone(),
+            input: json!({"operation":operation,"source_revision":request.arguments["workspace"]["revision"],
+                "source_branch":context.source.branch,
+                "destination":if context.target.owner == context.project { "mainline" } else { "parent_work" },
+                "candidate_revision":request.arguments["publication"]["revision"],
+                "regression_configured":!resources.instance.inputs.get("test_configuration")
+                    .and_then(|value| value.get("regression")).is_some_and(Value::is_null),
+                "facts":facts}),
+        });
+        Ok(())
+    }
+
     pub(crate) fn prepare_delivery_action(
         &self,
         request: &PlatformToolRequest,
         resources: &WorkflowResources,
         plan: &mut PlatformPlan,
     ) -> Result<PlatformAction> {
-        let policy = resources
-            .instance
-            .plan
-            .document
-            .delivery_policy
-            .as_ref()
-            .ok_or_else(|| err("configuration_required", "工具需要冻结的交付政策"))?;
+        let document = &resources.instance.plan.document;
+        let legacy = document.delivery_policy.as_ref();
+        let evidence = document
+            .operation_evidence
+            .get(REPOSITORY_DELIVERY_EVIDENCE);
+        require(
+            legacy.is_some() || evidence.is_some(),
+            "工具需要冻结的交付证据合同",
+        )?;
         let (context, workspace, reads) = self.platform_native_grant(request, resources)?;
         plan.basis = plan.basis.merge(reads.versions().iter().cloned())?;
         require(
@@ -214,281 +391,295 @@ impl Engine {
         )?;
         plan.basis = plan.basis.merge([version(&state)])?;
         let source = text(&request.arguments["workspace"], "revision")?;
-        self.delivery_step_result(resources, &policy.code_review_step, plan)?;
-        let review = resources
-            .instance
-            .steps
-            .iter()
-            .find(|e| e.step == policy.code_review_step)
-            .ok_or_else(|| err("storage", "代码评审执行缺失"))?;
-        require(
-            review
-                .inputs
-                .get("workspace")
-                .is_some_and(|v| v["revision"] == source),
-            "代码评审未绑定当前源版本",
-        )?;
+        if let Some(binding) = evidence {
+            self.prepare_delivery_evidence(binding, request, resources, &context, plan)?;
+        }
+        if let Some(policy) = legacy {
+            self.delivery_step_result(resources, &policy.code_review_step, plan)?;
+            let review = resources
+                .instance
+                .steps
+                .iter()
+                .find(|e| e.step == policy.code_review_step)
+                .ok_or_else(|| err("storage", "代码评审执行缺失"))?;
+            require(
+                review
+                    .inputs
+                    .get("workspace")
+                    .is_some_and(|v| v["revision"] == source),
+                "代码评审未绑定当前源版本",
+            )?;
+        }
 
         let op = crate::material_commands::stable_object_id(
             self.store.as_ref(),
             &request.execution_id,
             "delivery-operation",
         )?;
-        let action = match request.definition.qualified_name.as_str() {
-            "workspace.target" => {
-                let target = one(
-                    self.store.as_ref(),
-                    "repository_worktree_owner",
-                    &json!([request.project_id, context.target.owner]).to_string(),
-                )?;
-                plan.basis = plan.basis.merge([version(&target)])?;
-                let target: RepositoryWorktree = serde_json::from_value(
-                    target
-                        .value
-                        .ok_or_else(|| err("resource_pending", "上级 worktree 未就绪"))?,
-                )
-                .map_err(|e| err("storage", e.to_string()))?;
-                self.platform_plan_fence(plan, request, &context.target.worktree)?;
-                plan.head = Some(one(
-                    self.store.as_ref(),
-                    "head",
-                    &if context.target.owner == context.project {
-                        format!("main:{}", context.project)
-                    } else {
-                        context.target.owner.clone()
-                    },
-                )?);
-                let expected = text(
-                    plan.head
+        let action =
+            match request.definition.qualified_name.as_str() {
+                "workspace.target" => {
+                    let target = one(
+                        self.store.as_ref(),
+                        "repository_worktree_owner",
+                        &json!([request.project_id, context.target.owner]).to_string(),
+                    )?;
+                    plan.basis = plan.basis.merge([version(&target)])?;
+                    let target: RepositoryWorktree = serde_json::from_value(
+                        target
+                            .value
+                            .ok_or_else(|| err("resource_pending", "上级 worktree 未就绪"))?,
+                    )
+                    .map_err(|e| err("storage", e.to_string()))?;
+                    self.platform_plan_fence(plan, request, &context.target.worktree)?;
+                    plan.head = Some(one(
+                        self.store.as_ref(),
+                        "head",
+                        &if context.target.owner == context.project {
+                            format!("main:{}", context.project)
+                        } else {
+                            context.target.owner.clone()
+                        },
+                    )?);
+                    let expected = text(
+                        plan.head
+                            .as_ref()
+                            .unwrap()
+                            .value
+                            .as_ref()
+                            .ok_or_else(|| err("resource_pending", "上级代码头未就绪"))?,
+                        "revision",
+                    )?;
+                    DeliveryAction::Target {
+                        context,
+                        expected,
+                        workspace: target.id,
+                        operation: op,
+                    }
+                }
+
+                "git.source.publish" => {
+                    if let Some(policy) = legacy {
+                        self.delivery_test_gate(
+                            resources,
+                            &policy.source_regression_step,
+                            &source,
+                            plan,
+                        )?;
+                        self.delivery_step_result(resources, &policy.code_review_step, plan)?;
+                    }
+                    self.platform_plan_fence(plan, request, &context.source.worktree)?;
+                    DeliveryAction::Source {
+                        context,
+                        revision: source,
+                        operation: op,
+                    }
+                }
+                "git.delivery.open" => {
+                    if let Some(policy) = legacy {
+                        if context.target.owner == context.project {
+                            self.delivery_children_gate(resources, plan)?;
+                        }
+                        let pushed = self.delivery_step_result(
+                            resources,
+                            &policy.source_publication_step,
+                            plan,
+                        )?;
+                        require(
+                            pushed["revision"] == source
+                                && pushed["branch"] == context.source.branch,
+                            "PR 创建必须使用已推送的确切开发分支",
+                        )?;
+                        plan.basis = plan.basis.merge([self.platform_receipt_proof(
+                            &resources.instance.root_instance_id,
+                            "git.source.publish",
+                            &pushed,
+                        )?])?;
+                        self.delivery_test_gate(
+                            resources,
+                            &policy.source_regression_step,
+                            &source,
+                            plan,
+                        )?;
+                    }
+                    let target = &request.arguments["target"];
+                    require(
+                        target["owner_id"] == context.target.owner,
+                        "PR base 必须为实际工作上级",
+                    )?;
+                    let proof = self
+                        .platform_receipt_proof(
+                            &resources.instance.root_instance_id,
+                            "workspace.target",
+                            target,
+                        )
+                        .or_else(|_| {
+                            self.platform_receipt_proof(
+                                &resources.instance.root_instance_id,
+                                "workspace.current",
+                                target,
+                            )
+                        })?;
+                    plan.basis = plan.basis.merge([proof])?;
+                    DeliveryAction::OpenSource {
+                        projection: if context.target.owner == context.project {
+                            let projection = DeliveryProjection {
+                                source_revision: source.clone(),
+                                target_revision: text(target, "revision")?,
+                                validation_paths: serde_json::from_value(
+                                    request
+                                        .arguments
+                                        .get("validation_paths")
+                                        .cloned()
+                                        .unwrap_or(json!(["tests/.devdesk", "evidence/.devdesk"])),
+                                )
+                                .map_err(|e| err("invalid_params", e.to_string()))?,
+                            };
+                            projection.validate()?;
+                            Some(projection)
+                        } else {
+                            None
+                        },
+                        context,
+                        source,
+                        target: text(target, "revision")?,
+                        workspace: workspace.id,
+                        operation: op,
+                        delivery: resources.record.id.clone(),
+                        state,
+                    }
+                }
+                "git.delivery.merge" => {
+                    let publication: DeliveryPublication =
+                        serde_json::from_value(request.arguments["publication"].clone())
+                            .map_err(|e| err("invalid_params", e.to_string()))?;
+                    require(
+                        publication.owner_id == request.owner_id
+                            && publication.source_revision == source
+                            && publication.source_branch == context.source.branch
+                            && publication.pull_request.base_branch == context.target.branch,
+                        "PR 项目、源版本或上级归属不符",
+                    )?;
+                    plan.basis = plan.basis.merge([self.platform_receipt_proof(
+                        &resources.instance.root_instance_id,
+                        "git.delivery.open",
+                        &json!(publication),
+                    )?])?;
+                    let saved = restored(self, &state)?;
+                    require(
+                        saved.data["publication"] == json!(publication),
+                        "交付已被后继候选替换",
+                    )?;
+                    if let Some(policy) = legacy {
+                        self.delivery_test_gate(
+                            resources,
+                            &policy.source_regression_step,
+                            &source,
+                            plan,
+                        )?;
+                        self.delivery_test_gate(
+                            resources,
+                            &policy.merge_regression_step,
+                            &publication.revision,
+                            plan,
+                        )?;
+                        self.delivery_step_result(resources, &policy.code_review_step, plan)?;
+                        if context.target.owner == context.project {
+                            let key = policy.human_confirmation_step.as_ref().ok_or_else(|| {
+                                err("permission_denied", "主分支需要真实 Human 审核")
+                            })?;
+                            let execution = resources
+                                .instance
+                                .steps
+                                .iter()
+                                .find(|e| &e.step == key)
+                                .ok_or_else(|| err("storage", "人工审核步骤缺失"))?;
+                            self.witnessed_human_delivery(
+                                resources,
+                                execution,
+                                &json!(publication),
+                                plan,
+                            )?;
+                            let children = policy.children_step.as_ref().ok_or_else(|| {
+                                err("configuration_required", "主分支交付需要当前子流程汇合")
+                            })?;
+                            self.delivery_step_result(resources, children, plan)?;
+                        } else {
+                            let key = policy.independent_green_step.as_ref().ok_or_else(|| {
+                                err("configuration_required", "Task 自动合入需要独立 Green")
+                            })?;
+                            self.delivery_test_gate(resources, key, &source, plan)?;
+                        }
+                    }
+                    if context.target.owner != context.project {
+                        let owner = crate::work_owners::WorkOwnerFacts::read(
+                            self.store.as_ref(),
+                            &request.owner_id,
+                        )?;
+                        require(
+                            owner.owner.resource.kind == "task"
+                                && owner.owner.value.as_ref().is_some_and(|value| {
+                                    value["feature_id"] == context.target.owner
+                                }),
+                            "交付上级必须是工作项的实际归属",
+                        )?;
+                        plan.basis = plan
+                            .basis
+                            .merge(owner.read_set.versions().iter().cloned())?;
+                    }
+                    self.platform_plan_fence(plan, request, &context.target.worktree)?;
+                    plan.head = Some(one(
+                        self.store.as_ref(),
+                        "head",
+                        &if context.target.owner == context.project {
+                            format!("main:{}", context.project)
+                        } else {
+                            context.target.owner.clone()
+                        },
+                    )?);
+                    if saved.data["synchronized"] == true {
+                        let receipt = &saved.data["completion"];
+                        self.require_completed_delivery_retry(request, resources, receipt, plan)?;
+                        require(
+                            self.git.workspace_revision(&context)? == publication.source_revision
+                                && plan
+                                    .head
+                                    .as_ref()
+                                    .unwrap()
+                                    .value
+                                    .as_ref()
+                                    .is_some_and(|v| v["revision"] == receipt["revision"])
+                                && self.git.delivery_sync_ready(
+                                    &context,
+                                    &publication.target_revision,
+                                    &text(receipt, "revision")?,
+                                )?,
+                            "原交付已完成，但当前本地目标不再是已核对的同步版本",
+                        )?;
+                        // A new explicit retry adopts the original physical result.
+                        // It never executes status publication, merge or checkout.
+                        return Ok(PlatformAction::Value(receipt.clone()));
+                    }
+                    if !plan
+                        .head
                         .as_ref()
                         .unwrap()
                         .value
                         .as_ref()
-                        .ok_or_else(|| err("resource_pending", "上级代码头未就绪"))?,
-                    "revision",
-                )?;
-                DeliveryAction::Target {
-                    context,
-                    expected,
-                    workspace: target.id,
-                    operation: op,
+                        .is_some_and(|v| v["revision"] == publication.target_revision)
+                    {
+                        return Err(err("stale_target", "本地目标已变化，必须重新回归和审核")
+                            .technical_not_applied());
+                    }
+                    DeliveryAction::Merge {
+                        context,
+                        publication: Box::new(publication),
+                        operation: op,
+                        state,
+                    }
                 }
-            }
-
-            "git.source.publish" => {
-                self.delivery_test_gate(resources, &policy.source_regression_step, &source, plan)?;
-                self.delivery_step_result(resources, &policy.code_review_step, plan)?;
-                self.platform_plan_fence(plan, request, &context.source.worktree)?;
-                DeliveryAction::Source {
-                    context,
-                    revision: source,
-                    operation: op,
-                }
-            }
-            "git.delivery.open" => {
-                if context.target.owner == context.project {
-                    self.delivery_children_gate(resources, plan)?;
-                }
-                let pushed =
-                    self.delivery_step_result(resources, &policy.source_publication_step, plan)?;
-                require(
-                    pushed["revision"] == source && pushed["branch"] == context.source.branch,
-                    "PR 创建必须使用已推送的确切开发分支",
-                )?;
-                plan.basis = plan.basis.merge([self.platform_receipt_proof(
-                    &resources.instance.root_instance_id,
-                    "git.source.publish",
-                    &pushed,
-                )?])?;
-                self.delivery_test_gate(resources, &policy.source_regression_step, &source, plan)?;
-                let target = &request.arguments["target"];
-                require(
-                    target["owner_id"] == context.target.owner,
-                    "PR base 必须为实际工作上级",
-                )?;
-                let proof = self
-                    .platform_receipt_proof(
-                        &resources.instance.root_instance_id,
-                        "workspace.target",
-                        target,
-                    )
-                    .or_else(|_| {
-                        self.platform_receipt_proof(
-                            &resources.instance.root_instance_id,
-                            "workspace.current",
-                            target,
-                        )
-                    })?;
-                plan.basis = plan.basis.merge([proof])?;
-                DeliveryAction::OpenSource {
-                    projection: if context.target.owner == context.project {
-                        let projection = DeliveryProjection {
-                            source_revision: source.clone(),
-                            target_revision: text(target, "revision")?,
-                            validation_paths: serde_json::from_value(
-                                request
-                                    .arguments
-                                    .get("validation_paths")
-                                    .cloned()
-                                    .unwrap_or(json!(["tests/.devdesk", "evidence/.devdesk"])),
-                            )
-                            .map_err(|e| err("invalid_params", e.to_string()))?,
-                        };
-                        projection.validate()?;
-                        Some(projection)
-                    } else {
-                        None
-                    },
-                    context,
-                    source,
-                    target: text(target, "revision")?,
-                    workspace: workspace.id,
-                    operation: op,
-                    delivery: resources.record.id.clone(),
-                    state,
-                }
-            }
-            "git.delivery.merge" => {
-                let publication: DeliveryPublication =
-                    serde_json::from_value(request.arguments["publication"].clone())
-                        .map_err(|e| err("invalid_params", e.to_string()))?;
-                require(
-                    publication.owner_id == request.owner_id
-                        && publication.source_revision == source
-                        && publication.source_branch == context.source.branch
-                        && publication.pull_request.base_branch == context.target.branch,
-                    "PR 项目、源版本或上级归属不符",
-                )?;
-                plan.basis = plan.basis.merge([self.platform_receipt_proof(
-                    &resources.instance.root_instance_id,
-                    "git.delivery.open",
-                    &json!(publication),
-                )?])?;
-                let saved = restored(self, &state)?;
-                require(
-                    saved.data["publication"] == json!(publication),
-                    "交付已被后继候选替换",
-                )?;
-                self.delivery_test_gate(resources, &policy.source_regression_step, &source, plan)?;
-                self.delivery_test_gate(
-                    resources,
-                    &policy.merge_regression_step,
-                    &publication.revision,
-                    plan,
-                )?;
-                self.delivery_step_result(resources, &policy.code_review_step, plan)?;
-                if context.target.owner == context.project {
-                    let key = policy
-                        .human_confirmation_step
-                        .as_ref()
-                        .ok_or_else(|| err("permission_denied", "主分支需要真实 Human 审核"))?;
-                    let execution = resources
-                        .instance
-                        .steps
-                        .iter()
-                        .find(|e| &e.step == key)
-                        .ok_or_else(|| err("storage", "人工审核步骤缺失"))?;
-                    require(
-                        execution.status == StepExecutionStatus::Completed
-                            && execution.inputs.values().any(|v| v == &json!(publication)),
-                        "人工审核未绑定当前确切交付",
-                    )?;
-                    let confirmations =
-                        one(self.store.as_ref(), "workflow_confirmations", &execution.id)?;
-                    plan.basis = plan.basis.merge([version(&confirmations)])?;
-                    require(
-                        confirmations
-                            .value
-                            .as_ref()
-                            .and_then(Value::as_array)
-                            .is_some_and(|rows| {
-                                rows.iter().any(|r| {
-                                    r["data"]["actor"]["kind"] == "human"
-                                        && r["data"]["input_digest"] == execution.input_digest
-                                        && r["data"]["outputs"] == json!(execution.outputs)
-                                })
-                            }),
-                        "缺少不可代签的 Human 决定，不能豁免正式合入",
-                    )?;
-                    let children = policy.children_step.as_ref().ok_or_else(|| {
-                        err("configuration_required", "主分支交付需要当前子流程汇合")
-                    })?;
-                    self.delivery_step_result(resources, children, plan)?;
-                } else {
-                    let owner = crate::work_owners::WorkOwnerFacts::read(
-                        self.store.as_ref(),
-                        &request.owner_id,
-                    )?;
-                    require(
-                        owner.owner.resource.kind == "task"
-                            && owner
-                                .owner
-                                .value
-                                .as_ref()
-                                .is_some_and(|v| v["feature_id"] == context.target.owner),
-                        "自动合入只允许 Task 向实际所属 Feature 交付",
-                    )?;
-                    plan.basis = plan
-                        .basis
-                        .merge(owner.read_set.versions().iter().cloned())?;
-                    let key = policy.independent_green_step.as_ref().ok_or_else(|| {
-                        err("configuration_required", "Task 自动合入需要独立 Green")
-                    })?;
-                    self.delivery_test_gate(resources, key, &source, plan)?;
-                }
-                self.platform_plan_fence(plan, request, &context.target.worktree)?;
-                plan.head = Some(one(
-                    self.store.as_ref(),
-                    "head",
-                    &if context.target.owner == context.project {
-                        format!("main:{}", context.project)
-                    } else {
-                        context.target.owner.clone()
-                    },
-                )?);
-                if saved.data["synchronized"] == true {
-                    let receipt = &saved.data["completion"];
-                    self.require_completed_delivery_retry(request, resources, receipt, plan)?;
-                    require(
-                        self.git.workspace_revision(&context)? == publication.source_revision
-                            && plan
-                                .head
-                                .as_ref()
-                                .unwrap()
-                                .value
-                                .as_ref()
-                                .is_some_and(|v| v["revision"] == receipt["revision"])
-                            && self.git.delivery_sync_ready(
-                                &context,
-                                &publication.target_revision,
-                                &text(receipt, "revision")?,
-                            )?,
-                        "原交付已完成，但当前本地目标不再是已核对的同步版本",
-                    )?;
-                    // A new explicit retry adopts the original physical result.
-                    // It never executes status publication, merge or checkout.
-                    return Ok(PlatformAction::Value(receipt.clone()));
-                }
-                if !plan
-                    .head
-                    .as_ref()
-                    .unwrap()
-                    .value
-                    .as_ref()
-                    .is_some_and(|v| v["revision"] == publication.target_revision)
-                {
-                    return Err(err("stale_target", "本地目标已变化，必须重新回归和审核")
-                        .technical_not_applied());
-                }
-                DeliveryAction::Merge {
-                    context,
-                    publication: Box::new(publication),
-                    operation: op,
-                    state,
-                }
-            }
-            _ => return Err(err("unsupported", "未知精简交付动作")),
-        };
+                _ => return Err(err("unsupported", "未知精简交付动作")),
+            };
         Ok(PlatformAction::Delivery(Box::new(action)))
     }
     pub(crate) fn delivery_admission_change(

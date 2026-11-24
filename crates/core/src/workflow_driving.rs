@@ -452,7 +452,7 @@ impl Engine {
                         execution.failure.as_ref().is_some_and(|failure| {
                             failure.automatic_retry_safe()
                                 && ((failure.code == "stale_target"
-                                    && member.instance.plan.document.delivery_policy.is_some())
+                                    && member.instance.plan.document.uses_repository_delivery())
                                     || member
                                         .instance
                                         .plan
@@ -488,7 +488,7 @@ impl Engine {
                     && failure.automatic_retry_safe()
                 {
                     (failure.code == "stale_target"
-                        && member.instance.plan.document.delivery_policy.is_some())
+                        && member.instance.plan.document.uses_repository_delivery())
                         || (scheduling.retry_error_codes.contains(&failure.code)
                             && self.rust_retry_count(&resources)?.1 < scheduling.max_retries)
                 } else {

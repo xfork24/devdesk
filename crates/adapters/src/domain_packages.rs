@@ -474,6 +474,20 @@ impl Package {
             } else {
                 (vec![], json!({}), Default::default())
             };
+        for workflow in sources.iter().filter(|source| source.r#type == "workflow") {
+            let document: WorkflowDefinition = workflow.decode()?;
+            for contract in document.operation_evidence.values() {
+                require(
+                    contract.verifier.starts_with(&prefix)
+                        && manifest
+                            .runtime
+                            .as_ref()
+                            .and_then(|runtime| runtime.handlers.get(&contract.verifier))
+                            .is_some_and(|handler| handler.core.is_none()),
+                    "工作流证据验证器必须由同一领域包注册",
+                )?;
+            }
+        }
         for (owner, entity) in &entity_types {
             for (reference, binding) in &entity.workflows {
                 let workflow = sources

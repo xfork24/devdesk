@@ -20,7 +20,7 @@ assert(releaseDir, "Pass a directory containing the release archives");
 const temp = await mkdtemp(path.join(os.tmpdir(), "devdesk-domain-release-"));
 const data = path.join(temp, "data");
 const pythonClient = path.join(root, "tests/entrypoints/domain_client.py");
-const candidate = path.join(releaseDir, "software-development-0.4.0.zip");
+const candidate = path.join(releaseDir, "software-development-0.5.0.zip");
 const legacy = path.join(baselineDir ?? temp, "software-development-0.3.0.zip");
 const manuscript = path.join(temp, "manuscript.zip");
 const incompatible = path.join(temp, "unsupported.zip");
@@ -143,9 +143,13 @@ try {
 from zipfile import ZipFile, ZIP_DEFLATED
 import json, sys
 with ZipFile(sys.argv[1]) as original, ZipFile(sys.argv[3]) as legacy:
-    unchanged = {name for name in original.namelist() if name.startswith(("configurations/", "runtime/"))}
-    assert unchanged == {name for name in legacy.namelist() if name.startswith(("configurations/", "runtime/"))}
-    assert all(original.read(name) == legacy.read(name) for name in unchanged)
+    old_names = set(legacy.namelist())
+    shared = (name for name in original.namelist()
+              if name in old_names and name.startswith("configurations/")
+              and name not in {"configurations/manifest.json", "configurations/defaults.json", "configurations/usage.json"})
+    assert all(original.read(name) == legacy.read(name) for name in shared)
+    manifest = json.loads(original.read("manifest.json"))
+    assert "software-development.delivery.authorize" in manifest["runtime"]["handlers"]
 with ZipFile(sys.argv[1]) as original, ZipFile(sys.argv[2], "w", ZIP_DEFLATED) as rewritten:
     for name in original.namelist():
         body = original.read(name)
@@ -188,7 +192,7 @@ with ZipFile(sys.argv[1]) as original, ZipFile(sys.argv[2], "w", ZIP_DEFLATED) a
     assert.equal((await client.active()).active.id, "manuscript");
     await client.rejected(incompatible);
     const upgraded = await client.install(candidate);
-    assert.equal(upgraded.version, "0.4.0");
+    assert.equal(upgraded.version, "0.5.0");
     await client.activate(upgraded.digest);
     await client.canRender("software-development.engineering-settings", (page) => page.getByRole("heading", { name: "数据与运行" }));
     const samples = await Promise.all(Array.from({ length: 100 }, () => client.active()));
@@ -204,7 +208,7 @@ with ZipFile(sys.argv[1]) as original, ZipFile(sys.argv[2], "w", ZIP_DEFLATED) a
   }, { crashAfter: true });
 
   await withHost(current.host, current.web, async (client) => {
-    assert.equal((await client.active()).active.version, "0.4.0");
+    assert.equal((await client.active()).active.version, "0.5.0");
     const read = await client.native("read", upgraded.run.project_id, upgraded.run.execution_id);
     assert.equal(read.record.data.status, "completed");
     assert.equal(read.domain_submission.entities.test_configuration, upgraded.proof_id);

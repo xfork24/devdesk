@@ -58,7 +58,15 @@ pub(crate) enum PlatformAction {
     },
 }
 #[derive(Clone, Serialize, Deserialize)]
+pub(crate) struct DomainEvidenceCheck {
+    pub handler: Id,
+    pub input: Value,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct PlatformPlan {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain_check: Option<DomainEvidenceCheck>,
     pub action: PlatformAction,
     pub basis: ReadSet,
     pub changes: Vec<ResourceChange>,
@@ -416,6 +424,7 @@ impl Engine {
             "平台原工作归属不符",
         )?;
         let mut plan = PlatformPlan {
+            domain_check: None,
             action: PlatformAction::Value(Value::Null),
             basis: resources.reads.clone(),
             changes: vec![],

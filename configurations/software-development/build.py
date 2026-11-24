@@ -9,11 +9,12 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 PACKAGE = Path(__file__).resolve().parent
 REPO = PACKAGE.parents[1]
 DOMAIN = "software-development"
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 DISCOVER = f"{DOMAIN}.tests.discover"
 BRANCH = f"{DOMAIN}.branch.plan"
 CONNECT = f"{DOMAIN}.project.connect"
 PR_CREATE = f"{DOMAIN}.pull-request.create"
+AUTHORIZE = f"{DOMAIN}.delivery.authorize"
 
 
 def source(kind, key, data, **references):
@@ -21,7 +22,7 @@ def source(kind, key, data, **references):
             "scope": "global", "name": key.replace("-", " ").title(), "data": data, **references}
 
 
-def delivery_configuration():
+def delivery_configuration(evidence_enabled):
     configurations = REPO / "configurations"
     manifest = json.loads((configurations / "manifest.json").read_text())
     core = json.loads((configurations / "core/manifest.json").read_text())
@@ -35,12 +36,30 @@ def delivery_configuration():
                 asset = source_path.parent / record["data"].pop(key)
                 record["data"][key.removesuffix("_file")] = asset.read_text()
         entries.append(record)
+    updated = {
+        "builtin-workflow-feature-development": (6, "feature"),
+        "builtin-workflow-task-development": (5, "task"),
+        "builtin-standard-engineering-delivery": (6, None),
+    } if evidence_enabled else {}
+    evidence = json.loads((PACKAGE / "delivery-evidence.json").read_text()) if updated else {}
     refs = {}
     for record in entries:
         identity = record["identity"]
         translated = f"{DOMAIN}.{identity.removeprefix('builtin-')}"
         refs[identity] = translated
-        refs[f"{identity}:{record['revision']}"] = f"{translated}:{record['revision']}"
+        old = record["revision"]
+        revision, kind = updated.get(identity, (old, None))
+        refs[f"{identity}:{old}"] = f"{translated}:{revision}"
+        record["revision"] = revision
+        if kind:
+            data = record["data"]
+            data.pop("delivery_policy")
+            data["operation_evidence"] = {"git.delivery": evidence[kind]}
+            immediate = data["completion"]
+            rules = immediate["rules"] if immediate["op"] == "all" else []
+            rules = rules + [{"op":"equals","source":{"step":"merge","port":"result","pointer":pointer},"value":True}
+                             for pointer in ("/synchronized", "/pull_request/merged")]
+            data["completion"] = {"op":"all", "rules":rules}
 
     def translate(value):
         if isinstance(value, str):
@@ -120,7 +139,8 @@ def build(target, web, version):
         }),
     ]
 
-    delivery_sources, defaults = delivery_configuration()
+    evidence_enabled = version == VERSION
+    delivery_sources, defaults = delivery_configuration(evidence_enabled)
     entries.extend(delivery_sources)
     connection_input = {
         "type": "object", "additionalProperties": False, "required": ["repository"],
@@ -150,7 +170,7 @@ def build(target, web, version):
     files = {"runtime/worker.mjs": (PACKAGE / "runtime/worker.mjs").read_bytes()}
     reporters = {"node_test": "runtime/node-reporter.mjs",
                  "python_unittest": "runtime/project-tests.py", "command": "runtime/project-tests.py"}
-    for path in set(reporters.values()):
+    for path in sorted(set(reporters.values()), reverse=True):
         files[path] = (PACKAGE / path).read_bytes()
     for record in entries:
         filename = f"{record['identity']}-v{record['revision']}.json"
@@ -205,6 +225,36 @@ def build(target, web, version):
                                       "needles": ["#[test", "#[tokio::test", "#[async_std::test"]}},
                                }},
                 }}}
+    if evidence_enabled:
+        entry = "runtime/worker.mjs"
+        implementation = (PACKAGE / "runtime/delivery-evidence.mjs").read_bytes()
+        handler_anchor = b"    [planBranch, ({ input }) => worktreeBranch(input)],"
+        if files[entry].count(handler_anchor) != 1:
+            raise ValueError("Worker handler table moved")
+        declaration = f"    ['{AUTHORIZE}', ({{ input }}) => authorizeDelivery(input)],".encode()
+        files[entry] = files[entry].replace(handler_anchor, handler_anchor + b"\n" + declaration) + b"\n" + implementation
+        manifest["files"][entry] = hashlib.sha256(files[entry]).hexdigest()
+        manifest["runtime"]["handlers"][AUTHORIZE] = {
+            "input_schema": {
+                "type": "object", "additionalProperties": False,
+                "required": ["operation", "source_revision", "source_branch", "destination",
+                             "candidate_revision", "regression_configured", "facts"],
+                "properties": {
+                    "operation": {"enum": ["workspace.target", "git.source.publish", "git.delivery.open",
+                                           "git.delivery.merge"]},
+                    "source_revision": coordinate["properties"]["revision"],
+                    "source_branch": {"type":"string", "minLength":1},
+                    "destination": {"enum": ["mainline", "parent_work"]},
+                    "candidate_revision": {"type":["null", "string"]},
+                    "regression_configured": {"type":"boolean"},
+                    "facts": {"type":"object", "maxProperties": 32},
+                },
+            },
+            "output_schema": {
+                "type": "object", "required": ["allowed"], "additionalProperties": False,
+                "properties": {"allowed": {"type":"boolean"}, "reason": {"type":"string"}},
+            }
+        }
     if ui:
         manifest["ui"] = ui
     files["manifest.json"] = json.dumps(manifest).encode()
@@ -221,6 +271,8 @@ if __name__ == "__main__":
     parser.add_argument("--web-dir", type=Path, default=REPO / "web/dist/software")
     parser.add_argument("--legacy-runtime-only", action="store_true",
                         help="Reproduce the 0.3.0 runtime-only release for compatibility tests")
+    parser.add_argument("--legacy-web", action="store_true",
+                        help="Build the 0.4.0 release with legacy delivery configuration")
     args = parser.parse_args()
     build(args.target, None if args.legacy_runtime_only else args.web_dir,
-          "0.3.0" if args.legacy_runtime_only else VERSION)
+          "0.3.0" if args.legacy_runtime_only else "0.4.0" if args.legacy_web else VERSION)

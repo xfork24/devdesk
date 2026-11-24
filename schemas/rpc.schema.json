@@ -4618,6 +4618,12 @@
             "$ref": "#/$defs/ReviewPolicy"
           }
         },
+        "operation_evidence": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/OperationEvidence"
+          }
+        },
         "delivery_policy": {
           "anyOf": [
             {
@@ -6745,6 +6751,40 @@
               "type": "null"
             }
           ]
+        }
+      }
+    },
+    "OperationEvidence": {
+      "type": "object",
+      "required": ["verifier", "sources", "checks"],
+      "additionalProperties": false,
+      "properties": {
+        "verifier": { "type": "string", "minLength": 1 },
+        "sources": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 32,
+          "additionalProperties": {
+            "type": "object",
+            "required": ["source"],
+            "additionalProperties": false,
+            "properties": {
+              "source": { "$ref": "#/$defs/PortSource" },
+              "platform_operation": { "type": "string", "minLength": 1 },
+              "human_confirmation": { "type": "boolean" }
+            }
+          }
+        },
+        "checks": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 32,
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "type": "string" }
+          }
         }
       }
     },

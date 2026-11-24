@@ -175,10 +175,7 @@ impl Engine {
                 }
             }
             if execution["status"] == "needs_reconciliation"
-                && plan
-                    .delivery_policy
-                    .as_ref()
-                    .is_some_and(|policy| policy.source_publication_step == step.key)
+                && plan.delivery_evidence_step("source_publication") == Some(step.key.as_str())
             {
                 let root = crate::workflow_commits::WorkflowHeaderFacts::read(self, &row.id)?;
                 let resources = root.step(self, &id)?;

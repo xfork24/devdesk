@@ -156,6 +156,7 @@ impl Workspace {
                 && ![
                     "workflow.inspect",
                     "workflow.change.preview",
+                    "workflow.rework.preview",
                     "workflow.execution.inspect",
                     "workflow.outputs.read",
                     "workflow.events.read",
@@ -181,6 +182,7 @@ impl Workspace {
             "query.spec_lint",
             "workflow.inspect",
             "workflow.change.preview",
+            "workflow.rework.preview",
             "workflow.execution.inspect",
             "workflow.outputs.read",
             "workflow.events.read",
@@ -393,6 +395,7 @@ impl Workspace {
                     && [
                         "configuration.change.apply",
                         "configuration.change.preview",
+                        "workflow.rework.preview",
                         "query.configuration_graph",
                         "query.project_standard_preview",
                     ]

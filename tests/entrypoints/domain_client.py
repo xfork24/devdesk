@@ -292,9 +292,16 @@ def run(origin, action, args):
     if action == "software":
         assert active["active"]["id"] == "software-development"
         path, revision = args
-        assert {"software-development.workflow-feature-development:5",
-                "software-development.workflow-task-development:4"} <= set(active["agent_workflows"])
-        assert active["defaults"]["standard_ref"] == "software-development.standard-engineering-delivery:5"
+        defaults = active["defaults"]
+        assert {defaults["workflow_ref"], defaults["task_workflow_ref"]} <= set(active["agent_workflows"])
+        assert defaults["standard_ref"].rsplit(":", 1)[0] == "software-development.standard-engineering-delivery"
+        if active["active"]["version"] == "0.5.0":
+            assert defaults["workflow_ref"] == "software-development.workflow-feature-development:6"
+            assert defaults["task_workflow_ref"] == "software-development.workflow-task-development:5"
+            for row in active["sources"]:
+                if row["id"] in (defaults["workflow_ref"], defaults["task_workflow_ref"]):
+                    assert "delivery_policy" not in row["data"]
+                    assert row["data"]["operation_evidence"]["git.delivery"]["checks"]["$completion"] == ["delivery_receipt"]
         coordinate = {"path": path, "revision": revision}
         actual = client.call("query.domain.invoke", epoch=epoch,
                              handler="software-development.tests.discover", input=coordinate)
@@ -328,7 +335,8 @@ def run(origin, action, args):
         assert proof["data"] == actual and proof["origin"]["owner_id"] == owner
         assert {row["type"] for row in active["sources"]} >= {"agent", "spec", "workflow", "skill"}
         return {"run": run, "branch": branch["branch"], "proof_id": proof["id"], "revision": revision,
-                "epoch": epoch, "contributions": active["contributions"]}
+                "epoch": epoch, "contributions": active["contributions"],
+                "version": active["active"]["version"], "standard_ref": defaults["standard_ref"]}
     raise ValueError(action)
 
 

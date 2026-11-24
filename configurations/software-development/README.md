@@ -22,3 +22,7 @@
 0.4.0 同时提供 Web 呈现目标 `web.react` API 2。Web Core 从 ZIP 加载 React ESM 模块及工作台样式。分支队列、交付和工程设置的入口在 `web/contributions.json` 声明。浏览器和独立客户端使用 `query.domain.contribution` 读取相同的项目查询结果。连接 GitHub 项目时，Web 通过 `domain.project.create` 使用当前包的连接处理器及默认配置。
 
 0.3.0 的流程配置和 JavaScript 运行端在 0.4.0 中逐文件保持一致。使用 `--legacy-runtime-only` 可重建 0.3.0，以复验独立升级和版本回切。
+
+0.5.0 使用 Feature Development 第 6 修订、Task Development 第 5 修订和 Engineering Delivery Standard 第 6 修订。交付流程在 `delivery-evidence.json` 声明证据输出、平台生产者和不可豁免的人工批准。Rust 在固化的执行意图上核对并绑定执行 ID、输入摘要、接纳结果和实际平台回执。Docker 内的验证器检查源版本、候选回归和适用的人工批准或独立 Green，Host 留存决定后执行受约束的 Git 操作。流程完成条件引用已接纳的平台合入与同步回执。
+
+旧 ZIP 和冻结工作流继续按其原配置读回，`--legacy-web` 可重建 0.4.0 用于兼容性检查。验证新流程使用独立领域项目和专用 GitHub 测试分支。

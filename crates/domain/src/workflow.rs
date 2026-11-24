@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub const WORKFLOW_STEP_LIMIT: usize = 1000;
 pub const WORKFLOW_DEPTH_LIMIT: usize = 8;
+pub const REPOSITORY_DELIVERY_EVIDENCE: &str = "git.delivery";
 /// Metadata recorded on persisted run instances; acceptance of stored instances is
 /// structural (a steps array), never a version comparison.
 pub const WORKFLOW_INSTANCE_SCHEMA: u64 = 6;
@@ -16,6 +17,8 @@ pub struct WorkflowDefinition {
     pub orchestrator_role_ref: Option<Id>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delivery_policy: Option<WorkflowDeliveryPolicy>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub operation_evidence: BTreeMap<String, OperationEvidence>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub rework_policies: BTreeMap<String, ReworkPolicy>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -51,6 +54,25 @@ pub struct WorkflowDeliveryPolicy {
     pub human_confirmation_step: Option<String>,
     #[serde(default)]
     pub children_step: Option<String>,
+}
+
+/// Frozen evidence consumed by a domain verifier before a platform operation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OperationEvidence {
+    pub verifier: Id,
+    pub sources: BTreeMap<String, EvidenceSource>,
+    pub checks: BTreeMap<String, BTreeSet<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EvidenceSource {
+    pub source: PortSource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform_operation: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub human_confirmation: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -619,6 +641,44 @@ impl WorkflowDefinition {
             })
     }
 
+    /// Existing recovery paths use the same frozen step references for both
+    /// old plans and plans with explicit evidence bindings.
+    pub fn delivery_evidence_step(&self, evidence: &str) -> Option<&str> {
+        if let Some(binding) = self.operation_evidence.get(REPOSITORY_DELIVERY_EVIDENCE) {
+            return binding
+                .sources
+                .get(evidence)
+                .map(|entry| entry.source.step.as_str());
+        }
+        let legacy = self.delivery_policy.as_ref()?;
+        match evidence {
+            "source_publication" => Some(&legacy.source_publication_step),
+            "source_regression" => Some(&legacy.source_regression_step),
+            "review" => Some(&legacy.code_review_step),
+            "candidate_regression" => Some(&legacy.merge_regression_step),
+            "green" => legacy.independent_green_step.as_deref(),
+            "approval" => legacy.human_confirmation_step.as_deref(),
+            "children" => legacy.children_step.as_deref(),
+            _ => None,
+        }
+    }
+
+    pub fn require_delivery_evidence_step(&self, evidence: &str) -> Result<&str> {
+        self.delivery_evidence_step(evidence).ok_or_else(|| {
+            err(
+                "configuration_required",
+                format!("缺少冻结的交付证据 {evidence}"),
+            )
+        })
+    }
+
+    pub fn uses_repository_delivery(&self) -> bool {
+        self.delivery_policy.is_some()
+            || self
+                .operation_evidence
+                .contains_key(REPOSITORY_DELIVERY_EVIDENCE)
+    }
+
     pub fn validate(&self) -> Result<Vec<String>> {
         self.scheduling.validate()?;
         require(
@@ -649,6 +709,49 @@ impl WorkflowDefinition {
                             && !s.allow_completion_override
                     }),
                     "正式合入必须绑定不可豁免的 Human 确认",
+                )?;
+            }
+        }
+        require(
+            self.delivery_policy.is_none()
+                || !self
+                    .operation_evidence
+                    .contains_key(REPOSITORY_DELIVERY_EVIDENCE),
+            "交付工作流只能使用一种证据合同",
+        )?;
+        for evidence in self.operation_evidence.values() {
+            require(
+                !evidence.verifier.trim().is_empty()
+                    && !evidence.sources.is_empty()
+                    && evidence.sources.len() <= 32
+                    && !evidence.checks.is_empty()
+                    && evidence.checks.len() <= 32,
+                "工作流操作证据合同无效",
+            )?;
+            for entry in evidence.sources.values() {
+                let producer = self
+                    .steps
+                    .iter()
+                    .find(|step| step.key == entry.source.step)
+                    .ok_or_else(|| err("invalid_workflow", "操作证据缺少生产步骤"))?;
+                require(
+                    producer.outputs.contains_key(&entry.source.port)
+                        && entry.source.pointer.is_empty(),
+                    "操作证据必须绑定完整输出端口",
+                )?;
+                if entry.human_confirmation {
+                    require(
+                        producer.confirmation == ConfirmationPolicy::Human
+                            && !producer.allow_completion_override,
+                        "操作证据需要不可豁免的人工确认",
+                    )?;
+                }
+            }
+            for names in evidence.checks.values() {
+                require(
+                    !names.is_empty()
+                        && names.iter().all(|name| evidence.sources.contains_key(name)),
+                    "操作引用了未声明的证据",
                 )?;
             }
         }

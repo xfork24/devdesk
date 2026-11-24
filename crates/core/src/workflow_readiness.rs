@@ -163,14 +163,16 @@ impl Engine {
             "not_required"
         };
         let mut delivery_refresh = Value::Null;
-        if let Some(policy) = &root.instance.plan.document.delivery_policy
+        let document = &root.instance.plan.document;
+        if let Some(source_publication) = document.delivery_evidence_step("source_publication")
             && e.failure
                 .as_ref()
                 .is_some_and(|f| f.code == "stale_target" && f.automatic_retry_safe())
         {
-            let published = root.step(self, &policy.source_publication_step)?;
+            let published = root.step(self, source_publication)?;
             if published.execution.status == StepExecutionStatus::Completed {
-                let reviewed = root.step(self, &policy.code_review_step)?;
+                let reviewed =
+                    root.step(self, document.require_delivery_evidence_step("review")?)?;
                 let source = text(&reviewed.execution.inputs["workspace"], "revision")?;
                 let budget = one(
                     self.store.as_ref(),

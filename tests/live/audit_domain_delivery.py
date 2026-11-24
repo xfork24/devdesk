@@ -15,6 +15,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("report", type=Path)
 parser.add_argument("--github-repo", required=True)
 parser.add_argument("--require-packaged-handlers", action="store_true")
+parser.add_argument("--require-delivery-evidence", action="store_true")
 args = parser.parse_args()
 root = args.report.resolve()
 context = json.loads((root / "context.json").read_text())
@@ -121,8 +122,40 @@ for ident, view in views.items():
         assert pr["base_branch"] == context["mainline"]
     stages.append(row)
 
+mode = context.get("mode", "agent")
+drivers = [json.loads(row[0]) for row in db.execute(
+    "SELECT data FROM governance_records WHERE type='workflow_driver' AND definition_id=?", (context["root"],))]
+if args.require_delivery_evidence:
+    if mode == "manual":
+        assert {driver["mode"] for driver in drivers} <= {"manual"}
+        actions = [json.loads(line) for line in (root / "manual-actions.jsonl").read_text().splitlines()]
+        assert {row["instance"] for row in actions if row["method"] == "workflow.complete"} == set(views)
+        assert {row["instance"] for row in actions if row["method"] == "workflow.step.dispatch"} == set(views)
+    else:
+        assert drivers and {driver["mode"] for driver in drivers} == {mode}
+dispatch_actors = {}
+for (raw,) in db.execute(
+    "SELECT d.data FROM governance_records p JOIN governance_records d "
+    "ON d.id=json_extract(p.data,'$.decision_id') WHERE p.type='workflow_dispatch'"):
+    decision = json.loads(raw)
+    if decision["root_instance_id"] == context["root"]:
+        kind = decision["actor"]["kind"]
+        dispatch_actors[kind] = dispatch_actors.get(kind, 0) + 1
+if args.require_delivery_evidence:
+    expected = {"manual": {"human"}, "rust": {"driver"}, "agent": {"controller", "segment"}}[mode]
+    assert dispatch_actors and set(dispatch_actors) <= expected
+confirmations = {item["execution_id"]: item for (raw,) in db.execute(
+    "SELECT data FROM governance_records WHERE type='workflow_confirmation'") if (item := json.loads(raw))}
+root_steps = views[context["root"]]["runtime"]["steps"]
+for step in root_steps:
+    if step["step"] in {"requirements_review", "design_review", "plan_review", "approval"}:
+        confirmed = confirmations[step["id"]]
+        assert confirmed["input_digest"] == step["input_digest"]
+        assert confirmed["outputs"] == step["outputs"]
+        assert confirmed["override_completion"] is False and confirmed["actor"]["kind"] == "human"
 authorizations = [json.loads(row[0]) for row in db.execute("SELECT data FROM governance_records WHERE type='workflow_human_decision'")]
-assert len(authorizations) >= 4 and all(item["approved"] and item["actor"]["kind"] == "human" for item in authorizations)
+if mode == "agent":
+    assert len(authorizations) >= 4 and all(item["approved"] and item["actor"]["kind"] == "human" for item in authorizations)
 creation_plans = []
 for (record,) in db.execute("SELECT data FROM governance_records WHERE type='platform_publish_stage'"):
     action = payload(json.loads(record)["action"])
@@ -136,8 +169,25 @@ for (record,) in db.execute("SELECT data FROM governance_records WHERE type='pla
         assert created["body"].replace("\r\n", "\n") == plan["creation"]["body"]
         creation_plans.append(plan["request"]["merge"])
 reporters = {}
-for (record,) in db.execute("SELECT data FROM governance_records WHERE type='platform_effect_intent'"):
-    action = payload(payload(json.loads(record)["plan"])["action"])
+evidence_decisions = {identity: {} for identity in views}
+observations = {effect: payload(json.loads(data)["result"]) for effect, data in db.execute(
+    "SELECT definition_id,data FROM governance_records WHERE type='platform_effect_observation' AND json_extract(data,'$.phase')='domain-authorization'")}
+for effect, call, record in db.execute("SELECT id,definition_id,data FROM governance_records WHERE type='platform_effect_intent'"):
+    plan = payload(json.loads(record)["plan"])
+    action = payload(plan["action"])
+    if check := plan.get("domain_check"):
+        raw, = db.execute("SELECT data FROM governance_records WHERE id=? AND type='platform_call'", (call,)).fetchone()
+        call_data = json.loads(raw)
+        if call_data["status"] == "succeeded":
+            assert check["handler"] == "software-development.delivery.authorize"
+            operation = check["input"]["operation"]
+            assert operation == call_data["handler"]
+            assert observations[effect] == {"Ok": {"allowed": True}}
+            instance = payload(call_data["request"])["instance_id"]
+            for fact in check["input"]["facts"].values():
+                assert re.fullmatch("[a-f0-9]{64}", fact["output_digest"])
+                assert fact["execution_id"]
+            evidence_decisions[instance][operation] = effect
     if action.get("Test",{}).get("reporter"):
         test = action["Test"]
         reporter = test["reporter"]
@@ -147,8 +197,22 @@ for (record,) in db.execute("SELECT data FROM governance_records WHERE type='pla
         reporters[test["operation_id"]] = reporter["digest"]
 if args.require_packaged_handlers:
     assert len(creation_plans) == 2 and len(reporters) >= 6
+if args.require_delivery_evidence:
+    with ZipFile(io.BytesIO(archive)) as installed:
+        for view in views.values():
+            # The package manifest only includes concrete workflow source revisions.
+            ref = view["runtime"]["workflow_ref"]
+            source, revision = ref.rsplit(":", 1)
+            frozen = json.loads(installed.read(f"configurations/{source}-v{revision}.json"))["data"]
+            assert "delivery_policy" not in frozen
+            assert frozen["operation_evidence"]["git.delivery"]["checks"]["$completion"] == ["delivery_receipt"]
+    for verified in evidence_decisions.values():
+        assert set(verified) == {"workspace.target", "git.source.publish", "git.delivery.open", "git.delivery.merge"}
 result = {"domain_digest": package_digest, "domain_version": manifest["version"],
-          "root":context["root"], "repository":repo,
-          "workflows":stages,"published_creation_plans":creation_plans,"frozen_reporters":reporters,"human_decisions":len(authorizations)}
+          "root":context["root"], "repository":repo, "mode":mode,
+          "workflows":stages,"published_creation_plans":creation_plans,"frozen_reporters":reporters,
+          "human_decisions":len(authorizations),"step_confirmations":len(confirmations),
+          "dispatch_actors":dispatch_actors,
+          "domain_evidence_decisions":evidence_decisions}
 (root / "delivery-audit.json").write_text(json.dumps(result,indent=2,ensure_ascii=False)+"\n")
 print(json.dumps(result,ensure_ascii=False))

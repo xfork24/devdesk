@@ -2809,7 +2809,8 @@
       "sites": [
         "crates/core/src/controllers.rs",
         "crates/core/src/orchestration.rs",
-        "crates/core/src/workflow_rework.rs"
+        "crates/core/src/workflow_rework.rs",
+        "crates/host/src/governance.rs"
       ]
     },
     {

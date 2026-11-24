@@ -118,9 +118,8 @@ impl Engine {
                 .instance
                 .plan
                 .document
-                .delivery_policy
-                .as_ref()
-                .is_none_or(|policy| policy.source_publication_step != step.step)
+                .delivery_evidence_step("source_publication")
+                != Some(step.step.as_str())
         {
             return Ok(None);
         }
@@ -617,6 +616,7 @@ impl Engine {
             saved
         } else {
             let plan = PlatformPlan {
+                domain_check: None,
                 action: PlatformAction::Delivery(Box::new(action.clone())),
                 basis: basis.clone(),
                 changes: vec![],

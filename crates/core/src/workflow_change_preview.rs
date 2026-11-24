@@ -895,6 +895,7 @@ impl Engine {
         );
         if document.action_requirements != old.plan.document.action_requirements
             || document.delivery_policy != old.plan.document.delivery_policy
+            || document.operation_evidence != old.plan.document.operation_evidence
         {
             seeds.extend(old.plan.document.steps.iter().map(|s| s.key.clone()));
         }

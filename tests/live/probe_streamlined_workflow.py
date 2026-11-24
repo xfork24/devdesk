@@ -18,6 +18,8 @@ parser.add_argument('--binary', type=Path, required=True)
 parser.add_argument('--codex-auth-source', type=Path, required=True)
 parser.add_argument('--github-repo', required=True)
 parser.add_argument('--mainline', default='main')
+parser.add_argument('--mode', choices=('manual', 'rust', 'agent'), default='agent')
+parser.add_argument('--web-dir', type=Path, help='Serve release Web Core for browser review')
 parser.add_argument('--domain-zip', type=Path, help='Verify the software domain package with an empty Core Host')
 parser.add_argument('--title', default='Normalize, format and compose with concurrent DAG')
 parser.add_argument('--report-directory', type=Path, required=True)
@@ -49,7 +51,8 @@ for filename in ['probe_streamlined_workflow.py', 'client.py', 'workflow_observe
 domain_archive = args.domain_zip.read_bytes() if args.domain_zip else None
 domain_digest = hashlib.sha256(domain_archive).hexdigest() if domain_archive else None
 trust = ['--trust-domain', domain_digest] if domain_digest else []
-child = None if args.url else subprocess.Popen([str(private), '--data', str(out / 'data'), '--port', '0', *trust],
+web = ['--web-dir', str(args.web_dir.resolve())] if args.web_dir else []
+child = None if args.url else subprocess.Popen([str(private), '--data', str(out / 'data'), '--port', '0', *trust, *web],
                          stdout=(out / ('host-' + str(time.time_ns()) + '.log')).open('w'), stderr=subprocess.STDOUT, env={**os.environ, **({'DEVDESK_PERF_LOG': '1'} if args.performance else {})})
 try:
     deadline = time.monotonic() + 180
@@ -72,6 +75,7 @@ try:
         client.project = context['project']
         client.domain_epoch = context.get('domain_epoch')
         context['url'] = urls[0]
+        assert context.get('mode', 'agent') == args.mode, 'Resume must retain the original driver mode'
         context.setdefault('resumptions', []).append({'binary_sha256': identity, 'time': time.time()})
     else:
         if domain_archive:
@@ -87,9 +91,9 @@ try:
                 'title': 'Software domain acceptance',
                 'connection': {'repository': args.github_repo, 'mainline': args.mainline},
             })['id']
-            assert defaults['workflow_ref'] == 'software-development.workflow-feature-development:5'
-            assert defaults['task_workflow_ref'] == 'software-development.workflow-task-development:4'
-            assert defaults['standard_ref'] == 'software-development.standard-engineering-delivery:5'
+            assert defaults['workflow_ref'].rsplit(':', 1)[0] == 'software-development.workflow-feature-development'
+            assert defaults['task_workflow_ref'].rsplit(':', 1)[0] == 'software-development.workflow-task-development'
+            assert defaults['standard_ref'].rsplit(':', 1)[0] == 'software-development.standard-engineering-delivery'
         else:
             project = client.command('project.open_github', payload={'repository': args.github_repo, 'mainline': args.mainline, 'title': 'streamlined acceptance'})['id']
         client.project = project
@@ -111,16 +115,51 @@ try:
                                 'harness_permission_ref', 'sandbox_ref', 'sandbox_permission_ref', 'orchestration']
         if not domain_archive:
             configuration_fields.append('orchestrator_role_ref')
-        configuration = client.command('project.configuration.update', project, current['revision'],
-                                       {key: defaults[key] for key in configuration_fields})
+        configured = {key: defaults[key] for key in configuration_fields}
+        configured['orchestration'] = {**configured['orchestration'], 'mode': args.mode}
+        configuration = client.command('project.configuration.update', project, current['revision'], configured)
         test_configuration = configuration['data']['test_configuration']
         feature = client.command('feature.create', payload={'project_id': project, 'title': args.title,
             'initial_requirement': args.requirement_file.read_text(), 'start_workflow': False, 'configuration_revision_id': configuration['id']})['id']
         client.command('workflow.start', feature, client.feature(feature)['feature']['revision'])
         root = client.rpc('query.workflow_instance', {'owner_id': feature})['record']['id']
         context = {'url': urls[0], 'project': project, 'feature': feature, 'root': root, 'binary_sha256': identity,
-                   'defaults': defaults, 'domain_epoch': client.domain_epoch, 'domain_digest': domain_digest, 'test_configuration': test_configuration, 'suite': 'streamlined', 'mainline': args.mainline, 'human_decisions_by_probe': 0}
+                   'defaults': defaults, 'domain_epoch': client.domain_epoch, 'domain_digest': domain_digest, 'test_configuration': test_configuration, 'suite': 'streamlined', 'mainline': args.mainline, 'mode': args.mode, 'human_decisions_by_probe': 0}
     (out / 'context.json').write_text(json.dumps(context, ensure_ascii=False, indent=2))
+    def manual_actions(tree):
+        # This client only drives the public manual scheduling actions. Human
+        # confirmations, requests for input and exceptional repairs are separate.
+        for identity, instance in reversed(list(tree.items())):
+            if instance['runtime']['status'] in ('completed', 'cancelled'):
+                continue
+            view = client.rpc('query.workflow_control', {'id': identity, 'view': 'summary', 'limit': 64})
+            command = None
+            payload = {}
+            if 'complete' in view['allowed_actions']:
+                command = 'workflow.complete'
+            else:
+                for row in view['steps']:
+                    step = row['execution']
+                    if row['actions']['dispatch']['allowed']:
+                        command = 'workflow.step.dispatch'
+                    elif step['status'] == 'awaiting_acceptance' and row['actions']['accept']['allowed']:
+                        command = 'workflow.step.accept'
+                    if command:
+                        payload = {'step': step['step'], 'execution_id': step['id']}
+                        if command == 'workflow.step.accept':
+                            payload.update(input_digest=step['input_digest'], outputs=step['outputs'])
+                        break
+            if command:
+                try:
+                    result = client.command(command, identity, view['record']['revision'], payload)
+                except RuntimeError as failure:
+                    if not any(code in str(failure) for code in (': revision_conflict:', ': resource_conflict:')):
+                        raise
+                    continue
+                with (out / 'manual-actions.jsonl').open('a') as actions:
+                    actions.write(json.dumps({'time':time.time(), 'method':command, 'instance':identity,
+                                              'payload':payload, 'result':result}) + '\n')
+
     seen = set()
     deadline = time.monotonic() + args.timeout_seconds
     while True:
@@ -151,10 +190,16 @@ try:
                 history.write(json.dumps({'time': time.time(), 'statuses': statuses, 'instances': [{'id': key, 'status': value['runtime']['status'], 'owner_id': value['runtime']['owner_id']} for key, value in tree.items()]}, ensure_ascii=False) + '\n')
             print(json.dumps(statuses, ensure_ascii=False), flush=True)
             seen.add(status_digest)
-        if workflow_settled(tree, manager, context['root']):
-            (out / 'completed.json').write_text(json.dumps({'time': time.time(), 'root': context['root'], 'controller_status': 'closed', 'human_decisions_by_probe': 0}))
+        complete = (workflow_settled(tree, manager, context['root']) if args.mode == 'agent'
+                    else all(view['runtime']['status'] == 'completed' for view in tree.values()))
+        if complete:
+            (out / 'completed.json').write_text(json.dumps({'time': time.time(), 'root': context['root'],
+                'mode': args.mode, 'controller_status': 'closed' if args.mode == 'agent' else None,
+                'human_decisions_by_probe': 0}))
             print('Real default workflow completed; evidence audit still required.', flush=True)
             break
+        if args.mode == 'manual':
+            manual_actions(tree)
         time.sleep(3)
 finally:
     if child is not None:
