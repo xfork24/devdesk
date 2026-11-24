@@ -46,7 +46,7 @@ P3 扩展验收使用同一个文稿包。Web 启动人工流程，Python 派发
 
 讨论和经验使用确切的对象归属。相同对象及 Agent 可以复用讨论，其他对象无法继承该讨论或按自身范围读回原经验。真实 Codex 讨论 `95d8f08e-3986-8a30-1f93-4ca079de65ed` 步骤结束后生成经验 `fd3f81f3-495c-10d1-b7c1-a635287b4234`，并通过了隔离断言。
 
-Harness 按会话、操作、所有者及版本接收工作区租约。Git 继续使用已冻结的提交和独占写入检查。只读 Artifact 取自同一流程中已接纳的步骤输出，验证摘要后挂载为 `/work/artifact`。适配器测试覆盖错误操作、写权限和内容变化。
+Harness 按会话、操作、所有者及版本接收工作区租约。Git 继续使用已冻结的提交和独占写入检查。只读 Artifact 取自同一流程中已接纳的步骤输出，验证摘要后挂载为 `/work/artifact`。适配器测试覆盖错误操作、写权限和内容变化。P3 联合验收再次完成真实 Codex 编排、对象讨论与经验隔离。证据位于 `/tmp/devdesk-p3-final.z3hG6K/evidence/result.json`。
 
 ## P4 软件开发候选包
 
@@ -55,6 +55,8 @@ Harness 按会话、操作、所有者及版本接收工作区租约。Git 继�
 Feature 和 Task 的真实 Git worktree 验证了分支策略在物理调用前写入操作意图。对已写入的 Feature 操作注入回执丢失后，`repository.reconcile` 只读取原工作副本和回执，物理写入计数保持不变。本轮远端 PR、合入、保护分支和同步仍待迁移及验收。[候选包](../../../configurations/software-development/README.md)
 
 两个独立发行件解压后，再次通过双端及热切换验收。软件包预检执行为 `65002759-b374-283b-0a1a-537a04e66552`，证据位于 `/tmp/devdesk-p4-release.2bfC1L/result.json`。同一 Host 发行件的真实 Codex 复验执行为 `ec056394-3eae-392e-2053-42c897e5d2bd`，证据位于 `/tmp/devdesk-p4-live-agent.RWWiq2/evidence/result.json`。
+
+软件开发包 0.2.0 增加了原 Feature→Task 的命名空间化配置目录。包内处理器解析 GitHub 连接坐标，Host 从已绑定包的项目发出原生仓库连接意图。空领域 Host 已验证安装、激活与项目配置装配。远端验证使用单独的目标分支。
 
 ## 基线和后续范围
 

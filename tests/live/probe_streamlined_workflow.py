@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Observe the real default streamlined DAG. Human decisions are never generated here."""
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -17,6 +18,7 @@ parser.add_argument('--binary', type=Path, required=True)
 parser.add_argument('--codex-auth-source', type=Path, required=True)
 parser.add_argument('--github-repo', required=True)
 parser.add_argument('--mainline', default='main')
+parser.add_argument('--domain-zip', type=Path, help='Verify the software domain package with an empty Core Host')
 parser.add_argument('--title', default='Normalize, format and compose with concurrent DAG')
 parser.add_argument('--report-directory', type=Path, required=True)
 parser.add_argument('--requirement-file', type=Path, required=True)
@@ -44,7 +46,10 @@ attempt.mkdir(parents=True)
 for filename in ['probe_streamlined_workflow.py', 'client.py', 'workflow_observer.py']:
     shutil.copy2(Path(__file__).parent / filename, attempt / filename)
 (attempt / 'identity.json').write_text(json.dumps({'binary_sha256': identity, 'resume': args.resume, 'performance': args.performance, 'time': time.time()}))
-child = None if args.url else subprocess.Popen([str(private), '--data', str(out / 'data'), '--port', '0'],
+domain_archive = args.domain_zip.read_bytes() if args.domain_zip else None
+domain_digest = hashlib.sha256(domain_archive).hexdigest() if domain_archive else None
+trust = ['--trust-domain', domain_digest] if domain_digest else []
+child = None if args.url else subprocess.Popen([str(private), '--data', str(out / 'data'), '--port', '0', *trust],
                          stdout=(out / ('host-' + str(time.time_ns()) + '.log')).open('w'), stderr=subprocess.STDOUT, env={**os.environ, **({'DEVDESK_PERF_LOG': '1'} if args.performance else {})})
 try:
     deadline = time.monotonic() + 180
@@ -57,7 +62,7 @@ try:
         assert child.poll() is None, 'Host stopped before listening'
         assert time.monotonic() < deadline, 'Host startup timeout'
         time.sleep(.1)
-    client = Client(urls[0])
+    client = Client(urls[0], core_protocol=domain_archive is not None)
     auth = out / 'data/credentials/codex/auth.json'
     auth.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(args.codex_auth_source.resolve(), auth)
@@ -65,33 +70,56 @@ try:
     if args.resume:
         context = json.loads((out / 'context.json').read_text())
         client.project = context['project']
+        client.domain_epoch = context.get('domain_epoch')
         context['url'] = urls[0]
         context.setdefault('resumptions', []).append({'binary_sha256': identity, 'time': time.time()})
     else:
-        project = client.command('project.open_github', payload={'repository': args.github_repo, 'mainline': args.mainline, 'title': 'streamlined acceptance'})['id']
+        if domain_archive:
+            status = client.rpc('query.domain.active')
+            assert status['active'] is None, 'new dataset must start in the empty domain'
+            installed = client.rpc('domain.install', {'archive': base64.b64encode(domain_archive).decode()})
+            assert installed['digest'] == domain_digest
+            status = client.rpc('domain.activate', {'digest': domain_digest, 'epoch': status['epoch']})
+            client.domain_epoch = status['epoch']
+            defaults = status['defaults']
+            project = client.rpc('domain.project.create', {
+                'epoch': status['epoch'], 'command_id': 'software-domain-live-project',
+                'title': 'Software domain acceptance',
+                'connection': {'repository': args.github_repo, 'mainline': args.mainline},
+            })['id']
+            assert defaults['workflow_ref'] == 'software-development.workflow-feature-development:5'
+            assert defaults['task_workflow_ref'] == 'software-development.workflow-task-development:4'
+            assert defaults['standard_ref'] == 'software-development.standard-engineering-delivery:5'
+        else:
+            project = client.command('project.open_github', payload={'repository': args.github_repo, 'mainline': args.mainline, 'title': 'streamlined acceptance'})['id']
         client.project = project
         client.wait(lambda: client.rpc('query.workspace'), lambda v: v['repository_ready'], 300)
         client.timeout = 1250
         runtime = client.rpc('runtime.prepare', {'provider': 'codex'})
         client.timeout = 180
-        defaults = client.rpc('query.configuration_defaults')
-        assert defaults['workflow_ref'] == 'builtin-workflow-feature-development:5'
-        assert defaults['task_workflow_ref'] == 'builtin-workflow-task-development:4'
-        assert defaults['standard_ref'] == 'builtin-standard-engineering-delivery:5'
+        if not domain_archive:
+            defaults = client.rpc('query.configuration_defaults')
+            assert defaults['workflow_ref'] == 'builtin-workflow-feature-development:5'
+            assert defaults['task_workflow_ref'] == 'builtin-workflow-task-development:4'
+            assert defaults['standard_ref'] == 'builtin-standard-engineering-delivery:5'
         discovery = client.rpc('query.project_test_configuration')
         (out / 'test-discovery.json').write_text(json.dumps(discovery, ensure_ascii=False, indent=2))
         current = client.rpc('query.workspace')['active_project']
         client.command('project.update', project, current['revision'], {'concurrency': 4})
         current = client.rpc('query.workspace')['active_project']
-        configuration = client.command('project.configuration.update', project, current['revision'], {
-            **{key: defaults[key] for key in ['workflow_ref', 'standard_ref', 'role_agent_bindings', 'orchestrator_role_ref', 'harness_permission_ref', 'sandbox_ref', 'sandbox_permission_ref', 'orchestration']}})
+        configuration_fields = ['workflow_ref', 'standard_ref', 'role_agent_bindings',
+                                'harness_permission_ref', 'sandbox_ref', 'sandbox_permission_ref', 'orchestration']
+        if not domain_archive:
+            configuration_fields.append('orchestrator_role_ref')
+        configuration = client.command('project.configuration.update', project, current['revision'],
+                                       {key: defaults[key] for key in configuration_fields})
         test_configuration = configuration['data']['test_configuration']
         feature = client.command('feature.create', payload={'project_id': project, 'title': args.title,
             'initial_requirement': args.requirement_file.read_text(), 'start_workflow': False, 'configuration_revision_id': configuration['id']})['id']
         client.command('workflow.start', feature, client.feature(feature)['feature']['revision'])
         root = client.rpc('query.workflow_instance', {'owner_id': feature})['record']['id']
         context = {'url': urls[0], 'project': project, 'feature': feature, 'root': root, 'binary_sha256': identity,
-                   'defaults': defaults, 'test_configuration': test_configuration, 'suite': 'streamlined', 'mainline': args.mainline, 'human_decisions_by_probe': 0}
+                   'defaults': defaults, 'domain_epoch': client.domain_epoch, 'domain_digest': domain_digest, 'test_configuration': test_configuration, 'suite': 'streamlined', 'mainline': args.mainline, 'human_decisions_by_probe': 0}
     (out / 'context.json').write_text(json.dumps(context, ensure_ascii=False, indent=2))
     seen = set()
     deadline = time.monotonic() + args.timeout_seconds

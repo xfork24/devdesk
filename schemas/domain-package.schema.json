@@ -23,6 +23,7 @@
         "entry": { "$ref": "#/$defs/path", "pattern": "^runtime/.+[.]mjs$" },
         "worktree_branch": { "$ref": "#/$defs/identifier" },
         "test_discovery": { "$ref": "#/$defs/identifier" },
+        "project_connection": { "$ref": "#/$defs/identifier" },
         "handlers": {
           "type": "object",
           "minProperties": 1,

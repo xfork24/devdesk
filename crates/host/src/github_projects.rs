@@ -1,7 +1,7 @@
 //! The Web project entry point always records a GitHub connection intent before opening.
 use super::*;
 
-fn repository_name(value: &str) -> Result<String> {
+pub(crate) fn repository_name(value: &str) -> Result<String> {
     let name = value
         .trim()
         .strip_prefix("https://github.com/")

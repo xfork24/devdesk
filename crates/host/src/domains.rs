@@ -130,7 +130,14 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
         "domain.project.create" => {
             let title = text("title")?;
             let command = command_identity(&params)?;
-            packages.with_sources(epoch()?, trusted, |digest, sources| {
+            packages.with_sources(epoch()?, trusted, params.get("connection"), |digest, sources, plan| {
+                let mut payload = json!({"title":title});
+                if let Some(plan) = &plan {
+                    let repository = plan["repository"].as_str().ok_or_else(|| err("domain_contract", "连接缺少仓库"))?;
+                    let mainline = plan["mainline"].as_str().ok_or_else(|| err("domain_contract", "连接缺少目标分支"))?;
+                    payload["repository"] = json!(crate::workspace::github_projects::repository_name(repository)?);
+                    payload["mainline"] = json!(mainline);
+                }
                 let created = workspace.create_project(
                     Command {
                         command_id: format!(
@@ -139,16 +146,28 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
                         ),
                         target: None,
                         expected_revision: None,
-                        payload: json!({"title":title}),
+                        payload,
                     },
                     |project| packages.bind_project(project, digest),
                 )?;
                 let project = created["id"]
                     .as_str()
                     .ok_or_else(|| err("storage", "项目回执缺少 ID"))?;
-                workspace
-                    .project_engine(Some(project))?
-                    .adopt_domain_sources(sources)?;
+                let engine = workspace.project_engine(Some(project))?;
+                engine.adopt_domain_sources(sources)?;
+                if let Some(plan) = plan {
+                    let state = engine.store.read_resources(&[devdesk_core::concurrency::ResourceKey::new(
+                        "repository_project_state", project,
+                    )])?.remove(0);
+                    if state.value.as_ref().is_some_and(|row| row["connect_exists"] == false) {
+                        engine.execute("repository.connect", Command {
+                            command_id: format!("domain-project-connect:{project}"),
+                            target: Some(project.into()),
+                            expected_revision: Some(engine.store.project_metadata()?.revision),
+                            payload: json!({"repository":plan["repository"],"mainline":plan["mainline"]}),
+                        })?;
+                    }
+                }
                 Ok(created)
             })
         }

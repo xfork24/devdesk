@@ -11,11 +11,46 @@ REPO = PACKAGE.parents[1]
 DOMAIN = "software-development"
 DISCOVER = f"{DOMAIN}.tests.discover"
 BRANCH = f"{DOMAIN}.branch.plan"
+CONNECT = f"{DOMAIN}.project.connect"
 
 
 def source(kind, key, data, **references):
     return {"type": kind, "identity": f"{DOMAIN}.{key}", "revision": 1,
             "scope": "global", "name": key.replace("-", " ").title(), "data": data, **references}
+
+
+def delivery_configuration():
+    configurations = REPO / "configurations"
+    manifest = json.loads((configurations / "manifest.json").read_text())
+    core = json.loads((configurations / "core/manifest.json").read_text())
+    core_paths = {path for paths in core["types"].values() for path in paths}
+    entries = []
+    for path in (path for paths in manifest["types"].values() for path in paths if path not in core_paths):
+        source_path = configurations / path
+        record = json.loads(source_path.read_text())
+        for key in tuple(record["data"]):
+            if key.endswith("_file"):
+                asset = source_path.parent / record["data"].pop(key)
+                record["data"][key.removesuffix("_file")] = asset.read_text()
+        entries.append(record)
+    refs = {}
+    for record in entries:
+        identity = record["identity"]
+        translated = f"{DOMAIN}.{identity.removeprefix('builtin-')}"
+        refs[identity] = translated
+        refs[f"{identity}:{record['revision']}"] = f"{translated}:{record['revision']}"
+
+    def translate(value):
+        if isinstance(value, str):
+            return refs.get(value, value)
+        if isinstance(value, dict):
+            return {refs.get(key, key): translate(child) for key, child in value.items()}
+        if isinstance(value, list):
+            return [translate(child) for child in value]
+        return value
+
+    defaults = json.loads((configurations / manifest["defaults"]).read_text())
+    return translate(entries), translate(defaults)
 
 
 def build(target):
@@ -83,10 +118,22 @@ def build(target):
         }),
     ]
 
+    delivery_sources, defaults = delivery_configuration()
+    entries.extend(delivery_sources)
+    connection_input = {
+        "type": "object", "additionalProperties": False, "required": ["repository"],
+        "properties": {"repository": {"type": "string", "minLength": 1, "maxLength": 300},
+                       "mainline": {"type": "string", "minLength": 1, "maxLength": 200}},
+    }
+    connection_result = {
+        **connection_input, "required": ["repository", "mainline"],
+        "properties": {**connection_input["properties"],
+                       "repository": {"type": "string", "pattern": r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"}},
+    }
     types = {}
     files = {"runtime/worker.mjs": (PACKAGE / "runtime/worker.mjs").read_bytes()}
     for record in entries:
-        filename = f"{record['identity']}.json"
+        filename = f"{record['identity']}-v{record['revision']}.json"
         types.setdefault(record["type"], []).append(filename)
         files[f"configurations/{filename}"] = json.dumps(record).encode()
     usage = runpy.run_path(str(REPO / "scripts/py/configuration_usage.py"))["usage_index"]
@@ -96,7 +143,7 @@ def build(target):
             "schema_version": 1, "bundle_version": f"{DOMAIN}-1", "types": types,
             "defaults": "defaults.json", "usage_index": "usage.json",
         }).encode(),
-        "configurations/defaults.json": b"{}",
+        "configurations/defaults.json": json.dumps(defaults).encode(),
         "configurations/usage.json": json.dumps({"references": usage(entries)}).encode(),
         entity_types: json.dumps({
             f"{DOMAIN}.repository:1": {"name": "Repository revision", "schema": coordinate,
@@ -104,10 +151,11 @@ def build(target):
             result_type: {"name": "Test configuration", "schema": output},
         }).encode(),
     })
-    manifest = {"format": 1, "id": DOMAIN, "version": "0.1.0", "entity_types": entity_types,
+    manifest = {"format": 1, "id": DOMAIN, "version": "0.2.0", "entity_types": entity_types,
                 "files": {path: hashlib.sha256(contents).hexdigest() for path, contents in files.items()},
                 "runtime": {"entry": "runtime/worker.mjs", "worktree_branch": BRANCH, "test_discovery": DISCOVER,
-                            "handlers": {
+                            "project_connection": CONNECT, "handlers": {
+                    CONNECT: {"input_schema": connection_input, "output_schema": connection_result},
                     BRANCH: {"input_schema": branch_request, "output_schema": branch_result},
                     DISCOVER: {"core": "git_snapshot", "input_schema": coordinate, "output_schema": output,
                                "git_snapshot": {

@@ -717,6 +717,10 @@ pub fn validate_domain_configuration(
     };
     let mut catalog = EngineeringState::default();
     initialize_template_catalog(&mut catalog)?;
+    // Validate against the same factory permission targets as a fresh Host.
+    // These in-memory bindings only check graph closure. Activation resolves
+    // the real enforcement contracts from the installed runtime.
+    template_permission_defaults(&mut catalog, &|_, _| Ok("domain-package-validation".into()))?;
     catalog.governance.extend(bundle.entries.iter().cloned());
     for (role, agent) in &bindings {
         let role = catalog.configuration(role)?;

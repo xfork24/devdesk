@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 
 const discover = "software-development.tests.discover";
 const planBranch = "software-development.branch.plan";
+const connect = "software-development.project.connect";
 
 function regression(runner, files, argv = null) {
   return {
@@ -108,10 +109,28 @@ export function worktreeBranch({ kind, owner }) {
   return { owner, kind, branch: `devdesk/${directory}/${owner}` };
 }
 
+export function connectProject(input) {
+  let repository = input.repository.trim();
+  if (repository.startsWith("https://github.com/")) {
+    repository = repository.slice("https://github.com/".length);
+  }
+  repository = repository.replace(/\/$/, "").replace(/[.]git$/, "");
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)
+      || repository.split("/").some((part) => part === "." || part === "..")) {
+    throw new Error("Expected a GitHub owner/repository");
+  }
+  const mainline = (input.mainline ?? "main").trim();
+  if (!mainline || mainline.startsWith("-") || /\s/.test(mainline)) {
+    throw new Error("Invalid target branch");
+  }
+  return { repository, mainline };
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const request = JSON.parse(readFileSync(0, "utf8"));
   const handlers = new Map([
     [planBranch, ({ input }) => worktreeBranch(input)],
+    [connect, ({ input }) => connectProject(input)],
     [discover, ({ core }) => discoverTests(core)],
   ]);
   try {

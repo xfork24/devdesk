@@ -5,7 +5,7 @@ mod background;
 #[path = "configuration_read.rs"]
 mod configuration_read;
 #[path = "github_projects.rs"]
-mod github_projects;
+pub(super) mod github_projects;
 #[path = "governance.rs"]
 mod governance;
 #[cfg(test)]

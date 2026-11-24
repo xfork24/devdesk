@@ -1,16 +1,20 @@
 """Small local acceptance client. Project pinning and unique commands are explicit."""
 import http.cookiejar,json,time,urllib.request,uuid
 class Client:
- def __init__(self,url='http://127.0.0.1:51751',project=None,timeout=180):
-  self.url=url;self.project=project;self.timeout=timeout;self.http=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()));deadline=time.monotonic()+15
+ def __init__(self,url='http://127.0.0.1:51751',project=None,timeout=180,domain_epoch=None,core_protocol=False):
+  self.url=url;self.project=project;self.timeout=timeout;self.domain_epoch=domain_epoch;self.http=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()));deadline=time.monotonic()+15
   while True:
-   try:self.http.open(url+'/',timeout=3).close();break
+   try:
+    endpoint = urllib.request.Request(url+'/session',data=b'{}',headers={'Content-Type':'application/json'}) if core_protocol else url+'/'
+    self.http.open(endpoint,timeout=3).close()
+    break
    except urllib.error.URLError:
     if time.monotonic()>=deadline:raise
     time.sleep(.2)
  def rpc(self,method,params=None):
   params=dict(params or {})
   if self.project:params.setdefault('project_id',self.project)
+  if self.domain_epoch is not None:params.setdefault('domain_epoch',self.domain_epoch)
   req=urllib.request.Request(self.url+'/rpc',data=json.dumps({'jsonrpc':'2.0','id':1,'method':method,'params':params}).encode(),headers={'Content-Type':'application/json'})
   value=json.load(self.http.open(req,timeout=self.timeout))
   if 'error' in value:raise RuntimeError(method+': '+value['error']['data']['code']+': '+value['error']['message'])

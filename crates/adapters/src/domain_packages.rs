@@ -36,6 +36,8 @@ struct Runtime {
     worktree_branch: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     test_discovery: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    project_connection: Option<String>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -232,6 +234,7 @@ struct Package {
     sources: Vec<ConfigurationRecord>,
     role_agent_bindings: BTreeMap<Id, Id>,
     agent_workflows: BTreeSet<Id>,
+    defaults: Value,
     entity_types: BTreeMap<String, EntityType>,
 }
 
@@ -347,14 +350,17 @@ impl Package {
                     "项目测试识别需要声明输入输出的 Git 快照处理器",
                 )?;
             }
-            if let Some(handler) = &runtime.worktree_branch {
+            for name in [&runtime.worktree_branch, &runtime.project_connection]
+                .into_iter()
+                .flatten()
+            {
                 require(
-                    runtime.handlers.get(handler).is_some_and(|handler| {
+                    runtime.handlers.get(name).is_some_and(|handler| {
                         handler.core.is_none()
                             && handler.input_schema.is_some()
                             && handler.output_schema.is_some()
                     }),
-                    "Git 工作区分支策略需要声明输入输出的纯处理器",
+                    "领域项目接入和分支策略需要声明输入输出的纯处理器",
                 )?;
             }
             for handler in runtime.handlers.values() {
@@ -418,18 +424,19 @@ impl Package {
                 }
             }
         }
-        let (sources, configuration) = if files.contains_key("configurations/manifest.json") {
-            let bundle = factory_bundle::read_bundle(|path| {
-                files
-                    .get(&format!("configurations/{path}"))
-                    .and_then(|body| std::str::from_utf8(body).ok())
-                    .ok_or_else(|| invalid("领域源文件缺失或编码无效"))
-            })?;
-            let configuration = devdesk_core::validate_domain_configuration(&prefix, &bundle)?;
-            (bundle.entries, configuration)
-        } else {
-            (vec![], Default::default())
-        };
+        let (sources, defaults, configuration) =
+            if files.contains_key("configurations/manifest.json") {
+                let bundle = factory_bundle::read_bundle(|path| {
+                    files
+                        .get(&format!("configurations/{path}"))
+                        .and_then(|body| std::str::from_utf8(body).ok())
+                        .ok_or_else(|| invalid("领域源文件缺失或编码无效"))
+                })?;
+                let configuration = devdesk_core::validate_domain_configuration(&prefix, &bundle)?;
+                (bundle.entries, bundle.defaults, configuration)
+            } else {
+                (vec![], json!({}), Default::default())
+            };
         for (owner, entity) in &entity_types {
             for (reference, binding) in &entity.workflows {
                 let workflow = sources
@@ -479,6 +486,7 @@ impl Package {
             sources,
             role_agent_bindings: configuration.role_agent_bindings,
             agent_workflows: configuration.agent_workflows,
+            defaults,
             entity_types,
         })
     }
@@ -579,6 +587,8 @@ impl DomainPackages {
             "targets":package.and_then(|p| p.manifest.ui.as_ref()).map(|ui| &ui.targets),
             "sources":package.map(|p| &p.sources),
             "agent_workflows":package.map(|p| &p.agent_workflows),
+            "defaults":package.map(|p| &p.defaults),
+            "project_connection":package.and_then(|p| p.runtime()).and_then(|r| r.project_connection.as_deref()),
             "entity_types":package.map(|p| &p.entity_types),
         })
     }
@@ -920,7 +930,8 @@ impl DomainPackages {
         &self,
         epoch: u64,
         trusted: &BTreeSet<String>,
-        action: impl FnOnce(&str, &[ConfigurationRecord]) -> Result<T>,
+        connection: Option<&Value>,
+        action: impl FnOnce(&str, &[ConfigurationRecord], Option<Value>) -> Result<T>,
     ) -> Result<T> {
         let active = self.active.read().unwrap();
         check_epoch(epoch, active.epoch)?;
@@ -929,7 +940,16 @@ impl DomainPackages {
             .as_ref()
             .filter(|package| trusted.contains(&package.digest))
             .ok_or_else(|| err("domain_inactive", "没有获准的活动领域"))?;
-        action(&package.digest, &package.sources)
+        let plan = connection
+            .map(|input| {
+                let handler = package
+                    .runtime()
+                    .and_then(|runtime| runtime.project_connection.as_deref())
+                    .ok_or_else(|| err("unsupported", "活动领域没有声明项目连接处理器"))?;
+                Self::run_handler(package, handler, input.clone())
+            })
+            .transpose()?;
+        action(&package.digest, &package.sources, plan)
     }
 
     fn projects(&self, digest: &str) -> Result<Vec<String>> {
