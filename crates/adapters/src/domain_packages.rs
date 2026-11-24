@@ -677,7 +677,7 @@ impl DomainPackages {
         )
         .map_err(storage)?;
         db.execute_batch(storage::SCHEMA).map_err(storage)?;
-        storage::restore_package_identities(&db, root)?;
+        storage::restore_package_identities(&db)?;
         let (mut epoch, installed_digest, domain, archive): (
             u64,
             Option<String>,
@@ -691,9 +691,9 @@ impl DomainPackages {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .map_err(storage)?;
-        let available = domain.as_deref().map_or(Ok(()), |id| {
-            storage::require_configured_storage(&db, root, id)
-        });
+        let available = domain
+            .as_deref()
+            .map_or(Ok(()), |id| storage::require_configured_storage(&db, id));
         let package = match available {
             Ok(()) => {
                 let package = archive

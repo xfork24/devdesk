@@ -74,21 +74,17 @@ pub struct RpcOutcome {
 pub(super) fn engine(
     store: Arc<dyn EngineeringStore>,
     adapters: &ports::ExecutionAdapters,
+    data_root: &Path,
 ) -> Arc<Engine> {
     let root = PathBuf::from(store.root());
-    let data_root = root
-        .ancestors()
-        .find(|p| p.join("global.sqlite3").is_file())
-        .unwrap_or(&root)
-        .to_owned();
-    let artifacts = Arc::new(FileArtifacts::new(PathBuf::from(store.root())));
+    let artifacts = Arc::new(FileArtifacts::new(root.clone()));
     let tools = Arc::new(
-        devdesk_adapters::integrations::NativeTools::new(store.root())
+        devdesk_adapters::integrations::NativeTools::for_host(&root, data_root)
             .expect("existing execution root"),
     );
     Arc::new(
         Engine::new(store, artifacts, adapters.clone())
-            .with_context_reader(Arc::new(experience::Reader::new(data_root)))
+            .with_context_reader(Arc::new(experience::Reader::new(data_root.to_owned())))
             .with_tool_executor(tools)
             .with_configuration_backend(Arc::new(devdesk_adapters::ConfigurationBackend)),
     )
@@ -215,7 +211,7 @@ impl Workspace {
         adapters: ports::ExecutionAdapters,
     ) -> Result<Arc<Self>> {
         let global = Arc::new(GlobalStore::open(root)?);
-        let configuration = engine(global.clone(), &adapters);
+        let configuration = engine(global.clone(), &adapters, Path::new(&global.root()));
         configuration.bootstrap()?;
         configuration.recover_tool_receipts()?;
         let catalog = global.configuration_snapshot()?;
@@ -436,15 +432,7 @@ impl Workspace {
             return Ok(Value::Null);
         }
         let engine = match self.project_engine(Some(project)) {
-            Err(error) if error.code == "not_found" => {
-                let root = self.global.root();
-                if let Err(error) = SqliteStore::project_path(Path::new(&root), project)
-                    && error.code == domain_packages::DOMAIN_STORAGE_UNAVAILABLE
-                {
-                    return Ok(Value::Null);
-                }
-                return Err(error);
-            }
+            Err(error) if error.code == "not_found" => return Ok(Value::Null),
             result => result?,
         };
         let key = devdesk_core::concurrency::ResourceKey::new(kind, project);
@@ -468,7 +456,13 @@ impl Workspace {
 
     fn reopen_registered_project(&self, id: &str) -> Result<()> {
         if self.global.project(id)?.is_some() && !self.global.removed_project_missing(id)? {
-            self.load_project(id, false)?;
+            match self.load_project(id, false) {
+                // A different Host can own this project while this Host uses the directory.
+                Err(error) if error.code == "dataset_locked" => {}
+                result => {
+                    result?;
+                }
+            }
         }
         Ok(())
     }
@@ -540,7 +534,7 @@ impl Workspace {
         let root = PathBuf::from(self.global.root());
         let store = SqliteStore::open_project(&root, id)?;
         store.maintain_runtime_storage(&root);
-        let e = engine(Arc::new(store), &self.adapters);
+        let e = engine(Arc::new(store), &self.adapters, &root);
         let mut e = Arc::try_unwrap(e)
             .map_err(|_| err("storage", "装配项目服务失败"))?
             .with_manager_services(ManagerServices {
@@ -605,7 +599,7 @@ impl Workspace {
                 let root = SqliteStore::global_discussion_path(&data)?;
                 let store = SqliteStore::open(&root)?;
                 store.maintain_runtime_storage(&data);
-                let e = engine(Arc::new(store), &self.adapters);
+                let e = engine(Arc::new(store), &self.adapters, &data);
                 e.store.subscribe_changes(self.background.wake.listener());
                 self.sync_configuration(&e)?;
                 e.bootstrap()?;
@@ -3289,13 +3283,16 @@ impl Workspace {
     pub(super) fn loading_profile(root: &Path) -> devdesk_domain::Result<Arc<Self>> {
         let global = Arc::new(GlobalStore::open(root)?);
         let adapters = crate::test_runtime::adapters();
-        let configuration = engine(global.clone(), &adapters);
+        let configuration = engine(global.clone(), &adapters, Path::new(&global.root()));
         let mut opened = std::collections::BTreeMap::new();
         let (projects, total) = global.projects(0, 100)?;
         devdesk_domain::require(total <= 100, "性能入口最多打开 100 个项目")?;
         for project in projects {
             let store = Arc::new(SqliteStore::open_project(root, &project.id)?);
-            opened.insert(project.id, engine(store, &adapters));
+            opened.insert(
+                project.id,
+                engine(store, &adapters, Path::new(&global.root())),
+            );
         }
         Ok(Arc::new(Self {
             global,

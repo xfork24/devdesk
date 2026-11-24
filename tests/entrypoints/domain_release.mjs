@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { execFile as call, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { access, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -76,10 +76,10 @@ async function extract(artifacts, cwd, verify) {
   };
 }
 
-async function withHost(host, web, operation, { crashAfter = false, legacyHost = false } = {}) {
+async function withHost(host, web, operation, { crashAfter = false, legacyHost = false, dataset = data } = {}) {
   const env = { ...process.env };
   delete env.DEVDESK_ACCESS_TOKEN;
-  const args = ["--data", data, "--web-dir", web, "--port", "0"];
+  const args = ["--data", dataset, "--web-dir", web, "--port", "0"];
   if (legacyHost) {
     // The optional pre-upgrade Host requires the legacy ZIP digest at startup.
     args.push("--trust-domain", digest(await bytes(legacy)));
@@ -352,6 +352,57 @@ with sqlite3.connect(database) as db:
     assert.equal(reopened.id, saved.project.id);
     pass.push("Saving a new domain directory recovers original projects, linked Git worktrees and manual reopening");
   });
+
+  const secondDataset = path.join(temp, "second-host-data");
+  const markerPath = path.join(replacement, ".devdesk-domain-storage");
+  const previousMarker = await readFile(markerPath, "utf8");
+  assert.equal(JSON.parse(previousMarker).host_root, await realpath(data));
+  await withHost(current.host, current.web, async (client) => {
+    const installed = await client.install(candidate);
+    const active = await client.activate(installed.digest);
+    const scope = { epoch: active.epoch };
+    const settings = await client.result("query.domain.storage", scope);
+    const configured = await client.result("domain.storage.configure", {
+      ...scope, expected_revision: settings.revision, data_root: replacement,
+    });
+    assert.equal(configured.available, true);
+    assert.equal(await readFile(markerPath, "utf8"), previousMarker);
+    const reopened = await client.result("domain.project.create", {
+      ...scope, title: "Project from previous Host", command_id: crypto.randomUUID(),
+      reuse_connection: true, connection: { repository: recoveryRepository, mainline: "main" },
+    });
+    assert.equal(reopened.id, saved.project.id);
+  }, { dataset: secondDataset });
+
+  await withHost(current.host, current.web, async (client) => {
+    const active = await client.active();
+    const settings = await client.result("query.domain.storage", { epoch: active.epoch });
+    assert.equal(settings.available, true);
+    const opened = await client.result("query.workspace", {
+      project_id: saved.project.id, domain_epoch: active.epoch,
+    });
+    assert.equal(opened.active_project.id, saved.project.id);
+    assert.equal(opened.project_database, path.join(settings.data_root, "projects", saved.project.id, "engineering.sqlite3"));
+    pass.push("A second Host reuses a directory registered by the first Host and reopens the original project after restart");
+
+    await withHost(current.host, current.web, async (other) => {
+      const active = await other.active();
+      const scope = { epoch: active.epoch };
+      const settings = await other.result("query.domain.storage", scope);
+      assert.equal(settings.data_root, await realpath(replacement));
+      assert.equal((await other.result("domain.storage.configure", {
+        ...scope, expected_revision: settings.revision, data_root: replacement,
+      })).available, true);
+      assert.equal((await other.result("query.workspace", {
+        project_id: replacementProject.id, domain_epoch: active.epoch,
+      })).active_project.id, replacementProject.id);
+      await assert.rejects(other.result("domain.project.create", {
+        ...scope, title: "Project held by another Host", command_id: crypto.randomUUID(),
+        reuse_connection: true, connection: { repository: recoveryRepository, mainline: "main" },
+      }), /dataset_locked/);
+    });
+    pass.push("Concurrent Hosts can configure the same domain directory, with exclusive writers per project");
+  }, { dataset: secondDataset });
   console.log(JSON.stringify({ artifactsVerified: true, checks: pass }));
 } finally {
   if (browser) await browser.close();

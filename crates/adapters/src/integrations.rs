@@ -17,6 +17,7 @@ struct ToolJob {
 type Job = Arc<ToolJob>;
 pub struct NativeTools {
     root: PathBuf,
+    host_root: Option<PathBuf>,
     jobs: Mutex<HashMap<String, Job>>,
 }
 fn argument_schema_message(schema: &Value, instance: &str, location: &str) -> String {
@@ -287,21 +288,31 @@ impl NativeTools {
     pub fn new(root: impl AsRef<Path>) -> Result<Self> {
         Ok(Self {
             root: fs::canonicalize(root).map_err(storage)?,
+            host_root: None,
             jobs: Mutex::new(HashMap::new()),
+        })
+    }
+    pub fn for_host(root: impl AsRef<Path>, host_root: impl AsRef<Path>) -> Result<Self> {
+        Ok(Self {
+            host_root: Some(fs::canonicalize(host_root).map_err(storage)?),
+            ..Self::new(root)?
+        })
+    }
+    fn host_root(&self) -> &Path {
+        self.host_root.as_deref().unwrap_or_else(|| {
+            self.root
+                .ancestors()
+                .find(|path| path.join("global.sqlite3").is_file())
+                .unwrap_or(&self.root)
         })
     }
     fn directory(&self, id: &str) -> PathBuf {
         self.root.join("tool-executions").join(operation(id))
     }
     fn revoked(&self, tool: &BoundTool) -> Result<bool> {
-        let root = self
-            .root
-            .ancestors()
-            .find(|p| p.join("global.sqlite3").is_file())
-            .unwrap_or(&self.root);
         let mut disabled: Vec<ConfigurationRecord> = Vec::new();
         for db in [
-            root.join("global.sqlite3"),
+            self.host_root().join("global.sqlite3"),
             self.root.join("engineering.sqlite3"),
         ] {
             if !db.is_file() {
@@ -339,12 +350,7 @@ impl NativeTools {
         let Some(key) = b.auth.credential_ref() else {
             return Ok(None);
         };
-        let root = self
-            .root
-            .ancestors()
-            .find(|p| p.join("global.sqlite3").is_file())
-            .unwrap_or(&self.root);
-        let vault = crate::credentials::CredentialVault::new(root)?;
+        let vault = crate::credentials::CredentialVault::new(self.host_root())?;
         if let IntegrationAuth::OAuth {
             account, scopes, ..
         } = &b.auth
@@ -720,9 +726,11 @@ impl ports::ToolExecutor for NativeTools {
             }
         }
         let root = self.root.clone();
+        let host_root = self.host_root().to_owned();
         let invocation = i.clone();
         std::thread::spawn(move || {
-            let result = NativeTools::new(&root).and_then(|e| e.execute(&invocation));
+            let result =
+                NativeTools::for_host(&root, host_root).and_then(|e| e.execute(&invocation));
             let receipt = result.unwrap_or_else(|e| ToolReceipt {
                 invocation_id: invocation.id.clone(),
                 success: false,

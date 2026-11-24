@@ -182,7 +182,7 @@ impl Workspace {
         let binding: IntegrationBinding =
             catalog.state.configuration(&flow.binding_ref)?.decode()?;
         let (permissions, image) = self.integration_permissions(&e, &binding)?;
-        let executor = NativeTools::new(e.store.root())?;
+        let executor = NativeTools::for_host(e.store.root(), &root)?;
         let vault = credentials::CredentialVault::new(&root)?;
         let result = devdesk_adapters::integration_oauth::finish(
             &root,
@@ -285,8 +285,8 @@ impl Workspace {
                 let receipt: ToolReceipt =
                     serde_json::from_value(e.store.restore_runtime_value(&r.data["receipt"])?)
                         .map_err(|_| err("not_found", "文件调用尚无回执"))?;
-                let (bytes, mime) =
-                    NativeTools::new(e.store.root())?.read_artifact(&r.id, &receipt)?;
+                let (bytes, mime) = NativeTools::for_host(e.store.root(), self.global.root())?
+                    .read_artifact(&r.id, &receipt)?;
                 use base64::Engine;
                 return Ok(
                     json!({"base64":base64::engine::general_purpose::STANDARD.encode(bytes),"mime":mime}),
@@ -373,7 +373,7 @@ impl Workspace {
                         .credential_ref()
                         .ok_or_else(|| err("oauth_credential", "绑定没有授权凭据"))?;
                     let (permissions, image) = self.integration_permissions(&e, &binding)?;
-                    let executor = NativeTools::new(e.store.root())?;
+                    let executor = NativeTools::for_host(e.store.root(), &root)?;
                     return devdesk_adapters::integration_oauth::revoke(
                         reference,
                         config,
@@ -548,7 +548,7 @@ impl Workspace {
                     !matches!(binding.auth, IntegrationAuth::OAuthPending { .. }),
                     "接入 OAuth 授权尚未完成",
                 )?;
-                let executor = NativeTools::new(e.store.root())?;
+                let executor = NativeTools::for_host(e.store.root(), self.global.root())?;
                 if method == "integration.discover" {
                     let lock = permissions.binding_lock.as_ref().ok_or_else(|| {
                         err("permission_unconfigured", "工具发现缺少冻结权限引用")

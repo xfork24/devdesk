@@ -13,7 +13,7 @@ pub const SCHEMA: &str = "
 
 /// Older registries discarded the manifest on uninstall. An external project's
 /// pinned root still carries the original domain ID in its ownership marker.
-pub(super) fn restore_package_identities(db: &Connection, host: &Path) -> Result<()> {
+pub(super) fn restore_package_identities(db: &Connection) -> Result<()> {
     let tx = db.unchecked_transaction().map_err(storage)?;
     let candidates = {
         let mut query = tx
@@ -34,23 +34,17 @@ pub(super) fn restore_package_identities(db: &Connection, host: &Path) -> Result
     };
     let mut recovered = BTreeMap::<String, Option<String>>::new();
     for (digest, path) in candidates {
-        let Ok(owner) = read_owner(Path::new(&path)) else {
+        let Ok(id) = storage_domain(Path::new(&path)) else {
             continue;
         };
-        let Some(id) = owner["package_id"].as_str().filter(|id| is_identifier(id)) else {
-            continue;
-        };
-        if owner["host_root"].as_str() != host.to_str() {
-            continue;
-        }
         recovered
             .entry(digest)
             .and_modify(|previous| {
-                if previous.as_deref() != Some(id) {
+                if previous.as_deref() != Some(id.as_str()) {
                     *previous = None;
                 }
             })
-            .or_insert_with(|| Some(id.to_owned()));
+            .or_insert(Some(id));
     }
     for (digest, id) in recovered {
         if let Some(id) = id {
@@ -80,7 +74,7 @@ impl DomainPackages {
             return Ok(self.root.clone());
         };
         let root = PathBuf::from(configured);
-        validate_root(&self.root, &root, Some(&package))?;
+        validate_root(&root, Some(&package))?;
         Ok(root)
     }
 
@@ -203,15 +197,14 @@ impl DomainPackages {
             .into_iter()
             .filter(|(root, _)| {
                 let root = Path::new(root);
-                root == self.root
-                    || validate_root(&self.root, root, Some(&package.manifest.id)).is_ok()
+                root == self.root || validate_root(root, Some(&package.manifest.id)).is_ok()
             })
             .map(|(root, projects)| json!({"data_root":root, "projects":projects}))
             .collect();
         Ok(json!({
             "package_id":package.manifest.id, "revision":revision, "configured_root":configured_root,
             "available": configured_root.as_deref().is_none_or(|path|
-                validate_root(&self.root, Path::new(path), Some(&package.manifest.id)).is_ok()),
+                validate_root(Path::new(path), Some(&package.manifest.id)).is_ok()),
             "data_root":configured_root.as_deref().or(self.root.to_str()), "project_roots":rows
         }))
     }
@@ -272,17 +265,21 @@ fn claim_root(host: &Path, package: &str, path: &Path) -> Result<PathBuf> {
     }
     let marker = root.join(OWNER);
     reject_symlink(&marker)?;
-    let owner = json!({"host_root":host, "package_id":package});
     if !marker.exists() {
         for entry in fs::read_dir(&root).map_err(storage)? {
             let entry = entry.map_err(storage)?;
             require(
                 entry.file_name() == ".DS_Store" && entry.file_type().map_err(storage)?.is_file(),
-                "请使用空目录或已经由此 Host 和领域登记的目录",
+                "请使用空目录或已登记给当前领域的数据目录",
             )?;
         }
         let mut temporary = tempfile::NamedTempFile::new_in(&root).map_err(storage)?;
-        serde_json::to_writer(&mut temporary, &owner).map_err(storage)?;
+        // Keep the old field so older Hosts can still open directories they own.
+        serde_json::to_writer(
+            &mut temporary,
+            &json!({"host_root":host, "package_id":package}),
+        )
+        .map_err(storage)?;
         temporary.as_file().sync_all().map_err(storage)?;
         if let Err(error) = temporary.persist_noclobber(&marker)
             && error.error.kind() != std::io::ErrorKind::AlreadyExists
@@ -290,21 +287,29 @@ fn claim_root(host: &Path, package: &str, path: &Path) -> Result<PathBuf> {
             return Err(storage(error.error));
         }
     }
-    require(
-        read_owner(&root)? == owner,
-        "领域数据目录已由其他 Host 或领域登记",
-    )?;
+    validate_root(&root, Some(package))?;
     reject_symlink(&root.join("projects"))?;
     Ok(root)
 }
 
-fn read_owner(root: &Path) -> Result<Value> {
+fn storage_domain(root: &Path) -> Result<Id> {
+    let mismatch = "领域项目数据目录归属不符";
+    require(root.is_absolute(), mismatch)?;
+    let canonical = root
+        .canonicalize()
+        .map_err(|error| root_error(root, error))?;
+    require(canonical == root, mismatch)?;
     let marker = root.join(OWNER);
     reject_symlink(&marker)?;
     let metadata = fs::metadata(&marker).map_err(|error| root_error(root, error))?;
     require(metadata.is_file(), "领域数据目录登记标记无效")?;
     let file = fs::File::open(marker).map_err(|error| root_error(root, error))?;
-    serde_json::from_reader(file).map_err(storage)
+    let owner: Value = serde_json::from_reader(file).map_err(storage)?;
+    owner["package_id"]
+        .as_str()
+        .filter(|id| is_identifier(id))
+        .map(str::to_owned)
+        .ok_or_else(|| err("blocked", "领域数据目录登记标记缺少有效的领域 ID"))
 }
 
 fn root_error(root: &Path, error: std::io::Error) -> Error {
@@ -317,30 +322,17 @@ fn root_error(root: &Path, error: std::io::Error) -> Error {
     }
 }
 
-fn validate_root(host: &Path, root: &Path, package: Option<&str>) -> Result<()> {
-    let mismatch = "领域项目数据目录归属不符";
-    require(root.is_absolute(), mismatch)?;
-    let canonical = root
-        .canonicalize()
-        .map_err(|error| root_error(root, error))?;
-    require(canonical == root, mismatch)?;
-    let owner = read_owner(root)?;
+fn validate_root(root: &Path, package: Option<&str>) -> Result<()> {
+    let actual = storage_domain(root)?;
     require(
-        match package {
-            Some(id) => owner == json!({"host_root":host,"package_id":id}),
-            None => owner["host_root"].as_str() == host.to_str(),
-        },
-        mismatch,
+        package.is_none_or(|id| id == actual),
+        "领域数据目录已登记给其他领域",
     )
 }
 
-pub(super) fn require_configured_storage(
-    db: &Connection,
-    host: &Path,
-    package: &str,
-) -> Result<()> {
+pub(super) fn require_configured_storage(db: &Connection, package: &str) -> Result<()> {
     if let Some(path) = storage_setting(db, package)?.0 {
-        validate_root(host, Path::new(&path), Some(package))?;
+        validate_root(Path::new(&path), Some(package))?;
     }
     Ok(())
 }
@@ -353,7 +345,7 @@ pub(super) fn recover_configured_projects(
     let configured = storage_setting(db, package)?.0;
     let target = configured.as_deref().map_or(host, Path::new);
     if target != host {
-        match validate_root(host, target, Some(package)) {
+        match validate_root(target, Some(package)) {
             Err(error) if error.code == DOMAIN_STORAGE_UNAVAILABLE => return Ok(()),
             result => result?,
         }
@@ -426,11 +418,14 @@ fn recover_project_roots(
         {
             continue;
         }
-        match validate_root(host, &old, Some(package)) {
+        match validate_root(&old, Some(package)) {
             Err(error) if error.code == DOMAIN_STORAGE_UNAVAILABLE => {}
             result => result?,
         }
-        crate::project_migration::relocate(host, &id, &old_project, &new)?;
+        match crate::project_migration::relocate(host, &id, &old_project, &new) {
+            Err(error) if error.code == "dataset_locked" => continue,
+            result => result?,
+        }
         if target == host {
             db.execute("DELETE FROM domain_project_storage WHERE project=?", [&id])
                 .map_err(storage)?;
@@ -451,7 +446,7 @@ fn recover_project_roots(
     Ok(())
 }
 
-fn open_project_registry(host: &Path) -> Result<Option<(Connection, bool)>> {
+fn open_project_registry(host: &Path) -> Result<Option<(Connection, bool, bool)>> {
     let path = host.join(REGISTRY);
     reject_symlink(&path)?;
     if !path.try_exists().map_err(storage)? {
@@ -460,36 +455,45 @@ fn open_project_registry(host: &Path) -> Result<Option<(Connection, bool)>> {
     let db = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(storage)?;
     // Global dataset preflight also runs before an older registry is upgraded.
-    let (has_storage, has_detached): (bool, bool) = db.query_row(
+    let (has_storage, has_detached, has_identities): (bool, bool, bool) = db.query_row(
         "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name='domain_project_storage' AND type='table'),
-                EXISTS(SELECT 1 FROM sqlite_schema WHERE name='domain_detached_projects' AND type='table')",
+                EXISTS(SELECT 1 FROM sqlite_schema WHERE name='domain_detached_projects' AND type='table'),
+                EXISTS(SELECT 1 FROM sqlite_schema WHERE name='domain_package_identities' AND type='table')",
         [],
-        |r| Ok((r.get(0)?, r.get(1)?)),
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
     ).map_err(storage)?;
-    Ok(has_storage.then_some((db, has_detached)))
+    Ok(has_storage.then_some((db, has_detached, has_identities)))
 }
 
 pub(crate) fn project_storage_root(host: &Path, project: &str) -> Result<Option<PathBuf>> {
-    let Some((db, has_detached)) = open_project_registry(host)? else {
+    let Some((db, has_detached, has_identities)) = open_project_registry(host)? else {
         return Ok(None);
     };
-    let sql = if has_detached {
-        "SELECT data_root FROM domain_project_storage WHERE project=?1
-         UNION ALL SELECT NULL FROM domain_detached_projects WHERE project=?1"
+    let binding = if has_identities {
+        "SELECT s.data_root, i.id FROM domain_project_storage s
+         JOIN domain_projects d ON d.project=s.project
+         LEFT JOIN domain_package_identities i ON i.digest=d.digest WHERE s.project=?1"
     } else {
-        "SELECT data_root FROM domain_project_storage WHERE project=?1"
+        "SELECT data_root, NULL FROM domain_project_storage WHERE project=?1"
     };
-    let location: Option<Option<String>> = db
-        .query_row(sql, [project], |r| r.get(0))
+    let sql = if has_detached {
+        format!(
+            "{binding} UNION ALL SELECT NULL, NULL FROM domain_detached_projects WHERE project=?1"
+        )
+    } else {
+        binding.to_owned()
+    };
+    let location: Option<(Option<String>, Option<Id>)> = db
+        .query_row(&sql, [project], |r| Ok((r.get(0)?, r.get(1)?)))
         .optional()
         .map_err(storage)?;
     match location {
-        Some(Some(path)) => {
+        Some((Some(path), package)) => {
             let root = PathBuf::from(path);
-            validate_root(host, &root, None)?;
+            validate_root(&root, package.as_deref())?;
             Ok(Some(root))
         }
-        Some(None) => Err(err(
+        Some((None, _)) => Err(err(
             DOMAIN_STORAGE_UNAVAILABLE,
             "已移除项目的数据目录已取消登记",
         )),
@@ -498,7 +502,7 @@ pub(crate) fn project_storage_root(host: &Path, project: &str) -> Result<Option<
 }
 
 pub(crate) fn externally_stored_projects(host: &Path) -> Result<Vec<Id>> {
-    let Some((db, _)) = open_project_registry(host)? else {
+    let Some((db, _, _)) = open_project_registry(host)? else {
         return Ok(Vec::new());
     };
     let mut query = db
