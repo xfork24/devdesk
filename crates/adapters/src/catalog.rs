@@ -310,6 +310,37 @@ impl GlobalStore {
         Ok(None)
     }
 
+    pub fn unregistered_projects(&self, data_root: &Path) -> Result<Vec<Id>> {
+        let projects = data_root.join("projects");
+        reject_symlink(&projects)?;
+        let entries = match fs::read_dir(&projects) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(storage(error)),
+        };
+        let mut candidates = Vec::new();
+        for entry in entries {
+            let entry = entry.map_err(storage)?;
+            let name = entry.file_name();
+            let Some(id) = name.to_str().filter(|id| uuid::Uuid::parse_str(id).is_ok()) else {
+                continue;
+            };
+            if entry.file_type().map_err(storage)?.is_dir() && self.project(id)?.is_none() {
+                candidates.push(id.to_owned());
+            }
+        }
+        candidates.sort_unstable();
+        Ok(candidates)
+    }
+
+    pub fn copied_project(data_root: &Path, id: &str) -> Result<Option<Project>> {
+        let Some((project, path)) = read_project_copy(data_root, id)? else {
+            return Ok(None);
+        };
+        validate_project_copy(&project, &path)?;
+        Ok(Some(project))
+    }
+
     /// Find an unpublished project by the repository identity recorded in its database.
     pub fn copied_github_project(
         &self,
@@ -317,33 +348,10 @@ impl GlobalStore {
         repository: &str,
         mainline: &str,
     ) -> Result<Option<Project>> {
-        let projects = data_root.join("projects");
-        reject_symlink(&projects)?;
-        let entries = match fs::read_dir(&projects) {
-            Ok(entries) => entries,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(error) => return Err(storage(error)),
-        };
         let mut found: Option<Project> = None;
-        for entry in entries {
-            let entry = entry.map_err(storage)?;
-            let name = entry.file_name();
-            let Some(id) = name.to_str().filter(|id| uuid::Uuid::parse_str(id).is_ok()) else {
+        for id in self.unregistered_projects(data_root)? {
+            let Some((project, path)) = read_project_copy(data_root, &id)? else {
                 continue;
-            };
-            if !entry.file_type().map_err(storage)?.is_dir() || self.project(id)?.is_some() {
-                continue;
-            }
-            let path = SqliteStore::project_path_in(data_root, id)?;
-            let db = path.join("engineering.sqlite3");
-            if !db.is_file() {
-                continue;
-            }
-            let connection = connection_pool::ManagedConnection::read_only(&db)?;
-            let project = match execution_read::project(&connection, id) {
-                Ok(project) => project,
-                Err(error) if error.code == "not_found" => continue,
-                Err(error) => return Err(error),
             };
             let Some(workspace) = &project.workspace_definition else {
                 continue;
@@ -353,21 +361,7 @@ impl GlobalStore {
             {
                 continue;
             }
-            check_engineering_baseline(&db)?;
-            let checkout = path.join("repository");
-            reject_symlink(&checkout)?;
-            if project.execution_mode != "live"
-                || Path::new(&workspace.path) != checkout
-                || Path::new(&project.workspace) != checkout
-                || !checkout.is_dir()
-            {
-                return Err(err(
-                    "incompatible_dataset",
-                    format!(
-                        "旧项目 {id} 的本地仓库路径不匹配或不存在，请将完整项目目录复制到原路径"
-                    ),
-                ));
-            }
+            validate_project_copy(&project, &path)?;
             if let Some(previous) = &found {
                 return Err(err(
                     "project_ambiguous",
@@ -537,6 +531,47 @@ fn preflight_engineering_databases(root: &Path, global: &Connection) -> Result<(
     }
     Ok(())
 }
+fn read_project_copy(data_root: &Path, id: &str) -> Result<Option<(Project, PathBuf)>> {
+    require(uuid::Uuid::parse_str(id).is_ok(), "无效项目 ID")?;
+    let path = SqliteStore::project_path_in(data_root, id)?;
+    let db = path.join("engineering.sqlite3");
+    if !db.is_file() {
+        return Ok(None);
+    }
+    let connection = connection_pool::ManagedConnection::read_only(&db)?;
+    match execution_read::project(&connection, id) {
+        Ok(project) => Ok(Some((project, path))),
+        Err(error) if error.code == "not_found" => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+fn validate_project_copy(project: &Project, path: &Path) -> Result<()> {
+    check_engineering_baseline(&path.join("engineering.sqlite3"))?;
+    if let Some(workspace) = &project.workspace_definition
+        && !(workspace.repository.is_empty()
+            && workspace.path.is_empty()
+            && project.workspace.is_empty())
+    {
+        let checkout = path.join("repository");
+        reject_symlink(&checkout)?;
+        if project.execution_mode != "live"
+            || Path::new(&workspace.path) != checkout
+            || Path::new(&project.workspace) != checkout
+            || !checkout.is_dir()
+        {
+            return Err(err(
+                "incompatible_dataset",
+                format!(
+                    "旧项目 {} 的本地仓库路径不匹配或不存在，请将完整项目目录复制到原路径",
+                    project.id
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn check_engineering_baseline(path: &Path) -> Result<()> {
     let connection = connection_pool::ManagedConnection::read_only(path)?;
     let version: u32 = connection

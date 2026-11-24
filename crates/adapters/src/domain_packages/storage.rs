@@ -88,6 +88,25 @@ impl DomainPackages {
         self.storage_view(&self.db.lock().unwrap(), package)
     }
 
+    pub fn with_configured_storage(
+        &self,
+        epoch: u64,
+        action: impl FnOnce(&str, &Path) -> Result<()>,
+    ) -> Result<()> {
+        let active = self.active.read().unwrap();
+        check_epoch(epoch, active.epoch)?;
+        let Some(package) = &active.package else {
+            return Ok(());
+        };
+        let root = match self.project_import_root(&package.digest) {
+            Ok(root) if root != self.root => root,
+            Ok(_) => return Ok(()),
+            Err(error) if error.code == DOMAIN_STORAGE_UNAVAILABLE => return Ok(()),
+            Err(error) => return Err(error),
+        };
+        action(&package.digest, &root)
+    }
+
     #[expect(
         clippy::readonly_write_lock,
         reason = "exclude project opens while changing storage bindings"

@@ -127,7 +127,7 @@ async function withHost(host, web, operation, { crashAfter = false, legacyHost =
       const page = await browser.newPage();
       try {
         await page.goto(base + "/?view=" + encodeURIComponent(view));
-        await expected(page).waitFor({ timeout: 15_000 });
+        await (await expected(page)).waitFor({ timeout: 15_000 });
         assert.equal(await page.locator("iframe").count(), 0);
       } finally {
         await page.close();
@@ -361,19 +361,36 @@ with sqlite3.connect(database) as db:
     const installed = await client.install(candidate);
     const active = await client.activate(installed.digest);
     const scope = { epoch: active.epoch };
-    const settings = await client.result("query.domain.storage", scope);
-    const configured = await client.result("domain.storage.configure", {
-      ...scope, expected_revision: settings.revision, data_root: replacement,
+    await client.canRender("software-development.engineering-settings", async (page) => {
+      await page.getByLabel("新项目数据目录").fill(replacement);
+      await page.getByRole("button", { name: "保存领域数据目录", exact: true }).click();
+      await page.getByText("领域数据目录已保存", { exact: true }).waitFor();
+      return page.getByRole("listitem").filter({ hasText: "2 个项目" });
     });
+    const configured = await client.result("query.domain.storage", scope);
+    assert.equal(configured.data_root, await realpath(replacement));
     assert.equal(configured.available, true);
     assert.equal(await readFile(markerPath, "utf8"), previousMarker);
-    const reopened = await client.result("domain.project.create", {
-      ...scope, title: "Project from previous Host", command_id: crypto.randomUUID(),
-      reuse_connection: true, connection: { repository: recoveryRepository, mainline: "main" },
-    });
-    assert.equal(reopened.id, saved.project.id);
+    assert.deepEqual(configured.project_roots, [{ data_root: await realpath(replacement), projects: 2 }]);
+    const directory = await client.result("query.project_directory", { domain_epoch: scope.epoch });
+    assert.equal(directory.total_projects, 2);
+    for (const project of [saved.project, replacementProject]) {
+      const opened = await client.result("query.workspace", {
+        project_id: project.id, domain_epoch: scope.epoch,
+      });
+      assert.equal(opened.active_project.id, project.id);
+    }
   }, { dataset: secondDataset });
 
+  // Simulate a Host that saved the directory before discovery was supported.
+  await execFile("python3", ["-c", `
+import pathlib, sqlite3, sys
+root = pathlib.Path(sys.argv[1])
+with sqlite3.connect(root / "domain-packages.sqlite3") as registry:
+    registry.executescript("DELETE FROM domain_project_storage; DELETE FROM domain_projects;")
+with sqlite3.connect(root / "global.sqlite3") as catalog:
+    catalog.execute("DELETE FROM project_catalog")
+`, secondDataset]);
   await withHost(current.host, current.web, async (client) => {
     const active = await client.active();
     const settings = await client.result("query.domain.storage", { epoch: active.epoch });
@@ -383,7 +400,7 @@ with sqlite3.connect(database) as db:
     });
     assert.equal(opened.active_project.id, saved.project.id);
     assert.equal(opened.project_database, path.join(settings.data_root, "projects", saved.project.id, "engineering.sqlite3"));
-    pass.push("A second Host reuses a directory registered by the first Host and reopens the original project after restart");
+    pass.push("A new Host automatically discovers existing projects on directory save and from a saved directory on startup");
 
     await withHost(current.host, current.web, async (other) => {
       const active = await other.active();
@@ -393,9 +410,12 @@ with sqlite3.connect(database) as db:
       assert.equal((await other.result("domain.storage.configure", {
         ...scope, expected_revision: settings.revision, data_root: replacement,
       })).available, true);
+      const independentProject = await other.result("domain.project.create", {
+        ...scope, title: "Independent project", command_id: crypto.randomUUID(),
+      });
       assert.equal((await other.result("query.workspace", {
-        project_id: replacementProject.id, domain_epoch: active.epoch,
-      })).active_project.id, replacementProject.id);
+        project_id: independentProject.id, domain_epoch: active.epoch,
+      })).active_project.id, independentProject.id);
       await assert.rejects(other.result("domain.project.create", {
         ...scope, title: "Project held by another Host", command_id: crypto.randomUUID(),
         reuse_connection: true, connection: { repository: recoveryRepository, mainline: "main" },

@@ -301,6 +301,9 @@ impl Workspace {
                 break;
             }
         }
+        if let Some(Ok(packages)) = workspace.domains.get() {
+            workspace.discover_domain_projects(packages.epoch())?;
+        }
         if SqliteStore::global_discussion_path(Path::new(&workspace.global.root()))?
             .join("engineering.sqlite3")
             .is_file()
@@ -475,6 +478,36 @@ impl Workspace {
             }
         }
         Ok(())
+    }
+
+    pub(super) fn discover_domain_projects(&self, epoch: u64) -> Result<()> {
+        let packages = self.domain_packages()?;
+        packages.with_configured_storage(epoch, |digest, root| {
+            let _open = self
+                .domain_project_open
+                .lock()
+                .map_err(|e| err("storage", e.to_string()))?;
+            for id in self.global.unregistered_projects(root)? {
+                let load = || {
+                    if self.global.project_removed(&id)? {
+                        return Ok(());
+                    }
+                    if let Some(project) = GlobalStore::copied_project(root, &id)? {
+                        packages.bind_copied_project(&id, digest, root)?;
+                        self.load_copied_project(&project)?;
+                    }
+                    Ok::<(), Error>(())
+                };
+                if let Err(error) = load() {
+                    eprintln!(
+                        "{}",
+                        json!({"type":"domain_project_discovery_skipped", "project_id":id,
+                        "code":error.code, "message":error.message})
+                    );
+                }
+            }
+            Ok(())
+        })
     }
 
     fn load_project_with_mode(&self, id: &str, mode: ProjectOpen) -> Result<Arc<Engine>> {

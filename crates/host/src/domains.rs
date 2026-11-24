@@ -161,11 +161,13 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
                 }
                 _ => return Err(err("invalid_params", "需要领域数据目录或 null")),
             };
-            let (settings, projects) =
-                packages.configure_storage(&workspace.global, epoch()?, expected, path)?;
+            let epoch = epoch()?;
+            let (_, projects) =
+                packages.configure_storage(&workspace.global, epoch, expected, path)?;
             workspace.reopen_available_domain_projects(projects)?;
+            workspace.discover_domain_projects(epoch)?;
             app.domain_epoch.send_modify(|_| {});
-            Ok(settings)
+            packages.storage(epoch)
         }
         "domain.install" => {
             let archive = text("archive")?;
@@ -203,7 +205,13 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
             } else {
                 packages.deactivate(digest()?, epoch()?, uninstall, quiescent)?
             };
+            let discovered = if name == "domain.activate" {
+                workspace.discover_domain_projects(epoch)
+            } else {
+                Ok(())
+            };
             publish(app, epoch);
+            discovered?;
             Ok(packages.status())
         }
         "domain.project.create" => {
