@@ -43,6 +43,7 @@
 | [src/github_delivery.rs](../../../crates/adapters/src/github_delivery.rs) | [Git、测试和 GitHub 适配器](engineering-resources.md) |
 | [src/harness.rs](../../../crates/adapters/src/harness.rs) | [Harness 协议与 Docker 容器](harness-and-protocols.md) |
 | [src/harness_startup.rs](../../../crates/adapters/src/harness_startup.rs) | [Harness 协议与 Docker 容器](harness-and-protocols.md) |
+| [src/harness_workspace.rs](../../../crates/adapters/src/harness_workspace.rs) | Materializes worker workspace leases before constructing a container. |
 | [src/integration_oauth.rs](../../../crates/adapters/src/integration_oauth.rs) | [HTTP、MCP、OAuth 与 Skill 接入](external-integrations.md) |
 | [src/integrations.rs](../../../crates/adapters/src/integrations.rs) | [HTTP、MCP、OAuth 与 Skill 接入](external-integrations.md) |
 | [src/jsonl.rs](../../../crates/adapters/src/jsonl.rs) | [Harness 协议与 Docker 容器](harness-and-protocols.md) |

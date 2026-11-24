@@ -71,6 +71,20 @@ python3 tests/live/audit_domain_delivery.py /tmp/devdesk-p4-domain-pkg.VQIVQc/ru
   --github-repo xfork24/devdesk-default-workflow-test-20261118 --require-packaged-handlers
 ```
 
+## P5 软件开发页面
+
+0.4.0 将软件工作台页面、分支队列、候选与 PR、交付 Diff、角色讨论、项目配置和历史装入领域 ZIP。Web Core 使用一个 React 根和共用的布局、导航及表单控件挂载活动页面。领域 ESM 入口、样式、项目 RPC 及事件流绑定活动代次。卸载会移除页面、导航及样式，过期资源与请求由 Host 拒绝。
+
+从独立发行件和空数据目录运行 Chromium 双标签页与 Python HTTP 客户端。测试通过两个 Web 接入入口连接专用 GitHub 仓库并复用项目，采用并恢复项目的领域默认配置草稿。在 Web 创建 Feature `9708885e-a3ce-6e28-35d8-81dcb60c3fcf`，比对 Web 和 Python 读到的分支事实，并检查项目历史及浏览器返回路径。Docker 软件预检提交测试配置的执行为 `dcab8c30-9d51-6466-b7e1-404c5ffa1f69`。软件开发与文稿来回切换并卸载，Host 使用同一进程，切回后可读取原执行与产物。验收数据位于 `/tmp/devdesk-p56-release.KskR1C/dual-client.json`。
+
+## P6 独立发行
+
+Linux x86_64 的 Core Host、Web Core 和软件开发 0.4.0 分别打包并生成 SHA-256。Web Core 提供 API 1 和 API 2 的运行接口，并附 Web SDK 类型与领域 Schema。Core Web 构建会拒绝纳入软件工作台入口。软件 ZIP 的 SHA-256 为 `88eb8e50e744bdba5d2eaa6b7340634c14bcd8a2873033ea27f9ab8d645e82a0`。
+
+从制品解压目录验收仅升级 Web、仅升级 Host、仅升级领域 ZIP、不兼容版本拒绝、回切旧摘要、强制停止后恢复以及 100 个并发领域目录读。0.4.0 的运行端及配置与 0.3.0 逐文件相同，实仓 PR #37、#38 在同一轮再次审计并核对同步证据。发行矩阵位于 `/tmp/devdesk-p56-release.KskR1C/matrix.json`，实仓审计位于 `/tmp/devdesk-p56-p4-delivery-audit.log`。[运行和兼容性](../../design/run-binary.md#领域工作台独立发行)
+
+CI 包含 Linux 和 macOS 的独立构建以及 Linux 双端、回切与重启验收。本轮在 Linux 本地执行。原 Feature/Task 的 `delivery_policy` 仍参与冻结门禁和恢复。正式 100 个活跃前端的持续负载矩阵需要独立负载机，本轮覆盖并发目录读。
+
 ## 基线和后续范围
 
 原基线 `2458a06` 的 `actual_git_docker_workflow_handoffs` 在启动 Docker 前停于 `builtin-tool-workspace-snapshot:2` 的配置读取。探针把项目级源用于全局草稿，并引用了退役 Harness 的测试工具修订。只修正探针的草稿作用域和工具引用后，真实 Git/Docker 流程在 18.210 秒内完成。证据存于 `/tmp/devdesk-domain-p0.O6iSOB/evidence`。

@@ -147,13 +147,40 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
             let command = command_identity(&params)?;
             packages.with_sources(epoch()?, trusted, params.get("connection"), |digest, sources, plan| {
                 let mut payload = json!({"title":title});
+                let mut existing_project = None;
+                let reuse = plan.is_some() && params["reuse_connection"] == true;
+                let _open = reuse
+                    .then(|| workspace.domain_project_open.lock().map_err(|e| err("storage", e.to_string())))
+                    .transpose()?;
                 if let Some(plan) = &plan {
                     let repository = plan["repository"].as_str().ok_or_else(|| err("domain_contract", "连接缺少仓库"))?;
                     let mainline = plan["mainline"].as_str().ok_or_else(|| err("domain_contract", "连接缺少目标分支"))?;
-                    payload["repository"] = json!(crate::workspace::github_projects::repository_name(repository)?);
+                    let repository = crate::workspace::github_projects::repository_name(repository)?;
+                    if reuse {
+                        for offset in (0..).step_by(100) {
+                            let directory = run("query.project_directory", json!({"limit":100,"project_offset":offset}))?;
+                            let rows = directory["projects"].as_array()
+                                .ok_or_else(|| err("storage", "项目目录缺失"))?;
+                            if let Some(existing) = rows.iter().find(|row| {
+                                let connection = &row["workspace_definition"];
+                                connection["repository"].as_str().is_some_and(|name| name.eq_ignore_ascii_case(&repository))
+                                    && connection["mainline"] == mainline
+                            }) {
+                                existing_project = Some(existing.clone());
+                                break;
+                            }
+                            if rows.len() < 100 {
+                                break;
+                            }
+                        }
+                    }
+                    payload["repository"] = json!(repository);
                     payload["mainline"] = json!(mainline);
                 }
-                let created = workspace.create_project(
+                let created = if let Some(existing) = existing_project {
+                    existing
+                } else {
+                    workspace.create_project(
                     Command {
                         command_id: format!(
                             "domain-project:{}",
@@ -163,8 +190,9 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
                         expected_revision: None,
                         payload,
                     },
-                    |project| packages.bind_project(project, digest),
-                )?;
+                        |project| packages.bind_project(project, digest),
+                    )?
+                };
                 let project = created["id"]
                     .as_str()
                     .ok_or_else(|| err("storage", "项目回执缺少 ID"))?;
@@ -305,6 +333,19 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
                     .project_engine(Some(project))?
                     .read_domain_entity(digest, id)
             })
+        }
+        "query.domain.contribution" => {
+            let epoch = epoch()?;
+            let method = packages.contribution_projection(epoch, text("contribution")?, trusted)?;
+            let mut input = params["input"]
+                .as_object()
+                .filter(|fields| fields.get("project_id").and_then(Value::as_str).is_some())
+                .cloned()
+                .ok_or_else(|| err("invalid_params", "领域贡献需要项目作用域"))?;
+            input.insert("domain_epoch".into(), json!(epoch));
+            workspace
+                .dispatch_public_rpc(&method, Value::Object(input))
+                .map(|reply| reply.value)
         }
         "query.domain.invoke" => {
             packages.invoke(epoch()?, text("handler")?, params["input"].clone(), trusted)

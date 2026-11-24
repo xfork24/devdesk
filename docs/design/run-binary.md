@@ -20,6 +20,49 @@ Host 已嵌入 Web 工作台和出厂配置，启动工作台无需 Python、Rus
 
 macOS 压缩包只包含签名后的 `devdesk-host` 命令行程序。
 
+## 领域工作台独立发行
+
+解压与操作系统及 CPU 匹配的 `devdesk-core-host-*.tar.gz` 和 `devdesk-core-web.tar.gz`，保留 `software-development-0.4.0.zip` 供工作台导入。使用从可信发行渠道取得的 SHA-256 校验文件。以下示例传入软件开发 ZIP 的发布摘要。
+
+```bash
+zip_sha=$(awk 'NR == 1 { print $1 }' software-development-0.4.0.zip.sha256)
+./devdesk-host --data /path/to/new-dataset --web-dir /path/to/devdesk-core-web \
+  --trust-domain "$zip_sha"
+```
+
+核心 Host 可以只带数据目录和 Web Core 启动。使用多个领域时，为每个可信 ZIP 重复传入 `--trust-domain`。工作台的「领域包」页支持导入、激活和卸载。当前包仍有活动工作流时，先完成或取消工作流即可切换。切换更新所有客户端的活动代次。项目及运行绑定原包摘要，切回该摘要后可以继续读取原有历史。运行领域处理器需要可用的 Docker 及下文的固定 Node 镜像。
+
+```bash
+docker pull node@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced307cf4b6f
+```
+
+| 工件 | 合同和兼容性 |
+| --- | --- |
+| Core Host | 保留 JSON-RPC 2.0 与领域包清单格式 1。该次发行增加贡献投影及 Web 样式声明，仍可装载 0.3.0 和早期夹具 |
+| Web Core | 同时支持 `web.react` API 1 与 API 2。API 1 使用早期动态模块接口。API 2 提供共享 React 实例、组件、布局、项目 RPC 和事件作用域。模块从 `/assets/devdesk-ui.mjs` 获取运行时，类型声明和 JSON Schema 随 Web Core 放在 `sdk/` |
+| 软件开发 ZIP 0.4.0 | 使用贡献投影和 API 2 呈现绑定。原生页面需要本次 Host 和 Web Core，项目交付资料由活动项目协议提供。升级可以保留已安装的 0.3.0，按摘要回切可复查旧执行 |
+
+非浏览器客户端先调用 `POST /session` 建立 Host 会话，随后从 `query.domain.active` 读取活动代次和贡献目录，并监听 `GET /domain-events`。项目事件流和已有项目 RPC 携带 `project_id` 及 `domain_epoch`。声明 `projection: true` 的贡献用 `query.domain.contribution` 读取，其他贡献的包处理器沿用 `query.domain.invoke`。
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "query.domain.contribution",
+  "params": {
+    "epoch": 4,
+    "contribution": "software-development.branches",
+    "input": {
+      "project_id": "b510137f-93ce-48d4-927e-d069e39a6701",
+      "feature_id": "d66ba20f-74b6-4439-8498-bd7c7c10d3ac",
+      "task_offset": 0
+    }
+  }
+}
+```
+
+请求示例中的代次、项目和 Feature 来自当前活动目录和项目数据。前端可选择适合自身平台的呈现绑定并使用同一贡献目录及 RPC。Web 插件与 Web Core 共享当前浏览器会话和 DOM，因此只向经过信任校验的 ZIP 提供可执行资产。
+
 ## 数据与退出
 
 同一数据集只能由一个 Host 管理。当前数据标记为 `devdesk-profile-runtime-v2`，布局为 `single-host-resource-v2`，数据库基线为 global 24 / project 62。程序兼容打开 project 60 和 61，旧工程库在显式迁移前沿用保守的模板重置扫描。

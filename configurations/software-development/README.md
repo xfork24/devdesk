@@ -3,7 +3,7 @@
 从仓库根目录构建。
 
 ```bash
-python3 configurations/software-development/build.py dist/software-development-0.3.0.zip
+./scripts/release/package-core.sh software
 ```
 
 软件开发包以固定 Git 提交归属运行仓库预检。Host 读取包声明的跟踪文件、路径及文本匹配结果，Docker 内的 JavaScript 处理器决定测试入口。预检将结果作为工作流产物提交。对已接入的项目，Host 的项目测试入口发现也使用包声明的处理器。
@@ -17,3 +17,8 @@ python3 configurations/software-development/build.py dist/software-development-0
 包提供 Node 与 Python 测试报告器。工具冻结报告器摘要和原始内容，Docker 从确切 Git 修订执行测试并保留结构化回执。包内处理器还生成候选分支和 GitHub PR 创建请求，Host 保存这些请求以便中断后核对，并执行远端保护、目标校验和同步。[领域插件化计划](../../docs/plans/domain-plugins/PLAN.md)
 
 正式 ZIP 的实仓证据、候选树和同步结果见[执行记录](../../docs/plans/domain-plugins/EXECUTION.md)。
+
+
+0.4.0 同时提供 Web 呈现目标 `web.react` API 2。Web Core 从 ZIP 加载 React ESM 模块及工作台样式。分支队列、交付和工程设置的入口在 `web/contributions.json` 声明。浏览器和独立客户端使用 `query.domain.contribution` 读取相同的项目查询结果。连接 GitHub 项目时，Web 通过 `domain.project.create` 使用当前包的连接处理器及默认配置。
+
+0.3.0 的流程配置和 JavaScript 运行端在 0.4.0 中逐文件保持一致。使用 `--legacy-runtime-only` 可重建 0.3.0，以复验独立升级和版本回切。

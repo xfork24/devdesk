@@ -274,6 +274,21 @@ def run(origin, action, args):
             assert "not_found" in str(failure), failure
             return True
         raise AssertionError("domain entity was readable from a different project")
+    if action == "project-read":
+        method, project, data = args
+        assert method.startswith("query.")
+        return client.call(method, **json.loads(data), project_id=project, domain_epoch=epoch)
+    if action == "contribution":
+        return client.call("query.domain.contribution", epoch=int(args[0]), contribution=args[1],
+                           input=json.loads(args[2]))
+    if action == "stale-contribution":
+        try:
+            client.call("query.domain.contribution", epoch=int(args[0]), contribution=args[1],
+                        input={"project_id": args[2]})
+        except RuntimeError as failure:
+            assert "domain_epoch_conflict" in str(failure), failure
+            return True
+        raise AssertionError("project contribution accepted an obsolete generation")
     if action == "software":
         assert active["active"]["id"] == "software-development"
         path, revision = args
@@ -311,8 +326,9 @@ def run(origin, action, args):
         entity_id = completed["domain_submission"]["entities"]["test_configuration"]
         proof = client.call("query.domain.entity", epoch=epoch, project_id=project, entity_id=entity_id)
         assert proof["data"] == actual and proof["origin"]["owner_id"] == owner
-        client.call("domain.uninstall", epoch=epoch, digest=active["active"]["digest"])
-        return {"run": run, "branch": branch["branch"], "proof_id": proof["id"], "revision": revision}
+        assert {row["type"] for row in active["sources"]} >= {"agent", "spec", "workflow", "skill"}
+        return {"run": run, "branch": branch["branch"], "proof_id": proof["id"], "revision": revision,
+                "epoch": epoch, "contributions": active["contributions"]}
     raise ValueError(action)
 
 

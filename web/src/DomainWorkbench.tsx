@@ -5,20 +5,25 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useLayoutEffect,
+  useRef,
   useState,
   type ComponentType,
   type FormEvent,
   type ReactNode,
 } from "react";
 import { DomainProvider } from "./domain-sdk";
+import { ActionButton } from "./components/ActionFeedback";
+import { WorkbenchLayout } from "./workbench-layout";
 import { KernelAuthentication } from "./components/KernelConnection";
-import type { Data } from "./domain-sdk";
+import type { Data, DomainContext } from "./domain-sdk";
 
 type Package = { id: string; version: string; digest: string };
 type Contribution = {
   id: string;
   title: string;
   query: string;
+  projection?: boolean;
   fields: { key: string; label: string }[];
   inputs: { key: string; label: string }[];
 };
@@ -27,16 +32,29 @@ type Directory = {
   epoch: number;
   active: Package | null;
   contributions: Contribution[] | null;
-  targets: { renderer: string; api: number; bindings: Binding[] }[] | null;
+  targets:
+    | {
+        renderer: string;
+        api: number;
+        bindings: Binding[];
+        styles?: string[];
+      }[]
+    | null;
   sources: CoreRecord[] | null;
   agent_workflows?: string[] | null;
+  project_connection?: string;
   entity_types?: Record<string, { workflows?: Record<string, unknown> }> | null;
 };
 type CoreRecord = { id: string; name: string; type: string; data: Data };
 
-async function rpc<T>(method: string, params: Data = {}): Promise<T> {
+async function rpc<T>(
+  method: string,
+  params: Data = {},
+  signal?: AbortSignal,
+): Promise<T> {
   const response = await fetch("/rpc", {
     method: "POST",
+    signal,
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       jsonrpc: "2.0",
@@ -47,7 +65,8 @@ async function rpc<T>(method: string, params: Data = {}): Promise<T> {
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const body = await response.json();
-  if (body.error) throw new Error(body.error.message);
+  if (body.error)
+    throw new Error(`${body.error.data?.code ?? ""} · ${body.error.message}`);
   return body.result as T;
 }
 
@@ -79,12 +98,26 @@ function DomainPage({
   directory: Directory;
   contribution: Contribution;
 }) {
-  const binding = directory.targets
-    ?.find(({ renderer, api }) => renderer === "web.react" && api === 1)
-    ?.bindings.find(({ contribution: id }) => id === contribution.id);
-  const entry =
-    binding &&
-    `/domain-assets/${directory.epoch}/${directory.active?.digest}/${binding.entry}`;
+  const target = directory.targets?.find(
+    ({ renderer, api }) => renderer === "web.react" && (api === 1 || api === 2),
+  );
+  const binding = target?.bindings.find(
+    ({ contribution: id }) => id === contribution.id,
+  );
+  const epoch = directory.epoch;
+  const base = `/domain-assets/${epoch}/${directory.active?.digest}/`;
+  const entry = binding && base + binding.entry;
+  const styles = binding ? target?.styles : undefined;
+  useLayoutEffect(() => {
+    const links = (styles ?? []).map((style) => {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = base + style;
+      document.head.append(link);
+      return link;
+    });
+    return () => links.forEach((link) => link.remove());
+  }, [base, styles]);
   const exportName = binding?.export;
   const Page = useMemo(
     () =>
@@ -98,31 +131,100 @@ function DomainPage({
         : null,
     [entry, exportName],
   );
-  const query = useCallback(
-    (handler: string, input: Data) =>
-      rpc("query.domain.invoke", { epoch: directory.epoch, handler, input }),
-    [directory.epoch],
+  const lifetime = useRef<AbortController | null>(null);
+  useLayoutEffect(() => {
+    const controller = new AbortController();
+    lifetime.current = controller;
+    return () => controller.abort();
+  }, []);
+  const context = useMemo<DomainContext>(
+    () => ({
+      epoch,
+      view: contribution.id,
+      projectConnection: directory.project_connection,
+      query: (handler, input) =>
+        rpc(
+          "query.domain.invoke",
+          { epoch, handler, input },
+          lifetime.current?.signal,
+        ),
+      request: (method, params, options) => {
+        const signals = [lifetime.current?.signal, options?.signal].filter(
+          (signal): signal is AbortSignal => !!signal,
+        );
+        const signal = AbortSignal.any(signals);
+        const projection = directory.contributions?.find(
+          (item) => item.projection && item.query === method,
+        );
+        return projection
+          ? rpc(
+              "query.domain.contribution",
+              {
+                epoch,
+                contribution: projection.id,
+                input: params,
+              },
+              signal,
+            )
+          : rpc(method, { ...params, domain_epoch: epoch }, signal);
+      },
+      events: (projectId) => {
+        const params = new URLSearchParams({
+          tail: "true",
+          configuration: "true",
+          domain_epoch: String(epoch),
+        });
+        if (projectId) params.set("project_id", projectId);
+        return new EventSource(`/events?${params}`);
+      },
+    }),
+    [
+      epoch,
+      contribution.id,
+      directory.project_connection,
+      directory.contributions,
+    ],
   );
-  return (
-    <section className="panel">
-      <h2>{contribution.title}</h2>
-      <DomainProvider.Provider value={{ query }}>
-        <PageBoundary key={entry ?? contribution.id}>
+  if (target?.api === 2 && Page)
+    return (
+      <DomainProvider.Provider value={context}>
+        <PageBoundary>
           <Suspense fallback={<p role="status">正在载入领域页面…</p>}>
-            {Page ? (
-              <Page />
-            ) : (
-              <CoreQuery
-                handler={contribution.query}
-                run={query}
-                fields={contribution.inputs}
-                resultFields={contribution.fields}
-              />
-            )}
+            <Page />
           </Suspense>
         </PageBoundary>
       </DomainProvider.Provider>
-    </section>
+    );
+  return (
+    <main>
+      <section className="panel">
+        <h2>{contribution.title}</h2>
+        <DomainProvider.Provider value={context}>
+          <PageBoundary>
+            <Suspense fallback={<p role="status">正在载入领域页面…</p>}>
+              {Page ? (
+                <Page />
+              ) : (
+                <CoreQuery
+                  handler={contribution.query}
+                  run={(_, input) =>
+                    contribution.projection
+                      ? rpc("query.domain.contribution", {
+                          epoch,
+                          contribution: contribution.id,
+                          input,
+                        })
+                      : context.query(contribution.query, input)
+                  }
+                  fields={contribution.inputs}
+                  resultFields={contribution.fields}
+                />
+              )}
+            </Suspense>
+          </PageBoundary>
+        </DomainProvider.Provider>
+      </section>
+    </main>
   );
 }
 
@@ -194,7 +296,13 @@ function CoreQuery({
           {displayed.map(({ key, label }) => (
             <div key={key}>
               <dt>{label}</dt>
-              <dd>{String((result as Data)[key])}</dd>
+              <dd>
+                {typeof (result as Data)[key] === "object" ? (
+                  <pre>{JSON.stringify((result as Data)[key], null, 2)}</pre>
+                ) : (
+                  String((result as Data)[key])
+                )}
+              </dd>
             </div>
           ))}
         </dl>
@@ -516,7 +624,17 @@ export function AppRoot() {
     };
   }, [refresh]);
   function select(id: string) {
-    history.pushState({}, "", `?view=${encodeURIComponent(id)}`);
+    const params = new URLSearchParams({ view: id });
+    const activeContributions = directory?.contributions ?? [];
+    if (activeContributions.some((item) => item.id === id)) {
+      const current = new URLSearchParams(location.search);
+      if (activeContributions.some((item) => item.id === current.get("view"))) {
+        const project = current.get("project_id");
+        if (project) params.set("project_id", project);
+      }
+    }
+    if (location.search !== `?${params}`)
+      history.pushState({}, "", `?${params}`);
     setSelected(id);
   }
   async function mutate(action: () => Promise<unknown>) {
@@ -544,125 +662,142 @@ export function AppRoot() {
     (item) => item.id === selected,
   );
   return (
-    <div className="app">
-      <aside className="sidebar">
-        <h1>DevDesk</h1>
+    <WorkbenchLayout
+      navigation={
         <nav aria-label="工作台导航">
-          <button onClick={() => select("packages")}>领域包</button>
-          <button onClick={() => select("core")}>核心配置</button>
-          <button onClick={() => select("git")}>Git</button>
+          <ActionButton className="nav" onClick={() => select("packages")}>
+            领域包
+          </ActionButton>
+          <ActionButton className="nav" onClick={() => select("core")}>
+            核心配置
+          </ActionButton>
+          <ActionButton className="nav" onClick={() => select("git")}>
+            Git
+          </ActionButton>
           {directory?.active && (
-            <button onClick={() => select("workflow")}>领域工作流</button>
+            <ActionButton className="nav" onClick={() => select("workflow")}>
+              领域工作流
+            </ActionButton>
           )}
           {directory?.contributions?.map((item) => (
-            <button key={item.id} onClick={() => select(item.id)}>
+            <ActionButton
+              className="nav"
+              aria-current={selected === item.id ? "page" : undefined}
+              key={item.id}
+              onClick={() => select(item.id)}
+            >
               {item.title}
-            </button>
+            </ActionButton>
           ))}
         </nav>
-      </aside>
-      <main className="main">
-        {error && <p role="alert">{error}</p>}
-        {selected === "workflow" && directory?.active ? (
-          <WorkflowLookup key={directory.epoch} directory={directory} />
-        ) : selected === "core" ? (
-          <CoreConfiguration />
-        ) : selected === "git" ? (
-          <section className="panel">
-            <h2>Git</h2>
-            <h3>仓库 HEAD</h3>
-            <CoreQuery handler="query.core.git.head" run={rpc} />
-            <h3>比较修订</h3>
-            <CoreQuery handler="query.core.git.diff" run={rpc} />
-          </section>
-        ) : directory && contribution ? (
-          <DomainPage
-            key={`${directory.epoch}:${contribution.id}`}
-            directory={directory}
-            contribution={contribution}
-          />
-        ) : (
-          <section className="panel">
-            <h2>领域包</h2>
-            <p role="status">
-              {directory
-                ? (directory.active?.id ?? "空领域")
-                : "正在连接工作台…"}
-            </p>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                const value = new FormData(event.currentTarget).get("archive");
-                if (value instanceof File && value.size)
-                  void mutate(async () => {
-                    await rpc("domain.install", {
-                      archive: await archive(value),
+      }
+    >
+      {error && <p role="alert">{error}</p>}
+      {directory && contribution ? (
+        <DomainPage
+          key={`${directory.epoch}:${contribution.id}`}
+          directory={directory}
+          contribution={contribution}
+        />
+      ) : (
+        <main>
+          {selected === "workflow" && directory?.active ? (
+            <WorkflowLookup key={directory.epoch} directory={directory} />
+          ) : selected === "core" ? (
+            <CoreConfiguration />
+          ) : selected === "git" ? (
+            <section className="panel">
+              <h2>Git</h2>
+              <h3>仓库 HEAD</h3>
+              <CoreQuery handler="query.core.git.head" run={rpc} />
+              <h3>比较修订</h3>
+              <CoreQuery handler="query.core.git.diff" run={rpc} />
+            </section>
+          ) : (
+            <section className="panel">
+              <h2>领域包</h2>
+              <p role="status">
+                {directory
+                  ? (directory.active?.id ?? "空领域")
+                  : "正在连接工作台…"}
+              </p>
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const value = new FormData(event.currentTarget).get(
+                    "archive",
+                  );
+                  if (value instanceof File && value.size)
+                    void mutate(async () => {
+                      await rpc("domain.install", {
+                        archive: await archive(value),
+                      });
                     });
-                  });
-              }}
-            >
-              <label>
-                领域 ZIP
-                <input type="file" name="archive" accept=".zip" required />
-              </label>
-              <button type="submit" disabled={busy || !directory}>
-                导入
-              </button>
-            </form>
-            <ul>
-              {packages.map((item) => (
-                <li key={item.digest}>
-                  {item.id} {item.version}{" "}
-                  <button
-                    disabled={
-                      busy ||
-                      !directory ||
-                      item.digest === directory.active?.digest
-                    }
-                    onClick={() =>
-                      void mutate(() =>
-                        rpc("domain.activate", {
-                          digest: item.digest,
-                          epoch: directory?.epoch,
-                        }),
-                      )
-                    }
-                  >
-                    激活
-                  </button>{" "}
-                  <button
-                    disabled={busy || !directory}
-                    onClick={() =>
-                      void mutate(() =>
-                        rpc("domain.uninstall", {
-                          digest: item.digest,
-                          epoch: directory?.epoch,
-                        }),
-                      )
-                    }
-                  >
-                    卸载
-                  </button>
-                </li>
-              ))}
-            </ul>
-            {directory?.sources?.length ? (
+                }}
+              >
+                <label>
+                  领域 ZIP
+                  <input type="file" name="archive" accept=".zip" required />
+                </label>
+                <button type="submit" disabled={busy || !directory}>
+                  导入
+                </button>
+              </form>
               <ul>
-                {directory.sources.map((source) => (
-                  <li key={source.id}>
-                    <details>
-                      <summary>
-                        {source.name} <code>{source.id}</code>
-                      </summary>
-                      <pre>{JSON.stringify(source.data, null, 2)}</pre>
-                    </details>
+                {packages.map((item) => (
+                  <li key={item.digest}>
+                    {item.id} {item.version}{" "}
+                    <button
+                      disabled={
+                        busy ||
+                        !directory ||
+                        item.digest === directory.active?.digest
+                      }
+                      onClick={() =>
+                        void mutate(() =>
+                          rpc("domain.activate", {
+                            digest: item.digest,
+                            epoch: directory?.epoch,
+                          }),
+                        )
+                      }
+                    >
+                      激活
+                    </button>{" "}
+                    <button
+                      disabled={busy || !directory}
+                      onClick={() =>
+                        void mutate(() =>
+                          rpc("domain.uninstall", {
+                            digest: item.digest,
+                            epoch: directory?.epoch,
+                          }),
+                        )
+                      }
+                    >
+                      卸载
+                    </button>
                   </li>
                 ))}
               </ul>
-            ) : null}
-          </section>
-        )}
-      </main>
-    </div>
+              {directory?.sources?.length ? (
+                <ul>
+                  {directory.sources.map((source) => (
+                    <li key={source.id}>
+                      <details>
+                        <summary>
+                          {source.name} <code>{source.id}</code>
+                        </summary>
+                        <pre>{JSON.stringify(source.data, null, 2)}</pre>
+                      </details>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </section>
+          )}
+        </main>
+      )}
+    </WorkbenchLayout>
   );
 }

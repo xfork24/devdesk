@@ -76,6 +76,8 @@ struct Ui {
 struct Target {
     renderer: String,
     api: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    styles: Vec<String>,
     bindings: Vec<Binding>,
 }
 
@@ -95,6 +97,8 @@ struct Contribution {
     kind: String,
     context: String,
     query: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    projection: bool,
     fields: Vec<Field>,
     #[serde(default)]
     inputs: Vec<Field>,
@@ -419,10 +423,16 @@ impl Package {
                     || !contribution.id.starts_with(&prefix)
                     || !ids.insert(contribution.id.as_str())
                     || contribution.title.trim().is_empty()
-                    || manifest
-                        .runtime
-                        .as_ref()
-                        .is_none_or(|r| !r.handlers.contains_key(&contribution.query))
+                    || if contribution.projection {
+                        !contribution.query.starts_with("query.")
+                            || !is_identifier(&contribution.query)
+                            || contribution.context != "project"
+                    } else {
+                        manifest
+                            .runtime
+                            .as_ref()
+                            .is_none_or(|r| !r.handlers.contains_key(&contribution.query))
+                    }
                 {
                     return Err(invalid("领域界面引用了无效的贡献或处理器"));
                 }
@@ -433,6 +443,12 @@ impl Package {
                 if !is_identifier(&target.renderer)
                     || !targets.insert(&target.renderer)
                     || target.api == 0
+                    || target.styles.iter().any(|style| {
+                        target.renderer != "web.react"
+                            || !style.starts_with("ui/web/")
+                            || !style.ends_with(".css")
+                            || !files.contains_key(style)
+                    })
                     || target.bindings.iter().any(|binding| {
                         !ids.contains(binding.contribution.as_str())
                             || !bindings.insert(&binding.contribution)
@@ -747,6 +763,41 @@ impl DomainPackages {
             };
         }
         Ok(epoch)
+    }
+
+    pub fn check_epoch(&self, epoch: u64) -> Result<()> {
+        check_epoch(epoch, self.epoch())
+    }
+
+    pub fn defaults_at(&self, epoch: u64, trusted: &BTreeSet<String>) -> Result<Option<Value>> {
+        let active = self.active.read().unwrap();
+        check_epoch(epoch, active.epoch)?;
+        Ok(active
+            .package
+            .as_ref()
+            .filter(|package| trusted.contains(&package.digest))
+            .map(|package| package.defaults.clone()))
+    }
+
+    pub fn contribution_projection(
+        &self,
+        epoch: u64,
+        id: &str,
+        trusted: &BTreeSet<String>,
+    ) -> Result<String> {
+        let active = self.active.read().unwrap();
+        check_epoch(epoch, active.epoch)?;
+        let package = active
+            .package
+            .as_ref()
+            .filter(|package| trusted.contains(&package.digest))
+            .ok_or_else(|| err("domain_inactive", "没有获准的活动领域"))?;
+        package
+            .contributions
+            .iter()
+            .find(|item| item.id == id && item.projection)
+            .map(|item| item.query.clone())
+            .ok_or_else(|| err("method_not_found", "领域查询贡献未注册"))
     }
 
     pub fn invoke(
@@ -1149,6 +1200,9 @@ impl DomainPackages {
         let active = self.active.read().unwrap();
         let Some(saved) = self.project_package(project)? else {
             drop(active);
+            if epoch.is_some() {
+                return Err(err("domain_inactive", "项目未绑定领域包"));
+            }
             return action(None);
         };
         if !trusted.contains(&saved) || active.package.as_ref().is_none_or(|p| p.digest != saved) {

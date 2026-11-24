@@ -9,6 +9,7 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 PACKAGE = Path(__file__).resolve().parent
 REPO = PACKAGE.parents[1]
 DOMAIN = "software-development"
+VERSION = "0.4.0"
 DISCOVER = f"{DOMAIN}.tests.discover"
 BRANCH = f"{DOMAIN}.branch.plan"
 CONNECT = f"{DOMAIN}.project.connect"
@@ -54,7 +55,7 @@ def delivery_configuration():
     return translate(entries), translate(defaults)
 
 
-def build(target):
+def build(target, web, version):
     coordinate = {
         "type": "object", "additionalProperties": False, "required": ["path", "revision"],
         "properties": {"path": {"type": "string", "minLength": 1, "maxLength": 4096},
@@ -170,7 +171,25 @@ def build(target):
             result_type: {"name": "Test configuration", "schema": output},
         }).encode(),
     })
-    manifest = {"format": 1, "id": DOMAIN, "version": "0.3.0", "entity_types": entity_types,
+    ui = None
+    if web is not None:
+        if not (web / "workbench.mjs").is_file():
+            raise ValueError(f"Missing Web entry in {web}; run npm --prefix web run build:software")
+        contributions = PACKAGE / "web/contributions.json"
+        files["ui/contributions.json"] = contributions.read_bytes()
+        stylesheet = "ui/web/workbench.css"
+        files[stylesheet] = (PACKAGE / "web/workbench.css").read_bytes()
+        for asset in web.rglob("*.mjs"):
+            files[f"ui/web/{asset.relative_to(web).as_posix()}"] = asset.read_bytes()
+        ui = {
+            "contributions": "ui/contributions.json",
+            "targets": [{"renderer": "web.react", "api": 2, "styles": [stylesheet], "bindings": [
+                {"contribution": row["id"], "entry": "ui/web/workbench.mjs", "export": export}
+                for row, export in zip(json.loads(contributions.read_text()),
+                                       ("BranchQueue", "DeliveryWorkbench", "EngineeringSettings"), strict=True)
+            ]}],
+        }
+    manifest = {"format": 1, "id": DOMAIN, "version": version, "entity_types": entity_types,
                 "files": {path: hashlib.sha256(contents).hexdigest() for path, contents in files.items()},
                 "runtime": {"entry": "runtime/worker.mjs", "worktree_branch": BRANCH, "test_discovery": DISCOVER,
                             "project_connection": CONNECT, "test_reporters": reporters,
@@ -186,6 +205,8 @@ def build(target):
                                       "needles": ["#[test", "#[tokio::test", "#[async_std::test"]}},
                                }},
                 }}}
+    if ui:
+        manifest["ui"] = ui
     files["manifest.json"] = json.dumps(manifest).encode()
     target.parent.mkdir(parents=True, exist_ok=True)
     with ZipFile(target, "w") as archive:
@@ -195,5 +216,11 @@ def build(target):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--version", action="version", version=VERSION)
     parser.add_argument("target", type=Path)
-    build(parser.parse_args().target)
+    parser.add_argument("--web-dir", type=Path, default=REPO / "web/dist/software")
+    parser.add_argument("--legacy-runtime-only", action="store_true",
+                        help="Reproduce the 0.3.0 runtime-only release for compatibility tests")
+    args = parser.parse_args()
+    build(args.target, None if args.legacy_runtime_only else args.web_dir,
+          "0.3.0" if args.legacy_runtime_only else VERSION)

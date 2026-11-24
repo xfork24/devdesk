@@ -345,13 +345,18 @@ pub fn compose_configuration_catalog(
         && state.projects.iter().all(|p| p.execution_mode == "live")
     {
         for record in global.state.governance.iter().filter(|r| {
-            r.immutable
+            // Membership is local catalog metadata and is reconciled below.
+            r.r#type != "template_catalog_member"
+                && r.immutable
                 && (r.r#type == "role"
                     || r.r#type == "role_retirement"
                     || configuration_visible(&global.state, r, Some(project)))
         }) {
             if let Some(old) = local.record(&record.id) {
-                require(old.content_hash == record.content_hash, "共享配置摘要冲突")?;
+                require(
+                    old.content_hash == record.content_hash,
+                    format!("共享配置摘要冲突 {}", record.id),
+                )?;
             } else {
                 state.governance.push(record.clone());
             }
@@ -406,4 +411,46 @@ pub fn compose_role_directory(
         }
     }
     ConfigurationCatalogSnapshot::new(state, global.revision, false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::governance::record;
+
+    #[test]
+    fn packaged_role_composition_preserves_project_membership() {
+        let role = record(
+            "role",
+            "test-domain.reviewer".into(),
+            Scope::global(),
+            "Reviewer".into(),
+            1,
+            None,
+            json!({"instructions":"Review the current result."}),
+            true,
+        );
+        let mut project = EngineeringState::default();
+        project.governance.push(role.clone());
+        register_template_members(&mut project, TEMPLATE_INITIAL_GENERATION);
+        let member = template_catalog_member(&project, &role).unwrap();
+        let member_id = member.id.clone();
+
+        // A shared directory can first discover the role without its membership.
+        let mut directory = EngineeringState::default();
+        directory.governance.push(role);
+        copy_template_catalog(&EngineeringState::default(), &mut directory).unwrap();
+        let global = ConfigurationCatalogSnapshot::new(directory, 1, false).unwrap();
+        let local = ConfigurationCatalogSnapshot::new(project, 1, true).unwrap();
+        assert_ne!(
+            global.record(&member_id).unwrap().content_hash,
+            local.record(&member_id).unwrap().content_hash
+        );
+
+        let composed = compose_configuration_catalog(&global, &local, "project").unwrap();
+        assert_eq!(
+            composed.record(&member_id).unwrap(),
+            local.record(&member_id).unwrap()
+        );
+    }
 }

@@ -1424,6 +1424,15 @@
       ]
     },
     {
+      "method": "query.domain.contribution",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "active_epoch",
+      "sites": [
+        "crates/host/src/domains.rs"
+      ]
+    },
+    {
       "method": "query.domain.entity",
       "access": "read",
       "scope": "explicit",

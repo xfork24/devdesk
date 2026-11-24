@@ -1,3 +1,5 @@
+import { DomainLayout, WorkbenchLayout } from "./workbench-layout";
+import type { DomainContext } from "./domain-sdk";
 import { displayText, shortId as short } from "./display-text";
 import { WorkflowExecutionRecords } from "./components/WorkflowExecutionRecords";
 import { WorkflowContexts } from "./components/WorkflowContexts";
@@ -26,7 +28,6 @@ import {
   type ActionTarget,
   useActionFeedback,
 } from "./components/action-feedback";
-import "./browser-compat";
 import {
   FeatureBranchQueue,
   type FeatureQueueItem,
@@ -221,127 +222,168 @@ const labels: Record<string, string> = {
 };
 const pretty = (v: unknown) => JSON.stringify(v, null, 2);
 let sequence = 0;
-async function rpc(
-  method: string,
-  params: Row = {},
-  options: RequestOptions = {},
-): ReturnType<Request> {
-  if (isTemplateMutation(method)) {
-    if (getCatalogGeneration() === undefined)
-      await rpc("query.template_catalog");
-    params = { ...params, expected_catalog_generation: getCatalogGeneration() };
-  }
+function createRequest(transport?: Request): Request {
+  return async function rpc(
+    method: string,
+    params: Row = {},
+    options: RequestOptions = {},
+  ): ReturnType<Request> {
+    if (isTemplateMutation(method)) {
+      if (getCatalogGeneration() === undefined)
+        await rpc("query.template_catalog");
+      params = {
+        ...params,
+        expected_catalog_generation: getCatalogGeneration(),
+      };
+    }
 
-  const preparingRuntime = [
-    "runtime.prepare",
-    "runtime.prepare_harness",
-    "runtime.prepare_sandbox",
-    "session.open",
-    "experience.restore",
-    "codex.auth.start",
-    "codex.auth.status",
-    "codex.auth.cancel",
-    "codex.auth.preparation_cancel",
-  ].includes(method);
-  if (preparingRuntime)
-    window.dispatchEvent(
-      new CustomEvent("devdesk.runtime-preparation", {
-        detail: { pending: true },
-      }),
-    );
-  if (!options.prefetch) foregroundRequest(true);
-  try {
-    const result = await readRuntime(
-      method,
-      params,
-      (runtimeSignal) =>
-        readConfiguration(
-          method,
-          params,
-          async (signal) => {
-            const id = ++sequence;
-            const traceId = globalThis.crypto
-              ?.randomUUID?.()
-              .replaceAll("-", "");
-            const timeout = AbortSignal.timeout(
-              [
-                "session.open",
-                "experience.restore",
-                "runtime.prepare",
-              ].includes(method)
-                ? 25 * 60 * 1000
-                : method === "codex.auth.start" ||
-                    method === "configuration.templates.reset"
-                  ? 5 * 60 * 1000
-                  : 30000,
-            );
-            let data;
-            try {
-              const res = await fetch("/rpc", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  ...(traceId ? { "X-DevDesk-Trace-Id": traceId } : {}),
-                },
-                body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
-                signal: AbortSignal.any([signal, timeout]),
-              });
-              if (!res.ok) throw new Error(`HTTP ${res.status} · 内核连接失败`);
-              data = await res.json();
-            } catch (error) {
-              if (timeout.aborted && !signal.aborted) {
-                const message = method.startsWith("query.")
-                  ? "读取超时，可重新读取"
-                  : "内核响应超时，操作结果待确认";
-                throw new RpcResponseTimeout(
-                  `${message} · ${method} · 请求 ${traceId || id}`,
-                  {
-                    cause: error,
-                  },
-                );
-              }
-              throw error;
-            }
-            if (data.error)
-              throw new Error(
-                `${data.error.data?.code || ""} · ${data.error.message}`,
-              );
-            if (
-              method.startsWith("query.") &&
-              configurationResponseOutdated(data.result, params)
-            )
-              throw new DOMException("Configuration changed", "AbortError");
-            return data.result;
-          },
-          { ...options, signal: runtimeSignal },
-        ),
-      options,
-      getConfigurationSession(),
-    );
-    const reset = observeConfigurationResponse(result, params);
-    observeCatalogGeneration(
-      result?.catalog_generation ??
-        (["query.template_catalog", "configuration.templates.reset"].includes(
-          method,
-        )
-          ? result?.generation
-          : undefined),
-      reset,
-    );
-    observeRuntimeCommand(method, params);
-    if (configurationMutation(method)) invalidateConfigurationQueries();
-    if (modelMutation(method)) invalidateModelCatalogs();
-    return result;
-  } finally {
+    const preparingRuntime = [
+      "runtime.prepare",
+      "runtime.prepare_harness",
+      "runtime.prepare_sandbox",
+      "session.open",
+      "experience.restore",
+      "codex.auth.start",
+      "codex.auth.status",
+      "codex.auth.cancel",
+      "codex.auth.preparation_cancel",
+    ].includes(method);
     if (preparingRuntime)
       window.dispatchEvent(
         new CustomEvent("devdesk.runtime-preparation", {
-          detail: { pending: false },
+          detail: { pending: true },
         }),
       );
-    if (!options.prefetch) foregroundRequest(false);
-  }
+    if (!options.prefetch) foregroundRequest(true);
+    try {
+      const result = await readRuntime(
+        method,
+        params,
+        (runtimeSignal) =>
+          readConfiguration(
+            method,
+            params,
+            async (signal) => {
+              const id = ++sequence;
+              const traceId = globalThis.crypto
+                ?.randomUUID?.()
+                .replaceAll("-", "");
+              const timeout = AbortSignal.timeout(
+                [
+                  "session.open",
+                  "experience.restore",
+                  "runtime.prepare",
+                ].includes(method)
+                  ? 25 * 60 * 1000
+                  : method === "codex.auth.start" ||
+                      method === "configuration.templates.reset"
+                    ? 5 * 60 * 1000
+                    : 30000,
+              );
+              let data;
+              try {
+                if (transport) {
+                  data = {
+                    result: await transport(method, params, {
+                      signal: AbortSignal.any([signal, timeout]),
+                    }),
+                  };
+                } else {
+                  const res = await fetch("/rpc", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      ...(traceId ? { "X-DevDesk-Trace-Id": traceId } : {}),
+                    },
+                    body: JSON.stringify({
+                      jsonrpc: "2.0",
+                      id,
+                      method,
+                      params,
+                    }),
+                    signal: AbortSignal.any([signal, timeout]),
+                  });
+                  if (!res.ok)
+                    throw new Error(`HTTP ${res.status} · 内核连接失败`);
+                  data = await res.json();
+                }
+              } catch (error) {
+                if (timeout.aborted && !signal.aborted) {
+                  const message = method.startsWith("query.")
+                    ? "读取超时，可重新读取"
+                    : "内核响应超时，操作结果待确认";
+                  throw new RpcResponseTimeout(
+                    `${message} · ${method} · 请求 ${traceId || id}`,
+                    {
+                      cause: error,
+                    },
+                  );
+                }
+                throw error;
+              }
+              if (data.error)
+                throw new Error(
+                  `${data.error.data?.code || ""} · ${data.error.message}`,
+                );
+              if (
+                method.startsWith("query.") &&
+                configurationResponseOutdated(data.result, params)
+              )
+                throw new DOMException("Configuration changed", "AbortError");
+              return data.result;
+            },
+            { ...options, signal: runtimeSignal },
+          ),
+        options,
+        getConfigurationSession(),
+      );
+      const reset = observeConfigurationResponse(result, params);
+      observeCatalogGeneration(
+        result?.catalog_generation ??
+          (["query.template_catalog", "configuration.templates.reset"].includes(
+            method,
+          )
+            ? result?.generation
+            : undefined),
+        reset,
+      );
+      observeRuntimeCommand(method, params);
+      if (configurationMutation(method)) invalidateConfigurationQueries();
+      if (modelMutation(method)) invalidateModelCatalogs();
+      return result;
+    } finally {
+      if (preparingRuntime)
+        window.dispatchEvent(
+          new CustomEvent("devdesk.runtime-preparation", {
+            detail: { pending: false },
+          }),
+        );
+      if (!options.prefetch) foregroundRequest(false);
+    }
+  };
 }
+const standaloneRequest = createRequest();
+
+function workbenchRequest(domain?: DomainContext): Request {
+  if (!domain) return standaloneRequest;
+  return createRequest((method, params, options) => {
+    if (method !== "project.open_github")
+      return domain.request(method, params, options);
+    const { repository, mainline, title } = params?.payload ?? {};
+    return domain.request(
+      "domain.project.create",
+      {
+        epoch: domain.epoch,
+        command_id: params?.command_id,
+        title: title || repository,
+        connection: { repository, mainline: mainline || "main" },
+        reuse_connection: true,
+      },
+      options,
+    );
+  });
+}
+
 function Badge({ value }: { value: string }) {
   return (
     <span className={`badge status-${value}`}>
@@ -357,8 +399,7 @@ function Empty({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
-const route = new URLSearchParams(location.search);
-function routeTabValue(p: URLSearchParams) {
+function routeTabValue(p: URLSearchParams, fallback = "overview") {
   const original = p.toString();
   const tab = p.get("tab");
   if (tab === "workflows" && p.has("workflow_id"))
@@ -376,10 +417,8 @@ function routeTabValue(p: URLSearchParams) {
     "history",
   ].includes(tab || "")
     ? tab!
-    : "overview";
+    : fallback;
 }
-const routeTab = routeTabValue(route);
-preloadPage(routeTab);
 const defaultExecutionTab = "manager";
 type ActivityFilter = "running" | "waiting_confirmation" | "blocked";
 const executionTabs = [
@@ -390,7 +429,16 @@ const executionTabs = [
   ["records", "执行记录"],
 ];
 
-function App() {
+function App({
+  domain,
+  initialTab,
+}: {
+  domain?: DomainContext;
+  initialTab?: string;
+}) {
+  const route = new URLSearchParams(location.search);
+  const routeTab = routeTabValue(route, initialTab);
+  const rpc = useMemo(() => workbenchRequest(domain), [domain]);
   const catalogGeneration = useCatalogGeneration();
   const requestGeneration = useRef(0);
   const activePage = useRef({
@@ -459,7 +507,7 @@ function App() {
               },
         ),
     };
-  }, [configurationLifetime, configurationReadVersion]);
+  }, [configurationLifetime, configurationReadVersion, rpc]);
   useEffect(
     () => () => configurationLifetime.controller.abort(),
     [configurationLifetime],
@@ -565,6 +613,11 @@ function App() {
   const [workFilter, setWorkFilter] = useState(route.get("filter") || "");
   useEffect(() => {
     const params = new URLSearchParams();
+    if (domain) {
+      if (new URLSearchParams(location.search).get("view") !== domain.view)
+        return;
+      params.set("view", domain.view);
+    }
     for (const key of [
       "config_tab",
       "config_object",
@@ -623,10 +676,12 @@ function App() {
     featurePage,
     historyScope,
     discussionFocus,
+    domain,
   ]);
   useEffect(() => {
     const pop = () => {
       const p = new URLSearchParams(location.search);
+      if (domain && p.get("view") !== domain.view) return;
       const pid = p.get("project_id") || "";
       if (pid !== projectId) {
         ++requestGeneration.current;
@@ -635,7 +690,7 @@ function App() {
         setData(undefined);
         setView(undefined);
       }
-      setTab(routeTabValue(p));
+      setTab(routeTabValue(p, initialTab));
       setHistoryScope(
         p.get("history_scope") === "global" ? "global" : "project",
       );
@@ -667,7 +722,7 @@ function App() {
     };
     window.addEventListener("popstate", pop);
     return () => window.removeEventListener("popstate", pop);
-  }, [projectId]);
+  }, [projectId, domain, initialTab]);
   const load = useCallback(
     async (afterCommand = false) => {
       // A command refresh must settle before another form captures its revision.
@@ -803,6 +858,7 @@ function App() {
       taskFilter,
       tab,
       summaryPage,
+      rpc,
     ],
   );
   refreshWorkspace.current = () => {
@@ -827,9 +883,11 @@ function App() {
     if (caps?.setup_required !== false) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let branchFactsChanged = false;
-    const stream = new EventSource(
-      `/events?tail=true&configuration=true${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ""}`,
-    );
+    const stream =
+      domain?.events(projectId) ??
+      new EventSource(
+        `/events?tail=true&configuration=true${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ""}`,
+      );
     stream.onopen = () => {
       if (!kernelStopped.current) setConnection("已连接");
     };
@@ -982,7 +1040,7 @@ function App() {
       document.removeEventListener("visibilitychange", visible);
       if (timer) clearTimeout(timer);
     };
-  }, [projectId, caps?.setup_required]);
+  }, [projectId, caps?.setup_required, domain]);
   const selectedProjectMatches =
     !loadedData?.active_project?.id ||
     loadedData.active_project.id === projectId;
@@ -1027,6 +1085,7 @@ function App() {
     activityRequest.current?.abort();
     setDetailPages({});
     const params = new URLSearchParams({
+      ...(domain ? { view: domain.view } : {}),
       tab: feature ? "execution" : "overview",
     });
     if (overviewProject) params.set("project_id", overviewProject);
@@ -1369,107 +1428,192 @@ function App() {
         </div>
       </div>
     );
-  return (
-    <div className="app">
-      <aside className="sidebar">
-        <div className="brand">
-          <Layers3 size={26} />
-          <strong>DevDesk</strong>
-        </div>
-        <div className="sidebar-caption">
-          软件工程工作台 <span>v0.3</span>
-        </div>
-        <div className="project-selector">
-          <span>当前项目</span>
-          <ActionSelect
-            aria-label="当前项目"
-            value={projectId}
-            disabled={busy}
-            onChange={(e) => openProject(e.target.value)}
-          >
-            <option value="">
-              {projects.length === 0 ? "尚无项目" : "选择项目"}
+  const Layout = domain ? DomainLayout : WorkbenchLayout;
+  const navigation = (
+    <>
+      <div className="sidebar-caption">
+        软件工程工作台 <span>v0.3</span>
+      </div>
+      <div className="project-selector">
+        <span>当前项目</span>
+        <ActionSelect
+          aria-label="当前项目"
+          value={projectId}
+          disabled={busy}
+          onChange={(e) => openProject(e.target.value)}
+        >
+          <option value="">
+            {projects.length === 0 ? "尚无项目" : "选择项目"}
+          </option>
+          {projectOptions.map((p) => (
+            <option key={p.id} value={p.id}>
+              {displayText(p.title)}
             </option>
-            {projectOptions.map((p) => (
-              <option key={p.id} value={p.id}>
-                {displayText(p.title)}
-              </option>
-            ))}
-          </ActionSelect>
-          <ActionButton aria-label="打开 GitHub 项目" onClick={createProject}>
-            <Plus size={16} />
-          </ActionButton>
-        </div>
-        {(data?.total_projects || 0) > 50 && (
-          <Pagination
-            page={projectPage}
-            setPage={(page) => {
-              setProjectPage(page);
-            }}
-            hasMore={(projectPage + 1) * 50 < (data?.total_projects || 0)}
-          />
-        )}
-        <nav>
-          {nav.map(([id, title, Icon]) => (
-            <ActionButton
-              key={id}
-              className={tab === id ? "nav active" : "nav"}
-              onClick={() => {
-                preloadPage(id);
-                if (id === "execution") setExecutionTab(defaultExecutionTab);
-                setTab(id);
-              }}
-              onMouseEnter={() => {
-                preloadPage(id);
-                if (
-                  [
-                    "projects",
-                    "workflows",
-                    "actors",
-                    "components",
-                    "discussion",
-                  ].includes(id)
-                )
-                  prefetchConfiguration(
-                    rpc,
-                    projectId || undefined,
-                    id === "actors" ? "role" : undefined,
-                  );
-              }}
-              onFocus={() => {
-                preloadPage(id);
-                if (
-                  [
-                    "projects",
-                    "workflows",
-                    "actors",
-                    "components",
-                    "discussion",
-                  ].includes(id)
-                )
-                  prefetchConfiguration(
-                    rpc,
-                    projectId || undefined,
-                    id === "actors" ? "role" : undefined,
-                  );
-              }}
-            >
-              <Icon size={18} />
-              {displayText(title)}
-            </ActionButton>
           ))}
-        </nav>
-        <div className="sidebar-bottom">
-          <div className="runtime-dot" />
-          <div>
-            <strong>
-              {displayText(project ? "GitHub 项目" : "打开 GitHub 仓库")}
-            </strong>
-            <p>工程流程与角色讨论</p>
-          </div>
+        </ActionSelect>
+        <ActionButton aria-label="打开 GitHub 项目" onClick={createProject}>
+          <Plus size={16} />
+        </ActionButton>
+      </div>
+      {(data?.total_projects || 0) > 50 && (
+        <Pagination
+          page={projectPage}
+          setPage={(page) => {
+            setProjectPage(page);
+          }}
+          hasMore={(projectPage + 1) * 50 < (data?.total_projects || 0)}
+        />
+      )}
+      <nav aria-label="软件开发导航">
+        {nav.map(([id, title, Icon]) => (
+          <ActionButton
+            key={id}
+            className={tab === id ? "nav active" : "nav"}
+            aria-current={tab === id ? "page" : undefined}
+            onClick={() => {
+              preloadPage(id);
+              if (id === "execution") setExecutionTab(defaultExecutionTab);
+              setTab(id);
+            }}
+            onMouseEnter={() => {
+              preloadPage(id);
+              if (
+                [
+                  "projects",
+                  "workflows",
+                  "actors",
+                  "components",
+                  "discussion",
+                ].includes(id)
+              )
+                prefetchConfiguration(
+                  rpc,
+                  projectId || undefined,
+                  id === "actors" ? "role" : undefined,
+                );
+            }}
+            onFocus={() => {
+              preloadPage(id);
+              if (
+                [
+                  "projects",
+                  "workflows",
+                  "actors",
+                  "components",
+                  "discussion",
+                ].includes(id)
+              )
+                prefetchConfiguration(
+                  rpc,
+                  projectId || undefined,
+                  id === "actors" ? "role" : undefined,
+                );
+            }}
+          >
+            <Icon size={18} />
+            {displayText(title)}
+          </ActionButton>
+        ))}
+      </nav>
+      <div className="sidebar-bottom">
+        <div className="runtime-dot" />
+        <div>
+          <strong>
+            {displayText(project ? "GitHub 项目" : "打开 GitHub 仓库")}
+          </strong>
+          <p>工程流程与角色讨论</p>
         </div>
-      </aside>
-      <div className="main">
+      </div>
+    </>
+  );
+  const overlay = (
+    <>
+      {dialog && (
+        <CommandDialog
+          key={dialog.method + (dialog.target || "")}
+          spec={dialog}
+          busy={busy}
+          close={() => setDialog(undefined)}
+          submit={async (payload) => {
+            let result;
+            if (dialog.method === "shutdown") {
+              const response = await fetch("/shutdown", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  command_id: dialog.commandId,
+                  instance_id: dialog.hostVersion?.instance_id,
+                  expected_revision: dialog.hostVersion?.revision,
+                }),
+              });
+              const outcome = await response.json();
+              if (!response.ok || outcome.error)
+                throw new Error(
+                  outcome.error
+                    ? `${outcome.code} · ${outcome.error}`
+                    : `退出失败 HTTP ${response.status}`,
+                );
+              kernelStopped.current = true;
+              ++requestGeneration.current;
+              ++projectGeneration.current;
+              setView(undefined);
+              setConnection("已断开");
+              setCaps(undefined);
+              setData(undefined);
+            } else if (dialog.method === "settings.update") {
+              const changes = Object.fromEntries(
+                dialog.fields
+                  .filter(({ key, value }) => String(payload[key]) !== value)
+                  .map(({ key }) => [key, payload[key]]),
+              );
+              if (!Object.keys(changes).length) {
+                setDialog(undefined);
+                return;
+              }
+              result = await rpc(dialog.method, {
+                command_id: dialog.commandId,
+                preconditions: dialog.preconditions?.filter(({ resource }) =>
+                  Object.hasOwn(changes, resource.id),
+                ),
+                payload: changes,
+              });
+              await load();
+            } else {
+              result = await command(
+                dialog.method,
+                dialog.target,
+                payload,
+                dialog.revision,
+                false,
+              );
+            }
+            if (dialog.method === "feature.create" && result?.id) {
+              setFeatureId(result.id);
+              setTab("overview");
+            }
+            if (dialog.method !== "shutdown")
+              publishActionFeedback(
+                dialog.feedbackTarget || null,
+                "操作已保存",
+              );
+            setDialog(undefined);
+          }}
+        />
+      )}
+      {view && (
+        <Reader
+          title={displayText(view.title)}
+          body={view.body}
+          format={view.format}
+          metadata={view.metadata}
+          close={() => setView(undefined)}
+        />
+      )}
+    </>
+  );
+  return (
+    <Layout navigation={navigation} overlay={overlay}>
+      <>
         <header>
           <div className="breadcrumb">
             <FolderOpen size={15} />
@@ -1958,11 +2102,13 @@ function App() {
             <ProjectManager
               key={`project-manager:${projectId || "global"}:${catalogGeneration}:${configurationSession}`}
               bootstrap={data}
+              domainDefaults={Boolean(domain)}
               request={configurationRequest}
               project={project}
               refresh={load}
               onOpen={async (id) => {
-                await command("project.open_github", id, {});
+                if (domain) openProject(id);
+                else await command("project.open_github", id, {});
                 setTab("projects");
               }}
             />
@@ -2132,89 +2278,8 @@ function App() {
             DevDesk 0.2 <span>工程内核 · 持久化历史 · GitHub 工程接入</span>
           </footer>
         </ConfigurationMain>
-      </div>
-      {dialog && (
-        <CommandDialog
-          key={dialog.method + (dialog.target || "")}
-          spec={dialog}
-          busy={busy}
-          close={() => setDialog(undefined)}
-          submit={async (payload) => {
-            let result;
-            if (dialog.method === "shutdown") {
-              const response = await fetch("/shutdown", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  command_id: dialog.commandId,
-                  instance_id: dialog.hostVersion?.instance_id,
-                  expected_revision: dialog.hostVersion?.revision,
-                }),
-              });
-              const outcome = await response.json();
-              if (!response.ok || outcome.error)
-                throw new Error(
-                  outcome.error
-                    ? `${outcome.code} · ${outcome.error}`
-                    : `退出失败 HTTP ${response.status}`,
-                );
-              kernelStopped.current = true;
-              ++requestGeneration.current;
-              ++projectGeneration.current;
-              setView(undefined);
-              setConnection("已断开");
-              setCaps(undefined);
-              setData(undefined);
-            } else if (dialog.method === "settings.update") {
-              const changes = Object.fromEntries(
-                dialog.fields
-                  .filter(({ key, value }) => String(payload[key]) !== value)
-                  .map(({ key }) => [key, payload[key]]),
-              );
-              if (!Object.keys(changes).length) {
-                setDialog(undefined);
-                return;
-              }
-              result = await rpc(dialog.method, {
-                command_id: dialog.commandId,
-                preconditions: dialog.preconditions?.filter(({ resource }) =>
-                  Object.hasOwn(changes, resource.id),
-                ),
-                payload: changes,
-              });
-              await load();
-            } else {
-              result = await command(
-                dialog.method,
-                dialog.target,
-                payload,
-                dialog.revision,
-                false,
-              );
-            }
-            if (dialog.method === "feature.create" && result?.id) {
-              setFeatureId(result.id);
-              setTab("overview");
-            }
-            if (dialog.method !== "shutdown")
-              publishActionFeedback(
-                dialog.feedbackTarget || null,
-                "操作已保存",
-              );
-            setDialog(undefined);
-          }}
-        />
-      )}
-      {view && (
-        <Reader
-          title={displayText(view.title)}
-          body={view.body}
-          format={view.format}
-          metadata={view.metadata}
-          close={() => setView(undefined)}
-        />
-      )}
-    </div>
+      </>
+    </Layout>
   );
 }
 function Metric({
@@ -2501,6 +2566,15 @@ function Reader({
     </div>
   );
 }
-export function AppRoot() {
-  return route.has("read") ? <RawJsonReader request={rpc} /> : <App />;
+export function AppRoot({
+  domain,
+  initialTab,
+}: { domain?: DomainContext; initialTab?: string } = {}) {
+  const route = new URLSearchParams(location.search);
+  const request = useMemo(() => workbenchRequest(domain), [domain]);
+  return route.has("read") ? (
+    <RawJsonReader request={request} />
+  ) : (
+    <App domain={domain} initialTab={initialTab} />
+  );
 }

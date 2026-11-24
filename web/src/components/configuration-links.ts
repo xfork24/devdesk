@@ -7,6 +7,8 @@ export function configurationHref(
 ) {
   if (!record.id || !record.type) return undefined;
   const params = new URLSearchParams();
+  const view = new URLSearchParams(location.search).get("view");
+  if (view) params.set("view", view);
   const type = record.type;
   if (["role", "capability", "agent"].includes(type)) {
     params.set("tab", "actors");

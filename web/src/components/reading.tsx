@@ -73,6 +73,8 @@ export function RawJsonLink({
   title?: string;
 }) {
   const p = new URLSearchParams({ read: source });
+  const view = new URLSearchParams(location.search).get("view");
+  if (view) p.set("view", view);
   for (const [key, value] of Object.entries(params))
     if (value != null && value !== "") p.set(key, String(value));
   const url = `?${p}`;
@@ -90,7 +92,9 @@ export function RawJsonLink({
 export function RawJsonReader({ request }: { request: Request }) {
   const p = new URLSearchParams(location.search),
     source = p.get("read") || "";
-  const params = Object.fromEntries([...p].filter(([key]) => key !== "read"));
+  p.delete("read");
+  p.delete("view");
+  const params = Object.fromEntries(p);
   const state = useReading(
     request,
     rawMethods[source] || "",

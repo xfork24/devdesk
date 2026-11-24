@@ -87,12 +87,16 @@ impl Engine {
         // Use the same global snapshot as the reset check. Role records just
         // published to the directory are already present in this project.
         for record in known.state.governance.iter().filter(|r| {
-            r.immutable
+            r.r#type != "template_catalog_member"
+                && r.immutable
                 && (matches!(r.r#type.as_str(), "role" | "role_retirement")
                     || configuration_visible(&known.state, r, self.store.project_id().as_deref()))
         }) {
             if let Some(hash) = ids.get(&record.id) {
-                require(hash == &record.content_hash, "共享配置摘要冲突")?;
+                require(
+                    hash == &record.content_hash,
+                    format!("共享配置摘要冲突 {}", record.id),
+                )?;
             } else {
                 ids.insert(record.id.clone(), record.content_hash.clone());
                 next.governance.push(record.clone());

@@ -1,0 +1,74 @@
+name: domain release
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: domain-release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  core-host:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: false
+      - run: ./scripts/release/package-core.sh host
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-host-${{ matrix.os }}
+          path: dist/devdesk-core-host-*.tar.gz*
+
+  workbench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: core-host
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-host-ubuntu-latest
+          path: dist
+      - run: ./scripts/release/package-core.sh web
+      - run: ./scripts/release/package-core.sh software
+      - run: ./web/node_modules/.bin/playwright install --with-deps chromium
+      - run: docker pull node@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced307cf4b6f
+      - name: Validate the published archives and version rollback
+        run: node tests/entrypoints/domain_release.mjs dist
+      - name: Validate hot loading from empty Core with both clients
+        run: |
+          mkdir -p /tmp/devdesk-release-test
+          tar -C /tmp/devdesk-release-test -xzf dist/devdesk-core-host-*.tar.gz
+          tar -C /tmp/devdesk-release-test -xzf dist/devdesk-core-web.tar.gz
+          node tests/entrypoints/domain_packages.mjs /tmp/devdesk-release-test/devdesk-core-host-*/devdesk-host /tmp/devdesk-release-test/devdesk-core-web dist/software-development-0.4.0.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: domain-and-web-core
+          path: |
+            dist/devdesk-core-web.tar.gz*
+            dist/software-development-0.4.0.zip*

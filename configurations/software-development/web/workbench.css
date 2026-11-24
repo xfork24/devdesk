@@ -1,0 +1,130 @@
+.feature-queue-panel .panel-heading {
+  flex-wrap: wrap;
+}
+.feature-branch-queue,
+.feature-branch-queue ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.feature-branch-queue {
+  padding: 12px clamp(8px, 2vw, 20px);
+  --branch-indent: clamp(12px, 2vw, 22px);
+  --branch-line: #dce2ed;
+}
+.feature-branch-queue ul {
+  margin-inline-start: 12px;
+  padding-inline-start: var(--branch-indent);
+}
+.feature-branch-queue ul > li {
+  position: relative;
+}
+.feature-branch-queue ul > li::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(-1 * var(--branch-indent));
+  border-inline-start: 1px solid var(--branch-line);
+}
+.feature-branch-queue ul > li:last-child::before {
+  inset-block-end: auto;
+  height: 20px;
+}
+.feature-branch-queue ul > li::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 19px;
+  inset-inline-start: calc(-1 * var(--branch-indent));
+  width: var(--branch-indent);
+  border-block-start: 1px solid var(--branch-line);
+}
+.queue-branch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 4px 7px;
+  border-radius: 6px;
+}
+.queue-branch-row.selected {
+  background: #f3f0fb;
+  box-shadow: inset 2px 0 #8c78cb;
+}
+.queue-branch-row svg {
+  flex: none;
+  color: #7865b5;
+}
+.queue-mainline > span {
+  color: #626d83;
+  font-size: 12px;
+}
+.queue-branch-toggle,
+.queue-feature-select {
+  border: 0;
+  background: transparent;
+}
+.queue-branch-toggle {
+  flex: none;
+  padding: 6px 4px;
+}
+.queue-branch-toggle[aria-expanded="true"] > svg {
+  transform: rotate(90deg);
+}
+.queue-feature-select {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  padding: 5px 4px;
+}
+.queue-branch-label {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.queue-branch-label strong,
+.queue-feature-select strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.queue-branch-ref {
+  display: block;
+  color: #616d84;
+  font-size: 11px;
+}
+.queue-branch-pr {
+  color: #6250a7;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.queue-branch-status.status-completed {
+  color: #3e7259;
+}
+.queue-branch-status.status-running {
+  color: #495e9c;
+}
+.queue-branch-message {
+  min-height: 40px;
+  padding: 8px;
+  color: #616d84;
+  font-size: 12px;
+}
+.queue-branch-message p {
+  margin: 0;
+}
+.queue-task-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.repository-connection-summary {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.repository-settings > .panel-heading {
+  border-bottom: 0;
+}

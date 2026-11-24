@@ -82,6 +82,11 @@
             "properties": {
               "renderer": { "$ref": "#/$defs/identifier" },
               "api": { "type": "integer", "minimum": 1 },
+              "styles": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": { "$ref": "#/$defs/path", "pattern": "^ui/web/.*\\.css$" }
+              },
               "bindings": {
                 "type": "array",
                 "items": {

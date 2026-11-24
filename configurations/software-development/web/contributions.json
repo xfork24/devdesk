@@ -1,0 +1,47 @@
+[
+  {
+    "id": "software-development.branches",
+    "title": "分支队列",
+    "kind": "page",
+    "context": "project",
+    "projection": true,
+    "query": "query.feature_branches",
+    "inputs": [
+      { "key": "project_id", "label": "项目 ID" },
+      { "key": "feature_id", "label": "Feature ID" }
+    ],
+    "fields": [
+      { "key": "candidate", "label": "试合并候选与 Pull Request" },
+      { "key": "tasks", "label": "Task 分支" }
+    ]
+  },
+  {
+    "id": "software-development.delivery",
+    "title": "Pull Requests 与 Diff",
+    "kind": "page",
+    "context": "project",
+    "projection": true,
+    "query": "query.workflow_materials",
+    "inputs": [
+      { "key": "project_id", "label": "项目 ID" },
+      { "key": "owner_id", "label": "工作归属 ID" }
+    ],
+    "fields": [
+      { "key": "records", "label": "交付与 Diff" },
+      { "key": "total", "label": "产物数量" }
+    ]
+  },
+  {
+    "id": "software-development.engineering-settings",
+    "title": "工程设置",
+    "kind": "page",
+    "context": "project",
+    "projection": true,
+    "query": "query.repository",
+    "inputs": [{ "key": "project_id", "label": "项目 ID" }],
+    "fields": [
+      { "key": "repository", "label": "仓库" },
+      { "key": "revisions", "label": "版本" }
+    ]
+  }
+]

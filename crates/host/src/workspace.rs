@@ -46,6 +46,7 @@ pub struct Workspace {
     github: github::GitHubPullRequests,
     configuration: Arc<Engine>,
     reset_publication: Mutex<()>,
+    pub(super) domain_project_open: Mutex<()>,
     adapters: ports::ExecutionAdapters,
     opened: Mutex<BTreeMap<String, Arc<Engine>>>,
     loading: Mutex<BTreeMap<String, EngineInitialization>>,
@@ -124,7 +125,10 @@ impl Workspace {
                 .map_err(Clone::clone)?
                 .with_public_project(project, epoch, &self.domain_trust, action);
         }
-        action(None)
+        if let Some(epoch) = epoch {
+            self.domain_packages()?.check_epoch(epoch)?;
+        }
+        action(epoch)
     }
 
     pub(super) fn dispatch_public_rpc(
@@ -140,9 +144,32 @@ impl Workspace {
             .as_str()
             .or_else(|| params["payload"]["project_id"].as_str())
             .map(str::to_owned);
-        self.with_public_project(project.as_deref(), epoch, |_| {
-            self.dispatch_display_read(method, params)
-        })
+        let defaults = if method == "query.configuration_defaults"
+            && params["view"] == "selection"
+            && let Some(epoch) = epoch
+        {
+            self.domain_packages()?
+                .defaults_at(epoch, &self.domain_trust)?
+        } else {
+            None
+        };
+        let mut reply = if let (None, Some(epoch)) = (project.as_deref(), epoch) {
+            let packages = self.domain_packages()?;
+            packages.check_epoch(epoch)?;
+            let reply = self.dispatch_display_read(method, params)?;
+            packages.check_epoch(epoch)?;
+            reply
+        } else {
+            self.with_public_project(project.as_deref(), epoch, |_| {
+                self.dispatch_display_read(method, params)
+            })?
+        };
+        if let Some(defaults) = defaults.as_ref().and_then(Value::as_object)
+            && let Some(selection) = reply.value.as_object_mut()
+        {
+            selection.extend(defaults.clone());
+        }
+        Ok(reply)
     }
 
     fn open_conversation(&self, e: &Engine, command: Command) -> Result<Value> {
@@ -201,6 +228,7 @@ impl Workspace {
             domain_trust,
             configuration,
             reset_publication: Mutex::new(()),
+            domain_project_open: Mutex::new(()),
             adapters,
             opened: Mutex::new(BTreeMap::new()),
             loading: Default::default(),
@@ -2987,6 +3015,7 @@ impl Workspace {
             domain_trust: Default::default(),
             configuration,
             reset_publication: Mutex::new(()),
+            domain_project_open: Mutex::new(()),
             codex_auth: devdesk_adapters::codex_auth::CodexAuthentication::new(root)?,
             github: github::GitHubPullRequests::new(root)?,
             adapters,

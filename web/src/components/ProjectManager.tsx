@@ -28,12 +28,14 @@ export function ProjectManager({
   onOpen,
   refresh,
   bootstrap,
+  domainDefaults = false,
 }: {
   request: Request;
   project?: Row;
   onOpen: (id: string) => Promise<unknown>;
   refresh: () => Promise<unknown>;
   bootstrap?: Row;
+  domainDefaults?: boolean;
 }) {
   const request = useReadRequest(parentRequest);
   const {
@@ -349,12 +351,11 @@ export function ProjectManager({
             </p>
           </div>
         </div>
-        {defaults && !configuration && (
+        {defaults && (!configuration || (domainDefaults && project)) && (
           <div className="notice">
             <strong>默认配置已准备好</strong>
             <p>
-              分阶段 Feature / Task 开发流程 · 已绑定职责 Agent · GPT-6.1 Sol
-              High · Codex · 默认 Tools / Skills · Docker 与默认 Permissions。
+              可按默认 Standard、角色和 Agent 初始化草稿，保存后应用到当前项目。
             </p>
             {project && (
               <ActionButton
@@ -381,7 +382,7 @@ export function ProjectManager({
                   });
                 }}
               >
-                采用默认配置
+                {configuration ? "恢复领域默认配置" : "采用默认配置"}
               </ActionButton>
             )}
           </div>
