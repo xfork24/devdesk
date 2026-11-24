@@ -83,9 +83,8 @@ def main() -> None:
                         fail(f"{rel}: body file {value!r} missing")
                     md_bodies.add(body)
 
-    # Every file in the tree must be owned: markdown by a published body_file, JSON by
-    # the manifest or the documented root meta files. Anything else is dead weight that
-    # build.rs would still embed into the binary.
+    # Factory files are owned by a published definition or by the factory metadata.
+    # The standalone domain tree is owned and checked by its release archive.
     root_meta = {
         "manifest.json",
         "defaults.json",
@@ -123,6 +122,7 @@ def main() -> None:
         str(p.relative_to(ROOT))
         for p in ROOT.rglob("*")
         if p.is_file()
+        and not p.is_relative_to(ROOT / "software-development")
         and str(p.relative_to(ROOT)) not in root_meta
         and str(p.relative_to(ROOT)) not in listed
         and p.suffix in (".json", ".md")
