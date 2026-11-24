@@ -92,6 +92,7 @@ def package(target, identity, title, handler, core):
                 "stages": [{"key": "read", "name": "Read"}],
                 "steps": [{
                     "key": "title", "name": "Read title", "stage": "read", "confirmation": "human",
+                    "inputs": {"manuscript": {"type": "source", "source": {"step": "$input", "port": "manuscript"}}},
                     "executor": {"type": "tool", "tool_ref": tool, "arguments": {
                         "handler": {"type": "constant", "value": method},
                         "input": {"type": "source", "source": {"step": "$input", "port": "manuscript"}},

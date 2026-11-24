@@ -26,14 +26,17 @@ try {
   await execFile("python3", [fixtures, tmp]);
   const gitZip = path.join(tmp, "git-probe.zip");
   const manuscriptZip = path.join(tmp, "manuscript.zip");
-  const digests = await Promise.all([gitZip, manuscriptZip].map(async (file) =>
+  const softwareZip = path.join(tmp, "software-development.zip");
+  await execFile("python3", [path.join(root, "configurations/software-development/build.py"), softwareZip]);
+  const digests = await Promise.all([gitZip, manuscriptZip, softwareZip].map(async (file) =>
     createHash("sha256").update(await readFile(file)).digest("hex"),
   ));
   await mkdir(repository);
   const git = async (...args) => (await execFile("git", ["-C", repository, ...args])).stdout.trim();
   await git("init", "-b", "main");
   await writeFile(path.join(repository, "note.txt"), "packaged Git probe\n");
-  await git("add", "note.txt");
+  await writeFile(path.join(repository, "package.json"), JSON.stringify({ scripts: { test: "node --test" } }));
+  await git("add", "note.txt", "package.json");
   await git("-c", "user.name=Domain probe", "-c", "user.email=domain@localhost",
     "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "commit", "-m", "probe");
   const head = await git("rev-parse", "HEAD");
@@ -148,6 +151,10 @@ try {
   const pid = host.pid;
   await native("unload");
   await second.getByText("空领域", { exact: true }).waitFor();
+  await writeFile(path.join(repository, "package.json"), JSON.stringify({ scripts: { test: "no test specified" } }));
+  await activate(softwareZip);
+  const software = await native("software", repository, head);
+  await second.getByText("空领域", { exact: true }).waitFor();
   await second.getByLabel("领域处理器").waitFor({ state: "detached" });
   // Reinstallation reuses the frozen sources and finished execution.
   await activate(manuscriptZip);
@@ -162,7 +169,7 @@ try {
   assert.equal(host.pid, pid);
   assert.equal(host.exitCode, null);
   assert.deepEqual(pageErrors, []);
-  console.log(JSON.stringify({ pid, head, image: ready.result.artifact.image_id, execution: result, manual, unloaded: true }));
+  console.log(JSON.stringify({ pid, head, image: ready.result.artifact.image_id, execution: result, manual, software, unloaded: true }));
 } catch (error) {
   console.error(hostLog);
   throw error;

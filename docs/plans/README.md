@@ -6,7 +6,7 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
-| [领域插件化改造](domain-plugins/PLAN.md) | [实施与验证](domain-plugins/EXECUTION.md) | P0–P2 首条发行件和双端路径通过。P3 已接入领域代次、编排角色和领域对象合同 |
+| [领域插件化改造](domain-plugins/PLAN.md) | [实施与验证](domain-plugins/EXECUTION.md) | 文稿对象归属和三种驱动通过。P4 已接入软件开发候选包的测试识别和 worktree 分支策略 |
 | [工作台与存储性能优化](workbench-storage-performance/PLAN.md) | [工作台延迟评估](../design/performance/workbench-latency-2026-11-23.md)、[阶段验收](workbench-storage-performance/VALIDATION.md) | P0、P1 及 Web 分包已验收。完成本机负载诊断，继续使用 SQLite。正式 100 前端容量验收待独立负载环境 |
 | [出厂模型与工程规范整理](default-configuration-refresh/PLAN.md) | [实施与验收](default-configuration-refresh/EXECUTION.md) | 完成。三种出厂 Model、隔离重置、真实 Feature 与三个 Task 闭环通过 |
 | [工作流故障恢复与升级](workflow-recovery/PLAN.md) | 实施中 | Agent 自修、经理接手、实际重跑预算、历史与人工升级 |

@@ -1975,6 +1975,7 @@ fn a_controller_does_not_inherit_a_live_owners_code_view() {
                     owner: project.clone(),
                     worktree_kind: WorktreeKind::Mainline,
                     base: base.clone(),
+                    branch: None,
                 },
                 status: RepositoryOperationStatus::Completed,
                 receipt: Some(RepositoryReceipt::Worktree {

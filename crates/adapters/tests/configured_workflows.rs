@@ -953,6 +953,7 @@ fn unsealed_workspace_at_clock(legacy: bool, clock: &std::sync::atomic::AtomicU6
                             WorktreeKind::Feature
                         },
                         base: base.clone(),
+                        branch: None,
                     },
                     status: RepositoryOperationStatus::Completed,
                     receipt: Some(RepositoryReceipt::Worktree {
@@ -4046,6 +4047,7 @@ fn actual_git_candidate(
                         owner: receipt.owner.clone(),
                         worktree_kind: kind,
                         base: base.clone(),
+                        branch: None,
                     },
                     status: RepositoryOperationStatus::Completed,
                     receipt: Some(RepositoryReceipt::Worktree {

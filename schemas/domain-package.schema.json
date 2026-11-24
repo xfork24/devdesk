@@ -21,6 +21,8 @@
       "required": ["entry", "handlers"],
       "properties": {
         "entry": { "$ref": "#/$defs/path", "pattern": "^runtime/.+[.]mjs$" },
+        "worktree_branch": { "$ref": "#/$defs/identifier" },
+        "test_discovery": { "$ref": "#/$defs/identifier" },
         "handlers": {
           "type": "object",
           "minProperties": 1,
@@ -29,7 +31,28 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "core": { "enum": ["git_head"] },
+              "core": { "enum": ["git_head", "git_snapshot"] },
+              "git_snapshot": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["files"],
+                "properties": {
+                  "files": { "type": "array", "items": { "type": "string" }, "maxItems": 16, "uniqueItems": true },
+                  "searches": {
+                    "type": "object",
+                    "maxProperties": 8,
+                    "additionalProperties": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["glob", "needles"],
+                      "properties": {
+                        "glob": { "type": "string" },
+                        "needles": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "type": "string" } }
+                      }
+                    }
+                  }
+                }
+              },
               "input_schema": { "type": ["object", "boolean"] },
               "output_schema": { "type": ["object", "boolean"] }
             }

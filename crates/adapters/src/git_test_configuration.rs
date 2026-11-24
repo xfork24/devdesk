@@ -3,21 +3,31 @@ use super::*;
 use std::collections::BTreeMap;
 
 impl CliGit {
+    pub(crate) fn registered_revision(
+        &self,
+        project: &str,
+        branch: &str,
+    ) -> Result<Option<(PathBuf, String)>> {
+        let location = self.project(project)?.join("repository");
+        reject_symlink(&location)?;
+        if !location.exists() {
+            return Ok(None);
+        }
+        let repo = self.repository(project)?;
+        self.output(&repo, &["check-ref-format", "--branch", branch])?;
+        let reference = format!("refs/heads/{branch}");
+        Ok(self
+            .existing_ref(&repo, &reference)?
+            .map(|revision| (repo, revision)))
+    }
+
     pub(super) fn discover_tests(
         &self,
         project: &str,
         mainline: &str,
     ) -> Result<ProjectTestDiscovery> {
         let mut result = ProjectTestDiscovery::default();
-        let location = self.project(project)?.join("repository");
-        reject_symlink(&location)?;
-        if !location.exists() {
-            return Ok(result);
-        }
-        let repo = self.repository(project)?;
-        self.output(&repo, &["check-ref-format", "--branch", mainline])?;
-        let reference = format!("refs/heads/{mainline}");
-        let Some(revision) = self.existing_ref(&repo, &reference)? else {
+        let Some((repo, revision)) = self.registered_revision(project, mainline)? else {
             return Ok(result);
         };
         result.revision = Some(revision.clone());

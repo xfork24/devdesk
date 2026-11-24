@@ -103,6 +103,7 @@ fn actual_git_docker_workflow_handoffs() {
                     owner: work.owner.clone(),
                     worktree_kind: WorktreeKind::Mainline,
                     base: base.clone(),
+                    branch: None,
                 },
                 status: RepositoryOperationStatus::Completed,
                 receipt: Some(RepositoryReceipt::Worktree {

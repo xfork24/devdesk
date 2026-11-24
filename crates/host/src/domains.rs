@@ -14,6 +14,25 @@ impl DomainReader for ProjectReader {
         self.packages
             .read_for_project(project, handler, input, &self.trusted)
     }
+
+    fn worktree_branch(
+        &self,
+        project: &str,
+        owner: &str,
+        kind: devdesk_domain::WorktreeKind,
+    ) -> devdesk_domain::Result<Option<String>> {
+        self.packages
+            .worktree_branch(project, owner, kind, &self.trusted)
+    }
+
+    fn project_test_discovery(
+        &self,
+        project: &str,
+        mainline: &str,
+    ) -> devdesk_domain::Result<Option<devdesk_domain::ProjectTestDiscovery>> {
+        self.packages
+            .project_test_discovery(project, mainline, &self.trusted)
+    }
 }
 
 pub(super) fn method(name: &str) -> bool {
@@ -91,10 +110,10 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
         "domain.activate" | "domain.deactivate" | "domain.uninstall" => {
             let quiescent = |projects: Vec<String>| {
                 for project in projects {
-                    if workspace.domain_project_has_active_root(&project)? {
+                    if workspace.domain_project_busy(&project)? {
                         return Err(err(
                             "domain_busy",
-                            format!("请先结束项目 {project} 的在途领域工作流"),
+                            format!("请先结束项目 {project} 的在途领域工作流或核对仓库操作"),
                         ));
                     }
                 }

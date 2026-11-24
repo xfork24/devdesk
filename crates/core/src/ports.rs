@@ -252,6 +252,23 @@ pub trait DomainReader: Send + Sync {
         handler: &str,
         input: serde_json::Value,
     ) -> Result<serde_json::Value>;
+
+    fn worktree_branch(
+        &self,
+        _project: &str,
+        _owner: &str,
+        _kind: devdesk_domain::WorktreeKind,
+    ) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    fn project_test_discovery(
+        &self,
+        _project: &str,
+        _mainline: &str,
+    ) -> Result<Option<devdesk_domain::ProjectTestDiscovery>> {
+        Ok(None)
+    }
 }
 
 pub trait ToolExecutor: Send + Sync {

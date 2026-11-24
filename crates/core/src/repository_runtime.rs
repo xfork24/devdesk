@@ -31,6 +31,7 @@ impl Engine {
                 owner: owner.into(),
                 worktree_kind: kind,
                 base: base.into(),
+                branch: None,
             },
             status: RepositoryOperationStatus::Prepared,
             receipt: None,
@@ -550,6 +551,17 @@ impl Engine {
                 _ => return Err(err("unsupported", "该仓库写入已由独立平台操作协议接管")),
             }
             let mut dispatched = op.clone();
+            if let RepositoryAction::CreateWorktree {
+                owner,
+                worktree_kind,
+                branch,
+                ..
+            } = &mut dispatched.action
+                && branch.is_none()
+                && let Some(domain) = &self.domain_reader
+            {
+                *branch = domain.worktree_branch(&op.project_id, owner, *worktree_kind)?;
+            }
             dispatched.status = RepositoryOperationStatus::Dispatched;
             dispatched.revision += 1;
             let mut effect = record(
@@ -926,11 +938,15 @@ impl Engine {
                     owner,
                     worktree_kind,
                     base,
+                    branch,
                 },
                 RepositoryReceipt::Worktree { worktree: work },
             ) => {
                 require(
-                    work.owner_id == *owner && work.kind == *worktree_kind && work.base == *base,
+                    work.owner_id == *owner
+                        && work.kind == *worktree_kind
+                        && work.base == *base
+                        && branch.as_ref().is_none_or(|branch| branch == &work.branch),
                     "工作副本回执改变了原请求",
                 )?;
                 if *worktree_kind == WorktreeKind::Task {

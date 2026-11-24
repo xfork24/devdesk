@@ -32,6 +32,10 @@ struct Manifest {
 struct Runtime {
     entry: String,
     handlers: BTreeMap<String, Handler>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    worktree_branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    test_discovery: Option<String>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -43,12 +47,15 @@ struct Handler {
     output_schema: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     core: Option<CoreInput>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    git_snapshot: Option<crate::git::GitSnapshotSelection>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum CoreInput {
     GitHead,
+    GitSnapshot,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -300,6 +307,35 @@ impl Package {
             return Err(invalid("领域运行入口或处理器无效"));
         }
         if let Some(runtime) = &manifest.runtime {
+            if let Some(handler) = &runtime.test_discovery {
+                require(
+                    runtime.handlers.get(handler).is_some_and(|handler| {
+                        matches!(handler.core, Some(CoreInput::GitSnapshot))
+                            && handler.input_schema.is_some()
+                            && handler.output_schema.is_some()
+                    }),
+                    "项目测试识别需要声明输入输出的 Git 快照处理器",
+                )?;
+            }
+            if let Some(handler) = &runtime.worktree_branch {
+                require(
+                    runtime.handlers.get(handler).is_some_and(|handler| {
+                        handler.core.is_none()
+                            && handler.input_schema.is_some()
+                            && handler.output_schema.is_some()
+                    }),
+                    "Git 工作区分支策略需要声明输入输出的纯处理器",
+                )?;
+            }
+            for handler in runtime.handlers.values() {
+                match (&handler.core, &handler.git_snapshot) {
+                    (Some(CoreInput::GitSnapshot), Some(selection)) => selection.validate()?,
+                    (Some(CoreInput::GitSnapshot), None) | (_, Some(_)) => {
+                        return Err(invalid("Git 快照需要独立的跟踪文件和搜索声明"));
+                    }
+                    _ => {}
+                }
+            }
             for schema in runtime
                 .handlers
                 .values()
@@ -425,6 +461,7 @@ impl ProjectVisibility {
 /// Serializes only activation lifecycle. Invocations pin their read lease until
 /// the bounded worker exits so that deactivation cannot publish mid-operation.
 pub struct DomainPackages {
+    root: PathBuf,
     db: Mutex<Connection>,
     active: RwLock<Active>,
 }
@@ -469,6 +506,7 @@ impl DomainPackages {
             return Err(err("storage", "活动领域包摘要与存储内容不符"));
         }
         Ok(Self {
+            root: root.into(),
             db: Mutex::new(db),
             active: RwLock::new(Active { epoch, package }),
         })
@@ -658,6 +696,13 @@ impl DomainPackages {
         validate_exchange(handler.input_schema.as_ref(), &input)?;
         let core = match handler.core {
             Some(CoreInput::GitHead) => crate::git::local_git(&input, false)?,
+            Some(CoreInput::GitSnapshot) => {
+                let selection = handler
+                    .git_snapshot
+                    .as_ref()
+                    .ok_or_else(|| invalid("Git 快照声明缺失"))?;
+                json!(crate::git::local_git_snapshot(&input, selection)?)
+            }
             None => Value::Null,
         };
         let result = worker::invoke(package, runtime, name, input, core)?;
@@ -675,6 +720,78 @@ impl DomainPackages {
         let active = self.active.read().unwrap();
         let package = self.require_project(&active, project, trusted)?;
         Self::run_handler(package, name, input)
+    }
+
+    pub fn worktree_branch(
+        &self,
+        project: &str,
+        owner: &str,
+        kind: WorktreeKind,
+        trusted: &BTreeSet<String>,
+    ) -> Result<Option<String>> {
+        let active = self.active.read().unwrap();
+        if self.project_package(project)?.is_none() {
+            return Ok(None);
+        }
+        let package = self.require_project(&active, project, trusted)?;
+        let Some(handler) = package
+            .runtime()
+            .and_then(|runtime| runtime.worktree_branch.as_deref())
+        else {
+            return Ok(None);
+        };
+        let value = Self::run_handler(package, handler, json!({"owner":owner,"kind":kind}))?;
+        require(
+            value["owner"] == owner && value["kind"] == json!(kind),
+            "领域策略改变了工作副本归属",
+        )?;
+        value["branch"]
+            .as_str()
+            .filter(|branch| {
+                !branch.is_empty()
+                    && branch.len() <= 240
+                    && !branch.starts_with('-')
+                    && !branch.chars().any(char::is_control)
+            })
+            .map(|value| Some(value.to_owned()))
+            .ok_or_else(|| invalid("领域策略返回了无效的分支"))
+    }
+
+    pub fn project_test_discovery(
+        &self,
+        project: &str,
+        mainline: &str,
+        trusted: &BTreeSet<String>,
+    ) -> Result<Option<ProjectTestDiscovery>> {
+        if self.project_package(project)?.is_none() {
+            return Ok(None);
+        }
+        // Project RPCs can already own a read lease. A concurrent switch
+        // must fail this read promptly instead of waiting on a nested lease.
+        let active = self
+            .active
+            .try_read()
+            .map_err(|_| err("domain_busy", "领域正在切换，请重新读取测试配置"))?;
+        let package = self.require_project(&active, project, trusted)?;
+        let Some(handler) = package
+            .runtime()
+            .and_then(|runtime| runtime.test_discovery.as_deref())
+        else {
+            return Ok(None);
+        };
+        let git = crate::git::CliGit::new(&self.root)?;
+        let Some((repo, revision)) = git.registered_revision(project, mainline)? else {
+            return Ok(Some(ProjectTestDiscovery::default()));
+        };
+        let reply = Self::run_handler(package, handler, json!({"path":repo,"revision":revision}))?;
+        let result: ProjectTestDiscovery = serde_json::from_value(reply)
+            .map_err(|error| err("domain_contract", error.to_string()))?;
+        require(
+            result.revision.as_deref() == Some(revision.as_str()),
+            "测试入口改变了原 Git 修订",
+        )?;
+        result.configuration.validate()?;
+        Ok(Some(result))
     }
 
     pub fn with_workflow<T>(

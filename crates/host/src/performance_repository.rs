@@ -75,6 +75,7 @@ pub(super) fn seed(workspace: &Arc<HostWorkspace>, root: &Path, project: &str) {
                     owner: work.owner.clone(),
                     worktree_kind: WorktreeKind::Mainline,
                     base: base.clone(),
+                    branch: None,
                 },
                 status: RepositoryOperationStatus::Completed,
                 receipt: Some(RepositoryReceipt::Worktree {

@@ -22,6 +22,7 @@ impl ports::Git for RacingGit {
             owner,
             worktree_kind,
             base,
+            ..
         } = &op.action
         else {
             panic!("unexpected operation")
@@ -144,6 +145,7 @@ fn race(kind: &'static str, complete: bool) {
                         WorktreeKind::Feature
                     },
                     base: "a".repeat(40),
+                    branch: None,
                 },
                 status: RepositoryOperationStatus::Prepared,
                 receipt: None,

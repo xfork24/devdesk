@@ -63,6 +63,8 @@ pub enum RepositoryAction {
         owner: Id,
         worktree_kind: WorktreeKind,
         base: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        branch: Option<String>,
     },
 }
 /// Workflow-owned validation files, distinct from maintained project tests.

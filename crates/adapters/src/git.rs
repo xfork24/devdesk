@@ -1,7 +1,12 @@
 //! Coordinator-only Git operations. Candidate and advance identities survive lost DB receipts.
 use super::*;
 use crate::process::{Output, capture_command};
-use std::{process::Command, time::Duration};
+use serde::Deserialize;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    process::Command,
+    time::Duration,
+};
 #[path = "git_delivery_projection.rs"]
 mod delivery_projection;
 #[path = "git_diff.rs"]
@@ -64,6 +69,14 @@ pub fn local_git(input: &Value, diff: bool) -> Result<Value> {
 }
 
 fn inspect_local_git(path: &Path, args: &[&str]) -> Result<String> {
+    let result = read_local_git(path, args)?;
+    if result.code != 0 {
+        return Err(err("git_read_failed", "Git 无法读取指定仓库或修订"));
+    }
+    String::from_utf8(result.stdout).map_err(|_| err("git_read_failed", "Git 内容不是 UTF-8"))
+}
+
+fn read_local_git(path: &Path, args: &[&str]) -> Result<Output> {
     let mut command = Command::new("git");
     for (key, _) in std::env::vars_os() {
         if key.to_string_lossy().starts_with("GIT_") {
@@ -77,6 +90,7 @@ fn inspect_local_git(path: &Path, args: &[&str]) -> Result<String> {
         .env("GIT_TERMINAL_PROMPT", "0")
         .args([
             "--no-pager",
+            "--no-replace-objects",
             "-c",
             "core.fsmonitor=false",
             "-c",
@@ -86,10 +100,135 @@ fn inspect_local_git(path: &Path, args: &[&str]) -> Result<String> {
         .arg(path)
         .args(args);
     let result = crate::process::capture_command(command, Duration::from_secs(10), None)?;
-    if result.code != 0 || result.truncated {
+    if result.truncated {
         return Err(err("git_read_failed", "Git 无法读取指定仓库或修订"));
     }
-    String::from_utf8(result.stdout).map_err(|_| err("git_read_failed", "Git 内容不是 UTF-8"))
+    Ok(result)
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GitSnapshotSelection {
+    pub files: Vec<String>,
+    #[serde(default)]
+    pub searches: BTreeMap<String, GitSnapshotSearch>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GitSnapshotSearch {
+    pub glob: String,
+    pub needles: Vec<String>,
+}
+
+impl GitSnapshotSelection {
+    pub fn validate(&self) -> Result<()> {
+        require(
+            self.files.len() <= 16
+                && self.files.iter().all(|path| test_relative_path(path))
+                && self.searches.len() <= 8
+                && self.searches.values().all(|search| {
+                    !search.glob.starts_with(['-', ':'])
+                        && !search.glob.is_empty()
+                        && search.glob.len() <= 128
+                        && !search.glob.contains('\0')
+                        && (1..=8).contains(&search.needles.len())
+                        && search.needles.iter().all(|needle| {
+                            !needle.is_empty() && needle.len() <= 128 && !needle.contains('\0')
+                        })
+                }),
+            "Git 文件和搜索合同超出边界",
+        )
+    }
+}
+
+#[derive(Serialize)]
+pub(crate) struct GitTrackedSnapshot {
+    pub revision: String,
+    pub paths: BTreeSet<String>,
+    pub files: BTreeMap<String, String>,
+    pub omitted: Vec<String>,
+    pub matches: BTreeMap<String, bool>,
+}
+
+pub(crate) fn local_git_snapshot(
+    input: &Value,
+    selection: &GitSnapshotSelection,
+) -> Result<GitTrackedSnapshot> {
+    let path = input["path"]
+        .as_str()
+        .filter(|path| !path.is_empty() && path.len() <= 4096)
+        .ok_or_else(|| err("invalid_params", "本地仓库路径无效"))?;
+    let path = fs::canonicalize(path).map_err(|_| err("not_found", "本地仓库路径不可读"))?;
+    let revision = input["revision"]
+        .as_str()
+        .filter(|revision| valid_oid(revision))
+        .ok_or_else(|| err("invalid_params", "Git 快照需要完整提交 OID"))?;
+    tracked_snapshot(&path, revision, selection)
+}
+
+fn tracked_snapshot(
+    path: &Path,
+    revision: &str,
+    selection: &GitSnapshotSelection,
+) -> Result<GitTrackedSnapshot> {
+    selection.validate()?;
+    require(valid_oid(revision), "Git 快照需要完整提交 OID")?;
+    let commit = format!("{revision}^{{commit}}");
+    require(
+        inspect_local_git(path, &["rev-parse", "--verify", &commit])?.trim() == revision,
+        "Git 快照需要原始提交身份",
+    )?;
+    let tree = inspect_local_git(path, &["ls-tree", "-r", "-z", "--full-tree", revision])?;
+    let entries = tree
+        .split('\0')
+        .filter_map(|entry| {
+            let (metadata, file) = entry.split_once('\t')?;
+            let mut fields = metadata.split_whitespace();
+            let mode = fields.next()?;
+            let kind = fields.next()?;
+            let oid = fields.next()?;
+            (matches!(mode, "100644" | "100755") && kind == "blob" && test_relative_path(file))
+                .then_some((file, oid))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut snapshot = GitTrackedSnapshot {
+        revision: revision.into(),
+        paths: entries.keys().map(|path| (*path).to_owned()).collect(),
+        files: BTreeMap::new(),
+        omitted: Vec::new(),
+        matches: BTreeMap::new(),
+    };
+    let mut remaining = 1024 * 1024;
+    for file in &selection.files {
+        let Some(oid) = entries.get(file.as_str()) else {
+            continue;
+        };
+        let size = inspect_local_git(path, &["cat-file", "-s", oid])?
+            .trim()
+            .parse::<usize>()
+            .map_err(storage)?;
+        if size > 256 * 1024 || size > remaining {
+            snapshot.omitted.push(file.clone());
+            continue;
+        }
+        snapshot.files.insert(
+            file.clone(),
+            inspect_local_git(path, &["cat-file", "blob", oid])?,
+        );
+        remaining -= size;
+    }
+    for (name, search) in &selection.searches {
+        let mut args = vec!["grep", "-q", "-F", "--no-textconv"];
+        for needle in &search.needles {
+            args.extend(["-e", needle]);
+        }
+        args.extend([revision, "--", &search.glob]);
+        let output = read_local_git(path, &args)?;
+        require(matches!(output.code, 0 | 1), "无法搜索 Git 跟踪内容")?;
+        snapshot.matches.insert(name.clone(), output.code == 0);
+    }
+    Ok(snapshot)
 }
 
 fn valid_oid(value: &str) -> bool {
@@ -451,6 +590,11 @@ impl CliGit {
         require(valid_oid(base), "worktree 基线必须是固定 commit")?;
         let repo = self.repository(project)?;
         require(self.oid(&repo, base)? == base, "基线对象无效")?;
+        require(
+            !branch.starts_with('-')
+                && self.output(&repo, &["check-ref-format", "--branch", branch])? == branch,
+            "工作副本分支无效",
+        )?;
         let branch = branch.to_string();
         let parent = self
             .project(project)?
@@ -1406,6 +1550,7 @@ impl CliGit {
                 owner,
                 worktree_kind,
                 base,
+                branch,
             } => {
                 let kind = match worktree_kind {
                     WorktreeKind::Feature => "features",
@@ -1415,7 +1560,11 @@ impl CliGit {
                         return Err(err("blocked", "Mainline 必须在仓库登记时创建"));
                     }
                 };
-                let work = self.prepare_worktree(&op.project_id, owner, kind, base, &op.id)?;
+                let work = if let Some(branch) = branch {
+                    self.prepare_named_worktree(&op.project_id, owner, kind, base, branch, &op.id)?
+                } else {
+                    self.prepare_worktree(&op.project_id, owner, kind, base, &op.id)?
+                };
                 Ok(RepositoryReceipt::Worktree {
                     worktree: make(work, *worktree_kind),
                 })
@@ -1541,6 +1690,7 @@ impl CliGit {
                 owner,
                 worktree_kind,
                 base,
+                branch,
             } => {
                 let kind = match worktree_kind {
                     WorktreeKind::Feature => "features",
@@ -1550,7 +1700,9 @@ impl CliGit {
                         return Err(err("invalid_params", "Mainline 只由接入创建"));
                     }
                 };
-                let branch = format!("devdesk/{kind}/{owner}");
+                let branch = branch
+                    .clone()
+                    .unwrap_or_else(|| format!("devdesk/{kind}/{owner}"));
                 let path = self
                     .project(&op.project_id)?
                     .join("execution/worktrees")

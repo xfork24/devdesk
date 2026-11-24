@@ -1,5 +1,6 @@
 """Exercise the domain protocol using only Python's HTTP client."""
 import base64
+import hashlib
 import http.cookiejar
 import json
 import sys
@@ -120,6 +121,7 @@ def submitted_proof(client, epoch, receipt, timeout=25):
     assert origin["root_id"] == receipt["execution_id"]
     step = details["runtime"]["steps"][0]
     assert origin["execution_id"] == step["id"] and origin["input_digest"] == step["input_digest"]
+    assert origin["input_digest"] != hashlib.sha256(b"{}").hexdigest()
     assert origin["output_id"] == step["outputs"]["observation"]
     assert origin["artifact_id"] == details["outputs"][origin["output_id"]]["artifact_id"]
     assert origin["producer"]["kind"] == "platform"
@@ -247,6 +249,32 @@ def run(origin, action, args):
             assert "not_found" in str(failure), failure
             return True
         raise AssertionError("domain entity was readable from a different project")
+    if action == "software":
+        assert active["active"]["id"] == "software-development"
+        path, revision = args
+        coordinate = {"path": path, "revision": revision}
+        actual = client.call("query.domain.invoke", epoch=epoch,
+                             handler="software-development.tests.discover", input=coordinate)
+        assert actual["revision"] == revision
+        assert actual["configuration"]["regression"]["command"]["argv"] == ["npm", "test"]
+        project = client.call("domain.project.create", epoch=epoch, title="Software repository preflight",
+                              command_id=uuid.uuid4().hex)["id"]
+        owner = str(uuid.uuid4())
+        client.call("domain.entity.put", epoch=epoch, project_id=project, entity_id=owner,
+                    command_id=uuid.uuid4().hex, type_ref="software-development.repository:1",
+                    expected_revision=0, data=coordinate)
+        branch = client.call("query.domain.invoke", epoch=epoch,
+                             handler="software-development.branch.plan", input={"owner": owner, "kind": "feature"})
+        assert branch["branch"] == f"devdesk/features/{owner}"
+        run = client.call("domain.workflow.start", epoch=epoch, project_id=project, entity_id=owner,
+                          expected_revision=1, command_id=uuid.uuid4().hex,
+                          workflow_ref="software-development.repository-preflight:1")
+        completed = wait_view(client, epoch, run, lambda view: view["record"]["data"]["status"] == "completed")
+        entity_id = completed["domain_submission"]["entities"]["test_configuration"]
+        proof = client.call("query.domain.entity", epoch=epoch, project_id=project, entity_id=entity_id)
+        assert proof["data"] == actual and proof["origin"]["owner_id"] == owner
+        client.call("domain.uninstall", epoch=epoch, digest=active["active"]["digest"])
+        return {"run": run, "branch": branch["branch"], "proof_id": proof["id"], "revision": revision}
     raise ValueError(action)
 
 

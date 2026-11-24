@@ -40,7 +40,13 @@ P3 扩展验收使用同一个文稿包。Web 启动人工流程，Python 派发
 
 对象合同验收直接通过 Python 客户端发现类型，拒绝类型错误、跨项目读取及过期修订写入，验证新建重放和重装原 ZIP 后回读修订。测试将实际工作流输出保存为校样对象，保留工作流自己的 Artifact 和来源记录。最新发行件复验记录位于 `/tmp/devdesk-domain-p3-terminal.rx19mJ/result.json`。单独解压 Host、以空领域启动并通过 HTTP 回读核心配置的检查也通过。
 
-对象归属的后续复验覆盖浏览器人工启动、Rust 自动派发以及真实 Codex 编排。三种方式使用同一文稿 ZIP 和 Docker 处理器。Codex 发起人工决定请求，验收客户端通过已认证的 Human RPC 提交签署，随后 Codex 接纳原结果并完成工作流。真实执行 `78a9442b-b1fb-dadd-e006-8c1925b54da0` 的证据位于 `/tmp/devdesk-domain-live-p3.YPPpy9/evidence/result.json`。正式会话沿用项目数据库会话分区，冻结的正式会话来源记录对象归属。
+对象归属的后续复验覆盖浏览器人工启动、Rust 自动派发以及真实 Codex 编排。三种方式使用同一文稿 ZIP 和 Docker 处理器。Codex 发起人工决定请求，验收客户端通过已认证的 Human RPC 提交签署，随后 Codex 接纳原结果并完成工作流。真实执行 `5e43b242-9996-6e29-9210-ac07a572675c` 的证据位于 `/tmp/devdesk-domain-live-p3-final.ZYgXjv/evidence/result.json`，校样记录包含非空输入摘要及签署引用。正式会话沿用项目数据库会话分区，冻结的正式会话来源记录对象归属。
+
+## P4 软件开发候选包
+
+仓库测试入口识别和工作副本分支策略已纳入软件开发 ZIP。预检使用 Git 提交里的跟踪内容，识别逻辑在 Docker 中运行。使用空仓库、Node、Rust、Go、pytest、unittest、自定义测试合同七类仓库对照旧实现，结果一致。
+
+Feature 和 Task 的真实 Git worktree 验证了分支策略在物理调用前写入操作意图。对已写入的 Feature 操作注入回执丢失后，`repository.reconcile` 只读取原工作副本和回执，物理写入计数保持不变。本轮远端 PR、合入、保护分支和同步仍待迁移及验收。[候选包](../../../configurations/software-development/README.md)
 
 ## 基线和后续范围
 

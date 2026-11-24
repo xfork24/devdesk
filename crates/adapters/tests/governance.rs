@@ -705,6 +705,7 @@ fn mainline_refresh_is_an_explicit_frozen_intent_and_accepts_only_matching_recei
                     owner: pid.clone(),
                     worktree_kind: WorktreeKind::Mainline,
                     base: old.clone(),
+                    branch: None,
                 },
                 status: RepositoryOperationStatus::Completed,
                 receipt: Some(RepositoryReceipt::Worktree {

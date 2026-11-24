@@ -31,6 +31,11 @@ impl Engine {
             .workspace_definition
             .as_ref()
             .map_or("main", |w| w.mainline.as_str());
+        if let Some(domain) = &self.domain_reader
+            && let Some(result) = domain.project_test_discovery(&project.id, mainline)?
+        {
+            return Ok(result);
+        }
         self.git.discover_project_tests(&project.id, mainline)
     }
     pub fn project_configuration_status(&self) -> Result<Value> {

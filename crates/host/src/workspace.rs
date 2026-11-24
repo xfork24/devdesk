@@ -360,12 +360,12 @@ impl Workspace {
         Ok(result)
     }
 
-    pub(super) fn domain_project_has_active_root(&self, project: &str) -> Result<bool> {
+    pub(super) fn domain_project_busy(&self, project: &str) -> Result<bool> {
         if self.global.project(project)?.is_none() {
             return Ok(false);
         }
         let engine = self.project_engine(Some(project))?;
-        let key = devdesk_core::concurrency::ResourceKey::new("workflow_active_project", project);
+        let key = devdesk_core::concurrency::ResourceKey::new("domain_project_busy", project);
         Ok(engine
             .store
             .read_resources(&[key])?
