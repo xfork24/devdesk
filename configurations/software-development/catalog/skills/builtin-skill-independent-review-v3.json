@@ -1,0 +1,11 @@
+{
+  "type": "skill",
+  "identity": "software-development.skill-independent-review",
+  "revision": 3,
+  "name": "Independent Review",
+  "scope": "global",
+  "data": {
+    "rules": [],
+    "body_file": "independent-review.md"
+  }
+}

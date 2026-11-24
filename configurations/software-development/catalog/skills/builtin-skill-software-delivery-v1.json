@@ -1,0 +1,12 @@
+{
+  "type": "skill",
+  "identity": "software-development.skill-software-delivery",
+  "revision": 1,
+  "name": "Software Delivery",
+  "scope": "global",
+  "data": {
+    "rules": [],
+    "slots": [],
+    "body_file": "software-delivery.md"
+  }
+}

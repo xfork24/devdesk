@@ -506,7 +506,7 @@ impl JsonlProcess {
     pub fn initialize_codex(&mut self) -> Result<()> {
         self.request(
             "initialize",
-            json!({"clientInfo":{"name":"devdesk","title":"DevDesk","version":"0.2.0"},"capabilities":{"experimentalApi":true}}),
+            json!({"clientInfo":{"name":"devdesk","title":"DevDesk","version":env!("CARGO_PKG_VERSION")},"capabilities":{"experimentalApi":true}}),
         )?;
         self.send(&json!({"method":"initialized","params":{}}))
     }

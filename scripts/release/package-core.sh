@@ -10,10 +10,20 @@ trap 'rm -rf "$stage"' EXIT
 
 case "${1:-}" in
   host)
-    ./scripts/dev/build-core-host.sh
-    name="devdesk-core-host-$(rustc -vV | sed -n 's/^host: //p')"
+    if ! command -v cargo >/dev/null && [ -f "$HOME/.cargo/env" ]; then source "$HOME/.cargo/env"; fi
+    cargo build --release --locked -p devdesk-host
+    binary="${CARGO_TARGET_DIR:-target}/release/devdesk-host"
+    ./scripts/platform/macos/sign-macos.sh "$binary"
+    version=$("$binary" --version)
+    name="devdesk-core-host-${version##* }-$(rustc -vV | sed -n 's/^host: //p')"
     mkdir "$stage/$name"
-    cp "${CARGO_TARGET_DIR:-target}/release/devdesk-host" "$stage/$name/"
+    cp "$binary" "$stage/$name/"
+    mkdir "$stage/$name/permissions"
+    cp -R permissions/backends "$stage/$name/permissions/"
+    if [[ "$(uname -s)" == Linux ]]; then
+      mkdir -p "$stage/$name/scripts/platform/linux"
+      cp scripts/platform/linux/install-linux-sandbox-policy.sh "$stage/$name/scripts/platform/linux/"
+    fi
     artifact="$name.tar.gz"
     tar -czf "$stage/$artifact" -C "$stage" "$name"
     ;;
@@ -21,7 +31,8 @@ case "${1:-}" in
     npm --prefix web ci
     npm --prefix web run build:core
     web/node_modules/.bin/tsc -p web/tsconfig.sdk.json
-    name="devdesk-core-web"
+    version=$(node -p 'require("./web/package.json").version')
+    name="devdesk-core-web-$version"
     mkdir "$stage/$name"
     cp -R web/dist/core/. "$stage/$name/"
     cp schemas/domain-{package,contributions,entity-types}.schema.json "$stage/$name/sdk/"

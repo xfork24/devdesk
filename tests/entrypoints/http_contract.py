@@ -18,7 +18,7 @@ import urllib.request
 import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
-BINARY = Path(sys.argv[1]).resolve() if len(sys.argv)>1 else ROOT / 'target/debug/devdesk-host'
+BINARY = Path(sys.argv[1]).resolve() if len(sys.argv)>1 and not sys.argv[1].startswith('--') else ROOT / 'target/fixtures/debug/devdesk-host'
 
 def wait_for_shutdown(child, response, started):
     # Require both SSE EOF and a clean exit within the original four-second budget.
@@ -34,9 +34,11 @@ def lifecycle_command(req):
 def run():
     with tempfile.TemporaryDirectory(prefix='devdesk-http-') as directory:
         binary = BINARY
+        web_dir = ROOT / "web/dist/fixture"
         if '--standalone' in sys.argv:
             binary = Path(directory) / 'devdesk-host'
             shutil.copy2(BINARY, binary)
+            web_dir = shutil.copytree(web_dir, Path(directory) / "web")
         # This test covers the HTTP boundary; fail closed if a workflow asks for
         # external infrastructure. Never build images or contact GitHub here.
         commands = Path(directory) / 'commands'
@@ -48,7 +50,8 @@ def run():
         env = {**os.environ, 'PATH': str(commands) + os.pathsep + os.environ['PATH']}
         env.pop('DEVDESK_ACCESS_TOKEN', None)
         dataset = Path(directory) / '中文 data set'
-        child = subprocess.Popen([str(binary), '--data', str(dataset), '--port', '0'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=directory, env=env)
+        host_args = [str(binary), '--data', str(dataset), '--port', '0', '--web-dir', str(web_dir)]
+        child = subprocess.Popen(host_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=directory, env=env)
         try:
             child.stdout.readline()
             url = child.stdout.readline().strip()
@@ -198,7 +201,7 @@ def run():
             stream.close()
             child.stdout.close()
             child.stderr.close()
-            child = subprocess.Popen([str(binary),'--data',str(dataset),'--port','0'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,cwd=directory,env=env)
+            child = subprocess.Popen(host_args,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,cwd=directory,env=env)
             child.stdout.readline()
             url=child.stdout.readline().strip()
             client.open(url).read()
@@ -223,7 +226,7 @@ def run():
                 for signum in (signal.SIGTERM, signal.SIGHUP):
                     child.stdout.close()
                     child.stderr.close()
-                    child = subprocess.Popen([str(binary),'--data',str(dataset),'--port','0'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,cwd=directory,env=env)
+                    child = subprocess.Popen(host_args,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,cwd=directory,env=env)
                     child.stdout.readline()
                     url=child.stdout.readline().strip()
                     client.open(url).read()
@@ -258,7 +261,7 @@ def connection_contract():
         denied = subprocess.run([str(BINARY),'--host','192.0.2.10','--data',str(rejected_data)], env=clean_env, capture_output=True, text=True, timeout=10)
         assert denied.returncode != 0 and 'DEVDESK_ACCESS_TOKEN' in denied.stderr
         assert not rejected_data.exists()
-        child = subprocess.Popen([str(BINARY),'--host','127.0.0.1','--data',str(Path(directory)/'data'),'--port','0'], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        child = subprocess.Popen([str(BINARY),'--host','127.0.0.1','--data',str(Path(directory)/'data'),'--port','0','--web-dir',str(ROOT/'web/dist/fixture')], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         peer = None
         try:
             child.stdout.readline()

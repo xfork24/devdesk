@@ -9,7 +9,7 @@ const NODE_REPORTER_DIGEST: &str =
 const PROJECT_REPORTER_DIGEST: &str =
     "9538ce6eb3cabe73f2238cff30dbf961c2f2a0b4b66b70768d143f5df49cfe84";
 
-#[cfg(any(feature = "engineering-defaults", feature = "test-fixtures", test))]
+#[cfg(any(feature = "fixture-catalog", feature = "test-fixtures", test))]
 fn legacy_reporter(runner: &TestRunner) -> Result<&'static [u8]> {
     Ok(if *runner == TestRunner::NodeTest {
         include_bytes!("../../../configurations/software-development/runtime/node-reporter.mjs")
@@ -18,7 +18,7 @@ fn legacy_reporter(runner: &TestRunner) -> Result<&'static [u8]> {
     })
 }
 
-#[cfg(not(any(feature = "engineering-defaults", feature = "test-fixtures", test)))]
+#[cfg(not(any(feature = "fixture-catalog", feature = "test-fixtures", test)))]
 fn legacy_reporter(_runner: &TestRunner) -> Result<&'static [u8]> {
     Err(err(
         "configuration_required",

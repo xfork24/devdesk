@@ -10,10 +10,9 @@
 | core | 应用流程、授权、版本检查与状态变化 | 检查依赖和额度，确定本次输入，记录待执行操作并接纳结果 |
 | adapters | 外部系统的具体实现和数据转换 | 调用 Docker、与 Harness 通信、读写 SQLite 和产物 |
 | host | 程序入口、接口服务、对象装配与后台调度 | 接收工具请求，为项目选择 Engine，驱动待执行操作 |
-| tools | 可独立运行的辅助程序 | macOS 凭据助手访问 Keychain |
 | Web | 用户交互和状态展示 | 显示分析进度，让用户阅读 PRD 和批准评审 |
 
-core 包含实际的业务功能。adapters 包含实际的外部执行功能。判断功能归属时，应看它决定什么、依赖什么，不能简单把“真实实现”全部放进 adapters。
+core 执行平台工作流、授权和持久化规则。领域 ZIP 提供业务配置、运行处理器和客户端贡献。adapters 负责工作流与外部系统的具体交互。
 
 ## 编译时依赖
 
@@ -27,7 +26,7 @@ flowchart TD
     C --> D
 ```
 
-箭头表示 Cargo 依赖。domain 不依赖其余应用层；core 不导入 adapters。tools 是独立程序，Web 通过协议访问 Host，两者不属于上图中的 Rust 调用链。
+箭头表示 Cargo 依赖。domain 不依赖其余应用层；core 不导入 adapters。Web 和其他客户端通过协议访问 Host。领域 ZIP 使用配置和处理器协议接入。
 
 ## core 如何调用 adapters
 
@@ -50,9 +49,9 @@ domain 可以计算规则，但不能自行查数据库。比如 `CompletionRule
 | 需求 | 主要修改位置 |
 |---|---|
 | 增加完成条件的表达形式 | domain 的类型和求值，core 的事实采集与调用 |
-| 增加派发前的业务约束 | core 的派发或授权流程 |
+| 增加领域工作流或业务约束 | 领域包的配置或证据处理器 |
 | 接入另一种 Harness 协议 | adapters 的实现，必要时扩展 core 端口和驱动能力声明 |
 | 增加外部请求入口 | host 路由及合同，调用已有或新增 core 用例 |
-| 新增独立命令行工具 | tools 的 `src/bin/` 和构建/验证入口 |
+| 增加领域页面 | 领域包的贡献声明和 Web SDK 绑定 |
 
 相关代码：[Engine 与端口](../crates/devdesk-core/engine-and-ports.md)、[Host 装配](../crates/devdesk-host/workspace-and-lifecycle.md)。

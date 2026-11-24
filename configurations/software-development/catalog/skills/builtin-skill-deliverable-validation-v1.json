@@ -1,0 +1,11 @@
+{
+  "type": "skill",
+  "identity": "software-development.skill-deliverable-validation",
+  "revision": 1,
+  "name": "Deliverable Validation",
+  "scope": "global",
+  "data": {
+    "rules": [],
+    "body_file": "deliverable-validation.md"
+  }
+}

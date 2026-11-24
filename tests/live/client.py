@@ -1,11 +1,11 @@
 """Small local acceptance client. Project pinning and unique commands are explicit."""
 import http.cookiejar,json,time,urllib.request,uuid
 class Client:
- def __init__(self,url='http://127.0.0.1:51751',project=None,timeout=180,domain_epoch=None,core_protocol=False):
+ def __init__(self,url='http://127.0.0.1:51751',project=None,timeout=180,domain_epoch=None):
   self.url=url;self.project=project;self.timeout=timeout;self.domain_epoch=domain_epoch;self.http=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()));deadline=time.monotonic()+15
   while True:
    try:
-    endpoint = urllib.request.Request(url+'/session',data=b'{}',headers={'Content-Type':'application/json'}) if core_protocol else url+'/'
+    endpoint = urllib.request.Request(url+'/session',data=b'{}',headers={'Content-Type':'application/json'})
     self.http.open(endpoint,timeout=3).close()
     break
    except urllib.error.URLError:

@@ -5,6 +5,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
+    "paths": { "react/*": ["./node_modules/@types/react/*"] },
     "types": ["vite/client"],
     "strict": true,
     "noUnusedLocals": true,
@@ -12,5 +13,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["src"]
+  "include": ["src", "../configurations/software-development/web"]
 }

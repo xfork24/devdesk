@@ -1,0 +1,10 @@
+{
+  "type": "agent",
+  "identity": "software-development.agent-gpt-6-2-sol-tester",
+  "revision": 4,
+  "name": "Test Engineer · GPT-6.2 Sol High",
+  "scope": "global",
+  "role_ref": "software-development.role-tester:1",
+  "capability_ref": "software-development.capability-tester-gpt-6-2-sol-codex:4",
+  "data": {}
+}

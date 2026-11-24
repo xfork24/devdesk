@@ -1,0 +1,19 @@
+{
+  "type": "delivery_type",
+  "identity": "software-development.delivery-merge-approval-packet",
+  "revision": 2,
+  "name": "Merge Approval Packet",
+  "scope": "global",
+  "data": {
+    "format": "json",
+    "producer": {
+      "kind": "platform",
+      "tools": [
+        "materials.capture"
+      ]
+    }
+  },
+  "spec_refs": [
+    "software-development.spec-platform-evidence:2"
+  ]
+}

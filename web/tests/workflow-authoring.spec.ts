@@ -51,11 +51,16 @@ test("内置 Delivery 全部关联内容标准并可查看确切规范", async (
   }
   const manifest = JSON.parse(
     readFileSync(
-      new URL("../../configurations/manifest.json", import.meta.url),
+      new URL(
+        "../../tests/fixtures/configuration/engineering-catalog.json",
+        import.meta.url,
+      ),
       "utf8",
     ),
   );
-  expect(deliveries).toHaveLength(manifest.types.delivery_type.length);
+  expect(deliveries).toHaveLength(
+    manifest["manifest.json"].types.delivery_type.length,
+  );
   expect(deliveries.some((r: any) => r.name === "结构化材料")).toBe(false);
   for (const delivery of deliveries) {
     expect(delivery.spec_refs.length).toBeGreaterThan(0);

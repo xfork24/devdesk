@@ -1,0 +1,10 @@
+{
+  "type": "agent",
+  "identity": "software-development.agent-glm-reviewer",
+  "revision": 8,
+  "name": "Independent Reviewer · GLM 5.3",
+  "scope": "global",
+  "capability_ref": "software-development.capability-reviewer-glm-dsh:7",
+  "role_ref": "software-development.role-reviewer:1",
+  "data": {}
+}

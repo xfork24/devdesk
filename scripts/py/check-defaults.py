@@ -1,21 +1,13 @@
 #!/usr/bin/env python3
-"""Factory configuration self-consistency gate.
-
-Replaces Rust-side content-hash constants: the published bundle is verified against
-the directory itself (manifest ↔ files ↔ defaults references), so factory edits no
-longer require recompiling tests. Structural validation and cross-reference checks
-remain in `cargo test` via build.rs and materialize().
-"""
+"""Check ownership and reference closure for the core and software catalogs."""
 import json
 import sys
 from pathlib import Path
 
-# The gate runs with -I; load only the explicitly owned sibling generator.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from configuration_usage import usage_index
 
 ROOT = Path(__file__).resolve().parents[2] / "configurations"
-
 REFERENCE_FIELDS = (
     "capability_ref",
     "role_ref",
@@ -31,154 +23,69 @@ REFERENCE_FIELDS = (
 )
 
 
-def fail(message: str) -> None:
-    print(f"check-defaults: {message}", file=sys.stderr)
-    sys.exit(1)
-
-
-def main() -> None:
-    # Manifest structure itself is the gate (the Rust Manifest struct enforces the
-    # shape at load time); schema_version is recorded metadata, never a version check.
-    manifest = json.loads((ROOT / "manifest.json").read_text())
-
-    published: dict[tuple[str, str, int], dict] = {}  # exact immutable revisions
-    identities: dict[tuple[str, str], str] = {}
-    sources: dict[str, dict] = {}  # rel -> parsed source
-    md_bodies: set[Path] = set()
-    for kind, paths in sorted(manifest.get("types", {}).items()):
-        for rel in paths:
-            path = ROOT / rel
-            if not path.is_file():
-                fail(f"manifest lists missing file: {rel}")
-            try:
-                source = json.loads(path.read_text())
-            except json.JSONDecodeError as e:
-                fail(f"{rel}: invalid JSON: {e}")
-            for field in ("type", "identity", "revision", "name", "scope", "data"):
-                if field not in source:
-                    fail(f"{rel}: missing envelope field {field!r}")
-            if source["type"] != kind:
-                fail(f"{rel}: type {source['type']!r} does not match manifest type {kind!r}")
-            if source["scope"] != "global":
-                fail(f"{rel}: factory sources must use the global scope")
-            key = (kind, source["identity"], source["revision"])
-            identity = (kind, source["identity"])
-            if identity in identities:
-                fail(
-                    f"local configuration must contain only the latest revision of "
-                    f"{source['identity']!r}: {identities[identity]} and {rel}"
-                )
-            identities[identity] = rel
-            if key in published:
-                fail(
-                    f"identity {source['identity']!r} published twice: "
-                    f"{published[key]} and {rel}"
-                )
-            published[key] = {"revision": source["revision"], "path": rel}
-            sources[rel] = source
-            for field, value in source["data"].items():
-                if field.endswith("_file"):
+def check_catalog(directory, dependencies, domain=None):
+    manifest = json.loads((directory / "manifest.json").read_text())
+    owned = {"manifest.json", manifest["defaults"]}
+    by_identity = set()
+    sources = []
+    for kind, paths in manifest["types"].items():
+        for relative in paths:
+            path = directory / relative
+            source = json.loads(path.read_text())
+            identity = source["identity"]
+            if source["type"] != kind or source["scope"] != "global" or identity in by_identity:
+                raise ValueError(f"{path}: unexpected type, scope or duplicate identity")
+            if domain and not identity.startswith(f"{domain}."):
+                raise ValueError(f"{path}: source identity is outside {domain}")
+            if "delivery_policy" in source["data"]:
+                raise ValueError(f"{path}: use explicit operation_evidence")
+            by_identity.add(identity)
+            owned.add(relative)
+            sources.append(source)
+            for key, value in source["data"].items():
+                if key.endswith("_file"):
                     body = path.parent / value
-                    if not body.is_file():
-                        fail(f"{rel}: body file {value!r} missing")
-                    md_bodies.add(body)
+                    body.read_text()
+                    owned.add(body.relative_to(directory).as_posix())
 
-    # Factory files are owned by a published definition or by the factory metadata.
-    # The standalone domain tree is owned and checked by its release archive.
-    root_meta = {
-        "manifest.json",
-        "defaults.json",
-        "README.md",
-        manifest["usage_index"],
-    }
-    core_manifest_path = "core/manifest.json"
-    core = json.loads((ROOT / core_manifest_path).read_text())
-    core_paths = {
-        path for paths in core["types"].values() for path in paths
-    }
-    if not core_paths <= sources.keys():
-        fail("the core catalog references sources absent from the compatibility catalog")
-    root_meta.update((core_manifest_path, core["defaults"], core["usage_index"]))
-    core_sources = [sources[path] for path in core_paths]
-    core_references = {f"{source['identity']}:{source['revision']}" for source in core_sources}
-    for source in core_sources:
+    references = dependencies | {f"{s['identity']}:{s['revision']}" for s in sources}
+
+    def resolve(reference, owner):
+        if reference not in references:
+            raise ValueError(f"{owner} references unpublished revision {reference!r}")
+
+    for source in sources:
         for field in REFERENCE_FIELDS:
             value = source.get(field, [])
-            for reference in ([value] if isinstance(value, str) else value):
-                if reference not in core_references:
-                    fail(f"core source {source['identity']} refers to a domain source: {reference}")
-    core_usage = json.loads((ROOT / core["usage_index"]).read_text())
-    if core_usage != {"schema_version": 1, "references": usage_index(core_sources)}:
-        fail("core reference usage index is stale")
-    core_defaults = json.loads((ROOT / core["defaults"]).read_text())
-    for key, reference in core_defaults.items():
-        if key.endswith("_ref") and reference not in core_references:
-            fail(f"core default {key} points outside the core catalog")
+            for reference in [value] if isinstance(value, str) else value:
+                resolve(reference, source["identity"])
 
-    listed = {
-        rel for paths in manifest.get("types", {}).values() for rel in paths
-    }
-    orphans = sorted(
-        str(p.relative_to(ROOT))
-        for p in ROOT.rglob("*")
-        if p.is_file()
-        and not p.is_relative_to(ROOT / "software-development")
-        and str(p.relative_to(ROOT)) not in root_meta
-        and str(p.relative_to(ROOT)) not in listed
-        and p.suffix in (".json", ".md")
-        and p not in md_bodies
-    )
-    if orphans:
-        fail(f"files not owned by any published definition or root meta: {orphans}")
-    usage = json.loads((ROOT / manifest["usage_index"]).read_text())
-    if usage != {"schema_version": 1, "references": usage_index(list(sources.values()))}:
-        fail("reference usage index is stale; run python3 scripts/py/configuration_usage.py --write")
-
-    def resolve(ref: str, what: str) -> None:
-        identity, _, revision = ref.rpartition(":")
-        for (_, ident, rev), meta in published.items():
-            if ident == identity and str(rev) == revision:
-                return
-        fail(f"{what} references unpublished revision {ref!r}")
-
-    # Flattened root references must point at published revisions.
-    for rel, source in sources.items():
-        for field in REFERENCE_FIELDS:
-            value = source.get(field)
-            if isinstance(value, str):
-                resolve(value, f"{rel} {field}")
-            elif isinstance(value, list):
-                for item in value:
-                    resolve(item, f"{rel} {field}")
-
-    defaults = json.loads((ROOT / manifest["defaults"]).read_text())
-    scalar_refs = [
-        "workflow_ref",
-        "task_workflow_ref",
-        "model_ref",
-        "harness_ref",
-        "sandbox_ref",
-        "capability_ref",
-        "standard_ref",
-        "orchestrator_role_ref",
-        "harness_permission_ref",
-        "sandbox_permission_ref",
-    ]
-    for key in scalar_refs:
-        value = defaults.get(key)
-        if isinstance(value, str):
+    defaults = json.loads((directory / manifest["defaults"]).read_text())
+    for key, value in defaults.items():
+        if key.endswith("_ref"):
             resolve(value, key)
     for role, agent in defaults.get("role_agent_bindings", {}).items():
-        resolve(role, f"role_agent_bindings key {role}")
-        resolve(agent, f"role_agent_bindings[{role}]")
+        resolve(role, "default role")
+        resolve(agent, f"default agent for {role}")
 
-    kinds = {kind: len(paths) for kind, paths in manifest.get("types", {}).items()}
-    print(
-        "check-defaults: OK — "
-        + ", ".join(f"{kind}={count}" for kind, count in sorted(kinds.items()))
-        + f"; bundle_version={manifest.get('bundle_version')}"
-    )
+    if index := manifest.get("usage_index"):
+        owned.add(index)
+        if json.loads((directory / index).read_text()) != {
+            "schema_version": 1, "references": usage_index(sources),
+        }:
+            raise ValueError("core usage index is stale; run python3 scripts/py/configuration_usage.py --write")
+    orphans = sorted(path.relative_to(directory).as_posix() for path in directory.rglob("*")
+                     if path.is_file() and path.relative_to(directory).as_posix() not in owned)
+    if orphans:
+        raise ValueError(f"{directory}: unowned files: {orphans}")
+
+    print(f"check-defaults: {manifest['bundle_version']} — {len(sources)} sources")
+    return references
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        core = check_catalog(ROOT / "core", set())
+        check_catalog(ROOT / "software-development/catalog", core, "software-development")
+    except (OSError, KeyError, ValueError) as error:
+        raise SystemExit(f"check-defaults: {error}") from error

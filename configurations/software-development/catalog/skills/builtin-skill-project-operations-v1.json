@@ -1,0 +1,11 @@
+{
+  "type": "skill",
+  "identity": "software-development.skill-project-operations",
+  "revision": 1,
+  "name": "Project Operations",
+  "scope": "global",
+  "data": {
+    "rules": [],
+    "body_file": "project-operations.md"
+  }
+}

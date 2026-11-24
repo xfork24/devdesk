@@ -295,7 +295,7 @@ def run(origin, action, args):
         defaults = active["defaults"]
         assert {defaults["workflow_ref"], defaults["task_workflow_ref"]} <= set(active["agent_workflows"])
         assert defaults["standard_ref"].rsplit(":", 1)[0] == "software-development.standard-engineering-delivery"
-        if active["active"]["version"] == "0.5.0":
+        if active["active"]["version"] in ("0.5.0", "0.5.1"):
             assert defaults["workflow_ref"] == "software-development.workflow-feature-development:6"
             assert defaults["task_workflow_ref"] == "software-development.workflow-task-development:5"
             for row in active["sources"]:

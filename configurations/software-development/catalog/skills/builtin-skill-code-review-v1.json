@@ -1,0 +1,11 @@
+{
+  "type": "skill",
+  "identity": "software-development.skill-code-review",
+  "revision": 1,
+  "name": "Code Review",
+  "scope": "global",
+  "data": {
+    "rules": [],
+    "body_file": "code-review.md"
+  }
+}

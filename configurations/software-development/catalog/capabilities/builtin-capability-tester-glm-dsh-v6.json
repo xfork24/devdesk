@@ -1,0 +1,22 @@
+{
+  "type": "capability",
+  "identity": "software-development.capability-tester-glm-dsh",
+  "revision": 6,
+  "name": "Test Engineering Capability · GLM 5.3",
+  "scope": "global",
+  "harness_ref": "builtin-harness-dsh-multi-provider:2",
+  "model_ref": "builtin-model-glm-5-3:1",
+  "skills": [
+    "software-development.skill-engineering-context:4",
+    "software-development.skill-test-design:3",
+    "software-development.skill-release-verification:3",
+    "software-development.skill-deliverable-validation:1"
+  ],
+  "tools": [
+    "builtin-tool-dsh-native:2"
+  ],
+  "data": {},
+  "spec_refs": [
+    "software-development.spec-test-design:2"
+  ]
+}

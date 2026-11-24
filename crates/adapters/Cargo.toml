@@ -34,6 +34,5 @@ serde_json.workspace = true
 jsonschema = { version = "0.61", default-features = false }
 
 [features]
-default = ["engineering-defaults"]
-engineering-defaults = []
+fixture-catalog = []
 test-fixtures = ["devdesk-core/test-fixtures"]

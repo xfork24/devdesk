@@ -9,7 +9,7 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 PACKAGE = Path(__file__).resolve().parent
 REPO = PACKAGE.parents[1]
 DOMAIN = "software-development"
-VERSION = "0.5.0"
+VERSION = "0.5.1"
 DISCOVER = f"{DOMAIN}.tests.discover"
 BRANCH = f"{DOMAIN}.branch.plan"
 CONNECT = f"{DOMAIN}.project.connect"
@@ -22,59 +22,24 @@ def source(kind, key, data, **references):
             "scope": "global", "name": key.replace("-", " ").title(), "data": data, **references}
 
 
-def delivery_configuration(evidence_enabled):
-    configurations = REPO / "configurations"
-    manifest = json.loads((configurations / "manifest.json").read_text())
-    core = json.loads((configurations / "core/manifest.json").read_text())
-    core_paths = {path for paths in core["types"].values() for path in paths}
+def load_catalog():
+    catalog = PACKAGE / "catalog"
+    manifest = json.loads((catalog / "manifest.json").read_text())
     entries = []
-    for path in (path for paths in manifest["types"].values() for path in paths if path not in core_paths):
-        source_path = configurations / path
-        record = json.loads(source_path.read_text())
-        for key in tuple(record["data"]):
-            if key.endswith("_file"):
-                asset = source_path.parent / record["data"].pop(key)
-                record["data"][key.removesuffix("_file")] = asset.read_text()
-        entries.append(record)
-    updated = {
-        "builtin-workflow-feature-development": (6, "feature"),
-        "builtin-workflow-task-development": (5, "task"),
-        "builtin-standard-engineering-delivery": (6, None),
-    } if evidence_enabled else {}
-    evidence = json.loads((PACKAGE / "delivery-evidence.json").read_text()) if updated else {}
-    refs = {}
-    for record in entries:
-        identity = record["identity"]
-        translated = f"{DOMAIN}.{identity.removeprefix('builtin-')}"
-        refs[identity] = translated
-        old = record["revision"]
-        revision, kind = updated.get(identity, (old, None))
-        refs[f"{identity}:{old}"] = f"{translated}:{revision}"
-        record["revision"] = revision
-        if kind:
+    for paths in manifest["types"].values():
+        for path in paths:
+            source_path = catalog / path
+            record = json.loads(source_path.read_text())
             data = record["data"]
-            data.pop("delivery_policy")
-            data["operation_evidence"] = {"git.delivery": evidence[kind]}
-            immediate = data["completion"]
-            rules = immediate["rules"] if immediate["op"] == "all" else []
-            rules = rules + [{"op":"equals","source":{"step":"merge","port":"result","pointer":pointer},"value":True}
-                             for pointer in ("/synchronized", "/pull_request/merged")]
-            data["completion"] = {"op":"all", "rules":rules}
-
-    def translate(value):
-        if isinstance(value, str):
-            return refs.get(value, value)
-        if isinstance(value, dict):
-            return {refs.get(key, key): translate(child) for key, child in value.items()}
-        if isinstance(value, list):
-            return [translate(child) for child in value]
-        return value
-
-    defaults = json.loads((configurations / manifest["defaults"]).read_text())
-    return translate(entries), translate(defaults)
+            for key in tuple(data):
+                if key.endswith("_file"):
+                    asset = source_path.parent / data.pop(key)
+                    data[key.removesuffix("_file")] = asset.read_text()
+            entries.append(record)
+    return entries, json.loads((catalog / manifest["defaults"]).read_text()), manifest["bundle_version"]
 
 
-def build(target, web, version):
+def build(target, web):
     coordinate = {
         "type": "object", "additionalProperties": False, "required": ["path", "revision"],
         "properties": {"path": {"type": "string", "minLength": 1, "maxLength": 4096},
@@ -139,8 +104,7 @@ def build(target, web, version):
         }),
     ]
 
-    evidence_enabled = version == VERSION
-    delivery_sources, defaults = delivery_configuration(evidence_enabled)
+    delivery_sources, defaults, bundle_version = load_catalog()
     entries.extend(delivery_sources)
     connection_input = {
         "type": "object", "additionalProperties": False, "required": ["repository"],
@@ -180,7 +144,7 @@ def build(target, web, version):
     entity_types = "configurations/entity-types/repository.json"
     files.update({
         "configurations/manifest.json": json.dumps({
-            "schema_version": 1, "bundle_version": f"{DOMAIN}-1", "types": types,
+            "schema_version": 1, "bundle_version": bundle_version, "types": types,
             "defaults": "defaults.json", "usage_index": "usage.json",
         }).encode(),
         "configurations/defaults.json": json.dumps(defaults).encode(),
@@ -191,25 +155,23 @@ def build(target, web, version):
             result_type: {"name": "Test configuration", "schema": output},
         }).encode(),
     })
-    ui = None
-    if web is not None:
-        if not (web / "workbench.mjs").is_file():
-            raise ValueError(f"Missing Web entry in {web}; run npm --prefix web run build:software")
-        contributions = PACKAGE / "web/contributions.json"
-        files["ui/contributions.json"] = contributions.read_bytes()
-        stylesheet = "ui/web/workbench.css"
-        files[stylesheet] = (PACKAGE / "web/workbench.css").read_bytes()
-        for asset in web.rglob("*.mjs"):
-            files[f"ui/web/{asset.relative_to(web).as_posix()}"] = asset.read_bytes()
-        ui = {
-            "contributions": "ui/contributions.json",
-            "targets": [{"renderer": "web.react", "api": 2, "styles": [stylesheet], "bindings": [
-                {"contribution": row["id"], "entry": "ui/web/workbench.mjs", "export": export}
-                for row, export in zip(json.loads(contributions.read_text()),
-                                       ("BranchQueue", "DeliveryWorkbench", "EngineeringSettings"), strict=True)
-            ]}],
-        }
-    manifest = {"format": 1, "id": DOMAIN, "version": version, "entity_types": entity_types,
+    if not (web / "workbench.mjs").is_file():
+        raise ValueError(f"Missing Web entry in {web}; run npm --prefix web run build:software")
+    contributions = PACKAGE / "web/contributions.json"
+    files["ui/contributions.json"] = contributions.read_bytes()
+    stylesheet = "ui/web/workbench.css"
+    files[stylesheet] = (PACKAGE / "web/workbench.css").read_bytes()
+    for asset in web.rglob("*.mjs"):
+        files[f"ui/web/{asset.relative_to(web).as_posix()}"] = asset.read_bytes()
+    ui = {
+        "contributions": "ui/contributions.json",
+        "targets": [{"renderer": "web.react", "api": 2, "styles": [stylesheet], "bindings": [
+            {"contribution": row["id"], "entry": "ui/web/workbench.mjs", "export": export}
+            for row, export in zip(json.loads(contributions.read_text()),
+                                   ("BranchQueue", "DeliveryWorkbench", "EngineeringSettings"), strict=True)
+        ]}],
+    }
+    manifest = {"format": 1, "id": DOMAIN, "version": VERSION, "entity_types": entity_types,
                 "files": {path: hashlib.sha256(contents).hexdigest() for path, contents in files.items()},
                 "runtime": {"entry": "runtime/worker.mjs", "worktree_branch": BRANCH, "test_discovery": DISCOVER,
                             "project_connection": CONNECT, "test_reporters": reporters,
@@ -225,38 +187,28 @@ def build(target, web, version):
                                       "needles": ["#[test", "#[tokio::test", "#[async_std::test"]}},
                                }},
                 }}}
-    if evidence_enabled:
-        entry = "runtime/worker.mjs"
-        implementation = (PACKAGE / "runtime/delivery-evidence.mjs").read_bytes()
-        handler_anchor = b"    [planBranch, ({ input }) => worktreeBranch(input)],"
-        if files[entry].count(handler_anchor) != 1:
-            raise ValueError("Worker handler table moved")
-        declaration = f"    ['{AUTHORIZE}', ({{ input }}) => authorizeDelivery(input)],".encode()
-        files[entry] = files[entry].replace(handler_anchor, handler_anchor + b"\n" + declaration) + b"\n" + implementation
-        manifest["files"][entry] = hashlib.sha256(files[entry]).hexdigest()
-        manifest["runtime"]["handlers"][AUTHORIZE] = {
-            "input_schema": {
-                "type": "object", "additionalProperties": False,
-                "required": ["operation", "source_revision", "source_branch", "destination",
-                             "candidate_revision", "regression_configured", "facts"],
-                "properties": {
-                    "operation": {"enum": ["workspace.target", "git.source.publish", "git.delivery.open",
-                                           "git.delivery.merge"]},
-                    "source_revision": coordinate["properties"]["revision"],
-                    "source_branch": {"type":"string", "minLength":1},
-                    "destination": {"enum": ["mainline", "parent_work"]},
-                    "candidate_revision": {"type":["null", "string"]},
-                    "regression_configured": {"type":"boolean"},
-                    "facts": {"type":"object", "maxProperties": 32},
-                },
+    manifest["runtime"]["handlers"][AUTHORIZE] = {
+        "input_schema": {
+            "type": "object", "additionalProperties": False,
+            "required": ["operation", "source_revision", "source_branch", "destination",
+                         "candidate_revision", "regression_configured", "facts"],
+            "properties": {
+                "operation": {"enum": ["workspace.target", "git.source.publish", "git.delivery.open",
+                                       "git.delivery.merge"]},
+                "source_revision": coordinate["properties"]["revision"],
+                "source_branch": {"type":"string", "minLength":1},
+                "destination": {"enum": ["mainline", "parent_work"]},
+                "candidate_revision": {"type":["null", "string"]},
+                "regression_configured": {"type":"boolean"},
+                "facts": {"type":"object", "maxProperties": 32},
             },
-            "output_schema": {
-                "type": "object", "required": ["allowed"], "additionalProperties": False,
-                "properties": {"allowed": {"type":"boolean"}, "reason": {"type":"string"}},
-            }
+        },
+        "output_schema": {
+            "type": "object", "required": ["allowed"], "additionalProperties": False,
+            "properties": {"allowed": {"type":"boolean"}, "reason": {"type":"string"}},
         }
-    if ui:
-        manifest["ui"] = ui
+    }
+    manifest["ui"] = ui
     files["manifest.json"] = json.dumps(manifest).encode()
     target.parent.mkdir(parents=True, exist_ok=True)
     with ZipFile(target, "w") as archive:
@@ -269,10 +221,5 @@ if __name__ == "__main__":
     parser.add_argument("--version", action="version", version=VERSION)
     parser.add_argument("target", type=Path)
     parser.add_argument("--web-dir", type=Path, default=REPO / "web/dist/software")
-    parser.add_argument("--legacy-runtime-only", action="store_true",
-                        help="Reproduce the 0.3.0 runtime-only release for compatibility tests")
-    parser.add_argument("--legacy-web", action="store_true",
-                        help="Build the 0.4.0 release with legacy delivery configuration")
     args = parser.parse_args()
-    build(args.target, None if args.legacy_runtime_only else args.web_dir,
-          "0.3.0" if args.legacy_runtime_only else "0.4.0" if args.legacy_web else VERSION)
+    build(args.target, args.web_dir)

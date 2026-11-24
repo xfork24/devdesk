@@ -1,0 +1,13 @@
+{
+  "type": "role",
+  "identity": "software-development.role-project-manager",
+  "revision": 1,
+  "name": "项目经理",
+  "scope": "global",
+  "data": {
+    "visibility": {
+      "kind": "global"
+    },
+    "instructions_file": "project-manager.md"
+  }
+}

@@ -122,14 +122,14 @@ def main():
             env['DEVDESK_LIVE_GITHUB_REPO'] = args.github_repo
             suites.append('github_resources')
         for suite in suites:
-            listing = run(suite + '-list', ['cargo', 'test', '--locked', '-p', 'devdesk-adapters', '--features', 'test-fixtures', '--test', suite, '--', '--ignored', '--list'])
+            listing = run(suite + '-list', ['cargo', 'test', '--locked', '-p', 'devdesk-adapters', '--features', 'test-fixtures,fixture-catalog', '--test', suite, '--', '--ignored', '--list'])
             tests = re.findall(r'^(.+): test$', listing, re.MULTILINE)
             if not tests:
                 raise RuntimeError(f'{suite} did not enumerate any external tests')
             expected = len(tests)
             report['tests'][suite] = tests
             report['expected_tests'] += expected
-            output = run(suite, ['cargo', 'test', '--locked', '-p', 'devdesk-adapters', '--features', 'test-fixtures', '--test', suite, '--', '--ignored', '--test-threads=1'])
+            output = run(suite, ['cargo', 'test', '--locked', '-p', 'devdesk-adapters', '--features', 'test-fixtures,fixture-catalog', '--test', suite, '--', '--ignored', '--test-threads=1'])
             if not re.search(rf'test result: ok\. {expected} passed; 0 failed; 0 ignored;', output):
                 raise RuntimeError(f'{suite} did not execute the expected {expected} external tests')
         if source_fingerprint() != report['source']['inputs_sha256']:

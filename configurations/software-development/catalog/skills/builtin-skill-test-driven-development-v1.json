@@ -1,0 +1,11 @@
+{
+  "type": "skill",
+  "identity": "software-development.skill-test-driven-development",
+  "revision": 1,
+  "name": "Test-Driven Development",
+  "scope": "global",
+  "data": {
+    "rules": [],
+    "body_file": "test-driven-development.md"
+  }
+}

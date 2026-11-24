@@ -30,6 +30,6 @@ Schema 约束数据形状，domain 检查结构间的关系，core 结合当前�
 
 ## 版本号不能混用
 
-配置修订、配置中的 schema_version、SQLite user_version、Host 生命周期 revision 和凭据助手协议版本分别解决不同问题。调整展示版本不能绕过数据库兼容检查；更新工具定义也不能证明已安装 Harness 支持新协议。
+配置修订、配置中的 schema_version、SQLite user_version、Host 生命周期 revision 和领域协议版本分别解决不同问题。调整展示版本不能绕过数据库兼容检查；更新工具定义也不能证明已安装 Harness 支持新协议。
 
 完整格式索引见 [schemas/README.md](../../../schemas/README.md)，应用层解析入口见 [配置与编译](../../crates/devdesk-core/configuration-and-catalog.md)。

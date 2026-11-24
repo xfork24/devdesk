@@ -4,7 +4,7 @@ set -euo pipefail
 if ! command -v cargo >/dev/null && [ -f "$HOME/.cargo/env" ]; then source "$HOME/.cargo/env"; fi
 cd "$(dirname "$0")/../.."
 if [ ! -d web/node_modules ]; then npm --prefix web ci; fi
-npm --prefix web run build
+npm --prefix web run build:core
 cargo build --locked -p devdesk-host
 ./scripts/platform/macos/sign-macos.sh target/debug/devdesk-host
-exec python3 scripts/dev/run-host.py target/debug/devdesk-host "$@"
+exec python3 scripts/dev/run-host.py target/debug/devdesk-host "$@" --web-dir web/dist/core

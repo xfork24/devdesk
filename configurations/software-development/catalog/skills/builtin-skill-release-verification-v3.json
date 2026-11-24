@@ -1,0 +1,11 @@
+{
+  "type": "skill",
+  "identity": "software-development.skill-release-verification",
+  "revision": 3,
+  "name": "Release Verification",
+  "scope": "global",
+  "data": {
+    "rules": [],
+    "body_file": "release-verification.md"
+  }
+}

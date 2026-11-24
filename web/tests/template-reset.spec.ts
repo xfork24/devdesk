@@ -1,3 +1,4 @@
+import { fixtureHost, fixtureWebDir } from "../fixtures/workbench/host";
 import { test as base, expect, type Page } from "@playwright/test";
 import { spawn } from "node:child_process";
 import {
@@ -24,10 +25,15 @@ const test = base.extend<{ appUrl: string }>({
     const root = mkdtempSync(join(tmpdir(), "devdesk-template-reset-e2e-"));
     const log = openSync(join(root, "host.log"), "w");
     const process = spawn(
-      resolve(
-        `../target/${globalThis.process.env.DEVDESK_E2E_PROFILE ?? "debug"}/devdesk-host`,
-      ),
-      ["--port", String(port), "--data", join(root, "data")],
+      fixtureHost,
+      [
+        "--port",
+        String(port),
+        "--data",
+        join(root, "data"),
+        "--web-dir",
+        fixtureWebDir,
+      ],
       { stdio: ["ignore", log, log] },
     );
     closeSync(log);

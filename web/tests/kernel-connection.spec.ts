@@ -1,8 +1,9 @@
+import { fixtureHost, fixtureWebDir } from "../fixtures/workbench/host";
 import { expect, test, Page } from "@playwright/test";
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 
 async function settings(page: Page, origin = "/") {
@@ -28,12 +29,7 @@ async function protectedKernel() {
   const directory = mkdtempSync(join(tmpdir(), "devdesk-connection-target-"));
   const key = "synthetic-connection-key-for-browser-fixture-only";
   const child = spawn(
-    resolve(
-      import.meta.dirname,
-      "../../target",
-      process.env.DEVDESK_E2E_PROFILE ?? "debug",
-      "devdesk-host",
-    ),
+    fixtureHost,
     [
       "--data",
       directory,
@@ -41,6 +37,8 @@ async function protectedKernel() {
       process.env.DEVDESK_CONNECTION_TEST_HOST ?? "127.0.0.1",
       "--port",
       "0",
+      "--web-dir",
+      fixtureWebDir,
     ],
     {
       env: { ...process.env, DEVDESK_ACCESS_TOKEN: key },

@@ -1,0 +1,11 @@
+{
+  "type": "skill",
+  "identity": "software-development.skill-task-planning",
+  "revision": 1,
+  "name": "Task Planning",
+  "scope": "global",
+  "data": {
+    "rules": [],
+    "body_file": "task-planning.md"
+  }
+}

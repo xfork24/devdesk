@@ -1,0 +1,10 @@
+{
+  "type": "agent",
+  "identity": "software-development.agent-glm-analyst",
+  "revision": 6,
+  "name": "Requirements Analyst · GLM 5.3",
+  "scope": "global",
+  "capability_ref": "software-development.capability-analyst-glm-dsh:6",
+  "role_ref": "software-development.role-analyst:1",
+  "data": {}
+}

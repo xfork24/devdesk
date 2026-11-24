@@ -1,6 +1,6 @@
 # DevDesk 工作台与存储性能优化计划
 
-P0、P1A–P1C 和 P2B 已通过阶段验收。P2A 已完成开发与本机诊断，正式容量验收待独立负载环境。P3 当前决定保留 SQLite 项目库及同库读投影。各阶段的基准、结果与回退见实施记录。 [工作台延迟评估](../../design/performance/workbench-latency-2026-11-23.md) · [实施与验收记录](VALIDATION.md)
+P0、P1A–P1C 和 P2B 已通过阶段验收。P2A 已完成开发与本机诊断，正式容量验收待独立负载环境。P3 当前决定保留 SQLite 项目库及同库读投影。各阶段的基准、结果与回退见实施记录。 [工作台延迟评估](../../benchmarks/workbench-latency-2026-11-23.md) · [实施与验收记录](VALIDATION.md)
 
 ## 一、目标与范围
 

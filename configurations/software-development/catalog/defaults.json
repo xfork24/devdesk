@@ -1,0 +1,30 @@
+{
+  "workflow_ref": "software-development.workflow-feature-development:6",
+  "task_workflow_ref": "software-development.workflow-task-development:5",
+  "model_ref": "builtin-model-gpt-6-2-sol-high:1",
+  "harness_ref": "builtin-harness-codex-managed:2",
+  "sandbox_ref": "builtin-sandbox-docker:2",
+  "capability_ref": "software-development.capability-developer-gpt-6-2-sol-codex:3",
+  "standard_ref": "software-development.standard-engineering-delivery:6",
+  "role_agent_bindings": {
+    "software-development.role-analyst:1": "software-development.agent-gpt-6-2-sol-analyst:3",
+    "software-development.role-architect:1": "software-development.agent-gpt-6-2-sol-architect:3",
+    "software-development.role-project-manager:1": "software-development.agent-gpt-6-2-sol-project-manager:4",
+    "software-development.role-developer:1": "software-development.agent-gpt-6-2-sol-developer:3",
+    "software-development.role-tester:1": "software-development.agent-gpt-6-2-sol-tester:4",
+    "software-development.role-reviewer:1": "software-development.agent-gpt-6-2-sol-reviewer:4"
+  },
+  "harness_permission_ref": "builtin-permission-harness-full-access:2",
+  "sandbox_permission_ref": "builtin-permission-sandbox-full-access:2",
+  "orchestration": {
+    "mode": "agent"
+  },
+  "authoring": {
+    "execution_budget": {
+      "max_turns": 8,
+      "timeout_seconds": 300,
+      "retry_limit": 3
+    }
+  },
+  "orchestrator_role_ref": "software-development.role-project-manager:1"
+}

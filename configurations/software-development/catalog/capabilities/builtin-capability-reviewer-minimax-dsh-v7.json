@@ -1,0 +1,22 @@
+{
+  "type": "capability",
+  "identity": "software-development.capability-reviewer-minimax-dsh",
+  "revision": 7,
+  "name": "Independent Review Capability · MiniMax M3.1 Flash",
+  "scope": "global",
+  "harness_ref": "builtin-harness-dsh-multi-provider:2",
+  "model_ref": "builtin-model-minimax-m3-1-flash:1",
+  "skills": [
+    "software-development.skill-engineering-context:4",
+    "software-development.skill-code-review:1",
+    "software-development.skill-independent-review:3",
+    "software-development.skill-deliverable-validation:1"
+  ],
+  "tools": [
+    "builtin-tool-dsh-native:2"
+  ],
+  "data": {},
+  "spec_refs": [
+    "software-development.spec-delivery-review:3"
+  ]
+}

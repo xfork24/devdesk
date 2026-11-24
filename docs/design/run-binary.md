@@ -1,36 +1,28 @@
-# DevDesk 运行指南
+# DevDesk v0.5 运行指南
 
-Host 已嵌入 Web 工作台和出厂配置，启动工作台无需 Python、Rust、Node 或单独的数据库服务。
+Host、Web Core 和领域 ZIP 独立发行。运行已打包的制品无需 Python、Rust、宿主 Node 或数据库服务。
 
 ## 启动
 
-解压与操作系统、CPU 架构匹配的包，在包目录运行：
-
-```bash
-./devdesk-host
-```
-
-打开终端给出的地址，默认是 `http://127.0.0.1:4317`。首次选择空数据目录，也可直接指定：
+解压与操作系统和 CPU 匹配的 Host。API 客户端可以直接连接仅启动 Host 的工作台。
 
 ```bash
 ./devdesk-host --data "/完整路径/DevDesk 数据" --port 4317
 ```
 
-工程执行还需要可用的 Linux Docker Engine/Desktop、Git，以及 GitHub CLI。GitHub 和模型认证可在设置中完成。执行安装由所选 Harness/Sandbox 配置准备，不必手工猜测镜像标签。
-
-macOS 压缩包只包含签名后的 `devdesk-host` 命令行程序。
+运行 Web 工作台时解压 Web Core，并加上 `--web-dir`。终端会显示连接地址，默认是 `http://127.0.0.1:4317`。通过 Web 首次初始化时，可省略 `--data` 并在页面选择空目录。macOS 使用可访问 Keychain 的签名 Host。见[签名与凭据](../crates/devdesk-adapters/signing-and-keychain.md)。
 
 ## 领域工作台独立发行
 
-解压与操作系统及 CPU 匹配的 `devdesk-core-host-*.tar.gz` 和 `devdesk-core-web.tar.gz`，保留 `software-development-0.5.0.zip` 供工作台导入。使用从可信发行渠道取得的 SHA-256 校验文件。以下示例传入软件开发 ZIP 的发布摘要。
+解压与操作系统及 CPU 匹配的 `devdesk-core-host-0.5.0-<target>.tar.gz` 和 `devdesk-core-web-0.5.0.tar.gz`，保留 `software-development-0.5.1.zip` 供工作台导入。使用从可信发行渠道取得的 SHA-256 校验文件。以下示例传入软件开发 ZIP 的发布摘要。
 
 ```bash
-zip_sha=$(awk 'NR == 1 { print $1 }' software-development-0.5.0.zip.sha256)
-./devdesk-host --data /path/to/new-dataset --web-dir /path/to/devdesk-core-web \
+zip_sha=$(awk 'NR == 1 { print $1 }' software-development-0.5.1.zip.sha256)
+./devdesk-host --data /path/to/new-dataset --web-dir /path/to/devdesk-core-web-0.5.0 \
   --trust-domain "$zip_sha"
 ```
 
-核心 Host 可以只带数据目录和 Web Core 启动。使用多个领域时，为每个可信 ZIP 重复传入 `--trust-domain`。工作台的「领域包」页支持导入、激活和卸载。当前包仍有活动工作流时，先完成或取消工作流即可切换。切换更新所有客户端的活动代次。项目及运行绑定原包摘要，切回该摘要后可以继续读取原有历史。运行领域处理器需要可用的 Docker 及下文的固定 Node 镜像。
+空领域可直接操作核心配置和 Git。使用多个领域时，为每个可信 ZIP 重复传入 `--trust-domain`。工作台的「领域包」页支持导入、激活和卸载。当前包仍有活动工作流时，先完成或取消工作流即可切换。切换更新所有客户端的活动代次。项目及运行绑定原包摘要，切回该摘要后可以继续读取原有历史。运行领域处理器需要可用的 Docker 及下文的固定 Node 镜像。
 
 ```bash
 docker pull node@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced307cf4b6f
@@ -38,9 +30,9 @@ docker pull node@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced3
 
 | 工件 | 合同和兼容性 |
 | --- | --- |
-| Core Host | 保留 JSON-RPC 2.0 与领域包清单格式 1。该次发行增加贡献投影及 Web 样式声明，仍可装载 0.3.0 和早期夹具 |
-| Web Core | 同时支持 `web.react` API 1 与 API 2。API 1 使用早期动态模块接口。API 2 提供共享 React 实例、组件、布局、项目 RPC 和事件作用域。模块从 `/assets/devdesk-ui.mjs` 获取运行时，类型声明和 JSON Schema 随 Web Core 放在 `sdk/` |
-| 软件开发 ZIP 0.5.0 | 使用 API 2 呈现绑定和工作流显式交付证据合同。需要支持 `operation_evidence` 的 Host。升级可保留已安装的 0.3.0 和 0.4.0，按摘要回切可复查旧执行 |
+| Core Host 0.5.0 | JSON-RPC 2.0、领域协议 1、领域包清单格式 1。支持既有贡献投影及按原摘要回切 |
+| Web Core 0.5.0 | 同时支持 `web.react` API 1 与 API 2。API 1 使用早期动态模块接口。API 2 提供共享 React 实例、组件、布局、项目 RPC 和事件作用域。模块从 `/assets/devdesk-ui.mjs` 获取运行时，类型声明和 JSON Schema 随 Web Core 放在 `sdk/` |
+| 软件开发 ZIP 0.5.1 | 使用 API 2 呈现绑定和工作流显式交付证据合同。需要支持 `operation_evidence` 的 Host。升级可保留已安装的 0.3.0、0.4.0 和 0.5.0，按摘要回切可复查旧执行 |
 
 非浏览器客户端先调用 `POST /session` 建立 Host 会话，随后从 `query.domain.active` 读取活动代次和贡献目录，并监听 `GET /domain-events`。项目事件流和已有项目 RPC 携带 `project_id` 及 `domain_epoch`。声明 `projection: true` 的贡献用 `query.domain.contribution` 读取，其他贡献的包处理器沿用 `query.domain.invoke`。
 
@@ -65,7 +57,7 @@ docker pull node@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced3
 
 ## 数据与退出
 
-同一数据集只能由一个 Host 管理。当前数据标记为 `devdesk-profile-runtime-v2`，布局为 `single-host-resource-v2`，数据库基线为 global 24 / project 62。程序兼容打开 project 60 和 61，旧工程库在显式迁移前沿用保守的模板重置扫描。
+同一数据集只能由一个 Host 管理。生产数据标记为 `devdesk-profile-runtime-v2`，全局布局为 `single-host-domain-packages-v1`，数据库基线为 global 24 / project 62。已使用领域平台布局的数据集可继续打开。首次从单体安装切换时，请为 v0.5 指定新的数据目录并保留原数据。兼容的工程库存储修订 60、61 可按下述方式显式迁移。
 
 停止该数据集的 Host 后，可以执行显式维护命令。
 
@@ -114,7 +106,8 @@ sudo ./scripts/platform/linux/install-linux-sandbox-policy.sh --install
 默认只监听 loopback。远程监听前设置 `DEVDESK_ACCESS_TOKEN`，要求 32–512 个非空白 ASCII 字符，再运行：
 
 ```bash
-./devdesk-host --host 192.168.1.10 --port 4317 --data "/完整路径/DevDesk 数据"
+./devdesk-host --host 192.168.1.10 --port 4317 --data "/完整路径/DevDesk 数据" \
+  --web-dir ./devdesk-core-web-0.5.0
 ```
 
 客户端通过“连接内核”探测并打开目标工作台，输入同一连接密钥。数据、Docker、Git 和凭据均位于目标 Host 机器。
@@ -134,4 +127,4 @@ sudo ./scripts/platform/linux/install-linux-sandbox-policy.sh --install
 
 记录对应项目、执行、会话和错误信息后再处理。不要用反复创建新执行或删除数据掩盖原故障。
 
-包内 `docs/design/` 提供架构说明，`docs/crates/` 提供开发阅读路线。代码链接需要源码仓库；本页的运行步骤不依赖这些链接。
+设计与开发入口收录在[仓库文档索引](../README.md)。

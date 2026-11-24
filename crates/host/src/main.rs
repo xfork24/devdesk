@@ -34,10 +34,6 @@ use std::{
     },
 };
 use workspace::Workspace;
-#[cfg(feature = "embedded-web")]
-#[derive(rust_embed::RustEmbed)]
-#[folder = "../../web/dist/"]
-struct Web;
 struct App {
     lifecycle: lifecycle::Lifecycle,
     workspace: RwLock<Option<Arc<Workspace>>>,
@@ -231,18 +227,9 @@ async fn static_file(State(app): State<Arc<App>>, request: Request) -> Response 
         return StatusCode::NOT_FOUND.into_response();
     }
     let key = if key.contains('.') { key } else { "index.html" };
-    let file = if let Some(root) = &app.web_root {
-        // web_root is an operator-installed core Web release, independent of ZIP assets.
-        tokio::fs::read(root.join(key)).await.ok()
-    } else {
-        #[cfg(feature = "embedded-web")]
-        {
-            Web::get(key).map(|file| file.data.into_owned())
-        }
-        #[cfg(not(feature = "embedded-web"))]
-        {
-            None
-        }
+    let file = match &app.web_root {
+        Some(root) => tokio::fs::read(root.join(key)).await.ok(),
+        None => None,
     };
     match file {
         Some(file) => (
@@ -508,7 +495,7 @@ async fn capabilities(State(app): State<Arc<App>>) -> Json<Value> {
     };
     let providers: Vec<&str> = HARNESS_PROVIDERS.iter().map(|p| p.as_str()).collect();
     Json(
-        json!({"version":"0.2.0","protocol_version":1,"setup_required":workspace.is_none(),"lifecycle":lifecycle,"domain_protocol":1,"project_selection":"frontend","storage_layout":"global-and-project-databases","execution_mode":"live","live":"requires_registered_runtime_and_credentials","conversations":{"providers":providers,"managed_linux_workers":true,"engineering_run_contract":true},"platform":{"linux":"runtime_verified_by_reports","macos":"runtime_verified_by_reports"},"runtime":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},"harness":{"providers":providers,"capabilities":["structured-output","cancel","poll"]},"sandbox":{"provider":"docker","capabilities":["managed-container","resource-cleanup"]}}),
+        json!({"version":env!("CARGO_PKG_VERSION"),"protocol_version":1,"setup_required":workspace.is_none(),"lifecycle":lifecycle,"domain_protocol":1,"project_selection":"frontend","storage_layout":"global-and-project-databases","execution_mode":"live","live":"requires_registered_runtime_and_credentials","conversations":{"providers":providers,"managed_linux_workers":true,"engineering_run_contract":true},"platform":{"linux":"runtime_verified_by_reports","macos":"runtime_verified_by_reports"},"runtime":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},"harness":{"providers":providers,"capabilities":["structured-output","cancel","poll"]},"sandbox":{"provider":"docker","capabilities":["managed-container","resource-cleanup"]}}),
     )
 }
 async fn artifact(
@@ -786,9 +773,14 @@ async fn main() {
 }
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("devdesk-host {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     if args.iter().any(|a| a == "--help") {
         println!(
-            "DevDesk 0.2\nUsage: devdesk-host [--data PATH] [--host IP] [--port 4317] [--public-url http(s)://HOST:PORT] [--web-dir DIR] [--trust-domain SHA256]\n       devdesk-host --data PATH --authorize-credential REFERENCE\nDefault host: 127.0.0.1. Remote listening requires DEVDESK_ACCESS_TOKEN (32+ characters).\nWithout --data, choose a dataset in the Web setup page. Web UI opens GitHub projects with native Codex/DSH execution."
+            "DevDesk {}\nUsage: devdesk-host [--data PATH] [--host IP] [--port 4317] [--public-url http(s)://HOST:PORT] [--web-dir DIR] [--trust-domain SHA256]\n       devdesk-host --data PATH --authorize-credential REFERENCE\nDefault host: 127.0.0.1. Remote listening requires DEVDESK_ACCESS_TOKEN (32+ characters).\nWithout --data, choose a dataset in the Web setup page. Without --web-dir the Host serves the client protocol only.",
+            env!("CARGO_PKG_VERSION")
         );
         return Ok(());
     }
@@ -815,15 +807,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         };
         println!("{}", serde_json::to_string_pretty(&report)?);
         return Ok(());
-    }
-    if let Some(path) = option("--factory-export") {
-        let mut state = devdesk_domain::EngineeringState::default();
-        devdesk_adapters::seed_factory_configuration(&mut state);
-        std::fs::write(path, serde_json::to_vec(&state)?)?;
-        return Ok(());
-    }
-    if args.iter().any(|a| a == "--update-credential-helper") {
-        return Err("devdesk-host now uses Keychain directly. Use --data PATH --authorize-credential REFERENCE when macOS requests authorization.".into());
     }
     if args.iter().any(|a| a == "--authorize-credential") {
         let reference = option("--authorize-credential")

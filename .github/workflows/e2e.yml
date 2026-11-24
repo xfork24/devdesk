@@ -56,15 +56,14 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm --prefix web ci
-      # The Host embeds web/dist at compile time, including in debug builds.
-      - run: npm --prefix web run build
+      - run: npm --prefix web run build:fixture
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache: false
       - uses: Swatinem/rust-cache@v2
         with:
           cache-bin: false
-      - run: cargo build --locked -p devdesk-host
+      - run: cargo build --locked -p devdesk-host --features fixture-catalog --target-dir target/fixtures
       - run: npx playwright install --with-deps chromium
         working-directory: web
       - name: Install the named Linux nested sandbox policy
@@ -76,19 +75,19 @@ jobs:
       - name: Debug HTTP and browser acceptance
         run: |
           python3 tests/entrypoints/http_contract.py
-          python3 tests/entrypoints/template_reset.py target/debug/devdesk-host
-          python3 tests/entrypoints/dataset_protocol.py target/debug/devdesk-host
-          python3 tests/entrypoints/runtime_preparation.py target/debug/devdesk-host
+          python3 tests/entrypoints/template_reset.py target/fixtures/debug/devdesk-host
+          python3 tests/entrypoints/dataset_protocol.py target/fixtures/debug/devdesk-host
+          python3 tests/entrypoints/runtime_preparation.py target/fixtures/debug/devdesk-host
           npm --prefix web run test:e2e
-      - run: cargo build --release --locked -p devdesk-host
+      - run: cargo build --release --locked -p devdesk-host --features fixture-catalog --target-dir target/fixtures
       - name: Release standalone HTTP and browser acceptance
         env:
           DEVDESK_E2E_PROFILE: release
         run: |
-          python3 tests/entrypoints/http_contract.py target/release/devdesk-host --standalone
-          python3 tests/entrypoints/template_reset.py target/release/devdesk-host
-          python3 tests/entrypoints/dataset_protocol.py target/release/devdesk-host
-          python3 tests/entrypoints/runtime_preparation.py target/release/devdesk-host
+          python3 tests/entrypoints/http_contract.py target/fixtures/release/devdesk-host --standalone
+          python3 tests/entrypoints/template_reset.py target/fixtures/release/devdesk-host
+          python3 tests/entrypoints/dataset_protocol.py target/fixtures/release/devdesk-host
+          python3 tests/entrypoints/runtime_preparation.py target/fixtures/release/devdesk-host
           npm --prefix web run test:e2e
       - uses: actions/upload-artifact@v4
         if: always()

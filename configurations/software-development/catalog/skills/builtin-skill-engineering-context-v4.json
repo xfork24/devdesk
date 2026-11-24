@@ -1,0 +1,11 @@
+{
+  "type": "skill",
+  "identity": "software-development.skill-engineering-context",
+  "revision": 4,
+  "name": "Engineering Context",
+  "scope": "global",
+  "data": {
+    "rules": [],
+    "body_file": "engineering-context.md"
+  }
+}

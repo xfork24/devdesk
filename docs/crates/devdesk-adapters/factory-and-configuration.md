@@ -10,9 +10,9 @@
 
 ## 出厂配置怎样进入程序
 
-[build.rs](../../../crates/adapters/build.rs) 从仓库顶层 `configurations/` 读取发布输入，[factory_bundle.rs](../../../crates/adapters/src/factory_bundle.rs) 装载内嵌资源并形成配置集合。manifest 是发布清单，不能将目录里未列入清单的文件自动当作有效默认。
+[build.rs](../../../crates/adapters/build.rs) 从 `configurations/core/` 读取发布输入，[factory_bundle.rs](../../../crates/adapters/src/factory_bundle.rs) 装载内嵌资源并形成配置集合。manifest 是发布清单，不能将目录里未列入清单的文件自动当作有效默认。
 
-修改出厂 JSON 后需要重新构建并重启 Host。只改运行数据目录的缓存，不会改变下一次构建嵌入的源资源。
+修改核心配置后重新构建 Host。领域配置由 [domain_packages.rs](../../../crates/adapters/src/domain_packages.rs) 从 ZIP 读取，运行中按活动代次加载。
 
 ## GlobalStore 与目录视图
 

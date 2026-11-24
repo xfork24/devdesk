@@ -1,0 +1,10 @@
+{
+  "type": "role",
+  "identity": "software-development.role-tester",
+  "revision": 1,
+  "name": "测试",
+  "scope": "global",
+  "data": {
+    "instructions_file": "tester.md"
+  }
+}

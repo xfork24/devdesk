@@ -6,7 +6,7 @@
 
 Feature 先完成需求、设计和计划，再建立 Task 子流程。Task 的主要过程是准备工作区、编写测试、记录测试代码、运行红灯测试、实现、记录实现版本、运行绿灯测试、独立评审、回归和交付。
 
-Feature 汇总子流程后，对整体代码继续评审和回归。Feature 评审接收已批准的冻结 Task Plan 及各 Task 的交付回执，用于核对计划范围与实际交付。当前出厂流程在需求、设计、计划评审及最终主线交付处包含人工确认。具体依赖和输入以[当前 Feature](../../configurations/workflows/builtin-workflow-feature-development-v5.json)与[Task](../../configurations/workflows/builtin-workflow-task-development-v4.json)定义为准。
+Feature 汇总子流程后，对整体代码继续评审和回归。Feature 评审接收已批准的冻结 Task Plan 及各 Task 的交付回执，用于核对计划范围与实际交付。当前软件开发包的流程在需求、设计、计划评审及最终主线交付处包含人工确认。具体依赖和输入以[当前 Feature](../../configurations/software-development/catalog/workflows/builtin-workflow-feature-development-v6.json)与[Task](../../configurations/software-development/catalog/workflows/builtin-workflow-task-development-v5.json)定义为准。
 
 ## 每一阶段产出什么证据
 
@@ -21,7 +21,7 @@ Feature 汇总子流程后，对整体代码继续评审和回归。Feature 评�
 
 ## 谁执行，谁判断
 
-core 根据工作流配置准备 `tests.run`、`workspace.checkpoint`、`git.source.publish` 等操作，检查来源、版本和权限。adapters 调用 Git、Docker 测试容器及 GitHub API/CLI，把实际观察结果返回给 core。core 再决定是否接受为步骤结果。
+core 根据工作流准备 `tests.run`、`workspace.checkpoint`、`git.source.publish` 等操作，检查来源、版本和权限。软件开发包用 `operation_evidence` 绑定已接纳的流程事实，Docker 内的领域处理器核对确切源、评审、测试与人工批准。adapters 调用 Git、Docker 测试容器及 GitHub API/CLI，core 根据实际回执接纳结果。
 
 测试命令由项目测试配置和当前流程选择。测试容器不会因此获得模型凭据。测试实现细节见[工程适配器](../crates/devdesk-adapters/engineering-resources.md)。
 
@@ -29,7 +29,7 @@ core 根据工作流配置准备 `tests.run`、`workspace.checkpoint`、`git.sou
 
 准备交付后，目标分支可能已被其他人修改。因此合入要核对确切源、目标和试合并版本。无保护目标使用 `beforeOid` 与 `force=false` 限定原子快进；受保护目标遵守 PR 门禁。Feature/main 交付还需要对应 Human 决定。
 
-如果结果不明，系统先读取远端状态和提交关系再继续，不能直接重复推送或把现有 PR 当作本次操作成功的充分证据。最后还需核对父提交、tree 与本地同步。
+如果结果不明，系统先读取远端状态和提交关系再继续，不能直接重复推送或把现有 PR 当作本次操作成功的充分证据。最后还需核对父提交、tree 与本地同步。Task 在开发分支 PR 上冻结双父试合并。Feature 从冻结的源构建代码候选，排除流程专用验证材料并保留项目正式测试。
 
 源分支发布若在推送子进程启动前因凭据检查失败，记录为远端写入未应用的技术失败。修复凭据后可按原步骤重试。推送之后的核验失败仍需要核对远端。项目经理收到实际步骤、诊断码、错误说明和外部影响状态，依据这些记录报告阻塞和处理方式。
 
@@ -41,4 +41,4 @@ core 根据工作流配置准备 `tests.run`、`workspace.checkpoint`、`git.sou
 
 评审拒绝会保留原结论，返工建立新的执行关联，并受额度和范围约束。经理不能删除拒绝记录来恢复“通过”的外观。
 
-本地协议夹具可以验证 GitHub 请求参数或错误处理，无法证明当前账号、远端保护规则或真实模型可用。真实工程验收需要专用仓库和明确认证，入口见[测试说明](../../tests/README.md)。本篇描述实现机制，不声明本轮文档修改运行了真实交付。
+本地协议夹具可以验证 GitHub 请求参数或错误处理，无法证明当前账号、远端保护规则或真实模型可用。真实工程验收需要专用仓库和明确认证，入口见[测试说明](../../tests/README.md)。

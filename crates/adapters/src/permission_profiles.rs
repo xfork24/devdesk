@@ -367,14 +367,6 @@ struct PermissionPresetCommand<'a> {
 
 impl GlobalStore {
     fn builtin_permission_preset_source(&self) -> Result<PathBuf> {
-        if let Ok(exe) = std::env::current_exe()
-            && let Some(parent) = exe.parent()
-        {
-            let path = parent.join("configurations/permissions/profiles");
-            if path.is_dir() {
-                return permission_preset_directory(&path);
-            }
-        }
         // A copied/read-only executable must not depend on its build checkout.
         // Materialize only packaged preset data, separately from user-selected
         // editable directories. Keep old content-addressed generations intact.

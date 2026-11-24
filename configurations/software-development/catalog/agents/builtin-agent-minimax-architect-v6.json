@@ -1,0 +1,10 @@
+{
+  "type": "agent",
+  "identity": "software-development.agent-minimax-architect",
+  "revision": 6,
+  "name": "Software Architect · MiniMax M3.1 Flash",
+  "scope": "global",
+  "capability_ref": "software-development.capability-architect-minimax-dsh:6",
+  "role_ref": "software-development.role-architect:1",
+  "data": {}
+}

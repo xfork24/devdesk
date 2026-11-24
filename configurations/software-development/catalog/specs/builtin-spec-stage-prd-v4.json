@@ -1,0 +1,47 @@
+{
+  "type": "spec",
+  "identity": "software-development.spec-stage-prd",
+  "revision": 4,
+  "name": "PRD Specification",
+  "scope": "global",
+  "data": {
+    "schema_version": 3,
+    "checks": [
+      {
+        "key": "check-scope-and-traceability",
+        "name": "范围与追溯",
+        "instructions": "判断输入、结论和产物是否符合本规范及本次明确的范围；提供具体材料位置作为依据。",
+        "evidence_required": true
+      },
+      {
+        "key": "check-requirements-completeness",
+        "name": "内容完整性",
+        "instructions": "按本规范正文逐项核对需要的内容、接口和异常行为；证据不足时拒绝通过。",
+        "evidence_required": true
+      },
+      {
+        "key": "check-supporting-evidence",
+        "name": "证据有效性",
+        "instructions": "核对被评审产物版本、实际工具回执和未执行范围；模型的自述不能替代真实测试或 Git 回执。",
+        "evidence_required": true
+      },
+      {
+        "key": "check-required-sections",
+        "name": "必需内容章节",
+        "instructions": "核对被评审文档的实际 Markdown 标题；代码块中的示例不算正文标题。结构成立后仍须完成其余内容检查。",
+        "assertion": {
+          "type": "required_sections",
+          "headings": [
+            "问题与目标",
+            "用户与流程",
+            "范围与非目标",
+            "验收条目",
+            "异常与恢复",
+            "约束与未决问题"
+          ]
+        }
+      }
+    ],
+    "body_file": "stage-prd.md"
+  }
+}

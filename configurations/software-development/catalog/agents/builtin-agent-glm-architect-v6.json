@@ -1,0 +1,10 @@
+{
+  "type": "agent",
+  "identity": "software-development.agent-glm-architect",
+  "revision": 6,
+  "name": "Software Architect · GLM 5.3",
+  "scope": "global",
+  "capability_ref": "software-development.capability-architect-glm-dsh:6",
+  "role_ref": "software-development.role-architect:1",
+  "data": {}
+}

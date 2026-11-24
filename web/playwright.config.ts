@@ -20,7 +20,7 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   webServer: {
-    command: `../target/${profile}/devdesk-host --port ${port}`,
+    command: `../target/fixtures/${profile}/devdesk-host --port ${port} --web-dir dist/fixture`,
     url: `http://127.0.0.1:${port}`,
     reuseExistingServer: false,
     timeout: 30000,

@@ -75,6 +75,7 @@ try {
   for (const tab of [page, second]) tab.setDefaultTimeout(12000);
   await Promise.all([page.goto(base), second.goto(base)]);
   await page.getByText("空领域", { exact: true }).waitFor();
+  await page.getByText("v0.5.0", { exact: true }).waitFor();
   await page.getByRole("button", { name: "核心配置" }).click();
   await page.getByText("GPT-6.2 Sol High", { exact: false }).first().waitFor();
   await page.getByLabel("显示名称").fill("Domain smoke model");

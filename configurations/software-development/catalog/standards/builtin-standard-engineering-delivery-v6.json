@@ -1,0 +1,15 @@
+{
+  "type": "standard",
+  "identity": "software-development.standard-engineering-delivery",
+  "revision": 6,
+  "name": "Engineering Standard",
+  "scope": "global",
+  "root_workflow_refs": [
+    "software-development.workflow-feature-development:6",
+    "software-development.workflow-task-development:5"
+  ],
+  "default_workflow_ref": "software-development.workflow-feature-development:6",
+  "data": {
+    "schema_version": 4
+  }
+}

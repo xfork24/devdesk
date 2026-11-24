@@ -1,5 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import { test } from "./support/kernel";
+import { selectWidths } from "./support/select-sizing";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -125,23 +126,13 @@ test("Standard 决定入口，项目覆盖保存来源与差异并在重载后�
   expect(roleBoxes.length).toBeGreaterThan(1);
   expect(roleBoxes[0].y).toBe(roleBoxes[1].y);
   expect(roleBoxes[1].x).toBeGreaterThan(roleBoxes[0].x);
-  const agentWidths = await roles.locator("select").evaluateAll((nodes) =>
-    nodes.map((node) => {
-      const style = getComputedStyle(node);
-      const context = document.createElement("canvas").getContext("2d")!;
-      context.font = style.font;
-      const longest = Math.max(
-        ...Array.from(
-          node.querySelectorAll("option"),
-          (option) => context.measureText(option.text).width,
-        ),
-      );
-      return { width: node.getBoundingClientRect().width, longest };
-    }),
+  const agentWidths = await Promise.all(
+    (await roles.locator("select").all()).map((select) =>
+      select.evaluate(selectWidths),
+    ),
   );
   for (const agent of agentWidths) {
-    expect(agent.width).toBeGreaterThan(agent.longest + 40);
-    expect(agent.width).toBeLessThan(agent.longest + 80);
+    expect(agent.width).toBeCloseTo(agent.intrinsic, 0);
   }
   await panel.getByText("项目覆盖（0 项）", { exact: true }).click();
   const kind = panel.getByLabel("规范类型", { exact: true });

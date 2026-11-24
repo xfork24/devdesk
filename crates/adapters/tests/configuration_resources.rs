@@ -466,11 +466,16 @@ fn detailed_delivery_catalog_has_content_standards_and_real_diff_ports() {
         .iter()
         .filter(|r| r.r#type == "delivery_type" && r.id != "fixture-delivery-object:1")
         .collect();
-    let manifest: Value =
-        serde_json::from_str(include_str!("../../../configurations/manifest.json")).unwrap();
+    let manifest: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/configuration/engineering-catalog.json"
+    ))
+    .unwrap();
     assert_eq!(
         deliveries.len(),
-        manifest["types"]["delivery_type"].as_array().unwrap().len()
+        manifest["manifest.json"]["types"]["delivery_type"]
+            .as_array()
+            .unwrap()
+            .len()
     );
     for delivery in &deliveries {
         state

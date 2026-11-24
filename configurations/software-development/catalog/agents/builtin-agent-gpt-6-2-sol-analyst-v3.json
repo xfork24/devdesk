@@ -1,0 +1,10 @@
+{
+  "type": "agent",
+  "identity": "software-development.agent-gpt-6-2-sol-analyst",
+  "revision": 3,
+  "name": "Requirements Analyst · GPT-6.2 Sol High",
+  "scope": "global",
+  "role_ref": "software-development.role-analyst:1",
+  "capability_ref": "software-development.capability-analyst-gpt-6-2-sol-codex:3",
+  "data": {}
+}

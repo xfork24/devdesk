@@ -147,14 +147,6 @@ pub struct ExecutionPermissions {
     pub limits: ResourceLimits,
     pub enforcement: PermissionEnforcementPlan,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PermissionDecision {
-    pub allowed: bool,
-    pub layer: String,
-    pub rule: String,
-    pub reason: String,
-}
 impl PermissionPolicy {
     pub fn full_access() -> Self {
         Self {

@@ -5,7 +5,7 @@ Requires an already running acceptance host with dedicated OAuth/Keychain creden
 import argparse,http.cookiejar,json,time,urllib.request,uuid
 from pathlib import Path
 p=argparse.ArgumentParser();p.add_argument('--url',default='http://127.0.0.1:51751');p.add_argument('--provider',choices=['codex','dsh'],required=True);p.add_argument('--github-repo');p.add_argument('--output',type=Path,required=True);a=p.parse_args()
-c=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()));c.open(a.url+'/').close()
+c=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()));c.open(urllib.request.Request(a.url+'/session', b'{}', {'Content-Type': 'application/json'})).close()
 def rpc(method,params=None):
  request=urllib.request.Request(a.url+'/rpc',data=json.dumps({'jsonrpc':'2.0','id':1,'method':method,'params':params or {}}).encode(),headers={'Content-Type':'application/json'})
  result=json.load(c.open(request,timeout=40))

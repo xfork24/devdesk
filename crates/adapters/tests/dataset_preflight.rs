@@ -119,14 +119,13 @@ fn the_previous_intent_layouts_are_rejected_without_changing_project_or_global_f
 fn same_numbered_but_different_resource_layout_is_rejected_without_repair() {
     let root = tempfile::tempdir().unwrap();
     GlobalStore::open(root.path()).unwrap();
-    let conn = rusqlite::Connection::open(root.path().join("global.sqlite3")).unwrap();
-    conn.execute(
-        "UPDATE dataset_layout SET contract='single-host-resource-v1' WHERE id=1",
-        [],
-    )
-    .unwrap();
-    drop(conn);
-    reject_unchanged(root.path(), "数据集资源协议不兼容");
+    for legacy in ["single-host-resource-v1", "single-host-resource-v2"] {
+        let conn = rusqlite::Connection::open(root.path().join("global.sqlite3")).unwrap();
+        conn.execute("UPDATE dataset_layout SET contract=?1 WHERE id=1", [legacy])
+            .unwrap();
+        drop(conn);
+        reject_unchanged(root.path(), "数据集资源协议不兼容");
+    }
 }
 
 #[test]

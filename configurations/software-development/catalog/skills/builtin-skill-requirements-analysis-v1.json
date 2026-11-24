@@ -1,0 +1,11 @@
+{
+  "type": "skill",
+  "identity": "software-development.skill-requirements-analysis",
+  "revision": 1,
+  "name": "Requirements Analysis",
+  "scope": "global",
+  "data": {
+    "rules": [],
+    "body_file": "requirements-analysis.md"
+  }
+}

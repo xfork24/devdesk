@@ -1,0 +1,10 @@
+{
+  "type": "role",
+  "identity": "software-development.role-developer",
+  "revision": 1,
+  "name": "开发",
+  "scope": "global",
+  "data": {
+    "instructions_file": "developer.md"
+  }
+}

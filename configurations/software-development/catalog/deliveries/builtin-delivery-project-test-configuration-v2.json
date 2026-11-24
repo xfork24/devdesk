@@ -1,0 +1,44 @@
+{
+  "type": "delivery_type",
+  "identity": "software-development.delivery-project-test-configuration",
+  "revision": 2,
+  "name": "Project Test Configuration",
+  "scope": "global",
+  "data": {
+    "format": "json",
+    "producer": {
+      "kind": "agent"
+    },
+    "content_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "language",
+        "independent_runner",
+        "regression"
+      ],
+      "properties": {
+        "language": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "independent_runner": {
+          "enum": [
+            "node_test",
+            "python_unittest"
+          ]
+        },
+        "regression": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      }
+    }
+  },
+  "spec_refs": [
+    "software-development.spec-platform-evidence:2"
+  ]
+}

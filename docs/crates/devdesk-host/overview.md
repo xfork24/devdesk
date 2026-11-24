@@ -7,6 +7,7 @@ Host 将应用装配成可运行的服务：打开数据集、选择项目 Engin
 | [启动、装配与生命周期](workspace-and-lifecycle.md) | main.rs、workspace.rs、lifecycle.rs |
 | [HTTP、RPC 与事件](http-and-security.md) | main.rs、event_hub.rs、各功能请求模块 |
 | [后台调度](background-scheduling.md) | Workspace::tick、background.rs |
+| [领域生命周期及客户端贡献](../../design/domain-packages.md) | domains.rs、workspace.rs |
 
 Web 通过协议调用 Host。Host 没有所有浏览器共用的 active project；每个工程请求明确指定项目。跨项目维护和调度由 Host 负责，但单个项目的业务规则由其 Engine 执行。
 

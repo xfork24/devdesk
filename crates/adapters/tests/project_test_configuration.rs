@@ -4,6 +4,10 @@ use devdesk_domain::*;
 use serde_json::json;
 use std::{fs, path::Path, process::Command};
 
+// Exercise the exact historical runtime with no Web build dependency.
+const SOFTWARE_DOMAIN_FIXTURE: &[u8] =
+    include_bytes!("../../../tests/fixtures/domain-packages/software-development-0.3.0.zip");
+
 fn git(repo: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
         .args([
@@ -232,20 +236,9 @@ fn software_domain_worker_matches_legacy_test_discovery() {
     use std::collections::BTreeSet;
 
     let temporary = tempfile::tempdir().unwrap();
-    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../configurations/software-development/build.py");
-    let archive = temporary.path().join("software-development.zip");
-    assert!(
-        Command::new("python3")
-            .arg(source)
-            .arg(&archive)
-            .status()
-            .unwrap()
-            .success()
-    );
     devdesk_adapters::seed_factory_configuration(&mut EngineeringState::default());
     let packages = DomainPackages::open(temporary.path()).unwrap();
-    let installed = packages.install(&fs::read(archive).unwrap()).unwrap();
+    let installed = packages.install(SOFTWARE_DOMAIN_FIXTURE).unwrap();
     let digest = installed["digest"].as_str().unwrap();
     let trusted = BTreeSet::from([digest.to_owned()]);
     let epoch = packages.activate(digest, 0, &trusted, |_| Ok(())).unwrap();
@@ -422,19 +415,8 @@ fn software_domain_branch_is_frozen_before_git_writes_and_inspected_without_rese
             },
         )
         .unwrap();
-    let archive = root.path().join("software-development.zip");
-    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../configurations/software-development/build.py");
-    assert!(
-        Command::new("python3")
-            .arg(source)
-            .arg(&archive)
-            .status()
-            .unwrap()
-            .success()
-    );
     let packages = DomainPackages::open(root.path()).unwrap();
-    let installed = packages.install(&fs::read(archive).unwrap()).unwrap();
+    let installed = packages.install(SOFTWARE_DOMAIN_FIXTURE).unwrap();
     let digest = installed["digest"].as_str().unwrap();
     let trusted = BTreeSet::from([digest.to_owned()]);
     packages.activate(digest, 0, &trusted, |_| Ok(())).unwrap();

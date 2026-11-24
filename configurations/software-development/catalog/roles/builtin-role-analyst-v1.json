@@ -1,0 +1,10 @@
+{
+  "type": "role",
+  "identity": "software-development.role-analyst",
+  "revision": 1,
+  "name": "需求分析师",
+  "scope": "global",
+  "data": {
+    "instructions_file": "analyst.md"
+  }
+}

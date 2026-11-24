@@ -1,0 +1,37 @@
+{
+  "type": "permission_profile",
+  "identity": "software-development.simplified-permission-read",
+  "revision": 2,
+  "name": "Read-Only Workflow Step",
+  "scope": "global",
+  "data": {
+    "policy": {
+      "approval": "never",
+      "filesystem": {
+        "mode": "scoped",
+        "rules": [
+          {
+            "path": "/",
+            "access": "read"
+          },
+          {
+            "path": "/work",
+            "access": "read"
+          }
+        ]
+      },
+      "network": {
+        "mode": "enabled"
+      },
+      "tools": {
+        "mode": "all_available"
+      },
+      "tool_refs": [
+        "builtin-tool-workflow-outputs-read:3",
+        "builtin-tool-spec-lint:2"
+      ]
+    },
+    "schema_version": 2,
+    "target_kind": "harness"
+  }
+}

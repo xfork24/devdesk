@@ -1,0 +1,19 @@
+{
+  "type": "delivery_type",
+  "identity": "software-development.delivery-pull-request",
+  "revision": 2,
+  "name": "Pull Request Record",
+  "scope": "global",
+  "data": {
+    "format": "json",
+    "producer": {
+      "kind": "platform",
+      "tools": [
+        "git.delivery.open"
+      ]
+    }
+  },
+  "spec_refs": [
+    "software-development.spec-platform-evidence:2"
+  ]
+}

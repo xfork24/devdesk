@@ -32,11 +32,9 @@
 
 ## 配置存放在哪里
 
-仓库的 [configurations](../../configurations/README.md) 是出厂资源；[manifest](../../configurations/manifest.json) 决定实际发布哪些修订。目录中存在某个文件，不代表它会被加载。
+[核心 manifest](../../configurations/core/manifest.json) 管理 Host 自带的配置，[软件开发 manifest](../../configurations/software-development/catalog/manifest.json) 管理领域 ZIP 的配置。两种目录分别发布。已安装领域的活动代次和项目绑定决定附加配置何时可见。
 
-基础组件页的 Tools 管理 HTTP 动作。Harness Tools 展示各 Harness 的原生工具组。Internal Tools 展示 DevDesk 平台工具的精确修订、输入与输出合同、Capability 引用和可跳转的 Workflow 步骤。
-
-构建时 Host 将出厂资源嵌入程序，初始化或重置时再导入数据集。运行时以 SQLite 的 `source_definitions` 和已保存的绑定为准。程序从这些记录解析运行所需视图，并用缓存和列表摘要加速读取。
+基础组件页可查看模型、运行时和工具。领域项目提供与自身范围匹配的编辑器及查询。运行时从 SQLite 的 `source_definitions` 和已保存的绑定解析所需视图。需要恢复的工作项继续使用当时冻结的配置与包摘要。
 
 停用 Model 等源定义、删除接入或预览模板重置时，Host 从各项目的只读配置目录核对引用或计算预览。项目仍通过 Capability、Agent 或其他配置间接使用该定义时，停用会被拒绝。停用保留原修订，供已冻结的执行读取。完整重置只重写依赖配置源的历史正文和受影响的活动工作流。已有会话引用的 Agent 修订及其依赖保留在历史目录中。
 

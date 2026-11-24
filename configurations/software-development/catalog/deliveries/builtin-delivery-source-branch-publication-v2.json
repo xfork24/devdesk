@@ -1,0 +1,19 @@
+{
+  "type": "delivery_type",
+  "identity": "software-development.delivery-source-branch-publication",
+  "revision": 2,
+  "name": "Source Branch Publication Receipt",
+  "scope": "global",
+  "data": {
+    "format": "json",
+    "producer": {
+      "kind": "platform",
+      "tools": [
+        "git.source.publish"
+      ]
+    }
+  },
+  "spec_refs": [
+    "software-development.spec-platform-evidence:2"
+  ]
+}

@@ -1139,6 +1139,7 @@ footer {
     padding: 20px 8px;
   }
   .sidebar .brand strong,
+  .sidebar .brand small,
   .sidebar-caption,
   .project-selector,
   .sidebar-bottom {

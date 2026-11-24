@@ -1,0 +1,19 @@
+{
+  "type": "spec",
+  "identity": "software-development.spec-platform-evidence",
+  "revision": 2,
+  "name": "Platform Evidence Specification",
+  "scope": "global",
+  "data": {
+    "schema_version": 3,
+    "checks": [
+      {
+        "key": "check-version-and-operation-provenance",
+        "name": "版本与来源",
+        "instructions": "核对确切版本、原始操作回执、生产者与真实终止事实。",
+        "evidence_required": true
+      }
+    ],
+    "body_file": "platform-evidence.md"
+  }
+}

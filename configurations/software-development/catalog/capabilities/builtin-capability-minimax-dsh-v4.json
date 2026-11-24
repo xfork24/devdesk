@@ -1,0 +1,17 @@
+{
+  "type": "capability",
+  "identity": "software-development.capability-minimax-dsh",
+  "revision": 4,
+  "name": "General Engineering Capability · MiniMax M3.1 Flash",
+  "scope": "global",
+  "harness_ref": "builtin-harness-dsh-multi-provider:2",
+  "model_ref": "builtin-model-minimax-m3-1-flash:1",
+  "skills": [
+    "software-development.skill-engineering-context:4",
+    "software-development.skill-software-delivery:1"
+  ],
+  "tools": [
+    "builtin-tool-dsh-native:2"
+  ],
+  "data": {}
+}

@@ -1,0 +1,18 @@
+{
+  "type": "capability",
+  "identity": "software-development.capability-sol-high-codex",
+  "revision": 6,
+  "name": "General Engineering Capability · GPT-6.2 Sol High",
+  "scope": "global",
+  "harness_ref": "builtin-harness-codex-managed:2",
+  "model_ref": "builtin-model-gpt-6-2-sol-high:1",
+  "skills": [
+    "software-development.skill-engineering-context:4",
+    "software-development.skill-software-delivery:1"
+  ],
+  "tools": [
+    "builtin-tool-codex-native:2",
+    "builtin-tool-workflow-outputs-read:3"
+  ],
+  "data": {}
+}

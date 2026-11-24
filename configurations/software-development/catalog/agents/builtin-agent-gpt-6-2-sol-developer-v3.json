@@ -1,0 +1,10 @@
+{
+  "type": "agent",
+  "identity": "software-development.agent-gpt-6-2-sol-developer",
+  "revision": 3,
+  "name": "Software Developer · GPT-6.2 Sol High",
+  "scope": "global",
+  "role_ref": "software-development.role-developer:1",
+  "capability_ref": "software-development.capability-developer-gpt-6-2-sol-codex:3",
+  "data": {}
+}

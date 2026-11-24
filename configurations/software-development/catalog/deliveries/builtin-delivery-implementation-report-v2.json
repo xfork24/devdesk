@@ -1,0 +1,16 @@
+{
+  "type": "delivery_type",
+  "identity": "software-development.delivery-implementation-report",
+  "revision": 2,
+  "name": "Implementation Report",
+  "scope": "global",
+  "spec_refs": [
+    "software-development.spec-implementation-report:2"
+  ],
+  "data": {
+    "format": "markdown",
+    "producer": {
+      "kind": "agent"
+    }
+  }
+}

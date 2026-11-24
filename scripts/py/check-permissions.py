@@ -11,7 +11,12 @@ for name,entry in manifest['assets'].items():
  assert hashlib.sha256(path.read_bytes()).hexdigest()==entry['sha256'],name
 for backend in manifest['backends']:
  for name in backend['assets']:assert name in manifest['assets'],name
-presets=[json.loads(p.read_text()) for p in sorted((root/'configurations/permissions/profiles').glob('*.json'))]
+catalogs = [root/'configurations/core', root/'configurations/software-development/catalog']
+presets = [
+    json.loads((catalog/path).read_text())
+    for catalog in catalogs
+    for path in json.loads((catalog/'manifest.json').read_text())['types']['permission_profile']
+]
 assert len({(p['identity'],p['revision']) for p in presets})==len(presets)
 for source in presets:
  assert source['type']=='permission_profile' and source['revision']>=1

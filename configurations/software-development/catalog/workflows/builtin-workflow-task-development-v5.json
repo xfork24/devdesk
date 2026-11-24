@@ -1,0 +1,1012 @@
+{
+  "type": "workflow",
+  "identity": "software-development.workflow-task-development",
+  "revision": 5,
+  "name": "Task Development",
+  "scope": "global",
+  "data": {
+    "schema_version": 6,
+    "orchestrator_role_ref": "software-development.role-project-manager:1",
+    "stages": [
+      {
+        "key": "tests",
+        "name": "独立测试",
+        "description": "按冻结依赖及真实回执推进本阶段；内部平台节点可在有界委托中连续执行。"
+      },
+      {
+        "key": "implementation",
+        "name": "实施",
+        "description": "按冻结依赖及真实回执推进本阶段；内部平台节点可在有界委托中连续执行。"
+      },
+      {
+        "key": "acceptance",
+        "name": "验收",
+        "description": "按冻结依赖及真实回执推进本阶段；内部平台节点可在有界委托中连续执行。"
+      },
+      {
+        "key": "submission",
+        "name": "提交",
+        "description": "按冻结依赖及真实回执推进本阶段；内部平台节点可在有界委托中连续执行。"
+      },
+      {
+        "key": "integration",
+        "name": "合入",
+        "description": "按冻结依赖及真实回执推进本阶段；内部平台节点可在有界委托中连续执行。"
+      }
+    ],
+    "inputs": {
+      "item": {
+        "delivery_ref": "software-development.delivery-task-record:3"
+      },
+      "design": {
+        "delivery_ref": "software-development.delivery-design-document:2"
+      },
+      "test_configuration": {
+        "delivery_ref": "software-development.delivery-project-test-configuration:2"
+      }
+    },
+    "steps": [
+      {
+        "key": "workspace",
+        "name": "Prepare Task Baseline",
+        "stage": "tests",
+        "dependencies": [],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "software-development.tool-workspace-current:2",
+          "arguments": {
+            "owner_id": {
+              "type": "source",
+              "source": {
+                "step": "$input",
+                "port": "item",
+                "pointer": "/id"
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "software-development.delivery-workspace-snapshot:3"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7500,
+          "retry_limit": 3
+        }
+      },
+      {
+        "key": "tests",
+        "name": "Design Independent Behavioral Tests",
+        "stage": "tests",
+        "dependencies": [
+          "workspace"
+        ],
+        "executor": {
+          "type": "agent",
+          "role_ref": "software-development.role-tester:1"
+        },
+        "inputs": {
+          "task": {
+            "type": "source",
+            "source": {
+              "step": "$input",
+              "port": "item",
+              "pointer": ""
+            }
+          },
+          "design": {
+            "type": "source",
+            "source": {
+              "step": "$input",
+              "port": "design",
+              "pointer": ""
+            }
+          },
+          "workspace": {
+            "type": "source",
+            "source": {
+              "step": "workspace",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "test_configuration": {
+            "type": "source",
+            "source": {
+              "step": "$input",
+              "port": "test_configuration",
+              "pointer": ""
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "software-development.delivery-test-design:2"
+          }
+        },
+        "task_instructions": "读取冻结输入及 runtime_context，不自行执行 Git、替代平台测试回执或代签 Human。原始输出、内容版本与原生 commandExecution 由平台保存，按引用定位；说明只记录有助于下游的结论，不复制源码和日志全文。 本流程独立验收断言及辅助文件统一放在 tests/.devdesk/<本 Task 完整 UUID>/ 下；此目录仅用于流程验证，不属于项目正式测试代码，不写到 tests/ 的其他位置。",
+        "required_skill_refs": [
+          "software-development.skill-test-design:3"
+        ],
+        "budget": {
+          "max_turns": 30,
+          "timeout_seconds": 1800,
+          "retry_limit": 3
+        },
+        "spec_refs": [
+          "software-development.spec-test-design:2"
+        ],
+        "harness_permission_ref": "software-development.simplified-permission-tests:3",
+        "access": {
+          "workspace_input": "workspace"
+        }
+      },
+      {
+        "key": "tests_snapshot",
+        "name": "Capture Test Checkpoint",
+        "stage": "tests",
+        "dependencies": [
+          "tests"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "software-development.simplified-tool-checkpoint:2",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "workspace",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "allowed_paths": {
+              "type": "constant",
+              "value": [
+                "."
+              ]
+            },
+            "interfaces": {
+              "type": "source",
+              "source": {
+                "step": "tests",
+                "port": "result",
+                "pointer": "/interfaces"
+              }
+            },
+            "include_diff": {
+              "type": "constant",
+              "value": true
+            }
+          },
+          "output_mapping": {
+            "result": "",
+            "diff": "/changes/diff"
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "software-development.delivery-code-checkpoint:2"
+          },
+          "diff": {
+            "delivery_ref": "software-development.delivery-git-diff:2"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7500,
+          "retry_limit": 3
+        }
+      },
+      {
+        "key": "red",
+        "name": "Run Red Tests",
+        "stage": "tests",
+        "dependencies": [
+          "tests_snapshot"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "software-development.simplified-tool-tests-run:3",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "tests_snapshot",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "recipe": {
+              "type": "source",
+              "source": {
+                "step": "tests",
+                "port": "result",
+                "pointer": "/recipe"
+              }
+            },
+            "expect_assertion_failure": {
+              "type": "constant",
+              "value": true
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "software-development.delivery-independent-test-report:2"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7200,
+          "retry_limit": 3
+        },
+        "completion": {
+          "op": "all",
+          "rules": [
+            {
+              "op": "equals",
+              "source": {
+                "step": "red",
+                "port": "result",
+                "pointer": "/status"
+              },
+              "value": "succeeded"
+            },
+            {
+              "op": "equals",
+              "source": {
+                "step": "red",
+                "port": "result",
+                "pointer": "/expected_failure"
+              },
+              "value": true
+            }
+          ]
+        }
+      },
+      {
+        "key": "implementation",
+        "name": "Implement and Verify Task",
+        "stage": "implementation",
+        "dependencies": [
+          "red"
+        ],
+        "executor": {
+          "type": "agent",
+          "role_ref": "software-development.role-developer:1"
+        },
+        "inputs": {
+          "task": {
+            "type": "source",
+            "source": {
+              "step": "$input",
+              "port": "item",
+              "pointer": ""
+            }
+          },
+          "design": {
+            "type": "source",
+            "source": {
+              "step": "$input",
+              "port": "design",
+              "pointer": ""
+            }
+          },
+          "recipe": {
+            "type": "source",
+            "source": {
+              "step": "tests",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "red": {
+            "type": "source",
+            "source": {
+              "step": "red",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "workspace": {
+            "type": "source",
+            "source": {
+              "step": "tests_snapshot",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "test_configuration": {
+            "type": "source",
+            "source": {
+              "step": "$input",
+              "port": "test_configuration",
+              "pointer": ""
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "software-development.delivery-implementation-report:2"
+          }
+        },
+        "task_instructions": "读取冻结输入及 runtime_context，不自行执行 Git、替代平台测试回执或代签 Human。原始输出、内容版本与原生 commandExecution 由平台保存，按引用定位；说明只记录有助于下游的结论，不复制源码和日志全文。 流程截图、日志、浏览器验收脚本、验证清单和临时验收依赖仅放在 evidence/.devdesk/<本 Task 完整 UUID>/ 下。它们保留在 Task/Feature 分支，不进入最终代码 PR。项目正式测试、源码、依赖和文档应放在项目约定位置并正常交付，不得混入上述流程材料目录。",
+        "required_skill_refs": [
+          "software-development.skill-test-driven-development:1"
+        ],
+        "budget": {
+          "max_turns": 30,
+          "timeout_seconds": 1800,
+          "retry_limit": 3
+        },
+        "spec_refs": [
+          "software-development.spec-implementation-report:2"
+        ],
+        "harness_permission_ref": "software-development.simplified-permission-implementation:3",
+        "access": {
+          "workspace_input": "workspace"
+        }
+      },
+      {
+        "key": "implementation_snapshot",
+        "name": "Capture Implementation Checkpoint and Diff",
+        "stage": "implementation",
+        "dependencies": [
+          "implementation"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "software-development.simplified-tool-checkpoint:2",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "tests_snapshot",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "allowed_paths": {
+              "type": "constant",
+              "value": [
+                "."
+              ]
+            },
+            "protected_paths": {
+              "type": "constant",
+              "value": [
+                "tests/.devdesk"
+              ]
+            },
+            "include_diff": {
+              "type": "constant",
+              "value": true
+            },
+            "diff_base": {
+              "type": "source",
+              "source": {
+                "step": "workspace",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          },
+          "output_mapping": {
+            "result": "",
+            "diff": "/changes/diff",
+            "scope_diff": "/scope_changes/diff"
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "software-development.delivery-code-checkpoint:2"
+          },
+          "diff": {
+            "delivery_ref": "software-development.delivery-git-diff:2"
+          },
+          "scope_diff": {
+            "delivery_ref": "software-development.delivery-git-diff:2"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7500,
+          "retry_limit": 3
+        }
+      },
+      {
+        "key": "green",
+        "name": "Run Independent Green Tests",
+        "stage": "implementation",
+        "dependencies": [
+          "implementation_snapshot"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "software-development.simplified-tool-tests-run:3",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "implementation_snapshot",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "recipe": {
+              "type": "source",
+              "source": {
+                "step": "tests",
+                "port": "result",
+                "pointer": "/recipe"
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "software-development.delivery-independent-test-report:2"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7200,
+          "retry_limit": 3
+        },
+        "completion": {
+          "op": "all",
+          "rules": [
+            {
+              "op": "equals",
+              "source": {
+                "step": "green",
+                "port": "result",
+                "pointer": "/status"
+              },
+              "value": "succeeded"
+            },
+            {
+              "op": "equals",
+              "source": {
+                "step": "green",
+                "port": "result",
+                "pointer": "/expected_failure"
+              },
+              "value": false
+            }
+          ]
+        }
+      },
+      {
+        "key": "review",
+        "name": "Review Task Changes Independently",
+        "stage": "acceptance",
+        "dependencies": [
+          "green"
+        ],
+        "executor": {
+          "type": "agent",
+          "role_ref": "software-development.role-reviewer:1"
+        },
+        "inputs": {
+          "task": {
+            "type": "source",
+            "source": {
+              "step": "$input",
+              "port": "item",
+              "pointer": ""
+            }
+          },
+          "implementation": {
+            "type": "source",
+            "source": {
+              "step": "implementation",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "red": {
+            "type": "source",
+            "source": {
+              "step": "red",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "green": {
+            "type": "source",
+            "source": {
+              "step": "green",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "workspace": {
+            "type": "source",
+            "source": {
+              "step": "implementation_snapshot",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "diff": {
+            "type": "source",
+            "source": {
+              "step": "implementation_snapshot",
+              "port": "scope_diff",
+              "pointer": ""
+            }
+          },
+          "changes": {
+            "type": "source",
+            "source": {
+              "step": "implementation_snapshot",
+              "port": "result",
+              "pointer": "/changes"
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "software-development.delivery-review:4",
+            "content_checks": true
+          }
+        },
+        "task_instructions": "读取冻结输入及 runtime_context，不自行执行 Git、替代平台测试回执或代签 Human。原始输出、内容版本与原生 commandExecution 由平台保存，按引用定位；说明只记录有助于下游的结论，不复制源码和日志全文。",
+        "required_skill_refs": [
+          "software-development.skill-code-review:1"
+        ],
+        "budget": {
+          "max_turns": 30,
+          "timeout_seconds": 1800,
+          "retry_limit": 3
+        },
+        "spec_refs": [
+          "software-development.spec-task-code-review:2"
+        ],
+        "completion": {
+          "op": "all",
+          "rules": [
+            {
+              "op": "equals",
+              "source": {
+                "step": "review",
+                "port": "result",
+                "pointer": "/approve"
+              },
+              "value": true
+            },
+            {
+              "op": "independent",
+              "author": "implementation",
+              "reviewer": "review"
+            }
+          ]
+        },
+        "harness_permission_ref": "software-development.simplified-permission-read:2",
+        "access": {
+          "workspace_input": "workspace"
+        }
+      },
+      {
+        "key": "regression",
+        "name": "Run Task Source Regression Tests",
+        "stage": "acceptance",
+        "dependencies": [
+          "review"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "software-development.simplified-tool-project-tests:3",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "implementation_snapshot",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "software-development.delivery-regression-test-receipt:2"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7200,
+          "retry_limit": 3
+        },
+        "completion": {
+          "op": "all",
+          "rules": [
+            {
+              "op": "equals",
+              "source": {
+                "step": "regression",
+                "port": "result",
+                "pointer": "/status"
+              },
+              "value": "succeeded"
+            },
+            {
+              "op": "equals",
+              "source": {
+                "step": "regression",
+                "port": "result",
+                "pointer": "/expected_failure"
+              },
+              "value": false
+            }
+          ]
+        }
+      },
+      {
+        "key": "source_publish",
+        "name": "Commit and Push Task Branch",
+        "stage": "submission",
+        "dependencies": [
+          "regression"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "software-development.simplified-tool-source-publish:2",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "implementation_snapshot",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "software-development.delivery-source-branch-publication:2"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7500,
+          "retry_limit": 3
+        }
+      },
+      {
+        "key": "target",
+        "name": "Resolve Feature Branch Baseline",
+        "stage": "submission",
+        "dependencies": [
+          "source_publish"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "software-development.simplified-tool-target:2",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "implementation_snapshot",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "software-development.delivery-target-branch-baseline:2"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7500,
+          "retry_limit": 3
+        }
+      },
+      {
+        "key": "publication",
+        "name": "Open Task Pull Request",
+        "stage": "submission",
+        "dependencies": [
+          "target"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "software-development.simplified-tool-delivery-open:3",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "implementation_snapshot",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "target": {
+              "type": "source",
+              "source": {
+                "step": "target",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "software-development.delivery-pull-request:2"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7500,
+          "retry_limit": 3
+        }
+      },
+      {
+        "key": "merge_regression",
+        "name": "Run Merge Candidate Regression Tests",
+        "stage": "integration",
+        "dependencies": [
+          "publication"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "software-development.simplified-tool-project-tests:3",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "publication",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "software-development.delivery-regression-test-receipt:2"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7200,
+          "retry_limit": 3
+        },
+        "completion": {
+          "op": "all",
+          "rules": [
+            {
+              "op": "equals",
+              "source": {
+                "step": "merge_regression",
+                "port": "result",
+                "pointer": "/status"
+              },
+              "value": "succeeded"
+            },
+            {
+              "op": "equals",
+              "source": {
+                "step": "merge_regression",
+                "port": "result",
+                "pointer": "/expected_failure"
+              },
+              "value": false
+            }
+          ]
+        }
+      },
+      {
+        "key": "merge",
+        "name": "Merge Task and Record Completion",
+        "stage": "integration",
+        "dependencies": [
+          "merge_regression"
+        ],
+        "executor": {
+          "type": "tool",
+          "tool_ref": "software-development.simplified-tool-delivery-merge:2",
+          "arguments": {
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "implementation_snapshot",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "publication": {
+              "type": "source",
+              "source": {
+                "step": "publication",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          }
+        },
+        "outputs": {
+          "result": {
+            "delivery_ref": "software-development.delivery-merge-sync:2"
+          }
+        },
+        "budget": {
+          "max_turns": 1,
+          "timeout_seconds": 7500,
+          "retry_limit": 3
+        }
+      }
+    ],
+    "outputs": {
+      "result": {
+        "step": "merge",
+        "port": "result",
+        "pointer": ""
+      }
+    },
+    "completion": {
+      "op": "all",
+      "rules": [
+        {
+          "op": "before",
+          "first": "red",
+          "second": "implementation"
+        },
+        {
+          "op": "independent",
+          "author": "tests",
+          "reviewer": "implementation"
+        },
+        {
+          "op": "independent",
+          "author": "implementation",
+          "reviewer": "review"
+        },
+        {
+          "op": "equals",
+          "source": {
+            "step": "merge",
+            "port": "result",
+            "pointer": "/synchronized"
+          },
+          "value": true
+        },
+        {
+          "op": "equals",
+          "source": {
+            "step": "merge",
+            "port": "result",
+            "pointer": "/pull_request/merged"
+          },
+          "value": true
+        }
+      ]
+    },
+    "scheduling": {
+      "max_concurrency": 4,
+      "max_actions_per_tick": 16,
+      "lease_seconds": 60,
+      "max_retries": 0,
+      "retry_error_codes": [],
+      "agent": {
+        "max_turns_per_wakeup": 8,
+        "max_tool_calls_per_turn": 64,
+        "timeout_seconds": 600
+      }
+    },
+    "rework_policies": {
+      "task_implementation": {
+        "entry_step": "implementation",
+        "allowed_targets": [
+          "producer_step",
+          "after_confirmed_checkpoint",
+          "child_workflow"
+        ],
+        "max_reworks": 3
+      }
+    },
+    "review_policies": {
+      "review": {
+        "review_step": "review",
+        "rejected_when": {
+          "op": "equals",
+          "source": {
+            "step": "review",
+            "port": "result",
+            "pointer": "/approve"
+          },
+          "value": false
+        },
+        "rework_policy": "task_implementation",
+        "allow_human_approval": true
+      }
+    },
+    "operation_evidence": {
+      "git.delivery": {
+        "verifier": "software-development.delivery.authorize",
+        "sources": {
+          "review": {
+            "source": {
+              "step": "review",
+              "port": "result",
+              "pointer": ""
+            }
+          },
+          "source_publication": {
+            "source": {
+              "step": "source_publish",
+              "port": "result",
+              "pointer": ""
+            },
+            "platform_operation": "git.source.publish"
+          },
+          "source_regression": {
+            "source": {
+              "step": "regression",
+              "port": "result",
+              "pointer": ""
+            },
+            "platform_operation": "tests.project"
+          },
+          "candidate_regression": {
+            "source": {
+              "step": "merge_regression",
+              "port": "result",
+              "pointer": ""
+            },
+            "platform_operation": "tests.project"
+          },
+          "delivery_receipt": {
+            "source": {
+              "step": "merge",
+              "port": "result",
+              "pointer": ""
+            },
+            "platform_operation": "git.delivery.merge"
+          },
+          "green": {
+            "source": {
+              "step": "green",
+              "port": "result",
+              "pointer": ""
+            },
+            "platform_operation": "tests.run"
+          }
+        },
+        "checks": {
+          "workspace.target": [
+            "review"
+          ],
+          "git.source.publish": [
+            "review",
+            "source_regression"
+          ],
+          "git.delivery.open": [
+            "review",
+            "source_publication",
+            "source_regression"
+          ],
+          "git.delivery.merge": [
+            "review",
+            "source_publication",
+            "source_regression",
+            "candidate_regression",
+            "green"
+          ],
+          "$completion": [
+            "delivery_receipt"
+          ]
+        }
+      }
+    }
+  }
+}

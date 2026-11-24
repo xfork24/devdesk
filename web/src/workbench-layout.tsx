@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Layers3 } from "lucide-react";
+import { version } from "../package.json";
 
 const ExtensionNavigation = createContext<HTMLElement | null>(null);
 
@@ -20,6 +21,7 @@ export function WorkbenchLayout({
         <div className="brand">
           <Layers3 size={26} />
           <strong>DevDesk</strong>
+          <small className="muted">v{version}</small>
         </div>
         {navigation}
         <div ref={setOutlet} className="extension-navigation" />

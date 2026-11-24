@@ -1806,7 +1806,8 @@ pub fn execution_adapters(root: &Path) -> Result<ports::ExecutionAdapters> {
     })
 }
 
-/// Product/test composition boundary for callers constructing a state without a Store.
+/// Test fixture composition for callers constructing a state without a Store.
+#[cfg(any(test, feature = "test-fixtures"))]
 pub fn seed_factory_configuration(state: &mut EngineeringState) {
     factory_bundle::initialize().expect("validated packaged factory resources");
     devdesk_core::seed_configuration(state);

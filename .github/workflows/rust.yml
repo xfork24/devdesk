@@ -1,5 +1,3 @@
-# Rust kernel gate: format, clippy, tests and the portable config checks.
-# web/dist must exist before cargo runs because the host embeds it via RustEmbed.
 name: rust
 
 on:
@@ -30,13 +28,6 @@ jobs:
           cache: pip
           cache-dependency-path: scripts/check/requirements.txt
       - run: python3 -m pip install -r scripts/check/requirements.txt
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - run: npm --prefix web ci
-      - run: npm --prefix web run build
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache: false
@@ -51,4 +42,3 @@ jobs:
       - run: ./scripts/check/check-defaults.sh
       - run: ./scripts/check/check-permissions.sh
       - run: python3 tests/entrypoints/permission_schema.py
-      - run: node --test tests/entrypoints/ci_workflow_gate.mjs

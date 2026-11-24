@@ -1,0 +1,10 @@
+{
+  "type": "agent",
+  "identity": "software-development.agent-minimax-project-manager",
+  "revision": 11,
+  "name": "Project Manager · MiniMax M3.1 Flash",
+  "scope": "global",
+  "capability_ref": "software-development.capability-project-manager-minimax-dsh:11",
+  "role_ref": "software-development.role-project-manager:1",
+  "data": {}
+}

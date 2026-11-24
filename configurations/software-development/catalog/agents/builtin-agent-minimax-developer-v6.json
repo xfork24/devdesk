@@ -1,0 +1,10 @@
+{
+  "type": "agent",
+  "identity": "software-development.agent-minimax-developer",
+  "revision": 6,
+  "name": "Software Developer · MiniMax M3.1 Flash",
+  "scope": "global",
+  "capability_ref": "software-development.capability-developer-minimax-dsh:6",
+  "role_ref": "software-development.role-developer:1",
+  "data": {}
+}

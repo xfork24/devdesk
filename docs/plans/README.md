@@ -6,8 +6,8 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
-| [领域插件化改造](domain-plugins/PLAN.md) | [实施与验证](domain-plugins/EXECUTION.md) | 文稿对象归属和三种驱动通过。P4 已接入软件开发候选包的测试识别和 worktree 分支策略 |
-| [工作台与存储性能优化](workbench-storage-performance/PLAN.md) | [工作台延迟评估](../design/performance/workbench-latency-2026-11-23.md)、[阶段验收](workbench-storage-performance/VALIDATION.md) | P0、P1 及 Web 分包已验收。完成本机负载诊断，继续使用 SQLite。正式 100 前端容量验收待独立负载环境 |
+| [领域插件化改造](domain-plugins/PLAN.md) | [实施与验证](domain-plugins/EXECUTION.md) | 空领域、独立制品、双端热切换和三种调度的真实软件交付已记录。当前实现见 [v0.5 领域包](../design/domain-packages.md) |
+| [工作台与存储性能优化](workbench-storage-performance/PLAN.md) | [工作台延迟评估](../benchmarks/workbench-latency-2026-11-23.md)、[阶段验收](workbench-storage-performance/VALIDATION.md) | P0、P1 及 Web 分包已验收。完成本机负载诊断，继续使用 SQLite。正式 100 前端容量验收待独立负载环境 |
 | [出厂模型与工程规范整理](default-configuration-refresh/PLAN.md) | [实施与验收](default-configuration-refresh/EXECUTION.md) | 完成。三种出厂 Model、隔离重置、真实 Feature 与三个 Task 闭环通过 |
 | [工作流故障恢复与升级](workflow-recovery/PLAN.md) | 实施中 | Agent 自修、经理接手、实际重跑预算、历史与人工升级 |
 | [工程库存储改造与百万级容量评估](project-payload-storage/PLAN.md) | [实施与验收](project-payload-storage/EXECUTION.md)、[容量与 I/O 报告](project-payload-storage/PERFORMANCE.md) | 正式工程库已迁移至 project 61，达到 120 MB 容量目标。部分相对 P95 探针仍有差距，百万级使用现有数据推算 |
@@ -69,7 +69,7 @@
 | `scripts/package-source.py` | `scripts/py/package-source.py`，当前入口为 `scripts/release/package-source.sh` |
 | `scripts/build.sh`、`scripts/dev.sh` | `scripts/dev/` 中的同名文件 |
 | `scripts/check.sh`、`scripts/check-live.sh`、`scripts/check-permissions.sh`、`scripts/doctor.sh` | `scripts/check/` 中的同名文件 |
-| `scripts/package.sh`、`scripts/package-source.sh` | `scripts/release/` 中的同名文件 |
+| `scripts/package.sh` | 已退役，由 `scripts/release/package-core.sh` 分别生成三种制品 |
 | `scripts/setup-macos-signing.sh`、`scripts/install-macos-credential-helper.sh`、`scripts/sign-macos.sh` | `scripts/platform/macos/` 中的同名文件 |
 | `scripts/install-linux-sandbox-policy.sh` | `scripts/platform/linux/install-linux-sandbox-policy.sh` |
 | `sql/NNN_*.sql` | `sql/project/<职责>/` 中的同编号文件，见 [迁移索引](../../sql/README.md) |

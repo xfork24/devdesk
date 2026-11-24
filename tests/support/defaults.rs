@@ -23,9 +23,11 @@ pub fn default_role_id(role: &str) -> String {
 pub const DEFAULT_CAPABILITY_ID: &str = "builtin-capability-sol-high-codex:6";
 
 pub fn default_configured_agent_id(role: &str) -> String {
-    let defaults: serde_json::Value =
-        serde_json::from_str(include_str!("../../configurations/defaults.json")).unwrap();
-    defaults["role_agent_bindings"][default_role_id(role)]
+    let defaults: serde_json::Value = serde_json::from_str(include_str!(
+        "../fixtures/configuration/engineering-catalog.json"
+    ))
+    .unwrap();
+    defaults["defaults.json"]["role_agent_bindings"][default_role_id(role)]
         .as_str()
         .unwrap()
         .to_owned()

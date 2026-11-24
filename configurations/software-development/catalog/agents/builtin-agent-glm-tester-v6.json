@@ -1,0 +1,10 @@
+{
+  "type": "agent",
+  "identity": "software-development.agent-glm-tester",
+  "revision": 6,
+  "name": "Test Engineer · GLM 5.3",
+  "scope": "global",
+  "capability_ref": "software-development.capability-tester-glm-dsh:6",
+  "role_ref": "software-development.role-tester:1",
+  "data": {}
+}

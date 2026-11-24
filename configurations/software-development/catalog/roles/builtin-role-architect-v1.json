@@ -1,0 +1,10 @@
+{
+  "type": "role",
+  "identity": "software-development.role-architect",
+  "revision": 1,
+  "name": "架构师",
+  "scope": "global",
+  "data": {
+    "instructions_file": "architect.md"
+  }
+}

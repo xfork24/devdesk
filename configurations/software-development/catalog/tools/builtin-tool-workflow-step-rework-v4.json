@@ -1,0 +1,118 @@
+{
+  "type": "tool",
+  "identity": "software-development.tool-workflow-step-rework",
+  "revision": 4,
+  "name": "Rework Workflow Step",
+  "scope": "global",
+  "data": {
+    "qualified_name": "workflow.step.rework",
+    "implementation": "platform",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "instance_id": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "plan_revision_id": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "control_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "decision_ref": {
+          "type": "string"
+        },
+        "step": {
+          "type": "string"
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "expected_step_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "execution_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rework": {
+          "type": "object",
+          "properties": {
+            "policy": {
+              "type": "string"
+            },
+            "target": {
+              "enum": [
+                "producer_step",
+                "after_confirmed_checkpoint",
+                "child_workflow"
+              ]
+            },
+            "review_instance_id": {
+              "type": "string"
+            },
+            "review_execution_id": {
+              "type": "string"
+            },
+            "report_output_id": {
+              "type": "string"
+            },
+            "producer_output_id": {
+              "type": "string"
+            },
+            "checkpoint_ref": {
+              "type": "string"
+            },
+            "baseline_output_id": {
+              "type": "string"
+            },
+            "assessment": {
+              "type": "string",
+              "minLength": 1
+            },
+            "acceptance_requirements": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "policy",
+            "target",
+            "review_instance_id",
+            "review_execution_id",
+            "report_output_id",
+            "assessment",
+            "acceptance_requirements"
+          ],
+          "additionalProperties": false
+        },
+        "preview_hash": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "plan_revision_id",
+        "step",
+        "expected_revision",
+        "control_version",
+        "expected_step_revision",
+        "execution_id"
+      ],
+      "additionalProperties": false,
+      "description": "Commit the exact workflow.rework.preview using its preview_hash and original versions. Rework selection binds the rejection, producer/checkpoint/child baseline, assessment and acceptance requirements. All targets share Workflow business budgets. Technical retry is separate."
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "capabilities": []
+  }
+}

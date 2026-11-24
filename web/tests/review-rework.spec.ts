@@ -322,15 +322,9 @@ test("根经理页处理子流程的真实例外申请，理由必填且只批�
     .locator(`a[href*="execution_id=${review.id}"]`)
     .filter({ hasText: "查看流程阻塞点" })
     .first();
-  const blockerDetails = blocker.locator("xpath=ancestor::details[1]");
-  // Awaiting-acceptance blockers open automatically so the current result is
-  // actionable. Exercise closing/reopening without assuming a collapsed panel.
-  await expect(blockerDetails).toHaveAttribute("open", "");
   await expect(blocker).toBeVisible();
-  await blockerDetails.locator(":scope > summary").click();
-  await expect(blocker).not.toBeVisible();
-  await blockerDetails.locator(":scope > summary").click();
-  await expect(blocker).toBeVisible();
+  const reviewHref = await blocker.getAttribute("href");
+  expect(reviewHref).toBeTruthy();
   await blocker.click();
   await expect(page.locator(`#workflow-execution-${review.id}`)).toBeVisible();
   await expect(
@@ -355,14 +349,22 @@ test("根经理页处理子流程的真实例外申请，理由必填且只批�
     .getByLabel("意见或修改要求")
     .fill("我已核对当前报告，接受本次浏览器观察缺口及风险");
   await approve.click();
-  await expect(
-    card.getByText("评审未通过，用户已例外批准", { exact: true }),
-  ).toBeVisible();
+  await expect
+    .poll(
+      async () =>
+        (await readChild()).completion_status[review.id]?.confirmation
+          ?.manual_approval,
+    )
+    .toBe(true);
   const after = await readChild();
   expect(after.outputs[review.outputs.report].value.inputs.approve).toBe(false);
-  expect(after.completion_status[review.id].confirmation.manual_approval).toBe(
-    true,
-  );
+  await page.goto(reviewHref!);
+  await expect(
+    page
+      .locator(`#workflow-execution-${review.id}`)
+      .getByRole("status")
+      .filter({ hasText: "评审未通过，用户已例外批准" }),
+  ).toBeVisible();
   await page.screenshot({
     path: test.info().outputPath("manager-child-exception.png"),
     fullPage: true,

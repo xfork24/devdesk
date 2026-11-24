@@ -1,5 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import { test } from "./support/kernel";
+import { selectWidths } from "./support/select-sizing";
 
 async function rpc(page: Page, method: string, params: any = {}) {
   const response = await page.request.post("/rpc", {
@@ -56,29 +57,8 @@ test("项目中替换共享 Standard 的 Spec 后生成命名项目快照，采�
   });
   await expect(item.getByLabel("替换为", { exact: true })).not.toBeVisible();
   await item.locator(":scope > details > summary").click();
-  const sizing = await item.getByRole("combobox").evaluate((select) => {
-    const style = getComputedStyle(select);
-    const context = document.createElement("canvas").getContext("2d")!;
-    context.font = style.font;
-    const longest = Math.max(
-      ...Array.from(
-        (select as HTMLSelectElement).options,
-        (option) => context.measureText(option.text).width,
-      ),
-    );
-    return {
-      width: select.getBoundingClientRect().width,
-      content:
-        longest +
-        parseFloat(style.paddingLeft) +
-        parseFloat(style.paddingRight),
-      // Native Chromium reserves an arrow gutter in addition to CSS padding.
-      // Bound that gutter in font units while still rejecting stretched fields.
-      nativeGutter: 3 * parseFloat(style.fontSize),
-    };
-  });
-  expect(sizing.width).toBeGreaterThanOrEqual(sizing.content - 2);
-  expect(sizing.width).toBeLessThan(sizing.content + sizing.nativeGutter);
+  const sizing = await item.getByRole("combobox").evaluate(selectWidths);
+  expect(sizing.width).toBeCloseTo(sizing.intrinsic, 0);
   await item.getByRole("combobox").selectOption(replacement.id);
   await panel.getByLabel("快照名称", { exact: true }).fill("项目验收规范");
   await panel.getByRole("button", { name: "预览替换", exact: true }).click();

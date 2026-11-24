@@ -1,0 +1,11 @@
+{
+  "type": "skill",
+  "identity": "software-development.skill-workflow-orchestration",
+  "revision": 6,
+  "name": "Workflow Orchestration",
+  "scope": "global",
+  "data": {
+    "rules": [],
+    "body_file": "workflow-orchestration.md"
+  }
+}

@@ -1431,9 +1431,6 @@ function App({
   const Layout = domain ? DomainLayout : WorkbenchLayout;
   const navigation = (
     <>
-      <div className="sidebar-caption">
-        软件工程工作台 <span>v0.3</span>
-      </div>
       <div className="project-selector">
         <span>当前项目</span>
         <ActionSelect
@@ -2274,9 +2271,6 @@ function App({
               </div>
             </>
           )}
-          <footer>
-            DevDesk 0.2 <span>工程内核 · 持久化历史 · GitHub 工程接入</span>
-          </footer>
         </ConfigurationMain>
       </>
     </Layout>

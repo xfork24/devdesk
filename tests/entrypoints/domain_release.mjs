@@ -20,8 +20,11 @@ assert(releaseDir, "Pass a directory containing the release archives");
 const temp = await mkdtemp(path.join(os.tmpdir(), "devdesk-domain-release-"));
 const data = path.join(temp, "data");
 const pythonClient = path.join(root, "tests/entrypoints/domain_client.py");
-const candidate = path.join(releaseDir, "software-development-0.5.0.zip");
-const legacy = path.join(baselineDir ?? temp, "software-development-0.3.0.zip");
+const candidate = path.join(releaseDir, "software-development-0.5.1.zip");
+const legacy = path.join(
+  baselineDir ?? path.join(root, "tests/fixtures/domain-packages"),
+  "software-development-0.3.0.zip",
+);
 const manuscript = path.join(temp, "manuscript.zip");
 const incompatible = path.join(temp, "unsupported.zip");
 const repository = path.join(temp, "repository");
@@ -35,9 +38,15 @@ async function bytes(zip) {
 
 async function extract(artifacts, cwd, verify) {
   const filenames = await readdir(artifacts);
-  const hosts = filenames.filter((file) => /^devdesk-core-host-.*\.tar\.gz$/.test(file));
+  const hosts = filenames.filter((file) => verify
+    ? file.startsWith("devdesk-core-host-0.5.0-") && file.endsWith(".tar.gz")
+    : /^devdesk-core-host-.*\.tar\.gz$/.test(file));
   assert.equal(hosts.length, 1, "Expected one Host archive for the current machine");
-  const web = "devdesk-core-web.tar.gz";
+  const webArchives = filenames.filter((file) => verify
+    ? file === "devdesk-core-web-0.5.0.tar.gz"
+    : /^devdesk-core-web(?:-.*)?\.tar\.gz$/.test(file));
+  assert.equal(webArchives.length, 1, "Expected one Web Core archive");
+  const [web] = webArchives;
   for (const name of [...hosts, web, ...(verify ? [path.basename(candidate)] : [])]) {
     if (verify) {
       const expected = (await readFile(path.join(artifacts, name + ".sha256"), "utf8")).split(/\s/)[0];
@@ -47,9 +56,20 @@ async function extract(artifacts, cwd, verify) {
       await execFile("tar", ["-xzf", path.join(artifacts, name), "-C", cwd]);
     }
   }
+  const hostDir = path.join(cwd, hosts[0].replace(/\.tar\.gz$/, ""));
+  if (verify) {
+    const assets = path.join(hostDir, "permissions/backends");
+    const policy = JSON.parse(await readFile(path.join(assets, "manifest.json"), "utf8"));
+    for (const [name, { sha256 }] of Object.entries(policy.assets)) {
+      assert.equal(digest(await readFile(path.join(assets, name))), sha256, name);
+    }
+    if (process.platform === "linux") {
+      await readFile(path.join(hostDir, "scripts/platform/linux/install-linux-sandbox-policy.sh"));
+    }
+  }
   return {
-    host: path.join(cwd, hosts[0].replace(/\.tar\.gz$/, ""), "devdesk-host"),
-    web: path.join(cwd, "devdesk-core-web"),
+    host: path.join(hostDir, "devdesk-host"),
+    web: path.join(cwd, web.replace(/\.tar\.gz$/, "")),
   };
 }
 
@@ -130,14 +150,12 @@ async function withHost(host, web, operation, { crashAfter = false } = {}) {
 
 try {
   const current = await extract(releaseDir, temp, true);
+  assert.equal((await execFile(current.host, ["--version"])).stdout.trim(), "devdesk-host 0.5.0");
   const previous = baselineDir
     ? await extract(baselineDir, await mkdtemp(path.join(temp, "previous-")), false)
     : current;
   await readFile(path.join(current.web, "sdk/domain-sdk.d.ts"));
   await readFile(path.join(current.web, "sdk/domain-contributions.schema.json"));
-  if (!baselineDir) {
-    await execFile("python3", [path.join(root, "configurations/software-development/build.py"), legacy, "--legacy-runtime-only"]);
-  }
   await execFile("python3", [path.join(root, "tests/fixtures/domain-packages/build.py"), temp]);
   await execFile("python3", ["-c", `
 from zipfile import ZipFile, ZIP_DEFLATED
@@ -170,6 +188,9 @@ with ZipFile(sys.argv[1]) as original, ZipFile(sys.argv[2], "w", ZIP_DEFLATED) a
 
   const original = await withHost(previous.host, current.web, async (client) => {
     assert.equal((await client.active()).active, null);
+    const permissions = await client.result("query.permission_resources");
+    assert.equal(permissions.source.is_builtin, true);
+    assert(permissions.profiles.some((row) => row.identity === "builtin-permission-harness-read-only"));
     await client.canRender("core", (page) => page.getByText("GPT-6.2 Sol High").first());
     const state = await client.activate((await client.install(legacy)).digest);
     assert.equal(state.active.version, "0.3.0");
@@ -192,7 +213,7 @@ with ZipFile(sys.argv[1]) as original, ZipFile(sys.argv[2], "w", ZIP_DEFLATED) a
     assert.equal((await client.active()).active.id, "manuscript");
     await client.rejected(incompatible);
     const upgraded = await client.install(candidate);
-    assert.equal(upgraded.version, "0.5.0");
+    assert.equal(upgraded.version, "0.5.1");
     await client.activate(upgraded.digest);
     await client.canRender("software-development.engineering-settings", (page) => page.getByRole("heading", { name: "数据与运行" }));
     const samples = await Promise.all(Array.from({ length: 100 }, () => client.active()));
@@ -208,7 +229,7 @@ with ZipFile(sys.argv[1]) as original, ZipFile(sys.argv[2], "w", ZIP_DEFLATED) a
   }, { crashAfter: true });
 
   await withHost(current.host, current.web, async (client) => {
-    assert.equal((await client.active()).active.version, "0.5.0");
+    assert.equal((await client.active()).active.version, "0.5.1");
     const read = await client.native("read", upgraded.run.project_id, upgraded.run.execution_id);
     assert.equal(read.record.data.status, "completed");
     assert.equal(read.domain_submission.entities.test_configuration, upgraded.proof_id);

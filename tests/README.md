@@ -31,11 +31,26 @@ python3 -m pip install -r scripts/check/requirements.txt
 工作流专项：
 
 ```bash
-cargo test -p devdesk-adapters --features test-fixtures --test configured_workflows --test conversations --test schema_contracts --locked
+cargo test -p devdesk-adapters --features test-fixtures,fixture-catalog --test configured_workflows --test conversations --test schema_contracts --locked
+npm --prefix web run build:fixture
+cargo build --locked -p devdesk-host --features fixture-catalog --target-dir target/fixtures
 DEVDESK_E2E_PORT=4329 npm --prefix web run test:e2e
 ```
 
 删除的 v3 动作/配方测试由当前执行合同回归替代。当前测试不创建占位 Agent/Session，不将端口替身结果宣称为真实模型或外部系统验收。
+
+## 领域制品验收
+
+```bash
+export DEVDESK_RELEASE_OUT="$(mktemp -d)"
+./scripts/release/package-core.sh host
+./scripts/release/package-core.sh web
+./scripts/release/package-core.sh software
+node --test tests/entrypoints/domain_delivery_evidence.mjs
+node tests/entrypoints/domain_release.mjs "$DEVDESK_RELEASE_OUT"
+```
+
+用 `domain_packages.mjs` 配合解压后的 Host、Web Core 目录和软件 ZIP，验证浏览器与 Python 协议客户端操作同一领域目录、对象、流程和代次，以及真正的 Docker 处理器调用。制品验收也覆盖既有领域版本回切和重启恢复。运行前准备[领域 worker 镜像](../docs/design/run-binary.md#领域工作台独立发行)。
 
 ## 配置加载性能
 
@@ -49,7 +64,7 @@ python3 tests/performance/configuration_loading.py --test-binary target/debug/de
 # release 使用 cargo test --release --no-run 产生的测试二进制。
 # 优化后 RPC 采样增加 --assert-configuration-isolation，检查完整快照与事务次数为零。
 node --test tests/entrypoints/configuration_query_cache.mjs
-cargo test -p devdesk-adapters --test configuration_catalog configuration_source_scaling -- --ignored --exact --nocapture
+cargo test -p devdesk-adapters --features test-fixtures,fixture-catalog --test configuration_catalog configuration_source_scaling -- --ignored --exact --nocapture
 ```
 
 ## 工作台与存储性能
@@ -86,7 +101,7 @@ GitHub request 的 repository/number 必须指定已存在的验收 PR；测试�
 DSH 原生 SDK 夹具使用不可变镜像和禁外网容器内的本地端点，不调用真实模型：
 
 ```bash
-DEVDESK_DSH_MOCK_IMAGE=sha256:… cargo test -p devdesk-adapters --test model_providers pinned_dsh_uses_local_fixture_streams_tools_and_native_resume --locked -- --ignored
+DEVDESK_DSH_MOCK_IMAGE=sha256:… cargo test -p devdesk-adapters --features test-fixtures,fixture-catalog --test model_providers pinned_dsh_uses_local_fixture_streams_tools_and_native_resume --locked -- --ignored
 ```
 
 `tests/live/probe_workflow_workbench.py` 使用当前配置与真实执行器，在专用 GitHub 测试仓库中创建或继续运行。它不按固定业务节点推导行为。需预先配置相应 Agent；可传入精确绑定、输入及补充文本。人工确认默认保留等待，显式 `--confirm` 才确认当前版本，永远不自动覆盖失败完成条件。该入口会调用实际模型和修改测试仓库，只能显式执行；历史 v3 验收报告不代表 v4 已通过同样的原生工程验收。
@@ -95,14 +110,17 @@ DEVDESK_DSH_MOCK_IMAGE=sha256:… cargo test -p devdesk-adapters --test model_pr
 
 ```bash
 python3 tests/live/probe_configured_workflow.py --binary target/debug/devdesk-host --codex-auth-source /专用/auth.json
-python3 tests/live/probe_streamlined_workflow.py --binary target/release/devdesk-host --codex-auth-source /专用/auth.json --github-repo owner/dedicated-test-repo --requirement-file /专用/requirement.md --report-directory /新的证据目录 --performance
+python3 tests/live/probe_streamlined_workflow.py --binary target/release/devdesk-host \
+  --domain-zip dist/software-development-0.5.1.zip --mode agent \
+  --codex-auth-source /专用/auth.json --github-repo owner/dedicated-test-repo \
+  --requirement-file /专用/requirement.md --report-directory /新的证据目录 --performance
 ```
 
-两者都可用 `--report-directory` 指定临时证据目录。完整工程推荐使用 `target/release/devdesk-host`；通过同一证据目录的 `--resume` 可接管原根实例，先核对中断执行，再以新执行身份重试，保留已接纳成果。工程探针默认最多等待三小时，可用 `--timeout-seconds` 调整验收入口的等待时限，不改变工作流本身的预算或门禁。运行程序先复制二进制，避免同时构建影响正在执行的程序。不要把登录文件或证据写入源码目录。
+两者都可用 `--report-directory` 指定临时证据目录。完整工程推荐使用 `target/release/devdesk-host`；通过同一证据目录的 `--resume` 可接管原根实例，先核对中断执行，再以新执行身份重试，保留已接纳成果。工程探针默认最多等待 30 分钟，可用 `--timeout-seconds` 调整验收入口的等待时限，不改变工作流本身的预算或门禁。运行程序先复制二进制，避免同时构建影响正在执行的程序。不要把登录文件或证据写入源码目录。
 
-当前精简版验收应核对完整状态、无绕过/豁免、确切人工确认、真实 Red/Green 与两类回归、原始文件/Git blob，以及 Task/Feature 两个 PR 的确切合入和同步版本。`probe_streamlined_workflow.py` 等待根流程完成且经理关闭后才停止自己启动的 Host，并清理复制的认证。历史详细版的完整证据仍可使用 `python3 tests/live/verify_engineering_evidence.py /临时证据目录` 复核；该工具按其原详细版节点合同工作，不用于精简版。
+软件开发包支持 `--mode manual`、`--mode rust` 和 `--mode agent`。当前验收应核对完整状态、无绕过/豁免、确切人工确认、真实 Red/Green 与两类回归、原始文件/Git blob，以及 Task/Feature 两个 PR 的确切合入和同步版本。`probe_streamlined_workflow.py` 等待根流程完成且经理关闭后才停止自己启动的 Host，并清理复制的认证。历史详细版的完整证据仍可使用 `python3 tests/live/verify_engineering_evidence.py /临时证据目录` 复核；该工具按其原详细版节点合同工作，不用于精简版。
 
-`probe_permission_package.py` 检查解包发布程序的权限资产、配置发布、当前任务预览、数据库结构及独立运行，不调用模型。其他有效的 `tests/live/` 探针分别覆盖凭据、供应商协议、安装、经验和外部接入，使用前阅读其参数和外部依赖。
+发布包中的核心权限预设由 `domain_release.mjs` 和 Rust 权限回归验证。其他 `tests/live/` 探针覆盖凭据、供应商协议、安装、经验和外部接入。运行前阅读其参数和外部依赖。
 
 macOS 钥匙串的后台调用和显式授权隔离由 `cargo test -p devdesk-adapters --lib credentials_macos` 检查。签名后的 Host 可用独立测试数据集验证系统钥匙串访问。Linux Secret Service 与权限后端须在 Linux 实机单独验证。
 
@@ -133,13 +151,13 @@ Workflow 执行性能的显式组件入口为 `crates/adapters/tests/workflow_pe
 
 ## 工作流读取与审批观察专项
 
-`python3 -m unittest discover -s tests/live -p test_workflow_observer.py` 覆盖精简版和子流程探针审批请求先保存后检查、诊断失败继续观察、重启端口变化和原件不可覆盖、两类材料联合覆盖、确切版本及只读观察。生产命令合同另由 `configured_workflows` 中的 `human_interaction_uses_production_union_and_exact_execution_context` 验证；单独运行适配器测试时加 `--features test-fixtures`。这些入口不调用模型或推进真实 Feature。
+`python3 -m unittest discover -s tests/live -p test_workflow_observer.py` 覆盖精简版和子流程探针审批请求先保存后检查、诊断失败继续观察、重启端口变化和原件不可覆盖、两类材料联合覆盖、确切版本及只读观察。生产命令合同另由 `configured_workflows` 中的 `human_interaction_uses_production_union_and_exact_execution_context` 验证；单独运行适配器测试时加 `--features test-fixtures,fixture-catalog`。这些入口不调用模型或推进真实 Feature。
 
 `tests/performance/workflow_reads.py --test-binary <release测试入口> --dataset <专用兼容备份> --output <新证据目录> --samples 200` 通过关闭调度的实际 HTTP 服务测 control、状态页及执行详情，保留逐请求错误、bytes、内容摘要和 trace 关联。结果只用于本机定位，不等于原生往返或正式容量。`joint_frontends.py --browser` 的 1/2 页面诊断支持混合读、写和导航，较高并发仍分别记录动作数和真实 RPC；导航取消只对已观测到的只读请求单列，修改失败不豁免。
 
 `joint_frontends.py` 的本机协议模式可用 `--scale 1 --projects 10 --seconds 120 --renew --trace --sse-configuration --sse-reconnect --reconnecting-clients 10`，让 10 个客户端各重连 10 次，剩余客户端维持连接。输出 `sse-reconnections.json` 记录重连游标、收到首条消息和读回项目状态的时延。
 
-`DEVDESK_STORAGE_PROFILE_OUTPUT=/tmp/全新目录 cargo test --release --locked -p devdesk-adapters --features test-fixtures --test workflow_storage_scaling workflow_storage_growth_profile -- --ignored --exact --nocapture` 创建四个隔离数据集，分别测冷实例数、当前 DAG 及真实历史尝试的十倍增长；每项预热另存、30 个组件样本，保存版本回读、WAL/checkpoint、进程 I/O 及完整性结果。只测空正文 Control 和可信单步骤存储 patch，没有模型、外部 writer 或业务并发，不代表业务延迟、真实执行或容量通过。使用归档二进制时把构建与采样分开。
+`DEVDESK_STORAGE_PROFILE_OUTPUT=/tmp/全新目录 cargo test --release --locked -p devdesk-adapters --features test-fixtures,fixture-catalog --test workflow_storage_scaling workflow_storage_growth_profile -- --ignored --exact --nocapture` 创建四个隔离数据集，分别测冷实例数、当前 DAG 及真实历史尝试的十倍增长；每项预热另存、30 个组件样本，保存版本回读、WAL/checkpoint、进程 I/O 及完整性结果。只测空正文 Control 和可信单步骤存储 patch，没有模型、外部 writer 或业务并发，不代表业务延迟、真实执行或容量通过。使用归档二进制时把构建与采样分开。
 
 预算专项在 `configured_workflows` 中用可控 UTC/单调时钟、真实 SQLite 验证显式 time_limits v1 的 Human 截止、签署/补充输入、技术重试/重启、时钟倒退及计划采用；缺省旧预算的序列化由 schema_contracts 验证。新项目基线为 62，支持显式迁移 60 和 61。旧 59 数据集拒绝测试核对原文件字节未改写。
 

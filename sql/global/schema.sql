@@ -121,7 +121,7 @@ CREATE TRIGGER transfer_no_delete BEFORE DELETE ON governance_records WHEN OLD.t
 CREATE INDEX idx_tool_call_drivable ON governance_records(id) WHERE type='tool_call' AND (json_extract(data,'$.status') IN ('prepared','dispatched','needs_reconciliation') OR (json_extract(data,'$.status') IN ('succeeded','failed','cancelled') AND coalesce(json_extract(data,'$.reply_sent'),0)=0 AND json_extract(data,'$.invocation.session_id') IS NOT NULL));
 
 CREATE TABLE dataset_layout(id INTEGER PRIMARY KEY CHECK(id=1),contract TEXT NOT NULL);
-INSERT INTO dataset_layout VALUES(1,'single-host-resource-v2');
+INSERT INTO dataset_layout VALUES(1,'single-host-domain-packages-v1');
 
 PRAGMA user_version=24;
 COMMIT;

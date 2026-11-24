@@ -14,7 +14,7 @@ import time
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
-BINARY = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / 'target/debug/devdesk-host'
+BINARY = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / 'target/fixtures/debug/devdesk-host'
 
 with tempfile.TemporaryDirectory(prefix='devdesk-prepare-') as tmp:
     root = Path(tmp)
@@ -168,7 +168,7 @@ sys.exit(3)
     try:
         def client():
             opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
-            opener.open(url + '/').close()
+            opener.open(urllib.request.Request(url + '/session', b'{}', {'Content-Type': 'application/json'}), timeout=10).close()
             return opener
         def rpc(method, params=None):
             request = urllib.request.Request(url + '/rpc', json.dumps({'jsonrpc':'2.0','id':1,'method':method,'params':params or {}}).encode(), {'Content-Type':'application/json'})
@@ -180,7 +180,7 @@ sys.exit(3)
         defaults = rpc('query.configuration_defaults')['result']
         assert len(defaults['role_agent_bindings']) == 6
         model = next(row for row in defaults['records'] if row['id'] == defaults['model_ref'])
-        configuration = ROOT / 'configurations'
+        configuration = ROOT / 'configurations/core'
         manifest = json.loads((configuration/'manifest.json').read_text())
         packaged_defaults = json.loads((configuration/manifest['defaults']).read_text())
         assert defaults['model_ref'] == packaged_defaults['model_ref']

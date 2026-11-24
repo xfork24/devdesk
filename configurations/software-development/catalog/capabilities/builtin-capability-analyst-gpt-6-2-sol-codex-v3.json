@@ -1,0 +1,23 @@
+{
+  "type": "capability",
+  "identity": "software-development.capability-analyst-gpt-6-2-sol-codex",
+  "revision": 3,
+  "name": "Requirements Analysis Capability · GPT-6.2 Sol High",
+  "scope": "global",
+  "harness_ref": "builtin-harness-codex-managed:2",
+  "model_ref": "builtin-model-gpt-6-2-sol-high:1",
+  "skills": [
+    "software-development.skill-engineering-context:4",
+    "software-development.skill-deliverable-validation:1",
+    "software-development.skill-requirements-analysis:1"
+  ],
+  "tools": [
+    "builtin-tool-codex-native:2",
+    "builtin-tool-workflow-outputs-read:3",
+    "builtin-tool-spec-lint:2"
+  ],
+  "data": {},
+  "spec_refs": [
+    "software-development.spec-stage-prd:4"
+  ]
+}

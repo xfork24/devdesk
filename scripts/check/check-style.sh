@@ -10,7 +10,6 @@ cargo fmt --all -- --check
 npm --prefix web run lint
 npm --prefix web run typecheck
 npm --prefix web run format:check
-# RustEmbed needs the current Web bundle even in a clean checkout.
 npm --prefix web run build
 cargo clippy --workspace --all-targets --locked -- -D warnings
 echo "style: OK — rustfmt, clippy, eslint, typescript, prettier, web build"

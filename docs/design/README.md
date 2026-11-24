@@ -15,6 +15,7 @@ DevDesk 将需求、Agent 执行、工程验证和人工决定组织成可追踪
 |---|---|
 | [系统总览](overview.md) | 系统解决什么问题，各进程在哪里运行？ |
 | [分层与依赖](layers.md) | core、domain、adapters、host 如何分工和配合？ |
+| [领域包与客户端](domain-packages.md) | Host、Web Core 和领域 ZIP 如何独立发布和协作？ |
 | [核心概念](domain-model.md) | 工作项、步骤、会话、产物之间有什么关系？ |
 | [配置如何生效](configuration.md) | 一个 Agent 的角色、模型、工具、权限怎样确定？ |
 | [工作流](workflow.md) | 从需求到交付，谁派发、谁检查、谁批准？ |
@@ -30,10 +31,4 @@ DevDesk 将需求、Agent 执行、工程验证和人工决定组织成可追踪
 
 [术语表](glossary.md) · [RPC 参考](reference/rpc.md) · [工具和调度原语](reference/tools-and-primitives.md) · [外部接入](reference/integrations.md) · [数据格式](reference/contracts.md)
 
-[性能基准与完整时序索引](performance/README.md)：集中保存优化前后报告、HTML/SVG 图表及可重算数据。
-
-[2026-11-20 完整工作流回归与性能基准](performance/workflow-benchmark-2026-11-20.md)：包含原始时序、审批和主机休眠排除口径、全部步骤及真实回归证据。
-
-[15 分钟净流程的组件拆解与优化方向](performance/workflow-cost-breakdown-2026-11-20.md)：保存两种交互时间线，按主机时间戳区分 Agent、业务工具、workflow 侧成本，并核对审批准备、步骤间等待及收尾。
-
-这里描述当前实现。出厂流程示例以 [configurations/manifest.json](../../configurations/manifest.json) 发布的资源为准；历史方案和验收记录另见[计划索引](../plans/README.md)。某项历史测试通过，不代表当前机器已经通过相同验收。
+配置示例以[核心目录](../../configurations/core/manifest.json)和[软件开发目录](../../configurations/software-development/catalog/manifest.json)为准。扩展协议见[领域包与客户端](domain-packages.md)，历史报告见[计划索引](../plans/README.md)和[性能基准](../benchmarks/README.md)。

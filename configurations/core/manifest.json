@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "bundle_version": "core-v1",
-  "usage_index": "core/reference-usage.json",
+  "usage_index": "reference-usage.json",
   "types": {
     "role": [],
     "skill": [],
@@ -52,5 +52,5 @@
       "harnesses/builtin-model-catalog-dsh-v1.json"
     ]
   },
-  "defaults": "core/defaults.json"
+  "defaults": "defaults.json"
 }
