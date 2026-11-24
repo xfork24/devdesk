@@ -456,6 +456,16 @@
       ]
     },
     {
+      "method": "domain.entity.put",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "command_id_active_epoch_and_expected_revision",
+      "sites": [
+        "crates/host/src/domains.rs",
+        "crates/core/src/domain_entities.rs"
+      ]
+    },
+    {
       "method": "domain.install",
       "access": "mutation",
       "scope": "global",
@@ -1400,6 +1410,15 @@
       "access": "read",
       "scope": "global",
       "precondition": "none",
+      "sites": [
+        "crates/host/src/domains.rs"
+      ]
+    },
+    {
+      "method": "query.domain.entity",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "active_epoch",
       "sites": [
         "crates/host/src/domains.rs"
       ]

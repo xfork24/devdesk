@@ -2,7 +2,7 @@
 use super::*;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use devdesk_adapters::domain_packages::{DomainPackages, MAX_ARCHIVE, is_digest};
-use devdesk_core::{Command, ports::DomainReader};
+use devdesk_core::{Command, InvocationContext, ports::DomainReader};
 
 pub(super) struct ProjectReader {
     pub packages: Arc<DomainPackages>,
@@ -58,6 +58,14 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
                 Err(err("invalid_params", "领域包摘要无效"))
             }
         })
+    };
+    let entity = || {
+        let id = text("entity_id")?;
+        if uuid::Uuid::parse_str(id).is_ok_and(|parsed| parsed.to_string() == id) {
+            Ok(id)
+        } else {
+            Err(err("invalid_params", "领域对象 ID 需要规范 UUID"))
+        }
     };
     match name {
         "query.domain.active" => Ok(packages.status(trusted)),
@@ -151,13 +159,49 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
         }
         "query.domain.workflow" => {
             let project = text("project_id")?;
-            packages.with_project(project, epoch()?, trusted, || {
+            packages.with_project(project, epoch()?, trusted, |_| {
                 run(
                     "query.workflow_instance",
                     json!({
                         "project_id":project,"id":text("execution_id")?,
                     }),
                 )
+            })
+        }
+        "domain.entity.put" => {
+            let project = text("project_id")?;
+            let id = entity()?;
+            let reference = text("type_ref")?;
+            let command_id = text("command_id")?.trim();
+            if command_id.is_empty() || command_id.len() > 256 {
+                return Err(err("invalid_params", "需要有效的领域对象命令身份"));
+            }
+            let expected = params["expected_revision"]
+                .as_u64()
+                .ok_or_else(|| err("invalid_params", "缺少领域对象原修订"))?;
+            let data = &params["data"];
+            packages.validate_entity(project, epoch()?, trusted, (reference, data), |digest| {
+                workspace
+                    .project_engine(Some(project))?
+                    .write_domain_entity(
+                        digest,
+                        &Command {
+                            command_id: command_id.into(),
+                            target: Some(id.into()),
+                            expected_revision: Some(expected),
+                            payload: json!({"type_ref":reference, "data":data}),
+                        },
+                        &InvocationContext::human(Some(project.into())),
+                    )
+            })
+        }
+        "query.domain.entity" => {
+            let project = text("project_id")?;
+            let id = entity()?;
+            packages.with_project(project, epoch()?, trusted, |digest| {
+                workspace
+                    .project_engine(Some(project))?
+                    .read_domain_entity(digest, id)
             })
         }
         "query.domain.invoke" => {

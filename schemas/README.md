@@ -7,6 +7,7 @@
 | `orchestration.schema.json` | Workflow 内嵌 scheduling、控制权限执行视图、actor、ChangeSet、typed material 和运行时变更。 |
 | `rpc.schema.json` | JSON-RPC、配置修订、原生执行，以及 Workflow 运行实例和 StepExecution。 |
 | `domain-package.schema.json` / `domain-contributions.schema.json` | 领域 ZIP 的文件、处理器及各端绑定清单。公共贡献含查询、输入和显示字段。 |
+| `domain-entity-types.schema.json` | 领域包可选的对象类型目录，按确切类型修订携带对象的 JSON Schema。 |
 | `host-lifecycle.schema.json` | 初始化与退出的 Host 实例、版本前置条件和生命周期快照。 |
 | `workflow.schema.json` | Workflow v6：Stage、四种执行器、显式端口、访问范围、预算与有界完成规则。 |
 | `agent-task.schema.json` | `ConfiguredAgentTask`，renderer `agent-task/v6`；保存实际 Turn、Agent、输入正文、来源与摘要。 |

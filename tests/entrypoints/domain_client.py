@@ -89,6 +89,39 @@ def run(origin, action, args):
         receipt = client.call("domain.workflow.start", **start)
         completed(client, epoch, receipt)
         assert client.call("domain.workflow.start", **start) == receipt
+        assert set(active["entity_types"]) == {"manuscript.document:1", "manuscript.proof:1"}
+        target = {
+            "epoch": epoch, "project_id": receipt["project_id"], "entity_id": str(uuid.uuid4()),
+        }
+        original = {"type_ref": "manuscript.document:1", "expected_revision": 0,
+                    "data": {"title": "Local manuscript"}, "command_id": uuid.uuid4().hex}
+        try:
+            client.call("domain.entity.put", **target, **{**original, "data": {"title": 42}})
+        except RuntimeError as failure:
+            assert "domain_contract" in str(failure), failure
+        else:
+            raise AssertionError("domain entity accepted the wrong data type")
+        original_row = client.call("domain.entity.put", **target, **original)
+        assert original_row["revision"] == 1
+        assert client.call("domain.entity.put", **target, **original) == original_row
+        revised = {**original, "expected_revision": 1, "data": {"title": "Edited manuscript"},
+                   "command_id": uuid.uuid4().hex}
+        assert client.call("domain.entity.put", **target, **revised)["revision"] == 2
+        stale = {**revised, "command_id": uuid.uuid4().hex}
+        try:
+            client.call("domain.entity.put", **target, **stale)
+        except RuntimeError as failure:
+            assert "revision_conflict" in str(failure), failure
+        else:
+            raise AssertionError("domain entity update used an obsolete revision")
+        assert client.call("query.domain.entity", **target)["data"] == revised["data"]
+        details = client.call("query.domain.workflow", epoch=epoch, **receipt)
+        result = next(iter(details["outputs"].values()))["value"]
+        proof = client.call("domain.entity.put", epoch=epoch, project_id=receipt["project_id"],
+                            entity_id=str(uuid.uuid4()), command_id=uuid.uuid4().hex,
+                            type_ref="manuscript.proof:1", expected_revision=0, data=result)
+        assert proof["data"] == {"title": "Local manuscript", "observedBy": "domain-worker"}
+        receipt["entity_id"] = target["entity_id"]
         return receipt
     if action == "manual":
         project, root = args
@@ -177,6 +210,15 @@ def run(origin, action, args):
         return result
     if action == "read":
         return client.call("query.domain.workflow", epoch=epoch, project_id=args[0], execution_id=args[1])
+    if action == "read-entity":
+        return client.call("query.domain.entity", epoch=epoch, project_id=args[0], entity_id=args[1])
+    if action == "check-foreign-entity":
+        try:
+            client.call("query.domain.entity", epoch=epoch, project_id=args[0], entity_id=args[1])
+        except RuntimeError as failure:
+            assert "not_found" in str(failure), failure
+            return True
+        raise AssertionError("domain entity was readable from a different project")
     raise ValueError(action)
 
 

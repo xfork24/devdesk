@@ -30,6 +30,10 @@
       "tools/builtin-tool-workflow-events-read-v2.json",
       "tools/builtin-tool-workflow-outputs-read-v3.json",
       "tools/builtin-tool-workflow-execution-inspect-v2.json",
+      "tools/builtin-tool-workflow-step-dispatch-v3.json",
+      "tools/builtin-tool-workflow-step-accept-v3.json",
+      "tools/builtin-tool-workflow-decision-request-v5.json",
+      "tools/builtin-tool-workflow-complete-v3.json",
       "tools/builtin-tool-spec-lint-v2.json"
     ],
     "permission_profile": [

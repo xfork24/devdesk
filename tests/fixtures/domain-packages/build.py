@@ -25,7 +25,22 @@ def package(target, identity, title, handler, core):
         }]).encode(),
         "ui/web/page.mjs": (ROOT / "page.mjs").read_bytes(),
     }
+    entity_types = None
     if identity == "manuscript":
+        entity_types = "configurations/entity-types/editorial.json"
+        files[entity_types] = json.dumps({
+            "manuscript.document:1": {"name": "Manuscript", "schema": {
+                "type": "object", "required": ["title"],
+                "additionalProperties": False,
+                "properties": {"title": {"type": "string", "minLength": 1}},
+            }},
+            "manuscript.proof:1": {"name": "Proof", "schema": {
+                "type": "object", "required": ["title", "observedBy"],
+                "additionalProperties": False,
+                "properties": {"title": {"type": "string"}, "observedBy": {"type": "string"}},
+            }},
+        }).encode()
+
         def source(kind, key, data, **refs):
             return {"type": kind, "identity": f"{identity}.{key}", "revision": 1,
                     "scope": "global", "name": key.replace("-", " ").title(), "data": data, **refs}
@@ -49,7 +64,11 @@ def package(target, identity, title, handler, core):
             source("role", "editor", {"instructions": "Review manuscript wording."}),
             source("capability", "editor-capability", {},
                    harness_ref="builtin-harness-codex-managed:2", model_ref="builtin-model-gpt-6-2-sol-high:1",
-                   skills=[f"{identity}.title-review:1"], tools=[]),
+                   skills=[f"{identity}.title-review:1"], tools=[
+                       "builtin-tool-codex-native:2", "builtin-tool-workflow-inspect:3",
+                       "builtin-tool-workflow-step-dispatch:3", "builtin-tool-workflow-step-accept:3",
+                       "builtin-tool-workflow-complete:3",
+                   ]),
             source("agent", "editor-agent", {}, role_ref=f"{identity}.editor:1",
                    capability_ref=f"{identity}.editor-capability:1"),
             source("workflow", "workflow", {
@@ -82,6 +101,7 @@ def package(target, identity, title, handler, core):
         files["configurations/usage.json"] = json.dumps({"references": usage(sources)}).encode()
     manifest = {
         "format": 1, "id": identity, "version": "1",
+        **({"entity_types": entity_types} if entity_types else {}),
         "files": {path: hashlib.sha256(value).hexdigest() for path, value in files.items()},
         "runtime": {
             "entry": "runtime/worker.mjs",

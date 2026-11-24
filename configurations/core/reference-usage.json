@@ -4,9 +4,13 @@
     "builtin-tool-codex-native:2": [],
     "builtin-tool-dsh-native:2": [],
     "builtin-tool-spec-lint:2": [],
+    "builtin-tool-workflow-complete:3": [],
+    "builtin-tool-workflow-decision-request:5": [],
     "builtin-tool-workflow-events-read:2": [],
     "builtin-tool-workflow-execution-inspect:2": [],
     "builtin-tool-workflow-inspect:3": [],
-    "builtin-tool-workflow-outputs-read:3": []
+    "builtin-tool-workflow-outputs-read:3": [],
+    "builtin-tool-workflow-step-accept:3": [],
+    "builtin-tool-workflow-step-dispatch:3": []
   }
 }

@@ -8,6 +8,7 @@
     "format": { "const": 1 },
     "id": { "$ref": "#/$defs/identifier" },
     "version": { "$ref": "#/$defs/identifier" },
+    "entity_types": { "$ref": "#/$defs/path", "pattern": "^configurations/entity-types/.+[.]json$" },
     "files": {
       "type": "object",
       "maxProperties": 255,

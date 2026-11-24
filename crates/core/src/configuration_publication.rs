@@ -690,3 +690,83 @@ impl Engine {
         Ok(())
     }
 }
+
+#[derive(Default)]
+pub struct DomainConfiguration {
+    pub role_agent_bindings: BTreeMap<Id, Id>,
+    pub agent_workflows: BTreeSet<Id>,
+}
+
+/// A package's source graph is resolved against the platform bundle before it
+/// becomes active. ZIP handling and executable asset discovery stay in the adapter.
+pub fn validate_domain_configuration(
+    namespace: &str,
+    bundle: &ConfigurationBundle,
+) -> Result<DomainConfiguration> {
+    require(
+        configuration_usage_index(&bundle.entries)? == bundle.usage_index
+            && bundle.entries.iter().all(|record| {
+                record.scope.is_global() && record.definition_id.starts_with(namespace)
+            }),
+        "领域源定义命名空间或引用索引不符",
+    )?;
+    let bindings: BTreeMap<Id, Id> = match bundle.defaults.get("role_agent_bindings") {
+        Some(value) => serde_json::from_value(value.clone())
+            .map_err(|_| err("invalid_domain_package", "领域默认 Role 与 Agent 绑定无效"))?,
+        None => BTreeMap::new(),
+    };
+    let mut catalog = EngineeringState::default();
+    initialize_template_catalog(&mut catalog)?;
+    catalog.governance.extend(bundle.entries.iter().cloned());
+    for (role, agent) in &bindings {
+        let role = catalog.configuration(role)?;
+        let agent = catalog.resolve_agent(agent)?;
+        require(
+            role.r#type == "role" && agent.role == role.definition_id,
+            "领域默认 Agent 必须属于绑定的 Role",
+        )?;
+    }
+    let mut agent_workflows = BTreeSet::new();
+    for source in &bundle.entries {
+        for edge in configuration_edges(source)? {
+            let target = catalog.configuration(&edge.to)?;
+            require(target.r#type == edge.expected_type, "领域源引用类型不匹配")?;
+        }
+        if source.r#type != "workflow" {
+            continue;
+        }
+        let plan =
+            compile_workflow_sources(None, &catalog, source, &Scope::global(), Some(&bindings))?;
+        if let Some(agent) = plan
+            .document
+            .orchestrator_role_ref
+            .as_ref()
+            .and_then(|role| bindings.get(role))
+        {
+            let composition = catalog.resolve_agent(agent)?;
+            crate::governance::validate_composition(&catalog, &composition, &Scope::global())?;
+            require(
+                composition.tools.iter().any(|tool| {
+                    catalog.configuration(tool).is_ok_and(|tool| {
+                        tool.data["qualified_name"]
+                            .as_str()
+                            .is_some_and(|name| crate::controllers::CONTROL_TOOLS.contains(&name))
+                    })
+                }),
+                "领域 Workflow 的编排 Agent 需要明确选择编排工具",
+            )?;
+            let harness = catalog.configuration(&composition.harness_ref)?;
+            require(
+                harness.data["provider"]
+                    .as_str()
+                    .is_some_and(|provider| driver_supports(provider, "orchestration")),
+                "领域 Workflow 的编排 Agent 需要支持编排工具的 Harness",
+            )?;
+            agent_workflows.insert(source.id.clone());
+        }
+    }
+    Ok(DomainConfiguration {
+        role_agent_bindings: bindings,
+        agent_workflows,
+    })
+}

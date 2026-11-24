@@ -27,6 +27,8 @@
 | `query.domain.invoke` | 提交当前 `epoch`、声明的 `handler` 和 `input`。返回领域只读运行端的结果 |
 | `domain.workflow.start` | 提交 `epoch`、确切的 `workflow_ref` 和 `command_id`。默认 `rust`，也可选 `manual`。活动目录的 `agent_workflows` 列出可由 `agent` 调度的修订。返回 `project_id` 与 `execution_id` |
 | `query.domain.workflow` | 按原项目、执行 ID 及当前 `epoch` 读取内核的流程详情 |
+| `domain.entity.put` | 携带 `epoch`、`project_id`、`entity_id`、`type_ref`、`expected_revision`、`command_id` 和 `data`。新建使用修订 0。更新保留对象类型，Host 按该类型的 Schema 校验载荷 |
+| `query.domain.entity` | 按 `epoch`、`project_id` 和 `entity_id` 读取对象当前修订 |
 | `GET /domain-events` | 连接时收到当前代次，后续收到 `domain` 事件。客户端据此重读活动目录 |
 | `GET /domain-assets/{epoch}/{digest}/{path}` | Web 读取活动包的渲染资源。当前代次和摘要都需匹配 |
 | `query.core.git.head`、`query.core.git.diff` | 读取指定宿主本地仓库的 HEAD 或通过两个完整 OID 比较修订 |
@@ -34,6 +36,8 @@
 包及客户端目录的结构分别见 [领域包合同](../../../schemas/domain-package.schema.json) 和 [呈现贡献合同](../../../schemas/domain-contributions.schema.json)。[`domains.rs` 调用入口](../../../crates/host/src/domains.rs)
 
 领域项目复用 `workflow.step.dispatch`、`workflow.cancel` 等平台 RPC，并在参数中携带 `project_id` 与活动的 `domain_epoch`。领域项目的 `/events` 和 `/artifacts` 在 URL 查询中携带同样两个参数。项目事件订阅在活动代次变化后结束。领域包在 `configurations/defaults.json` 中通过 `role_agent_bindings` 绑定确切的 Role 和 Agent 修订。Workflow 声明 `orchestrator_role_ref` 并采用支持原生编排工具的 Harness 后开放 Agent 调度。
+
+清单可通过 `entity_types` 指定包内对象类型文件。活动目录按类型修订返回 JSON Schema，实例保存在包绑定的项目库。对象 ID 使用规范 UUID。[领域对象类型合同](../../../schemas/domain-entity-types.schema.json)
 
 ## RPC 请求与响应
 

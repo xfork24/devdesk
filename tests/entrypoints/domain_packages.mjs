@@ -136,6 +136,7 @@ try {
   const started = await (await starting).json();
   assert(!started.error, JSON.stringify(started.error));
   const manual = await native("manual", started.result.project_id, started.result.execution_id);
+  assert(await native("check-foreign-entity", manual.project_id, result.entity_id));
 
   await second.getByRole("button", { name: "Manuscript", exact: true }).click();
   await second.getByLabel("领域处理器").waitFor();
@@ -149,6 +150,9 @@ try {
   const original = await native("read", result.project_id, result.execution_id);
   assert.equal(original.record.id, result.execution_id);
   assert.equal(original.record.data.status, "completed");
+  const entity = await native("read-entity", result.project_id, result.entity_id);
+  assert.equal(entity.revision, 2);
+  assert.equal(entity.data.title, "Edited manuscript");
   await native("unload");
   await second.getByText("空领域", { exact: true }).waitFor();
   assert.equal(host.pid, pid);

@@ -23,6 +23,7 @@ struct Manifest {
     files: BTreeMap<String, String>,
     runtime: Option<Runtime>,
     ui: Option<Ui>,
+    entity_types: Option<String>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -92,6 +93,13 @@ struct Field {
     label: String,
 }
 
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct EntityType {
+    name: String,
+    schema: Value,
+}
+
 pub fn is_digest(value: &str) -> bool {
     value.len() == 64
         && value
@@ -138,6 +146,12 @@ static CONTRIBUTIONS_SCHEMA: std::sync::LazyLock<jsonschema::Validator> =
             "../../../schemas/domain-contributions.schema.json"
         ))
     });
+static ENTITY_TYPES_SCHEMA: std::sync::LazyLock<jsonschema::Validator> =
+    std::sync::LazyLock::new(|| {
+        embedded_schema(include_str!(
+            "../../../schemas/domain-entity-types.schema.json"
+        ))
+    });
 
 fn decode_contract<T: serde::de::DeserializeOwned>(
     validator: &jsonschema::Validator,
@@ -172,6 +186,7 @@ struct Package {
     sources: Vec<ConfigurationRecord>,
     role_agent_bindings: BTreeMap<Id, Id>,
     agent_workflows: BTreeSet<Id>,
+    entity_types: BTreeMap<String, EntityType>,
 }
 
 impl Package {
@@ -236,6 +251,25 @@ impl Package {
             return Err(invalid("领域文件与清单摘要不符"));
         }
         let prefix = format!("{}.", manifest.id);
+        let mut entity_types: BTreeMap<String, EntityType> = BTreeMap::new();
+        if let Some(path) = &manifest.entity_types {
+            entity_types = decode_contract(
+                &ENTITY_TYPES_SCHEMA,
+                files
+                    .get(path)
+                    .ok_or_else(|| invalid("领域对象类型文件缺失"))?,
+            )?;
+            for (reference, entity) in &entity_types {
+                require(
+                    reference.starts_with(&prefix) && !entity.name.trim().is_empty(),
+                    "领域对象类型需要本包命名空间和有效名称",
+                )?;
+                jsonschema::options()
+                    .offline()
+                    .build(&entity.schema)
+                    .map_err(|_| invalid("领域对象 Schema 不可用"))?;
+            }
+        }
         if let Some(runtime) = &manifest.runtime
             && (!runtime.entry.starts_with("runtime/")
                 || !runtime.entry.ends_with(".mjs")
@@ -301,50 +335,27 @@ impl Package {
                 }
             }
         }
-        let (sources, role_agent_bindings, agent_workflows) =
-            if files.contains_key("configurations/manifest.json") {
-                let bundle = factory_bundle::read_bundle(|path| {
-                    files
-                        .get(&format!("configurations/{path}"))
-                        .and_then(|body| std::str::from_utf8(body).ok())
-                        .ok_or_else(|| invalid("领域源文件缺失或编码无效"))
-                })?;
-                if configuration_usage_index(&bundle.entries)? != bundle.usage_index
-                    || bundle.entries.iter().any(|record| {
-                        !record.scope.is_global() || !record.definition_id.starts_with(&prefix)
-                    })
-                {
-                    return Err(invalid("领域源定义命名空间或引用索引不符"));
-                }
-                let mut catalog = EngineeringState::default();
-                devdesk_core::initialize_template_catalog(&mut catalog)?;
-                catalog.governance.extend(bundle.entries.iter().cloned());
-                let bindings: BTreeMap<Id, Id> = match bundle.defaults.get("role_agent_bindings") {
-                    Some(value) => serde_json::from_value(value.clone())
-                        .map_err(|_| invalid("领域默认 Role 与 Agent 绑定无效"))?,
-                    None => BTreeMap::new(),
-                };
-                for (role, agent) in &bindings {
-                    let role = catalog.configuration(role)?;
-                    let agent = catalog.resolve_agent(agent)?;
-                    require(
-                        role.r#type == "role" && agent.role == role.definition_id,
-                        "领域默认 Agent 必须属于绑定的 Role",
-                    )?;
-                }
-                let workflows = validate_source_closure(&catalog, &bundle.entries, &bindings)?;
-                (bundle.entries, bindings, workflows)
-            } else {
-                (vec![], BTreeMap::new(), BTreeSet::new())
-            };
+        let (sources, configuration) = if files.contains_key("configurations/manifest.json") {
+            let bundle = factory_bundle::read_bundle(|path| {
+                files
+                    .get(&format!("configurations/{path}"))
+                    .and_then(|body| std::str::from_utf8(body).ok())
+                    .ok_or_else(|| invalid("领域源文件缺失或编码无效"))
+            })?;
+            let configuration = devdesk_core::validate_domain_configuration(&prefix, &bundle)?;
+            (bundle.entries, configuration)
+        } else {
+            (vec![], Default::default())
+        };
         Ok(Self {
             digest: digest(bytes),
             manifest,
             files,
             contributions,
             sources,
-            role_agent_bindings,
-            agent_workflows,
+            role_agent_bindings: configuration.role_agent_bindings,
+            agent_workflows: configuration.agent_workflows,
+            entity_types,
         })
     }
 
@@ -355,46 +366,6 @@ impl Package {
     fn runtime(&self) -> Option<&Runtime> {
         self.manifest.runtime.as_ref()
     }
-}
-
-fn validate_source_closure(
-    catalog: &EngineeringState,
-    sources: &[ConfigurationRecord],
-    bindings: &BTreeMap<Id, Id>,
-) -> Result<BTreeSet<Id>> {
-    let mut agent_workflows = BTreeSet::new();
-    for source in sources {
-        for edge in configuration_edges(source)? {
-            let target = catalog.configuration(&edge.to)?;
-            require(target.r#type == edge.expected_type, "领域源引用类型不匹配")?;
-        }
-        if source.r#type == "workflow" {
-            let plan = devdesk_core::compile_workflow_sources(
-                None,
-                catalog,
-                source,
-                &Scope::global(),
-                Some(bindings),
-            )?;
-            if let Some(agent) = plan
-                .document
-                .orchestrator_role_ref
-                .as_ref()
-                .and_then(|role| bindings.get(role))
-            {
-                let composition = catalog.resolve_agent(agent)?;
-                let harness = catalog.configuration(&composition.harness_ref)?;
-                require(
-                    harness.data["provider"].as_str().is_some_and(|provider| {
-                        devdesk_core::driver_supports(provider, "orchestration")
-                    }),
-                    "领域 Workflow 的编排 Agent 需要支持编排工具的 Harness",
-                )?;
-                agent_workflows.insert(source.id.clone());
-            }
-        }
-    }
-    Ok(agent_workflows)
 }
 
 struct Active {
@@ -482,6 +453,7 @@ impl DomainPackages {
             "targets":package.and_then(|p| p.manifest.ui.as_ref()).map(|ui| &ui.targets),
             "sources":package.map(|p| &p.sources),
             "agent_workflows":package.map(|p| &p.agent_workflows),
+            "entity_types":package.map(|p| &p.entity_types),
         })
     }
 
@@ -787,12 +759,32 @@ impl DomainPackages {
         project: &str,
         epoch: u64,
         trusted: &BTreeSet<String>,
-        action: impl FnOnce() -> Result<T>,
+        action: impl FnOnce(&str) -> Result<T>,
     ) -> Result<T> {
         let active = self.active.read().unwrap();
         check_epoch(epoch, active.epoch)?;
-        self.require_project(&active, project, trusted)?;
-        action()
+        let package = self.require_project(&active, project, trusted)?;
+        action(&package.digest)
+    }
+
+    pub fn validate_entity(
+        &self,
+        project: &str,
+        epoch: u64,
+        trusted: &BTreeSet<String>,
+        (reference, data): (&str, &Value),
+        write: impl FnOnce(&str) -> Result<Value>,
+    ) -> Result<Value> {
+        let active = self.active.read().unwrap();
+        check_epoch(epoch, active.epoch)?;
+        let package = self.require_project(&active, project, trusted)?;
+        let entity = package
+            .entity_types
+            .get(reference)
+            .ok_or_else(|| err("not_found", "活动包未声明此领域对象类型"))?;
+        require(data.to_string().len() <= 16 * 1024, "领域对象数据超出预算")?;
+        validate_exchange(Some(&entity.schema), data)?;
+        write(&package.digest)
     }
 
     /// Pins existing public project endpoints to the current domain.

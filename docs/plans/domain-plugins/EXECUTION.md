@@ -9,8 +9,19 @@
 - 领域读处理器在固定 Node 镜像的临时 Docker 容器中通过 JSON-RPC 执行。Git 读取由平台适配器执行。文稿 Workflow 的工具步骤走既有 Rust 调度、持久化调用和回执接纳，Web 可按无浏览器端返回的执行 ID 读回状态和输出。
 - 切换及卸载核对包绑定项目中的活动根流程。正在工作的包需要先结束在途流程。包停用期间，其绑定项目不领取后台调度。重装相同摘要后可读取原有执行。
 - 包内 Workflow 声明编排 Role，配合包默认的 Role→Agent 精确绑定，经活动目录向各端发布 Agent 调度选项。工作流控制器和全局项目管理使用各自的 Role 资格。领域项目的 RPC、Artifact 下载和事件流检查活动代次，切包时结束原领域项目事件流。
+- ZIP 可声明带版本和 JSON Schema 的领域对象类型。实例写入既有项目库并使用预期修订、命令重放和包绑定。文稿夹具声明文稿和校样两种类型。对象间关系、流程归属和平台对校样的自动提交仍在 P3。
 
 ## 验收入口
+
+Host 和 Web 分别由 `scripts/release/package-core.sh host` 和 `scripts/release/package-core.sh web` 打包。解压后，传入全新数据目录、Web 制品目录和受信任的 ZIP SHA-256。Linux x86_64 上运行领域 worker 前，Docker 需要具备固定的 Node 镜像。
+
+```bash
+docker pull node@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced307cf4b6f
+zip_sha=$(sha256sum /path/to/domain.zip | cut -d ' ' -f 1)
+devdesk-host --data /path/to/new-dataset --web-dir /path/to/devdesk-core-web --trust-domain "$zip_sha"
+```
+
+体验夹具可执行 `python3 tests/fixtures/domain-packages/build.py /path/to/zip-directory` 生成。按仓库源码复跑验收时使用以下命令。
 
 ```bash
 cargo build --locked -p devdesk-host --no-default-features
@@ -26,6 +37,8 @@ node tests/entrypoints/domain_packages.mjs target/debug/devdesk-host web/dist/co
 P3 扩展验收使用同一个文稿包。Web 启动人工流程，Python 派发步骤、读取其 Artifact、接纳确切产物并结束流程。Python 也检查命令重放、损坏 ZIP、重复导入、旧代次写入、卸载后的项目目录，以及两类旧项目事件订阅结束。独立发行件复验的 Rust 执行为 `7d889430-9d55-2c00-15e8-f2fd4ba0c941`，人工执行为 `7fd78589-e7f2-7bec-d4e2-0d0ffe2260a7`。证据位于 `/tmp/devdesk-domain-p3-release.3h1AAp/result.json`。
 
 脚本化 Harness 通过原生工具派发编辑角色负责的流程，并记录来自 Human 的步骤批准。该 Role 无法开启项目管理控制器。测试使用脚本化 Agent 行为，真实模型调用单独验收。
+
+对象合同验收直接通过 Python 客户端发现类型，拒绝类型错误、跨项目读取及过期修订写入，验证新建重放和重装原 ZIP 后回读修订。测试将实际工作流输出保存为校样对象，保留工作流自己的 Artifact 和来源记录。最新发行件复验记录位于 `/tmp/devdesk-domain-p3-terminal.rx19mJ/result.json`。单独解压 Host、以空领域启动并通过 HTTP 回读核心配置的检查也通过。
 
 ## 基线和后续范围
 

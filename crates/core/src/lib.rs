@@ -9,6 +9,7 @@ mod configuration_catalog;
 mod configuration_publication;
 pub use configuration_publication::{
     ConfigurationPublication, configuration_transfer_witness, prepare_configuration_publication,
+    validate_domain_configuration,
 };
 pub mod credential_updates;
 pub mod experience_directory;
@@ -130,6 +131,7 @@ pub mod template_reset_jobs;
 mod templates;
 pub use command_catalog::*;
 pub use templates::{ConfigurationBundle, install_configuration_bundle};
+mod domain_entities;
 mod driver_capabilities;
 pub use driver_capabilities::{
     DriverCapabilities, driver_capabilities, driver_supports, install_driver_capabilities,

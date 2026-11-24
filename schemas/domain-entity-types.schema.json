@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DevDesk domain entity declarations",
+  "type": "object",
+  "maxProperties": 32,
+  "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,139}:[1-9][0-9]{0,9}$" },
+  "additionalProperties": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["name", "schema"],
+    "properties": {
+      "name": { "type": "string", "minLength": 1, "maxLength": 140 },
+      "schema": { "type": "object", "required": ["type"], "properties": { "type": { "const": "object" } } }
+    }
+  }
+}
