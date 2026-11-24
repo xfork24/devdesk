@@ -1227,6 +1227,14 @@ impl DomainPackages {
     }
 
     pub fn bind_project(&self, project: &str, digest: &str) -> Result<()> {
+        self.bind_project_at(project, digest, None)
+    }
+
+    pub fn bind_copied_project(&self, project: &str, digest: &str, root: &Path) -> Result<()> {
+        self.bind_project_at(project, digest, Some(root))
+    }
+
+    fn bind_project_at(&self, project: &str, digest: &str, root: Option<&Path>) -> Result<()> {
         let mut db = self.db.lock().unwrap();
         let tx = db.transaction().map_err(storage)?;
         let inserted = tx
@@ -1250,6 +1258,22 @@ impl DomainPackages {
                  WHERE p.digest=?2 AND s.data_root IS NOT NULL",
                 params![project, digest],
             ).map_err(storage)?;
+        }
+        if let Some(expected) = root {
+            let pinned: Option<String> = tx
+                .query_row(
+                    "SELECT data_root FROM domain_project_storage WHERE project=?",
+                    [project],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(storage)?;
+            if pinned.as_deref().map(Path::new).unwrap_or(&self.root) != expected {
+                return Err(err(
+                    "revision_conflict",
+                    "领域项目数据目录已改变，请重新打开项目",
+                ));
+            }
         }
         tx.commit().map_err(storage)
     }

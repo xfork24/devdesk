@@ -9,6 +9,17 @@ use crate::{
     workflow_resources::version,
     *,
 };
+
+const LEGACY_ADMISSION_CONFLICT: &str = "原物理观察已保留，原业务接纳版本冲突";
+
+fn connection_target(project: &Value) -> Value {
+    json!({
+        "workspace": project["workspace"],
+        "workspace_definition": project["workspace_definition"],
+        "execution_mode": project["execution_mode"],
+    })
+}
+
 impl Engine {
     pub(crate) fn prepare_native_worktree_intent(
         &self,
@@ -210,6 +221,8 @@ impl Engine {
                 .cloned()
                 .collect(),
         )?;
+        let connect_target = matches!(op.action, RepositoryAction::Connect { .. })
+            .then(|| connection_target(owner.owner.value.as_ref().unwrap()));
         let mut authorization = record(
             "repository_authorization",
             op.id.clone(),
@@ -217,7 +230,7 @@ impl Engine {
             "仓库原始写入资格".into(),
             1,
             None,
-            json!({"basis":basis,"actor":context.actor(),"command":c,"action":op.action}),
+            json!({"basis":basis,"actor":context.actor(),"command":c,"action":op.action,"connection_target":connect_target}),
             true,
         );
         authorization.id = format!("repository-authorization:{}", op.id);
@@ -399,6 +412,58 @@ impl Engine {
         }
         Ok(())
     }
+    fn check_connection_target(
+        &self,
+        op: &RepositoryOperation,
+        target: &Value,
+        reads: &mut ReadSet,
+    ) -> Result<ResourceSnapshot> {
+        let RepositoryAction::Connect {
+            repository,
+            mainline,
+        } = &op.action
+        else {
+            unreachable!("only connect updates the repository binding");
+        };
+        let selected = one(self.store.as_ref(), "project", &op.project_id)?;
+        let project = selected
+            .value
+            .as_ref()
+            .ok_or_else(|| err("not_found", "原项目缺失"))?;
+        let unchanged = if target.is_null() {
+            // Older grants saved only the whole Project version. When that
+            // changed, accept only the still-unconnected original destination.
+            reads.require(&selected.resource).ok() == Some(selected.revision)
+                || (project["execution_mode"] == "live"
+                    && project["workspace"] == ""
+                    && project["workspace_definition"]["path"] == ""
+                    && project["workspace_definition"]["repository"]
+                        .as_str()
+                        .is_some_and(|name| name.eq_ignore_ascii_case(repository))
+                    && project["workspace_definition"]["mainline"] == *mainline)
+        } else {
+            connection_target(project) == *target
+        };
+        if !unchanged {
+            return Err(err(
+                "repository_target_changed",
+                "仓库接入的原目标或工作区已变化",
+            ));
+        }
+        // This is a fresh compare-and-swap for updating the Project row. Its
+        // unrelated fields (for example title, concurrency, config revision)
+        // are copied from the current row, never from the original grant.
+        *reads = ReadSet::new(
+            reads
+                .versions()
+                .iter()
+                .filter(|entry| entry.resource != selected.resource)
+                .cloned()
+                .collect(),
+        )?
+        .merge([version(&selected)])?;
+        Ok(selected)
+    }
     fn drive_native_repository(&self, id: &str) -> Result<()> {
         let selected = one(self.store.as_ref(), "repository_operation", id)?;
         let op: RepositoryOperation = serde_json::from_value(
@@ -411,6 +476,12 @@ impl Engine {
         if op.status == RepositoryOperationStatus::Completed {
             return Ok(());
         }
+        let connect = matches!(op.action, RepositoryAction::Connect { .. });
+        let reconcile = op.status == RepositoryOperationStatus::NeedsReconciliation
+            && op.reason == "reconcile_requested";
+        let recover_legacy = connect
+            && op.status == RepositoryOperationStatus::NeedsReconciliation
+            && op.reason == LEGACY_ADMISSION_CONFLICT;
         let key = ResourceKey::new("governance", format!("repository-effect:{id}"));
         let previous = one(self.store.as_ref(), "governance", &key.id)?;
         let (fresh, effect, mut operation) = if previous.value.is_none() {
@@ -419,6 +490,7 @@ impl Engine {
                 "原仓库操作已有外部尝试，缺少旧意图时不能重发",
             )?;
             let mut basis = ReadSet::default();
+            let mut target = Value::Null;
             let authorization = one(
                 self.store.as_ref(),
                 "governance",
@@ -435,11 +507,14 @@ impl Engine {
                 basis = serde_json::from_value(original.data["basis"].clone())
                     .map_err(|e| err("storage", e.to_string()))?;
                 basis = basis.merge([version(&authorization)])?;
+                target = original.data["connection_target"].clone();
             }
             let mut additions = vec![];
             let mut qualifiers = vec![];
             match &op.action {
                 RepositoryAction::Connect { .. } => {
+                    let project = self.check_connection_target(&op, &target, &mut basis)?;
+                    target = connection_target(project.value.as_ref().unwrap());
                     for resource in [
                         ResourceKey::new("head", format!("main:{}", op.project_id)),
                         ResourceKey::new("repository_worktree", &op.project_id),
@@ -571,7 +646,7 @@ impl Engine {
                 "原仓库外部操作固定资格".into(),
                 1,
                 None,
-                json!({"operation":dispatched,"operation_version":{"resource":selected.resource,"revision":selected.revision+1},"basis":basis,"issuer":"kernel_repository"}),
+                json!({"operation":dispatched,"operation_version":{"resource":selected.resource,"revision":selected.revision+1},"basis":basis,"issuer":"kernel_repository","connection_target":target}),
                 true,
             );
             effect.id = key.id.clone();
@@ -673,9 +748,7 @@ impl Engine {
             })?;
             result
         };
-        let positive = if op.status == RepositoryOperationStatus::NeedsReconciliation
-            && op.reason == "reconcile_requested"
-        {
+        let positive = if reconcile {
             let key = ResourceKey::new(
                 "governance",
                 format!("repository-reconciled:{}:{}", id, op.revision),
@@ -696,9 +769,14 @@ impl Engine {
                         if let Err(original_error) = &result
                             && matches!(operation.action, RepositoryAction::Connect { .. })
                         {
-                            let basis: ReadSet =
+                            let mut basis: ReadSet =
                                 serde_json::from_value(effect.data["basis"].clone())
                                     .map_err(|e| err("storage", e.to_string()))?;
+                            self.check_connection_target(
+                                &operation,
+                                &effect.data["connection_target"],
+                                &mut basis,
+                            )?;
                             let keys: Vec<_> = basis
                                 .versions()
                                 .iter()
@@ -767,9 +845,7 @@ impl Engine {
         let expected: ResourceVersion =
             serde_json::from_value(effect.data["operation_version"].clone())
                 .map_err(|e| err("storage", e.to_string()))?;
-        let current = if op.status == RepositoryOperationStatus::NeedsReconciliation
-            && op.reason == "reconcile_requested"
-        {
+        let current = if reconcile || recover_legacy {
             version(&selected)
         } else {
             expected
@@ -785,7 +861,7 @@ impl Engine {
         let mut changes = vec![];
         let mut reads: ReadSet = serde_json::from_value(effect.data["basis"].clone())
             .map_err(|e| err("storage", e.to_string()))?;
-        reads = reads.merge([
+        let evidence = ReadSet::new(vec![
             current.clone(),
             observation.clone(),
             ResourceVersion {
@@ -793,29 +869,41 @@ impl Engine {
                 revision: 1,
             },
         ])?;
+        reads = reads.merge(evidence.versions().iter().cloned())?;
         match &actual {
             Ok(receipt) => {
                 // Raw supplier facts stay immutable even when they violate
                 // the original contract. Reject the projection and retain the
                 // physical fence for an explicit read-only reconciliation.
                 let original_reads = reads.clone();
-                let original_change_count = changes.len();
-                match self.prepare_repository_receipt(&operation, receipt, &mut reads, &mut changes)
-                {
+                match self.prepare_repository_receipt(
+                    &operation,
+                    receipt,
+                    &effect.data["connection_target"],
+                    &mut reads,
+                    &mut changes,
+                ) {
                     Ok(()) => {
                         operation.status = RepositoryOperationStatus::Completed;
                         operation.receipt = Some(receipt.clone());
                         operation.reason.clear();
                     }
                     Err(error) => {
-                        reads = original_reads;
-                        changes.truncate(original_change_count);
+                        reads = if connect {
+                            evidence.clone()
+                        } else {
+                            original_reads
+                        };
+                        changes.clear();
                         operation.status = RepositoryOperationStatus::NeedsReconciliation;
                         operation.reason = format!("receipt_rejected · {error}");
                     }
                 }
             }
             Err(error) => {
+                if connect {
+                    reads = evidence;
+                }
                 operation.status = RepositoryOperationStatus::NeedsReconciliation;
                 operation.reason = format!("{} · {}", error.code, error.message);
             }
@@ -839,6 +927,18 @@ impl Engine {
             time: now() as i64,
         });
         match result {
+            Err(error)
+                if connect
+                    && error.code == "revision_conflict"
+                    && error.context.iter().any(|context| {
+                        context.operation == "verify_read_set"
+                            && context.details["resource"]["kind"] == "project"
+                            && context.details["resource"]["id"] == op.project_id
+                    }) =>
+            {
+                // Retry only admission of the already persisted observation.
+                return Err(error);
+            }
             Err(error) if error.code == "revision_conflict" => {
                 let selected = one(self.store.as_ref(), "repository_operation", id)?;
                 let mut original: RepositoryOperation = serde_json::from_value(
@@ -850,7 +950,11 @@ impl Engine {
                 .map_err(|e| err("storage", e.to_string()))?;
                 if original.status != RepositoryOperationStatus::Completed {
                     original.status = RepositoryOperationStatus::NeedsReconciliation;
-                    original.reason = "原物理观察已保留，原业务接纳版本冲突".into();
+                    original.reason = if connect {
+                        format!("仓库接入条件已变化 · {}", error.message)
+                    } else {
+                        LEGACY_ADMISSION_CONFLICT.into()
+                    };
                     original.revision += 1;
                     self.store.commit_changes(&PreparedChangeSet {
                         command_id: format!("repository-conflict:{id}:{}", selected.revision),
@@ -875,6 +979,7 @@ impl Engine {
         &self,
         op: &RepositoryOperation,
         receipt: &RepositoryReceipt,
+        target: &Value,
         reads: &mut ReadSet,
         changes: &mut Vec<ResourceChange>,
     ) -> Result<()> {
@@ -905,12 +1010,7 @@ impl Engine {
                         && work.base == *head,
                     "仓库接入回执改变了原请求或策略依据",
                 )?;
-                let key = ResourceKey::new("project", &op.project_id);
-                let selected = one(self.store.as_ref(), &key.kind, &key.id)?;
-                require(
-                    reads.require(&key)? == selected.revision,
-                    "仓库接入原 Project 版本已变化",
-                )?;
+                let selected = self.check_connection_target(op, target, reads)?;
                 let mut next = selected
                     .value
                     .ok_or_else(|| err("not_found", "Project 缺失"))?;
@@ -919,7 +1019,7 @@ impl Engine {
                 next["execution_mode"] = json!("live");
                 next["revision"] = json!(selected.revision + 1);
                 changes.push(ResourceChange {
-                    resource: key,
+                    resource: selected.resource,
                     value: next,
                 });
                 let key = ResourceKey::new("head", format!("main:{}", op.project_id));

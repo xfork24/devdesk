@@ -20,6 +20,9 @@ impl Workspace {
         loop {
             let (projects, total) = self.global.projects(offset, 100)?;
             for project in &projects {
+                if self.global.removed_project_missing(&project.id)? {
+                    continue;
+                }
                 let engine = self.project_engine(Some(&project.id))?;
                 self.sync_configuration(&engine)?;
                 performance::record("catalog.reset_target_checked", 0.0);
@@ -44,7 +47,11 @@ impl Workspace {
             let (projects, total) = self.global.projects(offset, 100)?;
             let last_page = projects.is_empty();
             offset += projects.len();
-            targets.extend(projects.into_iter().map(|project| project.id));
+            for project in projects {
+                if !self.global.removed_project_missing(&project.id)? {
+                    targets.push(project.id);
+                }
+            }
             if offset >= total || last_page {
                 return Ok(targets);
             }

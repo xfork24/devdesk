@@ -484,6 +484,15 @@
       ]
     },
     {
+      "method": "domain.project.remove",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "command_id_active_epoch_and_project_registration",
+      "sites": [
+        "crates/host/src/domains.rs"
+      ]
+    },
+    {
       "method": "domain.read",
       "access": "platform_read",
       "scope": "explicit",

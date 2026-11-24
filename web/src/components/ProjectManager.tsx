@@ -856,6 +856,7 @@ export function ProjectManager({
             )}
             <ActionButton
               className="primary"
+              data-domain-project-save
               disabled={busy || !requirements || !preview}
             >
               保存项目配置

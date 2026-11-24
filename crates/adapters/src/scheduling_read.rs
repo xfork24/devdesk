@@ -38,7 +38,7 @@ fn stages(
         ),
         (
             S::Repositories,
-            "EXISTS(SELECT 1 FROM repository_operations WHERE status IN ('prepared','dispatched','observed') OR (status='needs_reconciliation' AND reason='reconcile_requested')) OR EXISTS(SELECT 1 FROM tasks WHERE status!='completed' AND worktree='' AND EXISTS(SELECT 1 FROM heads WHERE id=tasks.feature_id AND revision!='') AND NOT EXISTS(SELECT 1 FROM repository_operations WHERE json_extract(action,'$.kind')='create_worktree' AND json_extract(action,'$.owner')=tasks.id))",
+            "EXISTS(SELECT 1 FROM repository_operations WHERE status IN ('prepared','dispatched','observed') OR (status='needs_reconciliation' AND (reason='reconcile_requested' OR (json_extract(action,'$.kind')='connect' AND reason='原物理观察已保留，原业务接纳版本冲突')))) OR EXISTS(SELECT 1 FROM tasks WHERE status!='completed' AND worktree='' AND EXISTS(SELECT 1 FROM heads WHERE id=tasks.feature_id AND revision!='') AND NOT EXISTS(SELECT 1 FROM repository_operations WHERE json_extract(action,'$.kind')='create_worktree' AND json_extract(action,'$.owner')=tasks.id))",
         ),
         (
             S::PlanChanges,

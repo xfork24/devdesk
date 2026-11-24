@@ -14,6 +14,7 @@ import {
 } from "react";
 import { DomainProvider } from "./domain-sdk";
 import {
+  FolderMinus,
   History,
   LayoutDashboard,
   Library,
@@ -87,6 +88,55 @@ async function rpc<T>(
 
 function message(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function DomainProjectRemoval({
+  epoch,
+  project,
+}: {
+  epoch: number;
+  project: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  return (
+    <span className="domain-project-removal">
+      <ActionButton
+        type="button"
+        disabled={busy}
+        title="再次打开同一仓库和主分支即可恢复"
+        onClick={async () => {
+          setBusy(true);
+          setError("");
+          try {
+            await rpc("domain.project.remove", {
+              epoch,
+              project_id: project,
+              command_id: crypto.randomUUID(),
+            });
+            const url = new URL(location.href);
+            if (url.searchParams.get("project_id") === project) {
+              const next = new URLSearchParams();
+              for (const key of ["view", "tab"]) {
+                const value = url.searchParams.get(key);
+                if (value) next.set(key, value);
+              }
+              url.search = next.toString();
+              history.replaceState(null, "", url);
+              window.dispatchEvent(new PopStateEvent("popstate"));
+            }
+          } catch (failure) {
+            setError(message(failure));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <FolderMinus size={15} aria-hidden="true" /> 移除项目
+      </ActionButton>
+      {error && <span className="error" role="alert">{error}</span>}
+    </span>
+  );
 }
 
 class PageBoundary extends Component<
@@ -554,6 +604,17 @@ export function AppRoot() {
   const [auth, setAuth] = useState(false);
   const [needsDataset, setNeedsDataset] = useState(false);
   const [busy, setBusy] = useState(false);
+  const projectAction = useCallback(
+    (project: string) =>
+      directory?.project_connection ? (
+        <DomainProjectRemoval
+          key={project}
+          epoch={directory.epoch}
+          project={project}
+        />
+      ) : null,
+    [directory?.epoch, directory?.project_connection],
+  );
   const refresh = useCallback(async () => {
     const [next, installed] = await Promise.all([
       rpc<Directory>("query.domain.active"),
@@ -655,6 +716,11 @@ export function AppRoot() {
     );
   return (
     <WorkbenchLayout
+      domainProjectAction={
+        contribution && directory?.project_connection
+          ? projectAction
+          : undefined
+      }
       domainSettings={
         directory?.active && contribution ? (
           <Suspense fallback={null}>

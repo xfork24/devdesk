@@ -3,6 +3,7 @@ use super::*;
 use rusqlite::{OptionalExtension, params};
 
 const DOMAIN_DATASET_LAYOUT: &str = "single-host-domain-packages-v1";
+const REMOVED_PROJECT_PREFIX: &str = "project.removed:";
 
 pub struct GlobalStore {
     pub(super) connection: connection_pool::ConnectionPool,
@@ -157,7 +158,7 @@ impl GlobalStore {
     }
 
     pub fn projects(&self, offset: usize, limit: usize) -> Result<(Vec<Project>, usize)> {
-        self.projects_visible(offset, limit, false, None)
+        self.project_rows(offset, limit, false, None, true)
     }
     pub fn github_projects(&self, offset: usize, limit: usize) -> Result<(Vec<Project>, usize)> {
         self.projects_visible(offset, limit, true, None)
@@ -169,11 +170,29 @@ impl GlobalStore {
         github_only: bool,
         visibility: Option<&domain_packages::ProjectVisibility>,
     ) -> Result<(Vec<Project>, usize)> {
+        self.project_rows(offset, limit, github_only, visibility, false)
+    }
+    fn project_rows(
+        &self,
+        offset: usize,
+        limit: usize,
+        github_only: bool,
+        visibility: Option<&domain_packages::ProjectVisibility>,
+        include_removed: bool,
+    ) -> Result<(Vec<Project>, usize)> {
         let conn = self.connection.read().map_err(storage)?;
         let filter = if github_only {
             "project IS NOT NULL AND json_extract(project,'$.execution_mode')='live' AND coalesce(json_extract(project,'$.workspace_definition.repository'),'') <> ''"
         } else {
             "project IS NOT NULL"
+        };
+        let filter = if include_removed {
+            filter.to_owned()
+        } else {
+            format!(
+                "{filter} AND NOT EXISTS(SELECT 1 FROM settings
+                 WHERE key='{REMOVED_PROJECT_PREFIX}'||project_catalog.id AND value='true')"
+            )
         };
         let (filter, projects) = match visibility {
             Some(visibility)
@@ -210,6 +229,158 @@ impl GlobalStore {
             projects.push(serde_json::from_str(&body.map_err(storage)?).map_err(storage)?);
         }
         Ok((projects, count))
+    }
+
+    pub fn project_removal_key(project: &str) -> devdesk_core::concurrency::ResourceKey {
+        devdesk_core::concurrency::ResourceKey::new(
+            "setting",
+            format!("{REMOVED_PROJECT_PREFIX}{project}"),
+        )
+    }
+
+    pub fn project_removed(&self, project: &str) -> Result<bool> {
+        Ok(setting(
+            &*self.connection.read()?,
+            &Self::project_removal_key(project).id,
+        )? == Some(Value::Bool(true)))
+    }
+
+    pub fn removed_project_missing(&self, project: &str) -> Result<bool> {
+        Ok(self.project_removed(project)?
+            && !SqliteStore::project_path(&self.root, project)?
+                .join("engineering.sqlite3")
+                .try_exists()
+                .map_err(storage)?)
+    }
+
+    /// Reopening can find a retained registration even when it is hidden.
+    pub fn domain_github_project(
+        &self,
+        repository: &str,
+        mainline: &str,
+        visibility: &domain_packages::ProjectVisibility,
+    ) -> Result<Option<Project>> {
+        let conn = self.connection.read()?;
+        let mut query = conn
+            .prepare_cached(
+                "SELECT id,project FROM project_catalog WHERE project IS NOT NULL
+             AND json_extract(project,'$.workspace_definition.repository') = ?1 COLLATE NOCASE
+             AND json_extract(project,'$.workspace_definition.mainline') = ?2
+             ORDER BY EXISTS(SELECT 1 FROM settings
+                WHERE key='project.removed:'||project_catalog.id AND value='true'), rowid",
+            )
+            .map_err(storage)?;
+        let rows = query
+            .query_map(params![repository, mainline], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(storage)?;
+        for row in rows {
+            let (id, body) = row.map_err(storage)?;
+            if visibility.includes(&id)
+                && (setting(&conn, &Self::project_removal_key(&id).id)? != Some(json!(true))
+                    || SqliteStore::project_path(&self.root, &id)?
+                        .join("engineering.sqlite3")
+                        .try_exists()
+                        .map_err(storage)?)
+            {
+                return serde_json::from_str(&body).map(Some).map_err(storage);
+            }
+        }
+        Ok(None)
+    }
+
+    /// Find an unpublished project by the repository identity recorded in its database.
+    pub fn copied_github_project(
+        &self,
+        data_root: &Path,
+        repository: &str,
+        mainline: &str,
+    ) -> Result<Option<Project>> {
+        let projects = data_root.join("projects");
+        reject_symlink(&projects)?;
+        let entries = match fs::read_dir(&projects) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(storage(error)),
+        };
+        let mut found: Option<Project> = None;
+        for entry in entries {
+            let entry = entry.map_err(storage)?;
+            let name = entry.file_name();
+            let Some(id) = name.to_str().filter(|id| uuid::Uuid::parse_str(id).is_ok()) else {
+                continue;
+            };
+            if !entry.file_type().map_err(storage)?.is_dir() || self.project(id)?.is_some() {
+                continue;
+            }
+            let path = SqliteStore::project_path_in(data_root, id)?;
+            let db = path.join("engineering.sqlite3");
+            if !db.is_file() {
+                continue;
+            }
+            let connection = connection_pool::ManagedConnection::read_only(&db)?;
+            let project = match execution_read::project(&connection, id) {
+                Ok(project) => project,
+                Err(error) if error.code == "not_found" => continue,
+                Err(error) => return Err(error),
+            };
+            let Some(workspace) = &project.workspace_definition else {
+                continue;
+            };
+            if !workspace.repository.eq_ignore_ascii_case(repository)
+                || workspace.mainline != mainline
+            {
+                continue;
+            }
+            check_engineering_baseline(&db)?;
+            let checkout = path.join("repository");
+            reject_symlink(&checkout)?;
+            if project.execution_mode != "live"
+                || Path::new(&workspace.path) != checkout
+                || Path::new(&project.workspace) != checkout
+                || !checkout.is_dir()
+            {
+                return Err(err(
+                    "incompatible_dataset",
+                    format!(
+                        "旧项目 {id} 的本地仓库路径不匹配或不存在，请将完整项目目录复制到原路径"
+                    ),
+                ));
+            }
+            if let Some(previous) = &found {
+                return Err(err(
+                    "project_ambiguous",
+                    format!(
+                        "同一仓库和主分支有多个未登记项目（{}、{id}），请只保留要接回的项目目录",
+                        previous.id
+                    ),
+                ));
+            }
+            found = Some(project);
+        }
+        Ok(found)
+    }
+
+    /// Reserve the old ID before loading the database. Publication happens only
+    /// after it opens successfully, and an interrupted import can retry.
+    pub fn reserve_copied_project(&self, project: &Project) -> Result<()> {
+        let command = format!("copied-project:{}", project.id);
+        let conn = self.connection.lock().map_err(storage)?;
+        conn.execute(
+            "INSERT INTO project_catalog(id,command_id,fingerprint)
+             VALUES(?1,?2,?1) ON CONFLICT(id) DO NOTHING",
+            params![project.id, command],
+        )
+        .map_err(storage)?;
+        let owned: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM project_catalog WHERE id=?1 AND command_id=?2)",
+                params![project.id, command],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        require(owned, "旧项目 ID 已被占用")
     }
 
     /// Reserve an identity before creating its database, so retries after a crash use the same file.
@@ -321,7 +492,12 @@ fn preflight_engineering_databases(root: &Path, global: &Connection) -> Result<(
         let status = if path.exists() {
             check_engineering_baseline(&path)
         } else {
-            require(!published, "已发布项目的数据库缺失；拒绝重建")
+            require(
+                !published
+                    || setting(global, &GlobalStore::project_removal_key(&id).id)?
+                        == Some(json!(true)),
+                "已发布项目的数据库缺失；拒绝重建",
+            )
         };
         if !pending(&id) {
             status?;

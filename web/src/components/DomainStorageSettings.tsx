@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { ActionButton, ActionForm } from "./ActionFeedback";
 import { standaloneRequest as request } from "../workbench-request";
 
@@ -11,6 +11,7 @@ type StorageSettings = {
 };
 
 export function DomainStorageSettings({ epoch }: { epoch: number }) {
+  const formId = useId();
   const [settings, setSettings] = useState<StorageSettings>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -31,39 +32,41 @@ export function DomainStorageSettings({ epoch }: { epoch: number }) {
   }, [epoch]);
 
   return (
-    <section className="panel" aria-label="领域数据目录设置">
-      <div className="panel-heading">
-        <h2>领域数据目录</h2>
+    <section
+      className="setting-row"
+      data-domain-storage-row=""
+      aria-label="领域数据目录设置"
+    >
+      <div>
+        <h3>领域数据目录</h3>
         {settings && <code>{settings.package_id}</code>}
-      </div>
-      {settings ? (
-        <ActionForm
-          className="setting-row"
-          key={settings.revision}
-          onSubmit={async (event) => {
-            event.preventDefault();
-            const path = String(
-              new FormData(event.currentTarget).get("data_root") ?? "",
-            ).trim();
-            setBusy(true);
-            setError("");
-            setSaved(false);
-            try {
-              const data = await request("domain.storage.configure", {
-                epoch,
-                expected_revision: settings.revision,
-                data_root: path || null,
-              });
-              setSettings(data as StorageSettings);
-              setSaved(true);
-            } catch (failure) {
-              setError(String(failure));
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          <div>
+        {settings ? (
+          <ActionForm
+            id={formId}
+            key={settings.revision}
+            onSubmit={async (event) => {
+              event.preventDefault();
+              const path = String(
+                new FormData(event.currentTarget).get("data_root") ?? "",
+              ).trim();
+              setBusy(true);
+              setError("");
+              setSaved(false);
+              try {
+                const data = await request("domain.storage.configure", {
+                  epoch,
+                  expected_revision: settings.revision,
+                  data_root: path || null,
+                });
+                setSettings(data as StorageSettings);
+                setSaved(true);
+              } catch (failure) {
+                setError(String(failure));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
             <label>
               新项目数据目录
               <input
@@ -89,16 +92,18 @@ export function DomainStorageSettings({ epoch }: { epoch: number }) {
                 ))}
               </ul>
             )}
-          </div>
-          <ActionButton type="submit" disabled={busy}>
-            保存领域数据目录
-          </ActionButton>
-        </ActionForm>
-      ) : (
-        !error && <p role="status">正在读取领域数据目录…</p>
+          </ActionForm>
+        ) : (
+          !error && <p role="status">正在读取领域数据目录…</p>
+        )}
+        {error && <p role="alert">{error}</p>}
+        {saved && <p role="status">领域数据目录已保存</p>}
+      </div>
+      {settings && (
+        <ActionButton type="submit" form={formId} disabled={busy}>
+          保存领域数据目录
+        </ActionButton>
       )}
-      {error && <p role="alert">{error}</p>}
-      {saved && <p role="status">领域数据目录已保存</p>}
     </section>
   );
 }

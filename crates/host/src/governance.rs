@@ -304,6 +304,9 @@ impl Workspace {
                                 .is_none_or(|scope| scope.includes(&project.id))
                         }) {
                             crate::check_read_cancelled()?;
+                            if self.global.removed_project_missing(&project.id)? {
+                                continue;
+                            }
                             let engine = self.project_engine(Some(&project.id))?;
                             let state = if method == "query.standard_diff" {
                                 engine
@@ -410,6 +413,9 @@ impl Workspace {
                             .is_none_or(|scope| scope.includes(&project.id))
                     }) {
                         crate::check_read_cancelled()?;
+                        if self.global.removed_project_missing(&project.id)? {
+                            continue;
+                        }
                         let state = self
                             .project_engine(Some(&project.id))?
                             .store

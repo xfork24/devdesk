@@ -221,7 +221,10 @@ impl SqliteStore {
     pub fn project_path(data_root: &Path, project_id: &str) -> Result<PathBuf> {
         require(uuid::Uuid::parse_str(project_id).is_ok(), "无效项目 ID")?;
         let external = domain_packages::project_storage_root(data_root, project_id)?;
-        let parent = external.as_deref().unwrap_or(data_root).join("projects");
+        Self::project_path_in(external.as_deref().unwrap_or(data_root), project_id)
+    }
+    fn project_path_in(data_root: &Path, project_id: &str) -> Result<PathBuf> {
+        let parent = data_root.join("projects");
         let root = parent.join(project_id);
         reject_symlink(&parent)?;
         reject_symlink(&root)?;

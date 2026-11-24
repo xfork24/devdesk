@@ -27,6 +27,7 @@
 | `query.domain.contribution` | 提交当前 `epoch`、贡献 ID 和 `input`，返回公开投影 |
 | `query.domain.invoke` | 提交当前 `epoch`、声明的 `handler` 和 `input`。返回领域只读运行端的结果 |
 | `domain.project.create` | 提交 `epoch`、`title` 和 `command_id`，返回绑定活动领域包的新项目 |
+| `domain.project.remove` | 提交 `epoch`、`project_id` 和 `command_id`，从工作台列表移除 GitHub 项目，保留原项目存储。用 `domain.project.create` 和 `reuse_connection:true` 打开同一仓库及主分支可恢复 |
 | `query.domain.storage` | 按 `epoch` 读取领域新项目数据目录、配置版本和已有项目各自使用的目录 |
 | `domain.storage.configure` | 按 `epoch` 和 `expected_revision` 保存绝对路径 `data_root`。传 `null` 使用 Host 数据目录 |
 | `domain.workflow.start` | 提交 `epoch`、确切的 `workflow_ref` 和 `command_id`。实体工作流还需 `project_id`、`entity_id` 和 `expected_revision`。默认 `rust`，也可选 `manual`。活动目录的 `agent_workflows` 列出可由 `agent` 调度的修订 |

@@ -11,6 +11,30 @@ pub const SCHEMA: &str = "
         project TEXT PRIMARY KEY REFERENCES domain_projects(project), data_root TEXT NOT NULL);";
 
 impl DomainPackages {
+    /// Called under the active package lease held by the project opener.
+    pub fn project_import_root(&self, digest: &str) -> Result<PathBuf> {
+        let db = self.db.lock().unwrap();
+        let package: String = db
+            .query_row(
+                "SELECT id FROM domain_packages WHERE digest=?",
+                [digest],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        let (configured, _) = storage_setting(&db, &package)?;
+        let Some(configured) = configured else {
+            return Ok(self.root.clone());
+        };
+        let root = PathBuf::from(configured);
+        require(
+            root.is_absolute()
+                && root.canonicalize().map_err(storage)? == root
+                && read_owner(&root)? == json!({"host_root":self.root, "package_id":package}),
+            "领域项目数据目录归属不符",
+        )?;
+        Ok(root)
+    }
+
     pub fn storage(&self, epoch: u64) -> Result<Value> {
         let active = self.active.read().unwrap();
         check_epoch(epoch, active.epoch)?;

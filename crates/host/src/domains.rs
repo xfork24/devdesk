@@ -2,7 +2,9 @@
 use super::*;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use devdesk_adapters::domain_packages::{DomainPackages, MAX_ARCHIVE, is_digest};
-use devdesk_core::{Command, InvocationContext, ports::DomainReader};
+use devdesk_core::{
+    Command, EngineeringStore, InvocationContext, concurrency::*, ports::DomainReader,
+};
 
 pub(super) struct ProjectReader {
     pub packages: Arc<DomainPackages>,
@@ -60,8 +62,48 @@ fn command_identity(params: &Value) -> devdesk_domain::Result<&str> {
         .ok_or_else(|| err("invalid_params", "需要有效的命令身份"))
 }
 
+fn project_directory_change(
+    workspace: &Workspace,
+    command_id: String,
+    fingerprint: String,
+    project: &str,
+    removed: bool,
+    result: Value,
+) -> devdesk_domain::Result<Value> {
+    let key = devdesk_adapters::GlobalStore::project_removal_key(project);
+    let current = workspace
+        .global
+        .read_resources(std::slice::from_ref(&key))?
+        .remove(0);
+    workspace
+        .global
+        .commit_changes(&PreparedChangeSet {
+            command_id,
+            fingerprint,
+            read_set: ReadSet::new(vec![ResourceVersion {
+                resource: key.clone(),
+                revision: current.revision,
+            }])?,
+            changes: vec![ResourceChange {
+                resource: key,
+                value: json!(removed),
+            }],
+            result,
+            time: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64,
+        })
+        .map(|receipt| receipt.result)
+}
+
 pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::Result<Value> {
     let workspace = app.workspace()?;
+    if name != "domain.project.remove"
+        && let Some(project) = params["project_id"].as_str()
+    {
+        workspace.require_listed_project(project)?;
+    }
     let run = |method: &str, payload: Value| {
         workspace
             .dispatch_with_receipt(method, payload, None)
@@ -154,36 +196,32 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
         "domain.project.create" => {
             let title = text("title")?;
             let command = command_identity(&params)?;
-            packages.with_sources(epoch()?, params.get("connection"), |digest, sources, plan| {
+            let expected_epoch = epoch()?;
+            packages.with_sources(expected_epoch, params.get("connection"), |digest, sources, plan| {
                 let mut payload = json!({"title":title});
                 let mut existing_project = None;
                 let reuse = plan.is_some() && params["reuse_connection"] == true;
                 let _open = reuse
                     .then(|| workspace.domain_project_open.lock().map_err(|e| err("storage", e.to_string())))
                     .transpose()?;
+                let open_id = format!("domain-project-open:{}", devdesk_domain::configuration_hash(&(digest, command)));
+                let fingerprint = devdesk_domain::configuration_hash(&(digest, title, params.get("connection")));
+                if reuse && let Some(previous) = workspace.global.replay_commit(&open_id, &fingerprint)? {
+                    return Ok(previous.result);
+                }
                 if let Some(plan) = &plan {
                     let repository = plan["repository"].as_str().ok_or_else(|| err("domain_contract", "连接缺少仓库"))?;
                     let mainline = plan["mainline"].as_str().ok_or_else(|| err("domain_contract", "连接缺少目标分支"))?;
                     let repository = crate::workspace::github_projects::repository_name(repository)?;
                     if reuse {
-                        for offset in (0..).step_by(100) {
-                            let directory = workspace.dispatch_with_receipt(
-                                "query.project_directory",
-                                json!({"limit":100,"project_offset":offset}),
-                                Some(epoch()?),
-                            )?.value;
-                            let rows = directory["projects"].as_array()
-                                .ok_or_else(|| err("storage", "项目目录缺失"))?;
-                            if let Some(existing) = rows.iter().find(|row| {
-                                let connection = &row["workspace_definition"];
-                                connection["repository"].as_str().is_some_and(|name| name.eq_ignore_ascii_case(&repository))
-                                    && connection["mainline"] == mainline
-                            }) {
-                                existing_project = Some(existing.clone());
-                                break;
-                            }
-                            if rows.len() < 100 {
-                                break;
+                        let visibility = packages.project_visibility(Some(expected_epoch))?;
+                        existing_project = workspace.global.domain_github_project(&repository, mainline, &visibility)?
+                            .map(|project| json!(project));
+                        if existing_project.is_none() {
+                            let root = packages.project_import_root(digest)?;
+                            if let Some(project) = workspace.global.copied_github_project(&root, &repository, mainline)? {
+                                packages.bind_copied_project(&project.id, digest, &root)?;
+                                existing_project = Some(workspace.load_copied_project(&project)?);
                             }
                         }
                     }
@@ -224,7 +262,58 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
                         })?;
                     }
                 }
-                Ok(created)
+                if reuse {
+                    let was_removed = workspace.global.project_removed(project)?;
+                    let result = project_directory_change(&workspace, open_id, fingerprint, project, false, created.clone())?;
+                    if was_removed {
+                        app.domain_epoch.send_modify(|_| {});
+                    }
+                    Ok(result)
+                } else {
+                    Ok(created)
+                }
+            })
+        }
+        "domain.project.remove" => {
+            let project = text("project_id")?;
+            let command = command_identity(&params)?;
+            packages.with_project(project, epoch()?, |digest| {
+                let _open = workspace
+                    .domain_project_open
+                    .lock()
+                    .map_err(|e| err("storage", e.to_string()))?;
+                let existing = workspace
+                    .global
+                    .project(project)?
+                    .ok_or_else(|| err("not_found", "项目不存在"))?;
+                if existing
+                    .workspace_definition
+                    .as_ref()
+                    .is_none_or(|workspace| workspace.repository.is_empty())
+                {
+                    return Err(err(
+                        "invalid_params",
+                        "只有已登记 GitHub 仓库的项目可以移除",
+                    ));
+                }
+                let id = format!(
+                    "domain-project-remove:{}",
+                    devdesk_domain::configuration_hash(&(digest, command))
+                );
+                let fingerprint = devdesk_domain::configuration_hash(&(digest, project));
+                if let Some(previous) = workspace.global.replay_commit(&id, &fingerprint)? {
+                    return Ok(previous.result);
+                }
+                let result = project_directory_change(
+                    &workspace,
+                    id,
+                    fingerprint,
+                    project,
+                    true,
+                    json!({"id":project,"removed":true}),
+                )?;
+                app.domain_epoch.send_modify(|_| {});
+                Ok(result)
             })
         }
         "domain.workflow.start" => {

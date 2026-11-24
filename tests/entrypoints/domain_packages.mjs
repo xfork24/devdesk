@@ -46,6 +46,12 @@ try {
   const head = await git("rev-parse", "HEAD");
   const env = { ...process.env };
   delete env.DEVDESK_ACCESS_TOKEN;
+  if (!env.DEVDESK_DOMAIN_TEST_GITHUB_REPO) {
+    const fixtureBin = path.join(tmp, "bin");
+    await mkdir(fixtureBin);
+    await writeFile(path.join(fixtureBin, "gh"), "#!/bin/sh\nexit 1\n", { mode: 0o700 });
+    env.PATH = [fixtureBin, env.PATH].join(path.delimiter);
+  }
   host = spawn(hostBinary, [
     "--web-dir", web, "--port", "0",
   ], { env, cwd: tmp });
@@ -213,11 +219,13 @@ try {
   assert.equal(await page.getByRole("region", { name: "领域数据目录设置" }).count(), 0);
   await workbenchButton.click();
   await softwareNav(page).getByRole("button", { name: "设置", exact: true }).click();
-  const storagePanel = page.locator("main.settings-page").getByRole("region", {
-    name: "领域数据目录设置",
+  const dataPanel = page.locator("main.settings-page > section.panel").filter({
+    has: page.getByRole("heading", { name: "数据与运行", exact: true }),
   });
+  const storagePanel = dataPanel.getByRole("region", { name: "领域数据目录设置" });
   await storagePanel.getByLabel("新项目数据目录", { exact: true }).fill(softwareRoot);
-  await page.getByRole("button", { name: "保存领域数据目录", exact: true }).click();
+  assert(await storagePanel.evaluate((row) => row.parentElement.lastElementChild === row));
+  await storagePanel.getByRole("button", { name: "保存领域数据目录", exact: true }).click();
   await page.getByText("领域数据目录已保存", { exact: true }).waitFor();
   const savedStorage = await rpc(page, "query.domain.storage", storageQuery);
   assert.equal(savedStorage.configured_root, softwareRoot);
@@ -469,6 +477,57 @@ try {
   await second.getByRole("button", { name: "基础组件", exact: true }).click();
   await second.getByRole("tab", { name: "Model", exact: true }).click();
   await second.getByText("Domain smoke model", { exact: false }).first().waitFor();
+
+  if (!githubRepo) {
+    // Give an existing project a retained GitHub registration. The fixture gh
+    // exits locally if reopening tries to start a first connection.
+    await activate(softwareZip);
+    await softwareNav(page).waitFor();
+    const removalEpoch = (await rpc(page, "query.domain.active")).epoch;
+    const reopenedScope = { domain_epoch: removalEpoch, project_id: project };
+    const existing = (await rpc(page, "query.workspace", reopenedScope)).active_project;
+    const connection = { repository: "fixture/reopen-test", mainline: "main" };
+    await rpc(page, "project.update", {
+      ...reopenedScope,
+      target: project,
+      command_id: crypto.randomUUID(),
+      expected_revision: existing.revision,
+      payload: { workspace_definition: { ...connection, path: "" } },
+    });
+    const projectUrl = new URL(page.url());
+    projectUrl.searchParams.set("project_id", project);
+    await Promise.all([page.goto(projectUrl.href), second.goto(projectUrl.href)]);
+    const removed = page.waitForResponse((response) =>
+      response.request().postDataJSON()?.method === "domain.project.remove");
+    await softwareNav(page).getByRole("button", { name: "项目管理", exact: true }).click();
+    const projectActions = page.locator(".action-control").filter({
+      has: page.getByRole("button", { name: "保存项目配置", exact: true }),
+    });
+    await projectActions.getByRole("button", { name: "移除项目", exact: true }).click();
+    const removalReply = await removed;
+    assert.equal((await removalReply.json()).result?.id, project);
+    await Promise.all([page, second].map((tab) =>
+      tab.waitForURL((url) => !url.searchParams.has("project_id"))));
+    assert(!(await rpc(page, "query.project_directory", { domain_epoch: removalEpoch }))
+      .projects.some((entry) => entry.id === project));
+    await assert.rejects(rpc(page, "query.workspace", reopenedScope), /not_found/);
+    await access(database);
+
+    await page.getByRole("button", { name: "打开 GitHub 项目", exact: true }).first().click();
+    const open = page.getByRole("dialog");
+    await open.getByLabel("GitHub 仓库（owner/repo 或 URL）").fill(connection.repository);
+    const reopened = page.waitForResponse((response) =>
+      response.request().postDataJSON()?.method === "domain.project.create");
+    await open.getByRole("button", { name: "确认", exact: true }).click();
+    assert.equal((await (await reopened).json()).result?.id, project);
+    await page.waitForURL((url) => url.searchParams.get("project_id") === project);
+    assert.equal((await rpc(page, "query.workspace", reopenedScope)).project_database, database);
+    const retained = await native("read", project, software.run.execution_id);
+    assert.equal(retained.domain_submission.entities.test_configuration, software.proof_id);
+    await rpc(page, "domain.project.remove", removalReply.request().postDataJSON().params);
+    assert((await rpc(page, "query.project_directory", { domain_epoch: removalEpoch }))
+      .projects.some((entry) => entry.id === project));
+  }
   assert.equal(host.pid, pid);
   assert.equal(host.exitCode, null);
   assert.deepEqual(pageErrors, []);

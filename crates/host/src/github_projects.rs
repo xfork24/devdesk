@@ -80,11 +80,15 @@ impl Workspace {
             let mut offset = 0;
             loop {
                 let (rows, total) = self.global.projects(offset, 100)?;
-                existing = rows.into_iter().find(|p| {
-                    p.workspace_definition.as_ref().is_some_and(|w| {
+                for project in rows {
+                    let matches = project.workspace_definition.as_ref().is_some_and(|w| {
                         w.repository.eq_ignore_ascii_case(&repository) && w.mainline == mainline
-                    })
-                });
+                    });
+                    if matches && !self.global.removed_project_missing(&project.id)? {
+                        existing = Some(project);
+                        break;
+                    }
+                }
                 offset += 100;
                 if existing.is_some() || offset >= total {
                     break;

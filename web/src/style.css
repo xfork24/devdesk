@@ -223,6 +223,21 @@ pre {
   color: #a9b3c8;
   padding: 3px;
 }
+.domain-project-removal {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-inline-start: 8px;
+}
+.domain-project-removal button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.domain-project-removal .error {
+  overflow-wrap: anywhere;
+}
 .sidebar nav {
   display: flex;
   flex-direction: column;

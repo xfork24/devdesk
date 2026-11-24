@@ -1308,6 +1308,7 @@ function App({
           <ActionButton
             key={id}
             className={tab === id ? "nav active" : "nav"}
+            data-workbench-tab={id}
             aria-current={tab === id ? "page" : undefined}
             onClick={() => {
               preloadPage(id);
@@ -1980,7 +1981,7 @@ function App({
           )}
           {data && tab === "settings" && (
             <>
-              <section className="panel">
+              <section className="panel" data-domain-storage-outlet="">
                 <div className="panel-heading">
                   <h2>数据与运行</h2>
                   <span className="muted">按需准备运行环境</span>

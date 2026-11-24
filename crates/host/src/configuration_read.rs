@@ -42,6 +42,9 @@ impl Workspace {
             let (projects, total) = self.global.projects(offset, 100)?;
             for project in &projects {
                 crate::check_read_cancelled()?;
+                if self.global.removed_project_missing(&project.id)? {
+                    continue;
+                }
                 let catalog = SqliteStore::read_project_catalog(&root, &project.id)?;
                 visit(project, &catalog)?;
             }

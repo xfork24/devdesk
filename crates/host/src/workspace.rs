@@ -38,6 +38,12 @@ use std::{
 };
 
 type EngineInitialization = Arc<std::sync::OnceLock<Result<Arc<Engine>>>>;
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ProjectOpen {
+    Create,
+    Reopen,
+    AdoptCopy,
+}
 pub struct Workspace {
     pub global: Arc<GlobalStore>,
     domains: std::sync::OnceLock<Result<Arc<domain_packages::DomainPackages>>>,
@@ -122,6 +128,9 @@ impl Workspace {
         epoch: Option<u64>,
         action: impl FnOnce(Option<u64>) -> Result<T>,
     ) -> Result<T> {
+        if let Some(project) = project {
+            self.require_listed_project(project)?;
+        }
         if let (Some(project), Some(packages)) = (project, self.domains.get()) {
             return packages
                 .as_ref()
@@ -132,6 +141,13 @@ impl Workspace {
             self.domain_packages()?.check_epoch(epoch)?;
         }
         action(epoch)
+    }
+
+    pub(super) fn require_listed_project(&self, project: &str) -> Result<()> {
+        if self.global.project_removed(project)? {
+            return Err(err("not_found", "GitHub 项目已移除，请重新打开仓库"));
+        }
+        Ok(())
     }
 
     pub(super) fn dispatch_public_rpc(
@@ -269,6 +285,9 @@ impl Workspace {
         loop {
             let (projects, total) = workspace.global.projects(offset, 100)?;
             for project in projects {
+                if workspace.global.removed_project_missing(&project.id)? {
+                    continue;
+                }
                 recover_target(&project.id, workspace.load_project(&project.id, false))?;
             }
             offset += 100;
@@ -385,7 +404,9 @@ impl Workspace {
     }
 
     pub(super) fn domain_project_busy(&self, project: &str) -> Result<bool> {
-        if self.global.project(project)?.is_none() {
+        if self.global.project(project)?.is_none()
+            || self.global.removed_project_missing(project)?
+        {
             return Ok(false);
         }
         let engine = self.project_engine(Some(project))?;
@@ -400,10 +421,21 @@ impl Workspace {
     }
 
     fn load_project(&self, id: &str, creating: bool) -> Result<Arc<Engine>> {
+        let mode = if creating {
+            ProjectOpen::Create
+        } else {
+            ProjectOpen::Reopen
+        };
+        self.load_project_with_mode(id, mode)
+    }
+
+    fn load_project_with_mode(&self, id: &str, mode: ProjectOpen) -> Result<Arc<Engine>> {
+        if mode == ProjectOpen::Reopen {
+            require(self.global.project(id)?.is_some(), "项目不存在")?;
+        }
         let _span = performance::Span::new("project.open");
         let root = PathBuf::from(self.global.root());
-        if !creating {
-            require(self.global.project(id)?.is_some(), "项目不存在")?;
+        if mode != ProjectOpen::Create {
             require(
                 SqliteStore::project_path(&root, id)?
                     .join("engineering.sqlite3")
@@ -422,7 +454,7 @@ impl Workspace {
             .or_default()
             .clone();
         let result = cell
-            .get_or_init(|| self.initialize_project(id, creating))
+            .get_or_init(|| self.initialize_project(id, mode))
             .clone();
         if result.is_err() {
             let mut loading = self
@@ -438,7 +470,13 @@ impl Workspace {
         }
         result
     }
-    fn initialize_project(&self, id: &str, creating: bool) -> Result<Arc<Engine>> {
+    pub(super) fn load_copied_project(&self, project: &devdesk_domain::Project) -> Result<Value> {
+        self.global.reserve_copied_project(project)?;
+        let engine = self.load_project_with_mode(&project.id, ProjectOpen::AdoptCopy)?;
+        Ok(json!(engine.store.project_metadata()?))
+    }
+
+    fn initialize_project(&self, id: &str, mode: ProjectOpen) -> Result<Arc<Engine>> {
         let root = PathBuf::from(self.global.root());
         let store = SqliteStore::open_project(&root, id)?;
         store.maintain_runtime_storage(&root);
@@ -456,7 +494,7 @@ impl Workspace {
         }
         let e = Arc::new(e);
         e.store.subscribe_changes(self.background.wake.listener());
-        if !creating {
+        if mode != ProjectOpen::Create {
             require(
                 e.store.project_metadata()?.id == id,
                 "项目数据库未包含对应的有效 Project",
@@ -466,7 +504,7 @@ impl Workspace {
         self.sync_configuration(&e)?;
         e.bootstrap()?;
         e.recover_tool_receipts()?;
-        if !creating && e.store.project_metadata()?.execution_mode == "live" {
+        if mode == ProjectOpen::Reopen && e.store.project_metadata()?.execution_mode == "live" {
             let allowed = self.domains.get().map_or(Ok(true), |packages| {
                 packages.as_ref().map_err(Clone::clone)?.permits_project(id)
             })?;
@@ -477,9 +515,9 @@ impl Workspace {
         }
         // Repair a stale directory summary after a crash between the two independent commits.
         match e.store.project_metadata() {
-            Ok(_) if creating => self.publish_new_project(&e)?,
+            Ok(_) if mode == ProjectOpen::Create => self.publish_new_project(&e)?,
             Ok(project) => self.global.publish_project(&project)?,
-            Err(error) if creating && error.code == "not_found" => {}
+            Err(error) if mode == ProjectOpen::Create && error.code == "not_found" => {}
             Err(error) => return Err(error),
         }
         self.opened.lock().unwrap().insert(id.into(), e.clone());
