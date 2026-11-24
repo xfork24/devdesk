@@ -35,10 +35,14 @@ def package(target, identity, title, handler, core):
         }
         files[entity_types] = json.dumps({
             "manuscript.document:1": {"name": "Manuscript", "schema": manuscript_schema,
+                "relations": {"previous": {"target": "manuscript.document:1", "max_items": 1}},
                 "workflows": {"manuscript.workflow:1": {
                     "input": "manuscript", "outputs": {"observation": "manuscript.proof:1"},
+                    "owner_relations": {"observation": ["manuscript"]},
                 }}},
-            "manuscript.proof:1": {"name": "Proof", "schema": {
+            "manuscript.proof:1": {"name": "Proof",
+                "relations": {"manuscript": {"target": "manuscript.document:1", "min_items": 1, "max_items": 1}},
+                "schema": {
                 "type": "object", "required": ["title", "observedBy"],
                 "additionalProperties": False,
                 "properties": {"title": {"type": "string"}, "observedBy": {"type": "string"}},

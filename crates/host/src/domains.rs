@@ -244,16 +244,20 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
                 .as_u64()
                 .ok_or_else(|| err("invalid_params", "缺少领域对象原修订"))?;
             let data = &params["data"];
-            packages.validate_entity(project, epoch()?, trusted, (reference, data), |digest| {
+            packages.validate_entity(project, epoch()?, trusted, (reference, data), |digest, relations| {
                 workspace
                     .project_engine(Some(project))?
                     .write_domain_entity(
                         digest,
+                        relations,
                         &Command {
                             command_id: command_id.into(),
                             target: Some(id.into()),
                             expected_revision: Some(expected),
-                            payload: json!({"type_ref":reference, "data":data}),
+                            payload: json!({
+                                "type_ref":reference, "data":data,
+                                "relations":params.get("relations").cloned().unwrap_or_else(|| json!({}))
+                            }),
                         },
                         &InvocationContext::human(Some(project.into())),
                     )

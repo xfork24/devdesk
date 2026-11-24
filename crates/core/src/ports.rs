@@ -154,6 +154,18 @@ pub trait AgentContextReader: Send + Sync {
         params: &Value,
     ) -> Result<Value>;
 }
+/// Material requested by an admitted operation. The worker cannot choose the path.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FrozenResourceLease {
+    pub handle: devdesk_domain::FrozenResourceHandle,
+    pub operation_id: Id,
+    pub session_id: Id,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact: Option<devdesk_domain::Artifact>,
+    #[serde(default)]
+    pub exclusive_write: bool,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionStart {
     #[serde(default)]
@@ -162,6 +174,8 @@ pub struct SessionStart {
     pub configured_task: Option<devdesk_domain::ConfiguredAgentTask>,
     #[serde(default)]
     pub code_view: Option<CodeView>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<FrozenResourceLease>,
     pub session: devdesk_domain::Session,
     pub agent: devdesk_domain::Definition,
     pub skills: Vec<devdesk_domain::Definition>,

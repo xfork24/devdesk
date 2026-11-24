@@ -412,8 +412,17 @@ impl ports::Harness for RecordingAgent {
             .unwrap()
             .tool_policy
             != ToolPolicy::ReadOnly
-            && let (Some(git), Some(view)) =
-                (&*self.view_validator.lock().unwrap(), &request.code_view)
+            && let (Some(git), Some(view)) = (
+                &*self.view_validator.lock().unwrap(),
+                request
+                    .workspace
+                    .as_ref()
+                    .and_then(|lease| match &lease.handle.source {
+                        FrozenResourceSource::GitWorktree { view } => Some(view),
+                        _ => None,
+                    })
+                    .or(request.code_view.as_ref()),
+            )
         {
             git.validate_view(&view.context, &view.revision)?;
         }

@@ -169,7 +169,9 @@ impl Engine {
             "提案不能冒充平台或子流程产出",
         )?;
         self.validate_configured_value(&definition, &content.value)?;
-        let owner = WorkOwnerFacts::read(self.store.as_ref(), &session.owner_id)?;
+        let (owner_id, owner_guard) = self.session_work_owner(&session)?;
+        let mut owner = WorkOwnerFacts::read(self.store.as_ref(), &owner_id)?;
+        owner.read_set = owner.read_set.merge([owner_guard])?;
         require(owner.project == project, "提案目标不属于来源项目")?;
         read_set = read_set
             .merge(owner.read_set.versions().iter().cloned())?
@@ -201,7 +203,7 @@ impl Engine {
             schema_version: 2,
             dependencies: content.input_refs.clone(),
             content,
-            target: Some(session.owner_id),
+            target: Some(owner_id),
             expected_revision: Some(owner.owner.revision),
             status: ProposalStatus::Draft,
             artifact_id: Some(seal.artifact.id.clone()),

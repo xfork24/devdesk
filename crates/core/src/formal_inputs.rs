@@ -240,6 +240,7 @@ impl Engine {
         let provenance;
         let source;
         let code_view;
+        let workspace;
         let origin;
         if let Some(raw) = &selected[0].value {
             require(
@@ -252,10 +253,12 @@ impl Engine {
                 &text(&binding.data, "instance_id")?,
                 &text(&binding.data, "execution_id")?,
             )?;
+            let (owner_id, owner_guard) = self.session_work_owner(&session)?;
+            read_set = read_set.merge([owner_guard])?;
             require(
                 resources.record.scope == binding.scope
                     && resources.instance.project_id == project
-                    && resources.instance.owner_id == session.owner_id
+                    && resources.instance.owner_id == owner_id
                     && resources.execution.session_id.as_deref() == Some(sid.as_str())
                     && resources.execution.agent_revision_id.as_deref()
                         == Some(session.agent.as_str()),
@@ -345,9 +348,17 @@ impl Engine {
                 "conversation-turn",
             )?);
             changes.push(resources.changed_step(self.store.as_ref(), &execution)?);
-            let (view, guards) =
-                self.formal_input_code_view(&resources.instance, &execution, definition)?;
-            read_set = read_set.merge(guards.versions().iter().cloned())?;
+            let (resource, resource_guards) =
+                self.formal_input_resource(&resources.instance, &execution, definition)?;
+            workspace = resource;
+            let (view, guards) = if workspace.is_none() {
+                self.formal_input_code_view(&resources.instance, &execution, definition)?
+            } else {
+                (None, ReadSet::default())
+            };
+            read_set = read_set
+                .merge(resource_guards.versions().iter().cloned())?
+                .merge(guards.versions().iter().cloned())?;
             code_view = view;
             source = Some(binding);
         } else {
@@ -403,6 +414,7 @@ impl Engine {
             };
             source = None;
             code_view = None;
+            workspace = None;
             origin = Origin::External;
             let wakeup = self
                 .store
@@ -446,11 +458,81 @@ impl Engine {
                 references: json!([]),
                 task_source: source,
                 code_view,
+                workspace,
                 origin,
                 capture: None,
                 extra_files: vec![],
             },
         )
+    }
+
+    /// Only an accepted output of this frozen execution plan can supply an artifact workspace.
+    pub(crate) fn formal_input_resource(
+        &self,
+        instance: &ConfiguredWorkflowInstance,
+        execution: &StepExecution,
+        step: &StepDefinition,
+    ) -> Result<(Option<FrozenResourceHandle>, ReadSet)> {
+        let Some(name) = &step.access.workspace_input else {
+            return Ok((None, ReadSet::default()));
+        };
+        let Some(_) = execution
+            .inputs
+            .get(name)
+            .filter(|grant| grant["kind"] == "artifact")
+        else {
+            return Ok((None, ReadSet::default()));
+        };
+        require(
+            step.access.writable_paths.is_empty(),
+            "封存资源不可申请写租约",
+        )?;
+        let Some(InputBinding::Source { source }) = step.inputs.get(name) else {
+            return Err(err(
+                "invalid_configuration",
+                "封存资源需要实际步骤输出作为来源",
+            ));
+        };
+        let output_id = instance
+            .steps
+            .iter()
+            .find(|previous| {
+                previous.step == source.step && previous.status == StepExecutionStatus::Completed
+            })
+            .and_then(|previous| previous.outputs.get(&source.port))
+            .ok_or_else(|| {
+                err(
+                    "input_unavailable",
+                    "工作区资源需要当前流程中已接纳的原输出",
+                )
+            })?;
+        let output = crate::platform_facts::one(self.store.as_ref(), "governance", output_id)?;
+        let raw = output
+            .value
+            .as_ref()
+            .ok_or_else(|| err("not_found", "原输出不存在"))?;
+        require(
+            raw["type"] == "workflow_output" && raw["data"]["port"] == source.port,
+            "工作区资源必须使用原步骤产物",
+        )?;
+        let id = text(&raw["data"], "artifact_id")?;
+        let artifact = crate::platform_facts::one(self.store.as_ref(), "artifact", &id)?;
+        let digest = text(
+            artifact
+                .value
+                .as_ref()
+                .ok_or_else(|| err("not_found", "封存资源不存在"))?,
+            "sha256",
+        )?;
+        Ok((
+            Some(FrozenResourceHandle {
+                project_id: instance.project_id.clone(),
+                owner_id: instance.owner_id.clone(),
+                version: digest,
+                source: FrozenResourceSource::Artifact { id },
+            }),
+            ReadSet::new(vec![version(&output), version(&artifact)])?,
+        ))
     }
 
     pub(crate) fn formal_input_code_view(

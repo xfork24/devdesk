@@ -136,8 +136,11 @@ fn visible_entries(root: &Path, current_project: &str, params: &Value) -> Result
     let instance = instance(root, current_project, &id)?;
     let snapshot = params["snapshot_id"].as_str();
     let source = params["source_project_id"].as_str();
+    let domains = domain_packages::experience_domains(root)?;
+    let current_domain = domains.get(current_project);
     let visible = |project: &str| {
-        source.is_none_or(|expected| expected == project)
+        domains.get(project) == current_domain
+            && source.is_none_or(|expected| expected == project)
             && (project == GLOBAL_DISCUSSION_NAMESPACE
                 || instance.scope.project_id().is_none_or(|pid| pid == project))
     };
@@ -179,7 +182,13 @@ fn visible_entries(root: &Path, current_project: &str, params: &Value) -> Result
     rows.retain(|row| {
         let pid = row["project_id"].as_str().unwrap_or_default();
         let sid = row["snapshot_id"].as_str().unwrap_or_default();
-        !deleted.contains(&(pid.to_owned(), sid.to_owned()))
+        let owner = &row["work_owner"];
+        let matches_owner = params["entity_id"].as_str().map_or_else(
+            || params["exclude_entity_scope"] != true || owner["kind"] != "entity",
+            |entity| owner["kind"] == "entity" && owner["id"] == entity && owner["project"] == pid,
+        );
+        matches_owner
+            && !deleted.contains(&(pid.to_owned(), sid.to_owned()))
             && seen.insert((
                 pid.to_owned(),
                 sid.to_owned(),

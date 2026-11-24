@@ -230,11 +230,21 @@ impl Engine {
         let instance = invocation["agent_instance_id"].as_str().unwrap_or("");
         let origin = call.data["origin_project"].as_str();
         let result = match definition.qualified_name.as_str() {
-            "agent.experience.list" | "agent.experience.read" => self
-                .context_reader
-                .as_ref()
-                .ok_or_else(|| err("unsupported", "未装配 Agent 经验读取服务"))?
-                .experience(instance, origin, arguments),
+            "agent.experience.list" | "agent.experience.read" => {
+                let (owner, _) = self.session_work_owner(session)?;
+                let mut scoped = arguments.clone();
+                if owner != session.owner_id {
+                    scoped["entity_id"] = json!(owner);
+                    scoped["source_project_id"] = json!(session.project_id);
+                    scoped["project_id"] = json!(session.project_id);
+                } else {
+                    scoped["exclude_entity_scope"] = json!(true);
+                }
+                self.context_reader
+                    .as_ref()
+                    .ok_or_else(|| err("unsupported", "未装配 Agent 经验读取服务"))?
+                    .experience(instance, origin, &scoped)
+            }
             "workflow.outputs.read" => self
                 .context_reader
                 .as_ref()

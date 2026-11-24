@@ -81,6 +81,23 @@ pub struct FrozenCode {
     pub context: GitContext,
     pub revision: String,
 }
+/// Server-verified identity of a resource before a worker acquires it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FrozenResourceHandle {
+    pub project_id: Id,
+    pub owner_id: Id,
+    pub version: String,
+    pub source: FrozenResourceSource,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum FrozenResourceSource {
+    Artifact { id: Id },
+    GitWorktree { view: FrozenCode },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationTurn {
     pub id: Id,

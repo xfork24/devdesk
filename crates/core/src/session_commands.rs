@@ -145,7 +145,7 @@ impl Engine {
             resource: ResourceKey::new("catalog_clock", "configuration"),
             revision: catalog.revision,
         }])?;
-        let (project, feature, task, session_scope, material) = if target == "global" {
+        let (project, feature, task, session_scope, material, work_owner) = if target == "global" {
             require(
                 catalog.state.projects.is_empty(),
                 "全局讨论必须使用独立讨论库",
@@ -157,6 +157,7 @@ impl Engine {
                 None,
                 SessionScope::Global,
                 MaterialOwner::Global,
+                None,
             )
         } else {
             let owner = WorkOwnerFacts::read(self.store.as_ref(), target)?;
@@ -172,7 +173,20 @@ impl Engine {
                 MaterialOwner::Task { .. } => SessionScope::Task,
                 MaterialOwner::Global => return Err(err("invalid_scope", "无效会话工作范围")),
             };
-            (owner.project, feature, task, scope, owner.material)
+            let work_owner = owner.work_reference();
+            (
+                owner.project,
+                feature,
+                task,
+                scope,
+                owner.material,
+                Some(work_owner),
+            )
+        };
+        let partition_owner = if matches!(work_owner, Some(WorkReference::Entity { .. })) {
+            project.as_str()
+        } else {
+            target
         };
         let selection_scope = if session_scope == SessionScope::Global {
             instance.scope.clone()
@@ -188,9 +202,10 @@ impl Engine {
             let family = ResourceKey::new(
                 "session_open_candidate",
                 json!([
-                    target,
+                    partition_owner,
                     source.definition_id,
-                    configuration.agent_instance_id
+                    configuration.agent_instance_id,
+                    target
                 ])
                 .to_string(),
             );
@@ -218,10 +233,12 @@ impl Engine {
         let mut predecessor = opt(&c.payload, "predecessor");
         let provenance = context.prepare_record(method, c);
         if let Some(latest) = &latest {
+            let (owner_id, owner_guard) = self.session_work_owner(latest)?;
+            read_set = read_set.merge([owner_guard])?;
             require(
                 latest.project_id.as_deref() == Some(project.as_str())
                     && latest.scope == Some(session_scope)
-                    && latest.owner_id == target,
+                    && owner_id == target,
                 "会话候选跨范围",
             )?;
             if continuation.is_none()
@@ -269,8 +286,10 @@ impl Engine {
                 source.turn_id.as_deref(),
                 source.turn_revision,
             )?;
+            let (owner_id, owner_guard) = self.session_work_owner(&original)?;
+            read_set = read_set.merge([owner_guard])?;
             require(
-                original.owner_id == target
+                owner_id == target
                     && original.project_id.as_deref() == Some(&project)
                     && original.scope == Some(session_scope)
                     && original
@@ -294,13 +313,20 @@ impl Engine {
                 .into_iter()
                 .next()
                 .ok_or_else(|| err("storage", "原会话读取不完整"))?;
+            let original: Session = serde_json::from_value(
+                self.store.restore_runtime_value(
+                    row.value
+                        .as_ref()
+                        .ok_or_else(|| err("not_found", "原会话缺失"))?,
+                )?,
+            )
+            .map_err(|error| err("storage", error.to_string()))?;
+            let (owner_id, owner_guard) = self.session_work_owner(&original)?;
             require(
-                row.value
-                    .as_ref()
-                    .is_some_and(|s| s["project_id"] == project),
-                "后继会话不能跨项目",
+                original.project_id.as_deref() == Some(&project) && owner_id == target,
+                "后继会话不能跨工作归属",
             )?;
-            read_set = read_set.merge([version(&row)])?;
+            read_set = read_set.merge([version(&row), owner_guard])?;
         } else if let Some(previous) = branch.as_ref().or(latest.as_ref()) {
             let keys = [
                 ResourceKey::new("session_input_state", &previous.id),
@@ -408,7 +434,7 @@ impl Engine {
         }
         if let Some(snapshot) = snapshot_id.as_deref().filter(|_| handoff.is_none()) {
             read_set = read_set.merge(
-                self.session_snapshot_scope(snapshot, &project)?
+                self.session_snapshot_scope(snapshot, &project, target)?
                     .versions()
                     .iter()
                     .cloned(),
@@ -417,7 +443,7 @@ impl Engine {
         let sid = stable_object_id(self.store.as_ref(), &c.command_id, "session")?;
         let session = Session {
             id: sid.clone(),
-            owner_id: target.into(),
+            owner_id: partition_owner.into(),
             agent: agent.clone(),
             harness: binding.installation.id.clone(),
             sandbox: format!("docker-image:{}", binding.installation.id),
@@ -451,7 +477,7 @@ impl Engine {
             instance.name.clone(),
             1,
             None,
-            json!({"agent_instance_id":configuration.agent_instance_id,"agent_revision_id":agent,"composition_hash":source.content_hash,"model_ref":composition.model_ref,"harness_ref":composition.harness_ref,"binding":binding,"step_execution_id":null}),
+            json!({"agent_instance_id":configuration.agent_instance_id,"agent_revision_id":agent,"composition_hash":source.content_hash,"model_ref":composition.model_ref,"harness_ref":composition.harness_ref,"binding":binding,"step_execution_id":null,"work_owner":work_owner}),
             true,
         );
         link.id = format!("agent-session:{sid}");
@@ -662,7 +688,62 @@ impl Engine {
             .map(|receipt| receipt.result)
     }
 
-    pub(crate) fn session_snapshot_scope(&self, id: &str, project: &str) -> Result<ReadSet> {
+    fn session_owner_source(&self, session: &str) -> Result<ResourceSnapshot> {
+        let link = crate::platform_facts::one(
+            self.store.as_ref(),
+            "governance",
+            &format!("agent-session:{session}"),
+        )?;
+        if link
+            .value
+            .as_ref()
+            .is_some_and(|row| !row["data"]["work_owner"].is_null())
+        {
+            return Ok(link);
+        }
+        let original = crate::platform_facts::one(
+            self.store.as_ref(),
+            "governance",
+            &format!("formal-session-source:{session}"),
+        )?;
+        Ok(if original.value.is_some() {
+            original
+        } else {
+            link
+        })
+    }
+
+    pub(crate) fn session_work_owner(&self, session: &Session) -> Result<(Id, ResourceVersion)> {
+        let link = self.session_owner_source(&session.id)?;
+        let mut owner = session.owner_id.clone();
+        if let Some(row) = &link.value {
+            if let Some(reference) = row["data"]
+                .get("work_owner")
+                .filter(|value| !value.is_null())
+            {
+                let reference: WorkReference = serde_json::from_value(reference.clone())
+                    .map_err(|error| err("storage", error.to_string()))?;
+                match reference {
+                    WorkReference::Entity { id, project } => {
+                        require(
+                            session.project_id.as_deref() == Some(project.as_str()),
+                            "会话对象范围跨项目",
+                        )?;
+                        owner = id;
+                    }
+                    other => require(other.id() == owner, "会话归属与冻结来源不符")?,
+                }
+            }
+        }
+        Ok((owner, version(&link)))
+    }
+
+    pub(crate) fn session_snapshot_scope(
+        &self,
+        id: &str,
+        project: &str,
+        owner: &str,
+    ) -> Result<ReadSet> {
         let key = ResourceKey::new("snapshot", id);
         let row = self
             .store
@@ -697,6 +778,42 @@ impl Engine {
             GLOBAL_DISCUSSION_NAMESPACE.into()
         };
         require(source == project, "会话不能跨项目继承快照")?;
-        ReadSet::new(guards)
+        let entity_scope = owner != project
+            && crate::platform_facts::one(
+                self.store.as_ref(),
+                "governance",
+                &domain_entity_key(project, owner),
+            )?
+            .value
+            .is_some();
+        let mut has_entity_source = false;
+        for session in snapshot["capture"]["sessions"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            let session = session
+                .as_str()
+                .ok_or_else(|| err("storage", "快照会话引用无效"))?;
+            let link = self.session_owner_source(session)?;
+            if let Some(row) = &link.value
+                && row["data"]["work_owner"]["kind"] == "entity"
+            {
+                require(
+                    row["data"]["work_owner"]["project"] == project
+                        && row["data"]["work_owner"]["id"] == owner,
+                    "会话不能跨对象继承快照",
+                )?;
+                has_entity_source = true;
+            } else {
+                require(!entity_scope, "对象会话不能继承其他范围的快照")?;
+            }
+            guards.push(version(&link));
+        }
+        require(
+            !entity_scope || has_entity_source,
+            "对象快照需要确切的会话来源",
+        )?;
+        ReadSet::default().merge(guards)
     }
 }

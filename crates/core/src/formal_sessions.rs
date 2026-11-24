@@ -578,7 +578,7 @@ impl Engine {
         }
         if let Some(snapshot) = &snapshot {
             read_set = read_set.merge(
-                self.session_snapshot_scope(snapshot, &owner.project)?
+                self.session_snapshot_scope(snapshot, &owner.project, &owner.id)?
                     .versions()
                     .iter()
                     .cloned(),
@@ -623,7 +623,7 @@ impl Engine {
             instance.name.clone(),
             1,
             None,
-            json!({"agent_instance_id":prepared.agent_instance,"agent_revision_id":source.id,"composition_hash":source.content_hash,"model_ref":composition.model_ref,"harness_ref":composition.harness_ref,"binding":binding,"step_execution_id":prepared.source["execution_id"]}),
+            json!({"agent_instance_id":prepared.agent_instance,"agent_revision_id":source.id,"composition_hash":source.content_hash,"model_ref":composition.model_ref,"harness_ref":composition.harness_ref,"binding":binding,"step_execution_id":prepared.source["execution_id"],"work_owner":work_owner}),
             true,
         );
         link.id = format!("agent-session:{id}");

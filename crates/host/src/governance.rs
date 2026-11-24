@@ -33,6 +33,13 @@ impl Workspace {
         let detail = experience::query(Path::new(&self.global.root()), &read_pid, p)?;
         let command: Command = serde_json::from_value(params.clone())
             .map_err(|e| err("invalid_params", e.to_string()))?;
+        if detail["entry"]["work_owner"]["kind"] == "entity" {
+            require(
+                detail["entry"]["work_owner"]["project"] == pid
+                    && command.target.as_deref() == detail["entry"]["work_owner"]["id"].as_str(),
+                "对象经验只能恢复到原项目和对象",
+            )?;
+        }
         let snapid = e.import_experience(
             &command,
             &pid,

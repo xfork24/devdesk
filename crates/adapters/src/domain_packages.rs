@@ -1,6 +1,6 @@
 //! Installed domain bundles and the active generation, scoped to one dataset.
 use super::*;
-use devdesk_core::{DomainOutputBinding, DomainWorkflowBinding};
+use devdesk_core::{DomainOutputBinding, DomainRelation, DomainWorkflowBinding};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Deserialize;
 use std::{
@@ -108,6 +108,8 @@ struct EntityType {
     schema: Value,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     workflows: BTreeMap<Id, EntityWorkflow>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    relations: BTreeMap<String, DomainRelation>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -115,6 +117,8 @@ struct EntityType {
 struct EntityWorkflow {
     input: String,
     outputs: BTreeMap<String, Id>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    owner_relations: BTreeMap<String, Vec<String>>,
 }
 
 pub struct WorkflowPackage<'a> {
@@ -122,6 +126,24 @@ pub struct WorkflowPackage<'a> {
     pub sources: &'a [ConfigurationRecord],
     pub role_agent_bindings: &'a BTreeMap<Id, Id>,
     pub entity_bindings: BTreeMap<Id, DomainWorkflowBinding>,
+}
+
+pub(super) fn experience_domains(root: &Path) -> Result<BTreeMap<Id, String>> {
+    let path = root.join("domain-packages.sqlite3");
+    if !path.exists() {
+        return Ok(BTreeMap::new());
+    }
+    reject_symlink(&path)?;
+    let db = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(storage)?;
+    let mut query = db
+        .prepare("SELECT project,digest FROM domain_projects")
+        .map_err(storage)?;
+    query
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .map_err(storage)?
+        .collect::<rusqlite::Result<_>>()
+        .map_err(storage)
 }
 
 pub fn is_digest(value: &str) -> bool {
@@ -288,6 +310,14 @@ impl Package {
                     reference.starts_with(&prefix) && !entity.name.trim().is_empty(),
                     "领域对象类型需要本包命名空间和有效名称",
                 )?;
+                require(
+                    entity.relations.iter().all(|(name, rule)| {
+                        is_identifier(name)
+                            && rule.min_items <= rule.max_items
+                            && entity_types.contains_key(&rule.target)
+                    }),
+                    "领域对象关系引用了无效类型或基数",
+                )?;
                 jsonschema::options()
                     .offline()
                     .build(&entity.schema)
@@ -400,7 +430,7 @@ impl Package {
         } else {
             (vec![], Default::default())
         };
-        for entity in entity_types.values() {
+        for (owner, entity) in &entity_types {
             for (reference, binding) in &entity.workflows {
                 let workflow = sources
                     .iter()
@@ -408,14 +438,34 @@ impl Package {
                     .ok_or_else(|| invalid("领域对象引用了未声明的工作流"))?;
                 require(
                     workflow.data["inputs"].get(&binding.input).is_some()
+                        && binding
+                            .owner_relations
+                            .keys()
+                            .all(|port| binding.outputs.contains_key(port))
                         && binding.outputs.iter().all(|(name, target)| {
-                            entity_types.contains_key(target)
-                                && workflow.data["outputs"].get(name).is_some_and(|source| {
-                                    source["step"]
-                                        .as_str()
-                                        .is_some_and(|step| !step.starts_with('$'))
-                                        && source["pointer"].as_str().is_none_or(str::is_empty)
-                                })
+                            entity_types.get(target).is_some_and(|target| {
+                                let links = binding
+                                    .owner_relations
+                                    .get(name)
+                                    .map(Vec::as_slice)
+                                    .unwrap_or_default();
+                                links.iter().collect::<BTreeSet<_>>().len() == links.len()
+                                    && links.iter().all(|link| target.relations.contains_key(link))
+                                    && target.relations.iter().all(|(key, rule)| {
+                                        if links.contains(key) {
+                                            &rule.target == owner
+                                                && rule.min_items <= 1
+                                                && rule.max_items >= 1
+                                        } else {
+                                            rule.min_items == 0
+                                        }
+                                    })
+                            }) && workflow.data["outputs"].get(name).is_some_and(|source| {
+                                source["step"]
+                                    .as_str()
+                                    .is_some_and(|step| !step.starts_with('$'))
+                                    && source["pointer"].as_str().is_none_or(str::is_empty)
+                            })
                         }),
                     "领域对象工作流绑定引用了无效的输入或产物",
                 )?;
@@ -838,6 +888,11 @@ impl DomainPackages {
                             DomainOutputBinding {
                                 type_ref: target.clone(),
                                 schema: package.entity_types[target].schema.clone(),
+                                owner_relations: binding
+                                    .owner_relations
+                                    .get(port)
+                                    .cloned()
+                                    .unwrap_or_default(),
                             },
                         )
                     })
@@ -976,7 +1031,7 @@ impl DomainPackages {
         epoch: u64,
         trusted: &BTreeSet<String>,
         (reference, data): (&str, &Value),
-        write: impl FnOnce(&str) -> Result<Value>,
+        write: impl FnOnce(&str, &BTreeMap<String, DomainRelation>) -> Result<Value>,
     ) -> Result<Value> {
         let active = self.active.read().unwrap();
         check_epoch(epoch, active.epoch)?;
@@ -987,7 +1042,7 @@ impl DomainPackages {
             .ok_or_else(|| err("not_found", "活动包未声明此领域对象类型"))?;
         require(data.to_string().len() <= 16 * 1024, "领域对象数据超出预算")?;
         validate_exchange(Some(&entity.schema), data)?;
-        write(&package.digest)
+        write(&package.digest, &entity.relations)
     }
 
     /// Pins existing public project endpoints to the current domain.

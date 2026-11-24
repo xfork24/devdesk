@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tests" / "entrypoints"))
@@ -27,6 +28,62 @@ def wait_for_host(host, log):
                 return Client(line)
         time.sleep(0.1)
     raise TimeoutError("Core Host startup")
+
+
+def verify_discussion(client, epoch, entity, agent_instance):
+    pid, owner = entity["project_id"], entity["id"]
+    where = {"domain_epoch": epoch, "project_id": pid}
+
+    def command(method, target, expected, **payload):
+        return client.call(method, **where, target=target, expected_revision=expected,
+                           command_id=uuid.uuid4().hex, payload=payload)
+
+    sibling = client.call("domain.entity.put", epoch=epoch, project_id=pid, entity_id=str(uuid.uuid4()),
+                          type_ref=entity["type_ref"], expected_revision=0, data={"title": "Other document"},
+                          command_id=uuid.uuid4().hex)
+    discussion = command("session.open", owner, entity["revision"], agent_instance_id=agent_instance)
+    reused = command("session.open", owner, entity["revision"], agent_instance_id=agent_instance)
+    assert reused["id"] == discussion["id"] and reused["reused"]
+    view = client.call("query.session", **where, id=discussion["id"], owner_id=owner)
+    assert view["session"]["work_owner"] == {"kind": "entity", "id": owner, "project": pid}
+    assert any(row["id"] == discussion["id"] for row in client.call("query.sessions", **where, owner_id=owner)["sessions"])
+    for other in (pid, sibling["id"]):
+        assert all(row["id"] != discussion["id"] for row in client.call("query.sessions", **where, owner_id=other)["sessions"])
+    try:
+        command("session.open", sibling["id"], view["session"]["revision"], agent_instance_id=agent_instance,
+                continue_from={"session_id": discussion["id"]})
+    except RuntimeError as error:
+        assert "续聊需要原会话的归属" in str(error), error
+    else:
+        raise AssertionError("continued from a sibling entity discussion")
+
+    turn = command("conversation.send", discussion["id"], view["session"]["revision"],
+                   client_message_id=uuid.uuid4().hex,
+                   input="Reply with the word manuscript. This is a free discussion. Do not call tools.")
+    deadline = time.monotonic() + 120
+    while time.monotonic() < deadline:
+        observed = client.call("query.session", **where, id=discussion["id"], owner_id=owner)
+        statuses = {row["id"]: row["status"] for row in observed["turns"]}
+        status = statuses.get(turn["id"])
+        assert status not in {"failed", "cancelled", "needs_reconciliation"}, observed
+        if status == "completed":
+            entries = client.call("query.agent_experience", **where, agent_instance_id=agent_instance,
+                                  entity_id=owner)["records"]
+            detail = next((entry for entry in entries if entry["session_id"] == discussion["id"]), None)
+            if detail:
+                assert detail["work_owner"] == view["session"]["work_owner"]
+                assert client.call("query.agent_experience", **where, agent_instance_id=agent_instance,
+                                   entity_id=sibling["id"])["records"] == []
+                try:
+                    client.call("query.agent_experience", **where, agent_instance_id=agent_instance,
+                                entity_id=sibling["id"], snapshot_id=detail["snapshot_id"], source_project_id=pid)
+                except RuntimeError as error:
+                    assert "not_found" in str(error), error
+                else:
+                    raise AssertionError("read an experience in a sibling scope")
+                return {"session_id": discussion["id"], "turn_id": turn["id"], "experience": detail["snapshot_id"]}
+        time.sleep(0.5)
+    raise TimeoutError("Entity discussion or experience was not completed")
 
 
 def verify(client, archive, digest, report):
@@ -90,7 +147,9 @@ def verify(client, archive, digest, report):
     session = client.call("query.session", domain_epoch=epoch, project_id=run["project_id"], id=session_id)
     assert session["session"]["external_session"], "Codex did not create a native thread"
     assert session["current_runtime_binding"]["model"] and session["executions"], "native runtime evidence missing"
-    return {"run": run, "proof": proof, "human_decision": decision, "session_id": session_id,
+    assert session["session"]["work_owner"] == {"kind": "entity", "id": entity["id"], "project": entity["project_id"]}
+    discussion = verify_discussion(client, epoch, entity, session["agent_instance_id"])
+    return {"run": run, "discussion": discussion, "proof": proof, "human_decision": decision, "session_id": session_id,
             "successful_native_calls": calls}
 
 

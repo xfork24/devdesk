@@ -108,7 +108,7 @@ impl Engine {
             1,
             None,
             json!({"status":"captured","session":session,"turn_id":turn,"snapshot":{"id":snapshot.id},"artifact_id":artifact.artifact.id,
-                "experience":{"agent_instance_id":link.data["agent_instance_id"],"agent_revision_id":link.data["agent_revision_id"],"snapshot_id":snapshot.id,"session_id":session.id,"project_id":session.project_id,"project_name":facts.project_title,"feature_id":session.feature_id,"feature_name":facts.feature_title.clone().unwrap_or_default(),"task_id":session.task_id,
+                "experience":{"agent_instance_id":link.data["agent_instance_id"],"agent_revision_id":link.data["agent_revision_id"],"snapshot_id":snapshot.id,"session_id":session.id,"project_id":session.project_id,"project_name":facts.project_title,"feature_id":session.feature_id,"feature_name":facts.feature_title.clone().unwrap_or_default(),"task_id":session.task_id,"work_owner":link.data["work_owner"],
                     "workflow_instance_id":workflow["instance_id"],"step_execution_id":workflow["execution_id"],"plan_revision_id":workflow["plan_revision_id"],"content_digest":configuration_hash(snapshot),"captured_at":snapshot.capture.captured_at,"work_time":facts.work_time,"binding":link.data["binding"],"kind":snapshot.kind}}),
             false,
         );
@@ -276,7 +276,7 @@ impl Engine {
                 };
                 data["status"] = json!("capturing");
                 data["snapshot"] = json!(snap);
-                data["experience"] = json!({"agent_instance_id":link.data["agent_instance_id"],"agent_revision_id":link.data["agent_revision_id"],"snapshot_id":sid,"session_id":session.id,"project_id":session.project_id,"project_name":facts.project_title,"feature_id":session.feature_id,"feature_name":facts.feature_title.clone().unwrap_or_default(),"task_id":session.task_id,"workflow_instance_id":workflow["instance_id"],"step_execution_id":workflow["execution_id"],"plan_revision_id":workflow["plan_revision_id"],"content_digest":configuration_hash(&snap),"captured_at":snap.capture.captured_at,"work_time":facts.work_time,"binding":link.data["binding"],"kind":snap.kind});
+                data["experience"] = json!({"agent_instance_id":link.data["agent_instance_id"],"agent_revision_id":link.data["agent_revision_id"],"snapshot_id":sid,"session_id":session.id,"project_id":session.project_id,"project_name":facts.project_title,"feature_id":session.feature_id,"feature_name":facts.feature_title.clone().unwrap_or_default(),"task_id":session.task_id,"work_owner":link.data["work_owner"],"workflow_instance_id":workflow["instance_id"],"step_execution_id":workflow["execution_id"],"plan_revision_id":workflow["plan_revision_id"],"content_digest":configuration_hash(&snap),"captured_at":snap.capture.captured_at,"work_time":facts.work_time,"binding":link.data["binding"],"kind":snap.kind});
                 let body = serde_json::to_string_pretty(&snap)
                     .map_err(|e| err("serialization", e.to_string()))?;
                 let artifact_id = uuid::Uuid::parse_str(
@@ -490,8 +490,22 @@ impl Engine {
         }
         let data = &entry_data;
         let snapshot_id = text(data, "snapshot_id")?;
+        let object = data["work_owner"]
+            .as_object()
+            .filter(|owner| owner.get("kind").and_then(Value::as_str) == Some("entity"))
+            .and_then(|owner| owner.get("id").and_then(Value::as_str));
         let feature = data["feature_id"].as_str();
-        let identity = if let Some(feature) = feature {
+        let identity = if let Some(object) = object {
+            format!(
+                "experience:{}",
+                configuration_hash(&json!([
+                    data["agent_instance_id"],
+                    data["project_id"],
+                    "entity",
+                    object
+                ]))
+            )
+        } else if let Some(feature) = feature {
             format!(
                 "experience:{}",
                 configuration_hash(&json!([
@@ -519,7 +533,7 @@ impl Engine {
             .ok_or_else(|| err("storage", "经验头读取不完整"))?;
         let mut entry = record(
             "experience",
-            feature.unwrap_or(&snapshot_id).into(),
+            object.or(feature).unwrap_or(&snapshot_id).into(),
             intent.scope.clone(),
             data["feature_name"]
                 .as_str()

@@ -59,7 +59,9 @@ impl Engine {
                 read_set: ReadSet::default(),
             });
         }
-        let actual = WorkOwnerFacts::read(self.store.as_ref(), &session.owner_id)?;
+        let (owner, owner_guard) = self.session_work_owner(session)?;
+        let mut actual = WorkOwnerFacts::read(self.store.as_ref(), &owner)?;
+        actual.read_set = actual.read_set.merge([owner_guard])?;
         Ok(PermissionOwner {
             project: actual.project,
             material: actual.material,
@@ -511,7 +513,7 @@ impl Engine {
                 value: self.store.encode_runtime_record(&link)?,
             });
         }
-        let (input, task_source, code_view) = if let Some(source) = &facts.workflow {
+        let (input, task_source, code_view, workspace) = if let Some(source) = &facts.workflow {
             require(
                 c.payload.get("experience_refs").is_none(),
                 "正式后继输入不能附加自由讨论经验",
@@ -555,8 +557,14 @@ impl Engine {
                 &execution,
                 Some(&text(&c.payload, "input")?),
             )?;
-            let (view, guards) =
-                self.formal_input_code_view(&resources.instance, &execution, step)?;
+            let (workspace, guards) =
+                self.formal_input_resource(&resources.instance, &execution, step)?;
+            reads = reads.merge(guards.versions().iter().cloned())?;
+            let (view, guards) = if workspace.is_none() {
+                self.formal_input_code_view(&resources.instance, &execution, step)?
+            } else {
+                (None, ReadSet::default())
+            };
             reads = reads.merge(guards.versions().iter().cloned())?;
             changes.push(resources.changed_step(self.store.as_ref(), &execution)?);
             let mut association = record(
@@ -579,11 +587,11 @@ impl Engine {
                 resource: key,
                 value: self.store.encode_runtime_record(&association)?,
             });
-            (input, Some(association), view)
+            (input, Some(association), view, workspace)
         } else {
             let (view, guards) = self.native_discussion_code_view(&previous)?;
             reads = reads.merge(guards.versions().iter().cloned())?;
-            (text(&c.payload, "input")?, None, view)
+            (text(&c.payload, "input")?, None, view, None)
         };
         let references = c
             .payload
@@ -626,6 +634,7 @@ impl Engine {
                 references,
                 task_source,
                 code_view,
+                workspace,
                 origin: Origin::Human,
                 capture: Some((previous, facts)),
                 extra_files: vec![(seal, body)],

@@ -418,8 +418,8 @@ fn value(conn: &Connection, key: &ResourceKey) -> Result<Option<Value>> {
             [&key.id], |r| r.get::<_,bool>(0),
         ).map(|active|Some(json!(active))).map_err(storage),
         "session_open_candidate"=>{
-            let (owner,identity,instance):(String,String,String)=serde_json::from_str(&key.id).map_err(storage)?;
-            Ok(load_table_filtered_params::<Value>(conn,"sessions","id=(SELECT s.id FROM sessions s JOIN source_definitions d ON d.reference=s.agent AND d.type='agent' WHERE s.owner_id=?1 AND d.identity=?2 AND coalesce(json_extract(s.runtime_binding,'$.agent_configuration.instance_ref'),json_extract(s.runtime_binding,'$.agent_configuration.agent_instance_id'))=?3 AND json_extract(s.runtime_binding,'$.work_type')='discussion' AND NOT EXISTS(SELECT 1 FROM governance_records WHERE id='discussion-session-deleted:' || s.id) ORDER BY s.rowid DESC LIMIT 1)",&[&owner,&identity,&instance])?.into_iter().next())
+            let (owner,identity,instance,logical):(String,String,String,String)=serde_json::from_str(&key.id).map_err(storage)?;
+            Ok(load_table_filtered_params::<Value>(conn,"sessions","id=(SELECT s.id FROM sessions s JOIN source_definitions d ON d.reference=s.agent AND d.type='agent' WHERE s.owner_id=?1 AND coalesce((SELECT json_extract(a.data,'$.work_owner.id') FROM governance_records a WHERE a.id='agent-session:' || s.id AND a.type='agent_session'),s.owner_id)=?4 AND d.identity=?2 AND coalesce(json_extract(s.runtime_binding,'$.agent_configuration.instance_ref'),json_extract(s.runtime_binding,'$.agent_configuration.agent_instance_id'))=?3 AND json_extract(s.runtime_binding,'$.work_type')='discussion' AND NOT EXISTS(SELECT 1 FROM governance_records WHERE id='discussion-session-deleted:' || s.id) ORDER BY s.rowid DESC LIMIT 1)",&[&owner,&identity,&instance,&logical])?.into_iter().next())
         }
         "conversation_client"=>{
             let (session,client):(String,String)=serde_json::from_str(&key.id).map_err(storage)?;
@@ -843,7 +843,10 @@ fn current_revision(conn: &Connection, key: &ResourceKey) -> Result<u64> {
             + 8 * u64::from(flags["controller"] == true));
     }
     if key.kind == "session_open_candidate" {
-        return conn.query_row("SELECT revision FROM resource_versions WHERE kind='session_family' AND resource_id=?1",[&key.id],|r|r.get(0)).optional().map(|v|v.unwrap_or(0)).map_err(storage);
+        let (owner, identity, instance, _): (String, String, String, String) =
+            serde_json::from_str(&key.id).map_err(storage)?;
+        let family = json!([owner, identity, instance]).to_string();
+        return conn.query_row("SELECT revision FROM resource_versions WHERE kind='session_family' AND resource_id=?1",[&family],|r|r.get(0)).optional().map(|v|v.unwrap_or(0)).map_err(storage);
     }
     if key.kind == "repository_worktree_owner" {
         let raw = value(conn, key)?;

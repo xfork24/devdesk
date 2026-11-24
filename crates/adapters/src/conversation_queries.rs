@@ -18,6 +18,22 @@ fn selected(
 ) -> Result<Vec<Value>> {
     load_table_filtered_params(conn, table, predicate, args)
 }
+fn entity_owner(conn: &rusqlite::Connection, id: &str) -> Result<Value> {
+    let value: Option<String> = conn
+        .query_row(
+            "SELECT json_extract(data,'$.work_owner') FROM governance_records
+         WHERE id IN ('agent-session:' || ?1,'formal-session-source:' || ?1)
+            AND json_extract(data,'$.work_owner.kind')='entity' ORDER BY id LIMIT 1",
+            [id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(storage)?;
+    value.map_or(Ok(Value::Null), |value| {
+        serde_json::from_str(&value).map_err(storage)
+    })
+}
+
 pub(super) fn query(
     pool: &ConnectionPool,
     catalog: &ConfigurationCatalogSnapshot,
@@ -61,7 +77,7 @@ pub(super) fn query(
                 .and_then(|v| v["step_instance_id"].as_str())
         });
         let anchor_id = anchor.as_ref().and_then(|row| row["id"].as_str());
-        let predicate = "scope IS NOT NULL AND NOT EXISTS(SELECT 1 FROM governance_records WHERE id='discussion-session-deleted:' || sessions.id) AND (id=?5 OR ((?1 IS NULL OR owner_id=?1) AND (?2 IS NULL OR agent=?2) AND (?3 IS NULL OR coalesce(json_extract(runtime_binding,'$.agent_configuration.instance_ref'),json_extract(runtime_binding,'$.agent_configuration.agent_instance_id'))=?3 OR EXISTS(SELECT 1 FROM governance_records a WHERE a.type='agent_session' AND a.definition_id=sessions.id AND json_extract(a.data,'$.agent_instance_id')=?3)) AND (?4 IS NULL OR EXISTS(SELECT 1 FROM governance_records g WHERE g.type='configured_session' AND g.definition_id=sessions.id AND json_extract(g.data,'$.execution_id')=?4))))";
+        let predicate = "scope IS NOT NULL AND NOT EXISTS(SELECT 1 FROM governance_records WHERE id='discussion-session-deleted:' || sessions.id) AND (id=?5 OR ((?1 IS NULL OR coalesce((SELECT json_extract(o.data,'$.work_owner.id') FROM governance_records o WHERE o.id IN ('agent-session:' || sessions.id,'formal-session-source:' || sessions.id) AND json_extract(o.data,'$.work_owner.kind')='entity' ORDER BY o.id LIMIT 1), owner_id)=?1) AND (?2 IS NULL OR agent=?2) AND (?3 IS NULL OR coalesce(json_extract(runtime_binding,'$.agent_configuration.instance_ref'),json_extract(runtime_binding,'$.agent_configuration.agent_instance_id'))=?3 OR EXISTS(SELECT 1 FROM governance_records a WHERE a.type='agent_session' AND a.definition_id=sessions.id AND json_extract(a.data,'$.agent_instance_id')=?3)) AND (?4 IS NULL OR EXISTS(SELECT 1 FROM governance_records g WHERE g.type='configured_session' AND g.definition_id=sessions.id AND json_extract(g.data,'$.execution_id')=?4))))";
         let total: u64 = conn
             .query_row(
                 &format!("SELECT count(*) FROM sessions WHERE {predicate}"),
@@ -87,6 +103,11 @@ pub(super) fn query(
         )?;
         let mut sessions = vec![];
         for mut row in rows.into_iter().rev() {
+            let work_owner = entity_owner(&conn, row["id"].as_str().unwrap_or(""))?;
+            if let Some(id) = work_owner["id"].as_str() {
+                row["owner_id"] = json!(id);
+                row["work_owner"] = work_owner;
+            }
             row["agent_instance_id"] = json!(instance(&row));
             row["workflow_context"] = json!(context(&conn, row["id"].as_str().unwrap_or(""))?);
             sessions.push(row);
@@ -97,9 +118,17 @@ pub(super) fn query(
             .as_str()
             .or_else(|| p["session_id"].as_str())
             .ok_or_else(|| err("invalid_params", "需要 Session ID"))?;
-        let session = selected(&conn, "sessions", "id=?1 AND scope IS NOT NULL", &[&sid])?
+        let mut session = selected(&conn, "sessions", "id=?1 AND scope IS NOT NULL", &[&sid])?
             .pop()
             .ok_or_else(|| err("not_found", "原会话不存在"))?;
+        let work_owner = entity_owner(&conn, sid)?;
+        if let Some(id) = work_owner["id"].as_str() {
+            session["owner_id"] = json!(id);
+            session["work_owner"] = work_owner;
+        }
+        if let Some(owner) = p["owner_id"].as_str() {
+            require(session["owner_id"] == owner, "会话不属于所请求的对象")?;
+        }
         if let Some(project) = p["project_id"].as_str() {
             require(session["project_id"] == project, "会话跨项目")?;
         }

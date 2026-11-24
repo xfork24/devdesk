@@ -72,6 +72,30 @@ def prepare_document(client, epoch):
         assert "revision_conflict" in str(failure), failure
     else:
         raise AssertionError("domain entity update used an obsolete revision")
+    sibling = {**target, "entity_id": str(uuid.uuid4())}
+    sibling_fields = {**original, "command_id": uuid.uuid4().hex,
+                      "relations": {"previous": [target["entity_id"]]}}
+    assert client.call("domain.entity.put", **sibling, **sibling_fields)["relations"] == sibling_fields["relations"]
+    for links, error in [
+        ({"previous": [sibling["entity_id"]]}, "不可成环"),
+        ({"previous": [sibling["entity_id"], target["entity_id"]]}, "基数"),
+        ({"undeclared": [sibling["entity_id"]]}, "未声明"),
+    ]:
+        try:
+            client.call("domain.entity.put", **target, **{
+                **revised, "expected_revision": 2, "command_id": uuid.uuid4().hex, "relations": links})
+        except RuntimeError as failure:
+            assert error in str(failure), failure
+        else:
+            raise AssertionError(f"accepted invalid relation {links}")
+    another = client.call("domain.project.create", epoch=epoch, title="Unrelated editorial project",
+                          command_id=uuid.uuid4().hex)["id"]
+    try:
+        client.call("domain.entity.put", **{**sibling, "project_id": another}, **sibling_fields)
+    except RuntimeError as failure:
+        assert "not_found" in str(failure), failure
+    else:
+        raise AssertionError("accepted relation to a different project")
     return client.call("query.domain.entity", **target)
 
 
@@ -116,6 +140,7 @@ def submitted_proof(client, epoch, receipt, timeout=25):
     proof = client.call("query.domain.entity", epoch=epoch, project_id=receipt["project_id"],
                         entity_id=submission["entities"]["observation"])
     assert proof["data"] == {"title": "Local manuscript", "observedBy": "domain-worker"}
+    assert proof["relations"] == {"manuscript": [submission["owner_id"]]}
     origin = proof["origin"]
     assert origin["owner_id"] == submission["owner_id"] and origin["owner_revision"] == 2
     assert origin["root_id"] == receipt["execution_id"]

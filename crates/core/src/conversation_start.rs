@@ -5,7 +5,7 @@ use crate::{
     tool_calls::WorkflowToolAuthority,
     *,
 };
-use ports::{SessionStart, TurnDispatch};
+use ports::{FrozenResourceLease, SessionStart, TurnDispatch};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ConversationAuthority {
@@ -435,7 +435,8 @@ impl Engine {
             skills,
             specifications,
             configured_task,
-            code_view: turn.code_view.clone(),
+            code_view: None,
+            workspace: None,
             execution,
             project_root: self.store.root(),
             snapshot,
@@ -446,6 +447,63 @@ impl Engine {
             .project_id
             .as_ref()
             .ok_or_else(|| err("invalid_scope", "会话缺少项目命名空间"))?;
+        let workspace = crate::platform_facts::one(
+            self.store.as_ref(),
+            "governance",
+            &format!("conversation-workspace:{}", turn.id),
+        )?;
+        guards.push(version(&workspace));
+        if let Some(raw) = &workspace.value {
+            let (owner, owner_guard) = self.session_work_owner(session)?;
+            let handle: FrozenResourceHandle =
+                serde_json::from_value(raw["data"]["handle"].clone())
+                    .map_err(|error| err("storage", error.to_string()))?;
+            require(
+                request.configured_task.is_some()
+                    && turn.code_view.is_none()
+                    && raw["type"] == "conversation_workspace"
+                    && raw["data"]["session_id"] == session.id
+                    && handle.project_id == *pid
+                    && handle.owner_id == owner,
+                "工作区资源不属于当前启动机会话和对象",
+            )?;
+            let FrozenResourceSource::Artifact { id } = &handle.source else {
+                return Err(err("storage", "原存储工作区资源类型无效"));
+            };
+            let row = crate::platform_facts::one(self.store.as_ref(), "artifact", id)?;
+            let artifact: Artifact = serde_json::from_value(
+                row.value
+                    .clone()
+                    .ok_or_else(|| err("not_found", "原工作区资源不存在"))?,
+            )
+            .map_err(|error| err("storage", error.to_string()))?;
+            require(
+                artifact.id == *id && artifact.sha256 == handle.version,
+                "工作区资源版本变化",
+            )?;
+            guards.extend([owner_guard, version(&row)]);
+            request.workspace = Some(FrozenResourceLease {
+                handle,
+                operation_id: request.execution.operation_id.clone(),
+                session_id: session.id.clone(),
+                artifact: Some(artifact),
+                exclusive_write: false,
+            });
+        } else if let Some(view) = &turn.code_view {
+            request.workspace = Some(FrozenResourceLease {
+                handle: FrozenResourceHandle {
+                    project_id: view.context.project.clone(),
+                    owner_id: view.context.source.owner.clone(),
+                    version: view.revision.clone(),
+                    source: FrozenResourceSource::GitWorktree { view: view.clone() },
+                },
+                operation_id: request.execution.operation_id.clone(),
+                session_id: session.id.clone(),
+                artifact: None,
+                exclusive_write: binding.tool_policy != ToolPolicy::ReadOnly
+                    && request.configured_task.is_some(),
+            });
+        }
         let intent_key = ResourceKey::new("governance", format!("conversation-open:{digest}"));
         let execution_key = ResourceKey::new("execution", &request.execution.id);
         let mut keys = vec![
@@ -755,6 +813,10 @@ impl Engine {
         // Turn and Worker. The worktree checkpoint needs only this subset.
         data["request"] = json!({
             "code_view": request["code_view"],
+            "workspace": request["workspace"]["handle"].as_object().map(|handle| json!({
+                "project_id":handle["project_id"],"owner_id":handle["owner_id"],
+                "version":handle["version"],"kind":handle["source"]["kind"]
+            })),
             "configured_task": request["configured_task"].is_object().then(|| json!({})),
             "session": {
                 "id": request["session"]["id"],

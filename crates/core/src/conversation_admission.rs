@@ -18,6 +18,7 @@ pub(crate) struct NativeConversationInput {
     pub references: Value,
     pub task_source: Option<ConfigurationRecord>,
     pub code_view: Option<FrozenCode>,
+    pub workspace: Option<FrozenResourceHandle>,
     pub origin: Origin,
     pub capture: Option<(Session, ConversationCaptureFacts)>,
     pub extra_files: Vec<(ArtifactSeal, String)>,
@@ -45,9 +46,17 @@ impl Engine {
                 self.store.conversation_input_facts(session, None)?,
             )
         };
+        let (captured_owner, captured_guard) = self.session_work_owner(&captured_session)?;
+        let (owner_id, owner_guard) = if creating {
+            (captured_owner.clone(), captured_guard.clone())
+        } else {
+            self.session_work_owner(session)?
+        };
+        prepared.read_set = prepared.read_set.merge([owner_guard, captured_guard])?;
         require(
             captured_session.project_id == session.project_id
-                && captured_session.owner_id == session.owner_id,
+                && captured_session.owner_id == session.owner_id
+                && captured_owner == owner_id,
             "输入捕获不能跨项目或工作归属",
         )?;
         let same_source = match (&facts.workflow, &prepared.task_source) {
@@ -70,7 +79,7 @@ impl Engine {
             )?;
             (MaterialOwner::Global, None)
         } else {
-            let owner = WorkOwnerFacts::read(self.store.as_ref(), &session.owner_id)?;
+            let owner = WorkOwnerFacts::read(self.store.as_ref(), &owner_id)?;
             require(owner.project == project, "输入工作归属跨项目")?;
             prepared.read_set = prepared
                 .read_set
@@ -283,6 +292,28 @@ impl Engine {
         } else {
             Scope::project(project)
         };
+        if let Some(handle) = prepared.workspace {
+            let mut workspace = record(
+                "conversation_workspace",
+                tid.clone(),
+                scope.clone(),
+                "冻结工作区资源".into(),
+                1,
+                None,
+                json!({"handle":handle,"session_id":sid}),
+                true,
+            );
+            workspace.id = format!("conversation-workspace:{tid}");
+            let key = ResourceKey::new("governance", &workspace.id);
+            prepared.read_set = prepared.read_set.merge([ResourceVersion {
+                resource: key.clone(),
+                revision: 0,
+            }])?;
+            prepared.changes.push(ResourceChange {
+                resource: key,
+                value: self.store.encode_runtime_record(&workspace)?,
+            });
+        }
         if c.payload.get("experience_refs").is_some() {
             let mut context = record(
                 "conversation_context",

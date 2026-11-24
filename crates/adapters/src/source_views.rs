@@ -304,11 +304,15 @@ fn pack_reference(state: &EngineeringState, value: &Value) -> Result<Option<Valu
                 "work_type":value["work_type"],"credential_ref":value["credential_ref"]}),
         ));
     }
-    if value.get("agent_revision_id").is_some() && value.get("composition_hash").is_some() {
-        return Ok(Some(
-            json!({"$source":"agent_execution","agent_ref":value["agent_revision_id"],"instance_ref":value["agent_instance_id"],
-                "integration_lock":pack(state,&value["integration_lock"])?,"context_protocol":value["context_protocol"]}),
-        ));
+    if value.get("agent_revision_id").is_some()
+        && value.get("composition_hash").is_some()
+        && value.get("model_revision_id").is_some()
+    {
+        let reference = json!({"$source":"agent_execution","agent_ref":value["agent_revision_id"],"instance_ref":value["agent_instance_id"],
+            "integration_lock":pack(state,&value["integration_lock"])?,"context_protocol":value["context_protocol"]});
+        if restore(state, &reference).is_ok_and(|restored| restored == *value) {
+            return Ok(Some(reference));
+        }
     }
     if value["binding_lock"].is_object()
         && value.get("enforcement").is_some()

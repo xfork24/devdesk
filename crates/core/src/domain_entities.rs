@@ -3,7 +3,7 @@ use crate::{
     concurrency::*, governance::record, platform_facts::one, workflow_commits::WorkflowCommit,
     workflow_resources::version, *,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) const KIND: &str = "domain_entity";
 
@@ -20,6 +20,96 @@ pub struct DomainWorkflowBinding {
 pub struct DomainOutputBinding {
     pub type_ref: Id,
     pub schema: Value,
+    #[serde(default)]
+    pub owner_relations: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DomainRelation {
+    pub target: Id,
+    #[serde(default)]
+    pub min_items: usize,
+    pub max_items: usize,
+}
+
+type Relations = BTreeMap<String, Vec<Id>>;
+const MAX_RELATION_OBJECTS: usize = 256;
+
+fn relations(value: Option<&Value>) -> Result<Relations> {
+    value.map_or_else(
+        || Ok(BTreeMap::new()),
+        |value| {
+            serde_json::from_value(value.clone()).map_err(|e| err("invalid_params", e.to_string()))
+        },
+    )
+}
+
+fn relation_versions(
+    store: &dyn EngineeringStore,
+    project: &str,
+    digest: &str,
+    id: &str,
+    rules: &BTreeMap<String, DomainRelation>,
+    links: &Relations,
+) -> Result<Vec<ResourceVersion>> {
+    require(
+        links.keys().all(|name| rules.contains_key(name)),
+        "领域对象关系未声明",
+    )?;
+    let mut pending = Vec::new();
+    for (name, rule) in rules {
+        let targets = links.get(name).map(Vec::as_slice).unwrap_or_default();
+        require(
+            (rule.min_items..=rule.max_items).contains(&targets.len())
+                && targets.iter().collect::<BTreeSet<_>>().len() == targets.len(),
+            "领域对象关系违反基数或包含重复对象",
+        )?;
+        require(
+            targets.iter().all(|target| {
+                uuid::Uuid::parse_str(target).is_ok_and(|id| id.to_string() == *target)
+            }),
+            "领域对象关系目标需要规范 UUID",
+        )?;
+        pending.extend(
+            targets
+                .iter()
+                .map(|target| (target.clone(), Some(rule.target.as_str()))),
+        );
+    }
+    let mut seen = BTreeMap::<Id, Id>::new();
+    let mut versions = Vec::new();
+    while let Some((target, expected_type)) = pending.pop() {
+        require(target != id, "领域对象关系不可成环")?;
+        if let Some(kind) = seen.get(&target) {
+            require(
+                expected_type.is_none_or(|expected| kind == expected),
+                "领域对象关系类型不符",
+            )?;
+            continue;
+        }
+        require(
+            seen.len() < MAX_RELATION_OBJECTS,
+            "领域对象关系超出遍历预算",
+        )?;
+        let row = one(store, "governance", &domain_entity_key(project, &target))?;
+        let entity = extract(&row, project, digest)?
+            .ok_or_else(|| err("not_found", "领域对象关系目标不在当前项目"))?;
+        let kind = text(&entity, "type_ref")?;
+        require(
+            expected_type.is_none_or(|expected| kind == expected),
+            "领域对象关系类型不符",
+        )?;
+        seen.insert(target, kind);
+        versions.push(version(&row));
+        pending.extend(
+            relations(entity.get("relations"))?
+                .into_values()
+                .flatten()
+                .map(|id| (id, None)),
+        );
+    }
+    Ok(versions)
 }
 
 impl Engine {
@@ -46,6 +136,7 @@ impl Engine {
     pub fn write_domain_entity(
         &self,
         digest: &str,
+        rules: &BTreeMap<String, DomainRelation>,
         command: &Command,
         context: &InvocationContext,
     ) -> Result<Value> {
@@ -96,17 +187,27 @@ impl Engine {
                 .is_none_or(|entity| entity.get("origin").is_none()),
             "工作流提交的领域产物不可覆盖",
         )?;
+        let links = relations(command.payload.get("relations"))?;
+        let mut versions = vec![version(&row), version(&live), version(&active)];
+        versions.extend(relation_versions(
+            self.store.as_ref(),
+            &project,
+            digest,
+            id,
+            rules,
+            &links,
+        )?);
         let revision = row.revision + 1;
         let entity = json!({
             "id":id,"project_id":project,"type_ref":type_ref,
-            "revision":revision,"data":command.payload["data"],
+            "revision":revision,"data":command.payload["data"],"relations":links,
         });
         let stored = storage_record(&project, &key, digest, &entity, revision)?;
         self.store
             .commit_changes(&PreparedChangeSet {
                 command_id: receipt_id,
                 fingerprint,
-                read_set: ReadSet::new(vec![version(&row), version(&live), version(&active)])?,
+                read_set: ReadSet::new(versions)?,
                 changes: vec![ResourceChange {
                     resource: row.resource,
                     value: stored.to_storage(),
@@ -278,7 +379,13 @@ impl WorkflowCommit<'_> {
             }
             let id = self.object_id(&format!("domain-output:{port}"))?;
             let key = domain_entity_key(&root.project_id, &id);
+            let links = target
+                .owner_relations
+                .iter()
+                .map(|name| (name, [&root.owner_id]))
+                .collect::<BTreeMap<_, _>>();
             let entity = json!({
+                "relations":links,
                 "id":id,"project_id":root.project_id,"type_ref":target.type_ref,"revision":1,"data":value,
                 "origin":{"owner_id":root.owner_id,"owner_revision":owner.revision,
                     "root_id":root.root_instance_id,"plan_revision_id":root.active_plan_revision_id,

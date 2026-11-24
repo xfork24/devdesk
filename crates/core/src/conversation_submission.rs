@@ -193,6 +193,7 @@ impl Engine {
                 references,
                 task_source: None,
                 code_view,
+                workspace: None,
                 origin: Origin::Human,
                 capture: None,
                 extra_files: vec![],
@@ -212,6 +213,10 @@ impl Engine {
             .project_id
             .as_deref()
             .ok_or_else(|| err("invalid_scope", "代码视图缺少项目"))?;
+        let (owner, owner_version) = self.session_work_owner(session)?;
+        if owner != session.owner_id {
+            return Ok((None, ReadSet::new(vec![owner_version])?));
+        }
         let owner_key = ResourceKey::new(
             "repository_worktree_owner",
             json!([project, session.owner_id]).to_string(),
