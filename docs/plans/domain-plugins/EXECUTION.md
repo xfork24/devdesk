@@ -48,6 +48,8 @@ P3 扩展验收使用同一个文稿包。Web 启动人工流程，Python 派发
 
 Feature 和 Task 的真实 Git worktree 验证了分支策略在物理调用前写入操作意图。对已写入的 Feature 操作注入回执丢失后，`repository.reconcile` 只读取原工作副本和回执，物理写入计数保持不变。本轮远端 PR、合入、保护分支和同步仍待迁移及验收。[候选包](../../../configurations/software-development/README.md)
 
+两个独立发行件解压后，再次通过双端及热切换验收。软件包预检执行为 `65002759-b374-283b-0a1a-537a04e66552`，证据位于 `/tmp/devdesk-p4-release.2bfC1L/result.json`。同一 Host 发行件的真实 Codex 复验执行为 `ec056394-3eae-392e-2053-42c897e5d2bd`，证据位于 `/tmp/devdesk-p4-live-agent.RWWiq2/evidence/result.json`。
+
 ## 基线和后续范围
 
 原基线 `2458a06` 的 `actual_git_docker_workflow_handoffs` 在启动 Docker 前停于 `builtin-tool-workspace-snapshot:2` 的配置读取。探针把项目级源用于全局草稿，并引用了退役 Harness 的测试工具修订。只修正探针的草稿作用域和工具引用后，真实 Git/Docker 流程在 18.210 秒内完成。证据存于 `/tmp/devdesk-domain-p0.O6iSOB/evidence`。
