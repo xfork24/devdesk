@@ -45,10 +45,12 @@ DevDesk 是一个可加载领域包的工作台。Rust Host 管理配置、领�
 ```bash
 ./scripts/release/package.sh host
 ./scripts/release/package.sh web
-./scripts/release/package.sh software
+./scripts/release/package.sh software-development
 ```
 
 默认输出在 `dist/`。Host 可独立于 Node、Web 构建产物和领域源码构建。Web Core 构建只需要前端工具链。领域 ZIP 的运行机器需要 Docker，安装时使用已打包的 JavaScript 与静态资产。
+
+Host 默认使用体积优先的 `size` 配置。使用 `host --profile speed` 启用常规速度优化，或用 `host --profile symbols` 保留符号供诊断。见[打包选项](scripts/README.md#host-打包选项)。
 
 ```bash
 python3 -m venv .venv

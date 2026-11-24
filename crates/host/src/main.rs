@@ -779,9 +779,38 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.iter().any(|a| a == "--help") {
         println!(
-            "DevDesk {}\nUsage: devdesk-host [--data PATH] [--host IP] [--port 4317] [--public-url http(s)://HOST:PORT] [--web-dir DIR]\n       devdesk-host --data PATH --authorize-credential REFERENCE\nDefault host: 127.0.0.1. Remote listening requires DEVDESK_ACCESS_TOKEN (32+ characters).\nWithout --data, choose a dataset in the Web setup page. Without --web-dir the Host serves the client protocol only.",
+            "DevDesk {}\nUsage: devdesk-host [--data PATH] [--host IP] [--port 4317] [--public-url http(s)://HOST:PORT] [--web-dir DIR]\n       devdesk-host --data PATH --authorize-credential REFERENCE\n       devdesk-host sandbox-policy --print|--check|--install\nDefault host: 127.0.0.1. Remote listening requires DEVDESK_ACCESS_TOKEN (32+ characters).\nWithout --data, choose a dataset in the Web setup page. Without --web-dir the Host serves the client protocol only.",
             env!("CARGO_PKG_VERSION")
         );
+        return Ok(());
+    }
+    if let [command, options @ ..] = args.as_slice()
+        && command == "sandbox-policy"
+    {
+        use devdesk_adapters::permissions::LINUX_APPARMOR_POLICY;
+        match options {
+            [action] if action == "--print" => {
+                use std::io::Write;
+                std::io::stdout()
+                    .lock()
+                    .write_all(LINUX_APPARMOR_POLICY.as_bytes())?;
+            }
+            [action] if matches!(action.as_str(), "--check" | "--install") => {
+                let status = std::process::Command::new("/bin/bash")
+                    .arg("-c")
+                    .arg(include_str!(
+                        "../../../scripts/platform/linux/install-linux-sandbox-policy.sh"
+                    ))
+                    .arg("devdesk-host sandbox-policy")
+                    .arg(action)
+                    .arg(LINUX_APPARMOR_POLICY)
+                    .status()?;
+                if !status.success() {
+                    return Err(format!("AppArmor policy command failed ({status})").into());
+                }
+            }
+            _ => return Err("Usage: devdesk-host sandbox-policy --print|--check|--install".into()),
+        }
         return Ok(());
     }
     let option = |name: &str| {

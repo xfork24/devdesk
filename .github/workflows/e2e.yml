@@ -67,7 +67,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
         working-directory: web
       - name: Install the named Linux nested sandbox policy
-        run: sudo ./scripts/platform/linux/install-linux-sandbox-policy.sh --install
+        run: sudo ./target/fixtures/debug/devdesk-host sandbox-policy --install
       - name: Docker native acceptance (enumerated external tests, no paid models)
         run: python3 tests/entrypoints/native_acceptance.py --docker-only --prepare --reports /tmp/devdesk-native-acceptance
       - name: Prepare the selected browser Docker runtime

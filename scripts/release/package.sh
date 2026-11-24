@@ -2,30 +2,68 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
+usage() {
+  printf 'Usage: %s host [--profile size|speed|symbols]\n' "$0"
+  printf '       %s web|software-development\n' "$0"
+}
+
+target="${1:-}"
+profile=release
+suffix=
+case "$target" in
+  --help|-h)
+    usage
+    exit 0
+    ;;
+  host)
+    if [[ $# == 3 && "$2" == --profile ]]; then
+      case "$3" in
+        size) ;;
+        speed|symbols)
+          profile="release-$3"
+          suffix="-$3"
+          ;;
+        *)
+          usage >&2
+          exit 2
+          ;;
+      esac
+    elif [[ $# != 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    ;;
+  web|software-development)
+    if [[ $# != 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
+
 output="${DEVDESK_RELEASE_OUT:-dist}"
 mkdir -p "$output"
 output="$(cd "$output" && pwd)"
 stage="$(mktemp -d "${TMPDIR:-/tmp}/devdesk-core.XXXXXX")"
 trap 'rm -rf "$stage"' EXIT
 
-case "${1:-}" in
+case "$target" in
   host)
     if ! command -v cargo >/dev/null && [ -f "$HOME/.cargo/env" ]; then source "$HOME/.cargo/env"; fi
-    cargo build --release --locked -p devdesk-host
-    binary="${CARGO_TARGET_DIR:-target}/release/devdesk-host"
+    cargo build --profile "$profile" --locked -p devdesk-host
+    binary="${CARGO_TARGET_DIR:-target}/$profile/devdesk-host"
     ./scripts/platform/macos/sign-macos.sh "$binary"
     version=$("$binary" --version)
-    name="devdesk-core-host-${version##* }-$(rustc -vV | sed -n 's/^host: //p')"
+    name="devdesk-core-host-${version##* }-$(rustc -vV | sed -n 's/^host: //p')$suffix"
     mkdir "$stage/$name"
     cp "$binary" "$stage/$name/"
-    mkdir "$stage/$name/permissions"
-    cp -R permissions/backends "$stage/$name/permissions/"
-    if [[ "$(uname -s)" == Linux ]]; then
-      mkdir -p "$stage/$name/scripts/platform/linux"
-      cp scripts/platform/linux/install-linux-sandbox-policy.sh "$stage/$name/scripts/platform/linux/"
-    fi
+    cp permissions/backends/docker/upstream/LICENSE.moby "$stage/$name/"
     artifact="$name.tar.gz"
-    tar -czf "$stage/$artifact" -C "$stage" "$name"
+    COPYFILE_DISABLE=1 tar -czf "$stage/$artifact" -C "$stage" "$name"
     ;;
   web)
     npm --prefix web ci
@@ -39,15 +77,11 @@ case "${1:-}" in
     artifact="$name.tar.gz"
     tar -czf "$stage/$artifact" -C "$stage" "$name"
     ;;
-  software)
+  software-development)
     npm --prefix web ci
     npm --prefix web run build:software
     artifact="software-development-$(python3 plugins/software-development/build.py --version).zip"
     python3 plugins/software-development/build.py "$stage/$artifact"
-    ;;
-  *)
-    printf 'Usage: %s host|web|software\n' "$0" >&2
-    exit 2
     ;;
 esac
 (

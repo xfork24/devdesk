@@ -45,7 +45,7 @@ DEVDESK_E2E_PORT=4329 npm --prefix web run test:e2e
 export DEVDESK_RELEASE_OUT="$(mktemp -d)"
 ./scripts/release/package.sh host
 ./scripts/release/package.sh web
-./scripts/release/package.sh software
+./scripts/release/package.sh software-development
 node --test tests/entrypoints/domain_delivery_evidence.mjs
 node tests/entrypoints/domain_release.mjs "$DEVDESK_RELEASE_OUT"
 ```

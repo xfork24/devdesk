@@ -40,6 +40,8 @@ sudo ./scripts/platform/linux/install-linux-sandbox-policy.sh --install
 ./scripts/check/doctor.sh --permission-backend docker-nested-v1
 ```
 
+发布版 Host 内置运行资产。安装发布版时使用 [Host 的策略命令](../docs/design/run-binary.md#linux-权限策略)。
+
 安装器核对并加载 `devdesk-harness-v1`，保留 Docker 默认策略。Moby 基线和许可证位于 `docker/upstream/`。修改内核策略内容必须发布新后端版本，不能覆盖旧运行引用的资产。
 
 ## 构建与校验

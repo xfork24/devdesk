@@ -2,21 +2,29 @@
 # Install only DevDesk's named worker profile; never change docker-default,
 # daemon settings, sysctls, capabilities or AppArmor's enforcement mode.
 set -euo pipefail
-cd "$(dirname "$0")/../../.."
-policy=permissions/backends/docker/apparmor/devdesk-harness-v1.apparmor
 destination=/etc/apparmor.d/devdesk-harness-v1
 if [[ "$(uname -s)" != Linux ]]; then
   echo "This profile is for an AppArmor-enabled Linux Docker host." >&2
   exit 1
 fi
-apparmor_parser --skip-kernel-load --skip-cache "$policy"
-if [[ "${1:---check}" == --check ]]; then
-  sha256sum "$policy"
-  exit 0
+if [[ "$0" == "devdesk-host sandbox-policy" ]]; then
+  policy="$(mktemp /tmp/devdesk-apparmor.XXXXXX)"
+  trap 'rm -f -- "$policy"' EXIT
+  printf '%s' "$2" > "$policy"
+  set -- "$1"
+else
+  cd "$(dirname "$0")/../../.."
+  policy=permissions/backends/docker/apparmor/devdesk-harness-v1.apparmor
 fi
-if [[ "${1:-}" != --install || $# != 1 ]]; then
+action="${1:---check}"
+if [[ $# -gt 1 || "$action" != --check && "$action" != --install ]]; then
   echo "Usage: $0 --check | --install" >&2
   exit 2
+fi
+apparmor_parser --skip-kernel-load --skip-cache "$policy"
+if [[ "$action" == --check ]]; then
+  sha256sum "$policy"
+  exit 0
 fi
 if [[ "$(id -u)" != 0 ]]; then
   echo "Loading a named kernel profile requires root. Run: sudo $0 --install" >&2

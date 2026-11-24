@@ -41,9 +41,9 @@ async function bytes(zip) {
 
 async function extract(artifacts, cwd, verify) {
   const filenames = await readdir(artifacts);
-  const hosts = filenames.filter((file) => verify
-    ? file.startsWith("devdesk-core-host-0.5.0-") && file.endsWith(".tar.gz")
-    : /^devdesk-core-host-.*\.tar\.gz$/.test(file));
+  const hostPrefix = verify ? "devdesk-core-host-0.5.0-" : "devdesk-core-host-";
+  const hosts = filenames.filter((file) =>
+    file.startsWith(hostPrefix) && file.endsWith(".tar.gz") && !/-(speed|symbols)\.tar\.gz$/.test(file));
   assert.equal(hosts.length, 1, "Expected one Host archive for the current machine");
   const webArchives = filenames.filter((file) => verify
     ? file === "devdesk-core-web-0.5.0.tar.gz"
@@ -60,18 +60,18 @@ async function extract(artifacts, cwd, verify) {
     }
   }
   const hostDir = path.join(cwd, hosts[0].replace(/\.tar\.gz$/, ""));
+  const host = path.join(hostDir, "devdesk-host");
   if (verify) {
-    const assets = path.join(hostDir, "permissions/backends");
+    assert.deepEqual((await readdir(hostDir)).sort(), ["LICENSE.moby", "devdesk-host"]);
+    const assets = path.join(root, "permissions/backends");
     const policy = JSON.parse(await readFile(path.join(assets, "manifest.json"), "utf8"));
-    for (const [name, { sha256 }] of Object.entries(policy.assets)) {
-      assert.equal(digest(await readFile(path.join(assets, name))), sha256, name);
-    }
-    if (process.platform === "linux") {
-      await readFile(path.join(hostDir, "scripts/platform/linux/install-linux-sandbox-policy.sh"));
-    }
+    const { stdout } = await execFile(host, ["sandbox-policy", "--print"], { cwd });
+    assert.equal(digest(stdout), policy.assets["docker/apparmor/devdesk-harness-v1.apparmor"].sha256);
+    assert.equal(digest(await readFile(path.join(hostDir, "LICENSE.moby"))),
+      policy.assets["docker/upstream/LICENSE.moby"].sha256);
   }
   return {
-    host: path.join(hostDir, "devdesk-host"),
+    host,
     web: path.join(cwd, web.replace(/\.tar\.gz$/, "")),
   };
 }

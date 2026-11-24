@@ -13,7 +13,7 @@
 | `check/` | `check-style.sh` | 风格与构建门禁：rustfmt、clippy `-D warnings`、ESLint、TypeScript、Prettier 与 Web 构建；规范见 `docs/crates/standards/` |
 | `check/` | `check-permissions.sh` | 校验权限预设、后端 manifest 与不可变文件摘要 |
 | `check/` | `doctor.sh` | 检查宿主环境、Docker、GitHub CLI 和所选权限后端 |
-| `release/` | `package.sh` | 按 `host`、`web`、`software` 分别生成独立制品及 SHA-256 |
+| `release/` | `package.sh` | 按 `host`、`web`、`software-development` 分别生成独立制品及 SHA-256 |
 | `release/` | `package-source.sh` | 打包当前工作区源码与文件清单，排除运行数据和构建产物 |
 | `platform/macos/` | `setup-macos-signing.sh` | 准备或导入 DevDesk 本地稳定签名身份 |
 | `platform/macos/` | `sign-macos.sh` | 对 Host 应用配置好的签名身份 |
@@ -30,10 +30,20 @@
 ./scripts/check/check.sh
 ./scripts/release/package.sh host
 ./scripts/release/package.sh web
-./scripts/release/package.sh software
+./scripts/release/package.sh software-development
 ./scripts/release/package-source.sh
 ```
 
 macOS 首次配置见 [Host 签名与钥匙串](../docs/crates/devdesk-adapters/signing-and-keychain.md)，真实验收见 [工程交付](../docs/design/engineering-delivery.md)，测试分层见 [测试索引](../tests/README.md)。旧版 `scripts/<文件名>.sh` 已移动到上表目录，历史执行报告保留当时的命令。
 
 文档检查：`python3 scripts/py/check-docs.py` 验证当前说明的本地链接和各 crate 的 `files.md` 索引；新增、删除或移动 crate 文件后运行 `python3 scripts/py/check-docs.py --write`。检查器回归为 `python3 tests/entrypoints/test_docs_checker.py`，已纳入 check.sh。原生配方导出由 `cargo run --quiet --locked -p devdesk-adapters --example export_runtime_recipes` 调用领域组合器，不复制另一份 Python 配方编译逻辑。
+
+## Host 打包选项
+
+| 命令 | Rust 配置 | 制品名称 |
+| --- | --- | --- |
+| `./scripts/release/package.sh host` 或 `host --profile size` | 体积优化 `opt-level = "s"`、Thin LTO、移除符号表 | 标准名称 |
+| `./scripts/release/package.sh host --profile speed` | `opt-level = 3`、Thin LTO、移除符号表 | 增加 `-speed` 后缀 |
+| `./scripts/release/package.sh host --profile symbols` | 体积优化、Thin LTO、保留符号表 | 增加 `-symbols` 后缀 |
+
+每种配置在 macOS 上构建完成后签名，并生成压缩包和 SHA-256 校验文件。`symbols` 保留函数符号，沿用 Release 的调试信息设置。

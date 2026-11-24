@@ -94,10 +94,12 @@ Linux 需要 `secret-tool` 和已解锁的 Secret Service/D-Bus 会话，例如 
 
 ## Linux 权限策略
 
-使用受限嵌套权限且启用 AppArmor 时，经审阅安装随包专用策略：
+Host 内置权限运行资产。使用受限嵌套权限且启用 AppArmor 时，在 Docker 宿主上审阅、检查并安装内置专用策略。
 
 ```bash
-sudo ./scripts/platform/linux/install-linux-sandbox-policy.sh --install
+./devdesk-host sandbox-policy --print
+./devdesk-host sandbox-policy --check
+sudo ./devdesk-host sandbox-policy --install
 ```
 
 安装器只加载 DevDesk 专用策略，Host 会校验资产和权限。默认全权限绑定不要求该嵌套策略。缺少必需后端时应修复环境或明确选择适合的权限配置，不能把启动失败视为已隔离运行。

@@ -208,10 +208,8 @@ impl DockerSandbox {
         // Only the coordinator's fixed, administrator-installed policy is accepted.
         // A missing/drifted policy fails closed; never use an unconfined fallback.
         let path = Path::new("/etc/apparmor.d/devdesk-harness-v1");
-        let expected = include_bytes!(
-            "../../../permissions/backends/docker/apparmor/devdesk-harness-v1.apparmor"
-        );
-        let message = "Ubuntu 嵌套沙箱需要已审阅的专用 AppArmor 策略；请在 Docker 宿主运行 sudo ./scripts/platform/linux/install-linux-sandbox-policy.sh --install";
+        let expected = crate::permissions::LINUX_APPARMOR_POLICY.as_bytes();
+        let message = "Ubuntu 嵌套沙箱需要已审阅的专用 AppArmor 策略，请在 Docker 宿主运行 sudo /path/to/devdesk-host sandbox-policy --install";
         let metadata =
             fs::symlink_metadata(path).map_err(|_| err("sandbox_policy_required", message))?;
         require(

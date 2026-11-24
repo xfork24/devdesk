@@ -2,6 +2,9 @@
 use super::*;
 use std::collections::BTreeMap;
 
+pub const LINUX_APPARMOR_POLICY: &str =
+    include_str!("../../../permissions/backends/docker/apparmor/devdesk-harness-v1.apparmor");
+
 pub fn capabilities(provider: HarnessProvider) -> PermissionCapabilities {
     PermissionCapabilities {
         backend: provider.as_str().into(),
@@ -49,10 +52,7 @@ fn embedded_asset_digests() -> BTreeMap<String, String> {
         ),
         (
             "docker/apparmor/devdesk-harness-v1.apparmor",
-            include_bytes!(
-                "../../../permissions/backends/docker/apparmor/devdesk-harness-v1.apparmor"
-            )
-            .as_slice(),
+            LINUX_APPARMOR_POLICY.as_bytes(),
         ),
         (
             "dsh/bwrap-runner.sh",

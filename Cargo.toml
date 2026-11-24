@@ -21,3 +21,16 @@ unused = { level = "warn", priority = -1 }
 # Runtime binaries are hundreds of MB; debug hashing must remain interactive too.
 [profile.dev.package.sha2]
 opt-level = 3
+
+[profile.release]
+opt-level = "s"
+lto = "thin"
+strip = "symbols"
+
+[profile.release-speed]
+inherits = "release"
+opt-level = 3
+
+[profile.release-symbols]
+inherits = "release"
+strip = "none"

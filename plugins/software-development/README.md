@@ -7,7 +7,7 @@
 - `web/` 声明分支队列、交付工作台和工程设置，使用 `web.react` API 2 和 Web Core 的共享 SDK。
 
 ```bash
-./scripts/release/package.sh software
+./scripts/release/package.sh software-development
 ```
 
 在已运行的工作台中导入并激活生成的 ZIP。配置、处理器和页面随包的具体摘要冻结。安装、激活和部署命令见[运行指南](../../docs/design/run-binary.md)。协议和跨端扩展见[领域包架构](../../docs/design/domain-packages.md)。

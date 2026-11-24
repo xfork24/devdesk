@@ -58,7 +58,7 @@ jobs:
       - name: Build the software domain archive
         id: software
         run: |
-          ./scripts/release/package.sh software
+          ./scripts/release/package.sh software-development
           version=$(python3 plugins/software-development/build.py --version)
           printf 'archive=dist/software-development-%s.zip\n' "$version" >> "$GITHUB_OUTPUT"
       - run: ./web/node_modules/.bin/playwright install --with-deps chromium
