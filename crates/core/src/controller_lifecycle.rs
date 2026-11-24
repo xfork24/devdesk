@@ -137,9 +137,25 @@ impl Engine {
             )?,
         )
         .map_err(|e| err("storage", e.to_string()))?;
+        let owner = WorkOwnerFacts::read(self.store.as_ref(), &controller.owner_id)?;
+        let source_owner = if matches!(owner.work_reference(), WorkReference::Entity { .. }) {
+            let source = one(
+                self.store.as_ref(),
+                "governance",
+                &format!("formal-session-source:{sid}"),
+            )?;
+            let matched = source.value.as_ref().is_some_and(|row| {
+                row["type"] == "controller_session"
+                    && row["data"]["work_owner"] == json!(owner.work_reference())
+                    && session.owner_id == controller.project_id
+            });
+            commit.witness([version(&source)])?;
+            matched
+        } else {
+            session.owner_id == controller.owner_id
+        };
         require(
-            session.project_id.as_deref() == Some(controller.project_id.as_str())
-                && session.owner_id == controller.owner_id,
+            session.project_id.as_deref() == Some(controller.project_id.as_str()) && source_owner,
             "原经理会话归属不符",
         )?;
         let workers = one(self.store.as_ref(), "session_live_workers", sid)?;
@@ -156,7 +172,6 @@ impl Engine {
         commit.witness([version(&selected), version(&workers), version(&inputs)])?;
         let facts = self.store.conversation_input_facts(&session, None)?;
         commit.witness(facts.read_set.versions().iter().cloned())?;
-        let owner = WorkOwnerFacts::read(self.store.as_ref(), &controller.owner_id)?;
         commit.witness(owner.read_set.versions().iter().cloned())?;
         let id = commit.object_id("controller-handoff-snapshot")?;
         let (project_id, feature_id, task_id) = material_parts(&owner.material);

@@ -475,6 +475,15 @@
       ]
     },
     {
+      "method": "domain.project.create",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "command_id_and_active_epoch",
+      "sites": [
+        "crates/host/src/domains.rs"
+      ]
+    },
+    {
       "method": "domain.read",
       "access": "platform_read",
       "scope": "explicit",

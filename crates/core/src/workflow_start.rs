@@ -2,6 +2,7 @@
 //! and active-root predicates protect creation, plan publication and source heads.
 use crate::{
     concurrency::*,
+    domain_entities::{extract, workflow_binding_key},
     governance::record,
     material_commands::stable_object_id,
     platform_facts::{one, restored},
@@ -58,6 +59,26 @@ impl Engine {
         fingerprint: &str,
         context: &InvocationContext,
     ) -> Result<Value> {
+        self.start_workflow(c, fingerprint, context, None)
+    }
+
+    pub fn start_domain_workflow(
+        &self,
+        c: &Command,
+        binding: &DomainWorkflowBinding,
+    ) -> Result<Value> {
+        let context = InvocationContext::human(self.store.project_id());
+        let fingerprint = configuration_hash(&("domain.workflow.start", c, binding, &context));
+        self.start_workflow(c, &fingerprint, &context, Some(binding))
+    }
+
+    fn start_workflow(
+        &self,
+        c: &Command,
+        fingerprint: &str,
+        context: &InvocationContext,
+        domain: Option<&DomainWorkflowBinding>,
+    ) -> Result<Value> {
         if let Some(receipt) = self.store.replay_commit(&c.command_id, fingerprint)? {
             return self.store.restore_runtime_record(&receipt.result);
         }
@@ -70,13 +91,27 @@ impl Engine {
         owner.require_revision(c.expected_revision)?;
         owner.require_editable()?;
         context.require_project(&owner.project)?;
+        let frozen_entity = match domain {
+            Some(binding) => {
+                let entity = extract(&owner.owner, &owner.project, &binding.digest)?
+                    .ok_or_else(|| err("not_found", "原领域对象缺失"))?;
+                require(
+                    entity["type_ref"] == binding.owner_type,
+                    "原对象类型未授权此工作流",
+                )?;
+                Some((binding, entity))
+            }
+            None if matches!(owner.work_reference(), WorkReference::Entity { .. }) => {
+                return Err(err(
+                    "permission_denied",
+                    "领域对象需要通过已激活领域启动工作流",
+                ));
+            }
+            None => None,
+        };
         let mut commit = WorkflowCommit::new(self, "workflow.start", c, context)?;
         commit.witness(owner.read_set.versions().iter().cloned())?;
-        let active = one(
-            self.store.as_ref(),
-            "workflow_active_owner",
-            &owner.owner.resource.id,
-        )?;
+        let active = one(self.store.as_ref(), "workflow_active_owner", &owner.id)?;
         require(
             active.value.as_ref().is_some_and(|v| v["active"] == false),
             "同一工作已有未结束根流程",
@@ -98,7 +133,7 @@ impl Engine {
             require(
                 row.r#type == "workflow_controller"
                     && controller.project_id == owner.project
-                    && controller.owner_id == owner.owner.resource.id
+                    && controller.owner_id == owner.id
                     && controller.session_id.as_deref() == Some(session_id)
                     && controller.epoch == *epoch
                     && controller.status == "active",
@@ -109,11 +144,7 @@ impl Engine {
                 !controller.policy.human_operations.contains("start"),
                 "启动需要实际人类决定",
             )?;
-            let governed = one(
-                self.store.as_ref(),
-                "workflow_governed_owner",
-                &owner.owner.resource.id,
-            )?;
+            let governed = one(self.store.as_ref(), "workflow_governed_owner", &owner.id)?;
             require(
                 governed.revision == 0,
                 "受人工决策保护的工作需要人类启动后继流程",
@@ -150,25 +181,15 @@ impl Engine {
         let inherited = if let Some(id) = c.payload["work_configuration_ref"].as_str() {
             Some(before.state.configuration(id)?.clone())
         } else {
-            crate::standards::work_configuration(&before.state, &owner.owner.resource.id).cloned()
+            crate::standards::work_configuration(&before.state, &owner.id).cloned()
         };
         if let Some(row) = &inherited {
             require(
-                row.r#type == "work_configuration" && row.definition_id == owner.owner.resource.id,
+                row.r#type == "work_configuration" && row.definition_id == owner.id,
                 "工作配置不属于此工作",
             )?;
         }
-        let work = match owner.owner.resource.kind.as_str() {
-            "project" => WorkReference::Project {
-                id: owner.owner.resource.id.clone(),
-            },
-            "feature" => WorkReference::Feature {
-                id: owner.owner.resource.id.clone(),
-            },
-            _ => WorkReference::Task {
-                id: owner.owner.resource.id.clone(),
-            },
-        };
+        let work = owner.work_reference();
         let configuration = crate::standards::select_work_configuration_for(
             &mut catalog,
             &work,
@@ -190,11 +211,7 @@ impl Engine {
             self.compile_configured_workflow(&selected, &workflow, &owner.scope, Some(&bindings))?;
         plan.standard_ref = Some(text(&configuration.data, "standard_ref")?);
         plan.work_configuration_ref = Some(configuration.id.clone());
-        let request = one(
-            self.store.as_ref(),
-            "feature_request_source",
-            &owner.owner.resource.id,
-        )?;
+        let request = one(self.store.as_ref(), "feature_request_source", &owner.id)?;
         commit.witness([version(&request)])?;
         let mut inputs: BTreeMap<String, Value> = serde_json::from_value(
             c.payload
@@ -209,6 +226,21 @@ impl Engine {
                 .unwrap_or(json!({})),
         )
         .map_err(|e| err("invalid_params", e.to_string()))?;
+        if let Some((binding, entity)) = &frozen_entity {
+            require(
+                !inputs.contains_key(&binding.input),
+                "工作流输入不可覆盖冻结的领域对象",
+            )?;
+            require(
+                binding.outputs.keys().all(|port| {
+                    plan.document.outputs.get(port).is_some_and(|source| {
+                        source.pointer.is_empty() && !source.step.starts_with('$')
+                    })
+                }),
+                "领域交付必须绑定完整的已接纳步骤产物",
+            )?;
+            inputs.insert(binding.input.clone(), entity["data"].clone());
+        }
         if plan.document.inputs.contains_key("test_configuration") {
             let tests = configuration
                 .data
@@ -251,7 +283,7 @@ impl Engine {
                 ))
             })
             .collect::<Result<Vec<_>>>()?;
-        let mut instance=ConfiguredWorkflowInstance{active_plan_revision_id:String::new(),control_version:1,schema_version:WORKFLOW_INSTANCE_SCHEMA,owner_id:owner.owner.resource.id.clone(),workflow_ref:workflow.id.clone(),project_id:owner.project.clone(),plan,role_agent_bindings:bindings,inputs,user_request:request.value.as_ref().map(|r|r["data"]["user_request"].clone()).unwrap_or_else(||if owner.owner.resource.kind=="feature"{json!({"feature_id":owner.owner.resource.id,"title":owner.owner.value.as_ref().unwrap()["title"],"initial_requirement":""})}else{Value::Null}),human_governance:false,steps,status:StepExecutionStatus::Queued,paused:false,parent_execution_id:None,root_instance_id:instance_id.clone(),cancel_requested:false};
+        let mut instance=ConfiguredWorkflowInstance{active_plan_revision_id:String::new(),control_version:1,schema_version:WORKFLOW_INSTANCE_SCHEMA,owner_id:owner.id.clone(),workflow_ref:workflow.id.clone(),project_id:owner.project.clone(),plan,role_agent_bindings:bindings,inputs,user_request:request.value.as_ref().map(|r|r["data"]["user_request"].clone()).unwrap_or_else(||if owner.owner.resource.kind=="feature"{json!({"feature_id":owner.id,"title":owner.owner.value.as_ref().unwrap()["title"],"initial_requirement":""})}else{Value::Null}),human_governance:false,steps,status:StepExecutionStatus::Queued,paused:false,parent_execution_id:None,root_instance_id:instance_id.clone(),cancel_requested:false};
         let frozen = crate::orchestration::freeze_plan_record(
             &mut catalog,
             &mut instance,
@@ -269,7 +301,7 @@ impl Engine {
         }
         let mut row = record(
             "workflow_instance",
-            owner.owner.resource.id.clone(),
+            owner.id.clone(),
             owner.scope.clone(),
             workflow.name,
             1,
@@ -288,6 +320,21 @@ impl Engine {
                 resource: key,
                 value: self.store.encode_configuration_record(&candidate, fact)?,
             })?;
+        }
+        if let Some((binding, entity)) = &frozen_entity {
+            let mut contract = record(
+                "domain_workflow_binding",
+                row.id.clone(),
+                owner.scope.clone(),
+                "Domain workflow binding".into(),
+                1,
+                None,
+                json!({"owner_revision":entity["revision"],"owner_id":owner.id,
+                    "contract":serde_json::to_string(binding).map_err(|e| err("storage",e.to_string()))?}),
+                true,
+            );
+            contract.id = workflow_binding_key(&row.id);
+            commit.insert_record(&contract)?;
         }
         if owner.owner.resource.kind == "feature"
             && owner

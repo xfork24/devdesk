@@ -117,7 +117,7 @@ try {
   await second.getByRole("button", { name: "Git repository" }).waitFor({ state: "detached" });
   const result = await native("workflow");
   await page.getByRole("button", { name: "领域工作流" }).click();
-  await page.getByLabel("项目 ID").fill(result.project_id);
+  await page.getByLabel("项目 ID", { exact: true }).fill(result.project_id);
   await page.getByLabel("执行 ID").fill(result.execution_id);
   await page.getByRole("button", { name: "读取执行" }).click();
   const execution = page.getByLabel("领域执行结果");
@@ -129,6 +129,10 @@ try {
   const mode = page.getByLabel("调度方式");
   await mode.locator('option[value="agent"]').waitFor({ state: "attached" });
   await mode.selectOption("manual");
+  const owner = await native("prepare-owner");
+  await page.getByLabel("归属项目 ID").fill(owner.project_id);
+  await page.getByLabel("归属对象 ID").fill(owner.id);
+  await page.getByLabel("归属对象修订").fill(String(owner.revision));
   const starting = page.waitForResponse(
     (r) => r.url().endsWith("/rpc") && r.request().postDataJSON()?.method === "domain.workflow.start",
   );
@@ -152,7 +156,7 @@ try {
   assert.equal(original.record.data.status, "completed");
   const entity = await native("read-entity", result.project_id, result.entity_id);
   assert.equal(entity.revision, 2);
-  assert.equal(entity.data.title, "Edited manuscript");
+  assert.equal(entity.data.title, "  Local manuscript  ");
   await native("unload");
   await second.getByText("空领域", { exact: true }).waitFor();
   assert.equal(host.pid, pid);

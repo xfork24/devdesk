@@ -112,6 +112,7 @@ impl WorkflowCommit<'_> {
                         (WorkReference::Project { .. }, "project")
                             | (WorkReference::Feature { .. }, "feature")
                             | (WorkReference::Task { .. }, "task")
+                            | (WorkReference::Entity { .. }, "governance")
                     ),
                     "工作引用类型与实际对象不符",
                 )?;

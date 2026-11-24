@@ -365,7 +365,7 @@ impl Workspace {
             return Ok(false);
         }
         let engine = self.project_engine(Some(project))?;
-        let key = devdesk_core::concurrency::ResourceKey::new("workflow_active_owner", project);
+        let key = devdesk_core::concurrency::ResourceKey::new("workflow_active_project", project);
         Ok(engine
             .store
             .read_resources(&[key])?

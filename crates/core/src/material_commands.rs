@@ -249,7 +249,7 @@ impl Engine {
         context: &InvocationContext,
         owner: &WorkOwnerFacts,
     ) -> Result<Value> {
-        let context_key = ResourceKey::new("owner_context", &owner.owner.resource.id);
+        let context_key = ResourceKey::new("owner_context", &owner.id);
         let mut keys = vec![context_key.clone()];
         if c.payload.get("documents").is_none() {
             keys.push(ResourceKey::new(

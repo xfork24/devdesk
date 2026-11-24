@@ -358,6 +358,7 @@ fn value(conn: &Connection, key: &ResourceKey) -> Result<Option<Value>> {
         "workflow_change_pending"=>Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT c.id FROM governance_records c JOIN governance_records i ON i.id=c.definition_id AND i.type='workflow_instance' JOIN governance_records target ON target.id=?1 AND target.type='workflow_instance' WHERE c.type='workflow_change' AND json_extract(c.data,'$.status') IN ('prepared','waiting_quiescence') AND json_extract(i.data,'$.root_instance_id')=json_extract(target.data,'$.root_instance_id') ORDER BY c.id LIMIT 1)",&[&key.id])?.into_iter().next()),
         "workflow_governed"=>conn.query_row("SELECT EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_instance' AND json_extract(data,'$.root_instance_id')=?1 AND json_extract(data,'$.human_governance')=1)",[&key.id],|r|r.get::<_,bool>(0)).map(|governed|Some(json!({"governed":governed}))).map_err(storage),
         "workflow_active_owner"=>conn.query_row("SELECT EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_instance' AND json_extract(data,'$.owner_id')=?1 AND json_extract(data,'$.parent_execution_id') IS NULL AND json_extract(data,'$.status') NOT IN ('completed','cancelled'))",[&key.id],|r|r.get::<_,bool>(0)).map(|active|Some(json!({"active":active}))).map_err(storage),
+        "workflow_active_project"=>conn.query_row("SELECT EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_instance' AND json_extract(data,'$.project_id')=?1 AND json_extract(data,'$.parent_execution_id') IS NULL AND json_extract(data,'$.status') NOT IN ('completed','cancelled'))",[&key.id],|r|r.get::<_,bool>(0)).map(|active|Some(json!({"active":active}))).map_err(storage),
         "workflow_active_pause"=>Ok(load_table_filtered_params::<Value>(conn,"governance_records","id=(SELECT id FROM governance_records WHERE type='workflow_pause_interval' AND definition_id=?1 AND json_extract(data,'$.finished') IS NULL ORDER BY id LIMIT 1)",&[&key.id])?.into_iter().next()),
         "driver_lease_active"=>{
             let (driver,epoch):(String,u64)=serde_json::from_str(&key.id).map_err(storage)?;
@@ -784,7 +785,7 @@ fn current_revision(conn: &Connection, key: &ResourceKey) -> Result<u64> {
     }
     if matches!(
         key.kind.as_str(),
-        "workflow_active_owner" | "workflow_any_active_owner"
+        "workflow_active_owner" | "workflow_any_active_owner" | "workflow_active_project"
     ) {
         return Ok(u64::from(
             value(conn, key)?.is_some_and(|v| v["active"] == true),

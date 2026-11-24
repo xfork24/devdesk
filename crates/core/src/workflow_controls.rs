@@ -598,6 +598,9 @@ impl Engine {
                     "整体完成条件或最终交付未满足",
                 )?;
                 let decision = commit.decision(&root, None, "complete", reason)?;
+                let submitted =
+                    commit.commit_domain_outputs(&root.instance, &facts.facts, &decision)?;
+                commit.record_domain_submission(&root.instance, &submitted)?;
                 commit.new_record(record("workflow_completion",root.record.id.clone(),root.record.scope.clone(),reason.into(),1,None,json!({"plan_revision_id":root.instance.active_plan_revision_id,"decision_id":decision}),true),"workflow-completion")?;
                 let mut next = root.instance.as_ref().clone();
                 if next.plan.document.delivery_policy.is_some() {

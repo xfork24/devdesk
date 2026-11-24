@@ -43,18 +43,90 @@ def next_epoch(stream):
             fields[key] = value.strip()
 
 
-def completed(client, epoch, receipt):
-    end = time.monotonic() + 24
+def lookup(client, epoch, receipt):
+    return client.call("query.domain.workflow", epoch=epoch,
+                       project_id=receipt["project_id"], execution_id=receipt["execution_id"])
+
+
+def prepare_document(client, epoch):
+    project = client.call("domain.project.create", epoch=epoch, title="Editorial acceptance",
+                          command_id=uuid.uuid4().hex)["id"]
+    target = {"epoch": epoch, "project_id": project, "entity_id": str(uuid.uuid4())}
+    original = {"type_ref": "manuscript.document:1", "expected_revision": 0,
+                "data": {"title": "Draft"}, "command_id": uuid.uuid4().hex}
+    try:
+        client.call("domain.entity.put", **target, **{**original, "data": {"title": 42}})
+    except RuntimeError as failure:
+        assert "domain_contract" in str(failure), failure
+    else:
+        raise AssertionError("domain entity accepted the wrong data type")
+    entity = client.call("domain.entity.put", **target, **original)
+    assert entity["revision"] == 1 and client.call("domain.entity.put", **target, **original) == entity
+    revised = {**original, "expected_revision": 1, "data": {"title": "  Local manuscript  "},
+               "command_id": uuid.uuid4().hex}
+    assert client.call("domain.entity.put", **target, **revised)["revision"] == 2
+    try:
+        client.call("domain.entity.put", **target, **{**revised, "command_id": uuid.uuid4().hex})
+    except RuntimeError as failure:
+        assert "revision_conflict" in str(failure), failure
+    else:
+        raise AssertionError("domain entity update used an obsolete revision")
+    return client.call("query.domain.entity", **target)
+
+
+def start_for(client, epoch, entity, mode):
+    request = {"epoch": epoch, "workflow_ref": "manuscript.workflow:1", "mode": mode,
+               "project_id": entity["project_id"], "entity_id": entity["id"],
+               "expected_revision": entity["revision"], "command_id": uuid.uuid4().hex}
+    receipt = client.call("domain.workflow.start", **request)
+    assert client.call("domain.workflow.start", **request) == receipt
+    assert receipt["owner_id"] == entity["id"]
+    return receipt
+
+
+def wait_view(client, epoch, receipt, matches, timeout=25):
+    end = time.monotonic() + timeout
+    details = None
     while time.monotonic() < end:
-        details = client.call("query.domain.workflow", epoch=epoch, **receipt)
-        status = details.get("record", {}).get("data", {}).get("status")
-        if status == "completed":
-            assert "Local manuscript" in json.dumps(details), details
-            return receipt
+        details = lookup(client, epoch, receipt)
+        if matches(details):
+            return details
+        status = details["record"]["data"]["status"]
         if status in {"failed", "cancelled", "needs_reconciliation"}:
-            raise AssertionError((status, details["record"]["id"]))
-        time.sleep(0.2)
-    raise AssertionError((status, details["record"]["id"]))
+            raise AssertionError((status, receipt))
+        time.sleep(0.25)
+    raise AssertionError((receipt, [(step["step"], step["status"], step["reason"])
+                                   for step in (details or {}).get("runtime", {}).get("steps", [])]))
+
+
+def confirm_proof(client, epoch, receipt, view):
+    step = view["runtime"]["steps"][0]
+    return client.call("workflow.step.confirm", domain_epoch=epoch, project_id=receipt["project_id"],
+                       target=receipt["execution_id"], expected_revision=view["record"]["revision"],
+                       command_id=uuid.uuid4().hex, payload={"step": "title", "execution_id": step["id"],
+                       "input_digest": step["input_digest"], "outputs": step["outputs"],
+                       "accept_result": True, "reason": "I reviewed the exact worker output."})
+
+
+def submitted_proof(client, epoch, receipt, timeout=25):
+    details = wait_view(client, epoch, receipt, lambda view: view["record"]["data"]["status"] == "completed", timeout)
+    submission = details["domain_submission"]
+    assert submission["owner_id"] == details["record"]["data"]["owner_id"]
+    proof = client.call("query.domain.entity", epoch=epoch, project_id=receipt["project_id"],
+                        entity_id=submission["entities"]["observation"])
+    assert proof["data"] == {"title": "Local manuscript", "observedBy": "domain-worker"}
+    origin = proof["origin"]
+    assert origin["owner_id"] == submission["owner_id"] and origin["owner_revision"] == 2
+    assert origin["root_id"] == receipt["execution_id"]
+    step = details["runtime"]["steps"][0]
+    assert origin["execution_id"] == step["id"] and origin["input_digest"] == step["input_digest"]
+    assert origin["output_id"] == step["outputs"]["observation"]
+    assert origin["artifact_id"] == details["outputs"][origin["output_id"]]["artifact_id"]
+    assert origin["producer"]["kind"] == "platform"
+    assert origin["human_signature_id"]
+    with client.request(f"/artifacts/{origin['artifact_id']}?project_id={receipt['project_id']}&domain_epoch={epoch}") as response:
+        assert "Local manuscript" in response.read().decode()
+    return proof
 
 
 def run(origin, action, args):
@@ -85,44 +157,15 @@ def run(origin, action, args):
         assert active["active"]["id"] == "manuscript"
         assert {"workflow", "spec", "skill", "agent"} <= {row["type"] for row in active["sources"]}
         assert active["agent_workflows"] == ["manuscript.workflow:1"]
-        start = {"epoch": epoch, "workflow_ref": "manuscript.workflow:1", "command_id": uuid.uuid4().hex}
-        receipt = client.call("domain.workflow.start", **start)
-        completed(client, epoch, receipt)
-        assert client.call("domain.workflow.start", **start) == receipt
-        assert set(active["entity_types"]) == {"manuscript.document:1", "manuscript.proof:1"}
-        target = {
-            "epoch": epoch, "project_id": receipt["project_id"], "entity_id": str(uuid.uuid4()),
-        }
-        original = {"type_ref": "manuscript.document:1", "expected_revision": 0,
-                    "data": {"title": "Local manuscript"}, "command_id": uuid.uuid4().hex}
-        try:
-            client.call("domain.entity.put", **target, **{**original, "data": {"title": 42}})
-        except RuntimeError as failure:
-            assert "domain_contract" in str(failure), failure
-        else:
-            raise AssertionError("domain entity accepted the wrong data type")
-        original_row = client.call("domain.entity.put", **target, **original)
-        assert original_row["revision"] == 1
-        assert client.call("domain.entity.put", **target, **original) == original_row
-        revised = {**original, "expected_revision": 1, "data": {"title": "Edited manuscript"},
-                   "command_id": uuid.uuid4().hex}
-        assert client.call("domain.entity.put", **target, **revised)["revision"] == 2
-        stale = {**revised, "command_id": uuid.uuid4().hex}
-        try:
-            client.call("domain.entity.put", **target, **stale)
-        except RuntimeError as failure:
-            assert "revision_conflict" in str(failure), failure
-        else:
-            raise AssertionError("domain entity update used an obsolete revision")
-        assert client.call("query.domain.entity", **target)["data"] == revised["data"]
-        details = client.call("query.domain.workflow", epoch=epoch, **receipt)
-        result = next(iter(details["outputs"].values()))["value"]
-        proof = client.call("domain.entity.put", epoch=epoch, project_id=receipt["project_id"],
-                            entity_id=str(uuid.uuid4()), command_id=uuid.uuid4().hex,
-                            type_ref="manuscript.proof:1", expected_revision=0, data=result)
-        assert proof["data"] == {"title": "Local manuscript", "observedBy": "domain-worker"}
-        receipt["entity_id"] = target["entity_id"]
-        return receipt
+        entity = prepare_document(client, epoch)
+        receipt = start_for(client, epoch, entity, "rust")
+        view = wait_view(client, epoch, receipt, lambda view: view["runtime"]["steps"][0]["status"] == "waiting_confirmation")
+        assert "domain_submission" not in view
+        confirm_proof(client, epoch, receipt, view)
+        proof = submitted_proof(client, epoch, receipt)
+        return {**receipt, "entity_id": entity["id"], "proof_id": proof["id"]}
+    if action == "prepare-owner":
+        return prepare_document(client, epoch)
     if action == "manual":
         project, root = args
         view = client.call("query.workflow_control", domain_epoch=epoch, project_id=project, id=root)
@@ -141,32 +184,17 @@ def run(origin, action, args):
                 raise AssertionError("manual dispatch accepted without the active epoch")
         client.call("workflow.step.dispatch", domain_epoch=epoch, **dispatch)
         receipt = {"project_id": project, "execution_id": root}
-        end = time.monotonic() + 16
-        while time.monotonic() < end:
-            view = client.call("query.domain.workflow", epoch=epoch, **receipt)
-            step = view["runtime"]["steps"][0]
-            if step["status"] == "awaiting_acceptance":
-                break
-            time.sleep(0.2)
-        else:
-            raise AssertionError("manual tool output was not accepted")
-        artifact = next(iter(view["outputs"].values()))["artifact_id"]
-        with client.request(f"/artifacts/{artifact}?project_id={project}&domain_epoch={epoch}") as response:
-            assert "Local manuscript" in response.read().decode()
-        client.call("workflow.step.accept", command_id=uuid.uuid4().hex, domain_epoch=epoch,
-                    project_id=project, target=root, expected_revision=view["record"]["revision"],
-                    payload={key: step[value] for key, value in
-                             [("execution_id", "id"), ("input_digest", "input_digest"), ("outputs", "outputs")]})
-        view = client.call("query.domain.workflow", epoch=epoch, **receipt)
+        view = wait_view(client, epoch, receipt, lambda view: view["runtime"]["steps"][0]["status"] == "waiting_confirmation")
+        confirm_proof(client, epoch, receipt, view)
+        view = lookup(client, epoch, receipt)
         client.call("workflow.complete", command_id=uuid.uuid4().hex, domain_epoch=epoch,
                     project_id=project, target=root, expected_revision=view["record"]["revision"], payload={})
-        return completed(client, epoch, receipt)
+        return {**receipt, "proof_id": submitted_proof(client, epoch, receipt)["id"]}
     if action == "unload":
         active_projects = client.call("query.project_directory")
         assert active_projects["total_projects"] > 0, active_projects
         # Start a manual root that stays active until a human sends a control command.
-        pending = client.call("domain.workflow.start", epoch=epoch, mode="manual",
-                              workflow_ref="manuscript.workflow:1", command_id=uuid.uuid4().hex)
+        pending = start_for(client, epoch, prepare_document(client, epoch), "manual")
         try:
             client.call("domain.uninstall", epoch=epoch, digest=active["active"]["digest"])
         except RuntimeError as failure:

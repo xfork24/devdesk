@@ -2,6 +2,7 @@
 use crate::{concurrency::*, *};
 
 pub(crate) struct WorkOwnerFacts {
+    pub id: Id,
     pub owner: ResourceSnapshot,
     pub project: Id,
     pub material: MaterialOwner,
@@ -11,14 +12,20 @@ pub(crate) struct WorkOwnerFacts {
 }
 impl WorkOwnerFacts {
     pub fn read(store: &dyn EngineeringStore, id: &str) -> Result<Self> {
-        let keys = [
+        let mut keys = vec![
             ResourceKey::new("project", id),
             ResourceKey::new("feature", id),
             ResourceKey::new("task", id),
         ];
+        if let Some(project) = store.project_id() {
+            keys.push(ResourceKey::new(
+                "governance",
+                domain_entity_key(&project, id),
+            ));
+        }
         let rows = store.read_resources(&keys)?;
         require(
-            rows.len() == 3 && rows.iter().zip(&keys).all(|(r, k)| &r.resource == k),
+            rows.len() == keys.len() && rows.iter().zip(&keys).all(|(r, k)| &r.resource == k),
             "工作归属事实读取不完整",
         )?;
         let present = rows
@@ -81,6 +88,25 @@ impl WorkOwnerFacts {
                     Some(parent),
                 )
             }
+            "governance" => {
+                let project = store
+                    .project_id()
+                    .ok_or_else(|| err("invalid_scope", "领域对象需要项目库"))?;
+                require(
+                    raw["type"] == crate::domain_entities::KIND
+                        && serde_json::from_value::<Scope>(raw["scope"].clone())
+                            .is_ok_and(|scope| scope == Scope::project(&project)),
+                    "领域对象不属于此项目",
+                )?;
+                (
+                    project.clone(),
+                    MaterialOwner::Project {
+                        id: project.clone(),
+                    },
+                    Scope::project(&project),
+                    None,
+                )
+            }
             _ => return Err(err("invalid_scope", "无效工作归属")),
         };
         require(
@@ -99,6 +125,7 @@ impl WorkOwnerFacts {
             revision: live.revision,
         });
         Ok(Self {
+            id: id.into(),
             owner,
             project,
             material,
@@ -131,6 +158,10 @@ impl WorkOwnerFacts {
         )
     }
     pub fn advance(&self) -> Result<ResourceChange> {
+        require(
+            self.owner.resource.kind != "governance",
+            "领域对象修订需要领域对象命令",
+        )?;
         let mut value = self
             .owner
             .value
@@ -141,6 +172,24 @@ impl WorkOwnerFacts {
             resource: self.owner.resource.clone(),
             value,
         })
+    }
+
+    pub fn work_reference(&self) -> WorkReference {
+        match self.owner.resource.kind.as_str() {
+            "project" => WorkReference::Project {
+                id: self.id.clone(),
+            },
+            "feature" => WorkReference::Feature {
+                id: self.id.clone(),
+            },
+            "task" => WorkReference::Task {
+                id: self.id.clone(),
+            },
+            _ => WorkReference::Entity {
+                id: self.id.clone(),
+                project: self.project.clone(),
+            },
+        }
     }
 }
 

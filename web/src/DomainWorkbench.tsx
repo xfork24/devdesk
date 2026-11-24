@@ -30,6 +30,7 @@ type Directory = {
   targets: { renderer: string; api: number; bindings: Binding[] }[] | null;
   sources: CoreRecord[] | null;
   agent_workflows?: string[] | null;
+  entity_types?: Record<string, { workflows?: Record<string, unknown> }> | null;
 };
 type CoreRecord = { id: string; name: string; type: string; data: Data };
 
@@ -342,6 +343,9 @@ function WorkflowLookup({ directory }: { directory: Directory }) {
   const workflows =
     directory.sources?.filter((row) => row.type === "workflow") ?? [];
   const workflow = selection.workflow || workflows[0]?.id || "";
+  const needsOwner = Object.values(directory.entity_types ?? {}).some(
+    (type) => type.workflows?.[workflow],
+  );
   const canUseAgent = directory.agent_workflows?.includes(workflow) ?? false;
   const mode =
     canUseAgent || selection.mode !== "agent" ? selection.mode : "rust";
@@ -352,12 +356,18 @@ function WorkflowLookup({ directory }: { directory: Directory }) {
         <form
           onSubmit={(event) => {
             event.preventDefault();
+            const owner = new FormData(event.currentTarget);
             void submit(async () => {
               const receipt = await rpc<typeof run>("domain.workflow.start", {
                 epoch: directory.epoch,
                 workflow_ref: workflow,
                 mode,
                 command_id: crypto.randomUUID(),
+                ...(needsOwner && {
+                  project_id: owner.get("owner_project"),
+                  entity_id: owner.get("owner_entity"),
+                  expected_revision: Number(owner.get("owner_revision")),
+                }),
               });
               setRun(receipt);
               setValue(undefined);
@@ -393,6 +403,22 @@ function WorkflowLookup({ directory }: { directory: Directory }) {
               {canUseAgent && <option value="agent">Agent</option>}
             </select>
           </label>
+          {needsOwner && (
+            <>
+              <label>
+                归属项目 ID
+                <input name="owner_project" required />
+              </label>
+              <label>
+                归属对象 ID
+                <input name="owner_entity" required />
+              </label>
+              <label>
+                归属对象修订
+                <input name="owner_revision" min="1" type="number" required />
+              </label>
+            </>
+          )}
           <button disabled={busy}>启动工作流</button>
         </form>
       )}

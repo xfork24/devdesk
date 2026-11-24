@@ -10,7 +10,25 @@
     "required": ["name", "schema"],
     "properties": {
       "name": { "type": "string", "minLength": 1, "maxLength": 140 },
-      "schema": { "type": "object", "required": ["type"], "properties": { "type": { "const": "object" } } }
+      "schema": { "type": "object", "required": ["type"], "properties": { "type": { "const": "object" } } },
+      "workflows": {
+        "type": "object",
+        "maxProperties": 32,
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["input", "outputs"],
+          "properties": {
+            "input": { "type": "string", "minLength": 1 },
+            "outputs": {
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 16,
+              "additionalProperties": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
     }
   }
 }

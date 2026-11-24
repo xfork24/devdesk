@@ -22,6 +22,14 @@ pub(super) fn method(name: &str) -> bool {
         || name.starts_with("query.core.git.")
 }
 
+fn command_identity(params: &Value) -> devdesk_domain::Result<&str> {
+    params["command_id"]
+        .as_str()
+        .map(str::trim)
+        .filter(|command| !command.is_empty() && command.len() <= 256)
+        .ok_or_else(|| err("invalid_params", "需要有效的命令身份"))
+}
+
 pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::Result<Value> {
     let workspace = app.workspace()?;
     let run = |method: &str, payload: Value| {
@@ -100,12 +108,34 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
             publish(app, epoch);
             Ok(packages.status(trusted))
         }
+        "domain.project.create" => {
+            let title = text("title")?;
+            let command = command_identity(&params)?;
+            packages.with_sources(epoch()?, trusted, |digest, sources| {
+                let created = workspace.create_project(
+                    Command {
+                        command_id: format!(
+                            "domain-project:{}",
+                            devdesk_domain::configuration_hash(&(digest, command))
+                        ),
+                        target: None,
+                        expected_revision: None,
+                        payload: json!({"title":title}),
+                    },
+                    |project| packages.bind_project(project, digest),
+                )?;
+                let project = created["id"]
+                    .as_str()
+                    .ok_or_else(|| err("storage", "项目回执缺少 ID"))?;
+                workspace
+                    .project_engine(Some(project))?
+                    .adopt_domain_sources(sources)?;
+                Ok(created)
+            })
+        }
         "domain.workflow.start" => {
             let reference = text("workflow_ref")?;
-            let command = text("command_id")?.trim();
-            if command.is_empty() || command.len() > 256 {
-                return Err(err("invalid_params", "需要有效的工作流命令身份"));
-            }
+            let command = command_identity(&params)?;
             let mode = if params.get("mode").is_some() {
                 text("mode")?
             } else {
@@ -121,51 +151,66 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
             if !inputs.is_object() {
                 return Err(err("invalid_params", "工作流输入必须是 JSON 对象"));
             }
-            packages.with_workflow(
-                epoch()?,
-                reference,
-                mode,
-                trusted,
-                |digest, sources, bindings| {
-                    let identity = devdesk_domain::configuration_hash(&(digest, command));
+            let owner = if params.get("entity_id").is_some() || params.get("project_id").is_some() {
+                let revision = params["expected_revision"]
+                    .as_u64()
+                    .ok_or_else(|| err("invalid_params", "缺少工作归属原修订"))?;
+                Some((text("project_id")?, entity()?, revision))
+            } else {
+                None
+            };
+            packages.with_workflow(epoch()?, (reference, mode, owner.map(|owner| owner.0)), trusted, |package| {
+                let identity = devdesk_domain::configuration_hash(&(package.digest, command));
+                let payload = json!({"workflow_ref":reference,"orchestration":{"mode":mode},
+                    "role_agent_bindings":package.role_agent_bindings,"inputs":inputs});
+                if let Some((project, entity, revision)) = owner {
+                    let engine = workspace.project_engine(Some(project))?;
+                    let entity_record = engine.read_domain_entity(package.digest, entity)?;
+                    let kind = entity_record["type_ref"].as_str().ok_or_else(|| err("storage", "对象缺少类型"))?;
+                    let binding = package.entity_bindings.get(kind)
+                        .ok_or_else(|| err("blocked", "此领域对象类型未声明该工作流"))?;
+                    let result = engine.start_domain_workflow(&Command {
+                        command_id: format!("domain-entity-start:{identity}"),
+                        target: Some(entity.into()), expected_revision: Some(revision), payload,
+                    }, binding)?;
+                    return Ok(json!({"project_id":project,"execution_id":result["id"],"owner_id":entity}));
+                }
+                if !package.entity_bindings.is_empty() {
+                    return Err(err("invalid_params", "此工作流需要包声明的领域对象作为归属"));
+                }
                 let created = workspace.create_project(
                     Command {
-                        command_id: format!("domain-project:{identity}"),
-                        target: None,
-                        expected_revision: None,
-                        payload: json!({"title":format!("Domain workflow {reference}")}),
+                        command_id: format!("domain-project:{identity}"), target: None,
+                        expected_revision: None, payload: json!({"title":format!("Domain workflow {reference}")}),
                     },
-                    |project| packages.bind_project(project, digest),
-                    )?;
-                    let project = created["id"]
-                        .as_str()
-                        .ok_or_else(|| err("storage", "项目回执缺少 ID"))?;
-                    let engine = workspace.project_engine(Some(project))?;
-                    engine.adopt_domain_sources(sources)?;
-                    let result = run(
-                        "workflow.start",
-                        json!({
-                            "project_id":project,"command_id":format!("domain-start:{identity}"),
-                    "target":project,
+                    |project| packages.bind_project(project, package.digest),
+                )?;
+                let project = created["id"].as_str().ok_or_else(|| err("storage", "项目回执缺少 ID"))?;
+                workspace.project_engine(Some(project))?.adopt_domain_sources(package.sources)?;
+                let result = run("workflow.start", json!({
+                    "project_id":project,"command_id":format!("domain-start:{identity}"), "target":project,
                     "expected_revision":devdesk_core::project_creation::INITIAL_PROJECT_REVISION,
-                            "payload":{"workflow_ref":reference,"orchestration":{"mode":mode},
-                                "role_agent_bindings":bindings,
-                                "inputs":inputs},
-                        }),
-                    )?;
-                    Ok(json!({"project_id":project,"execution_id":result["id"]}))
-                },
-            )
+                    "payload":payload,
+                }))?;
+                Ok(json!({"project_id":project,"execution_id":result["id"]}))
+            })
         }
         "query.domain.workflow" => {
             let project = text("project_id")?;
+            let id = text("execution_id")?;
             packages.with_project(project, epoch()?, trusted, |_| {
-                run(
+                let mut result = run(
                     "query.workflow_instance",
-                    json!({
-                        "project_id":project,"id":text("execution_id")?,
-                    }),
-                )
+                    json!({"project_id":project,"id":id}),
+                )?;
+                if result["record"]["data"]["status"] == "completed"
+                    && let Some(submission) = workspace
+                        .project_engine(Some(project))?
+                        .read_domain_submission(id)?
+                {
+                    result["domain_submission"] = submission;
+                }
+                Ok(result)
             })
         }
         "domain.entity.put" => {

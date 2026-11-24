@@ -132,6 +132,7 @@ mod templates;
 pub use command_catalog::*;
 pub use templates::{ConfigurationBundle, install_configuration_bundle};
 mod domain_entities;
+pub use domain_entities::{DomainOutputBinding, DomainWorkflowBinding};
 mod driver_capabilities;
 pub use driver_capabilities::{
     DriverCapabilities, driver_capabilities, driver_supports, install_driver_capabilities,

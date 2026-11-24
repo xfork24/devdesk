@@ -28,12 +28,16 @@ def package(target, identity, title, handler, core):
     entity_types = None
     if identity == "manuscript":
         entity_types = "configurations/entity-types/editorial.json"
+        manuscript_schema = {
+            "type": "object", "required": ["title"],
+            "additionalProperties": False,
+            "properties": {"title": {"type": "string", "minLength": 1}},
+        }
         files[entity_types] = json.dumps({
-            "manuscript.document:1": {"name": "Manuscript", "schema": {
-                "type": "object", "required": ["title"],
-                "additionalProperties": False,
-                "properties": {"title": {"type": "string", "minLength": 1}},
-            }},
+            "manuscript.document:1": {"name": "Manuscript", "schema": manuscript_schema,
+                "workflows": {"manuscript.workflow:1": {
+                    "input": "manuscript", "outputs": {"observation": "manuscript.proof:1"},
+                }}},
             "manuscript.proof:1": {"name": "Proof", "schema": {
                 "type": "object", "required": ["title", "observedBy"],
                 "additionalProperties": False,
@@ -48,6 +52,8 @@ def package(target, identity, title, handler, core):
         tool = f"{identity}.read-title:1"
         delivery = f"{identity}.observation:1"
         sources = [
+            source("delivery_type", "input", {"format": "json", "content_schema": manuscript_schema},
+                   spec_refs=[f"{identity}.observation-spec:1"]),
             source("tool", "read-title", {"qualified_name": "domain.read", "implementation": "platform",
                    "input_schema": {"type": "object", "required": ["handler", "input"]},
                    "output_schema": {"type": "object", "required": ["title", "observedBy"]}}),
@@ -61,24 +67,34 @@ def package(target, identity, title, handler, core):
                 "producer": {"kind": "platform", "tools": ["domain.read"]},
             }, spec_refs=[f"{identity}.observation-spec:1"]),
             source("skill", "title-review", {"body": "Review the manuscript title.", "rules": []}),
-            source("role", "editor", {"instructions": "Review manuscript wording."}),
+            source("role", "editor", {"instructions": (
+                "You are the chief editor scheduling a single manuscript proofreading step named title. "
+                "Use workflow.inspect for current versions, then workflow.step.dispatch to run the trusted worker. "
+                "When the step waits for confirmation, use workflow.decision.request for workflow.step.confirm. "
+                "Bind the exact waiting execution, plan revision, input digest and outputs. Request the Human to review "
+                "the actual proof. Include the step as evidence in the interaction. "
+                "After the authenticated Human signs, call workflow.step.accept with the exact accepted output. "
+                "Then call workflow.complete "
+                "with the current plan revision, control version and expected revision. Do not simulate tool calls."
+            )}),
             source("capability", "editor-capability", {},
                    harness_ref="builtin-harness-codex-managed:2", model_ref="builtin-model-gpt-6-2-sol-high:1",
                    skills=[f"{identity}.title-review:1"], tools=[
                        "builtin-tool-codex-native:2", "builtin-tool-workflow-inspect:3",
                        "builtin-tool-workflow-step-dispatch:3", "builtin-tool-workflow-step-accept:3",
-                       "builtin-tool-workflow-complete:3",
+                       "builtin-tool-workflow-decision-request:5", "builtin-tool-workflow-complete:3",
                    ]),
             source("agent", "editor-agent", {}, role_ref=f"{identity}.editor:1",
                    capability_ref=f"{identity}.editor-capability:1"),
             source("workflow", "workflow", {
                 "schema_version": 6, "orchestrator_role_ref": f"{identity}.editor:1",
+                "inputs": {"manuscript": {"delivery_ref": f"{identity}.input:1"}},
                 "stages": [{"key": "read", "name": "Read"}],
                 "steps": [{
-                    "key": "title", "name": "Read title", "stage": "read",
+                    "key": "title", "name": "Read title", "stage": "read", "confirmation": "human",
                     "executor": {"type": "tool", "tool_ref": tool, "arguments": {
                         "handler": {"type": "constant", "value": method},
-                        "input": {"type": "constant", "value": {"title": "  Local manuscript  "}},
+                        "input": {"type": "source", "source": {"step": "$input", "port": "manuscript"}},
                     }},
                     "outputs": {"observation": {"delivery_ref": delivery}},
                 }],

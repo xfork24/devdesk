@@ -23,11 +23,15 @@ pub enum WorkReference {
     Project { id: Id },
     Feature { id: Id },
     Task { id: Id },
+    Entity { id: Id, project: Id },
 }
 impl WorkReference {
     pub fn id(&self) -> &str {
         match self {
-            Self::Project { id } | Self::Feature { id } | Self::Task { id } => id,
+            Self::Project { id }
+            | Self::Feature { id }
+            | Self::Task { id }
+            | Self::Entity { id, .. } => id,
         }
     }
     pub fn scope(&self, state: &EngineeringState) -> Result<Scope> {
@@ -45,6 +49,13 @@ impl WorkReference {
                 let f = state.feature(&t.feature_id)?;
                 Ok(Scope::feature(&f.project_id, &f.id))
             }
+            Self::Entity { project, .. } => {
+                require(
+                    state.projects.iter().any(|p| &p.id == project),
+                    "领域对象所属项目不存在",
+                )?;
+                Ok(Scope::project(project))
+            }
         }
     }
 }
@@ -56,9 +67,25 @@ pub fn work_reference(state: &EngineeringState, owner: &str) -> Result<WorkRefer
         Ok(WorkReference::Feature { id: owner.into() })
     } else if state.tasks.iter().any(|r| r.id == owner) {
         Ok(WorkReference::Task { id: owner.into() })
+    } else if let Some(project) = state.projects.iter().find(|project| {
+        let key = domain_entity_key(&project.id, owner);
+        state.governance.iter().any(|row| {
+            row.id == key
+                && row.r#type == "domain_entity"
+                && row.scope == Scope::project(&project.id)
+        })
+    }) {
+        Ok(WorkReference::Entity {
+            id: owner.into(),
+            project: project.id.clone(),
+        })
     } else {
         Err(err("not_found", "工作对象不存在"))
     }
+}
+
+pub fn domain_entity_key(project: &str, id: &str) -> Id {
+    format!("domain-entity:{}", configuration_hash(&(project, id)))
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

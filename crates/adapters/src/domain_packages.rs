@@ -1,5 +1,6 @@
 //! Installed domain bundles and the active generation, scoped to one dataset.
 use super::*;
+use devdesk_core::{DomainOutputBinding, DomainWorkflowBinding};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Deserialize;
 use std::{
@@ -98,6 +99,22 @@ struct Field {
 struct EntityType {
     name: String,
     schema: Value,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    workflows: BTreeMap<Id, EntityWorkflow>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct EntityWorkflow {
+    input: String,
+    outputs: BTreeMap<String, Id>,
+}
+
+pub struct WorkflowPackage<'a> {
+    pub digest: &'a str,
+    pub sources: &'a [ConfigurationRecord],
+    pub role_agent_bindings: &'a BTreeMap<Id, Id>,
+    pub entity_bindings: BTreeMap<Id, DomainWorkflowBinding>,
 }
 
 pub fn is_digest(value: &str) -> bool {
@@ -347,6 +364,27 @@ impl Package {
         } else {
             (vec![], Default::default())
         };
+        for entity in entity_types.values() {
+            for (reference, binding) in &entity.workflows {
+                let workflow = sources
+                    .iter()
+                    .find(|row| row.r#type == "workflow" && row.id == *reference)
+                    .ok_or_else(|| invalid("领域对象引用了未声明的工作流"))?;
+                require(
+                    workflow.data["inputs"].get(&binding.input).is_some()
+                        && binding.outputs.iter().all(|(name, target)| {
+                            entity_types.contains_key(target)
+                                && workflow.data["outputs"].get(name).is_some_and(|source| {
+                                    source["step"]
+                                        .as_str()
+                                        .is_some_and(|step| !step.starts_with('$'))
+                                        && source["pointer"].as_str().is_none_or(str::is_empty)
+                                })
+                        }),
+                    "领域对象工作流绑定引用了无效的输入或产物",
+                )?;
+            }
+        }
         Ok(Self {
             digest: digest(bytes),
             manifest,
@@ -642,10 +680,9 @@ impl DomainPackages {
     pub fn with_workflow<T>(
         &self,
         epoch: u64,
-        reference: &str,
-        mode: &str,
+        (reference, mode, project): (&str, &str, Option<&str>),
         trusted: &BTreeSet<String>,
-        start: impl FnOnce(&str, &[ConfigurationRecord], &BTreeMap<Id, Id>) -> Result<T>,
+        start: impl FnOnce(WorkflowPackage<'_>) -> Result<T>,
     ) -> Result<T> {
         let active = self.active.read().unwrap();
         check_epoch(epoch, active.epoch)?;
@@ -654,6 +691,9 @@ impl DomainPackages {
             .as_ref()
             .filter(|p| trusted.contains(&p.digest))
             .ok_or_else(|| err("domain_inactive", "没有获准的活动领域"))?;
+        if let Some(project) = project {
+            self.require_project(&active, project, trusted)?;
+        }
         require(
             package
                 .sources
@@ -667,11 +707,57 @@ impl DomainPackages {
                 "此 Workflow 未配置编排 Agent",
             ));
         }
-        start(
-            &package.digest,
-            &package.sources,
-            &package.role_agent_bindings,
-        )
+        let entity_bindings = package
+            .entity_types
+            .iter()
+            .filter_map(|(owner_type, definition)| {
+                let binding = definition.workflows.get(reference)?;
+                let outputs = binding
+                    .outputs
+                    .iter()
+                    .map(|(port, target)| {
+                        (
+                            port.clone(),
+                            DomainOutputBinding {
+                                type_ref: target.clone(),
+                                schema: package.entity_types[target].schema.clone(),
+                            },
+                        )
+                    })
+                    .collect();
+                Some((
+                    owner_type.clone(),
+                    DomainWorkflowBinding {
+                        digest: package.digest.clone(),
+                        owner_type: owner_type.clone(),
+                        input: binding.input.clone(),
+                        outputs,
+                    },
+                ))
+            })
+            .collect();
+        start(WorkflowPackage {
+            digest: &package.digest,
+            sources: &package.sources,
+            role_agent_bindings: &package.role_agent_bindings,
+            entity_bindings,
+        })
+    }
+
+    pub fn with_sources<T>(
+        &self,
+        epoch: u64,
+        trusted: &BTreeSet<String>,
+        action: impl FnOnce(&str, &[ConfigurationRecord]) -> Result<T>,
+    ) -> Result<T> {
+        let active = self.active.read().unwrap();
+        check_epoch(epoch, active.epoch)?;
+        let package = active
+            .package
+            .as_ref()
+            .filter(|package| trusted.contains(&package.digest))
+            .ok_or_else(|| err("domain_inactive", "没有获准的活动领域"))?;
+        action(&package.digest, &package.sources)
     }
 
     fn projects(&self, digest: &str) -> Result<Vec<String>> {

@@ -5371,6 +5371,16 @@
             "id"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "entity" },
+            "id": { "type": "string", "minLength": 1 },
+            "project": { "type": "string", "minLength": 1 }
+          },
+          "required": ["kind", "id", "project"],
+          "additionalProperties": false
         }
       ]
     },

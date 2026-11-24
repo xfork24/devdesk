@@ -88,7 +88,7 @@ impl Engine {
             )?;
             require(
                 actual == authority
-                    && resources.instance.owner_id == owner.owner.resource.id
+                    && resources.instance.owner_id == owner.id
                     && resources.instance.project_id == owner.project
                     && resources.execution.agent_revision_id.as_deref() == Some(agent.as_str()),
                 "正式会话不能替换原步骤资格或 Agent",
@@ -187,7 +187,7 @@ impl Engine {
             require(
                 record.r#type == "workflow_controller"
                     && record.scope == scope
-                    && actual.owner_id == owner.owner.resource.id
+                    && actual.owner_id == owner.id
                     && actual.project_id == owner.project
                     && actual.status == "active"
                     && c.payload["controller_epoch"] == actual.epoch
@@ -585,9 +585,16 @@ impl Engine {
             )?;
         }
         let id = stable_object_id(self.store.as_ref(), &c.command_id, "session")?;
+        let work_owner = owner.work_reference();
         let session = Session {
             id: id.clone(),
-            owner_id: owner.owner.resource.id,
+            // The backend session partition remains project-scoped for entities.
+            // The immutable formal association retains the logical work owner.
+            owner_id: if matches!(work_owner, WorkReference::Entity { .. }) {
+                owner.project.clone()
+            } else {
+                owner.id
+            },
             agent: source.id.clone(),
             harness: binding.installation.id.clone(),
             sandbox: format!("docker-image:{}", binding.installation.id),
@@ -633,7 +640,7 @@ impl Engine {
                 "步骤任务来源".into(),
                 1,
                 None,
-                json!({"execution_id":prepared.source["execution_id"],"instance_id":prepared.source["instance_id"],"plan_revision_id":prepared.source["plan_revision_id"],"workflow_revision_id":prepared.source["workflow_revision_id"],"step":prepared.source["step"]}),
+                json!({"execution_id":prepared.source["execution_id"],"instance_id":prepared.source["instance_id"],"plan_revision_id":prepared.source["plan_revision_id"],"workflow_revision_id":prepared.source["workflow_revision_id"],"step":prepared.source["step"],"work_owner":work_owner}),
                 true,
             )
         } else {
@@ -644,7 +651,7 @@ impl Engine {
                 "项目经理会话".into(),
                 1,
                 None,
-                json!({"controller_id":prepared.source["controller_id"],"epoch":prepared.source["epoch"]}),
+                json!({"controller_id":prepared.source["controller_id"],"epoch":prepared.source["epoch"],"work_owner":work_owner}),
                 true,
             )
         };
