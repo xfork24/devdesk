@@ -502,7 +502,9 @@ impl Engine {
                     data["agent_instance_id"],
                     data["project_id"],
                     "entity",
-                    object
+                    object,
+                    data["session_id"],
+                    snapshot_id
                 ]))
             )
         } else if let Some(feature) = feature {
