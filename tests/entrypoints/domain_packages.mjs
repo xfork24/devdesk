@@ -78,13 +78,14 @@ try {
     });
   }
   for (const tab of [page, second]) tab.setDefaultTimeout(12000);
-  const rpc = async (tab, method, params = {}) => {
+  const rpc = async (tab, method, params = {}, { timeout } = {}) => {
     const response = await tab.request.post(base + "/rpc", {
       data: { jsonrpc: "2.0", id: crypto.randomUUID(), method, params },
+      timeout,
     });
     assert.equal(response.status(), 200, await response.text());
     const reply = await response.json();
-    assert(!reply.error, JSON.stringify(reply.error));
+    assert(!reply.error, `${method}: ${JSON.stringify(reply.error)}`);
     return reply.result;
   };
   await Promise.all([page.goto(base), second.goto(base)]);
@@ -114,7 +115,9 @@ try {
   await page.getByRole("button", { name: "保存额度", exact: true }).click();
   await page.getByText("并发额度已保存", { exact: true }).waitFor();
   assert.equal((await rpc(page, "query.settings")).global_concurrency, 25);
-  const ready = { result: await rpc(page, "runtime.prepare_harness", { id: "builtin-harness-codex-managed:2" }) };
+  // A fresh runner may need to build the selected Docker recipe before registering it.
+  const ready = { result: await rpc(page, "runtime.prepare_harness",
+    { id: "builtin-harness-codex-managed:2" }, { timeout: 15 * 60_000 }) };
   assert.equal(ready.result.artifact.kind, "docker_image");
   assert.match(ready.result.artifact.image_id, /^sha256:[0-9a-f]{64}$/);
   assert.equal((await rpc(page, "query.core.git.head", { path: repository })).head, head);
