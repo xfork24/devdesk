@@ -66,7 +66,7 @@ npm --prefix web ci
 | 目录 | 内容 |
 |---|---|
 | `crates/{domain,core,adapters,host}` | Rust 领域模型、应用层、执行与持久化适配器、Host |
-| `web/` | Web Core、共享 SDK、软件领域使用的 UI 组件、浏览器测试 |
+| `web/` | Web Core、共享 SDK、软件领域使用的 UI 组件 |
 | `plugins/core/` | 随 Host 发布的领域无关默认配置 |
 | `plugins/software-development/` | 软件开发目录、运行端、Web 贡献及 ZIP 构建入口 |
 | `schemas/` · `sql/` | 结构合同和 SQLite 基线 |

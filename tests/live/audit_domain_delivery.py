@@ -27,10 +27,19 @@ assert "test" in repo.lower(), "use a dedicated test repository"
 assert len(views) == 2
 seen = set()
 with sqlite3.connect(f"file:{root / 'data/domain-packages.sqlite3'}?mode=ro", uri=True) as registry:
-    package_digest, archive = registry.execute(
-        "SELECT p.digest,p.zip FROM domain_projects d JOIN domain_packages p ON p.digest=d.digest WHERE d.project=?",
+    original_digest, = registry.execute(
+        "SELECT digest FROM domain_projects WHERE project=?",
         (context["project"],),
     ).fetchone()
+    package_digest, package_id, archive = registry.execute(
+        "SELECT digest,id,zip FROM domain_packages WHERE digest=?",
+        (context["domain_digest"],),
+    ).fetchone()
+    if original_digest != package_digest:
+        original_domain = registry.execute(
+            "SELECT id FROM domain_package_identities WHERE digest=?", (original_digest,),
+        ).fetchone()
+        assert original_domain == (package_id,), "execution package belongs to a different domain"
 assert package_digest == context["domain_digest"] == hashlib.sha256(archive).hexdigest()
 with ZipFile(io.BytesIO(archive)) as installed:
     manifest = json.loads(installed.read("manifest.json"))

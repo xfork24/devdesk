@@ -13,12 +13,11 @@
 
 ## 验收入口
 
-Host 和 Web 分别由 `scripts/release/package.sh host` 和 `scripts/release/package.sh web` 打包。解压后，传入全新数据目录、Web 制品目录和受信任的 ZIP SHA-256。Linux x86_64 上运行领域 worker 前，Docker 需要具备固定的 Node 镜像。
+Host 和 Web 分别由 `scripts/release/package.sh host` 和 `scripts/release/package.sh web` 打包。解压后传入全新数据目录和 Web 制品目录，再通过「领域管理」导入和激活 ZIP。Linux x86_64 上运行领域 worker 前，Docker 需要具备固定的 Node 镜像。
 
 ```bash
 docker pull node@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced307cf4b6f
-zip_sha=$(sha256sum /path/to/domain.zip | cut -d ' ' -f 1)
-devdesk-host --data /path/to/new-dataset --web-dir /path/to/devdesk-core-web --trust-domain "$zip_sha"
+devdesk-host --data /path/to/new-dataset --web-dir /path/to/devdesk-core-web
 ```
 
 体验夹具可执行 `python3 tests/fixtures/domain-packages/build.py /path/to/zip-directory` 生成。按仓库源码复跑验收时使用以下命令。
@@ -30,7 +29,7 @@ npm --prefix web run build:core
 node tests/entrypoints/domain_packages.mjs target/debug/devdesk-host web/dist/core
 ```
 
-验收使用独立数据目录、自建 Git 仓库、固定 Linux Docker 镜像、两个 Chromium 标签页和 Python 标准库 HTTP 客户端。记录真实提交和执行 ID，检查空领域中新增的模型、真实 Codex Harness/Docker 准备回执、核心 Git 读取、同一提交的双端读取、文稿 Workflow 持久化输出、未结束流程阻塞卸载、取消后卸载、SSE 代次、旧代次拒绝以及重装后的原运行。容器内的文稿处理和本地 Git 查询为实际执行。现有 Agent 定义用于配置发现，模型调用和 GitHub 写入属于后续验收。
+验收使用独立数据目录、自建 Git 仓库、固定 Linux Docker 镜像、两个 Chromium 标签页和 Python 标准库 HTTP 客户端。记录真实提交和执行 ID，检查空领域中新增的模型、真实 Codex Harness/Docker 准备回执、核心 Git 读取、同一提交的双端读取、文稿 Workflow 持久化输出、等待审批期间的卸载和重装回读、SSE 代次及旧代次拒绝。容器内的文稿处理和本地 Git 查询为实际执行。现有 Agent 定义用于配置发现，模型调用和 GitHub 写入属于后续验收。
 
 独立发行件解压后的完整脚本通过。该次记录的镜像为 `sha256:328e96db04cc428bec67d1e8ef06837041c3c147ce5940c7e86c251f9809b84b`，流程执行为 `d3eab70c-c437-db47-e175-329274fc50d2`。证据位于 `/tmp/devdesk-domain-release-verification.B1Vzff/result.json`。
 

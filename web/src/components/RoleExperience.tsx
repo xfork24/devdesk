@@ -46,7 +46,6 @@ export function RoleExperience({
   const [open, setOpen] = useState(false);
   const [project, setProject] = useState("");
   const [feature, setFeature] = useState("");
-  const [workflow, setWorkflow] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [page, setPage] = useState(0);
@@ -76,7 +75,6 @@ export function RoleExperience({
         role_id: roleId,
         project_name: project,
         feature_name: feature,
-        workflow_instance_id: workflow || undefined,
         from: from ? new Date(from).getTime() : undefined,
         to: to ? new Date(to).getTime() : undefined,
         offset: page * pageSize,
@@ -101,7 +99,6 @@ export function RoleExperience({
     roleId,
     project,
     feature,
-    workflow,
     from,
     to,
     page,
@@ -151,7 +148,7 @@ export function RoleExperience({
   }
 
   const filters = (
-    <div className="form-grid">
+    <div className="role-experience-filters">
       <label>
         项目名称
         <input
@@ -172,17 +169,6 @@ export function RoleExperience({
             captureFeedback();
 
             setFeature(e.target.value);
-            setPage(0);
-          }}
-        />
-      </label>
-      <label>
-        工作流实例
-        <input
-          value={workflow}
-          onChange={(e) => {
-            captureFeedback();
-            setWorkflow(e.target.value);
             setPage(0);
           }}
         />

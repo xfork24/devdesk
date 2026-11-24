@@ -32,7 +32,7 @@
 | [经验查询](../../../crates/adapters/src/experience.rs)与[Host 分发](../../../crates/host/src/governance.rs) | 已有按实例查询、跨项目只读快照读取与恢复；入口主要供 UI 使用。 | 抽取可由 UI 和 Agent 共同调用的经验读取服务。 |
 | [经验索引](../../../crates/core/src/governance.rs) | 已记录项目、Feature、Task、Session 和快照；未显式记录完整工作流来源关系。 | 从确切执行关联补足工作流实例、计划及步骤来源。 |
 | [经验相关校验](../../../crates/core/src/governance.rs)与[测试](../../../crates/adapters/tests/configuration_resources.rs) | 明确拒绝旧 `experience.lookup` 工具实现；测试固定了这一限制。 | 以新的只读上下文访问合同提供 Agent 调用入口，替换冲突的限制与测试。 |
-| [角色讨论](../../../web/src/components/RoleConversation.tsx)与[经验面板](../../../web/src/components/AgentExperience.tsx) | 已有全局讨论与人工选取快照后开启新讨论的入口；项目实例、当前范围和可读历史耦合。 | 支持独立选择实例、可选当前上下文及在原对话中引用经验。 |
+| [角色讨论](../../../web/src/components/RoleConversation.tsx)与[经验面板](../../../web/src/components/RoleExperience.tsx) | 已有全局讨论与人工选取快照后开启新讨论的入口；项目实例、当前范围和可读历史耦合。 | 支持独立选择实例、可选当前上下文及在原对话中引用经验。 |
 
 ## 3 能力定义与运行上下文
 

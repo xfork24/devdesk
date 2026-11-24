@@ -5,6 +5,8 @@
 /.devdesk-storage-backups/
 /test-results/
 /playwright-report/
+/web/test-results/
+/web/playwright-report/
 *.log
 /dist/
 /.idea/
@@ -19,3 +21,8 @@ __pycache__/
 /review/
 
 /.venv/
+/.python-version
+.env
+.env.*
+!.env.example
+!.env.*.example
