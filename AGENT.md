@@ -18,7 +18,7 @@
 | `configurations/core` | 随 Host 构建的核心配置 |
 | `configurations/software-development` | 独立的软件目录、运行时处理器及 Web 入口 |
 
-依赖方向为 `host → adapters → core → domain`。Host 可独立构建并从空领域启动。业务配置在 ZIP 内发布，领域页面经可信摘要校验后由 Web Core 同文档渲染。程序通过领域的实际声明选择处理器。Web 和非浏览器客户端使用相同的项目、对象、运行和贡献标识。
+依赖方向为 `host → adapters → core → domain`。Host 可独立构建并从空领域启动。业务配置在 ZIP 内发布，安装时校验包完整性，激活后由 Web Core 同文档渲染领域页面。程序通过领域的实际声明选择处理器。Web 和非浏览器客户端使用相同的项目、对象、运行和贡献标识。
 
 ## 配置与执行
 

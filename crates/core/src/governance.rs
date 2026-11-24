@@ -711,17 +711,20 @@ impl Engine {
             return Some(self.store.operational_read(method, p));
         }
         Some((|| {
-            let catalog;
-            let operational_state;
-            let s = if method == "query.configurations"
+            let catalog = if method == "query.configurations"
                 && p["kind"].as_str().is_some_and(|kind| !catalog_kind(kind))
             {
+                None
+            } else {
+                Some(self.store.configuration_snapshot()?)
+            };
+            let operational_state;
+            let s = if let Some(catalog) = &catalog {
+                catalog.state.as_ref()
+            } else {
                 // This compatibility query can return arbitrary historical record bodies.
                 operational_state = self.store.snapshot()?;
                 &operational_state
-            } else {
-                catalog = self.store.configuration_snapshot()?;
-                catalog.state.as_ref()
             };
             let _span = self.store.observe_query("catalog.filter_and_project");
             if method == "query.roles" {
@@ -787,6 +790,7 @@ impl Engine {
             let rows: Vec<_> = s
                 .governance
                 .iter()
+                .filter(|r| catalog.as_ref().is_none_or(|catalog| catalog.is_listed(r)))
                 .filter(|r| p["include_archived"] == true || template_record_current(s, r))
                 .filter(|r| crate::configuration::visible(s, r, p["project_id"].as_str()))
                 .rev()

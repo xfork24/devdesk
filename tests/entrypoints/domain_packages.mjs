@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile as call, spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { once } from "node:events";
 import os from "node:os";
 import path from "node:path";
@@ -47,8 +47,7 @@ try {
   const env = { ...process.env };
   delete env.DEVDESK_ACCESS_TOKEN;
   host = spawn(hostBinary, [
-    "--data", path.join(tmp, "data"), "--web-dir", web, "--port", "0",
-    ...digests.flatMap((digest) => ["--trust-domain", digest]),
+    "--web-dir", web, "--port", "0",
   ], { env, cwd: tmp });
   const exited = once(host, "exit");
   host.stderr.on("data", (data) => { hostLog += data; });
@@ -73,33 +72,51 @@ try {
     });
   }
   for (const tab of [page, second]) tab.setDefaultTimeout(12000);
+  const rpc = async (tab, method, params = {}) => {
+    const response = await tab.request.post(base + "/rpc", {
+      data: { jsonrpc: "2.0", id: crypto.randomUUID(), method, params },
+    });
+    assert.equal(response.status(), 200, await response.text());
+    const reply = await response.json();
+    assert(!reply.error, JSON.stringify(reply.error));
+    return reply.result;
+  };
   await Promise.all([page.goto(base), second.goto(base)]);
-  await page.getByText("空领域", { exact: true }).waitFor();
+  await second.getByLabel("数据目录", { exact: true }).waitFor();
+  await page.getByLabel("数据目录", { exact: true }).fill(path.join(tmp, "data"));
+  await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
+  await page.getByRole("heading", { name: "基础组件", exact: true }).waitFor();
+  await second.getByRole("heading", { name: "基础组件", exact: true }).waitFor();
   await page.getByText("v0.5.0", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "核心配置" }).click();
   await page.getByText("GPT-6.2 Sol High", { exact: false }).first().waitFor();
-  await page.getByLabel("显示名称").fill("Domain smoke model");
-  await page.getByLabel("模型标识").fill("test-core-model");
-  await page.getByLabel("供应商").selectOption("openai");
-  await page.getByRole("button", { name: "保存模型" }).click();
-  await page.getByText("Domain smoke model", { exact: false }).first().waitFor();
-  const preparation = page.waitForResponse(
-    (r) => r.url().endsWith("/rpc") && r.request().postDataJSON()?.method === "runtime.prepare_harness",
-    { timeout: 120000 },
-  );
-  await page.getByRole("listitem").filter({ hasText: "builtin-harness-codex-managed:2" })
-    .getByRole("button", { name: "准备运行环境" }).click();
-  const ready = await (await preparation).json();
-  assert(!ready.error, JSON.stringify(ready.error));
+  await rpc(page, "model.create", { command_id: crypto.randomUUID(), payload: {
+    name: "Domain smoke model", scope: "global", data: {
+      provider: "openai", model: "test-core-model", parameters: {},
+      capabilities: ["structured-output", "tool-calling"],
+    },
+  } });
+  await page.getByRole("tab", { name: "Internal Tools", exact: true }).click();
+  await page.getByRole("button", { name: /Accept Step Outputs/ }).waitFor();
+  await page.getByRole("button", { name: "历史记录", exact: true }).click();
+  await page.getByRole("heading", { name: "历史记录", exact: true, level: 1 }).waitFor();
+  await page.getByText("resource.changed", { exact: true }).first().waitFor();
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await page.getByRole("heading", { name: "数据与运行" }).waitFor();
+  assert.equal(await page.getByLabel("默认 Agent Harness", { exact: true }).inputValue(),
+    (await rpc(page, "query.settings")).default_harness);
+  await page.getByLabel("全局并发额度", { exact: true }).fill("25");
+  await page.getByRole("button", { name: "保存额度", exact: true }).click();
+  await page.getByText("并发额度已保存", { exact: true }).waitFor();
+  assert.equal((await rpc(page, "query.settings")).global_concurrency, 25);
+  const ready = { result: await rpc(page, "runtime.prepare_harness", { id: "builtin-harness-codex-managed:2" }) };
   assert.equal(ready.result.artifact.kind, "docker_image");
   assert.match(ready.result.artifact.image_id, /^sha256:[0-9a-f]{64}$/);
-  await page.getByRole("button", { name: "Git", exact: true }).click();
-  await page.getByLabel("本地仓库路径").first().fill(repository);
-  await page.getByRole("button", { name: "查询", exact: true }).first().click();
-  await page.getByText(head, { exact: false }).first().waitFor();
+  assert.equal((await rpc(page, "query.core.git.head", { path: repository })).head, head);
+  await page.getByRole("button", { name: "领域管理", exact: true }).click();
+  await page.getByText("当前激活的领域：空领域", { exact: true }).waitFor();
 
   const activate = async (file) => {
-    await page.getByRole("button", { name: "领域包", exact: true }).click();
+    await page.getByRole("button", { name: "领域管理", exact: true }).click();
     await page.getByLabel("领域 ZIP").setInputFiles(file);
     const installed = page.waitForResponse((r) => r.url().endsWith("/rpc") && r.request().postDataJSON()?.method === "domain.install");
     await page.getByRole("button", { name: "导入", exact: true }).click();
@@ -161,20 +178,178 @@ try {
   assert.match(hostLog, /Runtime:/);
   const pid = host.pid;
   await native("unload");
-  await second.getByText("空领域", { exact: true }).waitFor();
+  await second.getByText("当前激活的领域：空领域", { exact: true }).waitFor();
   await writeFile(path.join(repository, "package.json"), JSON.stringify({ scripts: { test: "no test specified" } }));
   await activate(softwareZip);
+  const softwareNav = (tab) => tab.getByRole("navigation", { name: "软件开发导航" });
+  for (const tab of [page, second]) {
+    await softwareNav(tab).waitFor();
+    await tab.getByRole("heading", { name: "工作总览", exact: true }).waitFor();
+    for (const name of ["Git", "领域工作流", "分支队列", "Pull Requests 与 Diff", "工程设置"]) {
+      assert.equal(await tab.getByRole("button", { name, exact: true }).count(), 0, name);
+    }
+  }
+  await page.getByRole("button", { name: "领域管理", exact: true }).click();
+  await page.getByRole("heading", { name: "领域管理", exact: true }).waitFor();
+  await page.getByText("当前激活的领域：software-development", { exact: true }).waitFor();
+  const workbenchButton = page.getByRole("button", { name: "领域工作台", exact: true });
+  assert.equal(await workbenchButton.locator("svg").count(), 1);
+  await workbenchButton.click();
+  await softwareNav(page).waitFor();
+  const active = await rpc(page, "query.domain.active");
+  const scope = { domain_epoch: active.epoch };
+  const hostRoot = await realpath(path.join(tmp, "data"));
+  const softwareRoot = path.join(await realpath(tmp), "software-data");
+  const storageQuery = { epoch: active.epoch };
+  const initialStorage = await rpc(page, "query.domain.storage", storageQuery);
+  assert.equal(initialStorage.data_root, hostRoot);
+  assert.equal(initialStorage.configured_root, null);
+  await assert.rejects(rpc(page, "domain.storage.configure", {
+    ...storageQuery, expected_revision: initialStorage.revision, data_root: repository,
+  }), /请使用空目录/);
+  await page.getByRole("button", { name: "领域管理", exact: true }).click();
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await page.getByRole("heading", { name: "数据与运行", exact: true }).waitFor();
+  assert.equal(await page.getByRole("region", { name: "领域数据目录设置" }).count(), 0);
+  await workbenchButton.click();
+  await softwareNav(page).getByRole("button", { name: "设置", exact: true }).click();
+  const storagePanel = page.locator("main.settings-page").getByRole("region", {
+    name: "领域数据目录设置",
+  });
+  await storagePanel.getByLabel("新项目数据目录", { exact: true }).fill(softwareRoot);
+  await page.getByRole("button", { name: "保存领域数据目录", exact: true }).click();
+  await page.getByText("领域数据目录已保存", { exact: true }).waitFor();
+  const savedStorage = await rpc(page, "query.domain.storage", storageQuery);
+  assert.equal(savedStorage.configured_root, softwareRoot);
+  await assert.rejects(rpc(page, "domain.storage.configure", {
+    ...storageQuery, expected_revision: initialStorage.revision, data_root: null,
+  }), /revision_conflict/);
+  await softwareNav(page).getByRole("button", { name: "工作总览", exact: true }).click();
+  await storagePanel.waitFor({ state: "detached" });
+  assert.equal((await rpc(page, "query.project_directory", scope)).total_projects, 0);
+  const index = await rpc(page, "query.configuration_index", { ...scope, include_history: true });
+  const automation = new Set([
+    "software-development.repository-preflight:1",
+    "software-development.repository-revision:1",
+    "software-development.test-configuration:1",
+    "software-development.detect-test-entry:1",
+    "software-development.preflight-contract:1",
+  ]);
+  const indexed = new Set(index.records.map((row) => row.id));
+  assert.equal(index.records.filter((row) => row.id.startsWith("software-development.")).length,
+    active.sources.length - automation.size);
+  for (const source of active.sources)
+    assert.equal(indexed.has(source.id), !automation.has(source.id), source.id);
+  assert((await rpc(page, "query.workflows", scope)).records.every((row) => !automation.has(row.id)));
+  for (let offset = 0; offset < active.sources.length; offset += 64) {
+    const expected = active.sources.slice(offset, offset + 64);
+    const actual = await rpc(page, "query.configuration_records", { ...scope, refs: expected.map((row) => row.id) });
+    assert.deepEqual(actual.records.map(({ id, content_hash }) => [id, content_hash]),
+      expected.map(({ id, content_hash }) => [id, content_hash]));
+  }
+  for (const [group, tab, name] of [
+    ["基础组件", "Skills", "Requirements Analysis"],
+    ["角色与代理", "Role", "需求分析师"],
+    ["角色与代理", "Capability", "Requirements Analysis Capability"],
+    ["角色与代理", "Agent", "Requirements Analyst"],
+    ["流程与规范", "Workflow", "Feature Development"],
+    ["流程与规范", "Delivery", "Source Branch Publication Receipt"],
+    ["流程与规范", "Spec", "PRD Specification"],
+    ["流程与规范", "Standard", "Engineering Standard"],
+  ]) {
+    await softwareNav(page).getByRole("button", { name: group, exact: true }).click();
+    await page.getByRole("tab", { name: tab, exact: true }).click();
+    await page.getByText(name, { exact: false }).filter({ visible: true }).first().waitFor();
+  }
+  await page.getByText(/不可变规范快照/).waitFor();
+  await page.getByText(/使用位置 · 当前 Standard.*（0）/).waitFor();
   const software = await native("software", repository, head);
   const project = software.run.project_id;
+  const scopedProject = { ...scope, project_id: project };
+  const database = path.join(softwareRoot, "projects", project, "engineering.sqlite3");
+  await access(database);
+  await assert.rejects(access(path.join(hostRoot, "projects", project, "engineering.sqlite3")));
+  assert.equal((await rpc(page, "query.workspace", scopedProject)).project_database, database);
+  assert.deepEqual((await rpc(page, "query.domain.storage", storageQuery)).project_roots,
+    [{ data_root: softwareRoot, projects: 1 }]);
+  const bundledSkill = active.sources.find((row) => row.type === "skill");
+  const bundledRole = active.sources.find((row) => row.type === "role");
+  assert.equal((await rpc(page, "query.project_directory")).total_projects, 0);
+  assert((await rpc(page, "query.project_directory", scope)).projects.some((row) => row.id === project));
+  assert((await rpc(page, "query.configuration_index", scopedProject)).records.every((row) => !automation.has(row.id)));
+  assert((await rpc(page, "query.workflows", scopedProject)).records.every((row) => !automation.has(row.id)));
+  const projectRole = await rpc(page, "role.create", {
+    ...scopedProject,
+    command_id: crypto.randomUUID(),
+    payload: { name: "Software project specialist", scope: `project:${project}`, data: { instructions: "# Project duty" } },
+  });
+  const coreIndex = await rpc(page, "query.configuration_index", { include_history: true });
+  assert(coreIndex.records.every((row) => !row.id.startsWith("software-development.")));
+  assert(!coreIndex.records.some((row) => row.id === projectRole.id));
+  assert((await rpc(page, "query.configuration_index", scope)).records.some((row) => row.id === projectRole.id));
+  await assert.rejects(rpc(page, "query.configuration_records", { refs: [projectRole.id] }), /not_found/);
+  const [originalRole] = (await rpc(page, "query.configuration_records", {
+    ...scopedProject, refs: [bundledRole.id],
+  })).records;
+  const revisedRole = await rpc(page, "role.revise", {
+    ...scopedProject,
+    command_id: crypto.randomUUID(),
+    target: originalRole.id,
+    expected_revision: originalRole.revision,
+    payload: { name: originalRole.name, data: { instructions: "Domain role revision for this project" } },
+  });
+  assert((await rpc(page, "query.configuration_records", {
+    ...scopedProject, refs: [revisedRole.id],
+  })).records.some((row) => row.id === revisedRole.id));
+  await assert.rejects(rpc(page, "query.configuration_records", { refs: [bundledRole.id, revisedRole.id] }), /not_found/);
+  assert(!Object.hasOwn(coreIndex.catalog_version.source_epochs, project));
+  assert(Object.hasOwn((await rpc(page, "query.configuration_index", scope)).catalog_version.source_epochs, project));
+  const readConfigurationClock = (tab, epoch) => tab.evaluate((epoch) => new Promise((resolve, reject) => {
+    const params = new URLSearchParams({ tail: "true", configuration: "true" });
+    if (epoch !== null) params.set("domain_epoch", String(epoch));
+    const stream = new EventSource("/events?" + params);
+    const timer = setTimeout(() => {
+      stream.close();
+      reject(new Error("configuration clock timed out"));
+    }, 8000);
+    stream.onmessage = ({ data }) => {
+      const version = JSON.parse(data).configuration_version;
+      if (!version) return;
+      clearTimeout(timer);
+      stream.close();
+      resolve(version);
+    };
+  }), epoch);
+  const [coreClock, domainClock] = await Promise.all([
+    readConfigurationClock(page, null), readConfigurationClock(second, active.epoch),
+  ]);
+  assert(!Object.hasOwn(coreClock.source_epochs, project));
+  assert(Object.hasOwn(domainClock.source_epochs, project));
+  await assert.rejects(rpc(page, "query.configuration_records", { refs: [bundledSkill.id] }), /not_found/);
+  await assert.rejects(rpc(page, "query.configuration_usage", { id: bundledSkill.id }), /not_found/);
+  await assert.rejects(rpc(page, "query.configuration_index", { domain_epoch: "invalid" }), /invalid_params/);
+  await assert.rejects(rpc(page, "query.configuration_index", { domain_epoch: active.epoch - 1 }), /domain_epoch_conflict/);
+  await softwareNav(page).getByRole("button", { name: "基础组件", exact: true }).click();
+  await page.getByRole("tab", { name: "Skills", exact: true }).click();
+  await page.getByRole("button", { name: /Requirements Analysis/ }).first().click();
+  await page.getByLabel("名称", { exact: true }).fill("Software skill draft");
+  await page.getByRole("button", { name: "领域管理", exact: true }).click();
+  await page.getByRole("button", { name: "基础组件", exact: true }).click();
+  await page.getByRole("tab", { name: "Internal Tools", exact: true, selected: true }).waitFor();
+  await page.getByRole("tab", { name: "Skills", exact: true }).click();
+  await page.getByRole("heading", { name: "Skill 管理", exact: true }).waitFor();
+  assert.equal(await page.getByLabel("名称", { exact: true }).inputValue(), "");
+  assert.equal(await page.getByRole("button", { name: /Requirements Analysis/ }).count(), 0);
+  await page.getByRole("button", { name: "领域工作台", exact: true }).click();
+  await softwareNav(page).waitFor();
+
   const settingsId = "software-development.engineering-settings";
-  const settingsButton = (tab) => tab.getByRole("button", { name: "工程设置", exact: true });
-  await settingsButton(page).click();
-  await settingsButton(second).click();
-  await page.getByRole("heading", { name: "数据与运行" }).waitFor();
-  await second.getByRole("heading", { name: "数据与运行" }).waitFor();
+  for (const tab of [page, second]) {
+    await softwareNav(tab).getByRole("button", { name: "设置", exact: true }).click();
+    await tab.getByRole("heading", { name: "数据与运行" }).waitFor();
+  }
   assert.equal(await page.locator(".app").count(), 1);
   assert.equal(await page.locator("iframe").count(), 0);
-  await page.getByRole("navigation", { name: "软件开发导航" }).waitFor();
   const style = page.locator('link[href*="/domain-assets/"][href$="/workbench.css"]');
   assert.equal(await style.count(), 1);
   const oldAsset = `/domain-assets/${software.epoch}/${digests[2]}/ui/web/workbench.mjs`;
@@ -208,7 +383,7 @@ try {
       assert(!reply.error, JSON.stringify(reply.error));
       return reply.result;
     };
-    await page.getByRole("button", { name: "分支队列", exact: true }).click();
+    await softwareNav(page).getByRole("button", { name: "工作总览", exact: true }).click();
     await page.getByRole("navigation", { name: "软件开发导航" }).waitFor();
     await page.getByRole("button", { name: "打开 GitHub 项目", exact: true }).first().click();
     const dialog = page.getByRole("dialog");
@@ -251,7 +426,7 @@ try {
     const history = await native("project-read", "query.history", connected.id, "{}");
     assert(JSON.stringify(history).includes("feature.create"), JSON.stringify(history).slice(0, 300));
   }
-  await page.getByRole("button", { name: "Pull Requests 与 Diff", exact: true }).click();
+  await softwareNav(page).getByRole("button", { name: "执行与交付", exact: true }).click();
   await page.getByRole("button", { name: "历史记录", exact: true }).click();
   await page.getByRole("heading", { name: "历史记录", exact: true, level: 1 }).waitFor();
   await page.goBack();
@@ -259,7 +434,6 @@ try {
 
   // Reinstallation reuses frozen sources and a completed execution.
   await activate(manuscriptZip);
-  await settingsButton(second).waitFor({ state: "detached" });
   await second.getByRole("navigation", { name: "软件开发导航" }).waitFor({ state: "detached" });
   await second.locator('link[href*="/domain-assets/"][href$="/workbench.css"]').waitFor({ state: "detached" });
   assert.equal((await second.request.get(base + oldAsset)).status(), 404);
@@ -272,21 +446,33 @@ try {
   assert.equal(entity.data.title, "  Local manuscript  ");
   await page.getByRole("listitem").filter({ hasText: `software-development ${software.version}` })
     .getByRole("button", { name: "激活", exact: true }).click();
-  await settingsButton(second).waitFor();
+  await softwareNav(second).waitFor();
+  await page.getByRole("button", { name: "领域管理", exact: true }).click();
   const preserved = await native("read", project, software.run.execution_id);
   assert.equal(preserved.record.data.status, "completed");
   assert.equal(preserved.domain_submission.entities.test_configuration, software.proof_id);
+  const updatedEpoch = (await rpc(page, "query.domain.active")).epoch;
+  const restoredStorage = await rpc(page, "query.domain.storage", { epoch: updatedEpoch });
+  assert.equal(restoredStorage.configured_root, softwareRoot);
+  const resetStorage = await rpc(page, "domain.storage.configure", {
+    epoch: updatedEpoch, expected_revision: restoredStorage.revision, data_root: null,
+  });
+  assert.equal(resetStorage.data_root, hostRoot);
+  assert(resetStorage.project_roots.some((root) => root.data_root === softwareRoot && root.projects > 0));
+  assert.equal((await rpc(page, "query.workspace", { project_id: project, domain_epoch: updatedEpoch })).project_database, database);
 
   await page.getByRole("listitem").filter({ hasText: `software-development ${software.version}` })
     .getByRole("button", { name: "卸载", exact: true }).click();
-  await second.getByText("空领域", { exact: true }).waitFor();
-  await settingsButton(second).waitFor({ state: "detached" });
-  await second.getByRole("button", { name: "核心配置" }).click();
+  await second.getByText("当前激活的领域：空领域", { exact: true }).waitFor();
+  assert.equal((await rpc(second, "query.configuration_index", { include_history: true }))
+    .records.some((row) => row.id.startsWith("software-development.")), false);
+  await second.getByRole("button", { name: "基础组件", exact: true }).click();
+  await second.getByRole("tab", { name: "Model", exact: true }).click();
   await second.getByText("Domain smoke model", { exact: false }).first().waitFor();
   assert.equal(host.pid, pid);
   assert.equal(host.exitCode, null);
   assert.deepEqual(pageErrors, []);
-  console.log(JSON.stringify({ pid, head, image: ready.result.artifact.image_id, execution: result, manual, software, feature, unloaded: true }));
+  console.log(JSON.stringify({ pid, head, image: ready.result.artifact.image_id, execution: result, manual, software, feature, configurationSources: active.sources.length, automationSources: automation.size, unloaded: true }));
 } catch (error) {
   console.error(hostLog, pageErrors);
   for (const tab of [page, second].filter(Boolean)) {

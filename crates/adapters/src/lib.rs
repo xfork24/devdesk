@@ -161,8 +161,6 @@ impl SqliteStore {
     }
     pub fn open_project(data_root: &Path, project_id: &str) -> Result<Self> {
         let root = Self::project_path(data_root, project_id)?;
-        let parent = data_root.join("projects");
-        fs::create_dir_all(&parent).map_err(storage)?;
         let mut store = Self::open(&root)?;
         store.project_id = Some(project_id.into());
         let projects = load_table::<Project>(&*store.connection.read()?, "projects")?;
@@ -222,7 +220,8 @@ impl SqliteStore {
     }
     pub fn project_path(data_root: &Path, project_id: &str) -> Result<PathBuf> {
         require(uuid::Uuid::parse_str(project_id).is_ok(), "无效项目 ID")?;
-        let parent = data_root.join("projects");
+        let external = domain_packages::project_storage_root(data_root, project_id)?;
+        let parent = external.as_deref().unwrap_or(data_root).join("projects");
         let root = parent.join(project_id);
         reject_symlink(&parent)?;
         reject_symlink(&root)?;

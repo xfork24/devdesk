@@ -367,7 +367,11 @@ impl Reader {
 }
 
 /// Agent identities and their immutable dependency closure, read without activation.
-pub fn discussion_catalog(root: &Path) -> Result<Vec<ConfigurationRecord>> {
+pub fn discussion_catalog(
+    root: &Path,
+    visibility: Option<&domain_packages::ProjectVisibility>,
+) -> Result<Vec<ConfigurationRecord>> {
+    let includes = |project: &str| visibility.is_none_or(|scope| scope.includes(project));
     let global = GlobalStore::read_configuration(root)?
         .state
         .governance
@@ -379,7 +383,10 @@ pub fn discussion_catalog(root: &Path) -> Result<Vec<ConfigurationRecord>> {
         .collect();
     let mut readable_projects = std::collections::BTreeSet::new();
     let mut states = Vec::new();
-    for project in projects(root)? {
+    for project in projects(root)?
+        .into_iter()
+        .filter(|project| includes(&project.id))
+    {
         if let Ok(catalog) = SqliteStore::read_project_catalog(root, &project.id) {
             readable_projects.insert(project.id.clone());
             states.push(catalog.state.as_ref().clone());
@@ -392,7 +399,7 @@ pub fn discussion_catalog(root: &Path) -> Result<Vec<ConfigurationRecord>> {
                 || r.scope
                     .project_id()
                     .map_or(!global_instances.contains(&r.id), |pid| {
-                        !readable_projects.contains(pid)
+                        includes(pid) && !readable_projects.contains(pid)
                     })
         });
         states.push(cached);

@@ -42,7 +42,6 @@ struct App {
     origin: String,
     access_token: Option<String>,
     web_root: Option<PathBuf>,
-    trusted_domains: Arc<std::collections::BTreeSet<String>>,
     domain_epoch: tokio::sync::watch::Sender<u64>,
     stopping: AtomicBool,
     shutdown: tokio::sync::Notify,
@@ -428,11 +427,9 @@ async fn open_dataset(
     ticket: lifecycle::Ticket,
     path: PathBuf,
 ) -> devdesk_domain::Result<Value> {
-    let trusted = app.trusted_domains.clone();
-    let opened =
-        tokio::task::spawn_blocking(move || Workspace::open_trusted_domains(&path, trusted))
-            .await
-            .unwrap_or_else(|error| Err(err("internal", error.to_string())));
+    let opened = tokio::task::spawn_blocking(move || Workspace::open(&path))
+        .await
+        .unwrap_or_else(|error| Err(err("internal", error.to_string())));
     let result = match opened {
         Ok(workspace) => {
             let mut current = app.workspace.write().unwrap();
@@ -440,6 +437,7 @@ async fn open_dataset(
                 Ok(()) => {
                     let root = workspace.global.root();
                     *current = Some(workspace);
+                    app.domain_epoch.send_modify(|_| {});
                     json!({"root":root})
                 }
                 Err(error) => json!({"error":error.message,"code":error.code}),
@@ -557,7 +555,7 @@ async fn events(
     if p.get("tail").is_some_and(|value| value == "true") {
         let tail = workspace.event_hub(&scope, engine).and_then(|hub| {
             let clock = configuration_events
-                .then(|| workspace.event_configuration_clock())
+                .then(|| workspace.event_configuration_clock(epoch))
                 .transpose()?;
             Ok((hub, clock))
         });
@@ -621,7 +619,9 @@ async fn events(
                 let read = tokio::task::spawn_blocking(move || -> devdesk_domain::Result<_> {
                     let values = read_engine.store.events_after(cursor, 100)?;
                     let version = if configuration_events {
-                        read_app.workspace()?.configuration_version(&read_engine)?
+                        read_app
+                            .workspace()?
+                            .configuration_version(&read_engine, epoch)?
                     } else {
                         Value::Null
                     };
@@ -779,7 +779,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.iter().any(|a| a == "--help") {
         println!(
-            "DevDesk {}\nUsage: devdesk-host [--data PATH] [--host IP] [--port 4317] [--public-url http(s)://HOST:PORT] [--web-dir DIR] [--trust-domain SHA256]\n       devdesk-host --data PATH --authorize-credential REFERENCE\nDefault host: 127.0.0.1. Remote listening requires DEVDESK_ACCESS_TOKEN (32+ characters).\nWithout --data, choose a dataset in the Web setup page. Without --web-dir the Host serves the client protocol only.",
+            "DevDesk {}\nUsage: devdesk-host [--data PATH] [--host IP] [--port 4317] [--public-url http(s)://HOST:PORT] [--web-dir DIR]\n       devdesk-host --data PATH --authorize-credential REFERENCE\nDefault host: 127.0.0.1. Remote listening requires DEVDESK_ACCESS_TOKEN (32+ characters).\nWithout --data, choose a dataset in the Web setup page. Without --web-dir the Host serves the client protocol only.",
             env!("CARGO_PKG_VERSION")
         );
         return Ok(());
@@ -838,20 +838,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     };
     let access_token = connection_key(listen, public_url.is_some(), token)?;
     let startup = performance_logging().then(devdesk_adapters::performance::Trace::start);
-    let trusted_domains = args
-        .windows(2)
-        .filter(|pair| pair[0] == "--trust-domain")
-        .map(|pair| pair[1].clone())
-        .collect::<std::collections::BTreeSet<_>>();
-    if trusted_domains
-        .iter()
-        .any(|id| !devdesk_adapters::domain_packages::is_digest(id))
-    {
-        return Err("--trust-domain requires a lowercase SHA-256".into());
-    }
-    let trusted_domains = Arc::new(trusted_domains);
     let workspace = option("--data")
-        .map(|p| Workspace::open_trusted_domains(&PathBuf::from(p), trusted_domains.clone()))
+        .map(|p| Workspace::open(&PathBuf::from(p)))
         .transpose();
     if let Some(trace) = startup {
         eprintln!(
@@ -882,7 +870,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         origin: origin.clone(),
         access_token,
         web_root,
-        trusted_domains,
         domain_epoch: tokio::sync::watch::channel(0).0,
         stopping: AtomicBool::new(false),
         shutdown: tokio::sync::Notify::new(),

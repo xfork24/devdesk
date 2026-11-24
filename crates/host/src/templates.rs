@@ -773,7 +773,7 @@ mod tests {
         assert_eq!(view.record(&binding_id), Some(old_binding));
         assert!(view.record(role_id).is_some());
         assert!(
-            compose_role_directory(&global, &[stale])
+            compose_configuration_directory(&global, &[], &[stale], |_| true)
                 .unwrap()
                 .record(role_id)
                 .is_none()

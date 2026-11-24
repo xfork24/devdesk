@@ -73,13 +73,15 @@ async function extract(artifacts, cwd, verify) {
   };
 }
 
-async function withHost(host, web, operation, { crashAfter = false } = {}) {
-  const hashes = await Promise.all([legacy, candidate, manuscript].map(async (file) => digest(await bytes(file))));
+async function withHost(host, web, operation, { crashAfter = false, legacyHost = false } = {}) {
   const env = { ...process.env };
   delete env.DEVDESK_ACCESS_TOKEN;
-  const child = spawn(host, ["--data", data, "--web-dir", web, "--port", "0",
-    ...hashes.flatMap((hash) => ["--trust-domain", hash]),
-  ], { env, cwd: temp });
+  const args = ["--data", data, "--web-dir", web, "--port", "0"];
+  if (legacyHost) {
+    // The optional pre-upgrade Host requires the legacy ZIP digest at startup.
+    args.push("--trust-domain", digest(await bytes(legacy)));
+  }
+  const child = spawn(host, args, { env, cwd: temp });
   const exit = once(child, "exit");
   let logs = "";
   let completed = false;
@@ -197,7 +199,7 @@ with ZipFile(sys.argv[1]) as original, ZipFile(sys.argv[2], "w", ZIP_DEFLATED) a
     await client.rejected(baselineDir ? candidate : incompatible);
     if (baselineDir) pass.push("Web Core upgrade with previous Host and domain");
     return client.native("software", repository, head);
-  });
+  }, { legacyHost: Boolean(baselineDir) });
 
   await withHost(current.host, previous.web, async (client) => {
     assert.equal((await client.active()).active.version, "0.3.0");
@@ -224,7 +226,7 @@ with ZipFile(sys.argv[1]) as original, ZipFile(sys.argv[2], "w", ZIP_DEFLATED) a
     assert.equal(frozen.active.version, "0.3.0");
     assert.equal((await client.native("read", original.run.project_id, original.run.execution_id)).record.id, original.run.execution_id);
     await client.activate(upgraded.digest);
-    pass.push("Domain-only upgrade with version rollback and 100 concurrent directory requests");
+    pass.push("Runtime ZIP activation, version rollback and 100 concurrent directory requests");
     return result;
   }, { crashAfter: true });
 

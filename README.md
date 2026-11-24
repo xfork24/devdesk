@@ -18,15 +18,9 @@ DevDesk 是一个可加载领域包的工作台。Rust Host 管理配置、领�
 ./devdesk-host --data ./data --web-dir ./devdesk-core-web-0.5.0
 ```
 
-打开终端显示的地址，默认是 `http://127.0.0.1:4317`。空领域中可以查看和操作 Model、Harness、Docker 和 Git。省略 `--web-dir` 时，Host 提供客户端协议。
+打开终端显示的地址，默认是 `http://127.0.0.1:4317`。空领域工作台提供基础组件、全局历史、设置和领域包管理。省略 `--web-dir` 时，Host 提供客户端协议。
 
-接入软件开发时，将从可信渠道取得的 ZIP 摘要传给 Host，再到「领域包」页导入并激活。领域包可在 Host 运行时加载、切换和卸载。浏览器在同一工作台内渲染领域页面，共用导航、布局和会话。安装、数据目录和远程连接设置见[运行指南](docs/design/run-binary.md)。
-
-```bash
-zip_sha=$(awk 'NR == 1 { print $1 }' software-development-0.5.1.zip.sha256)
-./devdesk-host --data ./data --web-dir ./devdesk-core-web-0.5.0 \
-  --trust-domain "$zip_sha"
-```
+接入软件开发时，在已经启动的工作台打开「领域包」，选择 `software-development-0.5.1.zip` 导入，再点击「激活」进入软件开发工作台。领域包可在 Host 运行时加载、切换和卸载。浏览器在同一工作台内渲染领域页面，共用导航、布局和会话。安装、数据目录和远程连接设置见[运行指南](docs/design/run-binary.md)。
 
 ### 开始软件开发工作流
 

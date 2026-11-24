@@ -26,6 +26,7 @@
 | [src/credentials.rs](../../../crates/adapters/src/credentials.rs) | [凭据与权限后端](credentials-and-permissions.md) |
 | [src/credentials_macos.rs](../../../crates/adapters/src/credentials_macos.rs) | [凭据与权限后端](credentials-and-permissions.md) |
 | [src/docker.rs](../../../crates/adapters/src/docker.rs) | [Harness 协议与 Docker 容器](harness-and-protocols.md) |
+| [src/domain_packages/storage.rs](../../../crates/adapters/src/domain_packages/storage.rs) | Optional external project storage. A project's root is fixed when it is bound. |
 | [src/domain_packages/worker.rs](../../../crates/adapters/src/domain_packages/worker.rs) | Bounded read-only domain process transport for the first extension slice. |
 | [src/domain_packages.rs](../../../crates/adapters/src/domain_packages.rs) | Installed domain bundles and the active generation, scoped to one dataset. |
 | [src/execution_read.rs](../../../crates/adapters/src/execution_read.rs) | Bounded execution-page facts, read from one committed snapshot. |

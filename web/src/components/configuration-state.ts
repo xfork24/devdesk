@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { ConfigurationScope } from "./configuration-scope";
 import {
   configurationIndexParams,
   getConfigurationSession,
@@ -147,6 +148,8 @@ export async function loadIntegrationRecords(
   }
 }
 export function useDraft<T>(key: string, initial: () => T) {
+  const namespace = useContext(ConfigurationScope)?.storageNamespace;
+  if (namespace) key = `${namespace}:${key}`;
   const generation = useCatalogGeneration();
   key = generation > 1 ? `${key}:catalog:${generation}` : key;
   const session = getConfigurationSession();
@@ -213,6 +216,8 @@ export function readGroupTab(group: string, allowed: string[]) {
       : allowed[0];
 }
 export function useGroupTab(group: string, allowed: string[]) {
+  const namespace = useContext(ConfigurationScope)?.storageNamespace;
+  if (namespace) group = `${namespace}:${group}`;
   const allowedKey = JSON.stringify(allowed);
   const read = useCallback(
     () => readGroupTab(group, JSON.parse(allowedKey) as string[]),

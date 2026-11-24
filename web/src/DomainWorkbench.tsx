@@ -13,7 +13,14 @@ import {
   type ReactNode,
 } from "react";
 import { DomainProvider } from "./domain-sdk";
-import { ActionButton } from "./components/ActionFeedback";
+import {
+  History,
+  LayoutDashboard,
+  Library,
+  PackageOpen,
+  Settings,
+} from "lucide-react";
+import { ActionButton, ActionForm } from "./components/ActionFeedback";
 import { WorkbenchLayout } from "./workbench-layout";
 import { KernelAuthentication } from "./components/KernelConnection";
 import type { Data, DomainContext } from "./domain-sdk";
@@ -45,7 +52,15 @@ type Directory = {
   project_connection?: string;
   entity_types?: Record<string, { workflows?: Record<string, unknown> }> | null;
 };
-type CoreRecord = { id: string; name: string; type: string; data: Data };
+type CoreRecord = { id: string; name: string; type: string };
+const CorePages = lazy(() =>
+  import("./CorePages").then(({ CorePages }) => ({ default: CorePages })),
+);
+const DomainStorageSettings = lazy(() =>
+  import("./components/DomainStorageSettings").then(
+    ({ DomainStorageSettings }) => ({ default: DomainStorageSettings }),
+  ),
+);
 
 async function rpc<T>(
   method: string,
@@ -313,118 +328,55 @@ function CoreQuery({
   );
 }
 
-function CoreConfiguration() {
-  const [records, setRecords] = useState<CoreRecord[]>([]);
-  const [output, setOutput] = useState("");
+function DatasetSetup({ opened }: { opened: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
-  const refresh = useCallback(async () => {
-    const summary = await rpc<{ records: { id: string }[] }>(
-      "query.configuration_index",
-      { limit: 64 },
-    );
-    const response = await rpc<{ records: CoreRecord[] }>(
-      "query.configuration_records",
-      {
-        refs: summary.records.map((row) => row.id),
-      },
-    );
-    setRecords(response.records);
-  }, []);
-  useEffect(() => {
-    void refresh().catch((error: unknown) => setOutput(message(error)));
-  }, [refresh]);
-  async function apply(method: string, params: Data) {
-    setBusy(true);
-    setOutput("");
-    try {
-      const value = await rpc(method, params);
-      setOutput(JSON.stringify(value, null, 2));
-      await refresh();
-    } catch (error) {
-      setOutput(message(error));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const [error, setError] = useState("");
   return (
     <section className="panel">
-      <h2>核心配置</h2>
-      {[
-        "model",
-        "model_provider",
-        "harness",
-        "sandbox",
-        "permission_profile",
-        "tool",
-      ].map((kind) => (
-        <section key={kind}>
-          <h3>{kind}</h3>
-          <ul>
-            {records
-              .filter((row) => row.type === kind)
-              .map((row) => (
-                <li key={row.id}>
-                  {row.name} <code>{row.id}</code>{" "}
-                  {kind === "harness" && (
-                    <button
-                      disabled={busy}
-                      onClick={() =>
-                        void apply("runtime.prepare_harness", { id: row.id })
-                      }
-                    >
-                      准备运行环境
-                    </button>
-                  )}
-                </li>
-              ))}
-          </ul>
-        </section>
-      ))}
-      <form
-        onSubmit={(event) => {
+      <div className="panel-heading">
+        <h2>打开数据集</h2>
+      </div>
+      <ActionForm
+        onSubmit={async (event) => {
           event.preventDefault();
-          const fields = new FormData(event.currentTarget);
-          void apply("model.create", {
-            command_id: crypto.randomUUID(),
-            payload: {
-              name: fields.get("name"),
-              scope: "global",
-              data: {
-                provider: fields.get("provider"),
-                model: fields.get("model"),
-                parameters: {},
-                capabilities: ["structured-output", "tool-calling"],
-              },
-            },
-          });
+          const path = new FormData(event.currentTarget).get("path");
+          setBusy(true);
+          setError("");
+          try {
+            const capabilities = await fetch("/capabilities").then((response) =>
+              response.json(),
+            );
+            if (capabilities.setup_required) {
+              const response = await fetch("/setup", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  path,
+                  command_id: crypto.randomUUID(),
+                  instance_id: capabilities.lifecycle.instance_id,
+                  expected_revision: capabilities.lifecycle.revision,
+                }),
+              });
+              const result = await response.json();
+              if (result.error) throw new Error(result.error);
+            }
+            await opened();
+          } catch (failure) {
+            setError(message(failure));
+          } finally {
+            setBusy(false);
+          }
         }}
       >
-        <h3>添加模型</h3>
         <label>
-          显示名称
-          <input name="name" required />
+          数据目录
+          <input name="path" defaultValue="./data" disabled={busy} required />
         </label>
-        <label>
-          供应商
-          <select name="provider">
-            {records
-              .filter((row) => row.type === "model_provider")
-              .map((row) => (
-                <option key={row.id} value={String(row.data.id)}>
-                  {row.name}
-                </option>
-              ))}
-          </select>
-        </label>
-        <label>
-          模型标识
-          <input name="model" required />
-        </label>
-        <button type="submit" disabled={busy}>
-          保存模型
-        </button>
-      </form>
-      {output && <pre role="status">{output}</pre>}
+        <ActionButton className="primary" disabled={busy}>
+          初始化 / 打开数据集
+        </ActionButton>
+      </ActionForm>
+      {error && <p role="alert">{error}</p>}
     </section>
   );
 }
@@ -585,14 +537,22 @@ async function archive(file: File) {
   });
 }
 
+function workbenchEntry(directory?: Directory) {
+  const target = directory?.targets?.find(
+    ({ renderer, api }) => renderer === "web.react" && api === 2,
+  );
+  return target?.bindings[0]?.contribution;
+}
+
 export function AppRoot() {
   const [directory, setDirectory] = useState<Directory>();
   const [packages, setPackages] = useState<Package[]>([]);
-  const [selected, setSelected] = useState(
-    () => new URLSearchParams(location.search).get("view") ?? "packages",
+  const [selected, setSelected] = useState(() =>
+    new URLSearchParams(location.search).get("view"),
   );
   const [error, setError] = useState("");
   const [auth, setAuth] = useState(false);
+  const [needsDataset, setNeedsDataset] = useState(false);
   const [busy, setBusy] = useState(false);
   const refresh = useCallback(async () => {
     const [next, installed] = await Promise.all([
@@ -603,20 +563,22 @@ export function AppRoot() {
       previous && previous.epoch > next.epoch ? previous : next,
     );
     setPackages(installed);
+    setNeedsDataset(false);
+    return next;
   }, []);
   useEffect(() => {
     const events = new EventSource("/domain-events");
     const reload = () =>
       void refresh().catch((failure: unknown) => {
-        if (message(failure) === "HTTP 401") setAuth(true);
-        else setError(message(failure));
+        const detail = message(failure);
+        if (detail === "HTTP 401") setAuth(true);
+        else if (detail.startsWith("setup_required ·")) setNeedsDataset(true);
+        else setError(detail);
       });
     events.addEventListener("domain", reload);
     reload();
     const pop = () =>
-      setSelected(
-        new URLSearchParams(location.search).get("view") ?? "packages",
-      );
+      setSelected(new URLSearchParams(location.search).get("view"));
     window.addEventListener("popstate", pop);
     return () => {
       events.close();
@@ -637,58 +599,125 @@ export function AppRoot() {
       history.pushState({}, "", `?${params}`);
     setSelected(id);
   }
-  async function mutate(action: () => Promise<unknown>) {
+  async function mutate(action: () => Promise<unknown>, enterDomain = false) {
     setError("");
     setBusy(true);
     try {
       await action();
-      await refresh();
+      const next = await refresh();
+      const home = enterDomain && workbenchEntry(next);
+      if (home) select(home);
     } catch (failure) {
       setError(message(failure));
     } finally {
       setBusy(false);
     }
   }
+  const home = workbenchEntry(directory);
+  const corePage =
+    selected === "core" || selected === "history" || selected === "settings"
+      ? selected
+      : selected === null && !directory?.active
+        ? "core"
+        : undefined;
+  const platformView =
+    selected === "packages" ||
+    !!corePage ||
+    (!home && (selected === "git" || selected === "workflow"));
+  const contributions = directory?.contributions;
+  const contribution =
+    contributions?.find((item) => item.id === selected) ??
+    (!platformView
+      ? contributions?.find((item) => item.id === home)
+      : undefined);
+  const destination = contribution?.id;
+  useLayoutEffect(() => {
+    if (!destination || destination === selected) return;
+    const params = new URLSearchParams(selected ? "" : location.search);
+    params.set("view", destination);
+    history.replaceState({}, "", `?${params}`);
+    setSelected(destination);
+  }, [destination, selected]);
+
   if (auth)
     return (
       <KernelAuthentication
         authenticated={async () => {
-          await refresh();
+          try {
+            await refresh();
+          } catch (failure) {
+            if (!message(failure).startsWith("setup_required ·")) throw failure;
+            setNeedsDataset(true);
+          }
           setAuth(false);
         }}
       />
     );
-  const contribution = directory?.contributions?.find(
-    (item) => item.id === selected,
-  );
   return (
     <WorkbenchLayout
+      domainSettings={
+        directory?.active && contribution ? (
+          <Suspense fallback={null}>
+            <DomainStorageSettings
+              key={directory.epoch}
+              epoch={directory.epoch}
+            />
+          </Suspense>
+        ) : undefined
+      }
       navigation={
+        <nav aria-label="工作台管理">
+          <ActionButton
+            className={selected === "packages" ? "nav active" : "nav"}
+            aria-current={selected === "packages" ? "page" : undefined}
+            onClick={() => select("packages")}
+          >
+            <PackageOpen size={18} aria-hidden="true" /> 领域管理
+          </ActionButton>
+        </nav>
+      }
+      fallbackNavigation={
         <nav aria-label="工作台导航">
-          <ActionButton className="nav" onClick={() => select("packages")}>
-            领域包
-          </ActionButton>
-          <ActionButton className="nav" onClick={() => select("core")}>
-            核心配置
-          </ActionButton>
-          <ActionButton className="nav" onClick={() => select("git")}>
-            Git
-          </ActionButton>
-          {directory?.active && (
+          {home && !contribution && (
+            <ActionButton className="nav" onClick={() => select(home)}>
+              <LayoutDashboard size={18} aria-hidden="true" /> 领域工作台
+            </ActionButton>
+          )}
+          {(
+            [
+              ["core", "基础组件", Library],
+              ["history", "历史记录", History],
+              ["settings", "设置", Settings],
+            ] as const
+          ).map(([id, title, Icon]) => {
+            const active = corePage === id;
+            return (
+              <ActionButton
+                key={id}
+                className={active ? "nav active" : "nav"}
+                aria-current={active ? "page" : undefined}
+                onClick={() => select(id)}
+              >
+                <Icon size={18} /> {title}
+              </ActionButton>
+            );
+          })}
+          {!home && directory?.active && (
             <ActionButton className="nav" onClick={() => select("workflow")}>
               领域工作流
             </ActionButton>
           )}
-          {directory?.contributions?.map((item) => (
-            <ActionButton
-              className="nav"
-              aria-current={selected === item.id ? "page" : undefined}
-              key={item.id}
-              onClick={() => select(item.id)}
-            >
-              {item.title}
-            </ActionButton>
-          ))}
+          {(!home || contribution) &&
+            contributions?.map((item) => (
+              <ActionButton
+                className="nav"
+                aria-current={selected === item.id ? "page" : undefined}
+                key={item.id}
+                onClick={() => select(item.id)}
+              >
+                {item.title}
+              </ActionButton>
+            ))}
         </nav>
       }
     >
@@ -701,10 +730,20 @@ export function AppRoot() {
         />
       ) : (
         <main>
-          {selected === "workflow" && directory?.active ? (
+          {needsDataset ? (
+            <DatasetSetup
+              opened={async () => {
+                await refresh();
+              }}
+            />
+          ) : !directory ? (
+            <p role="status">正在连接工作台…</p>
+          ) : corePage ? (
+            <Suspense fallback={<p role="status">正在读取工作台…</p>}>
+              <CorePages page={corePage} />
+            </Suspense>
+          ) : selected === "workflow" && directory?.active ? (
             <WorkflowLookup key={directory.epoch} directory={directory} />
-          ) : selected === "core" ? (
-            <CoreConfiguration />
           ) : selected === "git" ? (
             <section className="panel">
               <h2>Git</h2>
@@ -715,11 +754,9 @@ export function AppRoot() {
             </section>
           ) : (
             <section className="panel">
-              <h2>领域包</h2>
+              <h2>领域管理</h2>
               <p role="status">
-                {directory
-                  ? (directory.active?.id ?? "空领域")
-                  : "正在连接工作台…"}
+                当前激活的领域：{directory.active?.id ?? "空领域"}
               </p>
               <form
                 onSubmit={(event) => {
@@ -754,11 +791,13 @@ export function AppRoot() {
                         item.digest === directory.active?.digest
                       }
                       onClick={() =>
-                        void mutate(() =>
-                          rpc("domain.activate", {
-                            digest: item.digest,
-                            epoch: directory?.epoch,
-                          }),
+                        void mutate(
+                          () =>
+                            rpc("domain.activate", {
+                              digest: item.digest,
+                              epoch: directory?.epoch,
+                            }),
+                          true,
                         )
                       }
                     >
@@ -780,20 +819,6 @@ export function AppRoot() {
                   </li>
                 ))}
               </ul>
-              {directory?.sources?.length ? (
-                <ul>
-                  {directory.sources.map((source) => (
-                    <li key={source.id}>
-                      <details>
-                        <summary>
-                          {source.name} <code>{source.id}</code>
-                        </summary>
-                        <pre>{JSON.stringify(source.data, null, 2)}</pre>
-                      </details>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
             </section>
           )}
         </main>

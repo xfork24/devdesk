@@ -1,5 +1,6 @@
 import { createContext } from "react";
 import type { Request } from "./rpc-types";
 export const ConfigurationScope = createContext<
-  { request: Request; projectId?: string } | undefined
+  | { request: Request; projectId?: string; storageNamespace?: string }
+  | undefined
 >(undefined);

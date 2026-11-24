@@ -202,7 +202,7 @@ fn setup(path: &std::path::Path) -> (Engine, Arc<Scripted>, String) {
         shared,
         inventory: global.clone(),
     });
-    e.sync_shared_configuration(global.as_ref()).unwrap();
+    e.sync_shared_configuration(global.as_ref(), None).unwrap();
     e.bootstrap().unwrap();
     e.execute("project.create", creation).unwrap();
     global

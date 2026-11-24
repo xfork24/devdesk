@@ -176,8 +176,10 @@ impl GlobalStore {
             "project IS NOT NULL"
         };
         let (filter, projects) = match visibility {
-            Some(visibility) if !visibility.projects.is_empty() || visibility.domain_active => {
-                let operator = if visibility.domain_active {
+            Some(visibility)
+                if !visibility.projects.is_empty() || visibility.active_digest.is_some() =>
+            {
+                let operator = if visibility.active_digest.is_some() {
                     "IN"
                 } else {
                     "NOT IN"

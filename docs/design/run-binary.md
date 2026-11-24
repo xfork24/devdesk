@@ -14,15 +14,13 @@ Host、Web Core 和领域 ZIP 独立发行。运行已打包的制品无需 Pyth
 
 ## 领域工作台独立发行
 
-解压与操作系统及 CPU 匹配的 `devdesk-core-host-0.5.0-<target>.tar.gz` 和 `devdesk-core-web-0.5.0.tar.gz`，保留 `software-development-0.5.1.zip` 供工作台导入。使用从可信发行渠道取得的 SHA-256 校验文件。以下示例传入软件开发 ZIP 的发布摘要。
+解压与操作系统及 CPU 匹配的 `devdesk-core-host-0.5.0-<target>.tar.gz` 和 `devdesk-core-web-0.5.0.tar.gz`。启动后，在工作台「领域包」页导入并激活 `software-development-0.5.1.zip`。发行渠道提供的 SHA-256 校验文件可用于核对下载内容。
 
 ```bash
-zip_sha=$(awk 'NR == 1 { print $1 }' software-development-0.5.1.zip.sha256)
-./devdesk-host --data /path/to/new-dataset --web-dir /path/to/devdesk-core-web-0.5.0 \
-  --trust-domain "$zip_sha"
+./devdesk-host --data /path/to/new-dataset --web-dir /path/to/devdesk-core-web-0.5.0
 ```
 
-空领域可直接操作核心配置和 Git。使用多个领域时，为每个可信 ZIP 重复传入 `--trust-domain`。工作台的「领域包」页支持导入、激活和卸载。当前包仍有活动工作流时，先完成或取消工作流即可切换。切换更新所有客户端的活动代次。项目及运行绑定原包摘要，切回该摘要后可以继续读取原有历史。运行领域处理器需要可用的 Docker 及下文的固定 Node 镜像。
+空领域可直接操作核心配置和 Git。领域包支持运行时导入、激活和卸载。当前包仍有活动工作流时，先完成或取消工作流即可切换。切换更新所有客户端的活动代次。项目及运行绑定原包摘要，切回该摘要后可以继续读取原有历史。运行领域处理器需要可用的 Docker 及下文的固定 Node 镜像。
 
 ```bash
 docker pull node@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced307cf4b6f
@@ -53,7 +51,7 @@ docker pull node@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced3
 }
 ```
 
-请求示例中的代次、项目和 Feature 来自当前活动目录和项目数据。前端可选择适合自身平台的呈现绑定并使用同一贡献目录及 RPC。Web 插件与 Web Core 共享当前浏览器会话和 DOM，因此只向经过信任校验的 ZIP 提供可执行资产。
+请求示例中的代次、项目和 Feature 来自当前活动目录和项目数据。前端可选择适合自身平台的呈现绑定并使用同一贡献目录及 RPC。激活包的 Web 插件与 Web Core 共享当前浏览器会话和 DOM。
 
 ## 数据与退出
 

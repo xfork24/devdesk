@@ -138,6 +138,7 @@ pub fn configuration_index(
         .filter(|r| {
             r.is_definition() || matches!(r.r#type.as_str(), "agent_instance" | "workflow_draft")
         })
+        .filter(|r| catalog.is_listed(r))
         .filter(|r| p["kind"].as_str().is_none_or(|kind| r.r#type == kind))
         .filter(|r| configuration_visible(state, r, project))
         .filter(|r| p.get("scope").is_none_or(|scope| json!(r.scope) == *scope))
@@ -227,7 +228,8 @@ pub fn configuration_reference_usages(
     } else {
         let index = catalog.cached_query(format!("reference-usage-index:{project:?}"), || {
             let records = catalog.state.governance.iter().filter(|r| {
-                catalog.is_current_head(r)
+                catalog.is_listed(r)
+                    && catalog.is_current_head(r)
                     && !catalog.is_retired(r)
                     && !catalog.is_archived(r)
                     && configuration_visible(&catalog.state, r, project)

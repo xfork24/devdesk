@@ -267,7 +267,8 @@ fn immutable_catalog_copy_interleaves_with_a_local_source_publication() {
             local.execute("skill.create",Command{command_id:"local-source-during-copy".into(),target:None,expected_revision:None,payload:json!({"name":"Concurrent local skill","scope":format!("project:{project_scope}"),"data":{"body":"Must survive the immutable source copy"}})}).unwrap();
         });
         w.global.subscribe_changes(Arc::downgrade(&listener));
-        e.sync_shared_configuration(w.global.as_ref()).unwrap();
+        e.sync_shared_configuration(w.global.as_ref(), None)
+            .unwrap();
         assert!(fired.load(Ordering::Acquire));
         let state = e.store.configuration_snapshot().unwrap();
         assert_eq!(
@@ -327,7 +328,7 @@ fn opened_step_qualification_is_exact_and_never_restores_engineering_history() {
         .unwrap(),
         json!({"total":1,"records":[]})
     );
-    let ready=w.dispatch_display_read("query.workflow_instance",json!({"project_id":project,"id":run["id"],"execution_id":execution,"view":"qualification"})).unwrap().value;
+    let ready=w.dispatch_display_read("query.workflow_instance",json!({"project_id":project,"id":run["id"],"execution_id":execution,"view":"qualification"}), None).unwrap().value;
     assert_eq!(
         ready["completion_status"][execution.as_str().unwrap()]["satisfied"],
         true
@@ -340,7 +341,8 @@ fn opened_step_qualification_is_exact_and_never_restores_engineering_history() {
     assert!(
         w.dispatch_display_read(
             "query.workflow_instance",
-            json!({"project_id":project,"id":run["id"],"execution_id":id(),"view":"qualification"})
+            json!({"project_id":project,"id":run["id"],"execution_id":id(),"view":"qualification"}),
+            None,
         )
         .is_err()
     );

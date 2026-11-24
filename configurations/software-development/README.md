@@ -10,4 +10,4 @@
 ./scripts/release/package-core.sh software
 ```
 
-将生成的 ZIP 导入已运行的 Host，使用可信发行摘要启用运行端和 Web 资产。核心目录、处理器和页面随包的具体摘要冻结。安装、激活和部署命令见[运行指南](../../docs/design/run-binary.md)。协议和跨端扩展见[领域包架构](../../docs/design/domain-packages.md)。
+在已运行的工作台中导入并激活生成的 ZIP。配置、处理器和页面随包的具体摘要冻结。安装、激活和部署命令见[运行指南](../../docs/design/run-binary.md)。协议和跨端扩展见[领域包架构](../../docs/design/domain-packages.md)。

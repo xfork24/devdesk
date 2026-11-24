@@ -1673,6 +1673,24 @@ impl SessionPath<'_> {
             reject_symlink(&detached)?;
             return Ok(Some(detached));
         }
+        let external_log = |project: PathBuf| -> Result<Option<PathBuf>> {
+            let path = project
+                .join("execution/sessions")
+                .join(self.session)
+                .join("coordinator")
+                .join(format!("{op}.jsonl"));
+            if path.is_file() {
+                reject_symlink(&path)?;
+                Ok(Some(path))
+            } else {
+                Ok(None)
+            }
+        };
+        for project in crate::domain_packages::externally_stored_projects(root)? {
+            if let Some(log) = external_log(SqliteStore::project_path(root, &project)?)? {
+                return Ok(Some(log));
+            }
+        }
         let projects = match fs::read_dir(root.join("projects")) {
             Ok(entries) => entries,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -1680,17 +1698,10 @@ impl SessionPath<'_> {
         };
         for entry in projects {
             let entry = entry.map_err(storage)?;
-            if entry.file_type().map_err(storage)?.is_dir() {
-                let path = entry
-                    .path()
-                    .join("execution/sessions")
-                    .join(self.session)
-                    .join("coordinator")
-                    .join(format!("{op}.jsonl"));
-                if path.is_file() {
-                    reject_symlink(&path)?;
-                    return Ok(Some(path));
-                }
+            if entry.file_type().map_err(storage)?.is_dir()
+                && let Some(log) = external_log(entry.path())?
+            {
+                return Ok(Some(log));
             }
         }
         Ok(None)

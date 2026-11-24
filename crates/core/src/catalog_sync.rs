@@ -41,26 +41,40 @@ fn publish(
     Ok(())
 }
 impl Engine {
-    pub fn sync_shared_configuration(&self, global: &dyn EngineeringStore) -> Result<()> {
+    pub fn sync_shared_configuration(
+        &self,
+        global: &dyn EngineeringStore,
+        package_namespace: Option<&str>,
+    ) -> Result<()> {
         // Rebuild only this derived copy after a concurrent catalog publication.
         // The caller's original business command/versions are never retried.
         for attempt in 0..3 {
-            match self.sync_shared_configuration_once(global) {
+            match self.sync_shared_configuration_once(global, package_namespace) {
                 Err(error) if error.code == "revision_conflict" && attempt < 2 => continue,
                 result => return result,
             }
         }
         unreachable!()
     }
-    fn sync_shared_configuration_once(&self, global: &dyn EngineeringStore) -> Result<()> {
+    fn sync_shared_configuration_once(
+        &self,
+        global: &dyn EngineeringStore,
+        package_namespace: Option<&str>,
+    ) -> Result<()> {
         let existing = self.store.configuration_snapshot()?;
         let known = global.configuration_snapshot()?;
+        let allowed = |record: &ConfigurationRecord| {
+            package_role_identity(record).is_none_or(|identity| {
+                package_namespace.is_some_and(|namespace| identity.starts_with(namespace))
+            })
+        };
         if existing.needs_factory_reset_from(&known) {
-            return self.sync_factory_reset(global);
+            return self.sync_factory_reset(global, allowed);
         }
         let mut directory = known.state.as_ref().clone();
         for role in existing.state.governance.iter().filter(|r| {
             matches!(r.r#type.as_str(), "role" | "role_retirement")
+                && package_role_identity(r).is_none()
                 && !template_history_retained(&existing.state, r)
         }) {
             if let Some(old) = known.record(&role.id) {
@@ -89,6 +103,7 @@ impl Engine {
         for record in known.state.governance.iter().filter(|r| {
             r.r#type != "template_catalog_member"
                 && r.immutable
+                && allowed(r)
                 && (matches!(r.r#type.as_str(), "role" | "role_retirement")
                     || configuration_visible(&known.state, r, self.store.project_id().as_deref()))
         }) {
@@ -109,7 +124,11 @@ impl Engine {
         publish(self.store.as_ref(), &existing, next, "shared-catalog-sync")
     }
 
-    fn sync_factory_reset(&self, global: &dyn EngineeringStore) -> Result<()> {
+    fn sync_factory_reset(
+        &self,
+        global: &dyn EngineeringStore,
+        allowed: impl Fn(&ConfigurationRecord) -> bool,
+    ) -> Result<()> {
         // A foreground reset and the background publisher can see the same
         // generation change. Only one needs to prepare its historical evidence.
         let _reset = self
@@ -121,9 +140,16 @@ impl Engine {
         if !existing.needs_factory_reset_from(&known) {
             return Ok(());
         }
+        let records: Vec<_> = known
+            .state
+            .governance
+            .iter()
+            .filter(|r| allowed(r))
+            .cloned()
+            .collect();
         let publication = self
             .store
-            .prepare_configuration_reset(&known.state.governance, existing.revision)?;
+            .prepare_configuration_reset(&records, existing.revision)?;
         let transfer = configuration_transfer_witness(self.store.as_ref())?;
         let digest = configuration_hash(&(
             "factory-reset-sync",

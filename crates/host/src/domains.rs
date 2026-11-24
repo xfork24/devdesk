@@ -6,13 +6,11 @@ use devdesk_core::{Command, InvocationContext, ports::DomainReader};
 
 pub(super) struct ProjectReader {
     pub packages: Arc<DomainPackages>,
-    pub trusted: Arc<std::collections::BTreeSet<String>>,
 }
 
 impl DomainReader for ProjectReader {
     fn read(&self, project: &str, handler: &str, input: Value) -> devdesk_domain::Result<Value> {
-        self.packages
-            .read_for_project(project, handler, input, &self.trusted)
+        self.packages.read_for_project(project, handler, input)
     }
 
     fn worktree_branch(
@@ -21,15 +19,14 @@ impl DomainReader for ProjectReader {
         owner: &str,
         kind: devdesk_domain::WorktreeKind,
     ) -> devdesk_domain::Result<Option<String>> {
-        self.packages
-            .worktree_branch(project, owner, kind, &self.trusted)
+        self.packages.worktree_branch(project, owner, kind)
     }
 
     fn pull_request_creation(
         &self,
         request: &devdesk_domain::PullRequestRequest,
     ) -> devdesk_domain::Result<Option<devdesk_domain::PullRequestCreation>> {
-        self.packages.pull_request_creation(request, &self.trusted)
+        self.packages.pull_request_creation(request)
     }
 
     fn test_reporter(
@@ -37,7 +34,7 @@ impl DomainReader for ProjectReader {
         project: &str,
         runner: &devdesk_domain::TestRunner,
     ) -> devdesk_domain::Result<Option<devdesk_core::ports::TestReporter>> {
-        self.packages.test_reporter(project, runner, &self.trusted)
+        self.packages.test_reporter(project, runner)
     }
 
     fn project_test_discovery(
@@ -45,8 +42,7 @@ impl DomainReader for ProjectReader {
         project: &str,
         mainline: &str,
     ) -> devdesk_domain::Result<Option<devdesk_domain::ProjectTestDiscovery>> {
-        self.packages
-            .project_test_discovery(project, mainline, &self.trusted)
+        self.packages.project_test_discovery(project, mainline)
     }
 }
 
@@ -68,7 +64,7 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
     let workspace = app.workspace()?;
     let run = |method: &str, payload: Value| {
         workspace
-            .dispatch_with_receipt(method, payload)
+            .dispatch_with_receipt(method, payload, None)
             .map(|reply| reply.value)
     };
     match name {
@@ -81,7 +77,6 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
         _ => {}
     }
     let packages = workspace.domain_packages()?;
-    let trusted = &app.trusted_domains;
     let text = |key: &str| {
         params[key]
             .as_str()
@@ -110,8 +105,22 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
         }
     };
     match name {
-        "query.domain.active" => Ok(packages.status(trusted)),
+        "query.domain.active" => Ok(packages.status()),
         "query.domain.installed" => packages.installed(),
+        "query.domain.storage" => packages.storage(epoch()?),
+        "domain.storage.configure" => {
+            let expected = params["expected_revision"]
+                .as_u64()
+                .ok_or_else(|| err("invalid_params", "缺少领域数据目录版本"))?;
+            let path = match params.get("data_root") {
+                Some(Value::Null) => None,
+                Some(Value::String(path)) if !path.trim().is_empty() => {
+                    Some(std::path::Path::new(path))
+                }
+                _ => return Err(err("invalid_params", "需要领域数据目录或 null")),
+            };
+            packages.configure_storage(epoch()?, expected, path)
+        }
         "domain.install" => {
             let archive = text("archive")?;
             if archive.len() > MAX_ARCHIVE.div_ceil(3) * 4 {
@@ -135,17 +144,17 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
                 Ok(())
             };
             let epoch = if name == "domain.activate" {
-                packages.activate(digest()?, epoch()?, trusted, quiescent)?
+                packages.activate(digest()?, epoch()?, quiescent)?
             } else {
                 packages.deactivate(digest()?, epoch()?, name == "domain.uninstall", quiescent)?
             };
             publish(app, epoch);
-            Ok(packages.status(trusted))
+            Ok(packages.status())
         }
         "domain.project.create" => {
             let title = text("title")?;
             let command = command_identity(&params)?;
-            packages.with_sources(epoch()?, trusted, params.get("connection"), |digest, sources, plan| {
+            packages.with_sources(epoch()?, params.get("connection"), |digest, sources, plan| {
                 let mut payload = json!({"title":title});
                 let mut existing_project = None;
                 let reuse = plan.is_some() && params["reuse_connection"] == true;
@@ -158,7 +167,11 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
                     let repository = crate::workspace::github_projects::repository_name(repository)?;
                     if reuse {
                         for offset in (0..).step_by(100) {
-                            let directory = run("query.project_directory", json!({"limit":100,"project_offset":offset}))?;
+                            let directory = workspace.dispatch_with_receipt(
+                                "query.project_directory",
+                                json!({"limit":100,"project_offset":offset}),
+                                Some(epoch()?),
+                            )?.value;
                             let rows = directory["projects"].as_array()
                                 .ok_or_else(|| err("storage", "项目目录缺失"))?;
                             if let Some(existing) = rows.iter().find(|row| {
@@ -240,7 +253,7 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
             } else {
                 None
             };
-            packages.with_workflow(epoch()?, (reference, mode, owner.map(|owner| owner.0)), trusted, |package| {
+            packages.with_workflow(epoch()?, (reference, mode, owner.map(|owner| owner.0)), |package| {
                 let identity = devdesk_domain::configuration_hash(&(package.digest, command));
                 let payload = json!({"workflow_ref":reference,"orchestration":{"mode":mode},
                     "role_agent_bindings":package.role_agent_bindings,"inputs":inputs});
@@ -279,7 +292,7 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
         "query.domain.workflow" => {
             let project = text("project_id")?;
             let id = text("execution_id")?;
-            packages.with_project(project, epoch()?, trusted, |_| {
+            packages.with_project(project, epoch()?, |_| {
                 let mut result = run(
                     "query.workflow_instance",
                     json!({"project_id":project,"id":id}),
@@ -306,7 +319,7 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
                 .as_u64()
                 .ok_or_else(|| err("invalid_params", "缺少领域对象原修订"))?;
             let data = &params["data"];
-            packages.validate_entity(project, epoch()?, trusted, (reference, data), |digest, relations| {
+            packages.validate_entity(project, epoch()?, (reference, data), |digest, relations| {
                 workspace
                     .project_engine(Some(project))?
                     .write_domain_entity(
@@ -328,7 +341,7 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
         "query.domain.entity" => {
             let project = text("project_id")?;
             let id = entity()?;
-            packages.with_project(project, epoch()?, trusted, |digest| {
+            packages.with_project(project, epoch()?, |digest| {
                 workspace
                     .project_engine(Some(project))?
                     .read_domain_entity(digest, id)
@@ -336,7 +349,7 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
         }
         "query.domain.contribution" => {
             let epoch = epoch()?;
-            let method = packages.contribution_projection(epoch, text("contribution")?, trusted)?;
+            let method = packages.contribution_projection(epoch, text("contribution")?)?;
             let mut input = params["input"]
                 .as_object()
                 .filter(|fields| fields.get("project_id").and_then(Value::as_str).is_some())
@@ -348,7 +361,7 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
                 .map(|reply| reply.value)
         }
         "query.domain.invoke" => {
-            packages.invoke(epoch()?, text("handler")?, params["input"].clone(), trusted)
+            packages.invoke(epoch()?, text("handler")?, params["input"].clone())
         }
         _ => Err(err("method_not_found", "领域 RPC 未注册")),
     }
@@ -417,11 +430,9 @@ pub(super) async fn asset(
     State(app): State<Arc<App>>,
     Path((epoch, digest, path)): Path<(u64, String, String)>,
 ) -> Response {
-    let result = app.workspace().and_then(|workspace| {
-        Ok(workspace
-            .domain_packages()?
-            .asset(epoch, &digest, &path, &app.trusted_domains))
-    });
+    let result = app
+        .workspace()
+        .and_then(|workspace| Ok(workspace.domain_packages()?.asset(epoch, &digest, &path)));
     match result {
         Ok(Some(bytes)) => (
             [(

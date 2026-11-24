@@ -55,8 +55,8 @@ impl CliGit {
         require(
             fs::canonicalize(&common)
                 .map_err(storage)?
-                .starts_with(&self.root),
-            "Git 忽略规则路径不属于当前数据集",
+                .starts_with(repo),
+            "Git 忽略规则路径不属于当前仓库",
         )?;
         let info = common.join("info");
         reject_symlink(&info)?;

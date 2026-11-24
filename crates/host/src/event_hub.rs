@@ -48,7 +48,7 @@ struct Window {
 
 pub(crate) struct ConfigurationClock(watch::Sender<Option<Arc<Value>>>);
 impl ConfigurationClock {
-    pub(crate) fn new(workspace: &Arc<Workspace>) -> Arc<Self> {
+    pub(crate) fn new(workspace: &Arc<Workspace>, domain_epoch: Option<u64>) -> Arc<Self> {
         let (sender, _) = watch::channel(None);
         let clock = Arc::new(Self(sender));
         let subscription = Arc::downgrade(&clock);
@@ -58,7 +58,7 @@ impl ConfigurationClock {
             {
                 let read = tokio::task::spawn_blocking(move || {
                     let trace = performance_logging().then(devdesk_adapters::performance::Trace::start);
-                    let result = workspace.event_configuration_version();
+                    let result = workspace.event_configuration_version(domain_epoch);
                     if let Some(trace) = trace {
                         eprintln!("{}", json!({"type":"performance","context":"events_configuration_clock","success":result.is_ok(),"measurement":trace.finish()}));
                     }
@@ -385,10 +385,10 @@ mod tests {
                 .unwrap()
                 .unwrap()
                 .cursor;
-        let clock = workspace.event_configuration_clock().unwrap();
+        let clock = workspace.event_configuration_clock(None).unwrap();
         assert!(Arc::ptr_eq(
             &clock,
-            &workspace.event_configuration_clock().unwrap()
+            &workspace.event_configuration_clock(None).unwrap()
         ));
         let mut changes = clock.0.subscribe();
         let before =

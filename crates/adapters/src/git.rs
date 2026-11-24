@@ -645,7 +645,9 @@ impl CliGit {
     fn verify_worktree(&self, repo: &Path, worktree: &Path, branch: &str) -> Result<()> {
         let canonical = fs::canonicalize(worktree).map_err(storage)?;
         require(
-            canonical.starts_with(&self.root) && canonical == worktree,
+            repo.parent()
+                .is_some_and(|project| canonical.starts_with(project))
+                && canonical == worktree,
             "worktree 路径无效",
         )?;
         require(

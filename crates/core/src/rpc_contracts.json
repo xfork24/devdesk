@@ -494,6 +494,15 @@
       ]
     },
     {
+      "method": "domain.storage.configure",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "active_epoch_and_expected_revision",
+      "sites": [
+        "crates/host/src/domains.rs"
+      ]
+    },
+    {
       "method": "domain.uninstall",
       "access": "mutation",
       "scope": "global",
@@ -1454,6 +1463,15 @@
       "method": "query.domain.invoke",
       "access": "read",
       "scope": "explicit",
+      "precondition": "active_epoch",
+      "sites": [
+        "crates/host/src/domains.rs"
+      ]
+    },
+    {
+      "method": "query.domain.storage",
+      "access": "read",
+      "scope": "global",
       "precondition": "active_epoch",
       "sites": [
         "crates/host/src/domains.rs"

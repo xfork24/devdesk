@@ -10,7 +10,9 @@ use std::{
 };
 use uuid::Uuid;
 
+mod storage;
 mod worker;
+pub(crate) use storage::{externally_stored_projects, project_storage_root};
 
 pub const MAX_ARCHIVE: usize = 2 * 1024 * 1024;
 const MAX_EXPANDED: u64 = 8 * 1024 * 1024;
@@ -239,7 +241,8 @@ struct Package {
     manifest: Manifest,
     files: BTreeMap<String, Vec<u8>>,
     contributions: Vec<Contribution>,
-    sources: Vec<ConfigurationRecord>,
+    sources: Arc<[ConfigurationRecord]>,
+    automation_sources: Arc<BTreeSet<Id>>,
     role_agent_bindings: BTreeMap<Id, Id>,
     agent_workflows: BTreeSet<Id>,
     defaults: Value,
@@ -529,12 +532,14 @@ impl Package {
                 )?;
             }
         }
+        let automation_sources = automation_sources(&sources, &entity_types, &defaults)?;
         Ok(Self {
             digest: digest(bytes),
             manifest,
             files,
             contributions,
-            sources,
+            sources: sources.into(),
+            automation_sources: Arc::new(automation_sources),
             role_agent_bindings: configuration.role_agent_bindings,
             agent_workflows: configuration.agent_workflows,
             defaults,
@@ -551,19 +556,78 @@ impl Package {
     }
 }
 
+// Entity workflows own their private closure. Anything also reached by an
+// ordinary source or a package default stays in the editable directory.
+fn automation_sources(
+    sources: &[ConfigurationRecord],
+    entity_types: &BTreeMap<String, EntityType>,
+    defaults: &Value,
+) -> Result<BTreeSet<Id>> {
+    if entity_types
+        .values()
+        .all(|entity| entity.workflows.is_empty())
+    {
+        return Ok(BTreeSet::new());
+    }
+    let edges: BTreeMap<_, _> = sources
+        .iter()
+        .map(|source| configuration_edges(source).map(|edges| (source.id.as_str(), edges)))
+        .collect::<Result<_>>()?;
+    let descendants = |mut pending: Vec<Id>| {
+        let mut visited = BTreeSet::new();
+        while let Some(id) = pending.pop() {
+            if let Some(children) = edges.get(id.as_str())
+                && visited.insert(id)
+            {
+                pending.extend(children.iter().map(|edge| edge.to.clone()));
+            }
+        }
+        visited
+    };
+    let private = descendants(
+        entity_types
+            .values()
+            .flat_map(|entity| entity.workflows.keys().cloned())
+            .collect(),
+    );
+    let mut visible: Vec<_> = edges
+        .keys()
+        .copied()
+        .filter(|id| !private.contains(*id))
+        .map(str::to_owned)
+        .collect();
+    visible.extend(
+        defaults
+            .as_object()
+            .into_iter()
+            .flat_map(|values| values.values().filter_map(Value::as_str))
+            .map(str::to_owned),
+    );
+    let visible = descendants(visible);
+    Ok(private
+        .into_iter()
+        .filter(|id| !visible.contains(id))
+        .collect())
+}
+
+pub struct DomainConfigurationSources {
+    pub records: Arc<[ConfigurationRecord]>,
+    pub automation: Arc<BTreeSet<Id>>,
+}
+
 struct Active {
     epoch: u64,
     package: Option<Arc<Package>>,
 }
 
 pub struct ProjectVisibility {
-    pub(super) domain_active: bool,
+    pub active_digest: Option<Id>,
     pub(super) projects: BTreeSet<Id>,
 }
 
 impl ProjectVisibility {
     pub fn includes(&self, project: &str) -> bool {
-        self.projects.contains(project) == self.domain_active
+        self.projects.contains(project) == self.active_digest.is_some()
     }
 }
 
@@ -598,6 +662,7 @@ impl DomainPackages {
              INSERT OR IGNORE INTO active_domain VALUES(1,0,NULL);",
         )
         .map_err(storage)?;
+        db.execute_batch(storage::SCHEMA).map_err(storage)?;
         let (epoch, installed_digest, archive): (u64, Option<String>, Option<Vec<u8>>) = db
             .query_row(
                 "SELECT a.epoch, a.digest, p.zip FROM active_domain a
@@ -625,18 +690,15 @@ impl DomainPackages {
         self.active.read().unwrap().epoch
     }
 
-    pub fn status(&self, trusted: &BTreeSet<String>) -> Value {
+    pub fn status(&self) -> Value {
         let active = self.active.read().unwrap();
-        let package = active
-            .package
-            .as_ref()
-            .filter(|p| trusted.contains(&p.digest));
+        let package = active.package.as_deref();
         json!({
             "epoch":active.epoch,
             "active":package.map(|p| p.summary()),
             "contributions":package.map(|p| &p.contributions),
             "targets":package.and_then(|p| p.manifest.ui.as_ref()).map(|ui| &ui.targets),
-            "sources":package.map(|p| &p.sources),
+            "sources":package.map(|p| p.sources.as_ref()),
             "agent_workflows":package.map(|p| &p.agent_workflows),
             "defaults":package.map(|p| &p.defaults),
             "project_connection":package.and_then(|p| p.runtime()).and_then(|r| r.project_connection.as_deref()),
@@ -693,12 +755,8 @@ impl DomainPackages {
         &self,
         digest: &str,
         expected: u64,
-        trusted: &BTreeSet<String>,
         quiescent: impl FnOnce(Vec<String>) -> Result<()>,
     ) -> Result<u64> {
-        if !trusted.contains(digest) {
-            return Err(err("domain_untrusted", "该领域 ZIP 摘要未获信任"));
-        }
         check_epoch(expected, self.epoch())?;
         let archive: Vec<u8> = self
             .db
@@ -783,29 +841,22 @@ impl DomainPackages {
         check_epoch(epoch, self.epoch())
     }
 
-    pub fn defaults_at(&self, epoch: u64, trusted: &BTreeSet<String>) -> Result<Option<Value>> {
+    pub fn defaults_at(&self, epoch: u64) -> Result<Option<Value>> {
         let active = self.active.read().unwrap();
         check_epoch(epoch, active.epoch)?;
         Ok(active
             .package
             .as_ref()
-            .filter(|package| trusted.contains(&package.digest))
             .map(|package| package.defaults.clone()))
     }
 
-    pub fn contribution_projection(
-        &self,
-        epoch: u64,
-        id: &str,
-        trusted: &BTreeSet<String>,
-    ) -> Result<String> {
+    pub fn contribution_projection(&self, epoch: u64, id: &str) -> Result<String> {
         let active = self.active.read().unwrap();
         check_epoch(epoch, active.epoch)?;
         let package = active
             .package
-            .as_ref()
-            .filter(|package| trusted.contains(&package.digest))
-            .ok_or_else(|| err("domain_inactive", "没有获准的活动领域"))?;
+            .as_deref()
+            .ok_or_else(|| err("domain_inactive", "当前没有活动领域"))?;
         package
             .contributions
             .iter()
@@ -814,20 +865,13 @@ impl DomainPackages {
             .ok_or_else(|| err("method_not_found", "领域查询贡献未注册"))
     }
 
-    pub fn invoke(
-        &self,
-        epoch: u64,
-        name: &str,
-        input: Value,
-        trusted: &BTreeSet<String>,
-    ) -> Result<Value> {
+    pub fn invoke(&self, epoch: u64, name: &str, input: Value) -> Result<Value> {
         let active = self.active.read().unwrap();
         check_epoch(epoch, active.epoch)?;
         let package = active
             .package
-            .as_ref()
-            .filter(|p| trusted.contains(&p.digest))
-            .ok_or_else(|| err("domain_inactive", "没有获准的活动领域"))?;
+            .as_deref()
+            .ok_or_else(|| err("domain_inactive", "当前没有活动领域"))?;
         Self::run_handler(package, name, input)
     }
 
@@ -856,15 +900,9 @@ impl DomainPackages {
         Ok(result)
     }
 
-    pub fn read_for_project(
-        &self,
-        project: &str,
-        name: &str,
-        input: Value,
-        trusted: &BTreeSet<String>,
-    ) -> Result<Value> {
+    pub fn read_for_project(&self, project: &str, name: &str, input: Value) -> Result<Value> {
         let active = self.active.read().unwrap();
-        let package = self.require_project(&active, project, trusted)?;
+        let package = self.require_project(&active, project)?;
         Self::run_handler(package, name, input)
     }
 
@@ -873,13 +911,12 @@ impl DomainPackages {
         project: &str,
         owner: &str,
         kind: WorktreeKind,
-        trusted: &BTreeSet<String>,
     ) -> Result<Option<String>> {
         let active = self.active.read().unwrap();
         if self.project_package(project)?.is_none() {
             return Ok(None);
         }
-        let package = self.require_project(&active, project, trusted)?;
+        let package = self.require_project(&active, project)?;
         let Some(handler) = package
             .runtime()
             .and_then(|runtime| runtime.worktree_branch.as_deref())
@@ -906,13 +943,12 @@ impl DomainPackages {
     pub fn pull_request_creation(
         &self,
         request: &PullRequestRequest,
-        trusted: &BTreeSet<String>,
     ) -> Result<Option<PullRequestCreation>> {
         let active = self.active.read().unwrap();
         if self.project_package(&request.project)?.is_none() {
             return Ok(None);
         }
-        let package = self.require_project(&active, &request.project, trusted)?;
+        let package = self.require_project(&active, &request.project)?;
         let Some(handler) = package
             .runtime()
             .and_then(|runtime| runtime.pull_request_creation.as_deref())
@@ -934,13 +970,12 @@ impl DomainPackages {
         &self,
         project: &str,
         runner: &TestRunner,
-        trusted: &BTreeSet<String>,
     ) -> Result<Option<ports::TestReporter>> {
         let active = self.active.read().unwrap();
         if self.project_package(project)?.is_none() {
             return Ok(None);
         }
-        let package = self.require_project(&active, project, trusted)?;
+        let package = self.require_project(&active, project)?;
         let key = json!(runner);
         let Some(path) = package
             .runtime()
@@ -959,7 +994,6 @@ impl DomainPackages {
         &self,
         project: &str,
         mainline: &str,
-        trusted: &BTreeSet<String>,
     ) -> Result<Option<ProjectTestDiscovery>> {
         if self.project_package(project)?.is_none() {
             return Ok(None);
@@ -970,7 +1004,7 @@ impl DomainPackages {
             .active
             .try_read()
             .map_err(|_| err("domain_busy", "领域正在切换，请重新读取测试配置"))?;
-        let package = self.require_project(&active, project, trusted)?;
+        let package = self.require_project(&active, project)?;
         let Some(handler) = package
             .runtime()
             .and_then(|runtime| runtime.test_discovery.as_deref())
@@ -996,18 +1030,16 @@ impl DomainPackages {
         &self,
         epoch: u64,
         (reference, mode, project): (&str, &str, Option<&str>),
-        trusted: &BTreeSet<String>,
         start: impl FnOnce(WorkflowPackage<'_>) -> Result<T>,
     ) -> Result<T> {
         let active = self.active.read().unwrap();
         check_epoch(epoch, active.epoch)?;
         let package = active
             .package
-            .as_ref()
-            .filter(|p| trusted.contains(&p.digest))
-            .ok_or_else(|| err("domain_inactive", "没有获准的活动领域"))?;
+            .as_deref()
+            .ok_or_else(|| err("domain_inactive", "当前没有活动领域"))?;
         if let Some(project) = project {
-            self.require_project(&active, project, trusted)?;
+            self.require_project(&active, project)?;
         }
         require(
             package
@@ -1067,7 +1099,6 @@ impl DomainPackages {
     pub fn with_sources<T>(
         &self,
         epoch: u64,
-        trusted: &BTreeSet<String>,
         connection: Option<&Value>,
         action: impl FnOnce(&str, &[ConfigurationRecord], Option<Value>) -> Result<T>,
     ) -> Result<T> {
@@ -1075,9 +1106,8 @@ impl DomainPackages {
         check_epoch(epoch, active.epoch)?;
         let package = active
             .package
-            .as_ref()
-            .filter(|package| trusted.contains(&package.digest))
-            .ok_or_else(|| err("domain_inactive", "没有获准的活动领域"))?;
+            .as_deref()
+            .ok_or_else(|| err("domain_inactive", "当前没有活动领域"))?;
         let plan = connection
             .map(|input| {
                 let handler = package
@@ -1104,16 +1134,22 @@ impl DomainPackages {
 
     /// A directory view follows the committed pointer, including while the
     /// caller already pins an active domain for a project RPC.
-    pub fn project_visibility(&self, trusted: &BTreeSet<String>) -> Result<ProjectVisibility> {
+    pub fn project_visibility(&self, domain_epoch: Option<u64>) -> Result<ProjectVisibility> {
         let db = self.db.lock().unwrap();
-        let digest: Option<String> = db
-            .query_row(
-                "SELECT digest FROM active_domain WHERE singleton=1",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(storage)?;
-        let active = digest.as_deref().filter(|digest| trusted.contains(*digest));
+        let digest = if let Some(expected) = domain_epoch {
+            let (epoch, digest): (u64, Option<String>) = db
+                .query_row(
+                    "SELECT epoch,digest FROM active_domain WHERE singleton=1",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .map_err(storage)?;
+            check_epoch(expected, epoch)?;
+            Some(digest.ok_or_else(|| err("domain_inactive", "当前没有活动领域"))?)
+        } else {
+            None
+        };
+        let active = digest.as_deref();
         let mut query = db
             .prepare("SELECT project FROM domain_projects WHERE ?1 IS NULL OR digest=?1")
             .map_err(storage)?;
@@ -1123,20 +1159,43 @@ impl DomainPackages {
             .collect::<rusqlite::Result<_>>()
             .map_err(storage)?;
         Ok(ProjectVisibility {
-            domain_active: active.is_some(),
+            active_digest: digest,
             projects,
         })
     }
 
-    pub fn permits_project(&self, project: &str, trusted: &BTreeSet<String>) -> Result<bool> {
+    pub fn configuration_scope(
+        &self,
+        domain_epoch: Option<u64>,
+    ) -> Result<(ProjectVisibility, Option<DomainConfigurationSources>)> {
+        let Some(epoch) = domain_epoch else {
+            return Ok((self.project_visibility(None)?, None));
+        };
+        // A project RPC may already pin the domain. Never wait for a second
+        // lease while a switch is waiting to acquire the write lock.
+        let active = self
+            .active
+            .try_read()
+            .map_err(|_| err("domain_busy", "领域正在切换，请重新读取配置"))?;
+        let visibility = self.project_visibility(Some(epoch))?;
+        let sources = active
+            .package
+            .as_ref()
+            .map(|package| DomainConfigurationSources {
+                records: package.sources.clone(),
+                automation: package.automation_sources.clone(),
+            });
+        Ok((visibility, sources))
+    }
+
+    pub fn permits_project(&self, project: &str) -> Result<bool> {
         let active = self.active.read().unwrap();
         let saved = self.project_package(project)?;
         Ok(saved.is_none_or(|digest| {
-            trusted.contains(&digest)
-                && active
-                    .package
-                    .as_ref()
-                    .is_some_and(|package| package.digest == digest)
+            active
+                .package
+                .as_ref()
+                .is_some_and(|package| package.digest == digest)
         }))
     }
 
@@ -1153,33 +1212,57 @@ impl DomainPackages {
             .map_err(storage)
     }
 
+    pub fn project_package_namespace(&self, project: &str) -> Result<Option<String>> {
+        self.db
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT p.id || '.' FROM domain_projects d
+                 JOIN domain_packages p ON p.digest=d.digest WHERE d.project=?",
+                [project],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(storage)
+    }
+
     pub fn bind_project(&self, project: &str, digest: &str) -> Result<()> {
-        let db = self.db.lock().unwrap();
-        db.execute(
-            "INSERT OR IGNORE INTO domain_projects VALUES(?,?)",
-            params![project, digest],
-        )
-        .map_err(storage)?;
-        let saved: String = db
+        let mut db = self.db.lock().unwrap();
+        let tx = db.transaction().map_err(storage)?;
+        let inserted = tx
+            .execute(
+                "INSERT OR IGNORE INTO domain_projects VALUES(?,?)",
+                params![project, digest],
+            )
+            .map_err(storage)?;
+        let saved: String = tx
             .query_row(
                 "SELECT digest FROM domain_projects WHERE project=?",
                 [project],
                 |row| row.get(0),
             )
             .map_err(storage)?;
-        require(saved == digest, "项目已冻结到其他领域包版本")
+        require(saved == digest, "项目已冻结到其他领域包版本")?;
+        if inserted == 1 {
+            tx.execute(
+                "INSERT INTO domain_project_storage(project,data_root)
+                 SELECT ?1,s.data_root FROM domain_storage s JOIN domain_packages p ON s.package_id=p.id
+                 WHERE p.digest=?2 AND s.data_root IS NOT NULL",
+                params![project, digest],
+            ).map_err(storage)?;
+        }
+        tx.commit().map_err(storage)
     }
 
     pub fn with_project<T>(
         &self,
         project: &str,
         epoch: u64,
-        trusted: &BTreeSet<String>,
         action: impl FnOnce(&str) -> Result<T>,
     ) -> Result<T> {
         let active = self.active.read().unwrap();
         check_epoch(epoch, active.epoch)?;
-        let package = self.require_project(&active, project, trusted)?;
+        let package = self.require_project(&active, project)?;
         action(&package.digest)
     }
 
@@ -1187,13 +1270,12 @@ impl DomainPackages {
         &self,
         project: &str,
         epoch: u64,
-        trusted: &BTreeSet<String>,
         (reference, data): (&str, &Value),
         write: impl FnOnce(&str, &BTreeMap<String, DomainRelation>) -> Result<Value>,
     ) -> Result<Value> {
         let active = self.active.read().unwrap();
         check_epoch(epoch, active.epoch)?;
-        let package = self.require_project(&active, project, trusted)?;
+        let package = self.require_project(&active, project)?;
         let entity = package
             .entity_types
             .get(reference)
@@ -1208,7 +1290,6 @@ impl DomainPackages {
         &self,
         project: &str,
         epoch: Option<u64>,
-        trusted: &BTreeSet<String>,
         action: impl FnOnce(Option<u64>) -> Result<T>,
     ) -> Result<T> {
         let active = self.active.read().unwrap();
@@ -1219,7 +1300,7 @@ impl DomainPackages {
             }
             return action(None);
         };
-        if !trusted.contains(&saved) || active.package.as_ref().is_none_or(|p| p.digest != saved) {
+        if active.package.as_ref().is_none_or(|p| p.digest != saved) {
             return Err(err("domain_inactive", "项目所属领域当前不可用"));
         }
         let epoch = epoch.ok_or_else(|| err("invalid_params", "领域项目请求需要 domain_epoch"))?;
@@ -1227,17 +1308,11 @@ impl DomainPackages {
         action(Some(epoch))
     }
 
-    fn require_project<'a>(
-        &self,
-        active: &'a Active,
-        project: &str,
-        trusted: &BTreeSet<String>,
-    ) -> Result<&'a Package> {
+    fn require_project<'a>(&self, active: &'a Active, project: &str) -> Result<&'a Package> {
         let package = active
             .package
             .as_deref()
-            .filter(|p| trusted.contains(&p.digest))
-            .ok_or_else(|| err("domain_inactive", "没有获准的活动领域"))?;
+            .ok_or_else(|| err("domain_inactive", "当前没有活动领域"))?;
         let saved = self.project_package(project)?;
         require(
             saved.as_deref() == Some(&package.digest),
@@ -1246,17 +1321,10 @@ impl DomainPackages {
         Ok(package)
     }
 
-    pub fn asset(
-        &self,
-        epoch: u64,
-        digest: &str,
-        path: &str,
-        trusted: &BTreeSet<String>,
-    ) -> Option<Vec<u8>> {
+    pub fn asset(&self, epoch: u64, digest: &str, path: &str) -> Option<Vec<u8>> {
         let active = self.active.read().unwrap();
         if epoch != active.epoch
             || !path.starts_with("ui/web/")
-            || !trusted.contains(digest)
             || !matches!(
                 Path::new(path).extension().and_then(|e| e.to_str()),
                 Some("js" | "mjs" | "css" | "png" | "jpg" | "webp")

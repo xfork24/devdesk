@@ -218,7 +218,7 @@ def run(origin, action, args):
                     project_id=project, target=root, expected_revision=view["record"]["revision"], payload={})
         return {**receipt, "proof_id": submitted_proof(client, epoch, receipt)["id"]}
     if action == "unload":
-        active_projects = client.call("query.project_directory")
+        active_projects = client.call("query.project_directory", domain_epoch=epoch)
         assert active_projects["total_projects"] > 0, active_projects
         # Start a manual root that stays active until a human sends a control command.
         pending = start_for(client, epoch, prepare_document(client, epoch), "manual")

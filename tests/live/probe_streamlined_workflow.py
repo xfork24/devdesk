@@ -51,7 +51,7 @@ for filename in ['probe_streamlined_workflow.py', 'client.py', 'workflow_observe
 domain_archive = args.domain_zip.read_bytes()
 domain_digest = hashlib.sha256(domain_archive).hexdigest()
 web = ['--web-dir', str(args.web_dir.resolve())] if args.web_dir else []
-child = None if args.url else subprocess.Popen([str(private), '--data', str(out / 'data'), '--port', '0', '--trust-domain', domain_digest, *web],
+child = None if args.url else subprocess.Popen([str(private), '--data', str(out / 'data'), '--port', '0', *web],
                          stdout=(out / ('host-' + str(time.time_ns()) + '.log')).open('w'), stderr=subprocess.STDOUT, env={**os.environ, **({'DEVDESK_PERF_LOG': '1'} if args.performance else {})})
 try:
     deadline = time.monotonic() + 180

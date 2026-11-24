@@ -1,15 +1,28 @@
 use super::*;
 
 impl Workspace {
-    pub(super) fn experience_scope(&self, params: &Value, query: &Value) -> Result<String> {
+    pub(super) fn experience_scope(
+        &self,
+        params: &Value,
+        query: &Value,
+        domain_epoch: Option<u64>,
+    ) -> Result<String> {
         if params["scope"] == "global" {
             require(params["project_id"].is_null(), "全局讨论不能同时指定项目")?;
             let instance = devdesk_core::read_models::identifier(query, "agent_instance_id")?;
-            let origin = experience::discussion_catalog(Path::new(&self.global.root()))?
-                .into_iter()
+            let sources = experience::discussion_catalog(
+                Path::new(&self.global.root()),
+                self.project_visibility(domain_epoch)?.as_ref(),
+            )?;
+            let origin = sources
+                .iter()
                 .find(|r| r.id == instance && r.r#type == "agent_instance")
-                .and_then(|r| r.scope.project_id().map(str::to_owned));
-            return Ok(origin.unwrap_or_else(|| GLOBAL_DISCUSSION_NAMESPACE.into()));
+                .ok_or_else(|| err("not_found", "此工作台没有该 Agent 实例"))?;
+            return Ok(origin
+                .scope
+                .project_id()
+                .unwrap_or(GLOBAL_DISCUSSION_NAMESPACE)
+                .to_owned());
         }
         let pid = params["project_id"]
             .as_str()
@@ -21,9 +34,14 @@ impl Workspace {
         Ok(pid)
     }
 
-    pub(super) fn restore_experience(&self, params: &Value, e: &Engine) -> Result<Value> {
+    pub(super) fn restore_experience(
+        &self,
+        params: &Value,
+        e: &Engine,
+        domain_epoch: Option<u64>,
+    ) -> Result<Value> {
         let p = &params["payload"];
-        let read_pid = self.experience_scope(params, p)?;
+        let read_pid = self.experience_scope(params, p, domain_epoch)?;
         let pid = if params["scope"] == "global" {
             GLOBAL_DISCUSSION_NAMESPACE.to_owned()
         } else {
@@ -125,6 +143,7 @@ impl Workspace {
         &self,
         method: &str,
         params: &Value,
+        domain_epoch: Option<u64>,
     ) -> Option<Result<Value>> {
         if method.starts_with("configuration.transfer.") {
             return Some((|| {
@@ -218,7 +237,32 @@ impl Workspace {
         Some((|| {
             let target = params["target"].as_str().or_else(|| params["id"].as_str());
             let retirement = matches!(method, "role.delete" | "configuration.retire");
-            let catalog = self.global.configuration_snapshot()?;
+            if matches!(method, "role.revise" | "role.delete")
+                && let Some(target) = target.filter(|id| {
+                    id.rsplit_once(':')
+                        .is_some_and(|(identity, _)| identity.contains('.'))
+                })
+            {
+                let (view, _, _) = self.configuration_bundle(domain_epoch)?;
+                let role = view
+                    .record(target)
+                    .filter(|role| role.r#type == "role")
+                    .ok_or_else(|| err("not_found", "此工作台没有该 Role 定义"))?;
+                if self
+                    .global
+                    .configuration_snapshot()?
+                    .record(target)
+                    .is_none()
+                {
+                    self.configuration
+                        .adopt_domain_sources(std::slice::from_ref(role))?;
+                }
+            }
+            let catalog = if matches!(method, "query.standard_usage" | "query.standard_diff") {
+                self.configuration_bundle(domain_epoch)?.0
+            } else {
+                self.global.configuration_snapshot()?
+            };
             let global = catalog.state.as_ref();
             let target_global = match target {
                 Some(id) if catalog.record(id).is_none() => self
@@ -249,11 +293,16 @@ impl Workspace {
                                 .is_some_and(|id| global.configuration(id).is_err())
                     });
                 if needs_project {
+                    let visibility = self.project_visibility(domain_epoch)?;
                     let mut offset = 0;
                     loop {
                         crate::check_read_cancelled()?;
                         let (projects, total) = self.global.projects(offset, 100)?;
-                        for project in &projects {
+                        for project in projects.iter().filter(|project| {
+                            visibility
+                                .as_ref()
+                                .is_none_or(|scope| scope.includes(&project.id))
+                        }) {
                             crate::check_read_cancelled()?;
                             let engine = self.project_engine(Some(&project.id))?;
                             let state = if method == "query.standard_diff" {
@@ -349,12 +398,17 @@ impl Workspace {
             if method == "query.standard_usage" && params["project_id"].is_null() && target_global {
                 let reference = target.unwrap();
                 standard_snapshot(global, reference, &Scope::global())?;
+                let visibility = self.project_visibility(domain_epoch)?;
                 let mut records = Vec::new();
                 let mut offset = 0;
                 loop {
                     crate::check_read_cancelled()?;
                     let (projects, total) = self.global.projects(offset, 100)?;
-                    for project in &projects {
+                    for project in projects.iter().filter(|project| {
+                        visibility
+                            .as_ref()
+                            .is_none_or(|scope| scope.includes(&project.id))
+                    }) {
                         crate::check_read_cancelled()?;
                         let state = self
                             .project_engine(Some(&project.id))?

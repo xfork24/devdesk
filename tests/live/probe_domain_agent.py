@@ -201,8 +201,8 @@ def main():
         env = {key: value for key, value in os.environ.items() if key != "DEVDESK_ACCESS_TOKEN"}
         log = root / "host.log"
         with log.open("w") as output:
-            host = subprocess.Popen([str(args.binary.resolve()), "--data", str(dataset), "--port", "0",
-                                     "--trust-domain", digest], env=env, stdout=output, stderr=subprocess.STDOUT)
+            host = subprocess.Popen([str(args.binary.resolve()), "--data", str(dataset), "--port", "0"],
+                                    env=env, stdout=output, stderr=subprocess.STDOUT)
             try:
                 client = wait_for_host(host, log)
                 auth = dataset / "credentials/codex/auth.json"

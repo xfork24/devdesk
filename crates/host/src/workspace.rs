@@ -41,7 +41,6 @@ type EngineInitialization = Arc<std::sync::OnceLock<Result<Arc<Engine>>>>;
 pub struct Workspace {
     pub global: Arc<GlobalStore>,
     domains: std::sync::OnceLock<Result<Arc<domain_packages::DomainPackages>>>,
-    domain_trust: Arc<std::collections::BTreeSet<String>>,
     codex_auth: codex_auth::CodexAuthentication,
     github: github::GitHubPullRequests,
     configuration: Arc<Engine>,
@@ -55,7 +54,8 @@ pub struct Workspace {
     catalog_instance: String,
     configuration_sync_epochs: Mutex<BTreeMap<String, (u64, u64)>>,
     event_hubs: Mutex<BTreeMap<String, std::sync::Weak<crate::event_hub::EventHub>>>,
-    event_configuration_clock: Mutex<std::sync::Weak<crate::event_hub::ConfigurationClock>>,
+    event_configuration_clocks:
+        Mutex<BTreeMap<Option<u64>, std::sync::Weak<crate::event_hub::ConfigurationClock>>>,
     scheduler_next: std::sync::atomic::AtomicUsize,
     directory_next: std::sync::atomic::AtomicUsize,
     runtime_reads: runtime_reads::RuntimeReadCache,
@@ -101,14 +101,17 @@ impl Workspace {
             .map_err(Clone::clone)
     }
 
-    pub(super) fn project_visibility(&self) -> Result<Option<domain_packages::ProjectVisibility>> {
+    pub(super) fn project_visibility(
+        &self,
+        domain_epoch: Option<u64>,
+    ) -> Result<Option<domain_packages::ProjectVisibility>> {
         self.domains
             .get()
             .map(|packages| {
                 packages
                     .as_ref()
                     .map_err(Clone::clone)?
-                    .project_visibility(&self.domain_trust)
+                    .project_visibility(domain_epoch)
             })
             .transpose()
     }
@@ -123,7 +126,7 @@ impl Workspace {
             return packages
                 .as_ref()
                 .map_err(Clone::clone)?
-                .with_public_project(project, epoch, &self.domain_trust, action);
+                .with_public_project(project, epoch, action);
         }
         if let Some(epoch) = epoch {
             self.domain_packages()?.check_epoch(epoch)?;
@@ -139,7 +142,11 @@ impl Workspace {
         let epoch = params
             .as_object_mut()
             .and_then(|fields| fields.remove("domain_epoch"))
-            .and_then(|raw| raw.as_u64());
+            .map(|raw| {
+                raw.as_u64()
+                    .ok_or_else(|| err("invalid_params", "领域代次无效"))
+            })
+            .transpose()?;
         let project = params["project_id"]
             .as_str()
             .or_else(|| params["payload"]["project_id"].as_str())
@@ -148,20 +155,19 @@ impl Workspace {
             && params["view"] == "selection"
             && let Some(epoch) = epoch
         {
-            self.domain_packages()?
-                .defaults_at(epoch, &self.domain_trust)?
+            self.domain_packages()?.defaults_at(epoch)?
         } else {
             None
         };
         let mut reply = if let (None, Some(epoch)) = (project.as_deref(), epoch) {
             let packages = self.domain_packages()?;
             packages.check_epoch(epoch)?;
-            let reply = self.dispatch_display_read(method, params)?;
+            let reply = self.dispatch_display_read(method, params, Some(epoch))?;
             packages.check_epoch(epoch)?;
             reply
         } else {
-            self.with_public_project(project.as_deref(), epoch, |_| {
-                self.dispatch_display_read(method, params)
+            self.with_public_project(project.as_deref(), epoch, |epoch| {
+                self.dispatch_display_read(method, params, epoch)
             })?
         };
         if let Some(defaults) = defaults.as_ref().and_then(Value::as_object)
@@ -176,27 +182,13 @@ impl Workspace {
         e.open_prepared_session(&self.session_resources(), command)
     }
 
-    #[cfg(test)]
     pub fn open(root: &Path) -> Result<Arc<Self>> {
         Self::open_with_adapters(root, execution_adapters(root)?)
     }
-    pub fn open_trusted_domains(
-        root: &Path,
-        trusted: Arc<std::collections::BTreeSet<String>>,
-    ) -> Result<Arc<Self>> {
-        Self::open_with_services(root, execution_adapters(root)?, trusted)
-    }
-    #[cfg(test)]
+
     pub fn open_with_adapters(
         root: &Path,
         adapters: ports::ExecutionAdapters,
-    ) -> Result<Arc<Self>> {
-        Self::open_with_services(root, adapters, Default::default())
-    }
-    fn open_with_services(
-        root: &Path,
-        adapters: ports::ExecutionAdapters,
-        domain_trust: Arc<std::collections::BTreeSet<String>>,
     ) -> Result<Arc<Self>> {
         let global = Arc::new(GlobalStore::open(root)?);
         let configuration = engine(global.clone(), &adapters);
@@ -225,7 +217,6 @@ impl Workspace {
             github: github::GitHubPullRequests::new(root)?,
             global,
             domains: Default::default(),
-            domain_trust,
             configuration,
             reset_publication: Mutex::new(()),
             domain_project_open: Mutex::new(()),
@@ -237,15 +228,13 @@ impl Workspace {
             catalog_instance: id(),
             configuration_sync_epochs: Default::default(),
             event_hubs: Default::default(),
-            event_configuration_clock: Default::default(),
+            event_configuration_clocks: Default::default(),
             scheduler_next: Default::default(),
             directory_next: Default::default(),
             runtime_reads: Default::default(),
             background: Default::default(),
         });
-        if !workspace.domain_trust.is_empty()
-            || domain_packages::DomainPackages::registry_exists(Path::new(&workspace.global.root()))
-        {
+        if domain_packages::DomainPackages::registry_exists(Path::new(&workspace.global.root())) {
             workspace.domain_packages()?;
         }
         workspace
@@ -335,7 +324,14 @@ impl Workspace {
         {
             return Ok(());
         }
-        e.sync_shared_configuration(self.global.as_ref())?;
+        let package_namespace = match (e.store.project_id(), self.domains.get()) {
+            (Some(project), Some(packages)) => packages
+                .as_ref()
+                .map_err(Clone::clone)?
+                .project_package_namespace(&project)?,
+            _ => None,
+        };
+        e.sync_shared_configuration(self.global.as_ref(), package_namespace.as_deref())?;
         // Cache only the clocks captured before publication. A concurrent new
         // source must cause another sync, never be labelled already copied.
         self.configuration_sync_epochs
@@ -453,10 +449,9 @@ impl Workspace {
                 shared: self.configuration.clone(),
                 inventory: self.global.clone(),
             });
-        if !self.domain_trust.is_empty() {
+        if let Some(packages) = self.domains.get() {
             e.domain_reader = Some(Arc::new(crate::domains::ProjectReader {
-                packages: self.domain_packages()?.clone(),
-                trusted: self.domain_trust.clone(),
+                packages: packages.as_ref().map_err(Clone::clone)?.clone(),
             }));
         }
         let e = Arc::new(e);
@@ -473,10 +468,7 @@ impl Workspace {
         e.recover_tool_receipts()?;
         if !creating && e.store.project_metadata()?.execution_mode == "live" {
             let allowed = self.domains.get().map_or(Ok(true), |packages| {
-                packages
-                    .as_ref()
-                    .map_err(Clone::clone)?
-                    .permits_project(id, &self.domain_trust)
+                packages.as_ref().map_err(Clone::clone)?.permits_project(id)
             })?;
             if allowed {
                 // Re-evaluate native facts once on reopen before the idle-project filter.
@@ -540,7 +532,12 @@ impl Workspace {
         }
         result
     }
-    fn global_conversation_dispatch(&self, method: &str, params: Value) -> Result<Value> {
+    fn global_conversation_dispatch(
+        &self,
+        method: &str,
+        params: Value,
+        domain_epoch: Option<u64>,
+    ) -> Result<Value> {
         require(params["project_id"].is_null(), "全局讨论不能同时指定项目")?;
         let existing = {
             self.opened
@@ -569,11 +566,14 @@ impl Workspace {
         if (method == "session.open" || method == "experience.restore")
             && let Some(instance) = params["payload"]["agent_instance_id"].as_str()
         {
-            let sources = experience::discussion_catalog(Path::new(&self.global.root()))?;
+            let sources = experience::discussion_catalog(
+                Path::new(&self.global.root()),
+                self.project_visibility(domain_epoch)?.as_ref(),
+            )?;
             e.import_discussion_agent(&sources, instance)?;
         }
         if method == "experience.restore" {
-            return self.restore_experience(&params, &e);
+            return self.restore_experience(&params, &e, domain_epoch);
         }
         if method == "session.open" {
             require(params["target"] == "global", "全局讨论必须以 global 为目标")?;
@@ -610,17 +610,22 @@ impl Workspace {
     }
     #[cfg(test)]
     pub fn dispatch(&self, method: &str, params: Value) -> Result<Value> {
-        self.dispatch_with_receipt(method, params)
+        self.dispatch_with_receipt(method, params, None)
             .map(|outcome| outcome.value)
     }
     /// HTTP display snapshots may lag by at most this short cache interval.
     /// Native tools, exact bodies, editor baselines and action qualification
     /// continue to read their original authoritative paths.
-    pub fn dispatch_display_read(&self, method: &str, params: Value) -> Result<RpcOutcome> {
+    pub fn dispatch_display_read(
+        &self,
+        method: &str,
+        params: Value,
+        domain_epoch: Option<u64>,
+    ) -> Result<RpcOutcome> {
         let eligible = runtime_reads::eligible(method, &params);
         if !eligible {
             let project = params["project_id"].as_str().map(str::to_owned);
-            let outcome = self.dispatch_with_receipt(method, params);
+            let outcome = self.dispatch_with_receipt(method, params, domain_epoch);
             if outcome.is_ok()
                 && devdesk_core::rpc_contracts::contract(method).is_some_and(|c| {
                     matches!(
@@ -634,14 +639,20 @@ impl Workspace {
             }
             return outcome;
         }
-        let key = configuration_hash(&("http-display/v1", self.global.root(), method, &params));
+        let key = configuration_hash(&(
+            "http-display/v1",
+            self.global.root(),
+            method,
+            &params,
+            domain_epoch,
+        ));
         let key = self
             .runtime_reads
             .scoped_key(params["project_id"].as_str().unwrap(), &key)?;
         let value =
             self.runtime_reads
                 .read_for(&key, std::time::Duration::from_millis(100), || {
-                    let outcome = self.dispatch_with_receipt(method, params)?;
+                    let outcome = self.dispatch_with_receipt(method, params, domain_epoch)?;
                     require(outcome.commit.is_none(), "显示缓存不能保存修改回执")?;
                     Ok(outcome.value)
                 })?;
@@ -650,7 +661,12 @@ impl Workspace {
             commit: None,
         })
     }
-    pub fn dispatch_with_receipt(&self, method: &str, params: Value) -> Result<RpcOutcome> {
+    pub fn dispatch_with_receipt(
+        &self,
+        method: &str,
+        params: Value,
+        domain_epoch: Option<u64>,
+    ) -> Result<RpcOutcome> {
         if method == "github.auth_status" {
             return Ok(RpcOutcome {
                 value: json!(self.github.auth_status()?),
@@ -700,7 +716,7 @@ impl Workspace {
             });
         }
         if method == "query.agent_experience" {
-            let pid = self.experience_scope(&params, &params)?;
+            let pid = self.experience_scope(&params, &params, domain_epoch)?;
             return experience::query(Path::new(&self.global.root()), &pid, &params).map(|value| {
                 RpcOutcome {
                     value,
@@ -711,7 +727,7 @@ impl Workspace {
         if method == "experience.delete" {
             let command: Command = serde_json::from_value(params.clone())
                 .map_err(|e| err("invalid_params", e.to_string()))?;
-            let pid = self.experience_scope(&params, &command.payload)?;
+            let pid = self.experience_scope(&params, &command.payload, domain_epoch)?;
             let root = PathBuf::from(self.global.root());
             let receipt = devdesk_core::experience_directory::delete(
                 self.global.as_ref(),
@@ -731,10 +747,12 @@ impl Workspace {
             });
         }
         if method == "query.execution_workspace" {
-            return self.execution_workspace(&params).map(|value| RpcOutcome {
-                value,
-                commit: None,
-            });
+            return self
+                .execution_workspace(&params, domain_epoch)
+                .map(|value| RpcOutcome {
+                    value,
+                    commit: None,
+                });
         }
         if [
             "query.orchestration_summary",
@@ -864,18 +882,23 @@ impl Workspace {
                 ),
             });
         }
-        self.dispatch_legacy(method, params)
+        self.dispatch_legacy(method, params, domain_epoch)
             .map(|value| RpcOutcome {
                 value,
                 commit: None,
             })
     }
-    fn dispatch_legacy(&self, method: &str, params: Value) -> Result<Value> {
+    fn dispatch_legacy(
+        &self,
+        method: &str,
+        params: Value,
+        domain_epoch: Option<u64>,
+    ) -> Result<Value> {
         if method == "query.ui_bootstrap" {
-            return self.ui_bootstrap(&params);
+            return self.ui_bootstrap(&params, domain_epoch);
         }
         if method == "query.project_directory" {
-            return self.project_directory(&params);
+            return self.project_directory(&params, domain_epoch);
         }
         if method == "query.work_configuration"
             && let Some(project) = params["project_id"].as_str()
@@ -914,7 +937,7 @@ impl Workspace {
             }
             return engine.query(method, &params, 0);
         }
-        if let Some(result) = self.configuration_read(method, &params) {
+        if let Some(result) = self.configuration_read(method, &params, domain_epoch) {
             return result;
         }
 
@@ -963,7 +986,7 @@ impl Workspace {
             }
         }
         let params_for_sources = params.clone();
-        let mut result = self.dispatch_inner(method, params)?;
+        let mut result = self.dispatch_inner(method, params, domain_epoch)?;
         if template_catalog_query(method) {
             let global = self.global.configuration_snapshot()?.state.clone();
             let local = if params_for_sources["local"] == true
@@ -997,9 +1020,17 @@ impl Workspace {
         }
         Ok(result)
     }
-    fn dispatch_inner(&self, method: &str, params: Value) -> Result<Value> {
+    fn dispatch_inner(
+        &self,
+        method: &str,
+        params: Value,
+        domain_epoch: Option<u64>,
+    ) -> Result<Value> {
         if method == "query.discussion_agents" {
-            let records = experience::discussion_catalog(Path::new(&self.global.root()))?;
+            let records = experience::discussion_catalog(
+                Path::new(&self.global.root()),
+                self.project_visibility(domain_epoch)?.as_ref(),
+            )?;
             let offset = params["offset"].as_u64().unwrap_or(0) as usize;
             let limit = params["limit"].as_u64().unwrap_or(100).clamp(1, 100) as usize;
             let requested: Option<Vec<String>> = params
@@ -1072,7 +1103,7 @@ impl Workspace {
             ]
             .contains(&method)
         {
-            return self.global_conversation_dispatch(method, params);
+            return self.global_conversation_dispatch(method, params, domain_epoch);
         }
         if let Some(result) = self.model_provider_api(method, &params) {
             return result;
@@ -1106,7 +1137,7 @@ impl Workspace {
         if let Some(result) = self.integration_dispatch(method, &params) {
             return result;
         }
-        if let Some(result) = self.governance_dispatch(method, &params) {
+        if let Some(result) = self.governance_dispatch(method, &params, domain_epoch) {
             return result;
         }
         if method == "project.open_github" {
@@ -1326,7 +1357,7 @@ impl Workspace {
             return Err(err("adapter_contract", "讨论输入未由原生入口处理"));
         }
         if method == "experience.restore" {
-            return self.restore_experience(&params, &e);
+            return self.restore_experience(&params, &e, domain_epoch);
         }
         if method == "feature.create" {
             let mut params = params.clone();
@@ -1368,7 +1399,7 @@ impl Workspace {
                 result["permission_status"] = self.permission_session_status(&e, sid)?;
             }
             if method == "query.workspace" {
-                let mut directory = self.project_directory(&params)?;
+                let mut directory = self.project_directory(&params, domain_epoch)?;
                 result["projects"] = directory["projects"].take();
                 result["total_projects"] = directory["total_projects"].take();
                 let current = e
@@ -1451,16 +1482,21 @@ impl Workspace {
     }
     pub(crate) fn event_configuration_clock(
         self: &Arc<Self>,
+        domain_epoch: Option<u64>,
     ) -> Result<Arc<crate::event_hub::ConfigurationClock>> {
-        let mut subscription = self
-            .event_configuration_clock
+        let mut subscriptions = self
+            .event_configuration_clocks
             .lock()
             .map_err(|e| err("storage", e.to_string()))?;
-        if let Some(clock) = subscription.upgrade() {
+        subscriptions.retain(|_, clock| clock.strong_count() > 0);
+        if let Some(clock) = subscriptions
+            .get(&domain_epoch)
+            .and_then(std::sync::Weak::upgrade)
+        {
             return Ok(clock);
         }
-        let clock = crate::event_hub::ConfigurationClock::new(self);
-        *subscription = Arc::downgrade(&clock);
+        let clock = crate::event_hub::ConfigurationClock::new(self, domain_epoch);
+        subscriptions.insert(domain_epoch, Arc::downgrade(&clock));
         Ok(clock)
     }
     #[cfg(test)]
@@ -1598,7 +1634,7 @@ impl Workspace {
             }
             let project = engine.store.project_id().unwrap_or_else(|| "global".into());
             if let Some(Ok(packages)) = self.domains.get()
-                && !packages.permits_project(&project, &self.domain_trust)?
+                && !packages.permits_project(&project)?
             {
                 continue;
             }
@@ -1870,7 +1906,7 @@ mod tests {
         let command = json!({"scope":"global","command_id":id(),"target":snapshot,"expected_revision":0,
             "payload":{"agent_instance_id":instance["id"],"source_project_id":pid,"snapshot_id":snapshot}});
         let removed = w
-            .dispatch_with_receipt("experience.delete", command.clone())
+            .dispatch_with_receipt("experience.delete", command.clone(), None)
             .unwrap();
         assert_eq!(removed.value["snapshot_id"], snapshot);
         assert!(removed.commit.is_some());
@@ -2137,10 +2173,10 @@ mod tests {
             json!({"command_id":"register-fixture","expected_revision":0,"payload":registration});
         let trace = performance::Trace::start();
         let first = workspace
-            .dispatch_with_receipt("runtime.register", params.clone())
+            .dispatch_with_receipt("runtime.register", params.clone(), None)
             .unwrap();
         let repeated = workspace
-            .dispatch_with_receipt("runtime.register", params.clone())
+            .dispatch_with_receipt("runtime.register", params.clone(), None)
             .unwrap();
         let measurement = trace.finish();
         assert_eq!(first.value, repeated.value);
@@ -3012,7 +3048,6 @@ impl Workspace {
         Ok(Arc::new(Self {
             global,
             domains: Default::default(),
-            domain_trust: Default::default(),
             configuration,
             reset_publication: Mutex::new(()),
             domain_project_open: Mutex::new(()),
@@ -3026,7 +3061,7 @@ impl Workspace {
             catalog_instance: id(),
             configuration_sync_epochs: Default::default(),
             event_hubs: Default::default(),
-            event_configuration_clock: Default::default(),
+            event_configuration_clocks: Default::default(),
             scheduler_next: Default::default(),
             directory_next: Default::default(),
             runtime_reads: Default::default(),

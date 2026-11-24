@@ -233,15 +233,13 @@ fn common_compiled_project_manifests_supply_real_test_commands() {
 #[ignore = "explicit actual Docker domain worker and isolated Git repositories"]
 fn software_domain_worker_matches_legacy_test_discovery() {
     use devdesk_adapters::domain_packages::DomainPackages;
-    use std::collections::BTreeSet;
 
     let temporary = tempfile::tempdir().unwrap();
     devdesk_adapters::seed_factory_configuration(&mut EngineeringState::default());
     let packages = DomainPackages::open(temporary.path()).unwrap();
     let installed = packages.install(SOFTWARE_DOMAIN_FIXTURE).unwrap();
     let digest = installed["digest"].as_str().unwrap();
-    let trusted = BTreeSet::from([digest.to_owned()]);
-    let epoch = packages.activate(digest, 0, &trusted, |_| Ok(())).unwrap();
+    let epoch = packages.activate(digest, 0, |_| Ok(())).unwrap();
     let cases: &[&[(&str, &str)]] = &[
         &[],
         &[("package.json", r#"{"scripts":{"test":"node --test"}}"#)],
@@ -271,7 +269,6 @@ fn software_domain_worker_matches_legacy_test_discovery() {
                 epoch,
                 "software-development.tests.discover",
                 json!({"path":repo,"revision":head}),
-                &trusted,
             )
             .unwrap_or_else(|error| panic!("software domain failed on {files:?}: {error}"));
         let actual: ProjectTestDiscovery = serde_json::from_value(result).unwrap();
@@ -290,22 +287,17 @@ fn software_domain_branch_is_frozen_before_git_writes_and_inspected_without_rese
         ports::DomainReader,
     };
     use serde_json::Value;
-    use std::{
-        collections::BTreeSet,
-        sync::{
-            Arc,
-            atomic::{AtomicUsize, Ordering},
-        },
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
     };
 
     struct PackageReader {
         packages: DomainPackages,
-        trusted: BTreeSet<String>,
     }
     impl DomainReader for PackageReader {
         fn read(&self, project: &str, handler: &str, input: Value) -> Result<Value> {
-            self.packages
-                .read_for_project(project, handler, input, &self.trusted)
+            self.packages.read_for_project(project, handler, input)
         }
         fn worktree_branch(
             &self,
@@ -313,16 +305,14 @@ fn software_domain_branch_is_frozen_before_git_writes_and_inspected_without_rese
             owner: &str,
             kind: WorktreeKind,
         ) -> Result<Option<String>> {
-            self.packages
-                .worktree_branch(project, owner, kind, &self.trusted)
+            self.packages.worktree_branch(project, owner, kind)
         }
         fn project_test_discovery(
             &self,
             project: &str,
             mainline: &str,
         ) -> Result<Option<ProjectTestDiscovery>> {
-            self.packages
-                .project_test_discovery(project, mainline, &self.trusted)
+            self.packages.project_test_discovery(project, mainline)
         }
     }
 
@@ -418,10 +408,9 @@ fn software_domain_branch_is_frozen_before_git_writes_and_inspected_without_rese
     let packages = DomainPackages::open(root.path()).unwrap();
     let installed = packages.install(SOFTWARE_DOMAIN_FIXTURE).unwrap();
     let digest = installed["digest"].as_str().unwrap();
-    let trusted = BTreeSet::from([digest.to_owned()]);
-    packages.activate(digest, 0, &trusted, |_| Ok(())).unwrap();
+    packages.activate(digest, 0, |_| Ok(())).unwrap();
     packages.bind_project(&project, digest).unwrap();
-    engine.domain_reader = Some(Arc::new(PackageReader { packages, trusted }));
+    engine.domain_reader = Some(Arc::new(PackageReader { packages }));
     let discovery = engine.discover_project_tests().unwrap();
     assert_eq!(discovery.revision.as_deref(), Some(revision.as_str()));
     assert_eq!(

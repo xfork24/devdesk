@@ -8,6 +8,8 @@ pub(super) fn directory_query(method: &str) -> bool {
             | "query.configuration_index"
             | "query.configuration_records"
             | "query.configuration_usage"
+            | "query.configuration_references"
+            | "query.configuration_graph"
             | "query.standard"
             | "query.project_standard_preview"
             | "query.roles"
@@ -50,9 +52,20 @@ impl Workspace {
         }
     }
 
-    fn configuration_bundle(&self) -> Result<(Arc<ConfigurationCatalogSnapshot>, String, Value)> {
+    pub(super) fn configuration_bundle(
+        &self,
+        domain_epoch: Option<u64>,
+    ) -> Result<(Arc<ConfigurationCatalogSnapshot>, String, Value)> {
         let global = self.global.configuration_snapshot()?;
-        let visibility = self.project_visibility()?;
+        let (visibility, domain_sources) = if let Some(packages) = self.domains.get() {
+            let (visibility, sources) = packages
+                .as_ref()
+                .map_err(Clone::clone)?
+                .configuration_scope(domain_epoch)?;
+            (Some(visibility), sources)
+        } else {
+            (None, None)
+        };
         let engines: Vec<_> = self
             .opened
             .lock()
@@ -69,14 +82,17 @@ impl Workspace {
             clocks.push((id, catalog.revision));
             projects.push(catalog);
         }
-        let clock = configuration_hash(&clocks);
+        let active_digest = visibility
+            .as_ref()
+            .and_then(|scope| scope.active_digest.as_deref());
+        let clock = configuration_hash(&(active_digest, &clocks));
         let source_epochs = json!(
             clocks
                 .iter()
                 .cloned()
                 .collect::<std::collections::BTreeMap<_, _>>()
         );
-        let key = format!("roles:{}:{clock}", global.revision);
+        let key = format!("directory:{}:{clock}", global.revision);
         if let Some((_, snapshot)) = self
             .configuration_views
             .lock()
@@ -86,10 +102,30 @@ impl Workspace {
         {
             return Ok((snapshot.clone(), clock, source_epochs));
         }
-        let snapshot = if projects.is_empty() {
+        let snapshot = if projects.is_empty()
+            && visibility.is_none()
+            && domain_sources
+                .as_ref()
+                .is_none_or(|catalog| catalog.records.is_empty())
+        {
             global
         } else {
-            Arc::new(compose_role_directory(&global, &projects)?)
+            let mut view = compose_configuration_directory(
+                &global,
+                domain_sources
+                    .as_ref()
+                    .map_or(&[], |catalog| catalog.records.as_ref()),
+                &projects,
+                |project| {
+                    visibility
+                        .as_ref()
+                        .is_none_or(|scope| scope.includes(project))
+                },
+            )?;
+            if let Some(sources) = domain_sources {
+                view = view.with_automation_sources(sources.automation);
+            }
+            Arc::new(view)
         };
         self.retain_configuration_view(key, snapshot.clone())?;
         Ok((snapshot, clock, source_epochs))
@@ -114,9 +150,13 @@ impl Workspace {
         }
         Ok(())
     }
-    pub(crate) fn configuration_version(&self, engine: &Engine) -> Result<Value> {
+    pub(crate) fn configuration_version(
+        &self,
+        engine: &Engine,
+        domain_epoch: Option<u64>,
+    ) -> Result<Value> {
         let global = self.global.catalog_revision()?;
-        let visibility = self.project_visibility()?;
+        let visibility = self.project_visibility(domain_epoch)?;
         let engines: Vec<_> = self
             .opened
             .lock()
@@ -130,7 +170,10 @@ impl Workspace {
         for (id, engine) in engines {
             clocks.push((id, engine.store.catalog_revision()?));
         }
-        let clock = configuration_hash(&clocks);
+        let active_digest = visibility
+            .as_ref()
+            .and_then(|scope| scope.active_digest.as_deref());
+        let clock = configuration_hash(&(active_digest, &clocks));
         let source_epochs = json!(
             clocks
                 .into_iter()
@@ -145,13 +188,17 @@ impl Workspace {
             json!({"host":self.catalog_instance,"global":global,"project":project,"project_sources":clock,"source_epochs":source_epochs}),
         )
     }
-    pub(crate) fn event_configuration_version(&self) -> Result<Value> {
-        self.configuration_version(&self.configuration)
+    pub(crate) fn event_configuration_version(&self, domain_epoch: Option<u64>) -> Result<Value> {
+        self.configuration_version(&self.configuration, domain_epoch)
     }
-    pub(super) fn project_directory(&self, params: &Value) -> Result<Value> {
+    pub(super) fn project_directory(
+        &self,
+        params: &Value,
+        domain_epoch: Option<u64>,
+    ) -> Result<Value> {
         let offset = params["project_offset"].as_u64().unwrap_or(0) as usize;
         let limit = params["limit"].as_u64().unwrap_or(50).clamp(1, 100) as usize;
-        let visibility = self.project_visibility()?;
+        let visibility = self.project_visibility(domain_epoch)?;
         let (projects, total) = self.global.projects_visible(
             offset,
             limit,
@@ -172,16 +219,20 @@ impl Workspace {
         }
         Ok(json!({"projects":projects,"total_projects":total}))
     }
-    pub(super) fn execution_workspace(&self, params: &Value) -> Result<Value> {
+    pub(super) fn execution_workspace(
+        &self,
+        params: &Value,
+        domain_epoch: Option<u64>,
+    ) -> Result<Value> {
         let project = devdesk_core::read_models::identifier(params, "project_id")?;
         let query = devdesk_core::read_models::ExecutionWorkspaceQuery::parse(params)?;
         let engine = self.project_engine(Some(&project))?;
         let mut result = json!(engine.store.execution_workspace(&query)?);
-        let directory = self.project_directory(params)?;
+        let directory = self.project_directory(params, domain_epoch)?;
         result["projects"] = directory["projects"].clone();
         result["total_projects"] = directory["total_projects"].clone();
         result["active_project_id"] = json!(project);
-        result["catalog_version"] = self.configuration_version(&engine)?;
+        result["catalog_version"] = self.configuration_version(&engine, domain_epoch)?;
         let settings = devdesk_core::settings::read(self.global.as_ref())?;
         result["global_concurrency"] = json!(settings.global_concurrency);
         result["default_project_concurrency"] = json!(settings.default_project_concurrency);
@@ -198,9 +249,9 @@ impl Workspace {
         }
         Ok(result)
     }
-    pub(super) fn ui_bootstrap(&self, params: &Value) -> Result<Value> {
+    pub(super) fn ui_bootstrap(&self, params: &Value, domain_epoch: Option<u64>) -> Result<Value> {
         let _span = performance::Span::new("ui.bootstrap");
-        let (global, clock, source_epochs) = self.configuration_bundle()?;
+        let (global, clock, source_epochs) = self.configuration_bundle(domain_epoch)?;
         let engine = match self.project_engine(params["project_id"].as_str()) {
             Ok(engine) => engine,
             Err(e) if e.code == "project_required" => self.configuration.clone(),
@@ -219,7 +270,7 @@ impl Workspace {
         } else {
             json!({"ready":false,"issues":[]})
         };
-        let mut result = self.project_directory(params)?;
+        let mut result = self.project_directory(params, domain_epoch)?;
         if let Some(current) = current
             && let Some(rows) = result["projects"].as_array_mut()
             && let Some(summary) = rows.iter_mut().find(|row| row["id"] == current.id)
@@ -280,7 +331,12 @@ impl Workspace {
         Ok(view)
     }
 
-    pub(super) fn configuration_read(&self, method: &str, params: &Value) -> Option<Result<Value>> {
+    pub(super) fn configuration_read(
+        &self,
+        method: &str,
+        params: &Value,
+        domain_epoch: Option<u64>,
+    ) -> Option<Result<Value>> {
         if !directory_query(method)
             || (method == "query.configurations"
                 && params["kind"]
@@ -291,7 +347,7 @@ impl Workspace {
         }
         Some((|| {
             let _span = performance::Span::new("catalog.query");
-            let (global, clock, source_epochs) = self.configuration_bundle()?;
+            let (global, clock, source_epochs) = self.configuration_bundle(domain_epoch)?;
             let target = params["id"].as_str().or_else(|| params["target"].as_str());
             let project = params["project_id"].as_str();
             let local = match method {
@@ -300,6 +356,8 @@ impl Workspace {
                 "query.configuration_index"
                 | "query.configuration_records"
                 | "query.configuration_usage"
+                | "query.configuration_references"
+                | "query.configuration_graph"
                 | "query.project_standard_preview" => project.is_some() || params["local"] == true,
                 "query.integrations"
                 | "query.integration_bindings"
@@ -443,7 +501,8 @@ pub(super) fn local_directory(
         }
     }
     rows.retain(|r| {
-        (params["include_archived"] == true || template_record_current(state, r))
+        view.is_listed(r)
+            && (params["include_archived"] == true || template_record_current(state, r))
             && configuration_visible(state, r, project)
             && (params["include_deleted"] == true || !configuration_retired(state, r))
             && (params["include_history"] == true
@@ -808,7 +867,7 @@ mod tests {
         let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
         let project = create(&w, "project role source");
         let engine = w.project_engine(Some(&project)).unwrap();
-        let before = w.configuration_version(&engine).unwrap();
+        let before = w.configuration_version(&engine, None).unwrap();
         let role = engine.execute("role.create", Command {
             command_id: id(), target: None, expected_revision: None,
             payload: json!({"name":"Project role","scope":format!("project:{project}"),"data":{"instructions":"Project owned instructions"}}),
@@ -817,7 +876,7 @@ mod tests {
         let directory = w
             .dispatch("query.roles", json!({"include_history":true,"limit":100}))
             .unwrap();
-        let after = w.configuration_version(&engine).unwrap();
+        let after = w.configuration_version(&engine, None).unwrap();
         let measurement = trace.finish();
         assert_ne!(before, after);
         assert!(
@@ -889,7 +948,7 @@ mod tests {
             ("query.permission_resources", json!({"project_id":project})),
         ];
         for (method, params) in cases {
-            let old = w.dispatch_inner(method, params.clone()).unwrap();
+            let old = w.dispatch_inner(method, params.clone(), None).unwrap();
             let trace = performance::Trace::start();
             let mut current = w.dispatch(method, params).unwrap();
             let measurement = trace.finish();

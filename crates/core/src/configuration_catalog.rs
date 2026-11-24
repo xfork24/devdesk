@@ -33,6 +33,19 @@ pub fn catalog_record(record: &ConfigurationRecord) -> bool {
     record.is_definition() || CATALOG_RECORD_KINDS.contains(&record.r#type.as_str())
 }
 
+pub fn package_role_identity(record: &ConfigurationRecord) -> Option<&str> {
+    // Domain bundles must namespace their Role identities. Built-in Roles and
+    // identities allocated by role.create have no namespace.
+    let identity = match record.r#type.as_str() {
+        "role" | "role_retirement" => record.definition_id.as_str(),
+        "template_catalog_member" if record.data["kind"] == "role" => {
+            record.definition_id.rsplit_once(':')?.0
+        }
+        _ => return None,
+    };
+    identity.contains('.').then_some(identity)
+}
+
 /// An adapter may attach its memory reservation to the view's complete lifetime.
 /// Old views can remain pinned by readers after eviction from the current cache.
 pub trait SnapshotAllocation: Send + Sync {}
@@ -47,6 +60,7 @@ pub struct ConfigurationCatalogSnapshot {
     heads: BTreeMap<(String, String), u64>,
     origins: BTreeMap<String, Value>,
     current: BTreeSet<String>,
+    automation_sources: Arc<BTreeSet<Id>>,
     all_heads: BTreeMap<(String, String), u64>,
     retired_identities: BTreeSet<String>,
     retired_sources: BTreeSet<(String, String)>,
@@ -73,6 +87,7 @@ impl ConfigurationCatalogSnapshot {
             heads: BTreeMap::new(),
             origins: BTreeMap::new(),
             current: Default::default(),
+            automation_sources: Default::default(),
             all_heads: Default::default(),
             retired_identities: Default::default(),
             retired_sources: Default::default(),
@@ -167,6 +182,19 @@ impl ConfigurationCatalogSnapshot {
         }
         Ok(snapshot)
     }
+    pub fn with_automation_sources(mut self, automation_sources: Arc<BTreeSet<Id>>) -> Self {
+        if !automation_sources.is_empty() {
+            self.fingerprint =
+                configuration_hash(&(&self.fingerprint, automation_sources.as_ref()));
+            self.automation_sources = automation_sources;
+        }
+        self
+    }
+
+    pub fn is_listed(&self, record: &ConfigurationRecord) -> bool {
+        !self.automation_sources.contains(&record.id)
+    }
+
     pub fn with_allocation(mut self, allocation: impl SnapshotAllocation + 'static) -> Self {
         self._allocation = Some(Box::new(allocation));
         self
@@ -339,6 +367,13 @@ pub fn compose_configuration_catalog(
     project: &str,
 ) -> Result<ConfigurationCatalogSnapshot> {
     let mut state = local.state.as_ref().clone();
+    let package_roles: BTreeSet<_> = global
+        .records("role")
+        .filter_map(package_role_identity)
+        .collect();
+    state.governance.retain(|record| {
+        package_role_identity(record).is_none_or(|role| package_roles.contains(role))
+    });
     // A hard reset may recreate IDs such as permission bindings at revision one.
     // The independent snapshots can straddle either side of the reset.
     if local.same_factory_reset_as(global)
@@ -373,19 +408,45 @@ pub fn compose_configuration_catalog(
     }
 
     ConfigurationCatalogSnapshot::new(state, local.revision, local.repository_ready)
+        .map(|catalog| catalog.with_automation_sources(global.automation_sources.clone()))
 }
 
-/// Project-owned Role identities remain globally discoverable without publishing from a query.
-pub fn compose_role_directory(
+/// Include active domain sources and discoverable project Roles in one read view.
+pub fn compose_configuration_directory(
     global: &ConfigurationCatalogSnapshot,
+    domain_sources: &[ConfigurationRecord],
     projects: &[Arc<ConfigurationCatalogSnapshot>],
+    include_project: impl Fn(&str) -> bool,
 ) -> Result<ConfigurationCatalogSnapshot> {
     let mut state = global.state.as_ref().clone();
+    let package_roles: BTreeSet<_> = domain_sources
+        .iter()
+        .filter_map(package_role_identity)
+        .collect();
+    let visible = |record: &ConfigurationRecord| {
+        record.scope.project_id().is_none_or(&include_project)
+            && package_role_identity(record).is_none_or(|role| package_roles.contains(role))
+    };
+    state.governance.retain(&visible);
     let mut known: BTreeMap<String, String> = state
         .governance
         .iter()
         .map(|r| (r.id.clone(), r.content_hash.clone()))
         .collect();
+    for source in domain_sources {
+        if let Some(hash) = known.get(&source.id) {
+            require(
+                hash == &source.content_hash,
+                format!("领域源定义修订冲突 {}", source.id),
+            )?;
+        } else {
+            known.insert(source.id.clone(), source.content_hash.clone());
+            state.governance.push(source.clone());
+        }
+    }
+    if !domain_sources.is_empty() {
+        register_template_members(&mut state, template_catalog_generation(&global.state));
+    }
     for project in projects
         .iter()
         .filter(|project| project.same_factory_reset_as(global))
@@ -395,6 +456,8 @@ pub fn compose_role_directory(
             .governance
             .iter()
             .filter(|r| matches!(r.r#type.as_str(), "role" | "role_retirement"))
+            .filter(|r| package_role_identity(r).is_none())
+            .filter(|r| visible(r))
         {
             if let Some(hash) = known.get(&role.id) {
                 require(hash == &role.content_hash, "Role 目录摘要冲突")?;
@@ -452,5 +515,14 @@ mod tests {
             composed.record(&member_id).unwrap(),
             local.record(&member_id).unwrap()
         );
+
+        // Older hosts could publish package Roles into the shared catalog.
+        let core =
+            compose_configuration_directory(&global, &[], &[Arc::new(local)], |_| true).unwrap();
+        assert_eq!(core.records("role").count(), 0);
+        assert!(core.record(&member_id).is_none());
+        let core_project = compose_configuration_catalog(&core, &composed, "project").unwrap();
+        assert_eq!(core_project.records("role").count(), 0);
+        assert!(core_project.record(&member_id).is_none());
     }
 }

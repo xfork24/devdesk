@@ -125,7 +125,7 @@ fn agent_instances_pin_composition_and_choose_independent_scope() {
         Arc::new(SqliteStore::open_project(root.path(), &project).unwrap()),
     );
     local_engine
-        .sync_shared_configuration(directory.as_ref())
+        .sync_shared_configuration(directory.as_ref(), None)
         .unwrap();
     local_engine.execute("project.create", create).unwrap();
     let global = command(
@@ -235,7 +235,7 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
         );
         e.bootstrap().unwrap();
         runtime::bind_default_permissions(&e);
-        e.sync_shared_configuration(global.as_ref()).unwrap();
+        e.sync_shared_configuration(global.as_ref(), None).unwrap();
         e.execute("project.create", create).unwrap();
         global
             .publish_project(&e.store.snapshot().unwrap().projects[0])
@@ -370,7 +370,7 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
         )
         .is_err()
     );
-    let catalog = experience::discussion_catalog(root.path()).unwrap();
+    let catalog = experience::discussion_catalog(root.path(), None).unwrap();
     let detached_path = SqliteStore::global_discussion_path(root.path()).unwrap();
     let detached = Engine::new(
         Arc::new(SqliteStore::open(&detached_path).unwrap()),
