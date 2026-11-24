@@ -18,15 +18,18 @@ fn resource(path: &str) -> Result<&'static str> {
 }
 pub fn initialize() -> Result<()> {
     let _span = performance::Span::new("factory.initialize");
+    devdesk_core::install_driver_capabilities(harness::driver_capability_registry())?;
     static READY: std::sync::OnceLock<Result<()>> = std::sync::OnceLock::new();
     READY
         .get_or_init(|| {
-            devdesk_core::install_driver_capabilities(harness::driver_capability_registry())?;
-            load()
+            let bundle = read_bundle(resource)?;
+            devdesk_core::install_configuration_bundle(bundle)
         })
         .clone()
 }
-fn load() -> Result<()> {
+pub(crate) fn read_bundle<'a>(
+    resource: impl Fn(&str) -> Result<&'a str>,
+) -> Result<devdesk_core::ConfigurationBundle> {
     let manifest: Value = serde_json::from_str(resource("manifest.json")?).map_err(storage)?;
     let types: BTreeMap<String, Vec<String>> =
         serde_json::from_value(manifest["types"].clone()).map_err(storage)?;
@@ -80,7 +83,7 @@ fn load() -> Result<()> {
         serde_json::from_value(usage["references"].clone()).map_err(storage)?;
     let hash =
         configuration_hash(&json!({"sources":hashed,"defaults":defaults,"usage_index":usage}));
-    devdesk_core::install_configuration_bundle(devdesk_core::ConfigurationBundle {
+    Ok(devdesk_core::ConfigurationBundle {
         bundle_version: manifest["bundle_version"]
             .as_str()
             .ok_or_else(|| err("invalid_template", "缺少包标签"))?

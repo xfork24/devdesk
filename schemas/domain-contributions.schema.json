@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DevDesk client-neutral domain contributions",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["id", "kind", "context", "title", "query", "fields"],
+    "properties": {
+      "id": { "type": "string", "minLength": 1 },
+      "kind": { "type": "string", "minLength": 1 },
+      "context": { "type": "string", "minLength": 1 },
+      "title": { "type": "string", "minLength": 1 },
+      "query": { "type": "string", "minLength": 1 },
+      "fields": { "$ref": "#/$defs/fields" },
+      "inputs": { "$ref": "#/$defs/fields" }
+    }
+  },
+  "$defs": {
+    "fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "label"],
+        "properties": {
+          "key": { "type": "string", "minLength": 1 },
+          "label": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

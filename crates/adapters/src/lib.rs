@@ -47,6 +47,7 @@ pub mod credentials;
 #[cfg(target_os = "macos")]
 mod credentials_macos;
 pub mod docker;
+pub mod domain_packages;
 pub mod experience;
 mod experience_index;
 pub mod git;

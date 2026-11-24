@@ -1,0 +1,14 @@
+{
+  "model_ref": "builtin-model-gpt-6-2-sol-high:1",
+  "harness_ref": "builtin-harness-codex-managed:2",
+  "sandbox_ref": "builtin-sandbox-docker:2",
+  "harness_permission_ref": "builtin-permission-harness-full-access:2",
+  "sandbox_permission_ref": "builtin-permission-sandbox-full-access:2",
+  "authoring": {
+    "execution_budget": {
+      "max_turns": 8,
+      "timeout_seconds": 300,
+      "retry_limit": 3
+    }
+  }
+}

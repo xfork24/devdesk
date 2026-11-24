@@ -323,6 +323,7 @@ impl Engine {
             manager_services: self.manager_services.clone(),
             configuration_backend: self.configuration_backend.clone(),
             tool_executor: self.tool_executor.clone(),
+            domain_reader: self.domain_reader.clone(),
             artifacts: self.artifacts.clone(),
             harness: self.harness.clone(),
             git: self.git.clone(),

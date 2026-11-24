@@ -249,6 +249,9 @@ fn active_frontend_server() {
             authority: address.to_string(),
             origin: format!("http://{address}"),
             access_token: None,
+            web_root: None,
+            trusted_domains: Default::default(),
+            domain_epoch: tokio::sync::watch::channel(0).0,
             stopping: AtomicBool::new(false),
             shutdown: tokio::sync::Notify::new(),
         });

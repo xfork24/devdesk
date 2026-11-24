@@ -7,19 +7,24 @@ workspace = true
 [dependencies]
 devdesk-domain = { path = "../domain" }
 devdesk-core = { path = "../core" }
-devdesk-adapters = { path = "../adapters" }
+devdesk-adapters = { path = "../adapters", default-features = false }
 serde_json.workspace = true
 serde.workspace = true
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 futures-util = "0.3"
-rust-embed = { version = "8", features = ["debug-embed"] }
+rust-embed = { version = "8", features = ["debug-embed"], optional = true }
 mime_guess = "2"
 uuid.workspace = true
 base64 = "0.22"
 url = "2"
 [dev-dependencies]
 rusqlite = { version = "0.37", features = ["bundled"] }
-devdesk-adapters = { path = "../adapters", features = ["test-fixtures"] }
+devdesk-adapters = { path = "../adapters", default-features = false, features = ["test-fixtures"] }
 devdesk-core = { path = "../core", features = ["test-fixtures"] }
 tempfile = "3"
+
+[features]
+default = ["engineering-defaults", "embedded-web"]
+engineering-defaults = ["devdesk-adapters/engineering-defaults"]
+embedded-web = ["dep:rust-embed"]

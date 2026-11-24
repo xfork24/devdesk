@@ -650,3 +650,43 @@ impl Engine {
             .map(|r| r.result)
     }
 }
+
+impl Engine {
+    /// Adopt a package's immutable revisions into the project's catalog before starting work.
+    pub fn adopt_domain_sources(&self, sources: &[ConfigurationRecord]) -> Result<()> {
+        let before = self.store.configuration_snapshot()?;
+        let mut candidate = before.state.as_ref().clone();
+        for source in sources {
+            if let Some(existing) = before.record(&source.id) {
+                require(existing.source() == source.source(), "领域源定义修订冲突")?;
+            } else {
+                candidate.governance.push(source.clone());
+            }
+        }
+        register_template_members(&mut candidate, template_catalog_generation(&before.state));
+        candidate.validate_governance(&before.state)?;
+        let candidate =
+            ConfigurationCatalogSnapshot::new(candidate, before.revision, before.repository_ready)?;
+        for source in sources.iter().filter(|source| source.r#type == "workflow") {
+            self.compile_configured_workflow(&candidate.state, source, &Scope::global(), None)?;
+        }
+        let publication =
+            prepare_configuration_publication(self.store.as_ref(), &before, &candidate)?;
+        if !publication.changes.is_empty() {
+            let fingerprint = configuration_hash(&(
+                "domain-source-adoption",
+                &candidate.fingerprint,
+                before.revision,
+            ));
+            self.store.commit_changes(&PreparedChangeSet {
+                command_id: format!("domain-sources:{fingerprint}"),
+                fingerprint,
+                read_set: publication.read_set,
+                changes: publication.changes,
+                result: Value::Null,
+                time: now() as i64,
+            })?;
+        }
+        Ok(())
+    }
+}

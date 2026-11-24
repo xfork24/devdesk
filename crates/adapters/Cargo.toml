@@ -17,10 +17,10 @@ jsonschema = { version = "0.61", default-features = false }
 serde_yaml = "0.9"
 zip = { version = "7", default-features = false, features = ["deflate"] }
 base64 = "0.22"
+tempfile = "3"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 [dev-dependencies]
 devdesk-core = { path = "../core", features = ["test-fixtures"] }
-tempfile = "3"
 jsonschema = { version = "0.61", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
@@ -34,4 +34,6 @@ serde_json.workspace = true
 jsonschema = { version = "0.61", default-features = false }
 
 [features]
+default = ["engineering-defaults"]
+engineering-defaults = []
 test-fixtures = ["devdesk-core/test-fixtures"]

@@ -3,6 +3,7 @@
 #[cfg(test)]
 #[path = "../../../tests/support/defaults.rs"]
 mod default_fixture;
+mod domains;
 mod event_hub;
 mod lifecycle;
 #[cfg(test)]
@@ -33,6 +34,7 @@ use std::{
     },
 };
 use workspace::Workspace;
+#[cfg(feature = "embedded-web")]
 #[derive(rust_embed::RustEmbed)]
 #[folder = "../../web/dist/"]
 struct Web;
@@ -43,6 +45,9 @@ struct App {
     authority: String,
     origin: String,
     access_token: Option<String>,
+    web_root: Option<PathBuf>,
+    trusted_domains: Arc<std::collections::BTreeSet<String>>,
+    domain_epoch: tokio::sync::watch::Sender<u64>,
     stopping: AtomicBool,
     shutdown: tokio::sync::Notify,
 }
@@ -89,6 +94,8 @@ async fn guard(State(app): State<Arc<App>>, request: Request, next: Next) -> Res
     }
     let protected = path == "/rpc"
         || path == "/events"
+        || path == "/domain-events"
+        || path.starts_with("/domain-assets/")
         || path == "/setup"
         || path == "/shutdown"
         || path == "/capabilities"
@@ -217,27 +224,37 @@ fn connection_key(
         Ok(None)
     }
 }
-async fn static_file(request: Request) -> Response {
+async fn static_file(State(app): State<Arc<App>>, request: Request) -> Response {
     let path = request.uri().path().trim_start_matches('/');
     let key = if path.is_empty() { "index.html" } else { path };
-    let file = Web::get(key).or_else(|| {
-        if !key.contains('.') {
-            Web::get("index.html")
-        } else {
+    if !devdesk_adapters::domain_packages::safe_path(key) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let key = if key.contains('.') { key } else { "index.html" };
+    let file = if let Some(root) = &app.web_root {
+        // web_root is an operator-installed core Web release, independent of ZIP assets.
+        tokio::fs::read(root.join(key)).await.ok()
+    } else {
+        #[cfg(feature = "embedded-web")]
+        {
+            Web::get(key).map(|file| file.data.into_owned())
+        }
+        #[cfg(not(feature = "embedded-web"))]
+        {
             None
         }
-    });
+    };
     match file {
-        Some(file) => {
-            let mime = if key == "index.html" || !key.contains('.') {
-                "text/html".to_string()
-            } else {
+        Some(file) => (
+            [(
+                header::CONTENT_TYPE,
                 mime_guess::from_path(key)
                     .first_or_octet_stream()
-                    .to_string()
-            };
-            ([(header::CONTENT_TYPE, mime)], file.data.into_owned()).into_response()
-        }
+                    .to_string(),
+            )],
+            file,
+        )
+            .into_response(),
         None => (StatusCode::NOT_FOUND, "Not found").into_response(),
     }
 }
@@ -332,7 +349,17 @@ async fn rpc(
         let dispatch_started = std::time::Instant::now();
         let result = {
             let _span = devdesk_adapters::performance::Span::new("rpc.dispatch");
-            if read && cancelled.load(Ordering::Relaxed) { Err(devdesk_domain::err("cancelled", "读取已取消")) } else { app.workspace().and_then(|w| w.dispatch_display_read(&method, params)) }
+            if read && cancelled.load(Ordering::Relaxed) {
+                Err(devdesk_domain::err("cancelled", "读取已取消"))
+            } else if domains::method(&method) {
+                domains::dispatch(&app, &method, params).map(|value| workspace::RpcOutcome { value, commit: None })
+            } else {
+                app.workspace().and_then(|w| {
+                    w.validate_domain_project(params["project_id"].as_str()
+                        .or_else(|| params["payload"]["project_id"].as_str()))?;
+                    w.dispatch_display_read(&method, params)
+                })
+            }
         };
         let dispatch_ms = dispatch_started.elapsed().as_secs_f64()*1000.0;
         let success = result.is_ok();
@@ -418,9 +445,11 @@ async fn open_dataset(
     ticket: lifecycle::Ticket,
     path: PathBuf,
 ) -> devdesk_domain::Result<Value> {
-    let opened = tokio::task::spawn_blocking(move || Workspace::open(&path))
-        .await
-        .unwrap_or_else(|error| Err(err("internal", error.to_string())));
+    let trusted = app.trusted_domains.clone();
+    let opened =
+        tokio::task::spawn_blocking(move || Workspace::open_trusted_domains(&path, trusted))
+            .await
+            .unwrap_or_else(|error| Err(err("internal", error.to_string())));
     let result = match opened {
         Ok(workspace) => {
             let mut current = app.workspace.write().unwrap();
@@ -483,7 +512,7 @@ async fn capabilities(State(app): State<Arc<App>>) -> Json<Value> {
     };
     let providers: Vec<&str> = HARNESS_PROVIDERS.iter().map(|p| p.as_str()).collect();
     Json(
-        json!({"version":"0.2.0","protocol_version":1,"setup_required":workspace.is_none(),"lifecycle":lifecycle,"project_selection":"frontend","storage_layout":"global-and-project-databases","execution_mode":"live","live":"requires_registered_runtime_and_credentials","conversations":{"providers":providers,"managed_linux_workers":true,"engineering_run_contract":true},"platform":{"linux":"runtime_verified_by_reports","macos":"runtime_verified_by_reports"},"runtime":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},"harness":{"providers":providers,"capabilities":["structured-output","cancel","poll"]},"sandbox":{"provider":"docker","capabilities":["managed-container","resource-cleanup"]}}),
+        json!({"version":"0.2.0","protocol_version":1,"setup_required":workspace.is_none(),"lifecycle":lifecycle,"domain_protocol":1,"project_selection":"frontend","storage_layout":"global-and-project-databases","execution_mode":"live","live":"requires_registered_runtime_and_credentials","conversations":{"providers":providers,"managed_linux_workers":true,"engineering_run_contract":true},"platform":{"linux":"runtime_verified_by_reports","macos":"runtime_verified_by_reports"},"runtime":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},"harness":{"providers":providers,"capabilities":["structured-output","cancel","poll"]},"sandbox":{"provider":"docker","capabilities":["managed-container","resource-cleanup"]}}),
     )
 }
 async fn artifact(
@@ -492,9 +521,10 @@ async fn artifact(
     Query(p): Query<HashMap<String, String>>,
 ) -> Response {
     let result = (|| {
-        let e = app
-            .workspace()?
-            .project_engine(p.get("project_id").map(String::as_str))?;
+        let workspace = app.workspace()?;
+        let project = p.get("project_id").map(String::as_str);
+        workspace.validate_domain_project(project)?;
+        let e = workspace.project_engine(project)?;
         let v = e.query("query.artifact", &json!({"id":id}), 4)?;
         let a: devdesk_domain::Artifact =
             serde_json::from_value(v).map_err(|e| err("internal", e.to_string()))?;
@@ -521,7 +551,10 @@ async fn events(
         Ok(workspace) => workspace,
         Err(e) => return (StatusCode::CONFLICT, Json(failure(e))).into_response(),
     };
-    let pinned = workspace.event_engine(p.get("project_id").map(String::as_str));
+    let project = p.get("project_id").map(String::as_str);
+    let pinned = workspace
+        .validate_domain_project(project)
+        .and_then(|()| workspace.event_engine(project));
     let (scope, engine) = match pinned {
         Ok(pinned) => pinned,
         Err(e) => return (StatusCode::CONFLICT, Json(failure(e))).into_response(),
@@ -755,7 +788,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     if args.iter().any(|a| a == "--help") {
         println!(
-            "DevDesk 0.2\nUsage: devdesk-host [--data PATH] [--host IP] [--port 4317] [--public-url http(s)://HOST:PORT]\n       devdesk-host --data PATH --authorize-credential REFERENCE\nDefault host: 127.0.0.1. Remote listening requires DEVDESK_ACCESS_TOKEN (32+ characters).\nWithout --data, choose a dataset in the Web setup page. Web UI opens GitHub projects with native Codex/DSH execution."
+            "DevDesk 0.2\nUsage: devdesk-host [--data PATH] [--host IP] [--port 4317] [--public-url http(s)://HOST:PORT] [--web-dir DIR] [--trust-domain SHA256]\n       devdesk-host --data PATH --authorize-credential REFERENCE\nDefault host: 127.0.0.1. Remote listening requires DEVDESK_ACCESS_TOKEN (32+ characters).\nWithout --data, choose a dataset in the Web setup page. Web UI opens GitHub projects with native Codex/DSH execution."
         );
         return Ok(());
     }
@@ -822,8 +855,20 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     };
     let access_token = connection_key(listen, public_url.is_some(), token)?;
     let startup = performance_logging().then(devdesk_adapters::performance::Trace::start);
+    let trusted_domains = args
+        .windows(2)
+        .filter(|pair| pair[0] == "--trust-domain")
+        .map(|pair| pair[1].clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    if trusted_domains
+        .iter()
+        .any(|id| !devdesk_adapters::domain_packages::is_digest(id))
+    {
+        return Err("--trust-domain requires a lowercase SHA-256".into());
+    }
+    let trusted_domains = Arc::new(trusted_domains);
     let workspace = option("--data")
-        .map(|p| Workspace::open(&PathBuf::from(p)))
+        .map(|p| Workspace::open_trusted_domains(&PathBuf::from(p), trusted_domains.clone()))
         .transpose();
     if let Some(trace) = startup {
         eprintln!(
@@ -845,6 +890,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let session_port = url::Url::parse(&origin)?
         .port_or_known_default()
         .expect("HTTP origin has a port");
+    let web_root = option("--web-dir").map(std::fs::canonicalize).transpose()?;
     let app = Arc::new(App {
         lifecycle: lifecycle::Lifecycle::new(workspace.is_some()),
         workspace: RwLock::new(workspace),
@@ -852,6 +898,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         authority: authority.clone(),
         origin: origin.clone(),
         access_token,
+        web_root,
+        trusted_domains,
+        domain_epoch: tokio::sync::watch::channel(0).0,
         stopping: AtomicBool::new(false),
         shutdown: tokio::sync::Notify::new(),
     });
@@ -953,6 +1002,11 @@ fn router(app: Arc<App>) -> Router {
         .route("/shutdown", post(shutdown))
         .route("/capabilities", get(capabilities))
         .route("/events", get(events))
+        .route("/domain-events", get(domains::events))
+        .route(
+            "/domain-assets/{epoch}/{digest}/{*path}",
+            get(domains::asset),
+        )
         .route("/artifacts/{id}", get(artifact))
         .fallback(static_file)
         .layer(middleware::from_fn_with_state(app.clone(), guard))

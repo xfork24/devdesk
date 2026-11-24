@@ -63,6 +63,20 @@ python3 -m pip install -r scripts/check/requirements.txt
 
 输出为 `dist/devdesk-0.2.0-<rust-host-target>.tar.gz` 及 SHA-256 文件。macOS 压缩包只包含签名后的 `devdesk-host`。解压后运行 `./devdesk-host`，无需 Python、Rust、宿主 Node 或源码。实际工程仍需 Docker、Git、GitHub CLI 及认证。远程连接、访问密钥和平台设置见[运行包说明](docs/design/run-binary.md)。
 
+### 领域插件工作台预览
+
+核心 Host 与核心 Web 有独立的发行入口。核心 Host 使用新数据目录。Bash 示例以测试 ZIP 的摘要作为允许执行的来源。
+
+```bash
+./scripts/release/package-core.sh host
+./scripts/release/package-core.sh web
+python3 tests/fixtures/domain-packages/build.py /tmp/devdesk-domain-samples
+./target/release/devdesk-host --data ./data-domains --web-dir ./web/dist/core \
+  --trust-domain "$(sha256sum /tmp/devdesk-domain-samples/manuscript.zip | cut -d ' ' -f1)"
+```
+
+在「领域包」导入并激活 ZIP。文稿包提供领域页面、配置目录和一条可实际执行的 Rust 调度工作流。卸载前应结束该包的在途工作流。领域 worker 需要本机 Docker 及固定的 Node 镜像。当前移植进度、命令和端到端验收入口见计划记录。[领域插件实施记录](docs/plans/domain-plugins/EXECUTION.md)
+
 ## 开发与验证
 
 开发入口构建 Web 和 debug Host，然后启动服务：

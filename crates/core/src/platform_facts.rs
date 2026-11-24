@@ -12,6 +12,11 @@ use crate::{
 pub(crate) enum PlatformAction {
     Delivery(Box<crate::platform_delivery::DeliveryAction>),
     Value(Value),
+    DomainRead {
+        project: Id,
+        handler: String,
+        input: Value,
+    },
     WorkspaceCurrent {
         context: GitContext,
         workspace: RepositoryWorktree,
@@ -429,6 +434,11 @@ impl Engine {
                 "platform-effect",
             )?);
         plan.action = match request.definition.qualified_name.as_str() {
+            "domain.read" => PlatformAction::DomainRead {
+                project: request.project_id.clone(),
+                handler: text(p, "handler")?,
+                input: p["input"].clone(),
+            },
             "materials.capture" => PlatformAction::Value(
                 json!({"inputs":p,"captured_at":now(),"operation_id":request.execution_id}),
             ),

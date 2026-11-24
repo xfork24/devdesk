@@ -12,6 +12,7 @@
 | [src/active_frontend_performance.rs](../../../crates/host/src/active_frontend_performance.rs) | Opt-in local HTTP regression fixture, with real resource commits and scheduler. Control steps have no provider I/O. This is not the full browser/W2/P6 workload. |
 | [src/background.rs](../../../crates/host/src/background.rs) | [后台阶段与跨项目调度](background-scheduling.md) |
 | [src/configuration_read.rs](../../../crates/host/src/configuration_read.rs) | [HTTP、RPC、认证与事件](http-and-security.md) |
+| [src/domains.rs](../../../crates/host/src/domains.rs) | Client-neutral domain directory, commands, and update notifications. |
 | [src/event_hub.rs](../../../crates/host/src/event_hub.rs) | [HTTP、RPC、认证与事件](http-and-security.md) |
 | [src/github_projects.rs](../../../crates/host/src/github_projects.rs) | [HTTP、RPC、认证与事件](http-and-security.md) |
 | [src/governance.rs](../../../crates/host/src/governance.rs) | [HTTP、RPC、认证与事件](http-and-security.md) |

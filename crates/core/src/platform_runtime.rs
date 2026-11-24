@@ -346,6 +346,7 @@ impl PlatformCall {
                 let read_only = matches!(
                     &plan.action,
                     PlatformAction::Value(_)
+                        | PlatformAction::DomainRead { .. }
                         | PlatformAction::WorkspaceCurrent { .. }
                         | PlatformAction::ReusedPublication { .. }
                 );
@@ -644,6 +645,20 @@ impl Engine {
                 // This grant contains a verified original immutable observation.
                 // Replaying its fact never dispatches another Git/GitHub effect.
                 Ok(Some(receipt.clone()))
+            }
+            PlatformAction::DomainRead {
+                project,
+                handler,
+                input,
+            } => {
+                if !fresh {
+                    return Err(err("needs_reconciliation", "领域读取缺少原观察"));
+                }
+                self.domain_reader
+                    .as_ref()
+                    .ok_or_else(|| err("domain_inactive", "领域运行端未启用"))?
+                    .read(project, handler, input.clone())
+                    .map(Some)
             }
             PlatformAction::Value(value) => {
                 if fresh {

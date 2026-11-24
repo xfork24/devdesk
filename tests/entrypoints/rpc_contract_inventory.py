@@ -6,7 +6,7 @@ import re
 
 
 ROOT = Path(__file__).resolve().parents[2]
-PREFIXES = set("query project feature task work workflow conversation session turn interaction proposal orchestration manager settings credentials runtime codex models model model_provider model_catalog repository integration tool skill role agent capability permission sandbox harness standard spec delivery_type configuration context document snapshot definition binding decision execution github experience workspace tasks materials tests git".split())
+PREFIXES = set("domain query project feature task work workflow conversation session turn interaction proposal orchestration manager settings credentials runtime codex models model model_provider model_catalog repository integration tool skill role agent capability permission sandbox harness standard spec delivery_type configuration context document snapshot definition binding decision execution github experience workspace tasks materials tests git".split())
 
 
 def main():

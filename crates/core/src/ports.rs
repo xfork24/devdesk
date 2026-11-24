@@ -244,6 +244,16 @@ pub enum ConversationObservation {
 }
 
 /// Validations perform no I/O. Calls are asynchronously dispatched after persistence.
+/// Read-only operations furnished by the active domain for its project.
+pub trait DomainReader: Send + Sync {
+    fn read(
+        &self,
+        project: &str,
+        handler: &str,
+        input: serde_json::Value,
+    ) -> Result<serde_json::Value>;
+}
+
 pub trait ToolExecutor: Send + Sync {
     fn validate_schema(&self, schema: &Value) -> Result<()>;
     fn validate_arguments(&self, schema: &Value, value: &Value) -> Result<()>;

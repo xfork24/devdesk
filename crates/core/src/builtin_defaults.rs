@@ -21,19 +21,16 @@ impl Engine {
         let scope = project.map(Scope::project).unwrap_or(Scope::global());
         for agent in defaults["role_agent_bindings"]
             .as_object()
-            .ok_or_else(|| err("configuration_required", "默认角色绑定缺失"))?
-            .values()
+            .into_iter()
+            .flat_map(|rows| rows.values())
         {
             let r =
                 crate::governance::reference(&s, agent.as_str().unwrap_or(""), "agent", &scope)?;
             crate::governance::validate_composition(&s, &s.resolve_agent(&r.id)?, &scope)?;
         }
-        crate::governance::reference(
-            &s,
-            defaults["workflow_ref"].as_str().unwrap_or(""),
-            "workflow",
-            &scope,
-        )?;
+        if let Some(workflow) = defaults["workflow_ref"].as_str() {
+            crate::governance::reference(&s, workflow, "workflow", &scope)?;
+        }
         if full {
             defaults["records"] = json!(
                 crate::templates::pinned_template_records(&s, Some(&defaults))

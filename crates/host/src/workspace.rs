@@ -40,6 +40,8 @@ use std::{
 type EngineInitialization = Arc<std::sync::OnceLock<Result<Arc<Engine>>>>;
 pub struct Workspace {
     pub global: Arc<GlobalStore>,
+    domains: std::sync::OnceLock<Result<Arc<domain_packages::DomainPackages>>>,
+    domain_trust: Arc<std::collections::BTreeSet<String>>,
     codex_auth: codex_auth::CodexAuthentication,
     github: github::GitHubPullRequests,
     configuration: Arc<Engine>,
@@ -89,16 +91,50 @@ fn workspace_defaults(e: &Engine) -> Result<()> {
 }
 
 impl Workspace {
+    pub(super) fn domain_packages(&self) -> Result<&Arc<domain_packages::DomainPackages>> {
+        self.domains
+            .get_or_init(|| {
+                domain_packages::DomainPackages::open(Path::new(&self.global.root())).map(Arc::new)
+            })
+            .as_ref()
+            .map_err(Clone::clone)
+    }
+
+    /// Existing project RPCs and subscriptions share the same active package boundary.
+    pub(super) fn validate_domain_project(&self, project: Option<&str>) -> Result<()> {
+        if let (Some(project), Some(Ok(packages))) = (project, self.domains.get())
+            && !packages.permits_project(project, &self.domain_trust)?
+        {
+            return Err(err("domain_inactive", "项目所属领域当前不可用"));
+        }
+        Ok(())
+    }
+
     fn open_conversation(&self, e: &Engine, command: Command) -> Result<Value> {
         e.open_prepared_session(&self.session_resources(), command)
     }
 
+    #[cfg(test)]
     pub fn open(root: &Path) -> Result<Arc<Self>> {
         Self::open_with_adapters(root, execution_adapters(root)?)
     }
+    pub fn open_trusted_domains(
+        root: &Path,
+        trusted: Arc<std::collections::BTreeSet<String>>,
+    ) -> Result<Arc<Self>> {
+        Self::open_with_services(root, execution_adapters(root)?, trusted)
+    }
+    #[cfg(test)]
     pub fn open_with_adapters(
         root: &Path,
         adapters: ports::ExecutionAdapters,
+    ) -> Result<Arc<Self>> {
+        Self::open_with_services(root, adapters, Default::default())
+    }
+    fn open_with_services(
+        root: &Path,
+        adapters: ports::ExecutionAdapters,
+        domain_trust: Arc<std::collections::BTreeSet<String>>,
     ) -> Result<Arc<Self>> {
         let global = Arc::new(GlobalStore::open(root)?);
         let configuration = engine(global.clone(), &adapters);
@@ -126,6 +162,8 @@ impl Workspace {
             codex_auth: codex_auth::CodexAuthentication::new(root)?,
             github: github::GitHubPullRequests::new(root)?,
             global,
+            domains: Default::default(),
+            domain_trust,
             configuration,
             reset_publication: Mutex::new(()),
             adapters,
@@ -311,14 +349,19 @@ impl Workspace {
         let store = SqliteStore::open_project(&root, id)?;
         store.maintain_runtime_storage(&root);
         let e = engine(Arc::new(store), &self.adapters);
-        let e = Arc::new(
-            Arc::try_unwrap(e)
-                .map_err(|_| err("storage", "装配项目服务失败"))?
-                .with_manager_services(ManagerServices {
-                    shared: self.configuration.clone(),
-                    inventory: self.global.clone(),
-                }),
-        );
+        let mut e = Arc::try_unwrap(e)
+            .map_err(|_| err("storage", "装配项目服务失败"))?
+            .with_manager_services(ManagerServices {
+                shared: self.configuration.clone(),
+                inventory: self.global.clone(),
+            });
+        if !self.domain_trust.is_empty() {
+            e.domain_reader = Some(Arc::new(crate::domains::ProjectReader {
+                packages: self.domain_packages()?.clone(),
+                trusted: self.domain_trust.clone(),
+            }));
+        }
+        let e = Arc::new(e);
         e.store.subscribe_changes(self.background.wake.listener());
         if !creating {
             require(
@@ -1468,6 +1511,11 @@ impl Workspace {
                 break;
             }
             let project = engine.store.project_id().unwrap_or_else(|| "global".into());
+            if let Some(Ok(packages)) = self.domains.get()
+                && !packages.permits_project(&project, &self.domain_trust)?
+            {
+                continue;
+            }
             let hints = match engine.scheduling_hints() {
                 Ok(hints) => {
                     resolved(Some(&project), "read_scheduling_hints")?;
@@ -2877,6 +2925,8 @@ impl Workspace {
         }
         Ok(Arc::new(Self {
             global,
+            domains: Default::default(),
+            domain_trust: Default::default(),
             configuration,
             reset_publication: Mutex::new(()),
             codex_auth: devdesk_adapters::codex_auth::CodexAuthentication::new(root)?,

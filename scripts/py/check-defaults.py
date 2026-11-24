@@ -92,6 +92,30 @@ def main() -> None:
         "README.md",
         manifest["usage_index"],
     }
+    core_manifest_path = "core/manifest.json"
+    core = json.loads((ROOT / core_manifest_path).read_text())
+    core_paths = {
+        path for paths in core["types"].values() for path in paths
+    }
+    if not core_paths <= sources.keys():
+        fail("the core catalog references sources absent from the compatibility catalog")
+    root_meta.update((core_manifest_path, core["defaults"], core["usage_index"]))
+    core_sources = [sources[path] for path in core_paths]
+    core_references = {f"{source['identity']}:{source['revision']}" for source in core_sources}
+    for source in core_sources:
+        for field in REFERENCE_FIELDS:
+            value = source.get(field, [])
+            for reference in ([value] if isinstance(value, str) else value):
+                if reference not in core_references:
+                    fail(f"core source {source['identity']} refers to a domain source: {reference}")
+    core_usage = json.loads((ROOT / core["usage_index"]).read_text())
+    if core_usage != {"schema_version": 1, "references": usage_index(core_sources)}:
+        fail("core reference usage index is stale")
+    core_defaults = json.loads((ROOT / core["defaults"]).read_text())
+    for key, reference in core_defaults.items():
+        if key.endswith("_ref") and reference not in core_references:
+            fail(f"core default {key} points outside the core catalog")
+
     listed = {
         rel for paths in manifest.get("types", {}).values() for rel in paths
     }

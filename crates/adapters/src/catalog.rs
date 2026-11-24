@@ -2,6 +2,8 @@
 use super::*;
 use rusqlite::{OptionalExtension, params};
 
+const DOMAIN_DATASET_LAYOUT: &str = "single-host-domain-packages-v1";
+
 pub struct GlobalStore {
     pub(super) connection: connection_pool::ConnectionPool,
     catalog_cache: configuration_cache::CatalogCache,
@@ -39,7 +41,21 @@ impl GlobalStore {
             "数据集协议不兼容；请使用新的空数据目录",
         )?;
         if version == 24 {
-            check_dataset_layout(&connection)?;
+            if cfg!(feature = "engineering-defaults") {
+                check_dataset_layout(&connection)?;
+            } else {
+                let layout = connection.query_row(
+                    "SELECT contract FROM dataset_layout WHERE id=1",
+                    [],
+                    |row| row.get::<_, String>(0),
+                );
+                if !layout.is_ok_and(|value| value == DOMAIN_DATASET_LAYOUT) {
+                    return Err(err(
+                        "incompatible_dataset",
+                        "领域平台需要新的数据目录。原数据保持原样",
+                    ));
+                }
+            }
             storage_maintenance::checkpoint(&connection)?;
             preflight_engineering_databases(&root, &connection)?;
         }
@@ -49,9 +65,13 @@ impl GlobalStore {
             )
             .map_err(storage)?;
         if version == 0 {
-            connection
-                .execute_batch(include_str!("../../../sql/global/schema.sql"))
-                .map_err(storage)?;
+            let schema = include_str!("../../../sql/global/schema.sql");
+            if cfg!(feature = "engineering-defaults") {
+                connection.execute_batch(schema).map_err(storage)?;
+            } else {
+                let schema = schema.replace("single-host-resource-v2", DOMAIN_DATASET_LAYOUT);
+                connection.execute_batch(&schema).map_err(storage)?;
+            }
         }
 
         let store = Self {

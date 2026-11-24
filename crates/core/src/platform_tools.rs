@@ -3,6 +3,7 @@ use crate::*;
 
 pub(crate) const PLATFORM_HANDLERS: &[&str] = &[
     "spec.lint",
+    "domain.read",
     "project.overview",
     "project.records.list",
     "project.record.read",

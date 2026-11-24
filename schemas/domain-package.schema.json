@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DevDesk domain ZIP manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "id", "version", "files"],
+  "properties": {
+    "format": { "const": 1 },
+    "id": { "$ref": "#/$defs/identifier" },
+    "version": { "$ref": "#/$defs/identifier" },
+    "files": {
+      "type": "object",
+      "maxProperties": 255,
+      "propertyNames": { "$ref": "#/$defs/path" },
+      "additionalProperties": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entry", "handlers"],
+      "properties": {
+        "entry": { "$ref": "#/$defs/path", "pattern": "^runtime/.+[.]mjs$" },
+        "handlers": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "$ref": "#/$defs/identifier" },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "core": { "enum": ["git_head"] },
+              "input_schema": { "type": ["object", "boolean"] },
+              "output_schema": { "type": ["object", "boolean"] }
+            }
+          }
+        }
+      }
+    },
+    "ui": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contributions", "targets"],
+      "properties": {
+        "contributions": { "$ref": "#/$defs/path" },
+        "targets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["renderer", "api", "bindings"],
+            "properties": {
+              "renderer": { "$ref": "#/$defs/identifier" },
+              "api": { "type": "integer", "minimum": 1 },
+              "bindings": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["contribution", "entry", "export"],
+                  "properties": {
+                    "contribution": { "$ref": "#/$defs/identifier" },
+                    "entry": { "$ref": "#/$defs/path", "pattern": "^ui/" },
+                    "export": { "$ref": "#/$defs/identifier" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "identifier": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,139}$" },
+    "path": { "type": "string", "maxLength": 256, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,139}(/[A-Za-z0-9][A-Za-z0-9._-]{0,139})*$" }
+  }
+}

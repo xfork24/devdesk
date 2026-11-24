@@ -32,6 +32,66 @@ pub struct CliGit {
     root: PathBuf,
     github: crate::github::GitHubPullRequests,
 }
+/// Read-only local Git with fixed commands. The caller supplies an explicit
+/// location and the package receives only the resulting facts.
+pub fn local_git(input: &Value, diff: bool) -> Result<Value> {
+    let folder = input["path"]
+        .as_str()
+        .filter(|path| !path.is_empty() && path.len() <= 4096)
+        .ok_or_else(|| err("invalid_params", "请提供本地仓库路径"))?;
+    let folder = fs::canonicalize(folder).map_err(|_| err("not_found", "本地仓库路径不可读"))?;
+    let revision = |key: &str| {
+        input[key]
+            .as_str()
+            .filter(|s| {
+                *s == "HEAD"
+                    || (matches!(s.len(), 40 | 64) && s.bytes().all(|b| b.is_ascii_hexdigit()))
+            })
+            .ok_or_else(|| err("invalid_params", "修订必须为 HEAD 或完整 OID"))
+    };
+    let head = inspect_local_git(&folder, &["rev-parse", "--verify", "HEAD^{commit}"])?;
+    if diff {
+        let from = revision("from")?;
+        let to = revision("to")?;
+        let diff = inspect_local_git(
+            &folder,
+            &["diff", "--no-ext-diff", "--no-textconv", from, to, "--"],
+        )?;
+        Ok(json!({"head":head.trim(),"diff":diff}))
+    } else {
+        Ok(json!({"head":head.trim()}))
+    }
+}
+
+fn inspect_local_git(path: &Path, args: &[&str]) -> Result<String> {
+    let mut command = Command::new("git");
+    for (key, _) in std::env::vars_os() {
+        if key.to_string_lossy().starts_with("GIT_") {
+            command.env_remove(key);
+        }
+    }
+    command
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .args([
+            "--no-pager",
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-C",
+        ])
+        .arg(path)
+        .args(args);
+    let result = crate::process::capture_command(command, Duration::from_secs(10), None)?;
+    if result.code != 0 || result.truncated {
+        return Err(err("git_read_failed", "Git 无法读取指定仓库或修订"));
+    }
+    String::from_utf8(result.stdout).map_err(|_| err("git_read_failed", "Git 内容不是 UTF-8"))
+}
+
 fn valid_oid(value: &str) -> bool {
     matches!(value.len(), 40 | 64)
         && value

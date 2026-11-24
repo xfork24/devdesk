@@ -438,6 +438,61 @@
       ]
     },
     {
+      "method": "domain.activate",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "active_epoch_and_trust",
+      "sites": [
+        "crates/host/src/domains.rs"
+      ]
+    },
+    {
+      "method": "domain.deactivate",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "active_epoch",
+      "sites": [
+        "crates/host/src/domains.rs"
+      ]
+    },
+    {
+      "method": "domain.install",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "package_digest",
+      "sites": [
+        "crates/host/src/domains.rs"
+      ]
+    },
+    {
+      "method": "domain.read",
+      "access": "platform_read",
+      "scope": "explicit",
+      "precondition": "frozen_project_and_handler",
+      "sites": [
+        "crates/core/src/platform_facts.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "domain.uninstall",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "active_epoch",
+      "sites": [
+        "crates/host/src/domains.rs"
+      ]
+    },
+    {
+      "method": "domain.workflow.start",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "command_id_and_active_epoch",
+      "sites": [
+        "crates/host/src/domains.rs"
+      ]
+    },
+    {
       "method": "execution.retry_cleanup",
       "access": "mutation",
       "scope": "explicit",
@@ -1305,6 +1360,24 @@
       ]
     },
     {
+      "method": "query.core.git.diff",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/domains.rs"
+      ]
+    },
+    {
+      "method": "query.core.git.head",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/domains.rs"
+      ]
+    },
+    {
       "method": "query.default_configuration",
       "access": "retired",
       "scope": "explicit",
@@ -1320,6 +1393,42 @@
       "precondition": "none",
       "sites": [
         "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "query.domain.active",
+      "access": "read",
+      "scope": "global",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/domains.rs"
+      ]
+    },
+    {
+      "method": "query.domain.installed",
+      "access": "read",
+      "scope": "global",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/domains.rs"
+      ]
+    },
+    {
+      "method": "query.domain.invoke",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "active_epoch",
+      "sites": [
+        "crates/host/src/domains.rs"
+      ]
+    },
+    {
+      "method": "query.domain.workflow",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "active_epoch",
+      "sites": [
+        "crates/host/src/domains.rs"
       ]
     },
     {
@@ -2831,6 +2940,7 @@
     "execution.stopped",
     "experience.imported",
     "harness.native",
+    "orchestration.history_body",
     "project.read",
     "project.reserve",
     "query.work_",
@@ -2840,6 +2950,8 @@
     "repository.completed",
     "repository.dispatched",
     "repository.needs_reconciliation",
+    "runtime.controller.observe",
+    "runtime.controller.unlimit",
     "runtime.controller_calls",
     "runtime.controller_reply",
     "runtime.controllers",
@@ -2851,9 +2963,6 @@
     "runtime.platform_tools",
     "runtime.rust_driver",
     "runtime.step_checkpoint",
-    "workflow.changed",
-    "runtime.controller.observe",
-    "runtime.controller.unlimit",
     "runtime.task.worktree",
     "runtime.workflow.change.activate",
     "runtime.workflow.change.quiesce",
@@ -2861,6 +2970,7 @@
     "runtime.workflow.reconciliation",
     "runtime.workflow.rule_hint",
     "runtime.workflow.status",
+    "workflow.changed",
     "workflow.compile",
     "workflow.decision",
     "workflow.driver.selected",
@@ -2921,6 +3031,18 @@
       "path": "/artifacts/{id}",
       "access": "read",
       "precondition": "none"
+    },
+    {
+      "method": "GET",
+      "path": "/domain-events",
+      "access": "read",
+      "precondition": "session"
+    },
+    {
+      "method": "GET",
+      "path": "/domain-assets/{epoch}/{digest}/{*path}",
+      "access": "read",
+      "precondition": "session_and_active_epoch"
     }
   ]
 }

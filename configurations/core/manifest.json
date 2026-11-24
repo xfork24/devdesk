@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "bundle_version": "core-v1",
+  "usage_index": "core/reference-usage.json",
+  "types": {
+    "role": [],
+    "skill": [],
+    "spec": [],
+    "standard": [],
+    "workflow": [],
+    "delivery_type": [],
+    "capability": [],
+    "agent": [],
+    "model": [
+      "models/builtin-model-gpt-6-2-sol-high-v1.json",
+      "models/builtin-model-minimax-m3-1-flash-v1.json",
+      "models/builtin-model-glm-5-3-v1.json"
+    ],
+    "harness": [
+      "harnesses/builtin-harness-dsh-multi-provider-v2.json",
+      "harnesses/builtin-harness-codex-managed-v2.json"
+    ],
+    "sandbox": [
+      "sandboxes/builtin-sandbox-docker-v2.json"
+    ],
+    "tool": [
+      "tools/builtin-tool-codex-native-v2.json",
+      "tools/builtin-tool-dsh-native-v2.json",
+      "tools/builtin-tool-workflow-inspect-v3.json",
+      "tools/builtin-tool-workflow-events-read-v2.json",
+      "tools/builtin-tool-workflow-outputs-read-v3.json",
+      "tools/builtin-tool-workflow-execution-inspect-v2.json",
+      "tools/builtin-tool-spec-lint-v2.json"
+    ],
+    "permission_profile": [
+      "permissions/profiles/builtin-permission-harness-full-access-v2.json",
+      "permissions/profiles/builtin-permission-harness-read-only-v2.json",
+      "permissions/profiles/builtin-permission-sandbox-full-access-v2.json"
+    ],
+    "model_provider": [
+      "model-providers/builtin-model-provider-openai-v1.json",
+      "model-providers/builtin-model-provider-deepseek-v1.json",
+      "model-providers/builtin-model-provider-zai-coding-cn-v1.json",
+      "model-providers/builtin-model-provider-minimax-cn-v1.json",
+      "model-providers/builtin-model-provider-ollama-v1.json"
+    ],
+    "model_catalog": [
+      "harnesses/builtin-model-catalog-dsh-v1.json"
+    ]
+  },
+  "defaults": "core/defaults.json"
+}

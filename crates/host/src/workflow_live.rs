@@ -125,12 +125,12 @@ fn actual_git_docker_workflow_handoffs() {
         json!({"key":"snapshot","name":"Freeze actual Git files","stage":"probe","dependencies":["current"],"executor":{"type":"tool","tool_ref":"builtin-tool-workspace-snapshot:2","arguments":{"workspace":{"type":"source","source":{"step":"current","port":"workspace"}},"allowed_paths":{"type":"constant","value":["note.txt"]},"include_diff":{"type":"constant","value":false}}},"outputs":{"workspace":{"delivery_ref":"builtin-delivery-workspace-snapshot:3"}}}),
     ];
     for n in 0..6 {
-        steps.push(json!({"key":format!("docker_{n}"),"name":format!("Actual Docker test {n}"),"stage":"probe","dependencies":[if n==0 {"snapshot".into()}else{format!("docker_{}",n-1)}],"executor":{"type":"tool","tool_ref":"builtin-tool-tests-run:2","arguments":{"workspace":{"type":"source","source":{"step":"snapshot","port":"workspace"}},"recipe":{"type":"constant","value":{"runner":"node_test","files":["probe.test.mjs"],"timeout_seconds":30}}}},"outputs":{"report":{"delivery_ref":"builtin-delivery-test-report:2"}},"completion":{"op":"equals","source":{"step":format!("docker_{n}"),"port":"report","pointer":"/status"},"value":"succeeded"}}));
+        steps.push(json!({"key":format!("docker_{n}"),"name":format!("Actual Docker test {n}"),"stage":"probe","dependencies":[if n==0 {"snapshot".into()}else{format!("docker_{}",n-1)}],"executor":{"type":"tool","tool_ref":"simplified-tool-tests-run:3","arguments":{"workspace":{"type":"source","source":{"step":"snapshot","port":"workspace"}},"recipe":{"type":"constant","value":{"runner":"node_test","files":["probe.test.mjs"],"timeout_seconds":30}}}},"outputs":{"report":{"delivery_ref":"builtin-delivery-test-report:2"}},"completion":{"op":"equals","source":{"step":format!("docker_{n}"),"port":"report","pointer":"/status"},"value":"succeeded"}}));
     }
     let draft = command(
         "workflow.create",
         None,
-        json!({"name":"Actual Git Docker handoffs","document":{"schema_version":6,"scheduling":{"max_actions_per_tick":8,"max_concurrency":1,"lease_seconds":60},"stages":[{"key":"probe","name":"Transport probe"}],"steps":steps}}),
+        json!({"name":"Actual Git Docker handoffs","scope":format!("project:{project}"),"document":{"schema_version":6,"scheduling":{"max_actions_per_tick":8,"max_concurrency":1,"lease_seconds":60},"stages":[{"key":"probe","name":"Transport probe"}],"steps":steps}}),
     );
     let published = command("workflow.publish", draft["id"].as_str(), json!({}));
     let defaults = w
