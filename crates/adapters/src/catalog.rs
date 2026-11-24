@@ -246,11 +246,22 @@ impl GlobalStore {
     }
 
     pub fn removed_project_missing(&self, project: &str) -> Result<bool> {
-        Ok(self.project_removed(project)?
-            && !SqliteStore::project_path(&self.root, project)?
+        self.removed_project_missing_on(&*self.connection.read()?, project)
+    }
+
+    fn removed_project_missing_on(&self, conn: &Connection, project: &str) -> Result<bool> {
+        if setting(conn, &Self::project_removal_key(project).id)? != Some(json!(true)) {
+            return Ok(false);
+        }
+        match SqliteStore::project_path(&self.root, project) {
+            Ok(path) => path
                 .join("engineering.sqlite3")
                 .try_exists()
-                .map_err(storage)?)
+                .map(|exists| !exists)
+                .map_err(storage),
+            Err(error) if error.code == domain_packages::DOMAIN_STORAGE_UNAVAILABLE => Ok(true),
+            Err(error) => Err(error),
+        }
     }
 
     /// Reopening can find a retained registration even when it is hidden.
@@ -282,12 +293,7 @@ impl GlobalStore {
             if !visible && !visibility.unidentified_projects.contains(&id) {
                 continue;
             }
-            if setting(&conn, &Self::project_removal_key(&id).id)? == Some(json!(true))
-                && !SqliteStore::project_path(&self.root, &id)?
-                    .join("engineering.sqlite3")
-                    .try_exists()
-                    .map_err(storage)?
-            {
+            if self.removed_project_missing_on(&conn, &id)? {
                 continue;
             }
             if visible {
@@ -502,7 +508,11 @@ fn preflight_engineering_databases(root: &Path, global: &Connection) -> Result<(
         .map_err(storage)?;
     for row in projects {
         let (id, published) = row.map_err(storage)?;
-        let path = SqliteStore::project_path(root, &id)?.join("engineering.sqlite3");
+        let path = match SqliteStore::project_path(root, &id) {
+            Ok(path) => path.join("engineering.sqlite3"),
+            Err(error) if error.code == domain_packages::DOMAIN_STORAGE_UNAVAILABLE => continue,
+            Err(error) => return Err(error),
+        };
         let status = if path.exists() {
             check_engineering_baseline(&path)
         } else {
@@ -527,7 +537,7 @@ fn preflight_engineering_databases(root: &Path, global: &Connection) -> Result<(
     }
     Ok(())
 }
-fn check_engineering_baseline(path: &Path) -> Result<()> {
+pub(super) fn check_engineering_baseline(path: &Path) -> Result<()> {
     let connection = connection_pool::ManagedConnection::read_only(path)?;
     let version: u32 = connection
         .query_row("PRAGMA user_version", [], |r| r.get(0))

@@ -23,8 +23,7 @@
 | [schemas](../../schemas/README.md) | 数据形状及协议合同 |
 | [sql](../../sql/README.md) | 当前数据库基线和结构 |
 | [permissions](../../permissions/README.md) | 实际权限后端资产 |
-| [containers](../../containers/README.md) | 测试等容器输入；Harness 执行配方由配置组合生成 |
-| [tests](../../tests/README.md) | 跨进程合同、原生协议探针和共享支持 |
+| [tests](../../tests/README.md) | 跨进程合同、原生协议探针、测试镜像配方和共享支持 |
 | [scripts](../../scripts/README.md) | 开发、检查、平台安装与发布入口 |
 
 ## 按问题定位

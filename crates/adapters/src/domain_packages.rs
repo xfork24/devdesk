@@ -15,6 +15,7 @@ mod worker;
 pub(crate) use storage::{externally_stored_projects, project_storage_root};
 
 pub const MAX_ARCHIVE: usize = 2 * 1024 * 1024;
+pub const DOMAIN_STORAGE_UNAVAILABLE: &str = "domain_storage_unavailable";
 const MAX_EXPANDED: u64 = 8 * 1024 * 1024;
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -633,6 +634,12 @@ impl ProjectVisibility {
     pub fn includes(&self, project: &str) -> bool {
         self.projects.contains(project) == self.active_digest.is_some()
     }
+
+    pub fn retain_open_domain_projects(&mut self, mut is_open: impl FnMut(&str) -> bool) {
+        if self.active_digest.is_some() {
+            self.projects.retain(|id| is_open(id));
+        }
+    }
 }
 
 /// Serializes only activation lifecycle. Invocations pin their read lease until
@@ -671,22 +678,60 @@ impl DomainPackages {
         .map_err(storage)?;
         db.execute_batch(storage::SCHEMA).map_err(storage)?;
         storage::restore_package_identities(&db, root)?;
-        let (epoch, installed_digest, archive): (u64, Option<String>, Option<Vec<u8>>) = db
+        let (mut epoch, installed_digest, domain, archive): (
+            u64,
+            Option<String>,
+            Option<String>,
+            Option<Vec<u8>>,
+        ) = db
             .query_row(
-                "SELECT a.epoch, a.digest, p.zip FROM active_domain a
+                "SELECT a.epoch, a.digest, p.id, p.zip FROM active_domain a
              LEFT JOIN domain_packages p ON p.digest=a.digest WHERE singleton=1",
                 [],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .map_err(storage)?;
-        let package = archive
-            .as_deref()
-            .map(Package::read)
-            .transpose()?
-            .map(Arc::new);
-        if package.as_ref().map(|p| &p.digest) != installed_digest.as_ref() {
-            return Err(err("storage", "活动领域包摘要与存储内容不符"));
-        }
+        let available = domain.as_deref().map_or(Ok(()), |id| {
+            storage::require_configured_storage(&db, root, id)
+        });
+        let package = match available {
+            Ok(()) => {
+                let package = archive
+                    .as_deref()
+                    .map(Package::read)
+                    .transpose()?
+                    .map(Arc::new);
+                if package.as_ref().map(|p| &p.digest) != installed_digest.as_ref() {
+                    return Err(err("storage", "活动领域包摘要与存储内容不符"));
+                }
+                if let Some(package) = &package
+                    && let Err(error) =
+                        storage::recover_configured_projects(&db, root, &package.manifest.id)
+                {
+                    eprintln!(
+                        "{}",
+                        json!({"type":"domain_project_recovery_failed","domain":package.manifest.id,
+                            "reason":error.code,"message":error.message})
+                    );
+                }
+                package
+            }
+            Err(error) if error.code == DOMAIN_STORAGE_UNAVAILABLE => {
+                epoch = next_epoch(epoch)?;
+                db.execute(
+                    "UPDATE active_domain SET epoch=?,digest=NULL WHERE singleton=1",
+                    [epoch],
+                )
+                .map_err(storage)?;
+                eprintln!(
+                    "{}",
+                    json!({"type":"domain_startup_fallback","domain":domain,
+                        "epoch":epoch,"reason":error.code,"message":error.message})
+                );
+                None
+            }
+            Err(error) => return Err(error),
+        };
         Ok(Self {
             root: root.into(),
             db: Mutex::new(db),
@@ -771,6 +816,7 @@ impl DomainPackages {
         &self,
         digest: &str,
         expected: u64,
+        prepare: impl FnOnce(Vec<String>) -> Result<()>,
         quiescent: impl FnOnce(Vec<String>) -> Result<()>,
     ) -> Result<u64> {
         check_epoch(expected, self.epoch())?;
@@ -790,9 +836,13 @@ impl DomainPackages {
         if package.digest != digest {
             return Err(err("storage", "领域包内容与登记摘要不符"));
         }
+        let id = &package.manifest.id;
         if let Some(runtime) = package.runtime() {
             worker::describe(&package, runtime)?;
         }
+        // Reopening a project can read the current domain lease.
+        storage::recover_configured_projects(&self.db.lock().unwrap(), &self.root, id)?;
+        prepare(self.projects(id)?)?;
         let mut active = self.active.write().unwrap();
         check_epoch(expected, active.epoch)?;
         if active.package.as_ref().is_some_and(|p| p.digest == digest) {

@@ -1,6 +1,6 @@
 use super::*;
 use devdesk_adapters::permission_profiles::{
-    compile_permission_profiles, permission_contract, preflight_profile,
+    BUILTIN_PRESET_SOURCE, compile_permission_profiles, permission_contract, preflight_profile,
 };
 
 impl Workspace {
@@ -385,9 +385,11 @@ impl Workspace {
                     self.global.select_permission_preset_source(&c)
                 }
                 "permission.source.browse" => {
-                    let source = self.global.permission_preset_source()?;
                     let path = match params.get("path") {
                         None => PathBuf::from(self.global.root()),
+                        Some(Value::String(path)) if path == BUILTIN_PRESET_SOURCE => {
+                            PathBuf::from(self.global.root())
+                        }
                         Some(Value::String(path)) => PathBuf::from(path),
                         _ => return Err(err("invalid_params", "目录路径必须是字符串")),
                     };
@@ -410,7 +412,6 @@ impl Workspace {
                     directories.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
                     let mut locations = vec![
                         json!({"name":"数据目录","path":self.global.root()}),
-                        json!({"name":"内置预设","path":source.builtin_path}),
                         json!({"name":"根目录","path":Path::new(&path).ancestors().last()}),
                     ];
                     if let Some(home) = std::env::var_os("HOME") {
@@ -675,6 +676,15 @@ mod tests {
         let catalog = w.dispatch("query.permission_resources", json!({})).unwrap();
         let bindings = catalog["bindings"].clone();
         assert_eq!(catalog["source"]["is_builtin"], true);
+        assert_eq!(
+            w.dispatch(
+                "permission.source.browse",
+                json!({"path":catalog["source"]["builtin_path"]})
+            )
+            .unwrap()["path"],
+            json!(root)
+        );
+        assert!(!root.join("packaged-permission-presets").exists());
         let c = json!({"command_id":id(),"expected_revision":catalog["source"]["revision"],"payload":{"path":custom}});
         let selected = w.dispatch("permission.source.select", c.clone()).unwrap();
         assert_eq!(selected["path"], json!(custom));

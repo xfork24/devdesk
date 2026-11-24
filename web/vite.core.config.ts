@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 const pluginRoot = `${normalizePath(resolve("../plugins"))}/`;
 
 export default defineConfig({
-  root: "core",
+  root: "src",
   plugins: [
     {
       name: "core-workbench-imports",
@@ -31,7 +31,7 @@ export default defineConfig({
     rollupOptions: {
       preserveEntrySignatures: "exports-only",
       input: {
-        app: resolve("core/index.html"),
+        app: resolve("src/index.html"),
         "devdesk-ui": resolve("src/domain-sdk.ts"),
       },
       output: {

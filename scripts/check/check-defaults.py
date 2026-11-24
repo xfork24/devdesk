@@ -73,7 +73,7 @@ def check_catalog(directory, dependencies, domain=None):
         if json.loads((directory / index).read_text()) != {
             "schema_version": 1, "references": usage_index(sources),
         }:
-            raise ValueError("core usage index is stale; run python3 scripts/py/configuration_usage.py --write")
+            raise ValueError("core usage index is stale; run python3 scripts/check/configuration_usage.py --write")
     orphans = sorted(path.relative_to(directory).as_posix() for path in directory.rglob("*")
                      if path.is_file() and path.relative_to(directory).as_posix() not in owned)
     if orphans:

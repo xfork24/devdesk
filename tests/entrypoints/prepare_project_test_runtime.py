@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 root = Path(__file__).resolve().parents[2]
-recipe = root / 'containers/tests/Dockerfile'
+recipe = root / 'tests/fixtures/project-runtime/Dockerfile'
 reference = os.environ.get('DEVDESK_TEST_PROJECT_IMAGE', 'devdesk/project-tests:1')
 identity = hashlib.sha256(recipe.read_bytes()).hexdigest()
 existing = subprocess.run(['docker', 'image', 'inspect', reference], capture_output=True, text=True)

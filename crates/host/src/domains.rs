@@ -161,7 +161,11 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
                 }
                 _ => return Err(err("invalid_params", "需要领域数据目录或 null")),
             };
-            packages.configure_storage(epoch()?, expected, path)
+            let (settings, projects) =
+                packages.configure_storage(&workspace.global, epoch()?, expected, path)?;
+            workspace.reopen_available_domain_projects(projects)?;
+            app.domain_epoch.send_modify(|_| {});
+            Ok(settings)
         }
         "domain.install" => {
             let archive = text("archive")?;
@@ -194,7 +198,8 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
                 Ok(())
             };
             let epoch = if name == "domain.activate" {
-                packages.activate(digest()?, epoch()?, quiescent)?
+                let prepare = |projects| workspace.reopen_available_domain_projects(projects);
+                packages.activate(digest()?, epoch()?, prepare, quiescent)?
             } else {
                 packages.deactivate(digest()?, epoch()?, uninstall, quiescent)?
             };
@@ -239,6 +244,7 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
                 let created = if let Some(existing) = existing_project {
                     existing
                 } else {
+                    packages.project_import_root(digest)?;
                     workspace.create_project(
                     Command {
                         command_id: format!(
@@ -255,7 +261,13 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
                 let project = created["id"]
                     .as_str()
                     .ok_or_else(|| err("storage", "项目回执缺少 ID"))?;
-                let engine = workspace.project_engine(Some(project))?;
+                let (engine, reopened) = match workspace.project_engine(Some(project)) {
+                    Err(error) if reuse && error.code == "not_found" => {
+                        packages.recover_project_from_storage(digest)?;
+                        (workspace.open_registered_domain_project(project)?, true)
+                    }
+                    result => (result?, false),
+                };
                 engine.adopt_domain_sources(sources)?;
                 if let Some(plan) = plan {
                     let state = engine.store.read_resources(&[devdesk_core::concurrency::ResourceKey::new(
@@ -272,8 +284,9 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
                 }
                 if reuse {
                     let was_removed = workspace.global.project_removed(project)?;
-                    let result = project_directory_change(&workspace, open_id, fingerprint, project, false, created.clone())?;
-                    if was_removed {
+                    let current = json!(engine.store.project_metadata()?);
+                    let result = project_directory_change(&workspace, open_id, fingerprint, project, false, current)?;
+                    if was_removed || reopened {
                         app.domain_epoch.send_modify(|_| {});
                     }
                     Ok(result)

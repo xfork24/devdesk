@@ -239,7 +239,9 @@ fn software_domain_worker_matches_legacy_test_discovery() {
     let packages = DomainPackages::open(temporary.path()).unwrap();
     let installed = packages.install(SOFTWARE_DOMAIN_FIXTURE).unwrap();
     let digest = installed["digest"].as_str().unwrap();
-    let epoch = packages.activate(digest, 0, |_| Ok(())).unwrap();
+    let epoch = packages
+        .activate(digest, 0, |_| Ok(()), |_| Ok(()))
+        .unwrap();
     let cases: &[&[(&str, &str)]] = &[
         &[],
         &[("package.json", r#"{"scripts":{"test":"node --test"}}"#)],
@@ -408,7 +410,9 @@ fn software_domain_branch_is_frozen_before_git_writes_and_inspected_without_rese
     let packages = DomainPackages::open(root.path()).unwrap();
     let installed = packages.install(SOFTWARE_DOMAIN_FIXTURE).unwrap();
     let digest = installed["digest"].as_str().unwrap();
-    packages.activate(digest, 0, |_| Ok(())).unwrap();
+    packages
+        .activate(digest, 0, |_| Ok(()), |_| Ok(()))
+        .unwrap();
     packages.bind_project(&project, digest).unwrap();
     engine.domain_reader = Some(Arc::new(PackageReader { packages }));
     let discovery = engine.discover_project_tests().unwrap();

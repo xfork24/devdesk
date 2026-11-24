@@ -38,7 +38,7 @@
 在仓库根目录执行，按改动选择必要项目：
 
 ```bash
-python3 scripts/py/check-docs.py
+python3 scripts/check/check-docs.py
 python3 tests/entrypoints/test_docs_checker.py
 ./scripts/check/check-architecture.sh
 cargo test --workspace --locked

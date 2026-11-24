@@ -7,6 +7,7 @@ type StorageSettings = {
   revision: number;
   configured_root: string | null;
   data_root: string;
+  available?: boolean;
   project_roots: { data_root: string; projects: number }[];
 };
 
@@ -78,11 +79,17 @@ export function DomainStorageSettings({ epoch }: { epoch: number }) {
             </label>
             <p className="muted">
               输入 Host 所在机器上的绝对路径，留空使用 Host 数据目录。
-              新项目的数据库、仓库和产物写入此处。已有项目继续使用各自的路径。
+              新项目的数据写入此处。Host 会核对并接回已移到此处的项目。
             </p>
             <p>
-              当前生效目录 <code>{settings.data_root}</code>
+              {settings.available === false ? "已登记目录" : "当前生效目录"}{" "}
+              <code>{settings.data_root}</code>
             </p>
+            {settings.available === false && (
+              <p role="status">
+                此目录不可用。请恢复原目录，或保存一个可用目录。
+              </p>
+            )}
             {settings.project_roots.length > 0 && (
               <ul aria-label="已有项目的数据目录">
                 {settings.project_roots.map((item) => (

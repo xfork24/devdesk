@@ -257,6 +257,103 @@ impl CliGit {
             github: crate::github::GitHubPullRequests::new(root)?,
         })
     }
+    pub(crate) fn repair_relocated_worktrees(
+        &self,
+        old: &Path,
+        new: &Path,
+        repository: &str,
+        worktrees: &[RepositoryWorktree],
+    ) -> Result<()> {
+        let repo = new.join("repository");
+        reject_symlink(&repo)?;
+        require(
+            self.output(&repo, &["rev-parse", "--is-bare-repository"])? == "true"
+                && self
+                    .output(&repo, &["remote", "get-url", "origin"])?
+                    .eq_ignore_ascii_case(&format!("https://github.com/{repository}.git")),
+            "待接回项目的裸仓库或 GitHub 来源不符",
+        )?;
+        let admin = repo.join("worktrees");
+        reject_symlink(&admin)?;
+        if admin.is_dir() {
+            for entry in fs::read_dir(&admin).map_err(storage)? {
+                let entry = entry.map_err(storage)?;
+                let kind = entry.file_type().map_err(storage)?;
+                if entry.file_name() == ".DS_Store" && kind.is_file() {
+                    continue;
+                }
+                require(kind.is_dir(), "Git 工作树登记无效")?;
+                let gitdir = entry.path().join("gitdir");
+                reject_symlink(&gitdir)?;
+                require(gitdir.is_file(), "Git 工作树指针无效")?;
+                let raw = fs::read_to_string(&gitdir).map_err(storage)?;
+                let path = Path::new(raw.trim());
+                require(
+                    [old, new].iter().any(|root| {
+                        path.strip_prefix(root.join("execution/worktrees"))
+                            .is_ok_and(|tail| {
+                                tail.components()
+                                    .all(|part| matches!(part, std::path::Component::Normal(_)))
+                            })
+                    }),
+                    "Git 工作树登记越过项目目录",
+                )?;
+                if path.try_exists().map_err(storage)? {
+                    require(
+                        path.starts_with(new) && path.canonicalize().map_err(storage)? == path,
+                        "Git 工作树指针仍指向目标项目之外的文件",
+                    )?;
+                }
+                reject_symlink(&entry.path().join("commondir"))?;
+            }
+        }
+        let old_admin = old.join("repository/worktrees");
+        let mut present = Vec::new();
+        for tree in worktrees {
+            let path = Path::new(&tree.path);
+            reject_symlink(path)?;
+            if !path.try_exists().map_err(storage)? {
+                continue;
+            }
+            require(
+                path.is_dir() && path.canonicalize().map_err(storage)? == path,
+                "工作树目录无效",
+            )?;
+            let gitfile = path.join(".git");
+            reject_symlink(&gitfile)?;
+            require(gitfile.is_file(), "工作树缺少 Git 指针")?;
+            let contents = fs::read_to_string(gitfile).map_err(storage)?;
+            let linked = contents
+                .trim()
+                .strip_prefix("gitdir: ")
+                .map(Path::new)
+                .and_then(|path| {
+                    path.strip_prefix(&old_admin)
+                        .or_else(|_| path.strip_prefix(&admin))
+                        .ok()
+                })
+                .ok_or_else(|| err("incompatible_dataset", "工作树未登记到原仓库或目标仓库"))?;
+            require(
+                linked.components().count() == 1
+                    && matches!(
+                        linked.components().next(),
+                        Some(std::path::Component::Normal(_))
+                    )
+                    && admin.join(linked).is_dir(),
+                "Git 工作树登记缺失",
+            )?;
+            present.push(tree);
+        }
+        for trees in present.chunks(32) {
+            let mut args = vec!["worktree", "repair", "--"];
+            args.extend(trees.iter().map(|tree| tree.path.as_str()));
+            self.output(&repo, &args)?;
+            for tree in trees {
+                self.verify_worktree(&repo, Path::new(&tree.path), &tree.branch)?;
+            }
+        }
+        Ok(())
+    }
     fn project(&self, project: &str) -> Result<PathBuf> {
         SqliteStore::project_path(&self.root, project)
     }

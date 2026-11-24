@@ -317,35 +317,26 @@ fn runtime_directory_reload_is_idempotent_and_does_not_assign_targets() {
 }
 
 #[test]
-fn packaged_presets_are_dataset_local_and_recover_from_the_embedded_bundle() {
+fn packaged_presets_load_directly_from_the_embedded_bundle() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = global(dir.path());
     let source = store.permission_preset_source().unwrap();
     assert!(source.is_builtin);
-    assert!(source.path.starts_with(dir.path().canonicalize().unwrap()));
-    let files = std::fs::read_dir(&source.path)
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .collect::<Vec<_>>();
-    assert!(!files.is_empty());
-    for path in &files {
-        let source: SourceDefinition =
-            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
-        assert_eq!(source.r#type, "permission_profile");
+    assert_eq!(source.path.to_str(), Some(BUILTIN_PRESET_SOURCE));
+    let obsolete = dir.path().join("packaged-permission-presets");
+    std::fs::create_dir(&obsolete).unwrap();
+    std::fs::write(obsolete.join("stale.json"), "damaged generated cache").unwrap();
+    for payload in [json!({}), json!({"builtin":true})] {
+        let result = store
+            .reload_permission_presets(&preset_command(store.as_ref(), "reload", payload))
+            .unwrap();
+        assert!(!result["unchanged"].as_array().unwrap().is_empty());
+        if obsolete.exists() {
+            std::fs::remove_file(obsolete.join("stale.json")).unwrap();
+            std::fs::remove_dir(&obsolete).unwrap();
+        }
     }
-    let original = std::fs::read(&files[0]).unwrap();
-    std::fs::write(&files[0], "damaged generated cache").unwrap();
-    store
-        .reload_permission_presets(&preset_command(
-            store.as_ref(),
-            "reload",
-            json!({"builtin":true}),
-        ))
-        .unwrap();
-    assert_eq!(std::fs::read(&files[0]).unwrap(), original);
-    std::fs::remove_dir_all(&source.path).unwrap();
-    assert_eq!(store.permission_preset_source().unwrap().path, source.path);
-    assert_eq!(std::fs::read(&files[0]).unwrap(), original);
+    assert!(!obsolete.exists());
 }
 
 #[test]

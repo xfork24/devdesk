@@ -140,7 +140,7 @@ def build(target, web):
         filename = f"{record['identity']}-v{record['revision']}.json"
         types.setdefault(record["type"], []).append(filename)
         files[f"configurations/{filename}"] = json.dumps(record).encode()
-    usage = runpy.run_path(str(REPO / "scripts/py/configuration_usage.py"))["usage_index"]
+    usage = runpy.run_path(str(REPO / "scripts/check/configuration_usage.py"))["usage_index"]
     entity_types = "configurations/entity-types/repository.json"
     files.update({
         "configurations/manifest.json": json.dumps({

@@ -22,14 +22,14 @@
 | 方法或入口 | 作用和前置条件 |
 |---|---|
 | `domain.install` | 提交 Base64 ZIP `archive`，返回 ZIP SHA-256。重复安装相同 ZIP 可重放 |
-| `domain.activate`、`domain.deactivate`、`domain.uninstall` | 提交 `digest` 和原 `epoch`。激活按摘要读取已安装的 ZIP 并核对包内容。切换和停用检查在途工作流及待核对的仓库操作。卸载仅在该领域有工作流正在执行时返回 `domain_busy` |
+| `domain.activate`、`domain.deactivate`、`domain.uninstall` | 提交 `digest` 和原 `epoch`。激活核对已安装 ZIP，打开可用的项目。切换和停用检查在途工作流及待核对的仓库操作。卸载仅在该领域有工作流正在执行时返回 `domain_busy` |
 | `query.domain.installed` | 列出安装的版本和摘要 |
 | `query.domain.contribution` | 提交当前 `epoch`、贡献 ID 和 `input`，返回公开投影 |
 | `query.domain.invoke` | 提交当前 `epoch`、声明的 `handler` 和 `input`。返回领域只读运行端的结果 |
 | `domain.project.create` | 提交 `epoch`、`title` 和 `command_id` 创建项目。设置 `reuse_connection:true` 并提供 `connection` 时，优先复用同一领域 ID 下同仓库、同主分支的已有项目 |
 | `domain.project.remove` | 提交 `epoch`、`project_id` 和 `command_id`，从工作台列表移除 GitHub 项目，保留原项目存储。用 `domain.project.create` 和 `reuse_connection:true` 打开同一仓库及主分支可恢复 |
-| `query.domain.storage` | 按 `epoch` 读取领域新项目数据目录、配置版本和已有项目各自使用的目录 |
-| `domain.storage.configure` | 按 `epoch` 和 `expected_revision` 保存绝对路径 `data_root`。传 `null` 使用 Host 数据目录 |
+| `query.domain.storage` | 按 `epoch` 读取领域新项目数据目录、可用状态 `available`、配置版本和仍有项目数据库的可用目录 |
+| `domain.storage.configure` | 按 `epoch` 和 `expected_revision` 验证并保存绝对路径 `data_root`，接回所选目录中身份匹配的已移动项目，修正当前仓库与工作树路径，并清除已移除项目指向不存在的旧目录的存储路径。传 `null` 使用 Host 数据目录 |
 | `domain.workflow.start` | 提交 `epoch`、确切的 `workflow_ref` 和 `command_id`。实体工作流还需 `project_id`、`entity_id` 和 `expected_revision`。默认 `rust`，也可选 `manual`。活动目录的 `agent_workflows` 列出可由 `agent` 调度的修订 |
 | `query.domain.workflow` | 按原项目、执行 ID 及当前 `epoch` 读取流程详情。结束后从 `domain_submission.entities` 回读已提交的领域对象 ID |
 | `domain.entity.put` | 携带 `epoch`、`project_id`、`entity_id`、`type_ref`、`expected_revision`、`command_id` 和 `data`。新建使用修订 0。更新保留对象类型，Host 按该类型的 Schema 校验载荷 |

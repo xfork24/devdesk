@@ -7,7 +7,7 @@ import unittest
 
 
 SPEC = importlib.util.spec_from_file_location(
-    'docs_checker', Path(__file__).resolve().parents[2] / 'scripts/py/check-docs.py'
+    'docs_checker', Path(__file__).resolve().parents[2] / 'scripts/check/check-docs.py'
 )
 docs = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(docs)

@@ -1687,7 +1687,14 @@ impl SessionPath<'_> {
             }
         };
         for project in crate::domain_packages::externally_stored_projects(root)? {
-            if let Some(log) = external_log(SqliteStore::project_path(root, &project)?)? {
+            let path = match SqliteStore::project_path(root, &project) {
+                Ok(path) => path,
+                Err(error) if error.code == crate::domain_packages::DOMAIN_STORAGE_UNAVAILABLE => {
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
+            if let Some(log) = external_log(path)? {
                 return Ok(Some(log));
             }
         }

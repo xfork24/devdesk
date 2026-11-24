@@ -2,7 +2,7 @@
 
 返回 [adapters 概览](overview.md)。本表用于查文件，功能过程请先读概览中的专题。
 
-由 `python3 scripts/py/check-docs.py --write` 更新；保留已有的人工专题链接。
+由 `python3 scripts/check/check-docs.py --write` 更新；保留已有的人工专题链接。
 
 <!-- crate-files:start -->
 

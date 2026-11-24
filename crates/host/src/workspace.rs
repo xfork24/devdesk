@@ -101,7 +101,10 @@ impl Workspace {
     pub(super) fn domain_packages(&self) -> Result<&Arc<domain_packages::DomainPackages>> {
         self.domains
             .get_or_init(|| {
-                domain_packages::DomainPackages::open(Path::new(&self.global.root())).map(Arc::new)
+                let packages =
+                    domain_packages::DomainPackages::open(Path::new(&self.global.root()))?;
+                packages.forget_missing_removed_roots(&self.global)?;
+                Ok(Arc::new(packages))
             })
             .as_ref()
             .map_err(Clone::clone)
@@ -114,10 +117,15 @@ impl Workspace {
         self.domains
             .get()
             .map(|packages| {
-                packages
+                let mut visibility = packages
                     .as_ref()
                     .map_err(Clone::clone)?
-                    .project_visibility(domain_epoch)
+                    .project_visibility(domain_epoch)?;
+                if domain_epoch.is_some() {
+                    let opened = self.opened.lock().unwrap();
+                    visibility.retain_open_domain_projects(|id| opened.contains_key(id));
+                }
+                Ok(visibility)
             })
             .transpose()
     }
@@ -265,7 +273,7 @@ impl Workspace {
             None,
         )?
         .filter(|job| job.completed_at.is_none());
-        let recover_target = |target: &str, status: Result<Arc<Engine>>| -> Result<()> {
+        let recover_target = |target: &str, status: Result<()>| -> Result<()> {
             match status {
                 Ok(_) => Ok(()),
                 Err(error) => {
@@ -275,6 +283,8 @@ impl Workspace {
                             .any(|entry| entry.id == target && entry.applied_at.is_none())
                     }) {
                         job.record_target(workspace.global.as_ref(), target, Some(&error.code))
+                    } else if error.code == domain_packages::DOMAIN_STORAGE_UNAVAILABLE {
+                        Ok(())
                     } else {
                         Err(error)
                     }
@@ -285,10 +295,10 @@ impl Workspace {
         loop {
             let (projects, total) = workspace.global.projects(offset, 100)?;
             for project in projects {
-                if workspace.global.removed_project_missing(&project.id)? {
-                    continue;
-                }
-                recover_target(&project.id, workspace.load_project(&project.id, false))?;
+                recover_target(
+                    &project.id,
+                    workspace.reopen_registered_project(&project.id),
+                )?;
             }
             offset += 100;
             if offset >= total {
@@ -301,7 +311,7 @@ impl Workspace {
         {
             recover_target(
                 GLOBAL_DISCUSSION_NAMESPACE,
-                workspace.initialize_global_discussion(),
+                workspace.initialize_global_discussion().map(|_| ()),
             )?;
         }
         if let Some(job) = &reset
@@ -425,7 +435,18 @@ impl Workspace {
         {
             return Ok(Value::Null);
         }
-        let engine = self.project_engine(Some(project))?;
+        let engine = match self.project_engine(Some(project)) {
+            Err(error) if error.code == "not_found" => {
+                let root = self.global.root();
+                if let Err(error) = SqliteStore::project_path(Path::new(&root), project)
+                    && error.code == domain_packages::DOMAIN_STORAGE_UNAVAILABLE
+                {
+                    return Ok(Value::Null);
+                }
+                return Err(error);
+            }
+            result => result?,
+        };
         let key = devdesk_core::concurrency::ResourceKey::new(kind, project);
         Ok(engine
             .store
@@ -443,6 +464,23 @@ impl Workspace {
             ProjectOpen::Reopen
         };
         self.load_project_with_mode(id, mode)
+    }
+
+    fn reopen_registered_project(&self, id: &str) -> Result<()> {
+        if self.global.project(id)?.is_some() && !self.global.removed_project_missing(id)? {
+            self.load_project(id, false)?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn reopen_available_domain_projects(&self, projects: Vec<Id>) -> Result<()> {
+        for project in projects {
+            match self.reopen_registered_project(&project) {
+                Err(error) if error.code == domain_packages::DOMAIN_STORAGE_UNAVAILABLE => {}
+                result => result?,
+            }
+        }
+        Ok(())
     }
 
     fn load_project_with_mode(&self, id: &str, mode: ProjectOpen) -> Result<Arc<Engine>> {
@@ -490,6 +528,12 @@ impl Workspace {
         self.global.reserve_copied_project(project)?;
         let engine = self.load_project_with_mode(&project.id, ProjectOpen::AdoptCopy)?;
         Ok(json!(engine.store.project_metadata()?))
+    }
+
+    pub(super) fn open_registered_domain_project(&self, id: &str) -> Result<Arc<Engine>> {
+        // The caller already holds a domain lease. Load the recovered project
+        // without trying to read the lease again to evaluate pending workflows.
+        self.load_project_with_mode(id, ProjectOpen::AdoptCopy)
     }
 
     fn initialize_project(&self, id: &str, mode: ProjectOpen) -> Result<Arc<Engine>> {

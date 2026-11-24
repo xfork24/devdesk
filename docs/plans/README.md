@@ -65,8 +65,8 @@
 | `docs/plans/<计划名>.md` | `docs/plans/<计划名>/PLAN.md` |
 | 其余系统凭据、`credentials-*`、`macos-credentials*`、helper、preflight、runtime-base 与 Web package 文件 | `docs/plans/web-platform-and-credentials/` 中的同名文件 |
 | `fixtures/` | `tests/fixtures/` |
-| `scripts/doctor.py`、`scripts/credential-helper-fingerprint.py` | `scripts/py/` 中的同名文件；入口见 [脚本索引](../../scripts/README.md) |
-| `scripts/package-source.py` | `scripts/py/package-source.py`，当前入口为 `scripts/release/package-source.sh` |
+| `scripts/doctor.py` | `scripts/check/doctor.py`，入口见 [脚本索引](../../scripts/README.md) |
+| `scripts/package-source.py` | `scripts/release/package-source.py`，当前入口为 `scripts/release/package-source.sh` |
 | `scripts/build.sh`、`scripts/dev.sh` | `scripts/dev/` 中的同名文件 |
 | `scripts/check.sh`、`scripts/check-live.sh`、`scripts/check-permissions.sh`、`scripts/doctor.sh` | `scripts/check/` 中的同名文件 |
 | `scripts/package.sh` | 已退役，由 `scripts/release/package.sh` 分别生成三种制品 |
@@ -74,6 +74,7 @@
 | `scripts/install-linux-sandbox-policy.sh` | `scripts/platform/linux/install-linux-sandbox-policy.sh` |
 | `sql/NNN_*.sql` | `sql/project/<职责>/` 中的同编号文件，见 [迁移索引](../../sql/README.md) |
 | `containers/tests/node-reporter.mjs` | `tests/reporters/node-reporter.mjs`，仍为产品测试执行器的嵌入资产 |
+| `containers/tests/Dockerfile` | `tests/fixtures/project-runtime/Dockerfile`，用于构建项目测试镜像 |
 | `tests/http_contract.py`、`tests/runtime_preparation.py` | `tests/entrypoints/` 中的同名入口 |
 | `docs/demo.md` | `docs/plans/devdesk-prototype/demo.md`，仅保留为历史原型说明 |
 | `containers/security/README.md` | 已删除跳转页，直接阅读 [权限说明](../../permissions/README.md)；策略资产仍在 `permissions/backends/docker/` |

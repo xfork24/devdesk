@@ -44,11 +44,11 @@
 ./scripts/dev/dev.sh --data ./data --port 4317
 ./scripts/check/check-style.sh
 cargo test --workspace --locked
-python3 scripts/py/check-docs.py
+python3 scripts/check/check-docs.py
 ```
 
 运行完整 `./scripts/check/check.sh` 前安装 `scripts/check/requirements.txt`、Web 依赖和 Chromium。正式制品验证使用 `scripts/release/package.sh` 的 `host`、`web`、`software-development` 入口。单体时代的测试数据和浏览器入口仅供回归，显式使用 `fixture-catalog` 和 `npm --prefix web run build:fixture`。浏览器用例与夹具放在 `tests/`，生成的测试工作台、截图和报告放在忽略的 `target/web/`。跨端验收以正式制品为输入。见[测试索引](tests/README.md)。
 
-Rust 使用 rustfmt、clippy `-D warnings`，Web 使用 ESLint、TypeScript 和 Prettier。修改行为时同步更新合同和当前文档。调整 crate 文件后运行 `python3 scripts/py/check-docs.py --write` 更新索引。
+Rust 使用 rustfmt、clippy `-D warnings`，Web 使用 ESLint、TypeScript 和 Prettier。修改行为时同步更新合同和当前文档。调整 crate 文件后运行 `python3 scripts/check/check-docs.py --write` 更新索引。
 
 默认回归使用隔离的数据集与明确的测试端口。真实模型和 GitHub 只在已授权的专用账号、仓库与数据集中验收。报告请写明命令、制品版本、实际结果及未验证范围。

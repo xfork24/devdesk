@@ -146,7 +146,7 @@ pub(crate) fn packaged_permission_presets() -> Result<Vec<(String, &'static str)
         let path = path
             .as_str()
             .ok_or_else(|| err("invalid_template", "权限预设路径无效"))?;
-        files.push((format!("{:x}.json", Sha256::digest(path)), resource(path)?));
+        files.push((path.to_owned(), resource(path)?));
     }
     require(!files.is_empty(), "出厂包缺少权限预设")?;
     Ok(files)

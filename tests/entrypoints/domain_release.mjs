@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { execFile as call, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -233,13 +233,124 @@ with ZipFile(sys.argv[1]) as original, ZipFile(sys.argv[2], "w", ZIP_DEFLATED) a
     return result;
   }, { crashAfter: true });
 
-  await withHost(current.host, current.web, async (client) => {
-    assert.equal((await client.active()).active.version, domainVersion);
+  const external = path.join(temp, "external-domain-data");
+  const unmounted = path.join(temp, "unmounted-domain-data");
+  const replacement = path.join(temp, "new-domain-data");
+  const recoveryRepository = "fixture/storage-recovery";
+  const saved = await withHost(current.host, current.web, async (client) => {
+    const state = await client.active();
+    assert.equal(state.active.version, domainVersion);
     const read = await client.native("read", upgraded.run.project_id, upgraded.run.execution_id);
     assert.equal(read.record.data.status, "completed");
     assert.equal(read.domain_submission.entities.test_configuration, upgraded.proof_id);
     await client.canRender("software-development.engineering-settings", (page) => page.getByRole("heading", { name: "数据与运行" }));
     pass.push("Restart after SIGKILL recovered active digest and submitted evidence");
+
+    const scope = { epoch: state.epoch };
+    const storage = await client.result("query.domain.storage", scope);
+    const configured = await client.result("domain.storage.configure", {
+      ...scope, expected_revision: storage.revision, data_root: external,
+    });
+    const project = await client.result("domain.project.create", {
+      ...scope, title: "External storage recovery", command_id: crypto.randomUUID(),
+    });
+    const database = path.join(configured.data_root, "projects", project.id, "engineering.sqlite3");
+    await access(database);
+    const projectRoot = path.dirname(database);
+    const bare = path.join(projectRoot, "repository");
+    const worktree = path.join(projectRoot, "execution/worktrees/mainlines", project.id);
+    await execFile("git", ["clone", "--bare", repository, bare]);
+    await execFile("git", ["-C", bare, "remote", "set-url", "origin", `https://github.com/${recoveryRepository}.git`]);
+    await mkdir(path.dirname(worktree), { recursive: true });
+    await execFile("git", ["-C", bare, "worktree", "add", worktree, "main"]);
+    const directory = await client.result("query.project_directory", { domain_epoch: state.epoch });
+    return { state, project, database, bare, worktree, totalProjects: directory.total_projects };
+  });
+  await execFile("python3", ["-c", `
+import json, sqlite3, sys, uuid
+database, project, bare, worktree, repository, head = sys.argv[1:]
+operation = str(uuid.uuid4())
+with sqlite3.connect(database) as db:
+    db.execute(
+        "UPDATE projects SET workspace=?, workspace_definition=?, revision=revision+1 WHERE id=?",
+        (bare, json.dumps({"path":bare,"repository":repository,"mainline":"main"}), project),
+    )
+    db.execute(
+        "INSERT INTO repository_operations VALUES(?, ?, ?, 'completed', NULL, '', 1)",
+        (operation, project, json.dumps({"kind":"connect", "repository":repository, "mainline":"main"})),
+    )
+    db.execute(
+        "INSERT INTO repository_worktrees VALUES(?, ?, ?, 'mainline', 'main', ?, ?, ?)",
+        (str(uuid.uuid4()), project, project, worktree, head, operation),
+    )
+`, saved.database, saved.project.id, saved.bare, saved.worktree, recoveryRepository, head]);
+  await rename(external, unmounted);
+
+  const replacementProject = await withHost(current.host, current.web, async (client) => {
+    const empty = await client.active();
+    assert.equal(empty.active, null);
+    assert.equal(empty.epoch, saved.state.epoch + 1);
+    assert((await client.result("query.domain.installed")).some(
+      (row) => row.digest === saved.state.active.digest));
+    await client.canRender("core", (page) => page.getByText("GPT-6.2 Sol High").first());
+    const installed = await client.install(candidate);
+    assert.equal(installed.digest, saved.state.active.digest);
+    const loaded = await client.activate(installed.digest);
+    const scope = { epoch: loaded.epoch };
+    const settings = await client.result("query.domain.storage", scope);
+    assert.equal(settings.available, false);
+    await client.canRender("software-development.engineering-settings", (page) =>
+      page.getByText("此目录不可用。请恢复原目录，或保存一个可用目录。", { exact: true }));
+    assert.equal((await client.result("query.project_directory", { domain_epoch: loaded.epoch })).total_projects,
+      saved.totalProjects - 1);
+    const create = () => client.result("domain.project.create", {
+      ...scope, title: "Replacement storage", command_id: crypto.randomUUID(),
+    });
+    await assert.rejects(create(), /domain_storage_unavailable/);
+    await assert.rejects(access(external), { code: "ENOENT" });
+    await assert.rejects(client.result("domain.storage.configure", {
+      ...scope, expected_revision: settings.revision, data_root: repository,
+    }), /请使用空目录/);
+    const configured = await client.result("domain.storage.configure", {
+      ...scope, expected_revision: settings.revision, data_root: replacement,
+    });
+    assert.equal(configured.available, true);
+    const project = await create();
+    await access(path.join(replacement, "projects", project.id, "engineering.sqlite3"));
+    return project;
+  });
+
+  await withHost(current.host, current.web, async (client) => {
+    const restored = await client.active();
+    assert.equal(restored.active.digest, saved.state.active.digest);
+    assert.equal((await client.result("query.project_directory", { domain_epoch: restored.epoch })).total_projects,
+      saved.totalProjects);
+    assert.equal((await client.result("query.workspace", {
+      project_id: replacementProject.id, domain_epoch: restored.epoch,
+    })).active_project.id, replacementProject.id);
+    const relocated = path.join(replacement, "projects", saved.project.id);
+    await rename(path.join(unmounted, "projects", saved.project.id), relocated);
+    const scope = { epoch: restored.epoch };
+    const settings = await client.result("query.domain.storage", scope);
+    const configured = await client.result("domain.storage.configure", {
+      ...scope, expected_revision: settings.revision, data_root: replacement,
+    });
+    assert.equal(configured.available, true);
+    const opened = await client.result("query.workspace", {
+      project_id: saved.project.id, domain_epoch: restored.epoch,
+    });
+    assert.equal(opened.active_project.id, saved.project.id);
+    const canonical = path.join(configured.data_root, "projects", saved.project.id);
+    assert.equal(opened.project_database, path.join(canonical, "engineering.sqlite3"));
+    assert.equal(opened.active_project.workspace, path.join(canonical, "repository"));
+    const worktree = path.join(relocated, "execution/worktrees/mainlines", saved.project.id);
+    assert.equal((await execFile("git", ["-C", worktree, "rev-parse", "HEAD"])).stdout.trim(), head);
+    const reopened = await client.result("domain.project.create", {
+      ...scope, title: "Recovered GitHub project", command_id: crypto.randomUUID(),
+      reuse_connection: true, connection: { repository: recoveryRepository, mainline: "main" },
+    });
+    assert.equal(reopened.id, saved.project.id);
+    pass.push("Saving a new domain directory recovers original projects, linked Git worktrees and manual reopening");
   });
   console.log(JSON.stringify({ artifactsVerified: true, checks: pass }));
 } finally {

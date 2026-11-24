@@ -3,6 +3,144 @@
 use super::*;
 use rusqlite::{OptionalExtension, params};
 
+/// Attach a moved project without changing its identity or sealed execution facts.
+pub(crate) fn relocate(host: &Path, project_id: &str, old: &Path, new: &Path) -> Result<()> {
+    use devdesk_core::concurrency::{
+        PreparedChangeSet, ReadSet, ResourceChange, ResourceKey, ResourceVersion,
+    };
+    use std::collections::BTreeMap;
+
+    let (_, lock) = lock_dataset(new)?;
+    // Open the existing store under the project lock, including older supported layouts.
+    let database = new.join("engineering.sqlite3");
+    catalog::check_engineering_baseline(&database)?;
+    let connection = open_engineering_connection(&database)?;
+    let project_count: usize = connection
+        .query_row("SELECT count(*) FROM projects", [], |row| row.get(0))
+        .map_err(storage)?;
+    require(project_count == 1, "待接回数据库必须只包含原项目")?;
+    let mut project = execution_read::project(&connection, project_id)?;
+    let worktrees: Vec<RepositoryWorktree> = load_table(&connection, "repository_worktrees")?;
+    let busy: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM executions WHERE NOT writer_revoked)
+             OR EXISTS(SELECT 1 FROM repository_operations WHERE status!='completed')
+             OR EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_instance'
+                 AND json_extract(data,'$.status')='running')",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    require(!busy, "请先停止已移动项目中运行的任务并核对仓库操作")?;
+
+    let mut changes = Vec::new();
+    let old_repo = old.join("repository");
+    let new_repo = new.join("repository");
+    if let Some(workspace) = &mut project.workspace_definition {
+        require(
+            [Path::new(&workspace.path), Path::new(&project.workspace)]
+                .iter()
+                .all(|path| *path == old_repo || *path == new_repo),
+            "待接回项目的仓库路径不属于原项目或目标项目",
+        )?;
+        let mut relocated = worktrees.clone();
+        for tree in &mut relocated {
+            let path = Path::new(&tree.path);
+            let relative = path
+                .strip_prefix(old)
+                .or_else(|_| path.strip_prefix(new))
+                .map_err(|_| err("incompatible_dataset", "工作树路径不属于原项目或目标项目"))?;
+            require(
+                relative.starts_with("execution/worktrees")
+                    && relative
+                        .components()
+                        .all(|part| matches!(part, std::path::Component::Normal(_))),
+                "待接回工作树路径无效",
+            )?;
+            tree.path = new
+                .join(relative)
+                .to_str()
+                .ok_or_else(|| err("invalid_params", "项目路径需要使用 UTF-8"))?
+                .into();
+        }
+        let new_workspace = new_repo
+            .to_str()
+            .ok_or_else(|| err("invalid_params", "项目路径需要使用 UTF-8"))?;
+        let path_changed = workspace.path != new_workspace || project.workspace != new_workspace;
+        let moved: BTreeMap<_, _> = worktrees
+            .iter()
+            .zip(&relocated)
+            .filter(|(old, new)| old.path != new.path)
+            .map(|(old, new)| (old.path.as_str(), new.path.as_str()))
+            .collect();
+        if path_changed || !moved.is_empty() {
+            git::CliGit::new(host)?.repair_relocated_worktrees(
+                old,
+                new,
+                &workspace.repository,
+                &relocated,
+            )?;
+        }
+        if path_changed {
+            workspace.path = new_workspace.into();
+            project.workspace = new_workspace.into();
+            project.revision += 1;
+            changes.push(ResourceChange {
+                resource: ResourceKey::new("project", project_id),
+                value: json!(project),
+            });
+        }
+        for (old, tree) in worktrees.iter().zip(&relocated) {
+            if old.path != tree.path {
+                changes.push(ResourceChange {
+                    resource: ResourceKey::new("repository_worktree", &tree.id),
+                    value: json!(tree),
+                });
+            }
+        }
+        for mut task in load_table::<Task>(&connection, "tasks")? {
+            if let Some(path) = moved.get(task.worktree.as_str()) {
+                task.worktree = (*path).into();
+                task.revision += 1;
+                changes.push(ResourceChange {
+                    resource: ResourceKey::new("task", &task.id),
+                    value: json!(task),
+                });
+            }
+        }
+    }
+    if !changes.is_empty() {
+        let pool = connection_pool::ConnectionPool::new_engineering(&database, connection)?;
+        let keys: Vec<_> = changes
+            .iter()
+            .map(|change| change.resource.clone())
+            .collect();
+        let versions = resource_commits::read(&pool, &keys)?
+            .into_iter()
+            .map(|row| ResourceVersion {
+                resource: row.resource,
+                revision: row.revision,
+            })
+            .collect();
+        resource_commits::commit(
+            &pool,
+            &PreparedChangeSet {
+                command_id: format!("project-relocation:{}", id()),
+                fingerprint: configuration_hash(&(project_id, old, new)),
+                read_set: ReadSet::new(versions)?,
+                changes,
+                result: json!({"project":project_id,"from":old,"to":new}),
+                time: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as i64,
+            },
+        )?;
+    }
+    drop(lock);
+    Ok(())
+}
+
 fn database_len(path: &Path) -> Result<u64> {
     Ok(path.metadata().map_err(storage)?.len())
 }

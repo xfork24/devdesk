@@ -155,7 +155,7 @@ def package(target, identity, title, handler, core):
                 }], "outputs": {"proof": {"step": "read", "port": "proof"}},
             }),
         ])
-        usage = runpy.run_path(str(ROOT.parents[2] / "scripts/py/configuration_usage.py"))["usage_index"]
+        usage = runpy.run_path(str(ROOT.parents[2] / "scripts/check/configuration_usage.py"))["usage_index"]
         types = {}
         for record in sources:
             path = f"{record['identity']}.json"

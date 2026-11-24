@@ -7,7 +7,7 @@ import unittest
 
 from jsonschema import ValidationError
 
-gate = runpy.run_path(str(Path(__file__).resolve().parents[2] / 'scripts/py/check-permissions.py'))
+gate = runpy.run_path(str(Path(__file__).resolve().parents[2] / 'scripts/check/check-permissions.py'))
 
 
 class PermissionSchema(unittest.TestCase):

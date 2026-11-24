@@ -38,7 +38,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
       - run: ./scripts/check/check-architecture.sh
-      - run: python3 scripts/py/check-docs.py
+      - run: python3 scripts/check/check-docs.py
       - run: ./scripts/check/check-defaults.sh
       - run: ./scripts/check/check-permissions.sh
       - run: python3 tests/entrypoints/permission_schema.py

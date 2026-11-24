@@ -371,17 +371,21 @@ export function PermissionResources({
           <details>
             <summary>预定义来源与历史</summary>
             <p>
-              当前预设目录（
-              {displayText(catalog.source.is_builtin ? "内置" : "自定义")}）：
+              当前预设来源
               <span
                 className="permission-source-path"
-                aria-label="当前预设目录"
+                aria-label="当前预设来源"
               >
-                {displayText(catalog.source.path)}
+                {displayText(
+                  catalog.source.is_builtin
+                    ? "Host 内置预设"
+                    : catalog.source.path,
+                )}
               </span>
             </p>
             <p className="muted">
-              仅从当前目录加载预设。切换目录后点击“重新加载预设”；“重新加载内置预设”会恢复内置目录并加载。已导入的权限版本与活动绑定保持不变。
+              “重新加载预设”读取当前来源。“重新加载内置预设”读取 Host
+              内置资源，成功后将它设为当前来源。
             </p>
             <div className="actions">
               <ActionButton
@@ -430,7 +434,7 @@ export function PermissionResources({
                     );
                     await reload();
                     setMessage(
-                      `内置预设重新加载完成：新增 ${result.added.length}，相同 ${result.unchanged.length}；已恢复内置目录，活动绑定保持不变。`,
+                      `内置预设重新加载完成：新增 ${result.added.length}，相同 ${result.unchanged.length}。`,
                     );
                   });
                 }}

@@ -52,5 +52,5 @@
 复核命令
 
 ```sh
-python3 scripts/py/measure-project-storage.py <旧工程库备份> <新工程库> --verify --rounds 70
+python3 scripts/check/measure-project-storage.py <旧工程库备份> <新工程库> --verify --rounds 70
 ```

@@ -217,9 +217,7 @@ test("权限定义迁入基础组件，目标绑定与来源历史按组件管�
   writeFileSync(join(source, "new.json"), JSON.stringify(file));
   await page.getByText("预定义来源与历史", { exact: true }).click();
   await expect(page.getByLabel("新增预设来源目录")).toHaveCount(0);
-  await expect(page.getByLabel("当前预设目录")).toHaveText(
-    catalog.source.builtin_path,
-  );
+  await expect(page.getByLabel("当前预设来源")).toHaveText("Host 内置预设");
   await page.getByRole("button", { name: "打开文件夹", exact: true }).click();
   const picker = page.getByRole("dialog", { name: "选择预设文件夹" });
   await expect(picker).toBeVisible();
@@ -241,7 +239,7 @@ test("权限定义迁入基础组件，目标绑定与来源历史按组件管�
   await page.setViewportSize({ width: 1440, height: 1000 });
   await picker.getByRole("button", { name: "选择此文件夹" }).click();
   await expect(picker).not.toBeVisible();
-  await expect(page.getByLabel("当前预设目录")).toHaveText(
+  await expect(page.getByLabel("当前预设来源")).toHaveText(
     realpathSync(source),
   );
   expect(
@@ -261,23 +259,21 @@ test("权限定义迁入基础组件，目标绑定与来源历史按组件管�
   await page.reload();
   await openPermissions(first);
   await page.getByText("预定义来源与历史", { exact: true }).click();
-  await expect(page.getByLabel("当前预设目录")).toHaveText(
+  await expect(page.getByLabel("当前预设来源")).toHaveText(
     realpathSync(source),
   );
   await page.getByRole("button", { name: "打开文件夹", exact: true }).click();
   await picker.getByRole("button", { name: "上一级文件夹" }).click();
   await picker.press("Escape");
   await expect(picker).not.toBeVisible();
-  await expect(page.getByLabel("当前预设目录")).toHaveText(
+  await expect(page.getByLabel("当前预设来源")).toHaveText(
     realpathSync(source),
   );
   await page
     .getByRole("button", { name: "重新加载内置预设", exact: true })
     .click();
   await expect(page.getByText(/内置预设重新加载完成/)).toBeVisible();
-  await expect(page.getByLabel("当前预设目录")).toHaveText(
-    catalog.source.builtin_path,
-  );
+  await expect(page.getByLabel("当前预设来源")).toHaveText("Host 内置预设");
   expect((await rpc("query.permission_resources")).source.is_builtin).toBe(
     true,
   );

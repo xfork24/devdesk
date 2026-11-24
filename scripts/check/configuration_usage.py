@@ -84,7 +84,7 @@ def main():
     if args.write:
         path.write_text(json.dumps(expected, ensure_ascii=False, indent=2) + "\n")
     elif json.loads(path.read_text()) != expected:
-        raise SystemExit("Packaged usage index is stale; run python3 scripts/py/configuration_usage.py --write")
+        raise SystemExit("Packaged usage index is stale; run python3 scripts/check/configuration_usage.py --write")
     print(f"configuration-usage: OK — {len(expected['references'])} exact revisions")
 
 

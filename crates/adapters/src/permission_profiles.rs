@@ -302,6 +302,8 @@ pub struct PermissionPresetSource {
     pub revision: u64,
 }
 
+pub const BUILTIN_PRESET_SOURCE: &str = "builtin://permission-presets";
+
 fn permission_preset_directory(path: &Path) -> Result<PathBuf> {
     if !path.is_absolute() {
         return Err(err("invalid_params", "预设来源必须是绝对目录"));
@@ -321,7 +323,8 @@ fn preset_source_selection(s: &EngineeringState) -> Option<&ConfigurationRecord>
         .max_by_key(|r| r.version)
 }
 
-fn preset_source(s: &EngineeringState, builtin: PathBuf) -> PermissionPresetSource {
+fn preset_source(s: &EngineeringState) -> PermissionPresetSource {
+    let builtin = PathBuf::from(BUILTIN_PRESET_SOURCE);
     let path = preset_source_selection(s)
         .and_then(|r| r.data["path"].as_str())
         .map(PathBuf::from)
@@ -366,44 +369,6 @@ struct PermissionPresetCommand<'a> {
 }
 
 impl GlobalStore {
-    fn builtin_permission_preset_source(&self) -> Result<PathBuf> {
-        // A copied/read-only executable must not depend on its build checkout.
-        // Materialize only packaged preset data, separately from user-selected
-        // editable directories. Keep old content-addressed generations intact.
-        let files = factory_bundle::packaged_permission_presets()?;
-        let generation = configuration_hash(&json!(files));
-        let mut root = PathBuf::from(self.root());
-        for part in ["packaged-permission-presets", &generation] {
-            root.push(part);
-            reject_symlink(&root)?;
-            fs::create_dir_all(&root).map_err(storage)?;
-        }
-        for (name, body) in files {
-            let path = root.join(name);
-            reject_symlink(&path)?;
-            if fs::read(&path).is_ok_and(|bytes| bytes == body.as_bytes()) {
-                continue;
-            }
-            let temporary = root.join(format!(".{}.tmp", id()));
-            let write = (|| {
-                use std::io::Write;
-                let mut file = OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(&temporary)
-                    .map_err(storage)?;
-                file.write_all(body.as_bytes()).map_err(storage)?;
-                drop(file);
-                fs::rename(&temporary, &path).map_err(storage)
-            })();
-            if write.is_err() {
-                let _ = fs::remove_file(&temporary);
-            }
-            write?;
-        }
-        permission_preset_directory(&root)
-    }
-
     pub fn permission_preset_source(&self) -> Result<PermissionPresetSource> {
         self.permission_preset_source_at(&self.configuration_snapshot()?.state)
     }
@@ -412,10 +377,7 @@ impl GlobalStore {
         &self,
         state: &EngineeringState,
     ) -> Result<PermissionPresetSource> {
-        Ok(preset_source(
-            state,
-            self.builtin_permission_preset_source()?,
-        ))
+        Ok(preset_source(state))
     }
 
     pub fn select_permission_preset_source(&self, c: &Command) -> Result<Value> {
@@ -426,12 +388,12 @@ impl GlobalStore {
         if let Some(previous) = self.replay(&c.command_id, &fp)? {
             return Ok(previous);
         }
-        let path = permission_preset_directory(Path::new(
-            c.payload["path"]
-                .as_str()
-                .ok_or_else(|| err("invalid_params", "需要预设目录"))?,
-        ))?;
-        let builtin = self.builtin_permission_preset_source()?;
+        let path = c.payload["path"]
+            .as_str()
+            .ok_or_else(|| err("invalid_params", "需要预设目录"))?;
+        let path = (path != BUILTIN_PRESET_SOURCE)
+            .then(|| permission_preset_directory(Path::new(path)))
+            .transpose()?;
         let before = self.configuration_snapshot()?;
         let current = preset_source_selection(&before.state).map_or(0, |r| r.version);
         if c.expected_revision != Some(current) {
@@ -439,8 +401,8 @@ impl GlobalStore {
         }
         let transfer = devdesk_core::configuration_transfer_witness(self)?;
         let mut next = before.state.as_ref().clone();
-        select_preset_source(&mut next, if path == builtin { None } else { Some(&path) });
-        let result = json!(preset_source(&next, builtin));
+        select_preset_source(&mut next, path.as_deref());
+        let result = json!(preset_source(&next));
         self.commit_permission_catalog(
             &before,
             next,
@@ -484,13 +446,17 @@ impl GlobalStore {
             return Err(err("revision_conflict", "预设来源已改变，请重新载入"));
         }
         let transfer = devdesk_core::configuration_transfer_witness(self)?;
-        let builtin_path = self.builtin_permission_preset_source()?;
-        let source = preset_source(&before.state, builtin_path.clone());
-        let root = permission_preset_directory(if builtin { &builtin_path } else { &source.path })?;
+        let source = preset_source(&before.state);
         let mut profiles = Vec::new();
         let mut origins = Vec::new();
-        let mut bytes = 0;
-        {
+        if builtin || source.is_builtin {
+            for (name, body) in factory_bundle::packaged_permission_presets()? {
+                let path = PathBuf::from(BUILTIN_PRESET_SOURCE).join(name);
+                append_preset_file(&path, body.as_bytes(), &mut profiles, &mut origins)?;
+            }
+        } else {
+            let root = permission_preset_directory(&source.path)?;
+            let mut bytes = 0;
             let mut files: Vec<_> = fs::read_dir(&root)
                 .map_err(storage)?
                 .collect::<std::io::Result<Vec<_>>>()
@@ -511,23 +477,7 @@ impl GlobalStore {
                     return Err(err("invalid_params", "预设导入超过 4MiB"));
                 }
                 let body = fs::read(&path).map_err(storage)?;
-                let value: Value = serde_json::from_slice(&body).map_err(storage)?;
-                let entries = value["profiles"]
-                    .as_array()
-                    .cloned()
-                    .unwrap_or_else(|| vec![value.clone()]);
-                for p in &entries {
-                    if let (Some(identity), Some(revision)) =
-                        (p["identity"].as_str(), p["revision"].as_u64())
-                    {
-                        origins.push((source_reference(identity, revision)?,json!({"source_path":path,"file_sha256":format!("{:x}",Sha256::digest(&body))})));
-                    }
-                }
-                if let Some(batch) = value["profiles"].as_array() {
-                    profiles.extend(batch.clone());
-                } else {
-                    profiles.push(value);
-                }
+                append_preset_file(&path, &body, &mut profiles, &mut origins)?;
             }
         }
         let mut next = before.state.as_ref().clone();
@@ -622,6 +572,29 @@ impl GlobalStore {
         })
         .map(|r| r.result)
     }
+}
+
+fn append_preset_file(
+    path: &Path,
+    body: &[u8],
+    profiles: &mut Vec<Value>,
+    origins: &mut Vec<(String, Value)>,
+) -> Result<()> {
+    let value: Value = serde_json::from_slice(body).map_err(storage)?;
+    let entries = value["profiles"]
+        .as_array()
+        .cloned()
+        .unwrap_or_else(|| vec![value]);
+    let origin = json!({"source_path":path,"file_sha256":format!("{:x}",Sha256::digest(body))});
+    for profile in &entries {
+        if let (Some(identity), Some(revision)) =
+            (profile["identity"].as_str(), profile["revision"].as_u64())
+        {
+            origins.push((source_reference(identity, revision)?, origin.clone()));
+        }
+    }
+    profiles.extend(entries);
+    Ok(())
 }
 
 #[cfg(test)]
