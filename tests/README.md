@@ -52,6 +52,10 @@ node --test tests/entrypoints/configuration_query_cache.mjs
 cargo test -p devdesk-adapters --test configuration_catalog configuration_source_scaling -- --ignored --exact --nocapture
 ```
 
+## 工作台与存储性能
+
+[工作台基准与验收记录](../docs/plans/workbench-storage-performance/VALIDATION.md)给出了 Release Host、生产 Web 和检查点备份的复现入口。工作台基准保留 RPC、浏览器、事件重连和重置的原始样本，并按嵌套路径汇总 Host 计时。历史倍率夹具通过正常命令创建流程及其冻结计划，等待取消终态后封存数据库。浏览器使用 Chromium 和真实嵌入资源。 重置基准的 `--track-reset-progress` 记录全局受理后的首次可见状态。`workbench_reset_recovery.py` 用独立副本在全局提交和首个目标应用后中止进程，再校验重启后的重放回执。
+
 ## 单 Host 并发验收设计
 
 [底层并发重构方案](../docs/plans/single-host-concurrency/PLAN.md) 和 [100 前端验收合同](../docs/plans/single-host-concurrency/ACCEPTANCE.md) 定义待实施的并发测试入口、数据规模、负载与门禁。目标是单 Host/SQLite 在工作流持续推进时支持 100 个活跃 Web 前端，覆盖同项目热点、多项目独立选择、持续混合读写、突发竞争与重连。现有 `configuration_loading.py` 关闭调度器，只能作为离线查询基准，不能代替该验收。
@@ -133,9 +137,11 @@ Workflow 执行性能的显式组件入口为 `crates/adapters/tests/workflow_pe
 
 `tests/performance/workflow_reads.py --test-binary <release测试入口> --dataset <专用兼容备份> --output <新证据目录> --samples 200` 通过关闭调度的实际 HTTP 服务测 control、状态页及执行详情，保留逐请求错误、bytes、内容摘要和 trace 关联。结果只用于本机定位，不等于原生往返或正式容量。`joint_frontends.py --browser` 的 1/2 页面诊断支持混合读、写和导航，较高并发仍分别记录动作数和真实 RPC；导航取消只对已观测到的只读请求单列，修改失败不豁免。
 
+`joint_frontends.py` 的本机协议模式可用 `--scale 1 --projects 10 --seconds 120 --renew --trace --sse-configuration --sse-reconnect --reconnecting-clients 10`，让 10 个客户端各重连 10 次，剩余客户端维持连接。输出 `sse-reconnections.json` 记录重连游标、收到首条消息和读回项目状态的时延。
+
 `DEVDESK_STORAGE_PROFILE_OUTPUT=/tmp/全新目录 cargo test --release --locked -p devdesk-adapters --features test-fixtures --test workflow_storage_scaling workflow_storage_growth_profile -- --ignored --exact --nocapture` 创建四个隔离数据集，分别测冷实例数、当前 DAG 及真实历史尝试的十倍增长；每项预热另存、30 个组件样本，保存版本回读、WAL/checkpoint、进程 I/O 及完整性结果。只测空正文 Control 和可信单步骤存储 patch，没有模型、外部 writer 或业务并发，不代表业务延迟、真实执行或容量通过。使用归档二进制时把构建与采样分开。
 
-预算专项在 `configured_workflows` 中用可控 UTC/单调时钟、真实 SQLite 验证显式 time_limits v1 的 Human 截止、签署/补充输入、技术重试/重启、时钟倒退及计划采用；缺省旧预算的序列化由 schema_contracts 验证。新项目基线为 60；旧 59 数据集拒绝测试核对原文件字节未改写。
+预算专项在 `configured_workflows` 中用可控 UTC/单调时钟、真实 SQLite 验证显式 time_limits v1 的 Human 截止、签署/补充输入、技术重试/重启、时钟倒退及计划采用；缺省旧预算的序列化由 schema_contracts 验证。新项目基线为 62，支持显式迁移 60 和 61。旧 59 数据集拒绝测试核对原文件字节未改写。
 
 `DEVDESK_TRANSACTION_PROFILE_OUTPUT=/tmp/全新文件 cargo test --release --locked -p devdesk-adapters --test resource_commits transaction_observation_profile -- --ignored --exact --nocapture` 在新全局库交错执行启用/关闭 Trace 的同尺寸提交，预热另存，分别保存千样本。计时不含报告文件/日志输出，结果只定位内存观测开销；逐事务记录的上限、冲突/回滚、重放及内容排除另有默认回归。
 

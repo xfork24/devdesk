@@ -11,7 +11,7 @@ import { ManagerDisclosureContext } from "./manager-disclosure-state";
 import { useRuntimeRefresh } from "./useRuntimeRefresh";
 import { runtimeDisplayKey } from "../runtime-state";
 import { ActionButton } from "./ActionFeedback";
-import { WorkStandard } from "./WorkStandard";
+import { deferPage } from "./deferred-page";
 import {
   WorkflowController,
   WorkflowPlanChanges,
@@ -19,6 +19,10 @@ import {
 } from "./WorkflowController";
 import { ReadingLink, RawJsonLink } from "./reading";
 import { type Request, type Row } from "./rpc-types";
+
+const { Page: WorkStandard } = deferPage(() =>
+  import("./WorkStandard").then((module) => module.WorkStandard),
+);
 
 type Props = {
   request: Request;
@@ -50,6 +54,7 @@ export function WorkflowProjectManager({
       : undefined;
   const [error, setError] = useState("");
   const [manualRefresh, setManualRefresh] = useState(0);
+  const [taskConfigurationOpened, setTaskConfigurationOpened] = useState(false);
   const inheritedDisclosures = useContext(ManagerDisclosureContext);
   const localDisclosures = useMemo(
     () => ({
@@ -435,21 +440,28 @@ export function WorkflowProjectManager({
         )}
       </section>
       {!nested && unstartedTasks.length > 0 && (
-        <details className="manager-task-settings">
+        <details
+          className="manager-task-settings"
+          onToggle={(event) => {
+            if (event.currentTarget.open) setTaskConfigurationOpened(true);
+          }}
+        >
           <summary>待启动任务的规范配置</summary>
-          <div className="task-grid">
-            {unstartedTasks.map((task) => (
-              <article key={task.id}>
-                <strong>{displayText(task.title)}</strong>
-                <WorkStandard
-                  request={request}
-                  projectId={projectId}
-                  owner={task}
-                  refresh={refreshManagement}
-                />
-              </article>
-            ))}
-          </div>
+          {taskConfigurationOpened && (
+            <div className="task-grid">
+              {unstartedTasks.map((task) => (
+                <article key={task.id}>
+                  <strong>{displayText(task.title)}</strong>
+                  <WorkStandard
+                    request={request}
+                    projectId={projectId}
+                    owner={task}
+                    refresh={refreshManagement}
+                  />
+                </article>
+              ))}
+            </div>
+          )}
         </details>
       )}
       <WorkflowPlanChanges

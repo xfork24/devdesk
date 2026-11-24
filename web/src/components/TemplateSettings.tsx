@@ -24,6 +24,17 @@ const names: Record<string, string> = {
 };
 type ResetCommand = { command_id: string; payload: Row };
 
+type ResetProgress = {
+  phase:
+    | "idle"
+    | "global_committed"
+    | "applying"
+    | "completed"
+    | "retryable_failure";
+  applied?: number;
+  total?: number;
+};
+
 export function TemplateSettings({
   request,
   refresh,
@@ -36,6 +47,7 @@ export function TemplateSettings({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [progress, setProgress] = useState<ResetProgress>();
   const [pending, setPending] = useState<ResetCommand>();
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -51,6 +63,35 @@ export function TemplateSettings({
       active = false;
     };
   }, [request]);
+  useEffect(() => {
+    const controller = new AbortController();
+    const commandId = pending?.command_id;
+    let timer: number | undefined;
+    async function poll() {
+      let retry = busy && commandId !== undefined;
+      try {
+        const value: ResetProgress = await request(
+          "query.template_reset_progress",
+          commandId ? { command_id: commandId } : {},
+          { fresh: true, signal: controller.signal },
+        );
+        if (controller.signal.aborted) return;
+        const applying =
+          value.phase === "global_committed" || value.phase === "applying";
+        retry = applying || (retry && value.phase === "idle");
+        setProgress(value);
+      } catch {
+        // The reset request displays command failures. Keep polling a request in flight.
+      }
+      if (retry && !controller.signal.aborted)
+        timer = window.setTimeout(poll, 500);
+    }
+    void poll();
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [busy, pending?.command_id, request]);
   async function openPreview() {
     setBusy(true);
     setError("");
@@ -73,8 +114,8 @@ export function TemplateSettings({
     setBusy(true);
     setError("");
     setMessage("");
+    let command = retry;
     try {
-      let command = retry;
       if (!command) {
         const preview = preserveCustom
           ? await request("query.template_reset_preview")
@@ -116,8 +157,19 @@ export function TemplateSettings({
         setError("重置已提交，页面刷新失败，请重新载入。");
       }
     } catch (e) {
-      if (!(e instanceof RpcResponseTimeout)) setPending(undefined);
       setError(String(e));
+      if (command && !(e instanceof RpcResponseTimeout)) {
+        try {
+          const status: ResetProgress = await request(
+            "query.template_reset_progress",
+            { command_id: command.command_id },
+            { fresh: true },
+          );
+          if (status.phase === "idle") setPending(undefined);
+        } catch {
+          // A replay with the original command can verify the outcome.
+        }
+      }
     } finally {
       setBusy(false);
     }
@@ -133,7 +185,19 @@ export function TemplateSettings({
         <p className="muted">
           可在弹窗中选择保留自定义定义并恢复默认配置，或完全重置配置。
         </p>
-        {busy && pending && <p role="status">正在更新模板定义…</p>}
+        {progress?.phase === "retryable_failure" ? (
+          <p role="status">
+            模板定义已提交，{progress.applied} / {progress.total}{" "}
+            个库已更新，其余库等待重试。
+          </p>
+        ) : progress?.phase === "applying" ||
+          progress?.phase === "global_committed" ? (
+          <p role="status">
+            正在应用模板定义，{progress.applied} / {progress.total} 个库已更新。
+          </p>
+        ) : busy && pending ? (
+          <p role="status">正在更新模板定义…</p>
+        ) : null}
         {message && <p role="status">{displayText(message)}</p>}
         {error && !preview && (
           <p role="alert" className="error">

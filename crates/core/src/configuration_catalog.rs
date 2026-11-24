@@ -302,6 +302,7 @@ impl Engine {
     pub fn at_configuration(&self, catalog: Arc<ConfigurationCatalogSnapshot>) -> Self {
         Self {
             effect_in_flight: self.effect_in_flight.clone(),
+            configuration_reset: std::sync::Mutex::new(()),
             runtime_callback_cursors: std::sync::Mutex::new(Default::default()),
             experience_cursor: std::sync::Mutex::new(None),
             workflow_intent_cursor: std::sync::Mutex::new(None),

@@ -141,6 +141,9 @@ impl Workspace {
             json!({"host":self.catalog_instance,"global":global,"project":project,"project_sources":clock,"source_epochs":source_epochs}),
         )
     }
+    pub(crate) fn event_configuration_version(&self) -> Result<Value> {
+        self.configuration_version(&self.configuration)
+    }
     pub(super) fn project_directory(&self, params: &Value) -> Result<Value> {
         let offset = params["project_offset"].as_u64().unwrap_or(0) as usize;
         let limit = params["limit"].as_u64().unwrap_or(50).clamp(1, 100) as usize;

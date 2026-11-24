@@ -337,16 +337,16 @@ async fn rpc(
         let dispatch_ms = dispatch_started.elapsed().as_secs_f64()*1000.0;
         let success = result.is_ok();
         let error_code = result.as_ref().err().map(|error| error.code.clone());
-        let response = match result {
-            Ok(outcome) => {
-                let mut response = json!({"jsonrpc":"2.0","id":id,"result":outcome.value});
-                if let Some(commit) = outcome.commit {response["meta"]=json!({"commit":commit});}
-                response
-            },
-            Err(e) => json!({"jsonrpc":"2.0","id":id,"error":failure(e)}),
-        };
         let body = {
             let _span = devdesk_adapters::performance::Span::new("rpc.serialize");
+            let response = match result {
+                Ok(outcome) => {
+                    let mut response = json!({"jsonrpc":"2.0","id":id,"result":outcome.value});
+                    if let Some(commit) = outcome.commit {response["meta"]=json!({"commit":commit});}
+                    response
+                },
+                Err(e) => json!({"jsonrpc":"2.0","id":id,"error":failure(e)}),
+            };
             if read && cancelled.load(Ordering::Relaxed) { Vec::new() } else { serde_json::to_vec(&response).expect("JSON RPC value") }
         };
         let milliseconds = submitted.elapsed().as_secs_f64()*1000.0;
@@ -535,8 +535,14 @@ async fn events(
         .or_else(|| p.get("cursor").and_then(|s| s.parse().ok()));
     let configuration_events = p.get("configuration").is_some_and(|value| value == "true");
     if p.get("tail").is_some_and(|value| value == "true") {
-        return match workspace.event_hub(&scope, engine) {
-            Ok(hub) => event_hub::events(app, hub, resume, configuration_events),
+        let tail = workspace.event_hub(&scope, engine).and_then(|hub| {
+            let clock = configuration_events
+                .then(|| workspace.event_configuration_clock())
+                .transpose()?;
+            Ok((hub, clock))
+        });
+        return match tail {
+            Ok((hub, clock)) => event_hub::events(app, hub, resume, clock),
             Err(e) => (StatusCode::CONFLICT, Json(failure(e))).into_response(),
         };
     }
@@ -765,9 +771,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let report = match args.get(1).map(String::as_str) {
             Some("migrate") => devdesk_adapters::project_migration::migrate(&data, &project)?,
             Some("compact") => devdesk_adapters::project_migration::compact(&data, &project)?,
+            Some("rebuild-workflow-display") => {
+                devdesk_adapters::project_migration::rebuild_workflow_display(&data, &project)?
+            }
             _ => {
                 return Err(
-                    "Usage: devdesk-host storage (migrate|compact) --data PATH --project ID".into(),
+                    "Usage: devdesk-host storage (migrate|compact|rebuild-workflow-display) --data PATH --project ID".into(),
                 );
             }
         };

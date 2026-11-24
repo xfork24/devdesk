@@ -138,7 +138,7 @@ impl Workspace {
                 },
             )?;
         }
-        self.global.publish_project(&e.store.project_metadata()?)?;
+        self.publish_new_project(&e)?;
         let context = InvocationContext::human(None).prepare_record("project.open_github", &c);
         let directory_key = devdesk_core::concurrency::ResourceKey::new("project_directory", &pid);
         let directory = self

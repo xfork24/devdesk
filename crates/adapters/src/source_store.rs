@@ -27,27 +27,83 @@ fn catalog_filter() -> String {
     )
 }
 
-pub(super) fn load_reset_records(conn: &Connection) -> Result<Vec<ConfigurationRecord>> {
-    // The state must include task reconstruction facts even when they need no
-    // rewrite. Packed bodies may hide a source marker, so admit them as candidates.
-    let filter = format!(
-        "{} OR type IN ('workflow_instance','workflow_plan_revision','workflow_execution_history',
-            'configured_execution_task','archived_configured_execution_task')
-         OR instr(data, '\"$source\"') > 0 OR instr(data, 'devdesk-source-text:') > 0
-         OR instr(data, '\"$devdesk_project_payload_v1\"') > 0
-         OR instr(data, 'devdesk-payload/v1:') > 0",
+pub(super) fn load_reset_records(
+    conn: &Connection,
+    incoming: &[ConfigurationRecord],
+) -> Result<Vec<ConfigurationRecord>> {
+    // Reconstruction facts must remain available even when they need no rewrite.
+    let facts = format!(
+        "{} OR type IN ('permission_binding','permission_assignment','workflow_instance',
+           'workflow_plan_revision','workflow_execution_history','configured_execution_task',
+           'archived_configured_execution_task')",
         catalog_filter()
     );
-    load_records_selected(conn, &filter)
+    let legacy = "instr(data, '\"$source\"') > 0 OR instr(data, 'devdesk-source-text:') > 0
+         OR instr(data, '\"$devdesk_project_payload_v1\"') > 0
+         OR instr(data, 'devdesk-payload/v1:') > 0";
+    let _span = performance::Span::new("source.load_records");
+    let rows = if source_dependencies::enabled(conn)? {
+        let sources = load_records_selected(
+            conn,
+            &format!(
+                "{} OR type IN ('permission_binding','permission_assignment')",
+                catalog_filter()
+            ),
+        )?;
+        let unchanged = serde_json::to_string(&source_dependencies::unchanged(&sources, incoming))
+            .map_err(storage)?;
+        let candidate = source_dependencies::reset_candidate_filter(legacy);
+        load_rows::<Value>(
+            conn,
+            "governance_records",
+            &format!("{facts} OR {candidate}"),
+            &[&unchanged],
+            false,
+        )?
+    } else {
+        load_rows::<Value>(
+            conn,
+            "governance_records",
+            &format!("{facts} OR ({legacy})"),
+            &[],
+            false,
+        )?
+    };
+    let mut records = Vec::new();
+    for row in rows {
+        let mut row = ConfigurationRecord::from_storage(row)?;
+        let reconstruction_fact = catalog_kind(&row.r#type)
+            || matches!(
+                row.r#type.as_str(),
+                "workflow_instance"
+                    | "workflow_plan_revision"
+                    | "workflow_execution_history"
+                    | "configured_execution_task"
+                    | "archived_configured_execution_task"
+            );
+        if reconstruction_fact
+            || payload_store::governance_uses_sources(conn, &row.r#type, &row.data)?
+        {
+            payload_store::restore_governance(conn, &row.r#type, &mut row.data)?;
+            records.push(row);
+        }
+    }
+    append_source_definitions(conn, records)
 }
 
 fn load_records_selected(conn: &Connection, filter: &str) -> Result<Vec<ConfigurationRecord>> {
     let _span = performance::Span::new("source.load_records");
-    let mut records: Vec<ConfigurationRecord> =
-        load_table_filtered::<Value>(conn, "governance_records", filter)?
-            .into_iter()
-            .map(ConfigurationRecord::from_storage)
-            .collect::<Result<_>>()?;
+    let records = load_table_filtered::<Value>(conn, "governance_records", filter)?
+        .into_iter()
+        .map(ConfigurationRecord::from_storage)
+        .collect::<Result<_>>()?;
+    append_source_definitions(conn, records)
+}
+
+fn append_source_definitions(
+    conn: &Connection,
+    mut records: Vec<ConfigurationRecord>,
+) -> Result<Vec<ConfigurationRecord>> {
     let mut query = conn
         .prepare(
             "SELECT type,identity,revision,name,scope,refs,data FROM source_definitions ORDER BY rowid",

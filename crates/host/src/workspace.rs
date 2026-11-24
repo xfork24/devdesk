@@ -43,6 +43,7 @@ pub struct Workspace {
     codex_auth: codex_auth::CodexAuthentication,
     github: github::GitHubPullRequests,
     configuration: Arc<Engine>,
+    reset_publication: Mutex<()>,
     adapters: ports::ExecutionAdapters,
     opened: Mutex<BTreeMap<String, Arc<Engine>>>,
     loading: Mutex<BTreeMap<String, EngineInitialization>>,
@@ -51,6 +52,7 @@ pub struct Workspace {
     catalog_instance: String,
     configuration_sync_epochs: Mutex<BTreeMap<String, (u64, u64)>>,
     event_hubs: Mutex<BTreeMap<String, std::sync::Weak<crate::event_hub::EventHub>>>,
+    event_configuration_clock: Mutex<std::sync::Weak<crate::event_hub::ConfigurationClock>>,
     scheduler_next: std::sync::atomic::AtomicUsize,
     directory_next: std::sync::atomic::AtomicUsize,
     runtime_reads: runtime_reads::RuntimeReadCache,
@@ -125,6 +127,7 @@ impl Workspace {
             github: github::GitHubPullRequests::new(root)?,
             global,
             configuration,
+            reset_publication: Mutex::new(()),
             adapters,
             opened: Mutex::new(BTreeMap::new()),
             loading: Default::default(),
@@ -133,6 +136,7 @@ impl Workspace {
             catalog_instance: id(),
             configuration_sync_epochs: Default::default(),
             event_hubs: Default::default(),
+            event_configuration_clock: Default::default(),
             scheduler_next: Default::default(),
             directory_next: Default::default(),
             runtime_reads: Default::default(),
@@ -145,11 +149,32 @@ impl Workspace {
             .adapters
             .harness
             .subscribe_wakeup(workspace.background.wake.listener());
+        let reset = devdesk_core::template_reset_jobs::TemplateResetJob::read(
+            workspace.global.as_ref(),
+            None,
+        )?
+        .filter(|job| job.completed_at.is_none());
+        let recover_target = |target: &str, status: Result<Arc<Engine>>| -> Result<()> {
+            match status {
+                Ok(_) => Ok(()),
+                Err(error) => {
+                    if let Some(job) = reset.as_ref().filter(|job| {
+                        job.targets
+                            .iter()
+                            .any(|entry| entry.id == target && entry.applied_at.is_none())
+                    }) {
+                        job.record_target(workspace.global.as_ref(), target, Some(&error.code))
+                    } else {
+                        Err(error)
+                    }
+                }
+            }
+        };
         let mut offset = 0;
         loop {
             let (projects, total) = workspace.global.projects(offset, 100)?;
             for project in projects {
-                workspace.load_project(&project.id, false)?;
+                recover_target(&project.id, workspace.load_project(&project.id, false))?;
             }
             offset += 100;
             if offset >= total {
@@ -160,7 +185,18 @@ impl Workspace {
             .join("engineering.sqlite3")
             .is_file()
         {
-            workspace.initialize_global_discussion()?;
+            recover_target(
+                GLOBAL_DISCUSSION_NAMESPACE,
+                workspace.initialize_global_discussion(),
+            )?;
+        }
+        if let Some(job) = &reset
+            && let Err(error) = workspace.finish_template_reset_job(job)
+        {
+            eprintln!(
+                "{}",
+                json!({"type":"template_reset_recovery","generation":job.generation,"error_code":error.code})
+            );
         }
         Ok(workspace)
     }
@@ -202,6 +238,23 @@ impl Workspace {
             .insert(key, basis);
         Ok(())
     }
+    fn publish_new_project(&self, engine: &Engine) -> Result<()> {
+        let _publication = self
+            .reset_publication
+            .lock()
+            .map_err(|e| err("storage", e.to_string()))?;
+        self.sync_configuration(engine)?;
+        self.global
+            .publish_project(&engine.store.project_metadata()?)
+    }
+
+    fn reconcile_project_summary(&self, engine: &Engine, project: &Project) -> Result<()> {
+        if self.global.project(&project.id)?.is_none() {
+            return self.publish_new_project(engine);
+        }
+        self.global.publish_project(project)
+    }
+
     fn create_project_metadata(&self, engine: &Engine, command: &Command) -> Result<Value> {
         self.sync_configuration(engine)?;
         let settings = devdesk_core::settings::read(self.global.as_ref())?;
@@ -286,6 +339,7 @@ impl Workspace {
         }
         // Repair a stale directory summary after a crash between the two independent commits.
         match e.store.project_metadata() {
+            Ok(_) if creating => self.publish_new_project(&e)?,
             Ok(project) => self.global.publish_project(&project)?,
             Err(error) if creating && error.code == "not_found" => {}
             Err(error) => return Err(error),
@@ -307,6 +361,10 @@ impl Workspace {
             .clone();
         let result = cell
             .get_or_init(|| {
+                let _publication = self
+                    .reset_publication
+                    .lock()
+                    .map_err(|e| err("storage", e.to_string()))?;
                 let data = PathBuf::from(self.global.root());
                 let root = SqliteStore::global_discussion_path(&data)?;
                 let store = SqliteStore::open(&root)?;
@@ -683,6 +741,7 @@ impl Workspace {
         if matches!(
             method,
             "query.workflow_instance"
+                | "query.workflow_driver"
                 | "query.execution_task"
                 | "query.feature_branches"
                 | "query.workflow_contexts"
@@ -1061,7 +1120,7 @@ impl Workspace {
                 .reserve_project(&command, &devdesk_core::InvocationContext::human(None))?;
             let e = self.load_project(&id, true)?;
             let result = self.create_project_metadata(&e, &command)?;
-            self.global.publish_project(&e.store.project_metadata()?)?;
+            self.publish_new_project(&e)?;
             return Ok(result);
         }
         if method == "project.open" {
@@ -1261,6 +1320,20 @@ impl Workspace {
         hubs.insert(scope.to_owned(), Arc::downgrade(&hub));
         Ok(hub)
     }
+    pub(crate) fn event_configuration_clock(
+        self: &Arc<Self>,
+    ) -> Result<Arc<crate::event_hub::ConfigurationClock>> {
+        let mut subscription = self
+            .event_configuration_clock
+            .lock()
+            .map_err(|e| err("storage", e.to_string()))?;
+        if let Some(clock) = subscription.upgrade() {
+            return Ok(clock);
+        }
+        let clock = crate::event_hub::ConfigurationClock::new(self);
+        *subscription = Arc::downgrade(&clock);
+        Ok(clock)
+    }
     #[cfg(test)]
     pub fn tick_fixture(self: &Arc<Self>, should_stop: impl Fn() -> bool) -> Result<()> {
         self.tick(&should_stop)?;
@@ -1328,7 +1401,7 @@ impl Workspace {
                                 engine.store.project_id().as_deref(),
                                 "read_project_metadata",
                             )?;
-                            if let Err(error) = self.global.publish_project(&project) {
+                            if let Err(error) = self.reconcile_project_summary(engine, &project) {
                                 report(
                                     engine.store.project_id().as_deref(),
                                     "publish_project",
@@ -2805,6 +2878,7 @@ impl Workspace {
         Ok(Arc::new(Self {
             global,
             configuration,
+            reset_publication: Mutex::new(()),
             codex_auth: devdesk_adapters::codex_auth::CodexAuthentication::new(root)?,
             github: github::GitHubPullRequests::new(root)?,
             adapters,
@@ -2815,6 +2889,7 @@ impl Workspace {
             catalog_instance: id(),
             configuration_sync_epochs: Default::default(),
             event_hubs: Default::default(),
+            event_configuration_clock: Default::default(),
             scheduler_next: Default::default(),
             directory_next: Default::default(),
             runtime_reads: Default::default(),

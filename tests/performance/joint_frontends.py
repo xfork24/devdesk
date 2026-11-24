@@ -94,6 +94,100 @@ def validate_stopped_fixture(dataset, fixture, real_runtime):
     return result
 
 
+def storage_trace(output, rpc_rows, browser):
+    if browser:
+        samples = output / "browser-rpc.jsonl"
+        if not samples.is_file():
+            return {}
+        with samples.open() as stream:
+            rpc_rows = [row for line in stream if (row := json.loads(line))["phase"] == "load"]
+    else:
+        rpc_rows = [row for row in rpc_rows if row["label"] in {"read", "write"}]
+    requests = {row.get("host_request_id"): row for row in rpc_rows
+                if row.get("host_request_id") is not None}
+    inventory = Path(__file__).resolve().parents[2] / "crates/core/src/rpc_contracts.json"
+    read_methods = {entry["method"] for entry in json.loads(inventory.read_text())["entries"]
+                    if entry["access"] == "read"}
+    spans = ["sqlite.pool_wait", "sqlite.read_pool_wait", "sqlite.busy_wait",
+             "resource.sql_transaction", "sqlite.table_read_decode"]
+    times = defaultdict(list)
+    busy = 0
+    matched = 0
+    checkout_calls = 0
+    checkout_bounds = None
+    checkout_buckets = []
+    with (output / "server.log").open() as stream:
+        for line in stream:
+            if not line.startswith("{"):
+                continue
+            try:
+                trace = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if str(trace.get("request_id")) not in requests:
+                continue
+            matched += 1
+            busy += trace.get("error_code") == "storage_busy"
+            kind = "read" if trace["method"] in read_methods else "write"
+            observed = trace.get("measurement", {})
+            histogram = observed.get("read_pool_checkout_histogram")
+            if histogram:
+                if checkout_bounds is None:
+                    checkout_bounds = histogram["bounds_ms"]
+                    checkout_buckets = [0] * len(histogram["counts"])
+                if checkout_bounds != histogram["bounds_ms"]:
+                    raise ValueError("Read pool histogram changed within one build")
+                checkout_buckets = [a + b for a, b in zip(checkout_buckets, histogram["counts"])]
+            measurement = observed.get("spans", {})
+            checkout_calls += measurement.get("sqlite.pool_wait", {}).get("calls", 0)
+            for stage in spans:
+                if stage in measurement:
+                    times[(kind, stage)].append(measurement[stage]["total_ms"])
+    checkout_count = sum(checkout_buckets)
+    cumulative = 0
+    upper_p95 = None
+    if checkout_count and checkout_bounds:
+        for bound, count in zip(checkout_bounds, checkout_buckets):
+            cumulative += count
+            if cumulative >= math.ceil(checkout_count * 0.95):
+                upper_p95 = bound
+                break
+    return {
+        "matched_offered_requests": matched, "offered_request_ids_with_responses": len(requests),
+        "read_pool_checkouts": {
+            "count": checkout_count, "p95_upper_bound_ms": upper_p95,
+            "bounds_ms": checkout_bounds, "counts": checkout_buckets,
+        },
+        "observed_checkouts": checkout_calls, "storage_busy": busy,
+        "per_request_stage_totals": {
+            kind: {stage: stats(times[kind, stage]) for stage in spans}
+            for kind in ["read", "write"]
+        },
+    }
+
+
+def checkpoint_after_load(dataset):
+    """Measure one passive checkpoint after the workload window on its private databases."""
+    observations = []
+    for database in sorted(dataset.rglob("*.sqlite3")):
+        started = time.monotonic()
+        wal = database.with_name(database.name + "-wal")
+        bytes_before = wal.stat().st_size if wal.exists() else 0
+        with sqlite3.connect(database.as_uri() + "?mode=rw", uri=True, timeout=0.1) as connection:
+            busy, log_frames, checkpointed = connection.execute(
+                "PRAGMA wal_checkpoint(PASSIVE)"
+            ).fetchone()
+        observations.append({
+            "database": str(database.relative_to(dataset)),
+            "busy": busy,
+            "log_frames": log_frames,
+            "checkpointed_frames": checkpointed,
+            "wal_bytes_before": bytes_before,
+            "ms": (time.monotonic() - started) * 1000,
+        })
+    return observations
+
+
 def pending_root_supply(dataset, slot_roots, start_ms, end_ms):
     intervals=[];missing=[]
     projects={root['project_id']for roots in slot_roots for root in roots}
@@ -223,6 +317,7 @@ def run(args):
                 request = urllib.request.Request(origin+'/rpc', json.dumps({'jsonrpc':'2.0','id':str(uuid.uuid4()),'method':method,'params':params}).encode(), {'Cookie':cookie,'Content-Type':'application/json'})
                 with urllib.request.urlopen(request, timeout=30) as response:
                     body = response.read()
+                    row['host_request_id'] = response.headers.get('x-devdesk-request-id')
                     value = json.loads(body)
                 row.update(bytes=len(body), error=value.get('error'))
                 row['expected_error'] = bool(row['error'] and row['error'].get('data',{}).get('code') in expected_errors)
@@ -252,8 +347,9 @@ def run(args):
                         row=connection.execute("SELECT id,json_extract(data,'$.owner_id') FROM governance_records WHERE type='workflow_instance' AND json_extract(data,'$.parent_execution_id') IS NULL ORDER BY rowid DESC LIMIT 1").fetchone()
                     if row is None:raise RuntimeError('D2 project lacks a real frozen workflow to observe')
                     frontend_roots.append({'project_id':project,'id':row[0],'feature_id':row[1]})
-            independent=[]
-            for n in range(100):
+            independent=[context for batch in zip(*fixture.get('d2_contexts', []), strict=True) for context in batch]
+            prepared_targets=bool(independent)
+            for n in range(0 if prepared_targets else 100):
                 project=fixture['projects'][n%len(fixture['projects'])]
                 feature=rpc('feature.create',{'project_id':project,'command_id':str(uuid.uuid4()),'payload':{'project_id':project,'title':f'D2 independent frontend {n}','initial_requirement':'Performance context only; no workflow or model may start','start_workflow':False}},'setup',n)
                 if not feature:raise RuntimeError('D2 independent frontend Feature creation failed')
@@ -265,7 +361,7 @@ def run(args):
             fixture['contexts']=independent
             fixture['frontend_roots']=frontend_roots
             (output/'fixture.json').write_text(json.dumps(fixture,indent=2))
-            (output/'frontend-scope-setup.json').write_text(json.dumps({'seconds':time.monotonic()-setup_started,'write_targets_by_project':{project:sum(c['project_id']==project for c in independent)for project in fixture['projects']},'read_targets':frontend_roots,'scope':'Real setup commands before the offered window. Four continuing roots remain on two projects; dormant frozen workflows in other projects are observed without fabricating execution.'},indent=2))
+            (output/'frontend-scope-setup.json').write_text(json.dumps({'seconds':time.monotonic()-setup_started,'write_targets_prepared_offline':prepared_targets,'write_targets_by_project':{project:sum(c['project_id']==project for c in independent)for project in fixture['projects']},'read_targets':frontend_roots,'scope':'Prepared editable contexts before the offered window. Four continuing roots remain on two projects; dormant frozen workflows in other projects are observed without fabricating execution.'},indent=2))
         completed_by_root = {}
         slot_roots = [[root.copy()] for root in fixture['roots']]
         retired = set()
@@ -319,57 +415,73 @@ def run(args):
                         with (output/'renewals.jsonl').open('a') as stream:stream.write(json.dumps({'time':time.monotonic(),'slot':slot,'old':root,'new':next_root})+'\n')
                 except Exception as error:
                     failures.append({'renewal_error':repr(error)});return
+        reconnect_clients = (args.reconnecting_clients or args.clients) if args.sse_reconnect else 0
+
         def sse(client):
-            project=fixture['contexts'][client]['project_id']
-            cursor=None
-            cycles=0
+            project = fixture["contexts"][client]["project_id"]
+            cursor = None
+            cycles = 0
             try:
                 while not stop.is_set():
-                    headers={'Cookie':cookie}
-                    if cursor: headers['Last-Event-ID']=cursor
-                    began=time.monotonic()
-                    response=urllib.request.urlopen(urllib.request.Request(origin+'/events?'+urllib.parse.urlencode({'project_id':project,'tail':'true'}),headers=headers),timeout=15)
-                    streams.append(response)
-                    reconnect={'client':client,'cycle':cycles,'resume_cursor':cursor,'connected_ms':(time.monotonic()-began)*1000} if cycles else None
-                    first=True
-                    pending_id=None
-                    until=time.monotonic()+10
-                    reconnect_next=False
-                    while not stop.is_set():
-                        line=response.readline().decode()
-                        if not line: break
-                        if line.startswith('id:'):
-                            pending_id=line[3:].strip()
-                            if not pending_id.startswith(project+':'): failures.append({'client':client,'foreign_event':pending_id})
-                        elif line.startswith('data:'):
-                            value=json.loads(line[5:].strip())
-                            event={'client':client,'time':time.monotonic(),'id':pending_id,'kind':value.get('kind')}
-                            if isinstance(value.get('time'),(int,float)):event['commit_field_to_receive_ms']=time.time()*1000-value['time']
-                            record_event(event)
-                            if first and reconnect is not None:
-                                reconnect['first_event_ms']=(time.monotonic()-began)*1000
-                                root=next(root for root in fixture['roots'] if root['project_id']==project)
-                                result=rpc('query.workflow_progress',root,'reconnect_verify',client)
-                                reconnect['state_read_ms']=(time.monotonic()-began)*1000
-                                if result is None:failures.append({'client':client,'reconnect_state_unavailable':cycles})
-                                reconnects.append(reconnect)
-                            first=False
-                        elif not line.strip():
-                            if pending_id:cursor=pending_id
-                            pending_id=None
-                            if args.sse_reconnect and cycles<10 and time.monotonic()>=until:
-                                cycles+=1
-                                reconnect_next=True
-                                response.close()
+                    headers = {"Cookie": cookie}
+                    if cursor:
+                        headers["Last-Event-ID"] = cursor
+                    began = time.monotonic()
+                    url = origin + "/events?" + urllib.parse.urlencode({
+                        "project_id": project, "tail": "true",
+                        "configuration": str(args.sse_configuration).lower(),
+                    })
+                    request = urllib.request.Request(url, headers=headers)
+                    reconnect_next = False
+                    with urllib.request.urlopen(request, timeout=15) as response:
+                        streams.append(response)
+                        reconnect = {
+                            "client": client, "cycle": cycles, "resume_cursor": cursor,
+                            "connected_ms": (time.monotonic() - began) * 1000,
+                        } if cycles else None
+                        pending_id = None
+                        until = time.monotonic() + 10
+                        while not stop.is_set():
+                            line = response.readline().decode()
+                            if not line:
                                 break
-                    else:
-                        response.close()
+                            if line.startswith("id:"):
+                                pending_id = line[3:].strip()
+                                if not pending_id.startswith(project + ":"):
+                                    failures.append({"client": client, "foreign_event": pending_id})
+                            elif line.startswith("data:"):
+                                value = json.loads(line[5:].strip())
+                                event = {"client": client, "time": time.monotonic(),
+                                         "id": pending_id, "kind": value.get("kind")}
+                                if isinstance(value.get("time"), (int, float)):
+                                    event["commit_field_to_receive_ms"] = time.time() * 1000 - value["time"]
+                                record_event(event)
+                                if reconnect is not None:
+                                    reconnect["first_event_ms"] = (time.monotonic() - began) * 1000
+                                    roots = fixture.get("frontend_roots", fixture["roots"])
+                                    root = next(target for target in roots if target["project_id"] == project)
+                                    result = rpc("query.workflow_progress", root, "reconnect_verify", client)
+                                    reconnect["state_read_ms"] = (time.monotonic() - began) * 1000
+                                    if not result or result["record"]["id"] != root["id"]:
+                                        failures.append({"client": client, "reconnect_state_unavailable": cycles})
+                                    reconnects.append(reconnect)
+                                    reconnect = None
+                            elif not line.strip():
+                                if pending_id:
+                                    cursor = pending_id
+                                pending_id = None
+                                if client < reconnect_clients and cycles < 10 and time.monotonic() >= until:
+                                    cycles += 1
+                                    reconnect_next = True
+                                    break
+                    if not reconnect_next:
+                        if not stop.is_set():
+                            failures.append({"client": client, "unexpected_stream_end": cycles})
                         return
-                    if reconnect_next:continue
-                    if not stop.is_set():failures.append({'client':client,'unexpected_stream_end':cycles})
-                    return
             except Exception as error:
-                if not stop.is_set(): failures.append({'client':client,'sse_error':repr(error)})
+                if not stop.is_set():
+                    failures.append({"client": client, "sse_error": repr(error)})
+
         def committed_work():
             totals={'workflow_step_updates':0,'workflow_state_commits':0,'completed_docker_tests':0,'workflow_events':0}
             for database in dataset.glob('projects/*/engineering.sqlite3'):
@@ -537,7 +649,8 @@ def run(args):
                 with (output/'committed-context-readbacks.jsonl').open('a') as stream:stream.write(json.dumps({'client':client,'project_id':context['project_id'],'context_id':context['id'],'expected_revision':version,'actual_revision':actual.get('revision'),'last_content_matches':last_written[client] is None or actual.get('content')==last_written[client],'passed':valid})+'\n')
                 if not valid:
                     failures.append({'client':client,'expected_revision':version,'read_back':detail})
-        if args.sse_reconnect and len(reconnects)!=args.clients*10: failures.append({'incomplete_reconnections':len(reconnects),'expected':args.clients*10})
+        if len(reconnects) != reconnect_clients * 10:
+            failures.append({'incomplete_reconnections':len(reconnects),'expected':reconnect_clients * 10})
         renew_stop.set()
         if renewal_thread:
             renewal_thread.join(timeout=35)
@@ -569,10 +682,18 @@ def run(args):
         summary['work_telemetry_scope']='Separate read-only SQLite snapshots; workflow_step sum(revision-1) counts durable logical step changes; state_commits counts the one same-transaction WorkflowCommit method event for dispatch/accept/changed observation/completion, not empty ticks. New roots start at revision 1. Docker count requires succeeded actual tests.run platform calls.'
         summary['event_commit_field_to_receive']=event_stats()
         summary['event_timing_boundary']='Same-machine wall clock from persisted pre-COMMIT Event.time to complete SSE data line; conservative, not exact COMMIT or browser rendering latency.'
-        summary['sse_reconnections']={'enabled':args.sse_reconnect,'completed':len(reconnects),'expected':args.clients*10 if args.sse_reconnect else 0,'state_read':stats([r['state_read_ms'] for r in reconnects])}
+        summary['sse_reconnections']={'enabled':args.sse_reconnect,'completed':len(reconnects),'expected':reconnect_clients*10,'clients':reconnect_clients,'state_read':stats([r['state_read_ms'] for r in reconnects])}
+        if args.sse_reconnect:
+            (output/'sse-reconnections.json').write_text(json.dumps(reconnects, indent=2))
         (output/'reconnections.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in reconnects))
         summary['elapsed_seconds']=time.monotonic()-start
         summary['replenished']=args.renew
+        if args.trace:
+            checkpoints = checkpoint_after_load(dataset)
+            summary['passive_checkpoints_after_load'] = checkpoints
+            log.flush()
+            summary['storage_trace'] = storage_trace(output, rows, args.browser)
+            (output/'checkpoint-after-load.json').write_text(json.dumps(checkpoints, indent=2))
         timing_start=start_wall_ms
         if args.browser and (output/'browser-window.json').exists():timing_start=json.loads((output/'browser-window.json').read_text())['began']
         dispatches=dispatch_latency(dataset,timing_start,timing_start+args.seconds*1000)
@@ -626,7 +747,7 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--test-binary',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True)
-    parser.add_argument('--clients',type=int,default=100,choices=[0,1,2,10,25,50,100])
+    parser.add_argument('--clients',type=int,default=100,choices=[0,1,2,4,10,16,25,50,100])
     parser.add_argument('--seconds',type=int,default=30)
     parser.add_argument('--read-rps',type=float,default=100)
     parser.add_argument('--write-rps',type=float,default=10)
@@ -634,7 +755,9 @@ if __name__=='__main__':
     parser.add_argument('--projects',type=int,choices=[2,10],default=2)
     parser.add_argument('--browser',action='store_true')
     parser.add_argument('--trace',action='store_true')
-    parser.add_argument('--sse-reconnect',action='store_true',help='Ten disconnect/resume/state-read cycles per independent subscriber; use a 120s or longer load')
+    parser.add_argument('--sse-reconnect',action='store_true',help='Ten disconnect/resume/state-read cycles per selected subscriber; use a 120s or longer load')
+    parser.add_argument('--sse-configuration',action='store_true',help='Subscribe to the catalog clock as the Web application does')
+    parser.add_argument('--reconnecting-clients',type=int,help='Number of subscribers to reconnect; defaults to all')
     parser.add_argument('--burst-cycles',type=int,default=0,help='Separate synchronized read, independent write, same-version competition and exact replay rounds')
     parser.add_argument('--renew',action='store_true',help='Replenish only the deterministic Rust fixture before its finite control roots drain')
     parser.add_argument('--real-runtime',action='store_true',help='Actual Git/Docker with the production Host after private fixture preparation')
@@ -643,6 +766,7 @@ if __name__=='__main__':
     parser.add_argument('--test-image')
     args=parser.parse_args()
     if args.sse_reconnect and (args.seconds<120 or args.browser): parser.error('Reconnect scene needs at least 120 seconds of protocol load')
+    if args.reconnecting_clients is not None and (not args.sse_reconnect or not 1<=args.reconnecting_clients<=args.clients): parser.error('Select between 1 and the total client count when reconnecting')
     if args.real_runtime and args.renew: parser.error('Renewal is limited to the W1 deterministic fixture')
     if args.burst_cycles and (args.browser or args.clients!=100 or not 1<=args.burst_cycles<=30): parser.error('Burst scene requires 100 protocol clients and 1..30 cycles')
     if not 10<=args.seconds<=3600 or args.read_rps<0 or args.write_rps<0 or (args.clients and (args.read_rps==0 or args.write_rps==0)): parser.error('Invalid duration/rate')

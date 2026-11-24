@@ -48,6 +48,8 @@ pub(super) fn segments_pending_sql() -> String {
 // The display rows are transactional hints, never dispatch authority. Include
 // status repairs and cancellation as well as actual running receipts. Revisit
 // older business/unknown projections of confirmed child cancellations once.
+// The ancestor guard matches the partial idx_workflow_active_root predicate
+// while retaining the original treatment of NULL status in legacy rows.
 pub(super) const WORKFLOW_READY: &str = "(
  json_extract(c.data,'$.status') NOT IN ('completed','cancelled') AND (
  coalesce(json_extract(c.data,'$.cancel_requested'),0)=1
@@ -80,6 +82,7 @@ pub(super) const WORKFLOW_READY: &str = "(
            AND json_extract(s.value,'$.failure.effect')='unknown')))))
  OR EXISTS(SELECT 1 FROM governance_records a WHERE a.type='workflow_instance'
    AND json_extract(a.data,'$.root_instance_id')=json_extract(c.data,'$.root_instance_id')
+   AND coalesce(json_extract(a.data,'$.status'),'') NOT IN ('completed','cancelled')
    AND json_extract(a.data,'$.status') NOT IN ('completed','cancelled')
    AND coalesce(json_extract(a.data,'$.cancel_requested'),0)=1)
 ))";

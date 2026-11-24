@@ -10,6 +10,11 @@ import {
   isTemplateMutation,
 } from "./template-catalog";
 import { TemplateSettings } from "./components/TemplateSettings";
+import { deferPage } from "./components/deferred-page";
+import {
+  preloadConfigurationTab,
+  selectedConfigurationTab,
+} from "./components/configuration-page-chunks";
 import {
   ActionButton,
   ActionForm,
@@ -22,13 +27,13 @@ import {
   useActionFeedback,
 } from "./components/action-feedback";
 import "./browser-compat";
-import { ProjectManager } from "./components/ProjectManager";
 import {
   FeatureBranchQueue,
   type FeatureQueueItem,
 } from "./components/FeatureBranchQueue";
 import { ConfigurationScope } from "./components/configuration-scope";
 import {
+  configurationIndexParams,
   configurationMutation,
   configurationResponseOutdated,
   foregroundRequest,
@@ -84,21 +89,78 @@ import {
   Box,
   AlertTriangle,
 } from "lucide-react";
-import { ConfigurationPage } from "./components/ConfigurationPages";
-import { CallHistory } from "./components/Integrations";
-import { AgentCatalog } from "./components/AgentCatalog";
-import { WorkStandard } from "./components/WorkStandard";
 import { WorkflowMaterials } from "./components/WorkflowMaterials";
 import { WorkflowScope } from "./components/WorkflowScope";
-import { RepositorySettings } from "./components/RepositorySettings";
 import { GitHubConnection } from "./components/GitHubConnection";
-import { RoleConversation } from "./components/RoleConversation";
-import { RuntimeSettings } from "./components/RuntimeSettings";
 import { RuntimePreparationStatus } from "./components/RuntimePreparationStatus";
 import {
   KernelAuthentication,
   KernelConnection,
 } from "./components/KernelConnection";
+
+const { Page: ProjectManager, preload: loadProjectManager } = deferPage(() =>
+  import("./components/ProjectManager").then((module) => module.ProjectManager),
+);
+const { Page: ConfigurationPage, preload: loadConfigurationPage } = deferPage(
+  () =>
+    import("./components/ConfigurationPages").then(
+      (module) => module.ConfigurationPage,
+    ),
+);
+const { Page: CallHistory, preload: loadCallHistory } = deferPage(() =>
+  import("./components/Integrations").then((module) => module.CallHistory),
+);
+const { Page: AgentCatalog, preload: loadAgentCatalog } = deferPage(() =>
+  import("./components/AgentCatalog").then((module) => module.AgentCatalog),
+);
+const { Page: WorkStandard } = deferPage(() =>
+  import("./components/WorkStandard").then((module) => module.WorkStandard),
+);
+const { Page: RepositorySettings } = deferPage(() =>
+  import("./components/RepositorySettings").then(
+    (module) => module.RepositorySettings,
+  ),
+);
+const { Page: RoleConversation, preload: loadRoleConversation } = deferPage(
+  () =>
+    import("./components/RoleConversation").then(
+      (module) => module.RoleConversation,
+    ),
+);
+const { Page: RuntimeSettings, preload: loadRuntimeSettings } = deferPage(() =>
+  import("./components/RuntimeSettings").then(
+    (module) => module.RuntimeSettings,
+  ),
+);
+
+const navigationChunks: Record<string, () => Promise<unknown>> = {
+  projects: loadProjectManager,
+  workflows: loadConfigurationPage,
+  components: loadConfigurationPage,
+  actors: loadAgentCatalog,
+  definitions: loadAgentCatalog,
+  discussion: loadRoleConversation,
+  history: loadCallHistory,
+  settings: loadRuntimeSettings,
+};
+
+function preloadPage(tab: string) {
+  if (Object.hasOwn(navigationChunks, tab))
+    void navigationChunks[tab]().catch(() => {});
+  if (tab === "workflows" || tab === "components")
+    preloadConfigurationTab(tab === "workflows" ? "processes" : "foundations");
+}
+
+function initialCatalogQuery(tab: string, projectId?: string) {
+  if (tab === "projects" || tab === "workflows")
+    return configurationIndexParams(projectId);
+  if (tab !== "components") return;
+  const selected = selectedConfigurationTab("foundations");
+  if (["model", "harness", "sandbox"].includes(selected))
+    return configurationIndexParams(projectId, {
+      archived: selected !== "model",
+    });
+}
 
 function ConfigurationMain({
   scope,
@@ -317,6 +379,7 @@ function routeTabValue(p: URLSearchParams) {
     : "overview";
 }
 const routeTab = routeTabValue(route);
+preloadPage(routeTab);
 const defaultExecutionTab = "manager";
 type ActivityFilter = "running" | "waiting_confirmation" | "blocked";
 const executionTabs = [
@@ -358,6 +421,8 @@ function App() {
   const [projectId, setProjectId] = useState(route.get("project_id") || "");
   const [featureId, setFeatureId] = useState(route.get("feature_id") || "");
   const [tab, setTab] = useState(routeTab);
+  const initialCatalog = useRef("");
+  useEffect(() => preloadPage(tab), [tab]);
   const [branchQueueRevision, setBranchQueueRevision] = useState(0);
   const configurationSession = useSyncExternalStore(
     subscribeConfigurationSession,
@@ -678,8 +743,17 @@ function App() {
                 },
           );
           if (generation !== requestGeneration.current) return;
-          if (d.catalog_version)
+          if (d.catalog_version) {
             configurationVersion.current = JSON.stringify(d.catalog_version);
+            const params = initialCatalogQuery(tab, projectId || undefined);
+            const key = JSON.stringify([d.catalog_version, params]);
+            if (params && key !== initialCatalog.current) {
+              initialCatalog.current = key;
+              void rpc("query.configuration_index", params, {
+                prefetch: true,
+              }).catch(() => {});
+            }
+          }
           setData(d);
         }
       } catch (e) {
@@ -909,12 +983,34 @@ function App() {
       if (timer) clearTimeout(timer);
     };
   }, [projectId, caps?.setup_required]);
-  const detail = data?.detail;
+  const selectedProjectMatches =
+    !loadedData?.active_project?.id ||
+    loadedData.active_project.id === projectId;
+  const detail =
+    tab === "execution" &&
+    (!selectedProjectMatches ||
+      !featureId ||
+      data?.detail?.feature?.id !== featureId)
+      ? undefined
+      : data?.detail;
   const f = detail?.feature;
+  const projectWorkflowSelected =
+    tab === "execution" &&
+    !featureId &&
+    selectedProjectMatches &&
+    (data?.configurations || []).some(
+      (record: Row) =>
+        record.type === "workflow_instance" &&
+        record.data.owner_id === projectId &&
+        record.data.parent_execution_id == null,
+    );
+  const workflowOwner = f?.id || (projectWorkflowSelected ? projectId : "");
   const projects: Row[] = (loadedData?.projects || []).filter(
     (p: Row) => p.workspace_definition?.repository,
   );
-  const features: FeatureQueueItem[] = data?.features || [];
+  const features: FeatureQueueItem[] = selectedProjectMatches
+    ? loadedData?.features || []
+    : [];
   const definitions: Row[] = (data?.definitions || []).filter(
     (d: Row) => d.family !== "agent" || d.agent_profile,
   );
@@ -1319,10 +1415,12 @@ function App() {
               key={id}
               className={tab === id ? "nav active" : "nav"}
               onClick={() => {
+                preloadPage(id);
                 if (id === "execution") setExecutionTab(defaultExecutionTab);
                 setTab(id);
               }}
               onMouseEnter={() => {
+                preloadPage(id);
                 if (
                   [
                     "projects",
@@ -1339,6 +1437,7 @@ function App() {
                   );
               }}
               onFocus={() => {
+                preloadPage(id);
                 if (
                   [
                     "projects",
@@ -1578,7 +1677,7 @@ function App() {
               </aside>
             </div>
           )}
-          {data && tab === "execution" && (
+          {loadedData && tab === "execution" && (
             <div className="feature-picker">
               <label>
                 当前 Feature
@@ -1587,6 +1686,7 @@ function App() {
                   value={featureId}
                   onChange={(e) => {
                     setFeatureId(e.target.value);
+                    setReadingTarget({});
                     setTaskFilter("");
                     setDetailPages({});
                   }}
@@ -1658,155 +1758,13 @@ function App() {
               refresh={load}
             />
           )}
-          {tab === "execution" && f && (
-            <>
-              <section
-                className={
-                  executionTab === "manager" ? "manager-feature-view" : "panel"
-                }
-              >
-                <h2>{displayText(f.title)}</h2>
-                <div
-                  className="detail-tabs"
-                  role="tablist"
-                  aria-label="执行详情"
-                >
-                  {executionTabs.map(([key, label]) => (
-                    <ActionButton
-                      key={key}
-                      role="tab"
-                      aria-selected={executionTab === key}
-                      onClick={() => {
-                        setReadingTarget({});
-                        setExecutionTab(key);
-                      }}
-                    >
-                      {displayText(label)}
-                    </ActionButton>
-                  ))}
-                </div>
-                {executionTab === "manager" &&
-                  !["completed", "cancelled"].includes(f.status) &&
-                  !data?.configurations?.some(
-                    (r: Row) =>
-                      r.type === "workflow_instance" &&
-                      r.data.owner_id === f.id &&
-                      r.data.parent_execution_id == null,
-                  ) && (
-                    <section className="panel" aria-label="启动 Feature">
-                      <div className="panel-heading">
-                        <div>
-                          <h3>Feature 尚未启动</h3>
-                          <p>
-                            已保存需求和执行配置，点击启动后创建工作流并采用已选调度模式。
-                          </p>
-                        </div>
-                        <ActionButton
-                          className="primary"
-                          disabled={busy || !repositoryReady}
-                          onClick={() =>
-                            void command("workflow.start", f.id).catch(() => {})
-                          }
-                        >
-                          启动 Feature
-                        </ActionButton>
-                      </div>
-                    </section>
-                  )}
-                {executionTab === "manager" &&
-                  !data?.configurations?.some(
-                    (r: Row) =>
-                      r.type === "workflow_instance" &&
-                      r.data.owner_id === f.id &&
-                      r.data.parent_execution_id == null,
-                  ) && (
-                    <WorkStandard
-                      request={rpc}
-                      projectId={projectId}
-                      owner={f}
-                      refresh={load}
-                    />
-                  )}
-                {executionTab === "documents" && (
-                  <>
-                    <WorkflowMaterials
-                      key={`${projectId}:${f.id}`}
-                      projectId={projectId}
-                      ownerId={f.id}
-                      request={rpc}
-                      target={activeReadingTarget}
-                      documents={detail.documents}
-                    />
-                    <h3>材料修订</h3>
-                    <ActionButton
-                      onClick={() =>
-                        show({
-                          title: "保存材料修订",
-                          method: "document.revise",
-                          target: f.id,
-                          fields: [
-                            {
-                              key: "kind",
-                              label: "交付类型",
-                              type: "select",
-                              options: (data?.delivery_types || []).map(
-                                (r: Row) => ({
-                                  value: r.id,
-                                  label: r.name,
-                                }),
-                              ),
-                            },
-                            { key: "title", label: "标题" },
-                            { key: "body", label: "内容", type: "markdown" },
-                          ],
-                        })
-                      }
-                    >
-                      新建材料
-                    </ActionButton>
-                    {displayText(pager("documents"))}
-                  </>
-                )}
-                {executionTab === "context" && (
-                  <WorkflowContexts
-                    key={`${projectId}:${f.id}`}
-                    projectId={projectId}
-                    ownerId={f.id}
-                    request={rpc}
-                    target={activeReadingTarget}
-                    contexts={detail.contexts}
-                    onEditContext={(context) =>
-                      show({
-                        title: "更新上下文",
-                        method: "context.update",
-                        target: context.id,
-                        revision: context.revision,
-                        fields: [
-                          {
-                            key: "content",
-                            label: "内容",
-                            type: "markdown",
-                            value: context.content,
-                          },
-                        ],
-                      })
-                    }
-                  />
-                )}
-                {executionTab === "records" && (
-                  <WorkflowExecutionRecords
-                    key={`${projectId}:${f.id}`}
-                    projectId={projectId}
-                    ownerId={f.id}
-                    request={rpc}
-                    target={activeReadingTarget}
-                  />
-                )}
-              </section>
-            </>
-          )}
-          {tab === "execution" && !f && projectId && (
-            <section className="panel">
+          {tab === "execution" && projectId && (
+            <section
+              className={
+                executionTab === "manager" ? "manager-feature-view" : "panel"
+              }
+            >
+              {f && <h2>{displayText(f.title)}</h2>}
               <div className="detail-tabs" role="tablist" aria-label="执行详情">
                 {executionTabs.map(([key, label]) => (
                   <ActionButton
@@ -1822,29 +1780,131 @@ function App() {
                   </ActionButton>
                 ))}
               </div>
-              {executionTab === "documents" && (
-                <WorkflowMaterials
-                  key={`${projectId}:${featureId}`}
-                  projectId={projectId}
-                  ownerId={featureId || projectId}
-                  request={rpc}
-                  target={activeReadingTarget}
-                />
+              {(!featureId ||
+                (!f && ["manager", "overview"].includes(executionTab))) && (
+                <p className="muted" role="status">
+                  {featureId ? "正在读取 Feature…" : "请选择 Feature"}
+                </p>
               )}
-              {executionTab === "context" && (
+              {f &&
+                executionTab === "manager" &&
+                !["completed", "cancelled"].includes(f.status) &&
+                !data?.configurations?.some(
+                  (r: Row) =>
+                    r.type === "workflow_instance" &&
+                    r.data.owner_id === f.id &&
+                    r.data.parent_execution_id == null,
+                ) && (
+                  <section className="panel" aria-label="启动 Feature">
+                    <div className="panel-heading">
+                      <div>
+                        <h3>Feature 尚未启动</h3>
+                        <p>
+                          已保存需求和执行配置，点击启动后创建工作流并采用已选调度模式。
+                        </p>
+                      </div>
+                      <ActionButton
+                        className="primary"
+                        disabled={busy || !repositoryReady}
+                        onClick={() =>
+                          void command("workflow.start", f.id).catch(() => {})
+                        }
+                      >
+                        启动 Feature
+                      </ActionButton>
+                    </div>
+                  </section>
+                )}
+              {f &&
+                executionTab === "manager" &&
+                !data?.configurations?.some(
+                  (r: Row) =>
+                    r.type === "workflow_instance" &&
+                    r.data.owner_id === f.id &&
+                    r.data.parent_execution_id == null,
+                ) && (
+                  <WorkStandard
+                    request={rpc}
+                    projectId={projectId}
+                    owner={f}
+                    refresh={load}
+                  />
+                )}
+              {featureId && executionTab === "documents" && (
+                <>
+                  <WorkflowMaterials
+                    key={`${projectId}:${featureId}`}
+                    projectId={projectId}
+                    ownerId={featureId}
+                    request={rpc}
+                    target={activeReadingTarget}
+                    documents={detail?.documents}
+                  />
+                  {f && (
+                    <>
+                      <h3>材料修订</h3>
+                      <ActionButton
+                        onClick={() =>
+                          show({
+                            title: "保存材料修订",
+                            method: "document.revise",
+                            target: f.id,
+                            fields: [
+                              {
+                                key: "kind",
+                                label: "交付类型",
+                                type: "select",
+                                options: (data?.delivery_types || []).map(
+                                  (r: Row) => ({
+                                    value: r.id,
+                                    label: r.name,
+                                  }),
+                                ),
+                              },
+                              { key: "title", label: "标题" },
+                              { key: "body", label: "内容", type: "markdown" },
+                            ],
+                          })
+                        }
+                      >
+                        新建材料
+                      </ActionButton>
+                      {displayText(pager("documents"))}
+                    </>
+                  )}
+                </>
+              )}
+              {featureId && executionTab === "context" && (
                 <WorkflowContexts
                   key={`${projectId}:${featureId}`}
                   projectId={projectId}
-                  ownerId={featureId || projectId}
+                  ownerId={featureId}
                   request={rpc}
                   target={activeReadingTarget}
+                  contexts={detail?.contexts}
+                  onEditContext={(context) =>
+                    show({
+                      title: "更新上下文",
+                      method: "context.update",
+                      target: context.id,
+                      revision: context.revision,
+                      fields: [
+                        {
+                          key: "content",
+                          label: "内容",
+                          type: "markdown",
+                          value: context.content,
+                        },
+                      ],
+                    })
+                  }
                 />
               )}
-              {executionTab === "records" && (
+              {featureId && executionTab === "records" && (
                 <WorkflowExecutionRecords
                   key={`${projectId}:${featureId}`}
                   projectId={projectId}
-                  ownerId={featureId || projectId}
+                  ownerId={featureId}
                   request={rpc}
                   target={activeReadingTarget}
                 />
@@ -1853,11 +1913,11 @@ function App() {
           )}
           {tab === "execution" &&
             ["manager", "overview"].includes(executionTab) &&
-            projectId && (
+            workflowOwner && (
               <WorkflowScope
-                key={`${projectId}:${featureId || projectId}`}
+                key={`${projectId}:${workflowOwner}`}
                 projectId={projectId}
-                ownerId={featureId || projectId}
+                ownerId={workflowOwner}
                 request={rpc}
                 refresh={load}
                 records={data?.configurations || []}
@@ -1874,32 +1934,6 @@ function App() {
                   setTab("discussion");
                 }}
               />
-            )}
-          {tab === "execution" &&
-            !featureId &&
-            !f &&
-            ["manager", "overview"].includes(executionTab) && (
-              <section className="panel">
-                <h2>
-                  Feature 工作队列
-                  {displayText(workFilter ? ` · ${workFilter}` : "")}
-                </h2>
-                {features.map((feature) => (
-                  <ActionButton
-                    className="feature-row"
-                    key={feature.id}
-                    onClick={() => setFeatureId(feature.id)}
-                  >
-                    {displayText(feature.title)} ·{" "}
-                    {displayText(labels[feature.status] || feature.status)}
-                  </ActionButton>
-                ))}
-                <Pagination
-                  page={featurePage}
-                  setPage={setFeaturePage}
-                  hasMore={(featurePage + 1) * 50 < (data?.total_features || 0)}
-                />
-              </section>
             )}
           {data && ["workflows", "components"].includes(tab) && (
             <ConfigurationPage

@@ -1,13 +1,18 @@
 import { displayText } from "../display-text";
 import { ActionButton } from "./ActionFeedback";
-import { ResourceEditor } from "./AgentCatalog";
-import { Integrations } from "./Integrations";
-import { StandardManager } from "./StandardManager";
-import { WorkflowManager } from "./WorkflowManager";
-import { PermissionResources } from "./PermissionResources";
 import { PermissionTargetBinding } from "./PermissionTargetBinding";
 import { useGroupTab } from "./configuration-state";
 import { type Request, type Row } from "./rpc-types";
+
+import {
+  configurationTabs,
+  Integrations,
+  PermissionResources,
+  ResourceEditor,
+  StandardManager,
+  WorkflowManager,
+  type ConfigurationGroup,
+} from "./configuration-page-chunks";
 
 type Props = {
   request: Request;
@@ -15,29 +20,11 @@ type Props = {
   installations: Row[];
   refresh: () => Promise<void>;
 };
-const processTabs = [
-  ["workflow", "Workflow"],
-  ["delivery_type", "Delivery"],
-  ["spec", "Spec"],
-  ["standard", "Standard"],
-];
-const foundationTabs = [
-  ["model", "Model"],
-  ["harness", "Harness"],
-  ["sandbox", "Sandbox"],
-  ["permission", "Permission"],
-  ["mcp", "MCP"],
-  ["skills", "Skills"],
-  ["http", "Tools"],
-  ["native", "Harness Tools"],
-  ["internal", "Internal Tools"],
-];
-
 export function ConfigurationPage({
   group,
   ...props
-}: Props & { group: "processes" | "foundations" }) {
-  const tabs = group === "processes" ? processTabs : foundationTabs;
+}: Props & { group: ConfigurationGroup }) {
+  const tabs = configurationTabs[group];
   const [tab, choose] = useGroupTab(
     group,
     tabs.map(([id]) => id),

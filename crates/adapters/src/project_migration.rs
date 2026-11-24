@@ -9,10 +9,14 @@ fn database_len(path: &Path) -> Result<u64> {
 
 fn validate(conn: &Connection, project: &str) -> Result<()> {
     check_dataset_layout(conn)?;
-    let actual: String = conn
+    let actual: Option<String> = conn
         .query_row("SELECT id FROM projects", [], |r| r.get(0))
+        .optional()
         .map_err(storage)?;
-    require(actual == project, "待迁移库的项目身份不符")?;
+    require(
+        actual.as_deref() == (project != GLOBAL_DISCUSSION_NAMESPACE).then_some(project),
+        "待迁移库的项目身份不符",
+    )?;
     let integrity: String = conn
         .query_row("PRAGMA integrity_check", [], |r| r.get(0))
         .map_err(storage)?;
@@ -43,7 +47,7 @@ fn upgrade(conn: &mut Connection, root: &Path) -> Result<Value> {
         tx.execute_batch(&format!("DROP TRIGGER \"{}\"", name.replace('"', "\"\"")))
             .map_err(storage)?;
     }
-    tx.pragma_update(None, "user_version", PROJECT_SCHEMA_VERSION)
+    tx.pragma_update(None, "user_version", PAYLOAD_PROJECT_SCHEMA_VERSION)
         .map_err(storage)?;
     tx.execute_batch(
         "CREATE TABLE payload_pack_objects (
@@ -185,7 +189,11 @@ pub fn migrate(data: &Path, project: &str) -> Result<Value> {
         "需要已初始化的 DevDesk 数据集",
     )?;
     let (data, _dataset_lock) = lock_dataset(data)?;
-    let root = SqliteStore::project_path(&data, project)?;
+    let root = if project == GLOBAL_DISCUSSION_NAMESPACE {
+        SqliteStore::global_discussion_path(&data)?
+    } else {
+        SqliteStore::project_path(&data, project)?
+    };
     let live = root.join("engineering.sqlite3");
     reject_symlink(&live)?;
     require(live.is_file(), "工程库不存在")?;
@@ -200,7 +208,10 @@ pub fn migrate(data: &Path, project: &str) -> Result<Value> {
         );
     }
     require(
-        version == LEGACY_PROJECT_SCHEMA_VERSION,
+        matches!(
+            version,
+            LEGACY_PROJECT_SCHEMA_VERSION | PAYLOAD_PROJECT_SCHEMA_VERSION
+        ),
         "工程库版本不支持此迁移",
     )?;
     let busy: u64 = source
@@ -221,7 +232,18 @@ pub fn migrate(data: &Path, project: &str) -> Result<Value> {
                 "PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;",
             )
             .map_err(storage)?;
-        let counts = payload_store::stage(|| upgrade(&mut candidate, &root))?;
+        let mut counts = if version == LEGACY_PROJECT_SCHEMA_VERSION {
+            payload_store::stage(|| upgrade(&mut candidate, &root))?
+        } else {
+            json!({})
+        };
+        let index = candidate.transaction().map_err(storage)?;
+        source_dependencies::create(&index)?;
+        counts["source_dependencies"] = source_dependencies::backfill(&index)?;
+        index
+            .pragma_update(None, "user_version", PROJECT_SCHEMA_VERSION)
+            .map_err(storage)?;
+        index.commit().map_err(storage)?;
         validate(&candidate, project)?;
         candidate
             .pragma_update(None, "page_size", 8192)
@@ -289,5 +311,39 @@ pub fn compact(data: &Path, project: &str) -> Result<Value> {
         connection.execute_batch("VACUUM").map_err(storage)?;
     }
     storage_maintenance::checkpoint(&connection)?;
+    Ok(report)
+}
+
+pub fn rebuild_workflow_display(data: &Path, project: &str) -> Result<Value> {
+    require(
+        data.join("global.sqlite3").is_file(),
+        "需要已初始化的 DevDesk 数据集",
+    )?;
+    let (data, _dataset_lock) = lock_dataset(data)?;
+    let root = SqliteStore::project_path(&data, project)?;
+    let live = root.join("engineering.sqlite3");
+    reject_symlink(&live)?;
+    require(live.is_file(), "工程库不存在")?;
+    let (_root, _project_lock) = lock_dataset(&root)?;
+    let mut connection =
+        Connection::open_with_flags(&live, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)
+            .map_err(storage)?;
+    let version: u32 = connection
+        .pragma_query_value(None, "user_version", |r| r.get(0))
+        .map_err(storage)?;
+    require(
+        matches!(
+            version,
+            LEGACY_PROJECT_SCHEMA_VERSION | PAYLOAD_PROJECT_SCHEMA_VERSION | PROJECT_SCHEMA_VERSION
+        ),
+        "工程库版本不支持流程展示回填",
+    )?;
+    validate(&connection, project)?;
+    connection
+        .execute_batch("PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL;")
+        .map_err(storage)?;
+    let mut report = workflow_projection::rebuild(&mut connection)?;
+    report["project_id"] = json!(project);
+    report["version"] = json!(version);
     Ok(report)
 }

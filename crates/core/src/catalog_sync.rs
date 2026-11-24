@@ -56,25 +56,7 @@ impl Engine {
         let existing = self.store.configuration_snapshot()?;
         let known = global.configuration_snapshot()?;
         if existing.needs_factory_reset_from(&known) {
-            let publication = self
-                .store
-                .prepare_configuration_reset(&known.state.governance, existing.revision)?;
-            let transfer = configuration_transfer_witness(self.store.as_ref())?;
-            let digest = configuration_hash(&(
-                "factory-reset-sync",
-                self.store.namespace(),
-                known.revision,
-                existing.revision,
-            ));
-            self.store.commit_changes(&PreparedChangeSet {
-                command_id: format!("factory-reset-sync:{digest}"),
-                fingerprint: digest,
-                read_set: publication.read_set.merge([transfer])?,
-                changes: publication.changes,
-                result: json!({"ok":true}),
-                time: now() as i64,
-            })?;
-            return Ok(());
+            return self.sync_factory_reset(global);
         }
         let mut directory = known.state.as_ref().clone();
         for role in existing.state.governance.iter().filter(|r| {
@@ -121,5 +103,38 @@ impl Engine {
         // they are not a second mutable configuration store.
         next.refresh_configuration_views()?;
         publish(self.store.as_ref(), &existing, next, "shared-catalog-sync")
+    }
+
+    fn sync_factory_reset(&self, global: &dyn EngineeringStore) -> Result<()> {
+        // A foreground reset and the background publisher can see the same
+        // generation change. Only one needs to prepare its historical evidence.
+        let _reset = self
+            .configuration_reset
+            .lock()
+            .map_err(|error| err("storage", error.to_string()))?;
+        let existing = self.store.configuration_snapshot()?;
+        let known = global.configuration_snapshot()?;
+        if !existing.needs_factory_reset_from(&known) {
+            return Ok(());
+        }
+        let publication = self
+            .store
+            .prepare_configuration_reset(&known.state.governance, existing.revision)?;
+        let transfer = configuration_transfer_witness(self.store.as_ref())?;
+        let digest = configuration_hash(&(
+            "factory-reset-sync",
+            self.store.namespace(),
+            known.revision,
+            existing.revision,
+        ));
+        self.store.commit_changes(&PreparedChangeSet {
+            command_id: format!("factory-reset-sync:{digest}"),
+            fingerprint: digest,
+            read_set: publication.read_set.merge([transfer])?,
+            changes: publication.changes,
+            result: json!({"ok":true}),
+            time: now() as i64,
+        })?;
+        Ok(())
     }
 }

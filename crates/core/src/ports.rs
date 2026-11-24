@@ -595,6 +595,12 @@ pub trait EngineeringStore: Send + Sync {
     ) -> Result<crate::read_models::OrchestrationSummary> {
         Err(err("unsupported", "存储未实现经理摘要读取"))
     }
+    fn orchestration_history(&self, _root: &str, _before: Option<u64>) -> Result<Value> {
+        Err(err("unsupported", "存储未实现经理历史读取"))
+    }
+    fn orchestration_history_member(&self, _root: &str, _id: &str) -> Result<bool> {
+        Err(err("unsupported", "存储未实现历史决定归属读取"))
+    }
     fn workflow_driver_summary(
         &self,
         _id: &str,

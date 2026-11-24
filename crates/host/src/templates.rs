@@ -1,9 +1,11 @@
 //! Reset only the current definition directory; immutable project bindings retain their history.
 use super::*;
+use devdesk_core::template_reset_jobs::TemplateResetJob;
 use std::collections::{BTreeMap, BTreeSet};
 
 impl Workspace {
     fn finish_template_reset(&self) -> Result<()> {
+        let _span = performance::Span::new("catalog.reset_finish");
         let discussion = self
             .opened
             .lock()
@@ -12,6 +14,7 @@ impl Workspace {
             .cloned();
         if let Some(engine) = discussion {
             self.sync_configuration(&engine)?;
+            performance::record("catalog.reset_target_checked", 0.0);
         }
         let mut offset = 0;
         loop {
@@ -19,6 +22,7 @@ impl Workspace {
             for project in &projects {
                 let engine = self.project_engine(Some(&project.id))?;
                 self.sync_configuration(&engine)?;
+                performance::record("catalog.reset_target_checked", 0.0);
             }
             offset += projects.len();
             if offset >= total || projects.is_empty() {
@@ -27,7 +31,74 @@ impl Workspace {
         }
         Ok(())
     }
+    fn template_reset_targets(&self) -> Result<Vec<String>> {
+        let mut targets = Vec::new();
+        if SqliteStore::global_discussion_path(Path::new(&self.global.root()))?
+            .join("engineering.sqlite3")
+            .is_file()
+        {
+            targets.push(GLOBAL_DISCUSSION_NAMESPACE.into());
+        }
+        let mut offset = 0;
+        loop {
+            let (projects, total) = self.global.projects(offset, 100)?;
+            let last_page = projects.is_empty();
+            offset += projects.len();
+            targets.extend(projects.into_iter().map(|project| project.id));
+            if offset >= total || last_page {
+                return Ok(targets);
+            }
+        }
+    }
+
+    pub(super) fn finish_template_reset_job(&self, job: &TemplateResetJob) -> Result<()> {
+        let _span = performance::Span::new("catalog.reset_resume");
+        let mut first_failure = None;
+        for target in job
+            .targets
+            .iter()
+            .filter(|target| target.applied_at.is_none())
+        {
+            let result = (|| {
+                let engine = if target.id == GLOBAL_DISCUSSION_NAMESPACE {
+                    require(
+                        SqliteStore::global_discussion_path(Path::new(&self.global.root()))?
+                            .join("engineering.sqlite3")
+                            .is_file(),
+                        "全局讨论库缺失，不能自动重建",
+                    )?;
+                    self.initialize_global_discussion()?
+                } else {
+                    self.load_project(&target.id, false)?
+                };
+                self.sync_configuration(&engine)?;
+                let view = engine.store.configuration_snapshot()?;
+                require(
+                    devdesk_core::template_hard_reset_generation(view.state.as_ref())
+                        >= job.generation,
+                    "项目目录尚未应用原重置代次",
+                )
+            })();
+            let failure = result.as_ref().err().map(|error| error.code.as_str());
+            job.record_target(self.global.as_ref(), &target.id, failure)?;
+            if let Err(error) = result {
+                first_failure.get_or_insert(error);
+            } else {
+                performance::record("catalog.reset_target_checked", 0.0);
+            }
+        }
+        first_failure.map_or(Ok(()), Err)
+    }
+
+    fn finish_template_reset_command(&self, command: &str) -> Result<()> {
+        match TemplateResetJob::read(self.global.as_ref(), Some(command))? {
+            Some(job) => self.finish_template_reset_job(&job),
+            None => self.finish_template_reset(),
+        }
+    }
+
     fn template_snapshot_summary(&self) -> Result<Value> {
+        let _span = performance::Span::new("catalog.reset_preview");
         let catalog = self.global.configuration_snapshot()?;
         let global = catalog.state.as_ref();
         let mut fingerprints = Vec::new();
@@ -100,6 +171,7 @@ impl Workspace {
             method,
             "query.template_catalog"
                 | "query.template_reset_preview"
+                | "query.template_reset_progress"
                 | "configuration.templates.reset"
         ) {
             return None;
@@ -116,17 +188,33 @@ impl Workspace {
             if method == "query.template_reset_preview" {
                 return self.template_snapshot_summary();
             }
+            if method == "query.template_reset_progress" {
+                devdesk_core::read_models::fields(params, &["command_id"])?;
+                let command = params
+                    .get("command_id")
+                    .map(|_| devdesk_core::read_models::identifier(params, "command_id"))
+                    .transpose()?;
+                return Ok(
+                    TemplateResetJob::read(self.global.as_ref(), command.as_deref())?
+                        .map_or_else(|| json!({"phase":"idle"}), |job| job.report()),
+                );
+            }
             let c: Command = serde_json::from_value(params.clone())
                 .map_err(|e| err("invalid_params", e.to_string()))?;
             require(!c.command_id.is_empty(), "command_id 不能为空")?;
             let fingerprint = command_fingerprint(method, &c);
             if let Some(saved) = self.global.replay(&c.command_id, &fingerprint)? {
                 if c.payload["preserve_custom"] != true {
-                    self.finish_template_reset()?;
+                    self.finish_template_reset_command(&c.command_id)?;
                 }
                 return Ok(saved);
             }
-            let preview = self.template_snapshot_summary()?;
+            let acceptance = performance::Span::new("catalog.reset_accept");
+            let publication = self
+                .reset_publication
+                .lock()
+                .map_err(|e| err("storage", e.to_string()))?;
+            let mut preview = self.template_snapshot_summary()?;
             let payload = &c.payload;
             if payload["expected_catalog_generation"] != preview["generation"]
                 || payload["catalog_fingerprint"] != preview["catalog_fingerprint"]
@@ -137,14 +225,19 @@ impl Workspace {
                     "定义或默认版本已变化，请重新打开重置窗口后再操作",
                 ));
             }
+            if payload["preserve_custom"] != true && preview["pristine"] != true {
+                preview["reset_targets"] = json!(self.template_reset_targets()?);
+            }
             let result = self.configuration.reset_factory_catalog(
                 &c,
                 &fingerprint,
                 &preview,
                 &permission_profiles::permission_contract,
             )?;
+            drop(publication);
+            drop(acceptance);
             if payload["preserve_custom"] != true {
-                self.finish_template_reset()?;
+                self.finish_template_reset_command(&c.command_id)?;
             }
             Ok(result)
         })())
@@ -188,6 +281,96 @@ mod tests {
             .unwrap();
         json!({"command_id":id(),"payload":{"expected_catalog_generation":p["generation"],"catalog_fingerprint":p["catalog_fingerprint"],"bundle_hash":p["bundle_hash"]}})
     }
+    #[test]
+    fn template_reset_resumes_the_original_generation_with_a_missing_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = workspace(dir.path());
+        let a = create(&w, "Reset first");
+        let b = create(&w, "Reset second");
+        let role = write(&w, "role.revise", Some(&default_role_id("analyst")),
+            json!({"name":"Reset role","data":{"instructions":"# old","visibility":{"kind":"global"}}}), None).unwrap();
+        let role_id = role["id"].as_str().unwrap();
+        let e = w.project_engine(Some(&a)).unwrap();
+        w.sync_configuration(&e).unwrap();
+        let mut preview = w.template_snapshot_summary().unwrap();
+        preview["reset_targets"] = json!(w.template_reset_targets().unwrap());
+        let params = reset_command(&w);
+        let command: Command = serde_json::from_value(params.clone()).unwrap();
+        let receipt = w
+            .configuration
+            .reset_factory_catalog(
+                &command,
+                &command_fingerprint("configuration.templates.reset", &command),
+                &preview,
+                &permission_profiles::permission_contract,
+            )
+            .unwrap();
+        let progress = || {
+            TemplateResetJob::read(w.global.as_ref(), Some(&command.command_id))
+                .unwrap()
+                .unwrap()
+        };
+        assert_eq!(progress().report()["phase"], "global_committed");
+        assert!(
+            e.store
+                .configuration_snapshot()
+                .unwrap()
+                .record(role_id)
+                .is_some()
+        );
+        w.sync_configuration(&e).unwrap();
+        progress()
+            .record_target(w.global.as_ref(), &a, None)
+            .unwrap();
+        assert_eq!(progress().report()["phase"], "applying");
+        assert!(
+            e.store
+                .configuration_snapshot()
+                .unwrap()
+                .record(role_id)
+                .is_none()
+        );
+        let a_cursor = e.store.event_cursor().unwrap();
+        drop(e);
+        drop(w);
+
+        let database = SqliteStore::project_path(dir.path(), &b)
+            .unwrap()
+            .join("engineering.sqlite3");
+        let unavailable = database.with_extension("offline");
+        std::fs::rename(&database, &unavailable).unwrap();
+        let w = workspace(dir.path());
+        let progress = |w: &Workspace| {
+            w.dispatch(
+                "query.template_reset_progress",
+                json!({"command_id":command.command_id}),
+            )
+            .unwrap()
+        };
+        let failed = progress(&w);
+        assert_eq!(failed["phase"], "retryable_failure");
+        assert_eq!(failed["applied"], 1);
+        assert_eq!(failed["total"], 2);
+        assert!(!database.exists());
+        std::fs::rename(&unavailable, &database).unwrap();
+        assert_eq!(
+            w.dispatch("configuration.templates.reset", params.clone())
+                .unwrap(),
+            receipt
+        );
+        let completed = progress(&w);
+        assert_eq!(completed["phase"], "completed");
+        assert_eq!(completed["applied"], 2);
+        assert_eq!(completed["generation"], receipt["generation"]);
+        let after = w.project_engine(Some(&a)).unwrap();
+        assert_eq!(after.store.event_cursor().unwrap(), a_cursor);
+        assert_eq!(
+            w.dispatch("configuration.templates.reset", params).unwrap(),
+            receipt
+        );
+        assert_eq!(progress(&w), completed);
+    }
+
     #[test]
     fn factory_update_preserves_custom_sources_and_replays_the_reviewed_command() {
         let dir = tempfile::tempdir().unwrap();
@@ -597,6 +780,23 @@ mod tests {
         );
         w.dispatch("query.ui_bootstrap", json!({"project_id":project}))
             .unwrap();
+
+        let error = w
+            .dispatch(
+                "query.workflow_driver",
+                json!({"project_id":project,"id":"missing","view":"summary"}),
+            )
+            .unwrap_err();
+        assert_eq!(error.code, "not_found");
+        assert!(
+            engine
+                .store
+                .configuration_snapshot()
+                .unwrap()
+                .record(role_id)
+                .is_some(),
+            "a display read must not adopt the new catalog or prepare historical evidence"
+        );
 
         // Replaying a committed reset must finish synchronization and preserve its receipt.
         assert_eq!(

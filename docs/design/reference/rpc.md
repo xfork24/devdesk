@@ -49,6 +49,12 @@
 | 历史与工具调用 | query.history、query.events、query.tool_calls、query.artifact | [运行读取](../../../crates/host/src/runtime_reads.rs) |
 | 模型服务与接入 | models.list、integration.*、skill.import_package | [模型目录](../../../crates/host/src/model_providers.rs)、[接入](../../../crates/host/src/integrations.rs) |
 
+`query.orchestration` 接受项目及根流程范围。省略 `view` 时返回原完整协作视图。`current` 返回摘要、当前待处理决定和协作信息。`history` 需要 `root_instance_id`，以 `decision_before` 读取下一页，只返回已处理决定及签署与材料摘要。`decision` 需要 `root_instance_id` 和决定 `id`，核对归属后返回原决定和签署意见。历史游标独立于当前视图的待处理项。
+
+`query.workflow_driver` 的 `view: "actions"` 接受项目、根流程 `id` 与至多 20 个 `steps`。每项提供 `instance_id`、`execution_id` 和 `step_revision`。响应只含仍可按原版本核对的待接纳或待协调步骤。版本推进后重新读取摘要可获得当前步骤。返回的操作资料仅供显示，写入仍验证提交时的原始版本。
+
+`query.template_reset_progress` 查询当前模板重置，或通过 `command_id` 查询指定命令。全局受理、部分库完成、全部完成和可重试故障分别报告。重放原命令可以继续待应用的库。
+
 方法完整清单及 access/scope/precondition 分类直接查登记表，工具的输入 Schema 查[工具参考](tools-and-primitives.md)。这样新增入口不需要手工复制一份容易遗漏的大全。
 
 `query.workflow_instance` 的 `view: "reason"` 按 `project_id` 和流程实例 `id` 读取调度原因及其 `revision`。传入 `execution_id` 时，返回该步骤的完整 `reason` 和步骤版本。若有核对记录，还返回 `reconciliation_message` 和 `reconciliation_revision`。经理页和流程详情用它补全标记为截断的摘要。
@@ -78,6 +84,8 @@
 当前工作台使用 `GET /events?tail=true&configuration=true&project_id=ID`。事件 ID 为作用域与 cursor 的组合，同作用域 Last-Event-ID 可恢复窗口内事件。`stream.ready` 表示连接就绪；`stream.reset` 表示需要重新读取当前状态。
 
 配置通知 `configuration.changed` 不带持久化事件 ID，不推进工程事件游标。普通尾流事件只是失效提示，客户端不能把收到它当作命令已被接纳。未启用 tail 的历史流与共享尾流使用不同实现，不能把尾流的资源特性套到旧接口上。
+
+共享尾流按项目读取已提交事件。请求配置通知的连接共用 Host 的配置版本采样，采样完成后间隔 200 ms 再读，只有版本变化才发送通知。消息中的 `project` 是当前流作用域的版本，`source_epochs` 包含已打开的各项目配置版本。
 
 `query.history` 使用 offset/limit 分页；`include_tool_calls:true` 可同时显示事件和工具调用。summary 适合列表，确切记录 ID 用于按需读取全文。列表中的省略标记不能解释为原记录正文为空。
 

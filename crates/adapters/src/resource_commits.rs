@@ -1443,7 +1443,7 @@ fn prepare_write(change: &ResourceChange, specs: &ColumnSpecs) -> Result<Option<
 fn prepare_writes(
     pool: &ConnectionPool,
     prepared: &PreparedChangeSet,
-) -> Result<(Vec<Option<SqlWrite>>, String, bool)> {
+) -> Result<(Vec<Option<SqlWrite>>, String, bool, bool)> {
     let changed: std::collections::BTreeSet<_> = prepared
         .changes
         .iter()
@@ -1585,10 +1585,12 @@ fn prepare_writes(
     let mut specs = ColumnSpecs::new();
     let root;
     let external;
+    let indexed;
     {
         let conn = pool.read()?;
         root = project_storage::connection_root(&conn);
         external = payload_store::enabled(&conn)?;
+        indexed = source_dependencies::enabled(&conn)?;
         for change in &prepared.changes {
             if !matches!(
                 change.resource.kind.as_str(),
@@ -1680,7 +1682,7 @@ fn prepare_writes(
     if let Some(root) = root.as_deref().filter(|_| external) {
         payload_store::result(root, &mut result)?;
     }
-    Ok((writes, result.to_string(), external))
+    Ok((writes, result.to_string(), external, indexed))
 }
 
 pub(super) fn verify_read_set(conn: &Connection, read_set: &ReadSet) -> Result<()> {
@@ -1706,6 +1708,7 @@ fn commit_once(
     writes: &[Option<SqlWrite>],
     stored_result: &str,
     compact_versions: bool,
+    dependencies: &[(usize, Option<std::collections::BTreeSet<String>>)],
     mut timing: Option<&mut performance::TransactionTiming>,
 ) -> Result<(CommitReceipt, bool)> {
     if let Some(receipt) = replay_on(conn, &prepared.command_id, &prepared.fingerprint)? {
@@ -1865,6 +1868,18 @@ fn commit_once(
                 ],
             )
             .map_err(sqlite_error)?;
+        for (index, references) in dependencies {
+            let change = &prepared.changes[*index];
+            let digest = change.value["content_hash"]
+                .as_str()
+                .ok_or_else(|| err("storage", "治理记录缺少内容摘要"))?;
+            source_dependencies::write(
+                &transaction,
+                &change.resource.id,
+                digest,
+                references.as_ref(),
+            )?;
+        }
         let cursor = transaction.last_insert_rowid() as u64;
         transaction
         .execute(
@@ -1934,7 +1949,18 @@ pub(super) fn commit(
             return result;
         }
     }
-    let (writes, stored_result, compact_versions) = prepare_writes(pool, prepared)?;
+    let (writes, stored_result, compact_versions, indexed) = prepare_writes(pool, prepared)?;
+    let dependencies: Vec<_> = if indexed {
+        prepared
+            .changes
+            .iter()
+            .enumerate()
+            .filter(|(_, change)| change.resource.kind == "governance")
+            .map(|(index, change)| (index, source_dependencies::classify(&change.value["data"])))
+            .collect()
+    } else {
+        Vec::new()
+    };
     let checkout_deadline = Instant::now() + Duration::from_secs(2);
     let mut technical_spent = Duration::ZERO;
     for attempt in 0..16 {
@@ -1963,6 +1989,7 @@ pub(super) fn commit(
                 &writes,
                 &stored_result,
                 compact_versions,
+                &dependencies,
                 timing.as_mut(),
             );
             if let Some(timing) = timing.as_mut() {

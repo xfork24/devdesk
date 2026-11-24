@@ -41,6 +41,39 @@ fn command(engine: &Engine, method: &str, target: Option<&str>, payload: Value) 
         .unwrap()
 }
 
+fn seed_contexts(engine: &Engine, project: &str, owner: &Value, count: usize) -> Vec<Value> {
+    let mut contexts = Vec::with_capacity(count);
+    let changes = (0..count).map(|index| {
+        let context = id();
+        contexts.push(json!({"project_id":project,"owner_id":owner,"id":context,"revision":1}));
+        ResourceChange {
+            resource: ResourceKey::new("context", &context),
+            value: json!({"id":context,"owner_id":owner,"content":format!("Client context {index}"),"revision":1}),
+        }
+    }).collect::<Vec<_>>();
+    engine
+        .store
+        .commit_changes(&PreparedChangeSet {
+            command_id: id(),
+            fingerprint: configuration_hash(&changes),
+            read_set: ReadSet::new(
+                changes
+                    .iter()
+                    .map(|change| ResourceVersion {
+                        resource: change.resource.clone(),
+                        revision: 0,
+                    })
+                    .collect(),
+            )
+            .unwrap(),
+            changes,
+            result: Value::Null,
+            time: 1,
+        })
+        .unwrap();
+    contexts
+}
+
 #[test]
 #[ignore = "explicit fresh-dataset local 100-client HTTP regression; no external providers"]
 fn active_frontend_server() {
@@ -73,6 +106,7 @@ fn active_frontend_server() {
     let mut projects = vec![];
     let mut roots = vec![];
     let mut contexts = vec![];
+    let mut d2_contexts = vec![];
     let scale: usize = std::env::var("DEVDESK_PERFORMANCE_HISTORY_SCALE")
         .ok()
         .map(|v| v.parse().unwrap())
@@ -87,10 +121,10 @@ fn active_frontend_server() {
         for project_index in 0..project_count {
             let project=workspace.dispatch("project.create",json!({"command_id":id(),"payload":{"title":format!("Local HTTP fixture {project_index}")}})).unwrap()["id"].as_str().unwrap().to_owned();
             let engine = workspace.project_engine(Some(&project)).unwrap();
-            test_runtime::bind_default_permissions(&engine);
             if real_runtime {
                 test_runtime::retired_configuration::install(&engine);
             }
+            test_runtime::bind_default_permissions(&engine);
             let steps = if real_runtime {
                 repository::seed(&workspace, &root.canonicalize().unwrap(), &project);
                 let image = std::env::var("DEVDESK_PERFORMANCE_TEST_IMAGE")
@@ -163,32 +197,19 @@ fn active_frontend_server() {
                     roots.push(
                         json!({"project_id":project,"id":run["id"],"feature_id":feature["id"],"write_owner_id":writer["id"]}),
                     );
-                    let changes=(0..25).map(|index| {
-                let context=id();
-                contexts.push(json!({"project_id":project,"id":context,"revision":1}));
-                ResourceChange{resource:ResourceKey::new("context",&context),value:json!({"id":context,"owner_id":writer["id"],"content":format!("Client {member}/{index}"),"revision":1})}
-            }).collect::<Vec<_>>();
-                    engine
-                        .store
-                        .commit_changes(&PreparedChangeSet {
-                            command_id: id(),
-                            fingerprint: configuration_hash(&changes),
-                            read_set: ReadSet::new(
-                                changes
-                                    .iter()
-                                    .map(|change| ResourceVersion {
-                                        resource: change.resource.clone(),
-                                        revision: 0,
-                                    })
-                                    .collect(),
-                            )
-                            .unwrap(),
-                            changes,
-                            result: Value::Null,
-                            time: 1,
-                        })
-                        .unwrap();
+                    contexts.extend(seed_contexts(&engine, &project, &writer["id"], 25));
                 }
+            }
+            if real_runtime && project_count == 10 {
+                let writer = command(
+                    &engine,
+                    "feature.create",
+                    None,
+                    json!({
+                        "project_id":project,"title":"Independent D2 load targets","start_workflow":false
+                    }),
+                );
+                d2_contexts.push(seed_contexts(&engine, &project, &writer["id"], 10));
             }
             if scale > 0 {
                 history::seed(&engine, &project, scale);
@@ -210,7 +231,7 @@ fn active_frontend_server() {
         }
         fixture
     } else {
-        let fixture = json!({"projects":projects,"roots":roots,"contexts":contexts,"scheduler":true,"external_providers":real_runtime,"history_scale":scale,"hot_project":hot_project});
+        let fixture = json!({"projects":projects,"roots":roots,"contexts":contexts,"d2_contexts":d2_contexts,"scheduler":true,"external_providers":real_runtime,"history_scale":scale,"hot_project":hot_project});
         std::fs::write(&seed, serde_json::to_vec(&fixture).unwrap()).unwrap();
         fixture
     };

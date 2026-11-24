@@ -1677,6 +1677,15 @@
       ]
     },
     {
+      "method": "query.template_reset_progress",
+      "access": "read",
+      "scope": "global",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/templates.rs"
+      ]
+    },
+    {
       "method": "query.tool_calls",
       "access": "read",
       "scope": "explicit",

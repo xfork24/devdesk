@@ -4,6 +4,9 @@ use super::*;
 use std::time::{Duration, Instant};
 
 pub(super) fn eligible(method: &str, params: &Value) -> bool {
+    if method == "query.orchestration" && params["view"] == "decision" {
+        return false;
+    }
     params["project_id"].as_str().is_some_and(|p| !p.is_empty())
         && (matches!(
             method,

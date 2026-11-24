@@ -172,7 +172,6 @@ impl Workspace {
             "configuration.change.preview",
             "query.configuration_graph",
             "query.spec_lint",
-            "query.workflow_driver",
             "workflow.inspect",
             "workflow.change.preview",
             "workflow.execution.inspect",
@@ -388,7 +387,6 @@ impl Workspace {
                         "configuration.change.apply",
                         "configuration.change.preview",
                         "query.configuration_graph",
-                        "query.workflow_driver",
                         "query.project_standard_preview",
                     ]
                     .contains(&method))

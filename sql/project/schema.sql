@@ -866,5 +866,16 @@ CREATE TABLE payload_pack_objects (
  bytes INTEGER NOT NULL CHECK(bytes >= 0)
 ) WITHOUT ROWID;
 CREATE INDEX idx_payload_pack_file ON payload_pack_objects(pack);
-PRAGMA user_version=61;
+-- Source dependency index.
+CREATE TABLE governance_source_scans (
+        consumer TEXT PRIMARY KEY REFERENCES governance_records(id) ON DELETE CASCADE,
+        content_hash TEXT NOT NULL, codec INTEGER NOT NULL,
+        reference_count INTEGER NOT NULL CHECK(reference_count>=0)
+    ) WITHOUT ROWID;
+    CREATE TABLE governance_source_refs (
+        consumer TEXT NOT NULL REFERENCES governance_source_scans(consumer) ON DELETE CASCADE,
+        reference TEXT NOT NULL, PRIMARY KEY(consumer,reference)
+    ) WITHOUT ROWID;
+    CREATE INDEX idx_governance_source_ref ON governance_source_refs(reference,consumer);
+PRAGMA user_version=62;
 COMMIT;

@@ -19,16 +19,17 @@ pub(super) fn prepare(
             format!("record-summary:{table}"),
         ));
     }
-    let _span = performance::Span::new("catalog.reset_prepare");
-    let conn = pool.read()?;
+    let _span = performance::Span::for_database("catalog.reset_prepare", pool.observation_id());
+    let conn = pool.maintenance_read()?;
     let transaction = conn.unchecked_transaction().map_err(storage)?;
     let _payloads = payload_store::reset_read_scope(&transaction);
     let guards = resource_commits::read_on(&transaction, &keys)?;
     if guards[0].revision != expected_catalog {
         return Err(err("revision_conflict", "配置目录已变化，请重新预览").technical_not_applied());
     }
+    let load = performance::Span::new("catalog.reset_load");
     let mut before = EngineeringState {
-        governance: source_store::load_reset_records(&transaction)?,
+        governance: source_store::load_reset_records(&transaction, records)?,
         ..Default::default()
     };
     if project {
@@ -42,6 +43,8 @@ pub(super) fn prepare(
             )",
         )?;
     }
+    drop(load);
+    let archive = performance::Span::new("catalog.reset_archive");
     before.refresh_configuration_views()?;
     let sources = source_views::ResetSources::new(&before);
     let mut memo = BTreeMap::new();
@@ -99,11 +102,13 @@ pub(super) fn prepare(
         })
         .map(|row| row.id.as_str())
         .collect::<BTreeSet<_>>();
+    let indexed = source_dependencies::enabled(&transaction)?;
     let external_root = if payload_store::enabled(&transaction)? {
         project_storage::connection_root(&transaction)
     } else {
         None
     };
+    let mut dependencies = BTreeMap::new();
     let evidence = payload_store::stage(|| -> Result<Vec<Value>> {
         let mut evidence = Vec::new();
         for original in before
@@ -150,7 +155,7 @@ pub(super) fn prepare(
                 row.data["configuration_reset"] = json!(true);
                 row.revision += 1;
             }
-            row.data = source_views::seal_reset_evidence(&row.data);
+            source_views::seal_reset_evidence(&mut row.data);
             if let Some(request) = request {
                 row.data
                     .as_object_mut()
@@ -158,6 +163,9 @@ pub(super) fn prepare(
                     .insert("request".into(), request);
             }
             row.content_hash = content_digest(&row.refs, &row.data);
+            if indexed {
+                dependencies.insert(row.id.clone(), source_dependencies::classify(&row.data));
+            }
             if let Some(root) = &external_root {
                 payload_store::governance(root, &row.r#type, &mut row.data, None)?;
             }
@@ -166,17 +174,26 @@ pub(super) fn prepare(
         Ok(evidence)
     })?;
 
+    drop(archive);
+    let _runtime = performance::Span::new("catalog.reset_runtime");
     let mut catalog = records.to_vec();
     catalog.extend(retained);
     catalog.extend(historical);
-    let mut changes = json!({"records":catalog,"evidence":evidence});
+    let mut changes = json!({"records":catalog,"evidence":evidence,"dependencies":dependencies});
     if project {
         for table in ["sessions", "turns", "executions", "snapshots"] {
             let mut updated = Vec::new();
-            for row in load_rows::<Value>(&transaction, table, "1", &[], false)? {
+            for row in load_rows::<Value>(
+                &transaction,
+                table,
+                &runtime_source_filter(&transaction, table)?,
+                &[],
+                false,
+            )? {
                 if source_views::uses_source_codec(&row) {
-                    let restored = sources.restore(&row, &mut memo)?;
-                    updated.push(source_views::seal_reset_evidence(&restored));
+                    let mut restored = sources.restore(&row, &mut memo)?;
+                    source_views::seal_reset_evidence(&mut restored);
+                    updated.push(restored);
                 }
             }
             changes[table] = json!(updated);
@@ -198,6 +215,20 @@ pub(super) fn prepare(
             value: changes,
         }],
     })
+}
+
+fn runtime_source_filter(conn: &Connection, table: &str) -> Result<String> {
+    let columns = columns(conn, table)?;
+    Ok(columns
+        .iter()
+        .filter(|(_, kind)| matches!(kind.as_str(), "TEXT" | "JSON"))
+        .map(|(column, _)| {
+            format!(
+                r#"instr("{column}", 'devdesk-source-text:')>0 OR instr("{column}", '"$source"')>0"#
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" OR "))
 }
 
 /// Sessions keep their original Agent revision through an actual SQLite foreign key.
@@ -349,6 +380,29 @@ pub(super) fn apply(conn: &Connection, value: &Value) -> Result<()> {
         };
         if let Some(rows) = value[field].as_array().filter(|rows| !rows.is_empty()) {
             write_rows(conn, table, rows)?;
+            if table == "governance_records" {
+                for row in rows.iter().filter(|row| row["type"] == "workflow_instance") {
+                    let id = row["id"]
+                        .as_str()
+                        .ok_or_else(|| err("storage", "流程证据缺少身份"))?;
+                    workflow_projection::refresh_after_reset(conn, id)?;
+                }
+            }
+        }
+    }
+    if let Some(dependencies) = value["dependencies"].as_object() {
+        for row in value["evidence"].as_array().into_iter().flatten() {
+            let id = row["id"]
+                .as_str()
+                .ok_or_else(|| err("storage", "治理证据缺少身份"))?;
+            if let Some(dependencies) = dependencies.get(id) {
+                let digest = row["content_hash"]
+                    .as_str()
+                    .ok_or_else(|| err("storage", "治理证据缺少内容摘要"))?;
+                let references: Option<BTreeSet<String>> =
+                    serde_json::from_value(dependencies.clone()).map_err(storage)?;
+                source_dependencies::write(conn, id, digest, references.as_ref())?;
+            }
         }
     }
     for (_, sql) in guards {

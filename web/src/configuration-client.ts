@@ -15,7 +15,7 @@ export function subscribeModels(listener: () => void) {
 }
 const listeners = new Set<() => void>();
 const queryListeners = new Set<() => void>();
-export const getConfigurationQueryEpoch = () => serial;
+export const getConfigurationQueryEpoch = () => queryEpoch;
 export function subscribeConfigurationQueries(listener: () => void) {
   queryListeners.add(listener);
   return () => {
@@ -29,6 +29,7 @@ let identity = "",
   globalVersion = "",
   sources = "",
   serial = 0,
+  queryEpoch = 0,
   modelEpoch = 0;
 let resetGeneration = false;
 const origin = () =>
@@ -40,10 +41,14 @@ export function subscribeConfigurationSession(listener: () => void) {
     listeners.delete(listener);
   };
 }
+function notifyConfigurationQueries() {
+  queryEpoch++;
+  queryListeners.forEach((listener) => listener());
+}
 export function invalidateConfigurationQueries() {
   serial++;
   queries.clear();
-  queryListeners.forEach((listener) => listener());
+  notifyConfigurationQueries();
 }
 export function invalidateModelCatalogs() {
   modelEpoch++;
@@ -75,13 +80,14 @@ export function configurationResponseOutdated(value: Row, params: Row) {
 export function observeConfigurationVersion(version: Row, project?: string) {
   if (!version?.host) return;
   if (outdatedVersion(version, project)) return;
-  const changed =
+  const sharedChanged =
     host !== version.host ||
     globalVersion !== String(version.global) ||
-    sources !== version.project_sources ||
-    (!!project &&
-      version.project > 0 &&
-      projects.get(project) !== version.project);
+    sources !== (version.project_sources || "");
+  const projectChanged =
+    !!project &&
+    version.project > 0 &&
+    projects.get(project) !== version.project;
   if (host && host !== version.host) {
     resetGeneration = true;
     invalidateModelCatalogs();
@@ -95,7 +101,8 @@ export function observeConfigurationVersion(version: Row, project?: string) {
   globalVersion = String(version.global);
   sources = version.project_sources || "";
   if (project && version.project > 0) projects.set(project, version.project);
-  if (changed) invalidateConfigurationQueries();
+  if (sharedChanged) invalidateConfigurationQueries();
+  else if (projectChanged) notifyConfigurationQueries();
 }
 export function observeConfigurationResponse(value: Row, params: Row): boolean {
   if (!value || typeof value !== "object") return false;
@@ -167,14 +174,14 @@ export async function readConfiguration<T>(
   if (!host || !cachedMethods.has(method) || options.fresh)
     return load(options.signal || new AbortController().signal);
   for (let attempt = 0; attempt < 4; attempt++) {
-    const epoch = serial;
+    const version = scope(params);
     try {
       const result = await queries.read(
-        `${scope(params)}:${method}:${stable(params)}`,
+        `${version}:${method}:${stable(params)}`,
         load,
         options.signal,
       );
-      if (epoch !== serial)
+      if (version !== scope(params))
         throw new DOMException("Configuration changed", "AbortError");
       return result;
     } catch (error) {
@@ -317,21 +324,35 @@ function drainPrefetch() {
     });
   if (prefetchQueue.size) setTimeout(drainPrefetch, 0);
 }
+export function configurationIndexParams(
+  projectId?: string,
+  options: {
+    kind?: string;
+    archived?: boolean;
+    history?: boolean;
+    offset?: number;
+    version?: string;
+  } = {},
+) {
+  return {
+    project_id: projectId,
+    local: !!projectId,
+    limit: 1000,
+    offset: options.offset ?? 0,
+    kind: options.kind,
+    include_history: options.history ?? false,
+    include_archived: options.archived ?? false,
+    index_version: options.version,
+  };
+}
+
 export function prefetchConfiguration(
   request: Request,
   projectId?: string,
   kind?: string,
 ) {
   if (!host) return;
-  const params = {
-    project_id: projectId,
-    local: !!projectId,
-    limit: 1000,
-    offset: 0,
-    kind,
-    include_history: false,
-    include_archived: false,
-  };
+  const params = configurationIndexParams(projectId, { kind });
   const key = `${scope(params)}:index:${kind || "all"}`;
   if (prefetchQueue.size >= 2 || prefetchQueue.has(key)) return;
   prefetchQueue.set(key, () =>

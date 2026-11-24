@@ -1,6 +1,6 @@
 //! Storage codecs contain references and actual choices, never expanded source definitions.
 use super::*;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 const SOURCE_TEXT: &str = "\u{1e}devdesk-source-text:";
 const SNAPSHOT_PERMISSIONS: &str = "snapshot-permissions:";
 
@@ -42,7 +42,9 @@ impl<'a> ResetSources<'a> {
 /// Plain rows and existing literal envelopes do not depend on the source catalog.
 pub(super) fn uses_source_codec(value: &Value) -> bool {
     match value {
-        Value::String(text) => text.starts_with(SOURCE_TEXT),
+        Value::String(text) => text
+            .strip_prefix(SOURCE_TEXT)
+            .is_some_and(|encoded| !encoded.starts_with("{\"literal\":")),
         Value::Array(items) => items.iter().any(uses_source_codec),
         Value::Object(items) => match value["$source"].as_str() {
             Some("literal") => false,
@@ -55,32 +57,68 @@ pub(super) fn uses_source_codec(value: &Value) -> bool {
     }
 }
 
-/// Preserve literal protocol data without introducing references to removed sources.
-pub(super) fn seal_reset_evidence(value: &Value) -> Value {
-    if let Some(text) = value.as_str().filter(|text| text.starts_with(SOURCE_TEXT)) {
-        return json!(format!("{SOURCE_TEXT}{}", json!({"literal":text})));
+/// Match the traversal used by restore_value. Descriptors with implicit
+/// resolution remain unknown until the index can prove their whole closure.
+pub(super) fn collect_dependencies(value: &Value, references: &mut BTreeSet<String>) -> bool {
+    if payload_store::is_external_reference(value) {
+        return false;
     }
-    if value.get("$source").is_some() {
-        return json!({"$source":"literal","value":value});
+    if let Some(encoded) = value
+        .as_str()
+        .and_then(|text| text.strip_prefix(SOURCE_TEXT))
+    {
+        return serde_json::from_str::<Value>(encoded).is_ok_and(|value| {
+            value["literal"].is_string() || collect_dependencies(&value, references)
+        });
     }
+    let mut exact = |value: &Value| {
+        value.as_str().is_some_and(|reference| {
+            if reference.is_empty() {
+                return false;
+            }
+            references.insert(reference.to_owned());
+            true
+        })
+    };
     match value {
-        Value::Object(items) => Value::Object(
-            items
+        Value::Object(fields) => match value["$source"].as_str() {
+            Some("literal") => true,
+            Some("source" | "source_definition" | "tool_definition" | "skill_package") => {
+                exact(&value["ref"])
+            }
+            Some("bound_tool") => exact(&value["tool_ref"]) && exact(&value["binding_ref"]),
+            Some("agent_execution") => {
+                exact(&value["agent_ref"])
+                    && collect_dependencies(&value["integration_lock"], references)
+            }
+            Some(_) => false,
+            None => fields
                 .iter()
-                .map(|(key, item)| {
-                    (
-                        key.clone(),
-                        if factual_field(key) {
-                            item.clone()
-                        } else {
-                            seal_reset_evidence(item)
-                        },
-                    )
-                })
-                .collect(),
-        ),
-        Value::Array(items) => Value::Array(items.iter().map(seal_reset_evidence).collect()),
-        _ => value.clone(),
+                .all(|(key, item)| factual_field(key) || collect_dependencies(item, references)),
+        },
+        Value::Array(items) => items
+            .iter()
+            .all(|item| collect_dependencies(item, references)),
+        _ => true,
+    }
+}
+
+/// Preserve literal protocol data without introducing references to removed sources.
+pub(super) fn seal_reset_evidence(value: &mut Value) {
+    if let Some(text) = value.as_str().filter(|text| text.starts_with(SOURCE_TEXT)) {
+        *value = json!(format!("{SOURCE_TEXT}{}", json!({"literal":text})));
+    } else if value.get("$source").is_some() {
+        *value = json!({"$source":"literal","value":value.take()});
+    } else {
+        match value {
+            Value::Object(items) => {
+                for (_, item) in items.iter_mut().filter(|(key, _)| !factual_field(key)) {
+                    seal_reset_evidence(item);
+                }
+            }
+            Value::Array(items) => items.iter_mut().for_each(seal_reset_evidence),
+            _ => {}
+        }
     }
 }
 
@@ -160,7 +198,7 @@ pub(super) fn encode_task(
     Ok((metadata, encoded))
 }
 
-fn factual_field(key: &str) -> bool {
+pub(super) fn factual_field(key: &str) -> bool {
     [
         "inputs",
         "outputs",

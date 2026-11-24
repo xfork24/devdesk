@@ -91,11 +91,19 @@ pub(super) fn stage<T>(write: impl FnOnce() -> Result<T>) -> Result<T> {
     Ok(value)
 }
 
+// The index must inspect a hydrated value or defer classification.
+pub(super) fn is_external_reference(value: &Value) -> bool {
+    value.get(KEY).is_some()
+        || value
+            .as_str()
+            .is_some_and(|text| text.starts_with(TEXT_PREFIX))
+}
+
 pub(super) fn enabled(conn: &Connection) -> Result<bool> {
     let version: u32 = conn
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .map_err(storage)?;
-    Ok(version == PROJECT_SCHEMA_VERSION)
+    Ok(version >= PAYLOAD_PROJECT_SCHEMA_VERSION)
 }
 
 // The leading decimal length keeps the history byte budget available in SQL.
@@ -216,9 +224,14 @@ fn read(conn: &Connection, body: &Body) -> Result<Vec<u8>> {
             .pop()
             .ok_or_else(|| err("storage", "正文引用的封存记录缺失"))?;
         require(body.sha256 == artifact.sha256, "正文引用的封存摘要改变")?;
+        let _span = performance::Span::new("payload.io");
         FileArtifacts::new(root).read(&artifact)?
     } else {
-        match fs::read(object_path(&root, &body.sha256, false)?) {
+        let loose = {
+            let _span = performance::Span::new("payload.io");
+            fs::read(object_path(&root, &body.sha256, false)?)
+        };
+        match loose {
             Ok(bytes) => bytes,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 packed(conn, &root, &body.sha256, body.bytes)?
@@ -227,6 +240,7 @@ fn read(conn: &Connection, body: &Body) -> Result<Vec<u8>> {
             Err(e) => return Err(storage(e)),
         }
     };
+    let _span = performance::Span::new("payload.verify");
     verify(body, &bytes)?;
     Ok(bytes)
 }
@@ -254,6 +268,7 @@ fn packed(conn: &Connection, root: &Path, hash: &str, size: usize) -> Result<Opt
     };
     require(bytes == size, "正文归档长度与引用不符")?;
     let extent = |file: &File, length: u64| -> Result<Option<Vec<u8>>> {
+        let _span = performance::Span::new("payload.io");
         require(
             offset
                 .checked_add(bytes as u64)
@@ -269,8 +284,12 @@ fn packed(conn: &Connection, root: &Path, hash: &str, size: usize) -> Result<Opt
         if let Some((file, length)) = scope.as_ref().and_then(|packs| packs.get(&key)) {
             return extent(file, *length);
         }
-        let file = File::open(pack_path(root, &pack)?).map_err(storage)?;
-        let length = file.metadata().map_err(storage)?.len();
+        let (file, length) = {
+            let _span = performance::Span::new("payload.io");
+            let file = File::open(pack_path(root, &pack)?).map_err(storage)?;
+            let length = file.metadata().map_err(storage)?.len();
+            (file, length)
+        };
         let value = extent(&file, length)?;
         if let Some(packs) = scope.as_mut().filter(|packs| packs.len() < 8) {
             packs.insert(key, (file, length));
@@ -331,11 +350,12 @@ pub(super) fn step(root: &Path, value: &mut Value) -> Result<()> {
 fn governance_fields(
     kind: &str,
     data: &mut Value,
+    source_fields_only: bool,
     mut visit: impl FnMut(&mut Value, &[&str]) -> Result<()>,
 ) -> Result<()> {
     let paths: &[&str] = match kind {
         "workflow_output" => {
-            if let Some(value) = data.get_mut("value") {
+            if !source_fields_only && let Some(value) = data.get_mut("value") {
                 visit(value, &["owner_id", "workspace_id", "revision"])?;
             }
             return Ok(());
@@ -347,11 +367,13 @@ fn governance_fields(
                 .into_iter()
                 .flatten()
             {
-                visit_step(e, &mut visit)?;
+                visit_paths(e, STEP_BODIES, source_fields_only, &mut visit)?;
             }
             &["/inputs"]
         }
-        "workflow_execution_history" => return visit_step(data, visit),
+        "workflow_execution_history" => {
+            return visit_paths(data, STEP_BODIES, source_fields_only, visit);
+        }
         "workflow_change" => &["/preview"],
         "platform_call" => {
             if let Some(receipt) = data.get_mut("receipt") {
@@ -398,7 +420,7 @@ fn governance_fields(
         "workflow_reconciliation_observation" => &["/value"],
         _ => &[],
     };
-    visit_paths(data, paths, visit)
+    visit_paths(data, paths, source_fields_only, visit)
 }
 
 const STEP_BODIES: &[&str] = &["/inputs", "/rework_workspace", "/runtime_context"];
@@ -407,9 +429,13 @@ const COMMAND_BODIES: &[&str] = &["/3/arguments", "/3/input"];
 fn visit_paths(
     value: &mut Value,
     paths: &[&str],
+    source_fields_only: bool,
     mut visit: impl FnMut(&mut Value, &[&str]) -> Result<()>,
 ) -> Result<()> {
     for path in paths {
+        if source_fields_only && path.split('/').any(source_views::factual_field) {
+            continue;
+        }
         if let Some(body) = value.pointer_mut(path) {
             visit(body, &[])?;
         }
@@ -421,7 +447,7 @@ fn visit_step(
     value: &mut Value,
     visit: impl FnMut(&mut Value, &[&str]) -> Result<()>,
 ) -> Result<()> {
-    visit_paths(value, STEP_BODIES, visit)
+    visit_paths(value, STEP_BODIES, false, visit)
 }
 
 pub(super) fn governance(
@@ -430,7 +456,7 @@ pub(super) fn governance(
     data: &mut Value,
     artifact: Option<&Artifact>,
 ) -> Result<()> {
-    governance_fields(kind, data, |value, keep| {
+    governance_fields(kind, data, false, |value, keep| {
         if kind == "command_context" {
             // Retain the exact audit text while sharing its large literal parameters.
             let canonical = value.as_str().and_then(|s| {
@@ -461,7 +487,7 @@ pub(super) fn governance(
 }
 
 pub(super) fn restore_governance(conn: &Connection, kind: &str, data: &mut Value) -> Result<()> {
-    governance_fields(kind, data, |value, _| {
+    governance_fields(kind, data, false, |value, _| {
         if kind == "command_context"
             && let Some(text) = value.as_str().filter(|s| s.starts_with(TEXT_PREFIX))
         {
@@ -471,6 +497,35 @@ pub(super) fn restore_governance(conn: &Connection, kind: &str, data: &mut Value
         }
         Ok(())
     })
+}
+
+/// For a reset, only fields that the source codec visits can require a rewrite.
+pub(super) fn governance_uses_sources(conn: &Connection, kind: &str, data: &Value) -> Result<bool> {
+    if source_views::uses_source_codec(data) {
+        return Ok(true);
+    }
+    let mut candidate = data.clone();
+    let mut uses_sources = false;
+    governance_fields(kind, &mut candidate, true, |value, _| {
+        if uses_sources {
+            return Ok(());
+        }
+        if kind == "command_context"
+            && let Some(text) = value.as_str().and_then(|s| s.strip_prefix(TEXT_PREFIX))
+        {
+            // The JSON payload codec reconstructs the original command array as
+            // a string. Its nested fields cannot become source references.
+            if !text.starts_with("json:") {
+                let text = unpack_text(conn, value.as_str().unwrap().to_owned())?;
+                uses_sources = source_views::is_encoded_text(&text);
+            }
+        } else if value.get(KEY).is_some() {
+            restore_field(conn, value)?;
+            uses_sources = source_views::uses_source_codec(value);
+        }
+        Ok(())
+    })?;
+    Ok(uses_sources)
 }
 
 pub(super) fn restore_step(conn: &Connection, value: &mut Value) -> Result<()> {
@@ -494,7 +549,9 @@ pub(super) fn unpack_text(conn: &Connection, mut text: String) -> Result<String>
     }
     if let Some(encoded) = marker.strip_prefix("json:") {
         let mut value: Value = serde_json::from_str(encoded).map_err(storage)?;
-        visit_paths(&mut value, COMMAND_BODIES, |v, _| restore_field(conn, v))?;
+        visit_paths(&mut value, COMMAND_BODIES, false, |v, _| {
+            restore_field(conn, v)
+        })?;
         return Ok(value.to_string());
     }
     let (size, hash) = marker
@@ -528,7 +585,11 @@ fn restore_field(conn: &Connection, value: &mut Value) -> Result<()> {
             *value = decoded;
             return Ok(());
         }
-        let decoded: Value = serde_json::from_slice(&read(conn, &body)?).map_err(storage)?;
+        let bytes = read(conn, &body)?;
+        let decoded: Value = {
+            let _span = performance::Span::new("payload.json_decode");
+            serde_json::from_slice(&bytes).map_err(storage)?
+        };
         const MAX_FIELD_BYTES: usize = 128 * 1024;
         const MAX_CACHED_BYTES: usize = 16 * 1024 * 1024;
         const MAX_FIELDS: usize = 1024;
@@ -567,7 +628,10 @@ pub(super) fn decode_result(conn: &Connection, raw: &str) -> Result<Value> {
 }
 
 pub(super) fn decode_step(conn: &Connection, raw: &str) -> Result<Value> {
-    let mut value: Value = serde_json::from_str(raw).map_err(storage)?;
+    let mut value: Value = {
+        let _span = performance::Span::new("workflow.row_decode");
+        serde_json::from_str(raw).map_err(storage)?
+    };
     restore_step(conn, &mut value)?;
     Ok(value)
 }
@@ -729,7 +793,7 @@ pub(super) fn compact(conn: &mut Connection, root: &Path) -> Result<Value> {
             } else {
                 let mut value: Value = serde_json::from_str(&raw).map_err(storage)?;
                 if !kind.is_empty() {
-                    governance_fields(&kind, &mut value, |v, _| mark(v, &mut live))?;
+                    governance_fields(&kind, &mut value, false, |v, _| mark(v, &mut live))?;
                 } else if value.get(KEY).is_some() {
                     mark(&value, &mut live)?;
                 } else if let Some(step) = value.get_mut("execution") {

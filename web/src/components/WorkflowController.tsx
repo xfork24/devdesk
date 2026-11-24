@@ -1,11 +1,12 @@
 import { displayText } from "../display-text";
 import { ManagerInteraction } from "./ManagerInteraction";
 import { ManagerDisclosure } from "./ManagerDisclosure";
+import { ManagerDecisionHistory } from "./ManagerDecisionHistory";
 import { RuntimeApproval } from "./RuntimeApproval";
 import { WorkflowStepInput } from "./WorkflowStepInput";
 import { WorkflowReasonText } from "./WorkflowReasonText";
 import { DiscussionLink, ReadingLink } from "./reading";
-import { StandardDiff } from "./StandardManager";
+import { StandardDiff } from "./StandardDiff";
 import {
   useCallback,
   useEffect,
@@ -77,8 +78,10 @@ export function WorkflowController({
   const [readError, setReadError] = useState("");
   const epoch = useRef(0);
   const displayKey = useRef("");
+  const currentRead = useRef<AbortController | undefined>(undefined);
   const invalidate = useCallback(() => {
     epoch.current += 1;
+    currentRead.current?.abort();
   }, []);
   const rootId = instance.data.root_instance_id || instance.id;
   const waiting = ((data?.driverWaiting || []) as Row[]).filter(
@@ -91,71 +94,38 @@ export function WorkflowController({
   const load: (fresh?: boolean) => Promise<void> = useCallback(
     async (fresh = false) => {
       const ticket = ++epoch.current;
+      currentRead.current?.abort();
+      const controller = new AbortController();
+      currentRead.current = controller;
+      const options = { fresh, signal: controller.signal };
       try {
-        const [next, driver] = await Promise.all([
-          request(
-            "query.orchestration",
-            {
-              ...(workspaceOnly
-                ? { owner_id: projectId, workspace_only: true }
-                : { root_instance_id: rootId }),
-              project_id: projectId,
-              ...(decisionBefore === undefined
-                ? {}
-                : { decision_before: decisionBefore }),
-            },
-            { fresh },
-          ),
-          workspaceOnly
-            ? Promise.resolve({ driver: null })
-            : request(
-                "query.workflow_driver",
-                {
-                  id: rootId,
-                  project_id: projectId,
-                  view: "summary",
-                },
-                { fresh },
-              ).then((summary) => {
-                const needsDetails =
-                  summary.runtime_approval_pending ||
-                  summary.workflow_approval_pending ||
-                  (summary.waiting || []).some((step: Row) =>
-                    ["awaiting_acceptance", "needs_reconciliation"].includes(
-                      step.status,
-                    ),
-                  );
-                return needsDetails
-                  ? request(
-                      "query.workflow_driver",
-                      {
-                        id: rootId,
-                        project_id: projectId,
-                      },
-                      { fresh },
-                    ).then((details) => ({
-                      ...details,
-                      waiting: summary.waiting
-                        ? summary.waiting.map((item: Row) => {
-                            const detail = (details.waiting || []).find(
-                              (detail: Row) =>
-                                detail.execution_id === item.execution_id,
-                            );
-                            return {
-                              ...item,
-                              ...detail,
-                              reason_truncated:
-                                typeof detail?.reason === "string"
-                                  ? false
-                                  : item.reason_truncated,
-                            };
-                          })
-                        : details.waiting,
-                    }))
-                  : summary;
-              }),
+        const orchestration = request(
+          "query.orchestration",
+          {
+            ...(workspaceOnly
+              ? { owner_id: projectId, workspace_only: true }
+              : { root_instance_id: rootId }),
+            project_id: projectId,
+            view: "current",
+            ...(decisionBefore === undefined
+              ? {}
+              : { decision_before: decisionBefore }),
+          },
+          options,
+        );
+        const driverSummary = workspaceOnly
+          ? Promise.resolve({ driver: null } as Row)
+          : request(
+              "query.workflow_driver",
+              { id: rootId, project_id: projectId, view: "summary" },
+              options,
+            );
+        const [next, summary] = await Promise.all([
+          orchestration,
+          driverSummary,
         ]);
-        if (ticket === epoch.current) {
+        const publish = (driver: Row) => {
+          if (ticket !== epoch.current) return;
           const value = {
             ...next,
             _projectId: projectId,
@@ -172,10 +142,58 @@ export function WorkflowController({
             onRead?.({ data: value, reload: load });
           }
           setReadError("");
-        }
+        };
+        const approvalPending =
+          summary.runtime_approval_pending || summary.workflow_approval_pending;
+        const actionSteps = ((summary.waiting || []) as Row[])
+          .filter((step) =>
+            ["awaiting_acceptance", "needs_reconciliation"].includes(
+              step.status,
+            ),
+          )
+          .map(({ instance_id, execution_id, step_revision }) => ({
+            instance_id,
+            execution_id,
+            step_revision,
+          }));
+        const needsDetails = approvalPending || actionSteps.length > 0;
+        if (!needsDetails || !displayKey.current) publish(summary);
+        if (!needsDetails || ticket !== epoch.current) return;
+        const details = await request(
+          "query.workflow_driver",
+          {
+            id: rootId,
+            project_id: projectId,
+            ...(approvalPending ? {} : { view: "actions", steps: actionSteps }),
+          },
+          options,
+        );
+        publish({
+          ...summary,
+          ...details,
+          waiting: summary.waiting
+            ? summary.waiting.map((item: Row) => {
+                const detail = (details.waiting || []).find(
+                  (candidate: Row) =>
+                    candidate.execution_id === item.execution_id,
+                );
+                return {
+                  ...item,
+                  ...detail,
+                  reason_truncated:
+                    typeof detail?.reason === "string"
+                      ? false
+                      : item.reason_truncated,
+                };
+              })
+            : details.waiting,
+        });
       } catch (error) {
-        if (ticket === epoch.current) setReadError(String(error));
+        if (controller.signal.aborted || ticket !== epoch.current) return;
+        setReadError(String(error));
         throw error;
+      } finally {
+        if (currentRead.current === controller) currentRead.current = undefined;
       }
     },
     [request, rootId, projectId, workspaceOnly, onRead, decisionBefore],
@@ -249,6 +267,7 @@ export function WorkflowController({
         const loaded = await request("query.orchestration", {
           id: opened.id,
           project_id: projectId,
+          view: "current",
         });
         record = loaded.record;
       }
@@ -969,6 +988,16 @@ export function WorkflowController({
         </p>
       )}
       {interactionCards}
+      {!nested && !workspaceOnly && rootId && data && (
+        <ManagerDecisionHistory
+          key={JSON.stringify([projectId, rootId])}
+          request={request}
+          projectId={projectId}
+          rootId={rootId}
+          ownerId={instance.data.owner_id}
+          revision={data.cursor}
+        />
+      )}
       {!!data?.messages?.length && (
         <ManagerDisclosure className="manager-disclosure manager-log">
           <summary>

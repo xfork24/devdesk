@@ -37,6 +37,7 @@ pub mod project_migration;
 mod project_records;
 mod project_storage;
 pub mod session_resources;
+mod source_dependencies;
 mod source_store;
 mod source_views;
 mod workspace_read;
@@ -72,7 +73,8 @@ pub use catalog::GlobalStore;
 use devdesk_core::*;
 use devdesk_domain::*;
 pub use runtime_registry::configuration_digest;
-const PROJECT_SCHEMA_VERSION: u32 = 61;
+const PROJECT_SCHEMA_VERSION: u32 = 62;
+const PAYLOAD_PROJECT_SCHEMA_VERSION: u32 = 61;
 const LEGACY_PROJECT_SCHEMA_VERSION: u32 = 60;
 use rusqlite::{
     Connection,
@@ -120,7 +122,7 @@ impl SqliteStore {
             project_storage::maintain(&mut connection, &root)?;
         }
         Ok(Self {
-            connection: connection_pool::ConnectionPool::new(
+            connection: connection_pool::ConnectionPool::new_engineering(
                 &root.join("engineering.sqlite3"),
                 connection,
             )?,
@@ -505,7 +507,9 @@ fn open_engineering_connection(path: &Path) -> Result<connection_pool::ManagedCo
     require(
         matches!(
             version,
-            0 | LEGACY_PROJECT_SCHEMA_VERSION | PROJECT_SCHEMA_VERSION
+            0 | LEGACY_PROJECT_SCHEMA_VERSION
+                | PAYLOAD_PROJECT_SCHEMA_VERSION
+                | PROJECT_SCHEMA_VERSION
         ),
         "数据集协议不兼容；请使用新的空数据目录",
     )?;
@@ -576,7 +580,7 @@ fn load_rows<T: DeserializeOwned>(
     table: &str,
     predicate: &str,
     parameters: &[&dyn rusqlite::ToSql],
-    hydrate_snapshot: bool,
+    hydrate: bool,
 ) -> Result<Vec<T>> {
     let _span = performance::Span::new("sqlite.table_read_decode");
     let _packs = payload_store::read_scope();
@@ -628,7 +632,7 @@ fn load_rows<T: DeserializeOwned>(
         .map_err(storage)?;
     rows.map(|row| {
         let mut value = row.map_err(storage)?;
-        if table == "snapshots" && hydrate_snapshot {
+        if table == "snapshots" && hydrate {
             project_storage::restore_snapshot(conn, &mut value)?;
         }
         if table == "events"
@@ -642,7 +646,7 @@ fn load_rows<T: DeserializeOwned>(
                 false
             )?);
         }
-        if table == "governance_records" {
+        if table == "governance_records" && hydrate {
             let kind = value["type"].as_str().unwrap_or("").to_owned();
             payload_store::restore_governance(conn, &kind, &mut value["data"])?;
         }
@@ -1029,6 +1033,26 @@ impl EngineeringStore for SqliteStore {
                 .as_deref()
                 .ok_or_else(|| err("project_required", "经理摘要需要明确项目"))?,
             query,
+        )
+    }
+    fn orchestration_history(&self, root: &str, before: Option<u64>) -> Result<Value> {
+        read_models::orchestration_history(
+            &self.connection,
+            self.project_id
+                .as_deref()
+                .ok_or_else(|| err("project_required", "经理历史需要明确项目"))?,
+            root,
+            before,
+        )
+    }
+    fn orchestration_history_member(&self, root: &str, id: &str) -> Result<bool> {
+        read_models::orchestration_history_member(
+            &self.connection,
+            self.project_id
+                .as_deref()
+                .ok_or_else(|| err("project_required", "经理历史需要明确项目"))?,
+            root,
+            id,
         )
     }
     fn workflow_driver_summary(

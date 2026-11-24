@@ -14,6 +14,9 @@ use std::{
 };
 
 const HOST_CONNECTIONS: usize = 64;
+const DEFAULT_READERS: usize = 4;
+const ENGINEERING_READERS: usize = 6;
+const BUSY_LIMIT: Duration = Duration::from_millis(25);
 static OPEN: AtomicUsize = AtomicUsize::new(0);
 static POOLS: OnceLock<Mutex<Vec<Weak<PoolInner>>>> = OnceLock::new();
 thread_local! {
@@ -23,9 +26,10 @@ thread_local! {
 // between a burst of independent WAL commits. Poll the physical lock at a
 // finer, bounded cadence; no business operation or connection is serialized.
 fn bounded_busy(attempt: i32) -> bool {
+    let _span = performance::Span::new("sqlite.busy_wait");
     BUSY_UNTIL.with(|deadline| {
         if attempt == 0 {
-            deadline.set(Some(Instant::now() + Duration::from_millis(25)));
+            deadline.set(Some(Instant::now() + BUSY_LIMIT));
         }
         let Some(until) = deadline.get() else {
             return false;
@@ -147,14 +151,28 @@ impl ConnectionPool {
     }
     /// Initialization and schema validation finish before the pool is published.
     pub fn new(path: &Path, initial: ManagedConnection) -> Result<Self> {
-        Self::with_initial(path, initial, false)
+        Self::with_initial(path, initial, DEFAULT_READERS, false)
+    }
+
+    pub fn new_engineering(path: &Path, initial: ManagedConnection) -> Result<Self> {
+        Self::with_initial(path, initial, ENGINEERING_READERS, false)
     }
 
     pub fn read_only(path: &Path) -> Result<Self> {
-        Self::with_initial(path, ManagedConnection::read_only(path)?, true)
+        Self::with_initial(
+            path,
+            ManagedConnection::read_only(path)?,
+            DEFAULT_READERS,
+            true,
+        )
     }
 
-    fn with_initial(path: &Path, initial: ManagedConnection, read_only: bool) -> Result<Self> {
+    fn with_initial(
+        path: &Path,
+        initial: ManagedConnection,
+        readers: usize,
+        read_only: bool,
+    ) -> Result<Self> {
         // Schema initialization may use a longer busy timeout; runtime leases do not.
         initial.busy_handler(Some(bounded_busy)).map_err(storage)?;
         let inner = Arc::new(PoolInner {
@@ -163,9 +181,53 @@ impl ConnectionPool {
                 use sha2::{Digest, Sha256};
                 format!("{:x}", Sha256::digest(path.to_string_lossy().as_bytes()))
             },
-            readers: Lane::new(4),
+            readers: Lane::new(readers),
             submitters: Lane::new(if read_only { 0 } else { 2 }),
         });
+        if performance::trace_active() {
+            let settings = [
+                "user_version",
+                "page_size",
+                "cache_size",
+                "journal_mode",
+                "foreign_keys",
+                "synchronous",
+                "wal_autocheckpoint",
+                "busy_timeout",
+            ];
+            let settings = settings
+                .into_iter()
+                .filter_map(|key| {
+                    initial
+                        .pragma_query_value(None, key, |row| {
+                            Ok(match row.get_ref(0)? {
+                                rusqlite::types::ValueRef::Integer(value) => {
+                                    serde_json::json!(value)
+                                }
+                                rusqlite::types::ValueRef::Text(value) => {
+                                    serde_json::json!(String::from_utf8_lossy(value))
+                                }
+                                _ => serde_json::Value::Null,
+                            })
+                        })
+                        .ok()
+                        .map(|value| (key.to_owned(), value))
+                })
+                .collect::<serde_json::Map<_, _>>();
+            let compile_options: Option<Vec<String>> = initial
+                .prepare("PRAGMA compile_options")
+                .and_then(|mut statement| statement.query_map([], |row| row.get(0))?.collect())
+                .ok();
+            eprintln!(
+                "{}",
+                serde_json::json!({
+                    "type":"sqlite_configuration", "database_path_sha256":inner.observation_id,
+                    "sqlite_version":rusqlite::version(), "settings":settings, "compile_options":compile_options,
+                    "busy_handler_limit_ms":BUSY_LIMIT.as_millis(), "host_connection_limit":HOST_CONNECTIONS,
+                    "reader_limit":inner.readers.limit, "submitter_limit":inner.submitters.limit
+                })
+            );
+        }
         {
             let lane = if read_only {
                 &inner.readers
@@ -198,11 +260,22 @@ impl ConnectionPool {
         self.checkout(true)
     }
 
+    // Reset preparation can hold a read snapshot while archiving payloads.
+    // Keep that lease outside the short-lived foreground reader lane.
+    pub fn maintenance_read(&self) -> Result<ManagedConnection> {
+        ManagedConnection::read_only(&self.0.path)
+    }
+
     fn checkout(&self, read_only: bool) -> Result<PooledConnection> {
         self.checkout_until(read_only, Instant::now() + Duration::from_secs(2))
     }
     fn checkout_until(&self, read_only: bool, deadline: Instant) -> Result<PooledConnection> {
         let _span = performance::Span::new("sqlite.pool_wait");
+        let _lane_wait = performance::Span::new(if read_only {
+            "sqlite.read_pool_wait"
+        } else {
+            "sqlite.submit_pool_wait"
+        });
         let lane = if read_only {
             &self.0.readers
         } else {

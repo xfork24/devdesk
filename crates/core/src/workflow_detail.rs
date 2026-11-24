@@ -118,10 +118,12 @@ impl Engine {
                     .values
                     .insert((key.clone(), port.clone()), output.data["value"].clone());
             }
-            if matches!(
-                execution["status"].as_str(),
-                Some("completed" | "waiting_confirmation" | "awaiting_acceptance")
-            ) {
+            if query.view != WorkflowDetailView::Status
+                && matches!(
+                    execution["status"].as_str(),
+                    Some("completed" | "waiting_confirmation" | "awaiting_acceptance")
+                )
+            {
                 facts.executions.insert(
                     key.clone(),
                     ExecutionFact {

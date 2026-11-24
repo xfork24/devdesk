@@ -6,6 +6,7 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
+| [工作台与存储性能优化](workbench-storage-performance/PLAN.md) | [工作台延迟评估](../design/performance/workbench-latency-2026-11-23.md)、[阶段验收](workbench-storage-performance/VALIDATION.md) | P0、P1 及 Web 分包已验收。完成本机负载诊断，继续使用 SQLite。正式 100 前端容量验收待独立负载环境 |
 | [出厂模型与工程规范整理](default-configuration-refresh/PLAN.md) | [实施与验收](default-configuration-refresh/EXECUTION.md) | 完成。三种出厂 Model、隔离重置、真实 Feature 与三个 Task 闭环通过 |
 | [工作流故障恢复与升级](workflow-recovery/PLAN.md) | 实施中 | Agent 自修、经理接手、实际重跑预算、历史与人工升级 |
 | [工程库存储改造与百万级容量评估](project-payload-storage/PLAN.md) | [实施与验收](project-payload-storage/EXECUTION.md)、[容量与 I/O 报告](project-payload-storage/PERFORMANCE.md) | 正式工程库已迁移至 project 61，达到 120 MB 容量目标。部分相对 P95 探针仍有差距，百万级使用现有数据推算 |

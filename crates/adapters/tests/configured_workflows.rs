@@ -8609,6 +8609,29 @@ fn control_page_batches_advisory_reads_but_subsequent_commands_and_pages_are_fre
         )
         .is_err()
     );
+    let execution = &after["steps"][0]["execution"]["id"];
+    let step = e
+        .store
+        .read_resources(&[concurrency::ResourceKey::new(
+            "workflow_step",
+            json!([run["id"], execution]).to_string(),
+        )])
+        .unwrap()
+        .remove(0);
+    let mut action_params = json!({"project_id":project["id"],"id":run["id"],"view":"actions",
+        "steps":[{"instance_id":run["id"],"execution_id":execution,"step_revision":step.revision}]});
+    let precise = e.query("query.workflow_driver", &action_params, 1).unwrap();
+    assert_eq!(precise["waiting"].as_array().unwrap().len(), 1);
+    assert_eq!(precise["waiting"][0]["execution_id"], *execution);
+    assert_eq!(precise["waiting"][0]["actions"]["accept"]["allowed"], true);
+    action_params["id"] = json!("other-root");
+    assert!(e.query("query.workflow_driver", &action_params, 1).is_err());
+    action_params["id"] = run["id"].clone();
+    action_params["steps"][0]["step_revision"] = json!(step.revision + 1);
+    assert_eq!(
+        e.query("query.workflow_driver", &action_params, 1).unwrap()["waiting"],
+        json!([])
+    );
     let page = e
         .query(
             "query.workflow_control",

@@ -292,6 +292,58 @@ test("continuous runtime events refresh the manager without starving or busy pol
   expect(reads - initial).toBeLessThan(12);
 });
 
+test("clearing the Feature hides every execution view and ignores a late materials response", async ({
+  page,
+}) => {
+  const url = await fixture(page);
+  const queries: string[] = [];
+  let pending = false;
+  let releaseMaterials!: () => void;
+  const held = new Promise<void>((resolve) => {
+    releaseMaterials = resolve;
+  });
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    if (
+      call.method.startsWith("query.workflow_") ||
+      call.method === "query.orchestration"
+    ) {
+      queries.push(call.method);
+    }
+    if (call.method === "query.workflow_materials") {
+      pending = true;
+      await held;
+      await route
+        .fulfill({
+          json: {
+            jsonrpc: "2.0",
+            id: call.id,
+            result: { records: [], total: 0 },
+          },
+        })
+        .catch(() => {});
+      return;
+    }
+    await route.fallback();
+  });
+  await page.goto(url.replace("detail=manager", "detail=documents"));
+  await expect.poll(() => pending).toBe(true);
+  await page.getByRole("combobox", { name: "当前 Feature" }).selectOption("");
+  const priorQueries = queries.length;
+  releaseMaterials();
+  for (const name of ["项目经理", "工作流程", "上下文", "执行记录", "材料"]) {
+    await page.getByRole("tab", { name, exact: true }).click();
+    await expect(
+      page.getByRole("status").filter({ hasText: /^请选择 Feature$/ }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "读取隔离 Feature" }),
+    ).toHaveCount(0);
+  }
+  await expect(page.getByRole("heading", { name: "材料目录" })).toHaveCount(0);
+  expect(queries).toHaveLength(priorQueries);
+});
+
 test("another root's events do not reread the current Feature context workspace", async ({
   page,
 }) => {

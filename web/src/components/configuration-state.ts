@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getConfigurationSession } from "../configuration-client";
+import {
+  configurationIndexParams,
+  getConfigurationSession,
+} from "../configuration-client";
 import { useCatalogGeneration } from "../template-catalog";
 import type { Row, Request } from "./rpc-types";
 export const templateSourceLabel = (row?: Row) =>
@@ -57,16 +60,13 @@ export async function loadCatalog(
   for (;;) {
     const page = await request(
       "query.configuration_index",
-      {
-        include_archived: includeArchived,
-        local: !!projectId,
-        project_id: projectId,
-        offset,
-        limit: 1000,
-        include_history: includeHistory,
+      configurationIndexParams(projectId, {
+        archived: includeArchived,
+        history: includeHistory,
         kind,
-        index_version: generation,
-      },
+        offset,
+        version: generation,
+      }),
       { signal },
     );
     if (generation !== undefined && page.index_version !== generation)
@@ -200,21 +200,24 @@ export function useDraft<T>(key: string, initial: () => T) {
   }, [key, value]);
   return [value, setValue] as const;
 }
+export function readGroupTab(group: string, allowed: string[]) {
+  const url = new URLSearchParams(location.search).get("config_tab");
+  let stored: string | null = null;
+  try {
+    stored = localStorage.getItem(`devdesk:v2:tab:${group}`);
+  } catch {}
+  return allowed.includes(url || "")
+    ? url!
+    : allowed.includes(stored || "")
+      ? stored!
+      : allowed[0];
+}
 export function useGroupTab(group: string, allowed: string[]) {
   const allowedKey = JSON.stringify(allowed);
-  const read = useCallback(() => {
-    const allowed: string[] = JSON.parse(allowedKey);
-    const url = new URLSearchParams(location.search).get("config_tab");
-    let stored: string | null = null;
-    try {
-      stored = localStorage.getItem(`devdesk:v2:tab:${group}`);
-    } catch {}
-    return allowed.includes(url || "")
-      ? url!
-      : allowed.includes(stored || "")
-        ? stored!
-        : allowed[0];
-  }, [group, allowedKey]);
+  const read = useCallback(
+    () => readGroupTab(group, JSON.parse(allowedKey) as string[]),
+    [group, allowedKey],
+  );
   const [tab, setTab] = useState(read);
   useEffect(() => {
     const pop = () => setTab(read());

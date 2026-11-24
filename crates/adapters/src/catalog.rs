@@ -262,6 +262,23 @@ impl GlobalStore {
 // write global facts. Incomplete reservations may have no database yet; a
 // published project may not silently become a newly initialized empty project.
 fn preflight_engineering_databases(root: &Path, global: &Connection) -> Result<()> {
+    use devdesk_core::template_reset_jobs::{ACTIVE_SETTING, TemplateResetJob};
+    let reset = setting(global, ACTIVE_SETTING)?
+        .as_ref()
+        .and_then(Value::as_str)
+        .map(|key| setting(global, key))
+        .transpose()?
+        .flatten()
+        .map(serde_json::from_value::<TemplateResetJob>)
+        .transpose()
+        .map_err(storage)?;
+    let pending = |target: &str| {
+        reset.as_ref().is_some_and(|job| {
+            job.targets
+                .iter()
+                .any(|item| item.id == target && item.applied_at.is_none())
+        })
+    };
     let mut query = global
         .prepare("SELECT id,project IS NOT NULL FROM project_catalog")
         .map_err(storage)?;
@@ -271,16 +288,22 @@ fn preflight_engineering_databases(root: &Path, global: &Connection) -> Result<(
     for row in projects {
         let (id, published) = row.map_err(storage)?;
         let path = SqliteStore::project_path(root, &id)?.join("engineering.sqlite3");
-        if path.exists() {
-            check_engineering_baseline(&path)?;
+        let status = if path.exists() {
+            check_engineering_baseline(&path)
         } else {
-            require(!published, "已发布项目的数据库缺失；拒绝重建")?;
+            require(!published, "已发布项目的数据库缺失；拒绝重建")
+        };
+        if !pending(&id) {
+            status?;
         }
     }
     let path = SqliteStore::global_discussion_path(root)?.join("engineering.sqlite3");
     if path.exists() {
         reject_symlink(&path)?;
-        check_engineering_baseline(&path)?;
+        let status = check_engineering_baseline(&path);
+        if !pending(GLOBAL_DISCUSSION_NAMESPACE) {
+            status?;
+        }
     }
     Ok(())
 }
@@ -292,7 +315,7 @@ fn check_engineering_baseline(path: &Path) -> Result<()> {
     require(
         matches!(
             version,
-            LEGACY_PROJECT_SCHEMA_VERSION | PROJECT_SCHEMA_VERSION
+            LEGACY_PROJECT_SCHEMA_VERSION | PAYLOAD_PROJECT_SCHEMA_VERSION | PROJECT_SCHEMA_VERSION
         ),
         "数据集协议不兼容；请使用新的空数据目录",
     )?;

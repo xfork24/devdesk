@@ -44,7 +44,48 @@ struct Window {
     cursor: u64,
     bytes: usize,
     events: VecDeque<Arc<CachedEvent>>,
-    configuration_version: Value,
+}
+
+pub(crate) struct ConfigurationClock(watch::Sender<Option<Arc<Value>>>);
+impl ConfigurationClock {
+    pub(crate) fn new(workspace: &Arc<Workspace>) -> Arc<Self> {
+        let (sender, _) = watch::channel(None);
+        let clock = Arc::new(Self(sender));
+        let subscription = Arc::downgrade(&clock);
+        let workspace = Arc::downgrade(workspace);
+        tokio::spawn(async move {
+            while let (Some(clock), Some(workspace)) = (subscription.upgrade(), workspace.upgrade())
+            {
+                let read = tokio::task::spawn_blocking(move || {
+                    let trace = performance_logging().then(devdesk_adapters::performance::Trace::start);
+                    let result = workspace.event_configuration_version();
+                    if let Some(trace) = trace {
+                        eprintln!("{}", json!({"type":"performance","context":"events_configuration_clock","success":result.is_ok(),"measurement":trace.finish()}));
+                    }
+                    result
+                }).await;
+                match read {
+                    Ok(Ok(version)) => {
+                        clock.0.send_if_modified(|current| {
+                            if current.as_deref() == Some(&version) {
+                                return false;
+                            }
+                            *current = Some(Arc::new(version));
+                            true
+                        });
+                    }
+                    Ok(Err(error)) => {
+                        eprintln!("event configuration clock read failed: {}", error.code)
+                    }
+                    Err(_) => eprintln!("event configuration clock reader task failed"),
+                }
+                drop(clock);
+                // One bounded scan for all tail streams that requested catalog clocks.
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            }
+        });
+        clock
+    }
 }
 impl Window {
     fn omit(&mut self, cursor: u64) {
@@ -87,10 +128,6 @@ impl EventHub {
             Arc::new(move || notify.notify_one())
         };
         engine.store.subscribe_changes(Arc::downgrade(&listener));
-        workspace
-            .global
-            .subscribe_changes(Arc::downgrade(&listener));
-        workspace.subscribe_configuration_changes(Arc::downgrade(&listener));
         let (window, _) = watch::channel(Arc::new(Window::default()));
         let hub = Arc::new(Self {
             scope,
@@ -118,22 +155,35 @@ async fn pump(weak: Weak<EventHub>) {
         let cursor = previous.cursor;
         #[cfg(test)]
         hub.reads.fetch_add(1, Ordering::Relaxed);
-        let read_workspace = workspace.clone();
         let read = tokio::task::spawn_blocking(move || -> devdesk_domain::Result<_> {
-            let _span = devdesk_adapters::performance::Span::new("events.shared_read");
-            let (head, events) = if initialized {
-                (cursor, engine.store.event_hints_after(cursor, 100)?)
-            } else {
-                (engine.store.event_cursor()?, vec![])
-            };
-            Ok((head, events, read_workspace.configuration_version(&engine)?))
+            use devdesk_adapters::performance::{Span, Trace};
+            let trace = performance_logging().then(Trace::start);
+            let result: devdesk_domain::Result<_> = (|| {
+                let _span = Span::new("events.shared_read");
+                if initialized {
+                    Ok((cursor, engine.store.event_hints_after(cursor, 100)?))
+                } else {
+                    Ok((engine.store.event_cursor()?, vec![]))
+                }
+            })();
+            if let Some(trace) = trace {
+                eprintln!(
+                    "{}",
+                    json!({
+                        "type":"performance","context":"events_shared_read","success":result.is_ok(),
+                        "changes":result.as_ref().ok().map(|(_, events)| events.len()),
+                        "measurement":trace.finish()
+                    })
+                );
+            }
+            result
         })
         .await;
         let mut caught_up = true;
         match read {
-            Ok(Ok((head, events, version))) => {
+            Ok(Ok((head, events))) => {
                 caught_up = events.len() < 100;
-                if !initialized || !events.is_empty() || previous.configuration_version != version {
+                if !initialized || !events.is_empty() {
                     let mut next = previous.as_ref().clone();
                     if !initialized {
                         next.initialized = true;
@@ -147,7 +197,6 @@ async fn pump(weak: Weak<EventHub>) {
                             next.append(hint.event, &hub.scope);
                         }
                     }
-                    next.configuration_version = version;
                     // A subscriber may refresh immediately. Fence snapshots
                     // cached before a background commit before sending its hint.
                     if hub.scope != "global"
@@ -182,14 +231,20 @@ struct Subscriber {
     hub: Arc<EventHub>,
     receiver: watch::Receiver<Arc<Window>>,
     cursor: Option<u64>,
-    last_version: Option<Value>,
     ready: bool,
-    configuration: bool,
+    configuration: Option<ConfigurationSubscription>,
+}
+struct ConfigurationSubscription {
+    _clock: Arc<ConfigurationClock>,
+    receiver: watch::Receiver<Option<Arc<Value>>>,
+    last_version: Option<Arc<Value>>,
 }
 fn payload(kind: &str, scope: &str, cursor: u64, version: Option<&Value>) -> String {
     let mut value = json!({"kind":kind,"project_id":scope,"cursor":cursor});
     if let Some(version) = version {
-        value["configuration_version"] = version.clone();
+        let mut version = version.clone();
+        version["project"] = json!(version["source_epochs"][scope].as_u64().unwrap_or(0));
+        value["configuration_version"] = version;
     }
     value.to_string()
 }
@@ -197,7 +252,7 @@ pub(super) fn events(
     app: Arc<App>,
     hub: Arc<EventHub>,
     cursor: Option<u64>,
-    configuration: bool,
+    configuration: Option<Arc<ConfigurationClock>>,
 ) -> Response {
     let receiver = hub.window.subscribe();
     let subscriber = Subscriber {
@@ -205,9 +260,15 @@ pub(super) fn events(
         hub,
         receiver,
         cursor,
-        last_version: None,
         ready: false,
-        configuration,
+        configuration: configuration.map(|clock| {
+            let receiver = clock.0.subscribe();
+            ConfigurationSubscription {
+                _clock: clock,
+                receiver,
+                last_version: None,
+            }
+        }),
     };
     let stream = stream::unfold(subscriber, |mut state| async move {
         loop {
@@ -215,14 +276,21 @@ pub(super) fn events(
                 return None;
             }
             let window = state.receiver.borrow_and_update().clone();
-            if window.initialized {
-                let version = state.configuration.then_some(&window.configuration_version);
+            let version = state
+                .configuration
+                .as_mut()
+                .and_then(|subscription| subscription.receiver.borrow_and_update().clone());
+            if window.initialized && (state.configuration.is_none() || version.is_some()) {
+                let version_changed = state.configuration.as_ref().is_some_and(|subscription| {
+                    !subscription.last_version.as_ref().is_some_and(|last| {
+                        version.as_ref().is_some_and(|next| Arc::ptr_eq(last, next))
+                    })
+                });
                 let current = *state.cursor.get_or_insert(window.cursor);
                 let mut event = None;
                 if current < window.floor || current > window.cursor {
                     state.cursor = Some(window.cursor);
                     state.ready = true;
-                    state.last_version = version.cloned();
                     event = Some(
                         Event::default()
                             .id(format!("{}:{}", state.hub.scope, window.cursor))
@@ -230,43 +298,49 @@ pub(super) fn events(
                                 "stream.reset",
                                 &state.hub.scope,
                                 window.cursor,
-                                version,
+                                version.as_deref(),
                             )),
                     );
                 } else if let Some(value) = window.events.iter().find(|event| event.id > current) {
                     state.cursor = Some(value.id);
                     // Ordinary tail events carry exact persisted content. Configuration
                     // clocks have their own shared notification and do not alter cursors.
-                    event = Some(
-                        Event::default()
-                            .id(format!("{}:{}", state.hub.scope, value.id))
-                            .data(value.json.clone()),
-                    );
+                    let event = Event::default()
+                        .id(format!("{}:{}", state.hub.scope, value.id))
+                        .data(value.json.clone());
+                    return Some((Ok::<_, std::convert::Infallible>(event), state));
                 } else if !state.ready {
                     state.ready = true;
-                    state.last_version = version.cloned();
                     event = Some(Event::default().data(payload(
                         "stream.ready",
                         &state.hub.scope,
                         window.cursor,
-                        version,
+                        version.as_deref(),
                     )));
-                } else if version.is_some() && state.last_version.as_ref() != version {
-                    state.last_version = version.cloned();
+                } else if version_changed {
                     event = Some(Event::default().data(payload(
                         "configuration.changed",
                         &state.hub.scope,
                         window.cursor,
-                        version,
+                        version.as_deref(),
                     )));
                 }
                 if let Some(event) = event {
+                    if let Some(subscription) = &mut state.configuration {
+                        subscription.last_version = version;
+                    }
                     return Some((Ok::<_, std::convert::Infallible>(event), state));
                 }
             }
             drop(window);
             tokio::select! {
                 changed = state.receiver.changed() => { if changed.is_err() { return None } },
+                _ = async {
+                    match &mut state.configuration {
+                        Some(subscription) => { let _ = subscription.receiver.changed().await; }
+                        None => std::future::pending().await,
+                    }
+                } => {},
                 _ = state.app.shutdown.notified() => {},
                 // No per-client SQL poll; this bound only ensures shutdown EOF.
                 _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {},
@@ -283,6 +357,82 @@ mod tests {
     use super::*;
     use devdesk_core::concurrency::*;
     use std::time::Duration;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn projects_share_committed_catalog_clocks_without_advancing_other_event_tails() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace =
+            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
+        let create = |title| {
+            let project = workspace
+                .dispatch(
+                    "project.create",
+                    json!({"command_id":devdesk_core::id(),"payload":{"title":title}}),
+                )
+                .unwrap();
+            project["id"].as_str().unwrap().to_owned()
+        };
+        let first = create("first clock scope");
+        let second = create("second clock scope");
+        let (_, first_engine) = workspace.event_engine(Some(&first)).unwrap();
+        let (_, engine) = workspace.event_engine(Some(&second)).unwrap();
+        let hub = workspace.event_hub(&second, engine).unwrap();
+        let mut tail = hub.window.subscribe();
+        let initial =
+            tokio::time::timeout(Duration::from_secs(2), tail.wait_for(|w| w.initialized))
+                .await
+                .unwrap()
+                .unwrap()
+                .cursor;
+        let clock = workspace.event_configuration_clock().unwrap();
+        assert!(Arc::ptr_eq(
+            &clock,
+            &workspace.event_configuration_clock().unwrap()
+        ));
+        let mut changes = clock.0.subscribe();
+        let before =
+            tokio::time::timeout(Duration::from_secs(2), changes.wait_for(Option::is_some))
+                .await
+                .unwrap()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .clone();
+        first_engine.execute("role.create", devdesk_core::Command {
+            command_id: devdesk_core::id(), target: None, expected_revision: None,
+            payload:json!({"name":"Clocked role","scope":format!("project:{first}"),"data":{"instructions":"Clock test"}})
+        }).unwrap();
+        let current = tokio::time::timeout(
+            Duration::from_secs(2),
+            changes.wait_for(|version| {
+                version
+                    .as_ref()
+                    .is_some_and(|v| v["source_epochs"][&first] != before["source_epochs"][&first])
+            }),
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .clone();
+        let update: Value = serde_json::from_str(&payload(
+            "configuration.changed",
+            &second,
+            initial,
+            Some(&current),
+        ))
+        .unwrap();
+        assert_eq!(
+            update["configuration_version"]["project"],
+            before["source_epochs"][&second]
+        );
+        assert_eq!(
+            update["configuration_version"]["source_epochs"][&first],
+            current["source_epochs"][&first]
+        );
+        assert_eq!(hub.window.borrow().cursor, initial);
+    }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn one_hundred_tail_subscribers_share_reads_and_release_their_hub() {

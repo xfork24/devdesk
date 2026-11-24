@@ -88,6 +88,37 @@ pub(super) fn refresh_root(conn: &Connection, id: &str) -> Result<()> {
     }
     Ok(())
 }
+/// A catalog rewrite may include legacy rows without a versioned preview.
+pub(super) fn refresh_after_reset(conn: &Connection, id: &str) -> Result<()> {
+    let rebuildable: bool = conn
+        .query_row(
+            "SELECT NOT EXISTS(
+                SELECT 1 FROM governance_records root JOIN json_each(root.data,'$.steps') step
+                WHERE root.id=?1 AND NOT EXISTS(
+                    SELECT 1 FROM resource_versions rev WHERE rev.kind='workflow_step'
+                      AND rev.resource_id=json_array(root.id,json_extract(step.value,'$.id'))))
+             AND EXISTS(SELECT 1 FROM workflow_display_headers WHERE instance_id=?1)",
+            [id],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if rebuildable {
+        refresh_root(conn, id)?;
+    } else {
+        conn.execute(
+            "DELETE FROM workflow_display_steps WHERE instance_id=?1",
+            [id],
+        )
+        .map_err(storage)?;
+        conn.execute(
+            "DELETE FROM workflow_display_headers WHERE instance_id=?1",
+            [id],
+        )
+        .map_err(storage)?;
+    }
+    Ok(())
+}
+
 pub(super) fn commit(conn: &Connection, prepared: &PreparedChangeSet) -> Result<()> {
     let mut roots = BTreeSet::new();
     for change in &prepared.changes {
@@ -131,4 +162,84 @@ pub(super) fn commit(conn: &Connection, prepared: &PreparedChangeSet) -> Result<
         conn.execute("UPDATE workflow_display_headers SET record=json_set(record,'$.revision',(SELECT revision FROM governance_records WHERE id=?1),'$.content_hash',(SELECT content_hash FROM governance_records WHERE id=?1)) WHERE instance_id=?1",[id]).map_err(storage)?;
     }
     Ok(())
+}
+
+/// Rebuild the display tables on an offline project with a fixed event cursor.
+/// A failed repair rolls back the derived tables together.
+pub(super) fn rebuild(conn: &mut Connection) -> Result<Value> {
+    let tx = conn
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(storage)?;
+    let event_cursor = |conn: &Connection| -> Result<u64> {
+        conn.query_row("SELECT COALESCE(max(id),0) FROM events", [], |row| {
+            row.get(0)
+        })
+        .map_err(storage)
+    };
+    let initial = event_cursor(&tx)?;
+    tx.execute_batch("DELETE FROM workflow_display_steps; DELETE FROM workflow_display_headers;")
+        .map_err(storage)?;
+    let mut cursor = 0_i64;
+    let mut batches = 0;
+    let mut rebuilt = 0_u64;
+    loop {
+        let rows = tx
+            .prepare_cached(
+                "SELECT rowid,id FROM governance_records
+                 WHERE type='workflow_instance' AND rowid>?1 ORDER BY rowid LIMIT 128",
+            )
+            .map_err(storage)?
+            .query_map([cursor], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(storage)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(storage)?;
+        if rows.is_empty() {
+            break;
+        }
+        for (position, instance) in rows {
+            refresh_root(&tx, &instance)?;
+            cursor = position;
+            rebuilt += 1;
+        }
+        batches += 1;
+        eprintln!(
+            "{}",
+            json!({"type":"workflow_display_rebuild","event_cursor":initial,"row_cursor":cursor,"instances":rebuilt})
+        );
+    }
+    let (headers, steps, source_steps, invalid_keys): (u64, u64, u64, u64) = tx
+        .query_row(
+            "SELECT (SELECT count(*) FROM workflow_display_headers),
+                (SELECT count(*) FROM workflow_display_steps),
+                (SELECT coalesce(sum(json_array_length(data,'$.steps')),0)
+                 FROM governance_records WHERE type='workflow_instance'),
+                (SELECT count(*) FROM workflow_display_steps step
+                 WHERE json_extract(step.data,'$.id') IS NOT step.execution_id
+                    OR NOT EXISTS (
+                        SELECT 1 FROM resource_versions rev
+                        WHERE rev.kind='workflow_step'
+                          AND rev.resource_id=json_array(step.instance_id,step.execution_id)
+                          AND rev.revision=step.step_revision)
+                    OR NOT EXISTS (
+                        SELECT 1 FROM governance_records plan
+                        WHERE plan.id=json_extract(step.data,'$.plan_revision_id')
+                          AND plan.type='workflow_plan_revision'
+                          AND json_extract(plan.data,'$.instance_id')=step.instance_id))",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .map_err(storage)?;
+    require(
+        headers == rebuilt
+            && steps == source_steps
+            && invalid_keys == 0
+            && event_cursor(&tx)? == initial,
+        "流程展示回填的数量、引用或事件位置不一致",
+    )?;
+    tx.commit().map_err(storage)?;
+    Ok(
+        json!({"instances":headers,"steps":steps,"event_cursor":initial,"row_cursor":cursor,"batches":batches}),
+    )
 }

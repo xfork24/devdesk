@@ -70,6 +70,7 @@
 | [src/scheduling_read.rs](../../../crates/adapters/src/scheduling_read.rs) | [SQLite、资源提交与产物文件](storage-and-source-codecs.md) |
 | [src/session_cache.rs](../../../crates/adapters/src/session_cache.rs) | Session caches use an index while idle and private files while a worker runs. |
 | [src/session_resources.rs](../../../crates/adapters/src/session_resources.rs) | [运行环境准备与验证](runtime-preparation.md) |
+| [src/source_dependencies.rs](../../../crates/adapters/src/source_dependencies.rs) | Witnesses for the exact source revisions consumed by stored governance bodies. |
 | [src/source_store.rs](../../../crates/adapters/src/source_store.rs) | [SQLite、资源提交与产物文件](storage-and-source-codecs.md) |
 | [src/source_views.rs](../../../crates/adapters/src/source_views.rs) | [适配器工厂与配置装载](factory-and-configuration.md) |
 | [src/standard_reads.rs](../../../crates/adapters/src/standard_reads.rs) | Read adoption records without reconstructing the execution history. |

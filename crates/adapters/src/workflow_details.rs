@@ -477,11 +477,33 @@ fn status(
         .as_str()
         .or_else(|| row.data["workflow_ref"].as_str())
         .ok_or_else(|| err("storage", "流程显示缺少确切源引用"))?;
-    let mut document: WorkflowDefinition = catalog.state.configuration(reference)?.decode()?;
+    let plan_revision = row.data["active_plan_revision_id"].as_str().unwrap_or("");
+    let mut document: WorkflowDefinition = match catalog.state.configuration(reference) {
+        Ok(source) => source.decode()?,
+        Err(error) if error.code == "not_found" && !plan_revision.is_empty() => {
+            let plan = workflow_readers::record(conn, plan_revision)?;
+            require(
+                plan.r#type == "workflow_plan_revision"
+                    && plan.scope.project_id() == Some(project)
+                    && plan.data["instance_id"] == id
+                    && plan.data["plan"]["workflow_ref"]
+                        .as_str()
+                        .or_else(|| plan.data["plan"]["workflow_revision_id"].as_str())
+                        == Some(reference),
+                "冻结计划不属于所选流程版本",
+            )?;
+            serde_json::from_value(workflow_readers::source_document(catalog, &plan)?)
+                .map_err(storage)?
+        }
+        Err(error) => return Err(error),
+    };
     document.assign_node_ids(reference);
-    document
-        .steps
-        .retain(|s| steps.iter().any(|e| e["node_id"] == s.node_id));
+    document.steps.retain(|s| {
+        steps.iter().any(|e| {
+            e["node_id"] == s.node_id
+                || (e["node_id"].as_str().is_none_or(str::is_empty) && e["step"] == s.key)
+        })
+    });
     let plan_document = json!(document);
     row.data["plan"] = json!({"document":plan_document});
     row.data["steps"] = json!(steps);

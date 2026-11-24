@@ -5,21 +5,55 @@ use devdesk_core::{concurrency::ResourceKey, read_models::*};
 use rusqlite::{OptionalExtension, params};
 use std::collections::BTreeMap;
 
+// The selected instance precedes its JSON steps, history and associations in
+// the loop order. On mixed histories SQLite otherwise materializes whole
+// project slices before filtering them down to the selected work. Preview rows
+// are optional, tied to the committed header hash and execution revision in
+// the same snapshot. Exact execution details use the canonical entry.
+// Unary plus removes the outer column affinity for JSON expression index
+// lookups. Both sides of these comparisons store text identities.
 const SCOPE: &str = "WITH RECURSIVE owners(id,kind,title) AS MATERIALIZED (
  SELECT id,'project',title FROM projects WHERE id=?1 AND id=?2
  UNION ALL SELECT id,'feature',title FROM features WHERE (id=?1 OR project_id=?1) AND project_id=?2
  UNION ALL SELECT t.id,'task',t.title FROM tasks t JOIN features f ON f.id=t.feature_id WHERE (t.id=?1 OR t.feature_id=?1 OR f.project_id=?1) AND f.project_id=?2
 ), roots(id) AS MATERIALIZED (
- SELECT i.id FROM governance_records i JOIN owners o ON json_extract(i.data,'$.owner_id')=o.id
+ SELECT i.id FROM owners o CROSS JOIN governance_records i INDEXED BY idx_workflow_owner_current ON json_extract(i.data,'$.owner_id')=+o.id
  WHERE i.type='workflow_instance' AND i.owner_project=?2
- AND (json_extract(i.data,'$.parent_execution_id') IS NULL OR EXISTS(SELECT 1 FROM governance_records v WHERE v.type='workflow_invocation' AND v.owner_project=?2 AND json_extract(v.data,'$.child_instance_id')=i.id AND json_extract(v.data,'$.member_identity')=o.id))
+ AND (json_extract(i.data,'$.parent_execution_id') IS NULL OR EXISTS(SELECT 1 FROM governance_records v WHERE v.type='workflow_invocation' AND v.owner_project=?2 AND json_extract(v.data,'$.child_instance_id')=+i.id AND json_extract(v.data,'$.member_identity')=+o.id))
 
 ), selected(id) AS (
  SELECT id FROM roots
- UNION SELECT c.id FROM selected x JOIN governance_records p ON p.id=x.id JOIN json_each(p.data,'$.steps') e JOIN governance_records c ON c.type='workflow_instance' AND json_extract(c.data,'$.parent_execution_id')=json_extract(e.value,'$.id') AND c.owner_project=?2 JOIN owners o ON o.id=json_extract(c.data,'$.owner_id')
-), entries(instance_id,instance_name,owner_id,owner_kind,owner_title,workflow_ref,execution,historical,ordering,position) AS (
- SELECT i.id,i.name,o.id,o.kind,o.title,json_extract(i.data,'$.workflow_ref'),e.value,CASE WHEN EXISTS(SELECT 1 FROM governance_records newer WHERE newer.type='workflow_instance' AND newer.owner_project=?2 AND json_extract(newer.data,'$.owner_id')=o.id AND newer.rowid>i.rowid AND json_extract(newer.data,'$.parent_execution_id') IS NULL) THEN 1 ELSE 0 END,i.rowid,CAST(e.key AS INTEGER) FROM selected x JOIN governance_records i ON i.id=x.id JOIN owners o ON o.id=json_extract(i.data,'$.owner_id') JOIN json_each(i.data,'$.steps') e
- UNION ALL SELECT i.id,i.name,o.id,o.kind,o.title,json_extract(i.data,'$.workflow_ref'),h.data,1,h.rowid,0 FROM selected x JOIN governance_records i ON i.id=x.id JOIN owners o ON o.id=json_extract(i.data,'$.owner_id') JOIN governance_records h ON h.type='workflow_execution_history' AND h.owner_project=?2 AND json_extract(h.data,'$.workflow_instance_id')=i.id
+ UNION SELECT c.id FROM selected x JOIN governance_records p ON p.id=x.id CROSS JOIN json_each(p.data,'$.steps') e CROSS JOIN governance_records c INDEXED BY idx_workflow_parent_execution ON c.type='workflow_instance' AND json_extract(c.data,'$.parent_execution_id')=json_extract(e.value,'$.id') AND c.owner_project=?2 JOIN owners o ON o.id=json_extract(c.data,'$.owner_id')
+), entries(instance_id,instance_name,owner_id,owner_kind,owner_title,workflow_ref,execution,display_execution,historical,ordering,position) AS (
+ SELECT i.id,i.name,o.id,o.kind,o.title,json_extract(i.data,'$.workflow_ref'),e.value,
+ CASE WHEN projected.step_revision=(
+     SELECT revision FROM resource_versions WHERE kind='workflow_step'
+     AND resource_id=json_array(i.id,json_extract(e.value,'$.id')))
+     AND json_extract(projected.data,'$.id')=json_extract(e.value,'$.id')
+     AND json_extract(projected.data,'$.plan_revision_id') IS json_extract(e.value,'$.plan_revision_id')
+     AND json_extract(projected.data,'$.round') IS json_extract(e.value,'$.round')
+ THEN json_set(projected.data,'$.reason',json_extract(e.value,'$.reason'),'$.display_verified',1)
+ ELSE e.value END,
+ CASE WHEN EXISTS(
+     SELECT 1 FROM governance_records newer INDEXED BY idx_workflow_owner_current
+     WHERE newer.type='workflow_instance' AND newer.owner_project=?2
+     AND json_extract(newer.data,'$.owner_id')=+o.id AND newer.rowid>i.rowid
+     AND json_extract(newer.data,'$.parent_execution_id') IS NULL
+ ) THEN 1 ELSE 0 END,i.rowid,CAST(e.key AS INTEGER)
+ FROM selected x CROSS JOIN governance_records i ON i.id=x.id
+ JOIN owners o ON o.id=json_extract(i.data,'$.owner_id')
+ CROSS JOIN json_each(i.data,'$.steps') e
+ LEFT JOIN workflow_display_headers header ON header.instance_id=i.id
+     AND json_extract(header.record,'$.content_hash')=i.content_hash
+ LEFT JOIN workflow_display_steps projected ON projected.instance_id=header.instance_id
+     AND projected.execution_id=json_extract(e.value,'$.id')
+ UNION ALL
+ SELECT i.id,i.name,o.id,o.kind,o.title,json_extract(i.data,'$.workflow_ref'),h.data,h.data,1,h.rowid,0
+ FROM selected x CROSS JOIN governance_records i ON i.id=x.id
+ JOIN owners o ON o.id=json_extract(i.data,'$.owner_id')
+ CROSS JOIN governance_records h INDEXED BY idx_workflow_read_history
+     ON h.type='workflow_execution_history' AND h.owner_project=?2
+     AND json_extract(h.data,'$.workflow_instance_id')=+x.id
 )";
 
 fn optional<'a>(p: &'a Value, key: &str) -> Option<&'a str> {
@@ -28,7 +62,17 @@ fn optional<'a>(p: &'a Value, key: &str) -> Option<&'a str> {
 fn identifier(p: &Value, key: &str) -> Result<String> {
     devdesk_core::read_models::identifier(p, key)
 }
-fn record(conn: &Connection, id: &str) -> Result<ConfigurationRecord> {
+fn observe_display_source(execution: &Value) {
+    performance::record(
+        if execution["display_verified"] == 1 {
+            "workflow.display_projection_row"
+        } else {
+            "workflow.display_canonical_row"
+        },
+        0.0,
+    );
+}
+pub(super) fn record(conn: &Connection, id: &str) -> Result<ConfigurationRecord> {
     let row = resource_commits::read_on(conn, &[ResourceKey::new("governance", id)])?.remove(0);
     ConfigurationRecord::from_storage(
         row.value
@@ -43,7 +87,7 @@ fn restored(
     row.content_hash = content_digest(&row.refs, &row.data);
     Ok(row)
 }
-fn source_document(
+pub(super) fn source_document(
     catalog: &ConfigurationCatalogSnapshot,
     plan: &ConfigurationRecord,
 ) -> Result<Value> {
@@ -64,14 +108,14 @@ fn source_document(
     document.assign_node_ids(reference);
     Ok(json!(document))
 }
-fn step_source(
+fn step_source<'a>(
     conn: &Connection,
     catalog: &ConfigurationCatalogSnapshot,
     project: &str,
     instance: &str,
     e: &Value,
-    cache: &mut BTreeMap<String, Value>,
-) -> Result<Value> {
+    cache: &'a mut BTreeMap<String, Value>,
+) -> Result<&'a Value> {
     let plan = e["plan_revision_id"]
         .as_str()
         .ok_or_else(|| err("storage", "执行缺少原始计划"))?;
@@ -87,13 +131,12 @@ fn step_source(
         cache.insert(key.clone(), source_document(catalog, &row)?);
     }
     let document = &cache[&key];
-    let step = document["steps"]
+    document["steps"]
         .as_array()
         .into_iter()
         .flatten()
         .find(|s| s["node_id"] == e["node_id"])
-        .ok_or_else(|| err("not_found", "原执行步骤合同缺失"))?;
-    Ok(json!({"document":document,"step":step}))
+        .ok_or_else(|| err("not_found", "原执行步骤合同缺失"))
 }
 fn actor(
     conn: &Connection,
@@ -172,6 +215,12 @@ pub(super) fn read(
         )
         .map_err(storage)?;
     require(found, "工作归属不属于当前项目")?;
+    let _span = performance::Span::new(match view {
+        WorkflowReadingView::Materials => "read_model.workflow_materials",
+        WorkflowReadingView::Executions => "read_model.workflow_executions",
+        WorkflowReadingView::Record => "read_model.workflow_record",
+        WorkflowReadingView::Contexts => "read_model.workflow_contexts",
+    });
     let value = match view {
         WorkflowReadingView::Materials => materials(&conn, catalog, project, &owner, p)?,
         WorkflowReadingView::Executions => executions(&conn, catalog, project, &owner, p)?,
@@ -251,14 +300,27 @@ fn executions(
     let (offset, limit) = page(p)?;
     let instance = optional(p, "instance_id");
     let execution = optional(p, "execution_id");
+    let source = if execution.is_some() {
+        "execution"
+    } else {
+        "display_execution"
+    };
     let projection = if execution.is_some() {
         "execution"
     } else {
-        "json_object('id',json_extract(execution,'$.id'),'node_id',json_extract(execution,'$.node_id'),'plan_revision_id',json_extract(execution,'$.plan_revision_id'),'step',json_extract(execution,'$.step'),'round',json_extract(execution,'$.round'),'status',json_extract(execution,'$.status'),'reason',json_extract(execution,'$.reason'),'started',json_extract(execution,'$.started'),'finished',json_extract(execution,'$.finished'),'session_id',json_extract(execution,'$.session_id'),'turn_id',json_extract(execution,'$.turn_id'),'agent_revision_id',json_extract(execution,'$.agent_revision_id'),'outputs',json_extract(execution,'$.outputs'))"
+        "json_object('id',json_extract(execution,'$.id'),'node_id',json_extract(execution,'$.node_id'),'plan_revision_id',json_extract(execution,'$.plan_revision_id'),'step',json_extract(execution,'$.step'),'round',json_extract(execution,'$.round'),'status',json_extract(execution,'$.status'),'reason',json_extract(execution,'$.reason'),'display_verified',json_extract(execution,'$.display_verified'),'started',json_extract(execution,'$.started'),'finished',json_extract(execution,'$.finished'),'session_id',json_extract(execution,'$.session_id'),'turn_id',json_extract(execution,'$.turn_id'),'agent_revision_id',json_extract(execution,'$.agent_revision_id'),'outputs',json_extract(execution,'$.outputs'))"
     };
     let sql = format!(
-        "{SCOPE} SELECT instance_id,instance_name,owner_id,owner_title,{projection},historical FROM entries WHERE (?3 IS NULL OR instance_id=?3) AND (?4 IS NULL OR json_extract(execution,'$.id')=?4) ORDER BY historical,ordering,position LIMIT ?5 OFFSET ?6"
+        "{SCOPE}, page AS MATERIALIZED (
+            SELECT instance_id,instance_name,owner_id,owner_title,{source} AS execution,historical,ordering,position
+            FROM entries WHERE (?3 IS NULL OR instance_id=?3)
+            AND (?4 IS NULL OR json_extract(entries.execution,'$.id')=?4)
+            ORDER BY historical,ordering,position LIMIT ?5 OFFSET ?6
+         )
+         SELECT instance_id,instance_name,owner_id,owner_title,{projection},historical
+         FROM page ORDER BY historical,ordering,position"
     );
+    let sql_span = performance::Span::new("workflow.list_sql");
     let mut statement = conn.prepare_cached(&sql).map_err(storage)?;
     let mut rows = statement
         .query_map(
@@ -277,6 +339,7 @@ fn executions(
         .map_err(storage)?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(storage)?;
+    drop(sql_span);
     let more = rows.len() > limit;
     rows.truncate(limit);
     let mut records = Vec::new();
@@ -286,8 +349,10 @@ fn executions(
     for (instance, name, owner, title, raw, historical) in rows {
         let e: Value =
             source_views::restore(&catalog.state, &payload_store::decode_step(conn, &raw)?)?;
-        let frozen = step_source(conn, catalog, project, &instance, &e, &mut plans)?;
-        let step = &frozen["step"];
+        if execution.is_none() {
+            observe_display_source(&e);
+        }
+        let step = step_source(conn, catalog, project, &instance, &e, &mut plans)?;
         let outputs=e["outputs"].as_object().into_iter().flatten().map(|(port,id)|{
             let reference=step["outputs"][port]["delivery_ref"].as_str().unwrap_or("");
             json!({"id":id,"port":port,"turn_id":e["turn_id"],"name":catalog.state.configuration(reference).ok().map(|r|&r.name)})
@@ -382,25 +447,65 @@ fn materials(
         .collect::<String>()
         .to_lowercase();
     let cte = format!(
-        "{SCOPE}, material_rows AS MATERIALIZED (SELECT e.instance_id,e.instance_name,e.owner_id,e.owner_kind,e.owner_title,e.workflow_ref,e.execution,e.historical,o.id,o.created_at,o.data,ports.key AS port,d.reference AS delivery_ref,d.name AS delivery_name,json_extract(d.data,'$.format') AS format,s.value AS step,st.value AS stage FROM entries e JOIN json_each(e.execution,'$.outputs') ports JOIN governance_records o ON o.id=ports.value AND o.type='workflow_output' AND o.owner_project=?2 AND json_extract(o.data,'$.execution_id')=json_extract(e.execution,'$.id') JOIN governance_records p ON p.id=json_extract(e.execution,'$.plan_revision_id') AND p.type='workflow_plan_revision' AND p.owner_project=?2 AND json_extract(p.data,'$.instance_id')=e.instance_id LEFT JOIN source_definitions w ON w.reference=coalesce(json_extract(p.data,'$.plan.workflow_ref'),json_extract(p.data,'$.plan.workflow_revision_id')) AND w.type='workflow' JOIN json_each(coalesce(json_extract(p.data,'$.plan.document'),w.data),'$.steps') s ON json_extract(s.value,'$.node_id')=json_extract(e.execution,'$.node_id') OR (coalesce(json_extract(s.value,'$.node_id'),'')='' AND json_extract(s.value,'$.key')=json_extract(e.execution,'$.step')) LEFT JOIN json_each(coalesce(json_extract(p.data,'$.plan.document'),w.data),'$.stages') st ON json_extract(st.value,'$.key')=json_extract(s.value,'$.stage') JOIN source_definitions d ON d.reference=json_extract(o.data,'$.delivery_ref') AND d.type='delivery_type' WHERE (?3 IS NULL OR o.id=?3) AND (?4 IS NULL OR json_extract(e.execution,'$.id')=?4) AND (?5='' OR instr(lower(d.name||' '||coalesce(json_extract(s.value,'$.name'),'')||' '||coalesce(json_extract(st.value,'$.name'),'')||' '||e.owner_title||' '||ports.key),?5)>0))"
+        "{SCOPE}, material_entries AS MATERIALIZED (
+            SELECT instance_id,instance_name,owner_id,owner_kind,owner_title,workflow_ref,
+                display_execution AS execution,historical
+            FROM entries WHERE (?4 IS NULL OR json_extract(entries.execution,'$.id')=?4)
+        ), output_contracts AS (
+            SELECT e.instance_id,e.instance_name,e.owner_id,e.owner_kind,e.owner_title,e.workflow_ref,
+                e.execution,e.historical,o.id,o.created_at,ports.key AS port,s.value AS step,st.value AS stage,
+                json_extract(o.data,'$.delivery_ref') AS delivery_ref,
+                d.name AS current_name,json_extract(d.data,'$.format') AS current_format,
+                json_extract(p.data,'$.plan.definitions.' || json_quote(json_extract(o.data,'$.delivery_ref'))) AS frozen_delivery
+            FROM material_entries e JOIN json_each(e.execution,'$.outputs') ports
+            JOIN governance_records o ON o.id=ports.value AND o.type='workflow_output' AND o.owner_project=?2
+                AND json_extract(o.data,'$.execution_id')=json_extract(e.execution,'$.id')
+            JOIN governance_records p ON p.id=json_extract(e.execution,'$.plan_revision_id')
+                AND p.type='workflow_plan_revision' AND p.owner_project=?2 AND json_extract(p.data,'$.instance_id')=e.instance_id
+            LEFT JOIN source_definitions w ON w.reference=coalesce(json_extract(p.data,'$.plan.workflow_ref'),json_extract(p.data,'$.plan.workflow_revision_id')) AND w.type='workflow'
+            LEFT JOIN json_each(coalesce(json_extract(p.data,'$.plan.document'),w.data),'$.steps') s
+                ON json_extract(s.value,'$.node_id')=json_extract(e.execution,'$.node_id')
+                    OR (coalesce(json_extract(s.value,'$.node_id'),'')='' AND json_extract(s.value,'$.key')=json_extract(e.execution,'$.step'))
+            LEFT JOIN json_each(coalesce(json_extract(p.data,'$.plan.document'),w.data),'$.stages') st
+                ON json_extract(st.value,'$.key')=json_extract(s.value,'$.stage')
+            LEFT JOIN source_definitions d ON d.reference=json_extract(o.data,'$.delivery_ref') AND d.type='delivery_type'
+            WHERE (?3 IS NULL OR o.id=?3)
+        ), material_rows AS MATERIALIZED (
+            SELECT *,coalesce(current_name,json_extract(frozen_delivery,'$.name'),delivery_ref) AS delivery_name,
+                coalesce(current_format,json_extract(frozen_delivery,'$.data.format')) AS format
+            FROM output_contracts
+            WHERE (?5='' OR instr(lower(coalesce(current_name,json_extract(frozen_delivery,'$.name'),delivery_ref)
+                ||' '||coalesce(json_extract(step,'$.name'),'')||' '||coalesce(json_extract(stage,'$.name'),'')||' '||owner_title||' '||port),?5)>0)
+        )"
     );
-    let total: u64 = conn
-        .query_row(
-            &format!("{cte} SELECT count(*) FROM material_rows"),
-            params![owner, project, output, execution, search],
-            |r| r.get(0),
-        )
-        .map_err(storage)?;
-    let mut statement=conn.prepare_cached(&format!("{cte} SELECT instance_id,instance_name,owner_id,owner_kind,owner_title,workflow_ref,json_object('id',json_extract(execution,'$.id'),'step',json_extract(execution,'$.step'),'path',json_extract(execution,'$.path'),'status',json_extract(execution,'$.status'),'round',json_extract(execution,'$.round'),'plan_revision_id',json_extract(execution,'$.plan_revision_id'),'turn_id',json_extract(execution,'$.turn_id'),'session_id',json_extract(execution,'$.session_id'),'historical',json(CASE historical WHEN 0 THEN 'false' ELSE 'true' END)),id,created_at,port,delivery_name,format,step,stage,delivery_ref FROM material_rows ORDER BY created_at,id LIMIT ?6 OFFSET ?7")).map_err(storage)?;
+    let sql_span = performance::Span::new("workflow.list_sql");
+    let mut statement=conn.prepare_cached(&format!("{cte} SELECT instance_id,instance_name,owner_id,owner_kind,owner_title,workflow_ref,json_object('id',json_extract(execution,'$.id'),'step',json_extract(execution,'$.step'),'path',json_extract(execution,'$.path'),'status',json_extract(execution,'$.status'),'round',json_extract(execution,'$.round'),'plan_revision_id',json_extract(execution,'$.plan_revision_id'),'turn_id',json_extract(execution,'$.turn_id'),'session_id',json_extract(execution,'$.session_id'),'historical',json(CASE historical WHEN 0 THEN 'false' ELSE 'true' END),'display_verified',json_extract(execution,'$.display_verified')),id,created_at,port,delivery_name,format,step,stage,delivery_ref,count(*) OVER () FROM material_rows ORDER BY created_at,id LIMIT ?6 OFFSET ?7")).map_err(storage)?;
     let rows=statement.query_map(params![owner,project,output,execution,search,if output.is_some(){1}else{limit},offset],|r|{
+        let _decode = performance::Span::new("workflow.row_decode");
         let e:Value=serde_json::from_str(&r.get::<_,String>(6)?).map_err(|e|rusqlite::Error::FromSqlConversionFailure(6,rusqlite::types::Type::Text,Box::new(e)))?;
-        let step:Value=serde_json::from_str(&r.get::<_,String>(12)?).map_err(|e|rusqlite::Error::FromSqlConversionFailure(12,rusqlite::types::Type::Text,Box::new(e)))?;
-        let stage:Option<String>=r.get(13)?;let stage=stage.and_then(|s|serde_json::from_str::<Value>(&s).ok()).unwrap_or(Value::Null);
-        Ok(json!({"instance_id":r.get::<_,String>(0)?,"workflow_name":r.get::<_,String>(1)?,"owner_id":r.get::<_,String>(2)?,"owner_kind":r.get::<_,String>(3)?,"owner_title":r.get::<_,String>(4)?,"workflow_ref":r.get::<_,String>(5)?,"execution_id":e["id"],"turn_id":e["turn_id"],"session_id":e["session_id"],"historical":e["historical"],"status":e["status"],"round":e["round"],"path":e["path"],"step":e["step"],"step_name":step["name"],"stage_name":stage["name"],"plan_revision_id":e["plan_revision_id"],"id":r.get::<_,String>(7)?,"created_at":r.get::<_,u64>(8)?,"port":r.get::<_,String>(9)?,"delivery_ref":r.get::<_,String>(14)?,"delivery_name":r.get::<_,String>(10)?,"format":r.get::<_,Option<String>>(11)?}))
+        observe_display_source(&e);
+        let parse = |column| -> rusqlite::Result<Value> {
+            r.get::<_,Option<String>>(column)?.map(|raw| serde_json::from_str(&raw).map_err(|error|rusqlite::Error::FromSqlConversionFailure(column,rusqlite::types::Type::Text,Box::new(error)))).transpose().map(Option::unwrap_or_default)
+        };
+        let step = parse(12)?;
+        let stage = parse(13)?;
+        Ok((r.get::<_,u64>(15)?,json!({"instance_id":r.get::<_,String>(0)?,"workflow_name":r.get::<_,String>(1)?,"owner_id":r.get::<_,String>(2)?,"owner_kind":r.get::<_,String>(3)?,"owner_title":r.get::<_,String>(4)?,"workflow_ref":r.get::<_,String>(5)?,"execution_id":e["id"],"turn_id":e["turn_id"],"session_id":e["session_id"],"historical":e["historical"],"status":e["status"],"round":e["round"],"path":e["path"],"step":e["step"],"step_name":step["name"].as_str().or_else(||e["step"].as_str()),"stage_name":stage["name"],"plan_revision_id":e["plan_revision_id"],"id":r.get::<_,String>(7)?,"created_at":r.get::<_,u64>(8)?,"port":r.get::<_,String>(9)?,"delivery_ref":r.get::<_,String>(14)?,"delivery_name":r.get::<_,String>(10)?,"format":r.get::<_,Option<String>>(11)?})))
     }).map_err(storage)?.collect::<rusqlite::Result<Vec<_>>>().map_err(storage)?;
+    let total = match rows.first() {
+        Some((total, _)) => *total,
+        None if offset == 0 => 0,
+        None => conn
+            .query_row(
+                &format!("{cte} SELECT count(*) FROM material_rows"),
+                params![owner, project, output, execution, search],
+                |r| r.get(0),
+            )
+            .map_err(storage)?,
+    };
+    drop(sql_span);
     let mut rows = rows
         .into_iter()
-        .map(|v| source_views::restore(&catalog.state, &v))
+        .map(|(_, v)| source_views::restore(&catalog.state, &v))
         .collect::<Result<Vec<_>>>()?;
     if let Some(id) = output {
         let mut metadata = rows
@@ -410,23 +515,49 @@ fn materials(
         let reference = output.data["delivery_ref"]
             .as_str()
             .ok_or_else(|| err("storage", "交付引用缺失"))?;
-        let delivery = catalog.state.configuration(reference)?;
-        require(delivery.r#type == "delivery_type", "交付源类型无效")?;
-        metadata["delivery_ref"] = json!(reference);
+        let mut archived = None;
+        let mut definition = |reference: &str, kind: &str| -> Result<Option<ConfigurationRecord>> {
+            let record = match catalog.state.configuration(reference) {
+                Ok(record) => Some(record.clone()),
+                Err(error) if error.code == "not_found" => {
+                    if archived.is_none() {
+                        // The list query already verified the plan belongs to this execution and project.
+                        let plan = record(conn, &identifier(&metadata, "plan_revision_id")?)?;
+                        archived = Some(plan.data);
+                    }
+                    archived
+                        .as_ref()
+                        .and_then(|plan| plan["plan"]["definitions"].get(reference))
+                        .map(|source| ConfigurationRecord::from_storage(source.clone()))
+                        .transpose()?
+                }
+                Err(error) => return Err(error),
+            };
+            if let Some(record) = &record {
+                require(
+                    record.r#type == kind && record.id == reference,
+                    "冻结交付定义身份无效",
+                )?;
+            }
+            Ok(record)
+        };
         let mut definitions = BTreeMap::new();
-        definitions.insert(reference.to_owned(), delivery.clone());
-        for spec in delivery
-            .refs
-            .get("spec_refs")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-        {
-            let spec = catalog.state.configuration(spec)?;
-            require(spec.r#type == "spec", "冻结内容规范类型无效")?;
-            definitions.insert(spec.id.clone(), spec.clone());
+        if let Some(delivery) = definition(reference, "delivery_type")? {
+            for spec in delivery
+                .refs
+                .get("spec_refs")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+            {
+                if let Some(spec) = definition(spec, "spec")? {
+                    definitions.insert(spec.id.clone(), spec);
+                }
+            }
+            definitions.insert(reference.to_owned(), delivery);
         }
+        metadata["delivery_ref"] = json!(reference);
         return Ok(json!({"record":metadata,"output":output.data,"definitions":definitions}));
     }
     Ok(json!({"records":rows,"total":total,"offset":offset,"limit":limit}))
@@ -452,8 +583,33 @@ fn contexts(
             load_table_filtered_params::<Context>(conn, "contexts", "id=?1", &[&id])?.remove(0);
         return Ok(json!({"context":context,"source":"current_manual_context"}));
     }
+    // The canonical step value is part of the legacy UNION identity. Keep it
+    // for deduplication and tie ordering while seeking session links by ID.
     let cte = format!(
-        "{SCOPE}, scoped_sessions AS MATERIALIZED (SELECT DISTINCT e.instance_id,e.instance_name,e.owner_title,e.execution,e.historical,'step' AS kind,s.id AS session_id,s.owner_id,s.snapshot_id,s.agent,s.runtime_binding FROM entries e JOIN sessions s ON s.project_id=?2 AND s.scope IS NOT NULL AND (s.id=json_extract(e.execution,'$.session_id') OR EXISTS(SELECT 1 FROM governance_records b WHERE b.type='configured_session' AND b.definition_id=s.id AND b.owner_project=?2 AND json_extract(b.data,'$.execution_id')=json_extract(e.execution,'$.id'))) WHERE (?3 IS NULL OR e.instance_id=?3) UNION ALL SELECT json_extract(c.data,'$.root_instance_id'),'编排控制','',json_object('id',c.id),0,'controller',s.id,s.owner_id,s.snapshot_id,s.agent,s.runtime_binding FROM governance_records c JOIN sessions s ON s.id=json_extract(c.data,'$.session_id') AND s.project_id=?2 WHERE c.type='workflow_controller' AND c.owner_project=?2 AND json_extract(c.data,'$.root_instance_id') IN (SELECT id FROM selected) AND (?3 IS NULL OR json_extract(c.data,'$.root_instance_id')=?3))"
+        "{SCOPE}, context_entries AS MATERIALIZED (
+            SELECT instance_id,instance_name,owner_title,execution,historical,
+                json_extract(execution,'$.id') AS execution_id,
+                json_extract(display_execution,'$.session_id') AS session_id
+            FROM entries WHERE (?3 IS NULL OR instance_id=?3)
+        ), step_sessions AS (
+            SELECT instance_id,instance_name,owner_title,execution,historical,session_id
+            FROM context_entries WHERE session_id IS NOT NULL
+            UNION
+            SELECT e.instance_id,e.instance_name,e.owner_title,e.execution,e.historical,b.definition_id
+            FROM context_entries e CROSS JOIN governance_records b INDEXED BY idx_configured_session_execution ON json_extract(b.data,'$.execution_id')=e.execution_id
+            WHERE b.type='configured_session' AND b.owner_project=?2
+        ), scoped_sessions AS MATERIALIZED (
+            SELECT e.instance_id,e.instance_name,e.owner_title,e.execution,e.historical,'step' AS kind,
+                s.id AS session_id,s.owner_id,s.snapshot_id,s.agent,s.runtime_binding
+            FROM step_sessions e JOIN sessions s ON s.id=e.session_id AND s.project_id=?2 AND s.scope IS NOT NULL
+            UNION ALL
+            SELECT json_extract(c.data,'$.root_instance_id'),'编排控制','',json_object('id',c.id),0,
+                'controller',s.id,s.owner_id,s.snapshot_id,s.agent,s.runtime_binding
+            FROM governance_records c JOIN sessions s ON s.id=json_extract(c.data,'$.session_id') AND s.project_id=?2
+            WHERE c.type='workflow_controller' AND c.owner_project=?2
+                AND json_extract(c.data,'$.root_instance_id') IN (SELECT id FROM selected)
+                AND (?3 IS NULL OR json_extract(c.data,'$.root_instance_id')=?3)
+        )"
     );
     if let Some(snapshot) = optional(p, "snapshot_id") {
         let session = identifier(p, "session_id")?;
@@ -467,14 +623,17 @@ fn contexts(
     }
     let (offset, limit) = page(p)?;
     let sql = format!(
-        "{cte} SELECT x.instance_id,x.instance_name,x.owner_title,json_object('id',json_extract(x.execution,'$.id'),'node_id',json_extract(x.execution,'$.node_id'),'plan_revision_id',json_extract(x.execution,'$.plan_revision_id'),'step',json_extract(x.execution,'$.step'),'turn_id',json_extract(x.execution,'$.turn_id'),'round',json_extract(x.execution,'$.round')),x.kind,x.session_id,x.owner_id,x.snapshot_id,x.agent,coalesce(json_extract(x.runtime_binding,'$.agent_configuration.instance_ref'),json_extract(x.runtime_binding,'$.agent_configuration.agent_instance_id')),t.id,t.status,t.started,EXISTS(SELECT 1 FROM governance_records q WHERE q.type IN ('configured_execution_task','archived_configured_execution_task') AND q.definition_id=t.id AND q.owner_project=?2),EXISTS(SELECT 1 FROM governance_records q WHERE q.type='archived_configured_execution_task' AND q.definition_id=t.id AND q.owner_project=?2),t.id=(SELECT n.id FROM turns n WHERE n.session_id=x.session_id ORDER BY n.rowid DESC LIMIT 1),x.historical FROM scoped_sessions x JOIN turns t ON t.session_id=x.session_id WHERE (?8 IS NULL OR t.id=?8) AND (?9 IS NULL OR json_extract(x.execution,'$.id')=?9) AND (?4 IS NULL OR coalesce(json_extract(x.runtime_binding,'$.agent_configuration.instance_ref'),json_extract(x.runtime_binding,'$.agent_configuration.agent_instance_id'),'session:'||x.session_id)=?4) AND (?5 IS NULL OR x.session_id=?5) ORDER BY t.started DESC,t.id LIMIT ?6 OFFSET ?7"
+        "{cte} SELECT x.instance_id,x.instance_name,x.owner_title,json_object('id',json_extract(x.execution,'$.id'),'node_id',json_extract(x.execution,'$.node_id'),'plan_revision_id',json_extract(x.execution,'$.plan_revision_id'),'step',json_extract(x.execution,'$.step'),'turn_id',json_extract(x.execution,'$.turn_id'),'round',json_extract(x.execution,'$.round')),x.kind,x.session_id,x.owner_id,x.snapshot_id,x.agent,coalesce(json_extract(x.runtime_binding,'$.agent_configuration.instance_ref'),json_extract(x.runtime_binding,'$.agent_configuration.agent_instance_id')),t.id,t.status,t.started,EXISTS(SELECT 1 FROM governance_records q WHERE q.type IN ('configured_execution_task','archived_configured_execution_task') AND q.definition_id=t.id AND q.owner_project=?2),EXISTS(SELECT 1 FROM governance_records q WHERE q.type='archived_configured_execution_task' AND q.definition_id=t.id AND q.owner_project=?2),t.id=(SELECT n.id FROM turns n WHERE n.session_id=x.session_id ORDER BY n.rowid DESC LIMIT 1),x.historical FROM scoped_sessions x CROSS JOIN turns t INDEXED BY idx_turn_read_started ON t.session_id=x.session_id WHERE (?8 IS NULL OR t.id=?8) AND (?9 IS NULL OR json_extract(x.execution,'$.id')=?9) AND (?4 IS NULL OR coalesce(json_extract(x.runtime_binding,'$.agent_configuration.instance_ref'),json_extract(x.runtime_binding,'$.agent_configuration.agent_instance_id'),'session:'||x.session_id)=?4) AND (?5 IS NULL OR x.session_id=?5) ORDER BY t.started DESC,t.id LIMIT ?6 OFFSET ?7"
     );
+    let sql_span = performance::Span::new("workflow.list_sql");
     let mut statement = conn.prepare_cached(&sql).map_err(storage)?;
     let mut rows=statement.query_map(params![owner,project,optional(p, "instance_id"),optional(p, "agent_instance_id"),optional(p, "session_id"),limit+1,offset,optional(p, "turn_id"),optional(p, "execution_id")],|r|{
+        let _decode = performance::Span::new("workflow.row_decode");
         let e:Value=serde_json::from_str(&r.get::<_,String>(3)?).map_err(|e|rusqlite::Error::FromSqlConversionFailure(3,rusqlite::types::Type::Text,Box::new(e)))?;
         let kind:String=r.get(4)?;let turn:String=r.get(10)?;let latest:bool=r.get(15)?;
         Ok((r.get::<_,String>(8)?,r.get::<_,Option<String>>(9)?,json!({"kind":kind,"instance_id":r.get::<_,String>(0)?,"instance_name":r.get::<_,String>(1)?,"owner_title":r.get::<_,String>(2)?,"execution_id":e["id"],"step":e["step"],"node_id":e["node_id"],"plan_revision_id":e["plan_revision_id"],"round":e["round"].as_u64().unwrap_or(0),"session_id":r.get::<_,String>(5)?,"owner_id":r.get::<_,String>(6)?,"snapshot_id":r.get::<_,Option<String>>(7)?,"turn_id":turn,"status":r.get::<_,String>(11)?,"started":r.get::<_,Option<u64>>(12)?,"task_available":r.get::<_,bool>(13)?,"archived":r.get::<_,bool>(14)?,"historical":if kind=="controller"{!latest}else{r.get::<_,bool>(16)? || e["turn_id"]!=turn}})))
     }).map_err(storage)?.collect::<rusqlite::Result<Vec<_>>>().map_err(storage)?;
+    drop(sql_span);
     let more = rows.len() > limit;
     rows.truncate(limit);
     let mut groups = BTreeMap::<String, Value>::new();
@@ -485,7 +644,7 @@ fn contexts(
         let key = instance
             .unwrap_or_else(|| format!("session:{}", entry["session_id"].as_str().unwrap_or("")));
         if entry["kind"] == "step" {
-            let frozen = step_source(
+            let step = step_source(
                 conn,
                 catalog,
                 project,
@@ -493,7 +652,7 @@ fn contexts(
                 &entry,
                 &mut plans,
             )?;
-            entry["step_name"] = frozen["step"]["name"].clone();
+            entry["step_name"] = step["name"].clone();
         } else {
             entry["step_name"] = json!("编排控制");
         }

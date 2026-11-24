@@ -218,6 +218,48 @@ for (const nested of [false, true]) {
       await expect
         .poll(async () => (await inspect()).runtime.steps[1].status)
         .toBe("waiting_confirmation");
+      if (!nested) {
+        const managerRequests: { view?: string; id?: string }[] = [];
+        const observeManager = (
+          request: import("@playwright/test").Request,
+        ) => {
+          if (!request.url().endsWith("/rpc")) return;
+          const call = request.postDataJSON();
+          if (call?.method === "query.orchestration")
+            managerRequests.push(call.params);
+        };
+        page.on("request", observeManager);
+        await page.goto(
+          `/?tab=execution&detail=manager&project_id=${project.id}&instance_id=${root.id}`,
+        );
+        const rootManager = page.locator(".manager-workflow-summary");
+        const pendingAction = rootManager.getByRole("button", {
+          name: "确认：确认设计",
+        });
+        await expect(pendingAction).toBeEnabled();
+        expect(managerRequests.length).toBeGreaterThan(0);
+        expect(
+          managerRequests.every((params) => params.view === "current"),
+        ).toBe(true);
+        await rootManager.getByText("审批历史", { exact: true }).click();
+        const records = rootManager.getByRole("list", { name: "已处理的决定" });
+        await expect(records).toContainText("已确认");
+        expect(
+          managerRequests.some((params) => params.view === "history"),
+        ).toBe(true);
+        expect(
+          managerRequests.filter((params) => params.view === "decision"),
+        ).toHaveLength(0);
+        await records.getByRole("button").first().click();
+        await expect(records.getByRole("article")).toBeVisible();
+        expect(
+          managerRequests
+            .filter((params) => params.view === "decision")
+            .map((params) => params.id),
+        ).toEqual([pending.id]);
+        await expect(pendingAction).toBeEnabled();
+        page.off("request", observeManager);
+      }
       const inbox = await rpc(page, "query.orchestration", {
         project_id: project.id,
         root_instance_id: root.id,

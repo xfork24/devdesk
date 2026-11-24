@@ -25,10 +25,19 @@ export function WorkflowScope({
   onDiscussion: (id: string, owner: string, turnId?: string) => void;
   tasks?: Row[];
 }) {
-  const state = useReading(request, "query.workflow_executions", {
-    project_id: projectId,
-    owner_id: ownerId,
-  });
+  const knownRoots = records.filter(
+    (record) =>
+      record.type === "workflow_instance" &&
+      record.data.parent_execution_id == null &&
+      record.work_root !== false &&
+      record.data.owner_id === ownerId,
+  );
+  const state = useReading(
+    request,
+    "query.workflow_executions",
+    { project_id: projectId, owner_id: ownerId },
+    ownerId !== projectId && !knownRoots.length,
+  );
   const destination = useReading(
     request,
     "query.workflow_executions",
@@ -47,14 +56,14 @@ export function WorkflowScope({
       .map((record) => record.data.owner_id),
     ...(state.value?.records || []).map((entry: Row) => entry.owner_id),
   ]);
-  for (const record of records) {
-    if (
-      record.type === "workflow_instance" &&
-      record.data.parent_execution_id == null &&
-      record.work_root !== false &&
-      (ownerId === projectId || record.data.owner_id === ownerId)
-    )
-      roots.set(record.id, record);
+  for (const record of knownRoots) {
+    roots.set(record.id, {
+      ...record,
+      _reading:
+        ownerId === projectId
+          ? record._reading
+          : { ...record._reading, owner_kind: "feature", feature_id: ownerId },
+    });
   }
   for (const entry of state.value?.records || []) {
     if (roots.has(entry.instance_id)) {
@@ -116,7 +125,7 @@ export function WorkflowScope({
         ),
       )}
       {state.value && !roots.size && (
-        <p className="muted">当前项目尚无已启动的工作流程。</p>
+        <p className="muted">当前 Feature 尚无已启动的工作流程。</p>
       )}
     </>
   );

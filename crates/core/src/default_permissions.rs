@@ -115,6 +115,7 @@ impl Engine {
         if let Some(receipt) = self.store.replay_commit(&c.command_id, fingerprint)? {
             return Ok(receipt.result);
         }
+        let active = template_reset_jobs::TemplateResetJob::active_guard(self.store.as_ref())?;
         let before = self.store.configuration_snapshot()?;
         let transfer = configuration_transfer_witness(self.store.as_ref())?;
         require(
@@ -152,6 +153,27 @@ impl Engine {
         });
         let mut changes = publication.changes;
         changes.push(ctx);
+        if !update && result["changed"] == true && preview.get("reset_targets").is_some() {
+            let targets: Vec<String> = serde_json::from_value(preview["reset_targets"].clone())
+                .map_err(|e| err("invalid_params", e.to_string()))?;
+            let generation = result["generation"]
+                .as_u64()
+                .ok_or_else(|| err("storage", "模板重置结果缺少代次"))?;
+            let (job_guards, job_changes) = template_reset_jobs::TemplateResetJob::start(
+                self.store.as_ref(),
+                active,
+                &c.command_id,
+                generation,
+                targets,
+            )?;
+            guards.extend(job_guards);
+            changes.extend(job_changes);
+        } else {
+            guards.push(crate::concurrency::ResourceVersion {
+                resource: active.resource,
+                revision: active.revision,
+            });
+        }
         self.store
             .commit_changes(&crate::concurrency::PreparedChangeSet {
                 command_id: c.command_id.clone(),

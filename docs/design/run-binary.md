@@ -22,16 +22,19 @@ macOS 压缩包只包含签名后的 `devdesk-host` 命令行程序。
 
 ## 数据与退出
 
-同一数据集只能由一个 Host 管理。当前数据标记为 `devdesk-profile-runtime-v2`，布局为 `single-host-resource-v2`，数据库基线为 global 24 / project 61。程序兼容打开 project 60，初始化新项目使用 project 61。
+同一数据集只能由一个 Host 管理。当前数据标记为 `devdesk-profile-runtime-v2`，布局为 `single-host-resource-v2`，数据库基线为 global 24 / project 62。程序兼容打开 project 60 和 61，旧工程库在显式迁移前沿用保守的模板重置扫描。
 
 停止该数据集的 Host 后，可以执行显式维护命令。
 
 ```sh
 devdesk-host storage migrate --data /path/to/data --project <project-id>
 devdesk-host storage compact --data /path/to/data --project <project-id>
+devdesk-host storage rebuild-workflow-display --data /path/to/data --project <project-id>
 ```
 
-迁移命令输出迁移前后的工程库大小和备份路径。归档命令将仍被引用的对象合并，核验每条索引对应的正文后清理散文件。恢复旧版时使用迁移输出的备份。正常备份新版项目时，一起保存工程库、`artifacts/` 和 `payloads/`。
+迁移命令接受 project 60 和 61，回填源依赖索引并输出回填数量、事件位置、迁移前后的工程库大小和备份路径。全局讨论库使用项目参数 `00000000-0000-4000-8000-000000000000`。归档命令将仍被引用的对象合并，核验每条索引对应的正文后清理散文件。恢复旧版时使用迁移输出的备份。正常备份新版项目时，一起保存工程库、`artifacts/` 和 `payloads/`。
+
+流程展示回填使用固定的项目事件位置，从已提交的流程实例和步骤版本批量恢复展示表。回填事务提交前核对数量及精确引用，可用于 project 60、61 和 62。
 
 遇到不兼容错误时保留原数据。验证新版本请使用独立空目录，不以清空旧目录作为恢复步骤。切换数据目录需退出后重新启动。
 

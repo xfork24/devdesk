@@ -126,6 +126,7 @@ pub use platform_preparation::PreparedConfiguredPlatform;
 pub use platform_tools::PlatformToolRequest;
 mod command_catalog;
 pub mod frozen_views;
+pub mod template_reset_jobs;
 mod templates;
 pub use command_catalog::*;
 pub use templates::{ConfigurationBundle, install_configuration_bundle};
@@ -257,6 +258,7 @@ impl SchedulingStage {
     ];
 }
 pub struct Engine {
+    configuration_reset: std::sync::Mutex<()>,
     pub(crate) effect_in_flight: Arc<in_flight::InFlight>,
     pub(crate) runtime_callback_cursors: std::sync::Mutex<std::collections::BTreeMap<String, Id>>,
     pub(crate) experience_cursor: std::sync::Mutex<Option<Id>>,
@@ -321,6 +323,7 @@ impl Engine {
         adapters: ports::ExecutionAdapters,
     ) -> Self {
         Self {
+            configuration_reset: std::sync::Mutex::new(()),
             runtime_callback_cursors: std::sync::Mutex::new(Default::default()),
             effect_in_flight: Default::default(),
             experience_cursor: std::sync::Mutex::new(None),

@@ -103,6 +103,7 @@
 | [src/settings.rs](../../../crates/core/src/settings.rs) | Global preferences use independent resource revisions, never a project revision. |
 | [src/spec_lint.rs](../../../crates/core/src/spec_lint.rs) | A single structural checker for authoring previews and accepted immutable values. |
 | [src/standards.rs](../../../crates/core/src/standards.rs) | [配置加载、发布与编译](configuration-and-catalog.md) |
+| [src/template_reset_jobs.rs](../../../crates/core/src/template_reset_jobs.rs) | Durable progress for a committed full template reset. |
 | [src/templates.rs](../../../crates/core/src/templates.rs) | [配置加载、发布与编译](configuration-and-catalog.md) |
 | [src/tool_calls.rs](../../../crates/core/src/tool_calls.rs) | [工程资源与外部工具的应用流程](integrations-and-repositories.md) |
 | [src/tool_creation.rs](../../../crates/core/src/tool_creation.rs) | [工程资源与外部工具的应用流程](integrations-and-repositories.md) |

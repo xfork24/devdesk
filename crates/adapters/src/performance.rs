@@ -8,8 +8,52 @@ struct Measurement {
     calls: u64,
     total_ms: f64,
 }
+
+const MAX_PATHS: usize = 128;
+const READ_POOL_BOUNDS_MS: [f64; 15] = [
+    0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 1000.0, 2000.0,
+];
+
+#[derive(Default)]
+struct Measurements {
+    spans: BTreeMap<&'static str, Measurement>,
+    paths: BTreeMap<Vec<&'static str>, Measurement>,
+    databases: BTreeMap<(String, &'static str), Measurement>,
+    active: Vec<(u64, &'static str)>,
+    sequence: u64,
+    paths_omitted: u64,
+    read_checkout_histogram: [u64; READ_POOL_BOUNDS_MS.len() + 1],
+}
+
+impl Measurements {
+    fn path(&self, name: &'static str) -> Vec<&'static str> {
+        self.active
+            .iter()
+            .map(|(_, stage)| *stage)
+            .chain([name])
+            .collect()
+    }
+
+    fn record(&mut self, name: &'static str, path: Vec<&'static str>, milliseconds: f64) {
+        if name == "sqlite.read_pool_wait" {
+            let bucket = READ_POOL_BOUNDS_MS.partition_point(|upper| *upper < milliseconds);
+            self.read_checkout_histogram[bucket] += 1;
+        }
+        let span = self.spans.entry(name).or_default();
+        span.calls += 1;
+        span.total_ms += milliseconds;
+        if self.paths.len() < MAX_PATHS || self.paths.contains_key(&path) {
+            let span = self.paths.entry(path).or_default();
+            span.calls += 1;
+            span.total_ms += milliseconds;
+        } else {
+            self.paths_omitted += 1;
+        }
+    }
+}
+
 thread_local! {
-    static CURRENT: RefCell<Option<BTreeMap<&'static str, Measurement>>> = const { RefCell::new(None) };
+    static CURRENT: RefCell<Option<Measurements>> = const { RefCell::new(None) };
 }
 mod transactions;
 pub(crate) use transactions::TransactionTiming;
@@ -20,15 +64,23 @@ pub struct Trace {
 impl Trace {
     pub fn start() -> Self {
         transactions::reset();
-        CURRENT.with(|current| *current.borrow_mut() = Some(BTreeMap::new()));
+        CURRENT.with(|current| *current.borrow_mut() = Some(Measurements::default()));
         Self {
             started: Instant::now(),
         }
     }
     pub fn finish(self) -> Value {
-        let spans = CURRENT.with(|current| current.borrow_mut().take().unwrap_or_default());
+        let measurements = CURRENT.with(|current| current.borrow_mut().take().unwrap_or_default());
+        let paths = measurements
+            .paths
+            .into_iter()
+            .map(|(path, span)| json!({"path":path,"calls":span.calls,"total_ms":span.total_ms}))
+            .collect::<Vec<_>>();
+        let databases = measurements.databases.into_iter().map(|((database, stage), span)| {
+            json!({"database_path_sha256":database,"stage":stage,"calls":span.calls,"total_ms":span.total_ms})
+        }).collect::<Vec<_>>();
         let (transactions, omitted) = transactions::take();
-        json!({"total_ms":self.started.elapsed().as_secs_f64()*1000.0,"spans":spans,"transactions":transactions,"transactions_omitted":omitted})
+        json!({"total_ms":self.started.elapsed().as_secs_f64()*1000.0,"spans":measurements.spans,"paths":paths,"paths_omitted":measurements.paths_omitted,"databases":databases,"transactions":transactions,"transactions_omitted":omitted,"read_pool_checkout_histogram":{"bounds_ms":READ_POOL_BOUNDS_MS,"counts":measurements.read_checkout_histogram}})
     }
 }
 impl Drop for Trace {
@@ -40,7 +92,8 @@ impl Drop for Trace {
 
 pub struct Span {
     name: &'static str,
-    started: Option<Instant>,
+    active: Option<(Instant, u64, Vec<&'static str>)>,
+    database: Option<String>,
 }
 impl devdesk_core::ports::QueryObservation for Span {}
 pub fn observe(stage: &'static str) -> Box<dyn devdesk_core::ports::QueryObservation> {
@@ -85,28 +138,83 @@ impl Drop for NativePhase {
 }
 impl Span {
     pub fn new(name: &'static str) -> Self {
-        let active = CURRENT.with(|current| current.borrow().is_some());
+        let active = CURRENT.with_borrow_mut(|current| {
+            let current = current.as_mut()?;
+            let id = current.sequence;
+            current.sequence += 1;
+            let path = current.path(name);
+            current.active.push((id, name));
+            Some((Instant::now(), id, path))
+        });
         Self {
             name,
-            started: active.then(Instant::now),
+            active,
+            database: None,
         }
+    }
+    pub(crate) fn for_database(name: &'static str, database: &str) -> Self {
+        let mut span = Self::new(name);
+        if span.active.is_some() {
+            span.database = Some(database.into());
+        }
+        span
     }
 }
 impl Drop for Span {
     fn drop(&mut self) {
-        if let Some(started) = self.started {
-            record(self.name, started.elapsed().as_secs_f64() * 1000.0);
+        if let Some((started, id, path)) = self.active.take() {
+            CURRENT.with_borrow_mut(|current| {
+                if let Some(current) = current
+                    && let Some(index) =
+                        current.active.iter().rposition(|(active, _)| *active == id)
+                {
+                    current.active.remove(index);
+                    let elapsed = started.elapsed().as_secs_f64() * 1000.0;
+                    current.record(self.name, path, elapsed);
+                    if let Some(database) = self.database.take() {
+                        let key = (database, self.name);
+                        if current.databases.len() < MAX_PATHS
+                            || current.databases.contains_key(&key)
+                        {
+                            let measurement = current.databases.entry(key).or_default();
+                            measurement.calls += 1;
+                            measurement.total_ms += elapsed;
+                        } else {
+                            current.paths_omitted += 1;
+                        }
+                    }
+                }
+            });
         }
     }
 }
 pub fn record(name: &'static str, milliseconds: f64) {
-    CURRENT.with(|current| {
-        if let Some(spans) = current.borrow_mut().as_mut() {
-            let span = spans.entry(name).or_default();
-            span.calls += 1;
-            span.total_ms += milliseconds;
+    CURRENT.with_borrow_mut(|current| {
+        if let Some(current) = current {
+            current.record(name, current.path(name), milliseconds);
         }
     });
+}
+
+pub(crate) fn trace_active() -> bool {
+    CURRENT.with_borrow(Option::is_some)
+}
+
+#[test]
+fn paths_keep_inclusive_timings_separate_from_flat_counts() {
+    let trace = Trace::start();
+    {
+        let _outer = Span::new("outer");
+        let _inner = Span::new("inner");
+        record("point", 0.0);
+    }
+    record("point", 0.0);
+    let report = trace.finish();
+    assert_eq!(report["spans"]["point"]["calls"], 2);
+    let paths = report["paths"].as_array().unwrap();
+    assert_eq!(paths[2]["path"], json!(["outer", "inner", "point"]));
+    assert_eq!(paths[3]["path"], json!(["point"]));
+    assert!(paths[0]["total_ms"].as_f64() >= paths[1]["total_ms"].as_f64());
 }
 
 /// Transport boundaries, independent of the scheduler thread's scoped spans.

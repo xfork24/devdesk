@@ -10,14 +10,57 @@ use std::collections::BTreeMap;
 
 impl Engine {
     pub(crate) fn controller_workspace_view(&self, p: &Value) -> Result<Value> {
+        use crate::read_models::{ControllerQuery, fields, identifier};
+        let current = match p.get("view").and_then(Value::as_str) {
+            None if p.get("view").is_none() => false,
+            Some("current") => true,
+            Some("history") => {
+                fields(
+                    p,
+                    &["project_id", "view", "root_instance_id", "decision_before"],
+                )?;
+                let root = identifier(p, "root_instance_id")?;
+                let before = p
+                    .get("decision_before")
+                    .map(|v| {
+                        v.as_u64()
+                            .filter(|n| *n > 0 && *n <= i64::MAX as u64)
+                            .ok_or_else(|| err("invalid_params", "无效的历史决定游标"))
+                    })
+                    .transpose()?;
+                return self.store.orchestration_history(&root, before);
+            }
+            Some("decision") => {
+                fields(p, &["project_id", "view", "root_instance_id", "id"])?;
+                let root = identifier(p, "root_instance_id")?;
+                let id = identifier(p, "id")?;
+                require(
+                    self.store.orchestration_history_member(&root, &id)?,
+                    "历史决定不属于当前流程",
+                )?;
+                let _body = self.store.observe_query("orchestration.history_body");
+                let selected = one(self.store.as_ref(), "governance", &id)?;
+                let row = restored(self, &selected)?;
+                require(
+                    row.r#type == "workflow_pending_decision" && row.data["status"] != "pending",
+                    "历史决定已变化",
+                )?;
+                return self.controller_decision_view(&row);
+            }
+            _ => return Err(err("invalid_params", "无效的经理协作视图")),
+        };
+        let mut selector = p.clone();
+        if current && let Some(fields) = selector.as_object_mut() {
+            fields.remove("view");
+        }
         let mut value = json!(
             self.store
-                .orchestration_summary(&crate::read_models::ControllerQuery::parse(p)?)?
+                .orchestration_summary(&ControllerQuery::parse(&selector)?)?
         );
         // The indexed summary selects pending decisions across the whole root
         // before pagination. Do not replace it with a tail of resolved history.
         let mut decisions = value["decisions"].as_array().cloned().unwrap_or_default();
-        if p.get("decision_before").is_none() {
+        if !current && p.get("decision_before").is_none() {
             let root = p["root_instance_id"]
                 .as_str()
                 .or_else(|| value["record"]["data"]["root_instance_id"].as_str());
@@ -38,6 +81,9 @@ impl Engine {
         }
         let mut full = Vec::new();
         for decision in decisions {
+            let _body = (decision["status"] != "pending"
+                && decision["data"]["status"] != "pending")
+                .then(|| self.store.observe_query("orchestration.history_body"));
             let selected = one(self.store.as_ref(), "governance", &text(&decision, "id")?)?;
             let row = restored(self, &selected)?;
             full.push(self.controller_decision_view(&row)?);

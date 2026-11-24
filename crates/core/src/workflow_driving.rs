@@ -5,7 +5,7 @@ use crate::{
     governance::{record, update_record},
     platform_facts::{one, restored},
     workflow_commits::{WorkflowCommit, WorkflowHeaderFacts},
-    workflow_resources::version,
+    workflow_resources::{WorkflowResources, version},
     *,
 };
 use std::collections::BTreeMap;
@@ -128,6 +128,9 @@ impl Engine {
         .map_err(|e| err("storage", e.to_string()))
     }
     pub fn workflow_driver_query(&self, p: &Value) -> Result<Value> {
+        if p["view"] == "actions" {
+            return self.workflow_driver_actions(p);
+        }
         let root = WorkflowHeaderFacts::read(self, &text(p, "id")?)?;
         let driver = one(
             self.store.as_ref(),
@@ -163,60 +166,136 @@ impl Engine {
             }
             let offset = p["step_offset"].as_u64().unwrap_or(0) as usize;
             for e in member.instance.steps.iter().skip(offset).take(16) {
+                if matches!(
+                    e.status,
+                    StepExecutionStatus::Completed | StepExecutionStatus::Skipped
+                ) {
+                    continue;
+                }
                 let selected = self.native_step_readiness(&member, &member.step(self, &e.id)?)?;
                 if e.status == StepExecutionStatus::AwaitingAcceptance
                     || (selected["actions"]["accept"]["allowed"] != true
-                        && selected["dispatchable"] != true
-                        && !matches!(
-                            e.status,
-                            StepExecutionStatus::Completed | StepExecutionStatus::Skipped
-                        ))
+                        && selected["dispatchable"] != true)
                 {
-                    let mut waiting_for = Vec::<&str>::new();
-                    if e.status == StepExecutionStatus::WaitingInput
-                        || selected["input_gap"].is_string()
-                    {
-                        waiting_for.push("input");
-                    }
-                    if matches!(
-                        e.status,
-                        StepExecutionStatus::AwaitingAcceptance
-                            | StepExecutionStatus::WaitingConfirmation
-                    ) {
-                        if selected["completion_satisfied"] == false
-                            && selected["completion_overridden"] != true
-                        {
-                            waiting_for.push("completion");
-                        }
-                        if selected["human_satisfied"] == false {
-                            waiting_for.push("confirmation");
-                        }
-                    }
-                    if e.status == StepExecutionStatus::NeedsReconciliation {
-                        waiting_for.push("reconciliation");
-                    }
-                    let mut item = json!({"revision":member.record.revision,"plan_revision_id":member.instance.active_plan_revision_id,"control_version":member.instance.control_version,"step_name":member.instance.plan.document.steps.iter().find(|s|s.node_id==e.node_id).map(|s|&s.name),"ancestor_instance_ids":ancestors,"waiting_for":waiting_for,"instance_id":id,"owner_id":member.instance.owner_id,"execution_id":e.id,"step":e.step,"path":e.path,"status":e.status,"reason":e.reason,"actions":selected["actions"],"step_revision":selected["step_revision"],"input_digest":e.input_digest,"outputs":e.outputs});
-                    if e.status == StepExecutionStatus::AwaitingAcceptance
-                        && selected["actions"]["accept"]["allowed"] == true
-                    {
-                        item["materials"] =
-                            json!(self.controller_approval_materials(&member, e, false)?);
-                    }
-                    if let Some(recovery) = selected.get("source_publication_recovery") {
-                        item["source_publication_recovery"] = recovery.clone();
-                    }
-                    if let Some(recovery) = selected.get("recovery").filter(|v| !v.is_null()) {
-                        item["recovery"] = recovery.clone();
-                        item["retry_count"] = selected["retry_count"].clone();
-                        item["retry_limit"] = selected["retry_limit"].clone();
-                    }
-                    waiting.push(item);
+                    waiting.push(self.driver_waiting_item(&member, e, &ancestors, &selected)?);
                 }
             }
         }
         Ok(
             json!({"waiting":waiting,"approvals":approvals,"runtime_approvals":runtime_approvals,"driver":driver.value.map(|raw|self.store.restore_runtime_record(&raw)).transpose()?,"root_instance_id":root.instance.root_instance_id,"children_inherit":true,"next_after":if ids.len()==16{ids.last()}else{None},"step_limit":16}),
         )
+    }
+    fn workflow_driver_actions(&self, p: &Value) -> Result<Value> {
+        use crate::read_models::{fields, identifier};
+        fields(p, &["project_id", "id", "view", "steps"])?;
+        let root = identifier(p, "id")?;
+        let project = identifier(p, "project_id")?;
+        require(
+            self.store.project_id().as_deref() == Some(&project),
+            "步骤操作不属于当前项目",
+        )?;
+        let candidates = p["steps"]
+            .as_array()
+            .ok_or_else(|| err("invalid_params", "需要待处理步骤列表"))?;
+        require(candidates.len() <= 20, "一次最多核对 20 个待处理步骤")?;
+        let mut waiting = Vec::new();
+        let mut seen = std::collections::BTreeSet::new();
+        for candidate in candidates {
+            fields(candidate, &["instance_id", "execution_id", "step_revision"])?;
+            let instance = identifier(candidate, "instance_id")?;
+            let execution = identifier(candidate, "execution_id")?;
+            let revision = candidate["step_revision"]
+                .as_u64()
+                .filter(|revision| *revision > 0)
+                .ok_or_else(|| err("invalid_params", "需要确切步骤版本"))?;
+            require(
+                seen.insert((instance.clone(), execution.clone())),
+                "待处理步骤重复",
+            )?;
+            let resources =
+                match WorkflowResources::read(self.store.as_ref(), &instance, &execution) {
+                    Err(error)
+                        if matches!(error.code.as_str(), "not_found" | "revision_conflict") =>
+                    {
+                        continue;
+                    }
+                    result => result?,
+                };
+            require(
+                resources.instance.root_instance_id == root,
+                "待处理步骤不属于当前根流程",
+            )?;
+            if resources.step.revision != revision
+                || !matches!(
+                    resources.execution.status,
+                    StepExecutionStatus::AwaitingAcceptance
+                        | StepExecutionStatus::NeedsReconciliation
+                )
+            {
+                continue;
+            }
+            let member = WorkflowHeaderFacts {
+                record: resources.record.clone(),
+                instance: resources.instance.clone(),
+                header: resources.header.clone(),
+            };
+            let selected = match self.native_step_readiness(&member, &resources) {
+                Err(error) if error.code == "revision_conflict" => continue,
+                result => result?,
+            };
+            let ancestors = self.controller_ancestors(&instance)?;
+            waiting.push(self.driver_waiting_item(
+                &member,
+                &resources.execution,
+                &ancestors,
+                &selected,
+            )?);
+        }
+        Ok(json!({"root_instance_id":root,"waiting":waiting,"observed_only":true}))
+    }
+
+    fn driver_waiting_item(
+        &self,
+        member: &WorkflowHeaderFacts,
+        e: &StepExecution,
+        ancestors: &[String],
+        selected: &Value,
+    ) -> Result<Value> {
+        let mut waiting_for = Vec::<&str>::new();
+        if e.status == StepExecutionStatus::WaitingInput || selected["input_gap"].is_string() {
+            waiting_for.push("input");
+        }
+        if matches!(
+            e.status,
+            StepExecutionStatus::AwaitingAcceptance | StepExecutionStatus::WaitingConfirmation
+        ) {
+            if selected["completion_satisfied"] == false
+                && selected["completion_overridden"] != true
+            {
+                waiting_for.push("completion");
+            }
+            if selected["human_satisfied"] == false {
+                waiting_for.push("confirmation");
+            }
+        }
+        if e.status == StepExecutionStatus::NeedsReconciliation {
+            waiting_for.push("reconciliation");
+        }
+        let mut item = json!({"revision":member.record.revision,"plan_revision_id":member.instance.active_plan_revision_id,"control_version":member.instance.control_version,"step_name":member.instance.plan.document.steps.iter().find(|s|s.node_id==e.node_id).map(|s|&s.name),"ancestor_instance_ids":ancestors,"waiting_for":waiting_for,"instance_id":member.record.id,"owner_id":member.instance.owner_id,"execution_id":e.id,"step":e.step,"path":e.path,"status":e.status,"reason":e.reason,"actions":selected["actions"],"step_revision":selected["step_revision"],"input_digest":e.input_digest,"outputs":e.outputs});
+        if e.status == StepExecutionStatus::AwaitingAcceptance
+            && selected["actions"]["accept"]["allowed"] == true
+        {
+            item["materials"] = json!(self.controller_approval_materials(member, e, false)?);
+        }
+        if let Some(recovery) = selected.get("source_publication_recovery") {
+            item["source_publication_recovery"] = recovery.clone();
+        }
+        if let Some(recovery) = selected.get("recovery").filter(|v| !v.is_null()) {
+            item["recovery"] = recovery.clone();
+            item["retry_count"] = selected["retry_count"].clone();
+            item["retry_limit"] = selected["retry_limit"].clone();
+        }
+        Ok(item)
     }
     pub fn drive_rust_workflows(&self) -> Result<()> {
         let began = std::time::Instant::now();

@@ -4,7 +4,7 @@ import { ActionButton } from "./ActionFeedback";
 import { loadCatalog } from "./configuration-state";
 import { RevisionSelect } from "./configuration-ui";
 import { type Request, type Row } from "./rpc-types";
-import { StandardDiff } from "./StandardManager";
+import { StandardDiff } from "./StandardDiff";
 
 type WorkStandardProps = {
   request: Request;

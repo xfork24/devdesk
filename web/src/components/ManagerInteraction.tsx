@@ -17,6 +17,7 @@ type Props = {
   onDecide?: (approved: boolean, reason: string) => Promise<void>;
   requireReason?: boolean;
   awaitingInput?: boolean;
+  expanded?: boolean;
   feedback?: { id: string; input: string }[];
 };
 
@@ -34,6 +35,7 @@ export function ManagerInteraction({
   onDecide: latestDecide,
   requireReason = false,
   awaitingInput = false,
+  expanded = false,
   feedback = [],
 }: Props) {
   const [reason, setReason] = useState("");
@@ -91,7 +93,7 @@ export function ManagerInteraction({
       )}
       <ManagerDisclosure
         className="manager-disclosure"
-        open={status === "pending" || awaitingInput}
+        open={expanded || status === "pending" || awaitingInput}
       >
         <summary>
           <strong>

@@ -198,6 +198,91 @@ pub(super) fn orchestration(
     Ok(result)
 }
 
+pub(super) fn orchestration_history(
+    pool: &ConnectionPool,
+    project: &str,
+    root: &str,
+    before: Option<u64>,
+) -> Result<Value> {
+    let _span = performance::Span::new("read_model.orchestration_history");
+    let conn = pool.read()?;
+    conn.execute_batch("BEGIN;").map_err(storage)?;
+    let found: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM governance_records
+          WHERE id=?2 AND owner_project=?1 AND type='workflow_instance'
+            AND coalesce(json_extract(data,'$.root_instance_id'),id)=id)",
+            params![project, root],
+            |r| r.get(0),
+        )
+        .map_err(storage)?;
+    require(found, "经理历史不属于当前项目")?;
+    let mut query = conn
+        .prepare_cached(
+            "WITH page AS MATERIALIZED (
+          SELECT d.id,d.definition_id,d.name,d.created_at,d.data,d.rowid AS position
+          FROM governance_records i INDEXED BY idx_workflow_root
+          CROSS JOIN governance_records d INDEXED BY idx_governance_type
+            ON d.type='workflow_pending_decision' AND d.definition_id=i.id
+          WHERE i.type='workflow_instance' AND i.owner_project=?1
+            AND json_extract(i.data,'$.root_instance_id')=?2
+            AND d.owner_project=?1 AND json_extract(d.data,'$.status')<>'pending'
+            AND (?3 IS NULL OR d.rowid<?3)
+          ORDER BY d.rowid DESC LIMIT 21
+        )
+        SELECT p.id,p.definition_id,p.position,p.created_at,
+          coalesce(json_extract(p.data,'$.status'),''),
+          substr(coalesce(json_extract(p.data,'$.request.arguments.step'),''),1,128),
+          substr(coalesce(json_extract(p.data,'$.request.interaction.title'),p.name),1,160),
+          s.id,s.created_at,json_array_length(p.data,'$.request.interaction.materials'),
+          (SELECT json_group_array(substr(json_extract(m.value,'$.label'),1,128)) FROM (
+              SELECT value FROM json_each(p.data,'$.request.interaction.materials')
+              WHERE type='object' LIMIT 4
+           ) m)
+        FROM page p LEFT JOIN governance_records s ON s.id=json_extract(p.data,'$.decision_ref')
+          AND s.type='workflow_human_decision' AND s.immutable=1 AND s.owner_project=?1
+        ORDER BY p.position DESC",
+        )
+        .map_err(storage)?;
+    let mut rows = query.query_map(params![project, root, before], |r| {
+        let position: u64 = r.get(2)?;
+        let labels: String = r.get(10)?;
+        Ok((position, json!({
+            "id": r.get::<_, String>(0)?, "instance_id": r.get::<_, String>(1)?,
+            "created_at": r.get::<_, u64>(3)?, "status": r.get::<_, String>(4)?,
+            "step": r.get::<_, String>(5)?, "title": r.get::<_, String>(6)?,
+            "signed_decision_id": r.get::<_, Option<String>>(7)?, "signed_at": r.get::<_, Option<u64>>(8)?,
+            "material_count": r.get::<_, Option<u64>>(9)?,
+            "material_labels": serde_json::from_str::<Value>(&labels).unwrap_or_default(),
+        })))
+    }).map_err(storage)?.collect::<rusqlite::Result<Vec<_>>>().map_err(storage)?;
+    let more = trim_page(&mut rows, 20);
+    let next = more.then(|| rows.last().map(|r| r.0)).flatten();
+    let records: Vec<_> = rows.into_iter().map(|r| r.1).collect();
+    drop(query);
+    conn.execute_batch("COMMIT;").map_err(storage)?;
+    Ok(json!({"records":records, "next_decision_before":next}))
+}
+
+pub(super) fn orchestration_history_member(
+    pool: &ConnectionPool,
+    project: &str,
+    root: &str,
+    id: &str,
+) -> Result<bool> {
+    let conn = pool.read()?;
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM governance_records d
+          JOIN governance_records i ON i.id=d.definition_id AND i.type='workflow_instance'
+          WHERE d.id=?3 AND d.type='workflow_pending_decision' AND d.owner_project=?1
+            AND i.owner_project=?1 AND json_extract(i.data,'$.root_instance_id')=?2
+            AND json_extract(d.data,'$.status')<>'pending')",
+        params![project, root, id],
+        |r| r.get(0),
+    )
+    .map_err(storage)
+}
+
 pub(super) fn driver(
     pool: &ConnectionPool,
     project: &str,
