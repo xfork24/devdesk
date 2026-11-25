@@ -2,12 +2,14 @@
 
 日期：2026-11-25。状态：**待实施**。范围：接入 pi 1.6.0（`@earendil-works/pi-coding-agent`，MIT）为第三个 Harness，能力对齐 DSH：四家模型服务商、讨论会话、workflow 步骤工具。不含根编排。
 
+> **批次与依赖**：pi 属**批次 A**，单独先行，不依赖共享地基先完成。相反，共享地基里与厂商无关的通用管线（Provider 能力表、凭据泛化、全局库 v25 与升级命令、Schema 枚举机制、按 harness 渲染的设置页、`model_profile_digest` 按 provider 分派）由本计划 P1 **首次落地**，批次 B（mcode/opencode/zcode）只做增量。跨计划口径（终态映射、审批语义、全局库版本、旧数据升级流程）以 [Harness 扩展共享地基](../harness-shared-foundation/PLAN.md) 为准。
+
 ## 0. 已确认决策
 
 | 决策 | 结论 |
 |---|---|
 | 工具桥 | 纳入。容器内 DevDesk 扩展经 pi `extension_ui_request` 对话框通道（`input`）把 Host 代执行工具转发给 Host，Host 回执经 `extension_ui_response` 返回 |
-| 全局库升级 | 离线命令 `devdesk-host storage upgrade-global --data PATH` 的**实现口径按共享地基 2.5.2 与第 3 章**（版本号与 CHECK 取值只以共享地基为准）；**旧数据集的升级改造与实际执行属于本计划范围**，验收阶段对现有数据集实际执行 |
+| 全局库升级 | 离线命令 `devdesk-host storage upgrade-global --data PATH` 的**实现口径按共享地基 2.5.2 与第 3 章**（版本号与 CHECK 取值只以共享地基为准）；**旧数据集的升级改造与实际执行属于本计划范围**，验收阶段对现有数据集实际执行。全局库**只在本批次升级一次**，CHECK 届时写入全部六个 provider |
 | 模型服务商 | 智谱编程订阅、MiniMax 订阅、DeepSeek 官方 API、本机 Ollama 全部接入 |
 | 根编排 | pi 不获得 `orchestration` 能力（与 DSH 一致） |
 | Agent 提问 | 首期不支持（pi 无原生能力，RPC 模式无多选对话框） |
@@ -22,7 +24,7 @@
 - pi→客户端请求只有 `extension_ui_request` 一族（`select|confirm|input|editor` 阻塞等待应答 + 若干 fire-and-forget）。
 - npm 包 `@earendil-works/pi-coding-agent@1.6.0`，Node ≥ 22.19（沙箱基础镜像 Node 24.13 满足）。
 - 扩展（`.js`，jiti 加载，显式 `-e` 在 `-ne` 下仍生效）：`pi.on("tool_call")` 可拦截/阻断；`pi.registerTool` 注册工具；工具 `execute(..., ctx)` 里可 `await ctx.ui.input(...)` 并收到 `extension_ui_response`。
-- 权限/审批无内置；`grep|find` 依赖 ripgrep/fd（首期不开）；工具需 `--tools` 白名单。
+- 权限/审批无内置；默认工具为 `read`/`bash`/`edit`/`write`，**无需** `--tools`（`--tools` 是可选白名单，且会连带约束扩展工具，本计划不用）；`grep`/`find` 默认关闭且依赖 ripgrep/fd（首期不开）。
 - 配置：`PI_CODING_AGENT_DIR` 指向 `/state/pi`（`settings.json`、`models.json`、会话目录）；`--session-id` 按 cwd 创建或打开会话；恢复会话会还原记录的模型并可能静默回退（需 `get_state` + `set_model` 复核）。
 - 智谱服务商端点/容量与 devdesk dsh 目录一致，API key 环境变量名相同；MiniMax 内置默认端点 `api.minimaxi.com`，devdesk 固定 `api.minimax.cn`，需在 `models.json` 覆盖 `baseUrl`。
 - **注意**：以上来自本机安装包源码与文档（`~/.pi/agent/install/releases/1.6.0/node_modules/@earendil-works/pi-coding-agent/`），P0 实跑验证前不视为已证实的运行行为。
@@ -33,7 +35,10 @@
 - 适配器单文件协议分支：`crates/adapters/src/harness.rs`（2325 行）+ `jsonl.rs`（传输）+ `permissions.rs`/`permission_profiles.rs`（权限编译）。
 - 镜像配方：`compose_execution_recipe`（`crates/domain/src/execution_recipe.rs`）从 npm 包生成 Dockerfile；pi 可直接复用，codex/dsh 配方不变。
 - **一次性影响（系统既定设计）**：权限语义摘要覆盖 `permissions/backends/manifest.json` 全文与全部资产摘要，新增 pi 后端/资产后 codex/dsh 的 `enforcement_contract` 漂移、冻结会话 `permission_asset_mismatch`；全局库 `runtime_installations` CHECK 需重建表。
-- 现数据集：`data/`（global 24，3 条运行安装）、`data1/`（验收前先核对可读性）、`devdesk-recovery/20261119-large-snapshot/`（快照）。`dist/data` 为构建产物目录，可重新初始化。
+- 现数据集：`data/`（global 24，3 条运行安装）、`data1/`（global 24，32 条源，无安装记录与权限绑定——近空库，**先在它上面演练升级**）、`devdesk-recovery/20261119-large-snapshot/`（恢复快照，不升级）。`data1` 只读打开报错 14 是 WAL 库缺 `-shm` 所致，并非损坏。`dist/data` 为构建产物目录，可重新初始化。
+- **轮询是唤醒驱动的**：协议帧入队后 `JsonlProcess` 调用 `wakeups.notify()`。pi 的 UI 隧道走协议帧，天然满足；批次 B 的宿主 MCP 桥不产生协议帧，必须自己触发同一通道（共享地基 2.2.9）。
+- **出厂目录更新是显式命令**（`configuration.templates.reset`，`preserve_custom: true`）：升级后的旧数据集不会自动出现新增 Harness 源，旧数据升级流程必须包含这一步（第 4 章）。
+- **宿主代执行工具没有适配器层审批**：core 对平台写操作的口径是 `approval == never` 且文件系统非只读才直接执行，`on-request` 下由 core 拒绝（`crates/core/src/platform_observations.rs:351-366`）。
 
 ## 2. 方案设计
 
@@ -58,29 +63,32 @@
 
 ### 2.3 工具桥与审批
 
-- 扩展从 `/run/devdesk/dynamic-tools.json` 读取工具定义并 `pi.registerTool`；`execute` 内用 `ctx.ui.input` 发出带 `devdesk.tool_call.v1` 前缀的请求，Host 转成 `Obs::ToolCall`，`answer_tool` 回 `extension_ui_response{value: <ToolReceipt JSON>}`（载荷与 DSH 分支相同）。
+- 扩展从 `/run/devdesk/dynamic-tools.json` 读取工具定义并 `pi.registerTool`；`execute` 内用 `ctx.ui.input` 发出带 `devdesk.tool_call.v1` 前缀的请求，Host 转成 `Obs::ToolCall{request:{"kind":"dialog","id":"<对话框 id>"}}`（请求判别式与宿主 MCP 桥统一，见共享地基 2.4.10 的传输对照表），`answer_tool` 回 `extension_ui_response{value: <ToolReceipt JSON>}`（载荷与 DSH 分支相同）。
 - 审批：`approval !== never` 时，`tool_call` 钩子对 bash/edit/write 用 `ctx.ui.select` 发 `devdesk.approval.v1` 请求 → `Obs::Interaction{ToolApproval}`。
 - `tool_call` 钩子同时执行冻结策略（读 `/run/devdesk/permission`），与 DSH 的 `tool-policy.mjs` 同构；桥接工具放行，由 Host 按冻结 Tool 引用核验。
 - 无前缀或跨轮次的对话框一律回 `cancelled: true`。
-- **执行口径与共享地基统一**：pi 的 UI 隧道与新宿主 MCP 桥是**同一条链路的两个传输实现**——都产出 `Obs::ToolCall` → core 接纳（冻结引用核验、`provider_tool_intent` 治理记录、轮次状态与 guards 版本）→ `ToolExecutor` 执行 → `answer_tool` 回执 → 工具调用进入会话记录、可审计、可幂等重放。差别只在传输与请求载荷形状：pi 用 `devdesk.tool_call.v1` 前缀对话框，宿主 MCP 桥用 `request.kind == "bridge"` 判别式（共享地基 2.4.8）。审批同理：pi 的 `devdesk.approval.v1` 与桥的 `Obs::Interaction{ToolApproval, request:{"kind":"bridge",…}}` 都经 core 的 `PendingInteraction` 流程。
-- **平台工具同此**：隧道产出的观察按工具名走 core 的既有分派（集成/未绑定工具用 `qualified_name`、平台工具用 `call_name()`），平台工具仅在具备 controller 授权或 workflow 执行归属的会话可调用，普通讨论会话被 `tool_not_authorized` 拒绝 → 写入 `limitations`。pi 的隧道是**进程内**通道，不依赖容器网络，**不受宿主桥的禁网约束**（那是宿主 MCP 桥的限制）。
+- **执行口径与共享地基统一**：pi 的 UI 隧道与宿主 MCP 桥是**同一条链路的两个传输实现**——都产出 `Obs::ToolCall` → core 接纳（冻结引用核验、`provider_tool_intent` 治理记录、轮次状态与 guards 版本）→ `ToolExecutor` 执行 → `answer_tool` 回执 → 工具调用进入会话记录、可审计、可幂等重放。差别只在传输与请求判别式：pi 用 `{"kind":"dialog"}`，宿主 MCP 桥用 `{"kind":"bridge"}`（共享地基 2.4.8、2.4.10）。
+- **审批只对 provider 自己发起的请求**（共享地基 2.4.5）：`devdesk.approval.v1` 是 pi 扩展针对 bash/edit/write 发起的审批，经 core 的 `PendingInteraction` 流程；宿主代执行工具（隧道调用）**不设适配器层审批**，准入由 core 按冻结权限判定。
+- **平台工具同此**：隧道产出的观察按工具名走 core 的既有分派（集成/未绑定工具用 `qualified_name`、平台工具用 `call_name()`），平台工具仅在具备 controller 授权或 workflow 执行归属的会话可调用，普通讨论会话被 `tool_not_authorized` 拒绝 → 写入 `limitations`。pi 的隧道走协议通道，不依赖容器→宿主网络与宿主监听，因此在远程 Docker daemon 下同样可用（宿主 MCP 桥的限制不适用于 pi）。
 
 ### 2.4 权限
 
 - `capabilities(Pi)`：filesystem 三种；network 仅 `enabled`（pi 没有工具禁网执行器）；tools `all_available` + `restricted`；`limitations` 如实列出（无原生权限模式、不支持 Agent 提问、审批为每次写操作询问、cwd 固定）。
 - `validate_execution_permissions` 的 pi 分支：拒绝 `Disabled` 网络；scoped 规则沿用 DSH 的「必须由冻结挂载落实」校验（抽成共用函数）。
 - 执行合同按实际执行者命名：后端 `pi-extension-v1`，`harness_backend`/`rules` 不用 `native` 字样。
-- `protected_metadata` 加入 `.pi`：**三处必须同步**——`crates/domain/src/permission.rs:255`（`default_protected_metadata`）、`crates/adapters/src/permissions.rs:97`（权限编译）、`crates/adapters/src/docker.rs:1004`（**硬编码白名单** `require([".git",".codex",".agents"].contains(&leaf))`），只改前两处会在容器创建时被第三处拒绝。另注：`protected_metadata` 只作用于 `/work` 下的叶子目录（`docker.rs:1008`），而 pi 的状态目录是 `PI_CODING_AGENT_DIR=/state/pi` → **`.pi` 是否必要取决于 pi 是否在项目目录内写 `.pi/`**，须先核实再决定。
+- **仓库内可执行配置隔离（已定，共享地基 2.1.8）**：pi 1.6.0 **不向项目目录写入**，只读取受信任项目里的 `.pi/` 资源，而本计划的启动开关（`-na -ne -ns -np --no-mcp`）已把它们全部跳过 → **`.pi` 不加入 `protected_metadata`**，不改动三处白名单（`crates/domain/src/permission.rs:255`、`crates/adapters/src/permissions.rs:97`、`crates/adapters/src/docker.rs:1004`）。P0 增加一次反证（见 P0 第 3 项）。
+- **策略装载证明（fail-closed）**：扩展装载时发 `extension_ui_request{method:"notify", message:"devdesk.policy.loaded.v1"}`，Host 在初始化阶段必须观察到，否则以 `policy_not_enforced` 终止会话，不降级运行。
 
 ### 2.5 模型与凭据
 
 - 服务商公开 id 必须全局唯一（`validate_model_provider`，`crates/core/src/configuration.rs`），所以新建 `pi-zai-coding-cn`、`pi-minimax-cn`、`pi-deepseek`、`pi-ollama`，`route` 仍用 pi 的服务商名；新建对应 Model 源（GLM 5.3、MiniMax M3.1-Flash）和 `builtin-model-catalog-pi-v1.json`。现有 dsh 的 Model 源不动。
 - MiniMax 需在 `models.json` 覆盖 `baseUrl` 为 `api.minimax.cn/anthropic`。
-- 凭据链路从写死的 `dsh` 泛化为「API key Harness」：绑定键 `credentials.{harness}.{provider}`（dsh 现有键不变），macOS 钥匙串账户前缀白名单加入 pi 的三个前缀。
+- 凭据链路从写死的 `dsh` 泛化为「API key Harness」：绑定键 `credentials.{harness}.{provider}`（dsh 现有键不变），macOS 钥匙串账户前缀白名单加入 pi 的三个前缀。这套泛化是与厂商无关的通用管线，由本计划首次落地。
+- **已知使用成本**：同厂商的 API key 需要为每个 Harness 各保存一次（凭据按 `(Harness, 服务商)` 隔离）。一期在设置页如实提示；跨 Harness 一键复用列入后续演进（共享地基 2.3.4）。
 
 ### 2.6 数据与契约
 
-- `sql/global/schema.sql`：**一次全上**——`user_version` 24 → 25，`runtime_installations.provider` CHECK 直接写成 `('codex','dsh','pi','mcode','zcode','opencode')`；口径以共享地基第 3 章为准（本计划不另立版本号，避免出现两个互相矛盾的 25）。
+- `sql/global/schema.sql`：**全局库只在本批次升级一次**——`user_version` 24 → 25，`runtime_installations.provider` CHECK 直接写成 `('codex','dsh','pi','mcode','zcode','opencode')`（为批次 B 预留，避免二次重建表）。启动只接受 `0 | 25`，v24 给出指向升级命令的错误。口径以共享地基第 3 章为准。
 - `schemas/rpc.schema.json` 六处 provider 枚举、`schemas/permission-backend.schema.json` 两处。
 
 ## 3. 工作项
@@ -88,15 +96,16 @@
 ### P0 可行性验证（先于其余改动）
 
 1. 用生成的 Dockerfile 手工构建 pi 镜像：确认 `npm install --global --omit=dev` 能干净安装，`pi --version`、`pi --list-models` 输出符合预期，容器内 `get_state` 往返成功。合成器是否需要 `--ignore-scripts` 以实测为准。
-2. 用本机 pi 1.6.0 跑一个最小扩展，确认工具 `execute` 里的 `ctx.ui.input` 确实发出 `extension_ui_request` 并能被应答。
-3. 本计划文件与 `docs/plans/README.md` 登记（已完成）。
+2. 用本机 pi 1.6.0 跑一个最小扩展，确认工具 `execute` 里的 `ctx.ui.input` 确实发出 `extension_ui_request` 并能被应答；同一扩展里确认 `ctx.ui.notify` 的装载信号能被 Host 读到（§2.4 的策略装载证明）。
+3. 反证配置隔离：在 `/work` 放置含扩展、skills 与 MCP 声明的 `.pi/` 及 `AGENTS.md`，确认启动开关下均未被加载。
+4. 本计划文件与 `docs/plans/README.md` 登记（已完成）。
 
 ### P1 注册、配置、权限、凭据与界面入口
 
 结果：pi 可被选择，`runtime.prepare` 能构建镜像并通过协议探针。
 
 1. `crates/domain/src/runtime.rs`：`HarnessProvider::Pi`、`HARNESS_PROVIDERS`、`as_str`。
-2. 把「非 Codex 即 DSH」的隐式分支改成显式判断：`harness.rs`（模型连接、stop 模式名、应答形状）、`core/src/session_assembly.rs`、`domain/src/conversation.rs`、`core/src/credential_updates.rs`、`adapters/src/credentials.rs`。`conversation_observations.rs` 与 `provider_tools.rs` 的 `== Dsh → external_message` 不动（pi 走 `external_turn` 分支是对的）。
+2. **建立 Provider 能力表**（共享地基 2.1.3）：新增 `HarnessProvider::traits()`，把现有约 25 处 `== Codex` / `== Dsh` 判断迁移为能力判断——`harness.rs`（模型连接、stop 模式名、应答形状、历史复用、命令输出导出）、`core/src/session_assembly.rs`、`domain/src/conversation.rs`、`core/src/credential_updates.rs`、`adapters/src/credentials.rs`；`conversation_observations.rs` 与 `provider_tools.rs` 的 `== Dsh → external_message` 改为 `identity == ProviderMessage`（行为不变）。批次 B 的新 provider 只需在表里各加一行。
 3. `crates/adapters/src/jsonl.rs`：新增 pi 线协议模式（发送 `{"id","type",…}`，按 `type=="response"` 匹配应答，取 `data`，`success:false` 转错误）；日志对 pi 的 `message_update` 增量按 Codex 规则省略并做尾部脱敏。
 4. `crates/adapters/src/permissions.rs`、`permission_profiles.rs`：pi 能力、编译分支、校验分支、`asset_digests()`、语义摘要。
 5. 权限资产：`permissions/backends/pi/tool-policy.js`（P1 先只做策略拦截）、`manifest.json` 新增后端与 sha256、`permission-backend.schema.json`。
@@ -105,7 +114,7 @@
 8. `harness.rs` 此阶段只加让枚举穷尽的占位分支（`managed_adapter_contract` 为 `pi-rpc/v1`、`provider!(PiHarness, Pi)`、`RoutingHarness` 路由，命令分支返回 `unsupported`），P2 替换。
 9. 出厂配置：Harness/服务商/Model/目录/原生工具源，登记 `plugins/core/manifest.json`，用 `scripts/check/configuration_usage.py --write` 重生成 `reference-usage.json`；目录的 `recipe_digest` 取自 `export_runtime_recipes` 输出。`tests/fixtures/configuration/engineering-catalog.json` 同步加入同样的源（`schema_contracts` 会遍历全部 provider）。
 10. 凭据泛化：`core/src/credential_updates.rs`、`host/src/model_providers.rs`、`adapters/src/{credentials,catalog,credentials_macos}.rs`。
-11. 全局库：schema、`catalog.rs` 版本检查、升级命令（`host/src/main.rs`）。
+11. 全局库：schema、`catalog.rs` 启动版本检查（只接受 `0 | 25`）、升级命令（实现在 `adapters/src/global_migration.rs`，CLI 为 `host/src/main.rs` 的 `storage upgrade-global`；设计见共享地基第 3 章）。
 12. Schema 枚举更新。
 13. 前端：`RuntimeSettings.tsx`（类型与下拉）、`AgentCatalog.tsx`、`RuntimePreparationStatus.tsx`、`Integrations.tsx`、`RoleConversation.tsx`、`App.tsx`（凭据键前缀）；`DshProviderSettings.tsx` 改为按 harness 渲染，供 dsh 与 pi 共用。
 14. 测试支撑：`crates/adapters/tests/support/mod.rs`（`DEVDESK_TEST_PI_IMAGE`）、`tests/support/runtime.rs`、`native_acceptance.py`、`doctor.py`。
@@ -122,7 +131,7 @@
 ### P3 工具桥与审批
 
 1. 扩展：注册动态工具、`input` 隧道、`select` 审批。
-2. Rust：`project` 识别隧道请求；`answer_tool`、`answer` 的 pi 形状；`approval == Never` 时自动拒绝；打开会话时用现有的 `dynamic_tools(binding)` 写出桥接文件。
+2. Rust：`project` 识别隧道请求并产出 `Obs::ToolCall{request:{"kind":"dialog","id":…}}`；`answer_tool`、`answer` 的 pi 形状；`approval == Never` 时自动拒绝 pi 扩展自己发起的审批对话框（隧道工具调用不经交互流）；打开会话时用现有的 `dynamic_tools(binding)` 写出桥接文件。
 3. 测试：隧道往返、无前缀对话框取消、审批自动拒绝；**桥接调用进入会话记录与治理记录（可审计）**、同一调用重放不重复执行；真实镜像上的 `#[ignore]` Docker 用例（被策略拦截的工具、一次桥接调用）。
 
 ### P4 验收与文档
@@ -132,10 +141,15 @@
 
 ## 4. 旧数据集升级（本计划范围）
 
-1. 新增离线命令 `devdesk-host storage upgrade-global --data PATH`：核对宿主进程已停止后重建 `runtime_installations`（CHECK 写成 `('codex','dsh','pi','mcode','zcode','opencode')`），`user_version` 24 → 25，保留全部既有行（含 `data/` 现有 3 条安装）。启动版本检查同步接受新版本号（`catalog.rs:41`）。
-2. `tests/entrypoints/dataset_protocol.py` 扩展覆盖 v24→v25 升级路径。
-3. 升级后 codex/dsh 权限绑定合同漂移：通过设置页重新应用绑定（RPC `permission.binding.preflight` + `permission.bindings.apply`；`permission.bind` 已退役）。既有冻结会话需创建后继会话。
-4. 验收阶段对 `data/`、`data1/` 实际执行升级并保留原库备份；`devdesk-recovery` 快照按需另行执行同一命令。
+重建表只是第一步，以下流程缺一不可（完整口径见共享地基第 3 章）：
+
+1. **升级命令** `devdesk-host storage upgrade-global --data PATH`（实现在 `adapters/src/global_migration.rs`）：经 `lock_dataset` 独占锁确认无 Host 运行 → 判定版本（0 无需、24 继续、25 幂等返回、其他拒绝）→ WAL checkpoint → 备份到数据集目录之外 → 单事务重建 `runtime_installations`（CHECK 写成 `('codex','dsh','pi','mcode','zcode','opencode')`）及其索引并推进 `user_version` 24 → 25，保留全部既有行（含 `data/` 现有 3 条安装）→ 校验行数、表与索引定义与 v25 基线一致、`integrity_check` → 输出 JSON 报告。启动版本检查改为只接受 `0 | 25`。
+2. `tests/entrypoints/dataset_protocol.py` 扩展：v24→v25 升级路径、幂等重跑、Host 运行中拒绝升级、升级后旧二进制被拒绝。
+3. **演练顺序**：先在 `data1/` 的副本上演练，再对 `data1/`、最后对 `data/` 执行，每次保留备份。
+4. **更新出厂目录**：启动新 Host 后执行 `configuration.templates.reset`（`preserve_custom: true`）。不做这一步，旧数据集里选不到 pi，也看不到 pi 的服务商与 Model 源。
+5. **重新应用权限绑定**：新增后端资产让 codex/dsh 的 `enforcement_contract` 漂移。逐目标执行 `permission.binding.preflight` + `permission.bindings.apply`（`permission.bind` 已退役）；出厂 pi 目标的默认绑定由 `template_permission_defaults` 自动套用。
+6. 既有冻结会话需创建带上下文的后继会话；进行中的执行按恢复流程核对后重跑。codex/dsh 配方不变，已登记安装继续有效，仅自动重过协议探针。
+7. `devdesk-recovery/20261119-large-snapshot/` 是恢复快照，不升级。
 
 ## 5. 验证
 
@@ -157,7 +171,7 @@ python3 tests/entrypoints/native_acceptance.py --docker-only --prepare
 3. 让 Agent 读文件、改文件，确认工具事件入账；只读 Profile 下确认写入被拦截且原因明确。
 4. 跑一个带步骤工具的 workflow 步骤，确认桥接调用往返、宿主侧产生回执，**且该调用出现在会话记录与治理记录中（可审计）**；取消运行中的轮次，确认停止模式与容器移除。
 5. 重启 Host 后继续该会话，确认 `sessionId` 与模型被正确恢复。
-6. 对旧数据集执行 `storage upgrade-global`，重新应用 codex/dsh 权限绑定，codex 与 dsh 各跑一轮。
+6. 旧数据集按第 4 章走完整流程：升级命令 → 更新出厂目录 → 重新应用权限绑定 → 在**旧数据集里**选到 pi 并跑通一轮，codex 与 dsh 各跑一轮。
 
 ## 6. 不在本期范围
 
@@ -170,3 +184,6 @@ python3 tests/entrypoints/native_acceptance.py --docker-only --prepare
 - **pi 行为尚未实跑**：协议细节来自源码阅读，P0 先验证；若 P0 第 2 项不成立，P3 需要改方案。
 - **工具桥借用 UI 通道**：属于有节制的用法变通。pi 版本固定在镜像里不会意外失效，升级 pi 时需重新验证隧道。
 - **`harness.rs` 继续膨胀**：pi 逻辑放独立模块；该文件任何改动都会改变全部 provider 的构建摘要（既有行为）。
+- **升级后的旧数据集看不到 pi**：出厂目录更新是显式命令，漏做时用户会以为升级失败 → 纳入第 4 章流程与验收第 6 步。
+- **本批次落地的通用管线被批次 B 复用**：能力表、凭据泛化、升级命令若只按 pi 的形状写死，批次 B 要返工 → 实现时按共享地基 2.1.3 的完整能力表与 2.3 的键名规则落地，并为其写「新增一个 provider 只需加一行」的回归测试。
+- **工具桥借用 UI 通道**（保留）：属于有节制的用法变通。pi 版本固定在镜像里不会意外失效，升级 pi 时需重新验证隧道。

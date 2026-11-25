@@ -1,10 +1,10 @@
 # opencode Harness 接入（OpenCode CLI v2.4.1）
 
-日期：2026-11-25。状态：**待实施**。范围：接入 opencode CLI v2.4.1（MIT）为第六个 Harness，能力对齐 DSH：模型服务商、讨论会话、workflow 步骤工具。不含根编排。
+日期：2026-11-25。状态：**待实施（受 P0 门控）**。范围：接入 opencode CLI v2.4.1（MIT）为新增 Harness，能力对齐 DSH：模型服务商、讨论会话、workflow 步骤工具。不含根编排。
 
-前置依赖：[Harness 扩展共享地基](../harness-shared-foundation/PLAN.md) 必须先完成；**ACP 适配器由 mcode 计划（[mcode](../mcode-harness/PLAN.md)）先落地，本计划复用之**。
+前置依赖：[Harness 扩展共享地基](../harness-shared-foundation/PLAN.md)（批次 B；其第 6 章的统一语义口径与第 7 章的通用 P0 清单对本计划有约束力）；**ACP 适配器由 mcode 计划（[mcode](../mcode-harness/PLAN.md)）先落地，本计划复用之**。跨 Harness 的决策只引用共享地基，不另立口径。
 
-> **定位**：三个新接入线里**协议风险最低、许可最干净、边际成本最小**的一个——与 mcode 走同一套 ACP 标准协议，**共用 `harness_acp.rs` 适配器**，只新增自己的启动配置、模型配置、策略钩子与 MCP 注入。
+> **定位**：批次 B 的三条线里**协议风险最低、许可最干净、边际成本最小**的一个——与 mcode 走同一套 ACP 标准协议，**共用 `harness_acp.rs` 适配器**，只新增自己的启动配置、模型配置、策略钩子与 MCP 注入。
 
 ## 0. 已确认决策
 
@@ -17,7 +17,7 @@
 | 后台服务 | **禁止**使用 `--server` / `--service`；ACP 模式若隐式使用后台服务，必须找到强制私有服务的方式，否则改走备选路线 |
 | 审批 | 走 ACP `session/request_permission`；**忽略「永久允许」选项**；**禁用 `--auto`** |
 | 根编排 | opencode 不获得 `orchestration` 能力（与 DSH 一致） |
-| 全局库 | **一次全上**：24 → 25，`provider` CHECK 含 `pi,mcode,zcode,opencode`；口径以共享地基第 3 章为准 |
+| 全局库 | 版本 24 → 25 在批次 A（pi）一次性完成，CHECK 届时已含 `opencode`；**本计划不改全局库版本**。口径以共享地基第 3 章为准 |
 
 ## 1. 调研结论（已核实来源）
 
@@ -40,7 +40,8 @@
 - **配置面**：`opencode.json`（用户级 `~/.config/opencode/opencode.json`，项目级工作目录同名文件），schema `https://opencode.ai/config.json`；关键字段：`provider`（每项含 `npm`（AI SDK provider 插件）、`models`（`name`/`options`/`limit:{context,output}`）、`options.baseURL`、`options.headers`）、`model`、`small_model`、`mcp`（`type:"local"` 或 `type:"remote"` + `url` + `headers` + `oauth` + `timeout`）、`permission`（ruleset）。
 - **MCP 远端形状**：`McpRemoteConfig = {type:"remote", url, enabled?, headers?: Record<string,string>, oauth?, timeout?}` → **宿主 MCP 桥可复用**（opencode 的配置面比 ACP 参数面更可靠，故 opencode 侧以配置文件注入为主）。
 - **目录隔离**：二进制内实测路径解析为 `XDG_DATA_HOME`/`XDG_CONFIG_HOME`/`XDG_STATE_HOME`/`XDG_CACHE_HOME`，并支持 `OPENCODE_CONFIG_DIR`（覆盖配置目录）与 `OPENCODE_TEST_HOME`；本机实例据此落在 `~/.local/share/opencode`（含 `opencode.db` SQLite、`auth.json`）、`~/.config/opencode`。→ 容器内按会话设置 `XDG_DATA_HOME=/state/opencode/data`、`XDG_CONFIG_HOME=/state/opencode/config`、`XDG_STATE_HOME=/state/opencode/state`、`XDG_CACHE_HOME=/state/opencode/cache`、`OPENCODE_CONFIG_DIR=/state/opencode/config/opencode` 即可获得会话级隔离。
-- **后台服务风险**：opencode v2 默认连**后台服务**（本机 `~/.config/opencode/service.json` 内含服务口令），根命令有 `--standalone`（私有服务）与 `--server`；但 `acp --help` **未列出** `--standalone` → ACP 模式是否会拉起共享后台服务、能否强制私有服务，**P0 必须实测**（若会拉起，多个 DevDesk 会话将共享一个服务进程，违反「一数据集一宿主、状态按会话区分」）。
+- **隔离开关（已核实存在于 2.4.1 二进制）**：`OPENCODE_DISABLE_PROJECT_CONFIG`、`OPENCODE_DISABLE_MODELS_FETCH`、`OPENCODE_DISABLE_AUTOUPDATE`、`OPENCODE_DISABLE_CLAUDE_CODE`（及其 `_PROMPT`、`_SKILLS`）、`OPENCODE_DISABLE_FREE_MODELS`、`OPENCODE_DISABLE_FILEWATCHER`、`OPENCODE_DISABLE_CHANNEL_DB`；另有 `OPENCODE_CONFIG_CONTENT`。开关的存在已核实，**各开关的确切语义由 P0 逐项验证**。二进制内 `models.dev` 出现 13 处 → 启动期有模型目录外联，必须关闭或在探针中证伪。
+- **后台服务风险**：opencode v2 默认连**后台服务**（本机 `~/.config/opencode/service.json` 内含服务口令），根命令有 `--standalone`（私有服务）与 `--server`；但 `acp --help` **未列出** `--standalone`（本机 `opencode --help` 已核实根命令有 `--standalone`，`acp --help` 只有 `--login`）→ ACP 模式是否会拉起共享后台服务、能否强制私有服务，**P0 必须实测**（先试 `opencode --standalone acp`）（若会拉起，多个 DevDesk 会话将共享一个服务进程，违反「一数据集一宿主、状态按会话区分」）。
 - **插件钩子（策略落点，四者中最规范）**：`@opencode-ai/plugin` 暴露 `tool.execute.before`、`tool.execute.after`、`permission.ask`、`chat.message`、`experimental.chat.messages.transform` 与事件总线 → 可直接承载 DevDesk 冻结策略（读 `/run/devdesk/permission`），等价于 pi 的 `tool_call` 钩子、DSH 的 `tool-policy.mjs`、mcode/zcode 的 `PreToolUse`。
 - **审批面**：既有 `permission.ask` 插件钩子，也有配置 `permission` ruleset 与 CLI `--auto`（自动批准未被显式拒绝的权限）。**DevDesk 绝不可使用 `--auto`**：审批必须由宿主按冻结策略与用户裁决驱动。
 - **插件与工具注册**：opencode 插件可注册自定义工具（进程内），但按统一决策仍以宿主 MCP 承载 DevDesk 步骤工具。
@@ -56,54 +57,57 @@
 - **Harness 源**：`plugins/core/harnesses/builtin-harness-opencode-managed-v1.json`
   - `data.provider: "opencode"`、`runtime_version: "2.4.1"`、`license: "MIT"`。
   - **安装走 GitHub 发行二进制，版本与本机一致（v2.4.1）**：本机 `~/.opencode/bin/opencode` 是 240 MB 的 Mach-O arm64 单体二进制（`~/.opencode/package.json` 只装了 `@opencode-ai/plugin`）→ 即发行二进制，不是 npm v1 线。容器取**同版本**的 linux 发行件：`opencode-linux-x64.tar.gz` / `opencode-linux-arm64.tar.gz`（摘要取自发行页 `SHA256SUMS`）；**不使用 npm `opencode-ai`**（该包停留在 v1 线 1.19.6，与 v2 不等价）。
-    - **前置改造（不可跳过，共享地基 2.5.6）**：现有安装通道只有 npm 一条——`compose_execution_recipe` 写死 `RUN npm install --global --omit=dev {package}@{version}`，且 `HarnessInstallation.package` 必填非空；`native_releases` 只被 `prepare_codex_auth` 用于宿主侧登录组件，**不是镜像安装通道**。→ 需新增「二进制发行物」安装面：`package` 可选化 + 新字段（url/sha256/member）+ Dockerfile 生成下载/校验/解包 + 可执行文件落位并入 PATH + `ExecutionRecipe::validate` 与 `recipe_digest` 覆盖。**与 mcode 的 npm 参数面扩展同批实现**（同一处配方生成代码，避免两次改动与两次摘要漂移）。
+    - **前置改造（不可跳过，共享地基 2.5.6）**：现有安装通道只有 npm 一条——`compose_execution_recipe` 写死 `RUN npm install --global --omit=dev {package}@{version}`，且 `HarnessInstallation.package` 必填非空；`native_releases` 只被 `prepare_codex_auth` 用于宿主侧登录组件，**不是镜像安装通道**。→ 需新增「二进制发行物」安装面：`package` 可选化 + 新字段（url/sha256/member）+ Dockerfile 生成下载/校验/解包 + 可执行文件落位并入 PATH + `ExecutionRecipe::validate` 与 `recipe_digest` 覆盖。**与 mcode 的 npm 参数面扩展同批实现**（同一处配方生成代码；扩展对未使用新字段的 Harness 字节稳定，不产生额外摘要漂移；二进制资产在构建期内校验 sha256，按 `TARGETARCH` 选择，一份配方覆盖两种架构，见共享地基 2.5.6）。
     - 备选：若 P0 证明 v2 发行包在容器内不可用，回退 npm v1 线并接受协议差异（记录在案）。
   - `installation.entrypoint: ["opencode", "acp"]`（ACP stdio 服务端）。
-  - `installation.environment`：`XDG_DATA_HOME=/state/opencode/data`、`XDG_CONFIG_HOME=/state/opencode/config`、`XDG_STATE_HOME=/state/opencode/state`、`XDG_CACHE_HOME=/state/opencode/cache`、`OPENCODE_CONFIG_DIR=/state/opencode/config/opencode`、`OPENCODE_DISABLE_AUTOUPDATE=1`（若存在该开关；否则靠 `XDG_*` 隔离 + 断网构建）。
+  - `installation.environment`：`XDG_DATA_HOME=/state/opencode/data`、`XDG_CONFIG_HOME=/state/opencode/config`、`XDG_STATE_HOME=/state/opencode/state`、`XDG_CACHE_HOME=/state/opencode/cache`、`OPENCODE_CONFIG_DIR=/state/opencode/config/opencode`，以及隔离开关 `OPENCODE_DISABLE_AUTOUPDATE=1`、`OPENCODE_DISABLE_MODELS_FETCH=1`、`OPENCODE_DISABLE_PROJECT_CONFIG=1`、`OPENCODE_DISABLE_CLAUDE_CODE=1`、`OPENCODE_DISABLE_FREE_MODELS=1`（均见于二进制，语义由 P0 逐项验证）。
   - `installation.files`：策略插件资产（见 2.4）。
 - **容器命令**：cwd 固定 `/work`；stdout/stdin 全部是 ACP 协议流，stderr 只作诊断。
-- **会话隔离**：每个 DevDesk 会话独占一份 `XDG_*` 目录（1.2），会话库落在 `/state/opencode/data/opencode.db`；恢复时用 ACP `session/load` 携带 `sessionId`。
+- **指令注入通道（P0 必测，原计划缺口）**：`opencode acp` 只有 `--login` 一个开关，没有系统提示参数 → DevDesk 的角色指令、快照与合同必须另有通道。优先级：① ACP `session/new.systemPrompt{mode:"append"}`（需 opencode 宣告 `sessionCapabilities.systemPrompt`）；② 配置 `opencode.json` 的 `instructions`（或 `OPENCODE_CONFIG_CONTENT`）。**任一通道不成立，本计划不进入 P1**——指令送不到，角色与冻结合同就形同虚设。
+- **会话隔离**：每个 DevDesk 会话独占一份 `XDG_*` 目录（1.2），会话库落在 `/state/opencode/data/opencode.db`；恢复优先用 ACP `session/resume` 携带 `sessionId`（`session/load` 会重放整段历史，仅在 agent 未宣告 `sessionCapabilities.resume` 时使用，见共享地基 2.2.7）。
 - **后台服务禁令**：**禁止**让 opencode 连接或拉起共享后台服务（`--server` / `--service` 一律不用）。P0 必须确认 ACP 模式是否隐式使用后台服务；若会，则必须找到强制私有服务的开关（或改用第 5 章的 `serve --standalone` 路线），否则多个 DevDesk 会话会共享一个服务进程，违反「状态按会话区分」。
 
 ### 2.2 协议与事件映射（ACP，复用 mcode 计划的表）
 
 opencode 的 ACP 事件面与 mcode 计划 2.2 同构，**直接复用同一张映射表与同一套 `Obs` 投影**；实现上不在 `harness_opencode.rs` 复制逻辑，而是复用 `crates/adapters/src/harness_acp.rs`：
 
-- `harness_acp.rs` 负责：ACP 握手与协议版本协商、`session/new`/`session/load`、`session/prompt` 派发、`session/update` → `Obs` 投影、`session/request_permission` → `Obs::Interaction{ToolApproval}` 与应答、`session/cancel` 停止、`stopReason` → 终态、桥接 MCP 的 `mcpServers` 注入。
+- `harness_acp.rs` 负责：ACP 握手与协议版本协商、`session/new`/`session/resume`（不重放历史；见共享地基 2.2.7）、`session/prompt` 派发、`session/update` → `Obs` 投影、`session/request_permission` → `Obs::Interaction{ToolApproval}` 与应答、`session/cancel` 停止、`stopReason` → 终态、桥接 MCP 的 `mcpServers` 注入。
 - `harness_mcode.rs` / `harness_opencode.rs` 只提供**差异配置**：进程启动参数、环境变量、模型/服务商配置写入方式、容器内策略钩子的装载方式、恢复时的外部会话 id 语义。
 - 差异点：
   - opencode 的工具事件类型可能更细（读/写/执行/补丁等），P0 记录实际 `tool_call` 形态后统一归一。
   - opencode 的 ACP 可能额外发 `plan_update`；一期忽略（同 mcode）。
   - opencode 的 `session/request_permission` 选项集合与 mcode 不同（opencode 侧另有 `always`（永久允许）语义）→ **DevDesk 必须忽略「永久允许」选项**，只接受单次允许/拒绝，避免冻结权限被运行时长期放宽。
-- **共用同一套接纳语义**（mcode 计划 §2.2）：ACP 的 `session/prompt` 应答在**轮次结束**才到 → 宿主在提交时合成 `Obs::Admitted{external_turn: 宿主生成的轮次 id}` 并写入 turn 记录，应答帧改判终态；`Obs::Consumed` 的产生时机同 mcode 口径。opencode 若在 `session/prompt` 之外另有「立即回执」方法，需在 P0.2 记录并在 `harness_acp.rs` 里按 provider 配置化。
+- **共用同一套接纳语义**（mcode 计划 §2.2、共享地基 2.2.8）：ACP 的 `session/prompt` 应答在**轮次结束**才到 → 宿主在**首个 provider 证据**到达时合成 `Obs::Admitted{external_turn: 派发时生成的轮次 id}` 并写入 turn 记录，应答帧改判终态；`Obs::Consumed` 的产生时机同 mcode 口径。opencode 若在 `session/prompt` 之外另有「立即回执」方法，需在 P0.2 记录并在 `harness_acp.rs` 的方言配置里体现。
 - **帧路径**：`sessionUpdate` 取值在 `params.update.sessionUpdate`（同 mcode 计划 §2.2）。
+- **终态与终稿**：与 mcode 同口径（共享地基第 6 章）——`max_tokens` 判 Failed；工具调用失败只记 Tool 事件、不改终态；助手文本以工具调用为边界分段封存。
 
 ### 2.3 工具桥与审批（一期打通）
 
-1. **注入方式**：opencode 的 MCP 既可走 ACP `session/new.mcpServers`，也可走配置文件 `opencode.json` 的 `mcp` 映射（`{type:"remote", url, headers}`，类型已核实支持 `headers`）。**优先用配置文件注入**（`opencode.json` 由宿主在会话启动时写入 `/state/opencode/config/opencode/opencode.json`），因为配置面是 opencode 的稳定公开契约；ACP 参数注入作为备选（若 P0 证明配置文件不生效）。
+1. **注入方式**：opencode 的 MCP 既可走 ACP `session/new.mcpServers`，也可走配置文件 `opencode.json` 的 `mcp` 映射（`{type:"remote", url, headers}`，类型已核实支持 `headers`）。**优先用配置文件注入**（`opencode.json` 由宿主在会话启动时以 0600 写入 `/state/opencode/config/opencode/opencode.json`），因为配置面是 opencode 的稳定公开契约；ACP 参数注入作为备选（若 P0 证明配置文件不生效）。该文件位于宿主侧的会话状态目录，会话结束后会残留 → `cleanup_worker` 时覆盖或删除，并由令牌撤销兜底（共享地基 2.4.2）。
 2. **端点与鉴权**：复用共享地基 2.4 的宿主 MCP 桥（独立监听器 + 每会话令牌 + 路径含会话 id）；opencode 侧配置为：
    ```json
-   {"mcp":{"devdesk-tools":{"type":"remote",
+   {"mcp":{"devdesk":{"type":"remote",
      "url":"http://host.docker.internal:<bridge-port>/internal/tool-bridge/<session>/mcp",
      "headers":{"Authorization":"Bearer <session-token>"},
      "enabled":true,"timeout":120000}}}
    ```
    注意 `timeout` 需大于工具执行预算（opencode 默认 MCP 超时 5 s，远小于 DevDesk 工具超时）。
 3. **执行与回执（统一口径：经 core 接纳/审计链路）**：桥**不执行工具**。`tools/call` 由 MCP 服务端投递到该会话 worker 的桥收件箱 → worker 产出 `Obs::ToolCall{request:{"kind":"bridge","call_id":…}, …}` → core 走既有接纳（冻结 `tool_refs`、`qualified_name` 解析、`provider_tool_intent` 治理记录、轮次状态与 guards 版本）→ `ToolExecutor` 执行 → `harness.answer_tool_call` 回执 → 桥返回 MCP 结果。完整机制见共享地基 2.4.8。
-4. **审批**：`session/request_permission` → 宿主 `Obs::Interaction{ToolApproval}` → 用户裁决 → 以同一 `id` 应答；冻结策略为 `never` 时自动选择拒绝项。**明确禁止 `--auto`**（会绕过宿主裁决）。
-   - 桥触发的审批同样走既有交互流：worker 产出 `Obs::Interaction{ToolApproval, request:{"kind":"bridge",…}}` → core 建 `PendingInteraction` → 用户裁决 → `harness.answer_interaction` → 按 `kind` 交回桥；`never` 时 worker 直接产出拒绝决定。
+4. **审批（口径见共享地基 2.4.5）**：`session/request_permission` → 宿主 `Obs::Interaction{ToolApproval}` → 用户裁决 → 以同一 `id` 应答；冻结策略为 `never` 时自动选择拒绝项；允许时只选 `kind == allow_once`，**永不选「永久允许」**。**明确禁止 `--auto`**（会绕过宿主裁决）。
+   - **宿主桥调用不设适配器层审批**：准入完全由 core 按冻结权限判定（`approval == never` 且文件系统非只读时平台写操作直接执行；`on-request` 下 core 拒绝），桥把拒绝原样返回。此前版本写的「桥调用经 `PendingInteraction` 往返、`never` 时直接拒绝」是 core 里不存在的流程，且会让默认 Profile 下的步骤工具被全部拒绝，**不得实现**。
 5. **一致性**：宿主桥与 harness 审批共用同一份冻结权限；容器内插件钩子（2.4）同样读同一份 `/run/devdesk/permission`。**执行语义与 mcode/zcode/pi 完全一致**——差别只在传输与触发来源，桥调用同样进入会话记录与治理记录。
    - **暴露的工具范围（四类全暴露，含平台工具）**：桥产出观察时 `tool` 按种类取值——集成/未绑定工具用 `qualified_name`，**平台工具用 `call_name()`**；core 已按名分派（`conversation_runtime.rs:334-345`），平台工具自动走平台准入路径，**不需要新增 grant 路由或端口**。平台工具仅在具备 controller 授权或 workflow 执行归属的会话可调用，普通讨论会话被 `tool_not_authorized` 拒绝 → 写入 `limitations`。
-   - **禁网边界（本期明确不支持）**：冻结网络为 Disabled 的 Profile 下容器为 `--network none`，宿主桥物理不可达 → 步骤工具不可用，写入 `limitations`（共享地基 2.4.6）。
+   - **网络边界（已更正）**：Harness 工作容器恒为联网容器，不存在「禁网 Profile 下宿主桥不可达」的场景。真实的边界是：不支持 harness 层工具禁网（`disabled_tools`）；**远程 Docker daemon 下步骤工具不可用**。两项写入 `limitations`（共享地基 2.4.6）。
+   - **唤醒与 MCP 工具名**（共享地基 2.2.9、2.4.4）：桥调用入队即 `RuntimeWorkers.wakeups.notify()`——opencode 等待 MCP 结果期间不产生协议帧，不唤醒则调用滞留到超时；P0 记录 opencode 给 MCP 工具加的服务器前缀与模型可见名长度。
 
 ### 2.4 权限与策略后端
 
-1. **容器内冻结策略**：`permissions/backends/opencode/plugin.js`（opencode 插件，`tool.execute.before` + `permission.ask` 钩子）——读 `/run/devdesk/permission`，对不在冻结 allow/deny 集合内的工具与升级请求**抛错阻断**（opencode 插件钩子支持阻断，`tool.execute.before` 抛错即拒绝执行）。
-2. **能力声明** `capabilities(Opencode)`：filesystem 三档；network 仅 `enabled`；tools `all_available` + `restricted`；`limitations` 如实列出：**无进程内宿主工具注册通道（步骤工具走宿主 MCP）**、审批为逐次询问、cwd 固定 `/work`、**不支持「永久允许」语义（已冻结权限不允许被运行时放宽）**、ACP 模式不得使用后台服务、**冻结网络为 Disabled 的 Profile 下步骤工具不可用（宿主桥在 `--network none` 下不可达）**、**平台工具仅在具备 controller 授权或 workflow 执行归属的会话可调用**。
+1. **容器内冻结策略**：`permissions/backends/opencode/plugin.js`（opencode 插件，`tool.execute.before` + `permission.ask` 钩子）——读 `/run/devdesk/permission`，对不在冻结 allow/deny 集合内的工具与升级请求**抛错阻断**（opencode 插件钩子支持阻断，`tool.execute.before` 抛错即拒绝执行）。插件装载后必须发出一个**装载信号**，供 Host 在首轮输入前核对（共享地基 2.1.7）；拿不到会话级信号时退回「配置独占 + 镜像探针」。
+2. **能力声明** `capabilities(Opencode)`：filesystem 三档；network 仅 `enabled`；tools `all_available` + `restricted`；`limitations` 如实列出：**无进程内宿主工具注册通道（步骤工具走宿主 MCP）**、审批为逐次询问、cwd 固定 `/work`、**不支持「永久允许」语义（已冻结权限不允许被运行时放宽）**、ACP 模式不得使用后台服务、**不支持 harness 层工具禁网（`disabled_tools`）**、**不支持 Agent 提问（`elicitation/create` 被自动取消）**、**远程 Docker daemon 下步骤工具不可用**、**平台工具仅在具备 controller 授权或 workflow 执行归属的会话可调用**。
 3. **校验分支**：`validate_execution_permissions` 的 opencode 分支（拒绝 `Disabled` 网络；scoped 规则必须由冻结挂载落实）。
 4. **执行合同命名**：后端 `opencode-plugin-v1`，不使用 `native` 字样。
 5. **资产登记**：`permissions/backends/manifest.json` 新增后端与资产 sha256（条目需写全 `id`（`opencode-plugin-v1`）、`provider`（`opencode`）、`version`、`assets`；schema 的 `provider` 枚举当前只有 `docker|codex|dsh`）；`schemas/permission-backend.schema.json` 同步。
-6. `protected_metadata` 是否加入 `.opencode`：**先核实再定**——opencode 的状态目录实际是 `~/.config/opencode` 与 `~/.local/share/opencode`（容器内 `/state/opencode/...`），**不在 `/work` 内**，而 `protected_metadata` 只作用于 `/work` 下的叶子目录（`docker.rs:1008`）；若 opencode 不在项目目录写 `.opencode/`，则无需加入，避免引入无效条目。若确定要加，**三处必须同步**：`crates/domain/src/permission.rs:255`、`crates/adapters/src/permissions.rs:97`、`crates/adapters/src/docker.rs:1004`（**硬编码白名单** `require([".git",".codex",".agents"].contains(&leaf))`）。
+6. **仓库内可执行配置隔离（共享地基 2.1.8）**：opencode 的状态目录在 `/state/opencode/...`，**但会从工作目录读取项目级配置与插件**（`.opencode/`、`opencode.json`、`AGENTS.md`、Claude Code 配置）——仓库内容是不可信数据，其中的插件与 MCP 服务声明不能被加载。一期用 `OPENCODE_DISABLE_PROJECT_CONFIG=1` 与 `OPENCODE_DISABLE_CLAUDE_CODE=1` 关闭（P0 验证生效）；关不掉的路径加入 `protected_metadata`（`opencode.json` 是文件型条目，需确认白名单与挂载逻辑支持）。三处白名单必须同步：`crates/domain/src/permission.rs:255`、`crates/adapters/src/permissions.rs:97`、`crates/adapters/src/docker.rs:1004`（**硬编码白名单**，只改前两处会在容器创建时被第三处拒绝）。
 
 ### 2.5 模型与凭据
 
@@ -117,6 +121,7 @@ opencode 的 ACP 事件面与 mcode 计划 2.2 同构，**直接复用同一张�
    ```
    - `limit.context/output` 必须由 DevDesk 的模型目录供给（opencode 配置类型要求该结构），不能留空。
    - `options.headers` 中的 API key 由宿主在会话启动时写入，写完即从临时文件删除（沿用 `harness.rs` 现有凭据文件生命周期），且**不得进入协议日志**（共享地基 2.2.5 的结构化脱敏必须覆盖 `options.headers` 这类嵌套结构）。
+   - **provider `npm` 包的安装路径（P0 必测）**：`@ai-sdk/openai-compatible`、`@ai-sdk/anthropic` 等包若由 opencode 在**运行时**从 npm 拉取，每次会话启动都会有未固定版本的外联下载，不可接受。必须确认可预装并钉版本进入镜像，或改用其内置协议；如确有运行时安装，其可写目录必须落在会话私有的 `XDG_CACHE_HOME` 内。
 3. **凭据链路**：按共享地基 2.3 泛化后的键 `credentials.opencode.{provider}`；macOS 钥匙串账户前缀白名单加入 opencode 的服务商前缀。
 4. **服务商公开 id 全局唯一**（`validate_model_provider`）——与 dsh/pi/mcode/zcode 的 provider id 不冲突。
 
@@ -125,20 +130,22 @@ opencode 的 ACP 事件面与 mcode 计划 2.2 同构，**直接复用同一张�
 ### P0 可行性验证
 
 1. 用发行 tarball 构建 opencode 镜像：`opencode-linux-x64.tar.gz` / `opencode-linux-arm64.tar.gz` 解包后二进制是否可直接运行（是否需要 glibc 版本、是否有额外运行时依赖）；`opencode --version` 输出是否符合预期；镜像体积与启动时间是否可接受（约 240 MB 单体二进制）。**同时验证「二进制发行物」安装面**（新增字段 → Dockerfile 下载/校验 sha256/解包 → 可执行文件就位）是否可行；若不可行则按第 5 章回退。
-2. **ACP 最小闭环**：容器内 `opencode acp` → `initialize` → `session/new` → `session/prompt` → 观察 `session/update` 与 `stopReason`；确认协议版本与 `session/new` 是否接受 `mcpServers`；**确认 `session/prompt` 应答的时机（轮次末 vs 立即）**（决定 §2.2 的宿主合成接纳口径与流式是否成立）。
-3. **后台服务隔离**：确认 ACP 模式是否使用后台服务；若使用，找出强制私有服务的方式（`--standalone` 是否被 `acp` 接受 / 是否有等价环境变量）；否则改走第 5 章。
+2. **ACP 最小闭环**：容器内 `opencode acp` → `initialize` → `session/new` → `session/prompt` → 观察 `session/update` 与 `stopReason`；确认协议版本与 `session/new` 是否接受 `mcpServers`；**确认 `session/prompt` 应答的时机（轮次末 vs 立即）**（决定 §2.2 的宿主合成接纳口径与流式是否成立）；记录 `initialize` 应答的 `agentCapabilities`（`mcpCapabilities.http`、`sessionCapabilities.resume`、`sessionCapabilities.systemPrompt`）。
+3. **后台服务隔离**：确认 ACP 模式是否使用后台服务；若使用，找出强制私有服务的方式——根命令已核实有 `--standalone`，先实测 `opencode --standalone acp`（全局开关置于子命令前），再看是否有等价环境变量；否则改走第 5 章。
 4. **会话目录隔离**：确认 `XDG_*` + `OPENCODE_CONFIG_DIR` 组合能让两个容器实例互不共享会话库与配置。
-5. **策略钩子**：确认插件 `tool.execute.before` 抛错能真正阻断工具调用，`permission.ask` 能参与权限决策；**并确认 opencode 从哪里发现插件**（`OPENCODE_CONFIG_DIR` 下的 `plugin/`？项目级目录？`XDG_CONFIG_HOME` 下的用户级插件目录？）——发现路径不定，冻结策略会**静默不生效**（本计划已把「策略静默不生效」列为最危险风险）。
-6. **MCP 注入**：确认 `opencode.json` 的 `mcp`（remote + headers）能被运行时加载，并能从容器内连到宿主 MCP 桥端点（与 mcode 计划 P0.3 共用同一验证）。
-7. **模型与凭据**：确认 `provider.options.headers` 形式的 API key provider 可用，`limit` 字段被接受，`model` 选择生效。
+5. **策略钩子**：确认插件 `tool.execute.before` 抛错能真正阻断工具调用，`permission.ask` 能参与权限决策；**并确认 opencode 从哪里发现插件**（`OPENCODE_CONFIG_DIR` 下的 `plugin/`？项目级目录？`XDG_CONFIG_HOME` 下的用户级插件目录？）——发现路径不定，冻结策略会**静默不生效**（本计划已把「策略静默不生效」列为最危险风险）；同时确定可供 Host 在首轮输入前核对的**装载信号**（共享地基 2.1.7）。
+6. **MCP 注入**：确认 `opencode.json` 的 `mcp`（remote + headers）能被运行时加载，并能从容器内连到宿主 MCP 桥端点（与 mcode 计划 P0.3 共用同一验证）；记录 opencode 给 MCP 工具加的服务器前缀与模型可见名长度；确认 MCP 客户端超时可配到大于工具执行预算。
+7. **模型与凭据**：确认 `provider.options.headers` 形式的 API key provider 可用，`limit` 字段被接受，`model` 选择生效；确认 provider 的 `npm` 包是预装还是运行时拉取（§2.5）。
+8. **指令注入通道**（§2.1）：验证 ACP `systemPrompt` 或配置 `instructions` 能把 DevDesk 指令送进模型上下文；两者皆不成立则本计划不进入 P1。
+9. **隔离与外联**：逐项验证 `OPENCODE_DISABLE_PROJECT_CONFIG`、`OPENCODE_DISABLE_CLAUDE_CODE`、`OPENCODE_DISABLE_MODELS_FETCH`、`OPENCODE_DISABLE_AUTOUPDATE` 的语义；确认仓库内的 `.opencode/`、`opencode.json` 不被加载；探针在 `--network none` 下可启动。
 
 ### P1
 
-与 mcode 计划同构：provider 注册与显式分支（含 Opencode）；`harness_acp.rs` 从 `harness_mcode.rs` 抽出为共用模块（mcode 计划的 P2 需同步重构）；`permissions/backends/opencode/` 资产；`opencode_model_patch`；`runtime_verification.rs` 的 opencode 探针（`initialize` + `session/new`，无密钥无网络）；`default_opencode_recipe_digest`；出厂配置与模型目录；凭据泛化；Schema 枚举；前端（按 harness 渲染的 provider 设置页复用）。
+与 mcode 计划同构：provider 注册与显式分支（含 Opencode）；复用 mcode 计划 P2 已落地的共用 `harness_acp.rs`（差异只进 `AcpDialect` 方言配置，不在适配器内写 provider 分支）；`permissions/backends/opencode/` 资产；`opencode_model_patch`；`runtime_verification.rs` 的 opencode 探针（`initialize` + `session/new`，无密钥无网络）；`default_opencode_recipe_digest`；出厂配置与模型目录；凭据泛化的增量部分；Schema 枚举；前端（按 harness 渲染的 provider 设置页复用）。全局库 v25 已在批次 A 落地，本计划不改版本。
 
 **本计划独有的前置改造**：
 
-1. **「二进制发行物」安装面**（共享地基 2.5.6，**与 mcode 的 npm 参数面扩展同批实现**）：`HarnessInstallation.package` 可选化 + 新字段（url/sha256/member）+ `compose_execution_recipe` 生成下载/校验/解包/落位步骤 + `ExecutionRecipe::validate` 与 `recipe_digest` 覆盖 + `execution_recipe.rs:165-171` 的 package 校验放宽。**不做这一步，opencode 就无法在容器内使用与本机同版本的 v2.4.1 发行二进制**（现有配方只认 npm；`native_releases` 不是镜像安装通道）。摘要取自发行页 `SHA256SUMS`，按 `linux/x86_64` 与 `linux/aarch64` 分别钉住。
+1. **「二进制发行物」安装面**（共享地基 2.5.6，**与 mcode 的 npm 参数面扩展同批实现**）：`HarnessInstallation.package` 可选化 + 新字段（url/sha256/member）+ `compose_execution_recipe` 生成下载/校验/解包/落位步骤 + `ExecutionRecipe::validate` 与 `recipe_digest` 覆盖 + `execution_recipe.rs:165-171` 的 package 校验放宽。**不做这一步，opencode 就无法在容器内使用与本机同版本的 v2.4.1 发行二进制**（现有配方只认 npm；`native_releases` 不是镜像安装通道）。摘要取自发行页 `SHA256SUMS`，按 `linux/x86_64` 与 `linux/aarch64` 分别钉住，一份配方覆盖两种架构。扩展对未使用新字段的 Harness **字节稳定**：codex/dsh/pi 的 Dockerfile 与 `recipe_digest` 不变（共享地基 2.5.6）。
 2. `model_profile_digest` 的 provider 分派：`crates/adapters/src/session_resources.rs:207-209` 目前**写死** `dsh_model_patch` → 需按 provider 选 patch（这是四条新线共用的同一处改动，应与共享地基一起做，避免重复与遗漏）。
 
 ### P2 协议驱动
@@ -147,9 +154,9 @@ opencode 的 ACP 事件面与 mcode 计划 2.2 同构，**直接复用同一张�
 
 ### P3 工具桥与审批
 
-复用共享地基 2.4 的宿主 MCP 桥；opencode 侧写 `opencode.json` 的 `mcp` 配置并注入令牌；权限应答与「永久允许」拒绝测试。
+复用共享地基 2.4 的宿主 MCP 桥；opencode 侧写 `opencode.json` 的 `mcp` 配置并注入令牌；会话清理时覆盖或删除含令牌的配置文件；权限应答与「永久允许」拒绝测试。
 
-桥收件箱、观察产出（`Obs::ToolCall{request:{"kind":"bridge",…}}`，`tool` 按种类取值：集成/未绑定 → `qualified_name`，平台 → `call_name()`）、回执按 `request.kind` 路由、桥审批经 `PendingInteraction` 往返——**全部复用 mcode 计划 P3 的实现**，opencode 侧只提供差异配置；执行语义与其余三条线一致（共享地基 2.4.8）。验收须覆盖共享地基 2.4.9 的 8 条桥判据（往返、会话记录 + 治理记录可审计、越权拒绝、幂等、撤销、审批、脱敏、**平台工具的路由与无授权时的明确拒绝**）。
+桥收件箱、观察产出（`Obs::ToolCall{request:{"kind":"bridge",…}}`，`tool` 取原名）、回执按 `request.kind` 路由、入队即唤醒——**全部复用 mcode 计划 P3 的实现**，opencode 侧只提供差异配置；执行语义与其余三条线一致（共享地基 2.4.8）。桥调用**不经审批交互流**（共享地基 2.4.5）。验收须覆盖共享地基 2.4.9 的 9 条桥判据。
 
 ### P4 验收与文档
 
@@ -162,10 +169,11 @@ opencode 的 ACP 事件面与 mcode 计划 2.2 同构，**直接复用同一张�
   1. 镜像准备与协议探针通过；API key provider 可用。
   2. 讨论轮次：流式输出、终稿、终态（Completed/Failed/Cancelled）。
   3. 工具事件入账；只读 Profile 下写入被拦截且原因明确（插件钩子生效）。
-  4. 步骤工具（宿主 MCP 桥）往返 + 宿主回执，且该调用**出现在会话记录与治理记录中（可审计）**；同一 `call_id` 重放不重复执行。
+  4. 步骤工具（宿主 MCP 桥）往返 + 宿主回执，且该调用**出现在会话记录与治理记录中（可审计）**；同一 `call_id` 重放不重复执行；默认 `never` Profile 下步骤工具正常执行。
   5. 取消轮次 → 停止模式正确、容器移除。
-  6. 重启 Host 后 `session/load` 恢复成功，且恢复的是本会话的 opencode 会话库。
-  7. 两个并行 opencode 会话互不共享配置/会话库（后台服务隔离验证）。
+  6. 重启 Host 后 `session/resume` 恢复成功，且恢复的是本会话的 opencode 会话库；长会话（多轮带工具调用）恢复不触发初始化缓冲上限。
+  7. 仓库内放置含插件与 MCP 服务声明的 `.opencode/` 与 `opencode.json`，确认它们**不被加载**（配置隔离验证）。
+  8. 两个并行 opencode 会话互不共享配置/会话库（后台服务隔离验证）；会话清理后宿主侧不再残留可用的桥令牌。
 
 ## 5. 备选路线：v2 HTTP/SSE API
 
@@ -180,7 +188,7 @@ opencode 的 ACP 事件面与 mcode 计划 2.2 同构，**直接复用同一张�
 ## 6. 不在本期范围
 
 - 根编排（opencode 不获得 `orchestration`，与 DSH 一致）。
-- Agent 提问：ACP `elicitation/create` 通道不作为一期验收项。
+- Agent 提问：ACP `elicitation/create` 通道一期由适配器直接应答取消，写入 `limitations`。
 - 容器内工具禁网；opencode 的进程内插件工具注册（统一走宿主 MCP）。
 
 ## 7. 风险与兼容
@@ -194,3 +202,8 @@ opencode 的 ACP 事件面与 mcode 计划 2.2 同构，**直接复用同一张�
 | 「永久允许」语义 | 冻结权限被运行时长期放宽 | 宿主侧忽略该选项并记入事件流；2.2/2.3 已有约束 |
 | 密钥出现在 `options.headers` | 泄漏进日志或配置残留 | 共享地基 2.2.5 结构化脱敏 + 会话启动后删除凭据文件 + 写配置时 0600 权限 |
 | 与 mcode 共享 ACP 适配器的耦合 | mcode 的改动影响 opencode | 适配器按 provider 配置注入，不在共用层写 provider 分支；两套 provider 各自的协议测试夹具独立 |
+| `opencode acp` 没有系统提示开关 | DevDesk 的角色指令与冻结合同送不到模型 | P0.8 必测：ACP `systemPrompt` → 配置 `instructions`；皆不成立则不进入 P1 |
+| 仓库内 `.opencode/`、`opencode.json` 被当作项目级配置加载 | 不可信的仓库内容可注入插件与 MCP 服务 | `OPENCODE_DISABLE_PROJECT_CONFIG` + `OPENCODE_DISABLE_CLAUDE_CODE`（P0.9 验证）；不足再屏蔽 |
+| provider 的 `npm` 包在运行时从 npm 拉取 | 未固定版本的外联下载；断网构建或离线环境失败 | P0.7 必测：预装并钉版本，或使用内置协议 |
+| 桥调用入队后 worker 未被调度 | 桥调用滞留到超时、步骤工具不通 | 入队即 `wakeups.notify()`（共享地基 2.2.9）；列入桥验收判据第 9 条 |
+| `session/load` 重放整段历史 | 长会话恢复撞上初始化缓冲上限 | 优先 `session/resume`；退回时有界丢弃重放（共享地基 2.2.7） |
