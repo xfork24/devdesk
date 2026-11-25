@@ -7,7 +7,7 @@
 | 决策 | 结论 |
 |---|---|
 | 工具桥 | 纳入。容器内 DevDesk 扩展经 pi `extension_ui_request` 对话框通道（`input`）把 Host 代执行工具转发给 Host，Host 回执经 `extension_ui_response` 返回 |
-| 全局库升级 | 新增显式离线命令 `devdesk-host storage upgrade-global --data PATH`；**旧数据集的升级改造属于本计划范围**，验收阶段对现有数据集实际执行 |
+| 全局库升级 | 离线命令 `devdesk-host storage upgrade-global --data PATH` 的**实现口径按共享地基 2.5.2 与第 3 章**（版本号与 CHECK 取值只以共享地基为准）；**旧数据集的升级改造与实际执行属于本计划范围**，验收阶段对现有数据集实际执行 |
 | 模型服务商 | 智谱编程订阅、MiniMax 订阅、DeepSeek 官方 API、本机 Ollama 全部接入 |
 | 根编排 | pi 不获得 `orchestration` 能力（与 DSH 一致） |
 | Agent 提问 | 首期不支持（pi 无原生能力，RPC 模式无多选对话框） |
@@ -48,7 +48,7 @@
 
 | pi 记录 | 观察 |
 |---|---|
-| `prompt` 响应 `disposition: started` | `Admitted{external_turn: Host 生成的 id}`（pi 不签发轮次 id，此身份只用于把工具调用绑定到已接纳的轮次） |
+| `prompt` 响应 `disposition: started` | `Admitted{external_turn: Host 生成的 id}`（pi 不签发轮次 id，此身份只用于把工具调用绑定到已接纳的轮次；该 id 必须写进 turn 记录的 `external_turn` 字段——core 侧 `validate_provider_call_scope` 按 `turn["external_turn"]` 与观察里的 `external_turn` 比对，见 `crates/core/src/conversation_observations.rs:338-369`） |
 | `disposition: handled` | `provider_rejected`，不计为已应用 |
 | `message_end` (user) | `Consumed{message: None}` |
 | `message_update` + `text_delta` | Assistant `Delta`，复用 Codex 的合批与尾部脱敏；`thinking_delta` 丢弃（与 Codex 不展示 reasoning 一致） |
@@ -62,13 +62,15 @@
 - 审批：`approval !== never` 时，`tool_call` 钩子对 bash/edit/write 用 `ctx.ui.select` 发 `devdesk.approval.v1` 请求 → `Obs::Interaction{ToolApproval}`。
 - `tool_call` 钩子同时执行冻结策略（读 `/run/devdesk/permission`），与 DSH 的 `tool-policy.mjs` 同构；桥接工具放行，由 Host 按冻结 Tool 引用核验。
 - 无前缀或跨轮次的对话框一律回 `cancelled: true`。
+- **执行口径与共享地基统一**：pi 的 UI 隧道与新宿主 MCP 桥是**同一条链路的两个传输实现**——都产出 `Obs::ToolCall` → core 接纳（冻结引用核验、`provider_tool_intent` 治理记录、轮次状态与 guards 版本）→ `ToolExecutor` 执行 → `answer_tool` 回执 → 工具调用进入会话记录、可审计、可幂等重放。差别只在传输与请求载荷形状：pi 用 `devdesk.tool_call.v1` 前缀对话框，宿主 MCP 桥用 `request.kind == "bridge"` 判别式（共享地基 2.4.8）。审批同理：pi 的 `devdesk.approval.v1` 与桥的 `Obs::Interaction{ToolApproval, request:{"kind":"bridge",…}}` 都经 core 的 `PendingInteraction` 流程。
+- **平台工具同此**：隧道产出的观察按工具名走 core 的既有分派（集成/未绑定工具用 `qualified_name`、平台工具用 `call_name()`），平台工具仅在具备 controller 授权或 workflow 执行归属的会话可调用，普通讨论会话被 `tool_not_authorized` 拒绝 → 写入 `limitations`。pi 的隧道是**进程内**通道，不依赖容器网络，**不受宿主桥的禁网约束**（那是宿主 MCP 桥的限制）。
 
 ### 2.4 权限
 
 - `capabilities(Pi)`：filesystem 三种；network 仅 `enabled`（pi 没有工具禁网执行器）；tools `all_available` + `restricted`；`limitations` 如实列出（无原生权限模式、不支持 Agent 提问、审批为每次写操作询问、cwd 固定）。
 - `validate_execution_permissions` 的 pi 分支：拒绝 `Disabled` 网络；scoped 规则沿用 DSH 的「必须由冻结挂载落实」校验（抽成共用函数）。
 - 执行合同按实际执行者命名：后端 `pi-extension-v1`，`harness_backend`/`rules` 不用 `native` 字样。
-- `protected_metadata` 加入 `.pi`。
+- `protected_metadata` 加入 `.pi`：**三处必须同步**——`crates/domain/src/permission.rs:255`（`default_protected_metadata`）、`crates/adapters/src/permissions.rs:97`（权限编译）、`crates/adapters/src/docker.rs:1004`（**硬编码白名单** `require([".git",".codex",".agents"].contains(&leaf))`），只改前两处会在容器创建时被第三处拒绝。另注：`protected_metadata` 只作用于 `/work` 下的叶子目录（`docker.rs:1008`），而 pi 的状态目录是 `PI_CODING_AGENT_DIR=/state/pi` → **`.pi` 是否必要取决于 pi 是否在项目目录内写 `.pi/`**，须先核实再决定。
 
 ### 2.5 模型与凭据
 
@@ -78,7 +80,7 @@
 
 ### 2.6 数据与契约
 
-- `sql/global/schema.sql`：CHECK 加入 `'pi'`，`user_version=25`。
+- `sql/global/schema.sql`：**一次全上**——`user_version` 24 → 25，`runtime_installations.provider` CHECK 直接写成 `('codex','dsh','pi','mcode','zcode','opencode')`；口径以共享地基第 3 章为准（本计划不另立版本号，避免出现两个互相矛盾的 25）。
 - `schemas/rpc.schema.json` 六处 provider 枚举、`schemas/permission-backend.schema.json` 两处。
 
 ## 3. 工作项
@@ -121,7 +123,7 @@
 
 1. 扩展：注册动态工具、`input` 隧道、`select` 审批。
 2. Rust：`project` 识别隧道请求；`answer_tool`、`answer` 的 pi 形状；`approval == Never` 时自动拒绝；打开会话时用现有的 `dynamic_tools(binding)` 写出桥接文件。
-3. 测试：隧道往返、无前缀对话框取消、审批自动拒绝；真实镜像上的 `#[ignore]` Docker 用例（被策略拦截的工具、一次桥接调用）。
+3. 测试：隧道往返、无前缀对话框取消、审批自动拒绝；**桥接调用进入会话记录与治理记录（可审计）**、同一调用重放不重复执行；真实镜像上的 `#[ignore]` Docker 用例（被策略拦截的工具、一次桥接调用）。
 
 ### P4 验收与文档
 
@@ -130,7 +132,7 @@
 
 ## 4. 旧数据集升级（本计划范围）
 
-1. 新增离线命令 `devdesk-host storage upgrade-global --data PATH`：核对宿主进程已停止后重建 `runtime_installations`（CHECK 加入 `'pi'`），`user_version` 24→25，保留全部既有行（含 `data/` 现有 3 条安装）。启动版本检查同步接受 0|24|25（`catalog.rs:41`）。
+1. 新增离线命令 `devdesk-host storage upgrade-global --data PATH`：核对宿主进程已停止后重建 `runtime_installations`（CHECK 写成 `('codex','dsh','pi','mcode','zcode','opencode')`），`user_version` 24 → 25，保留全部既有行（含 `data/` 现有 3 条安装）。启动版本检查同步接受新版本号（`catalog.rs:41`）。
 2. `tests/entrypoints/dataset_protocol.py` 扩展覆盖 v24→v25 升级路径。
 3. 升级后 codex/dsh 权限绑定合同漂移：通过设置页重新应用绑定（RPC `permission.binding.preflight` + `permission.bindings.apply`；`permission.bind` 已退役）。既有冻结会话需创建后继会话。
 4. 验收阶段对 `data/`、`data1/` 实际执行升级并保留原库备份；`devdesk-recovery` 快照按需另行执行同一命令。
@@ -153,7 +155,7 @@ python3 tests/entrypoints/native_acceptance.py --docker-only --prepare
 1. 设置里准备 Pi 镜像，确认协议探针通过；为 pi 保存智谱或 MiniMax 的 API key。
 2. 新建 Agent，选 Pi 与 GLM 5.3，开讨论发消息：确认流式输出、最终正文和终态。
 3. 让 Agent 读文件、改文件，确认工具事件入账；只读 Profile 下确认写入被拦截且原因明确。
-4. 跑一个带步骤工具的 workflow 步骤，确认桥接调用往返；取消运行中的轮次，确认停止模式与容器移除。
+4. 跑一个带步骤工具的 workflow 步骤，确认桥接调用往返、宿主侧产生回执，**且该调用出现在会话记录与治理记录中（可审计）**；取消运行中的轮次，确认停止模式与容器移除。
 5. 重启 Host 后继续该会话，确认 `sessionId` 与模型被正确恢复。
 6. 对旧数据集执行 `storage upgrade-global`，重新应用 codex/dsh 权限绑定，codex 与 dsh 各跑一轮。
 

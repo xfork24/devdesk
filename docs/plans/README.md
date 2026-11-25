@@ -6,6 +6,10 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
+| [Harness 扩展共享地基](harness-shared-foundation/PLAN.md) | 本计划（待实施） | mcode/zcode/opencode 三条接入线共用：Provider 注册与显式分支、ACP 与 ZCode 线协议、凭据泛化、宿主侧 MCP 工具桥、全局库 v25 与旧数据集升级 |
+| [mcode Harness 接入](mcode-harness/PLAN.md) | 本计划（待实施） | MiniMax Code CLI 0.7.9 作为第四个 Harness；ACP 标准协议、四家模型服务商、宿主 MCP 工具桥；P0 判定 Linux 原生依赖 |
+| [opencode Harness 接入](opencode-harness/PLAN.md) | 本计划（待实施） | opencode CLI 2.4.1 作为第六个 Harness；与 mcode 共用 ACP 适配器、GitHub 发行二进制、插件钩子策略；禁用后台服务与 `--auto` |
+| [zcode Harness 接入](zcode-harness/PLAN.md) | 本计划（待实施，受 P0 门控） | ZCode CLI 作为第五个 Harness；ZCode Protocol app-server、宿主持有凭据（host 模式）；协议未公开文档化，未跑通不进入 P1 |
 | [pi Harness 接入](pi-harness/PLAN.md) | 本计划（待实施） | pi 1.6.0 作为第三个 Harness；工具桥、四家模型服务商、全局库 v25 与旧数据集升级；不含根编排 |
 | [领域插件化改造](domain-plugins/PLAN.md) | [实施与验证](domain-plugins/EXECUTION.md) | 空领域、独立制品、双端热切换和三种调度的真实软件交付已记录。当前实现见 [v0.5 领域包](../design/domain-packages.md) |
 | [工作台与存储性能优化](workbench-storage-performance/PLAN.md) | [工作台延迟评估](../benchmarks/workbench-latency-2026-11-23.md)、[阶段验收](workbench-storage-performance/VALIDATION.md) | P0、P1 及 Web 分包已验收。完成本机负载诊断，继续使用 SQLite。正式 100 前端容量验收待独立负载环境 |
