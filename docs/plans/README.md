@@ -6,6 +6,7 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
+| [pi Harness 接入](pi-harness/PLAN.md) | 本计划（待实施） | pi 1.6.0 作为第三个 Harness；工具桥、四家模型服务商、全局库 v25 与旧数据集升级；不含根编排 |
 | [领域插件化改造](domain-plugins/PLAN.md) | [实施与验证](domain-plugins/EXECUTION.md) | 空领域、独立制品、双端热切换和三种调度的真实软件交付已记录。当前实现见 [v0.5 领域包](../design/domain-packages.md) |
 | [工作台与存储性能优化](workbench-storage-performance/PLAN.md) | [工作台延迟评估](../benchmarks/workbench-latency-2026-11-23.md)、[阶段验收](workbench-storage-performance/VALIDATION.md) | P0、P1 及 Web 分包已验收。完成本机负载诊断，继续使用 SQLite。正式 100 前端容量验收待独立负载环境 |
 | [出厂模型与工程规范整理](default-configuration-refresh/PLAN.md) | [实施与验收](default-configuration-refresh/EXECUTION.md) | 完成。三种出厂 Model、隔离重置、真实 Feature 与三个 Task 闭环通过 |
