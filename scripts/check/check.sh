@@ -6,6 +6,7 @@ cd "$(dirname "$0")/../.."
 python3 tests/entrypoints/permission_schema.py
 ./scripts/check/check-defaults.sh
 ./scripts/check/check-architecture.sh
+python3 tests/entrypoints/test_architecture_checker.py
 python3 scripts/check/check-docs.py
 python3 tests/entrypoints/test_docs_checker.py
 python3 tests/entrypoints/rpc_contract_inventory.py
