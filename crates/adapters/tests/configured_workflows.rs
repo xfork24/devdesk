@@ -2457,6 +2457,44 @@ fn cancelling_a_failed_workflow_remains_schedulable_and_allows_a_fresh_run() {
 }
 
 #[test]
+fn title_only_project_runs_an_agent_step_without_a_repository_or_workspace() {
+    // A domain without an engineering extension has no repository or worktree to lease.
+    let dir = tempfile::tempdir().unwrap();
+    let mut engine = engine(dir.path());
+    let recorder = Arc::new(RecordingAgent::default());
+    engine.harness = recorder.clone();
+    recorder.responses.lock().unwrap().push(
+        json!({"status":"completed","summary":"完成调查","outputs":{"finding":{"scope":"title only"}}}));
+    let (role, agent) = research_agent(&engine);
+    let run = launch(
+        &engine,
+        &role,
+        &agent,
+        json!({"outputs":{"finding":{"delivery_ref":"fixture-delivery-object:1"}}}),
+    );
+    drive(&engine, 12);
+    let after = instance(&engine, &run["id"]);
+    let state = engine.store.snapshot().unwrap();
+    let owner = after["owner_id"].as_str().unwrap();
+    let project = state.projects.iter().find(|p| p.id == owner).unwrap();
+    assert!(
+        project
+            .workspace_definition
+            .as_ref()
+            .is_some_and(|workspace| workspace.repository.is_empty()),
+        "a title-only project registers no repository"
+    );
+    assert!(state.repository_worktrees.is_empty());
+    let starts = recorder.starts.lock().unwrap();
+    assert_eq!(starts.len(), 1);
+    assert!(
+        starts[0].workspace.is_none() && starts[0].code_view.is_none(),
+        "the session must open without a workspace lease or a code view"
+    );
+    assert_eq!(after["steps"][0]["status"], "completed");
+}
+
+#[test]
 fn cancelling_a_child_under_a_paused_ancestor_still_releases_the_invocation() {
     let dir = tempfile::tempdir().unwrap();
     let engine = engine(dir.path());

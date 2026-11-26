@@ -63,3 +63,34 @@
 
 - 没有运行真实模型或 GitHub。
 - 浏览器用例里需要联网拉取镜像的分支依赖本地已有的镜像缓存。
+
+## P1 协议核心
+
+实施中。提交哈希在本阶段的门禁通过后统一补记。
+
+### 已完成的工作项
+
+| 工作项 | 内容 |
+|---|---|
+| G-3 | 删除 core 对六个单体时代角色标识的归档逻辑，经验按角色筛选只匹配确切标识；架构检查的已知例外清空 |
+| N-8 | 结论：**无仓库的项目可以直接运行 Agent 步骤**，不需要新增文档工作区。新增回归测试 `title_only_project_runs_an_agent_step_without_a_repository_or_workspace` |
+
+### 初步验收
+
+| 工作项 | 命令 | 结果 |
+|---|---|---|
+| G-3 | `cargo test -p devdesk-core --locked --lib configuration_catalog` | 2 通过 |
+| | `cargo test -p devdesk-host --locked --bin devdesk-host configuration_read` | 9 通过 |
+| | `cargo test -p devdesk-adapters --locked --features test-fixtures,fixture-catalog --test experience_directory --test experience_imports --test conversations --test governance --test agent_capabilities` | 36 通过 |
+| | 反向验证：先删代码、后清例外 | 架构检查报出 3 条过期的例外，退出码 1；清空后通过 |
+| N-8 | `cargo test -p devdesk-adapters --locked --features test-fixtures,fixture-catalog --test configured_workflows -- title_only_project_runs_an_agent_step_without_a_repository_or_workspace` | 1 通过 |
+| | 同一套件中现有的 4 个用例：`automatic_review_blocks_rejection_and_advances_after_rework_without_confirmation`、`dynamic_spec_rejection_cannot_be_confirmed_and_rework_keeps_the_original_report`、`explicit_manual_approval_requires_reason_and_exact_execution_and_preserves_rejection`、`cancelling_a_failed_workflow_remains_schedulable_and_allows_a_fresh_run` | 4 通过。它们同样用只有标题的项目启动带 Agent 步骤的流程 |
+
+### N-8 的依据
+
+会话在没有工作区租约、也没有代码视图的情况下打开，步骤正常完成。`harness_workspace::prepare` 在这种请求下直接返回私有工作目录，不要求仓库。因此 V1 的风险不成立。
+
+### 执行中的发现
+
+- **仅标题的项目仍然带有工作区定义。** `project.create` 总是写入 `workspace_definition`，其中 `repository` 为空字符串、`mainline` 为 `main`。这说明内核的项目模型带着工程形状，由 N-4 处理。
+- **单独运行适配器的集成测试需要 `--features test-fixtures,fixture-catalog`。** 只开 `test-fixtures` 时出厂目录不含角色与 Agent，依赖默认绑定的用例会失败。`cargo test --workspace` 通过 Host 的开发依赖带上了这两个 feature，所以完整检查不受影响。这正是 T-6 要消除的耦合。
