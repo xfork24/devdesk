@@ -26,6 +26,8 @@ flowchart TD
     E --> S[Session 与 Turn]
 ```
 
+Feature 与 Task 的类型目前由内核定义，围绕它们的流程由软件开发包提供。按[架构独立性改造计划](../plans/arch-independency/PLAN.md)，两者将迁为软件开发包的对象类型。
+
 图中的两条工作项连线表示 WorkflowInstance 可以归属 Feature 或 Task，不表示一个实例同时归属两者。步骤也可能由平台工具或子工作流执行，并不都需要 Agent 会话。
 
 ## Agent、Session 和 Turn

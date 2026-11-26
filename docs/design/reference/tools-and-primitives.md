@@ -4,7 +4,7 @@
 
 ## 发布和授权
 
-当前 manifest 发布 49 个 platform 工具定义及 2 个 Harness 原生能力声明；core 注册表包含 54 个平台处理器。注册但未发布为当前出厂工具的处理器有 `workspace.snapshot`、`tasks.complete`、`git.candidate`、`git.advance`、`git.publish`。不能将这 54 个处理器全部描述为当前 Agent 可调用工具。
+当前 manifest 发布 49 个 platform 工具定义及 2 个 Harness 原生能力声明；core 注册表包含 55 个平台处理器。`domain.read` 的工具定义不在仓库的配置目录里，由软件开发包的构建脚本生成。注册但未发布为当前出厂工具的处理器有 `workspace.snapshot`、`tasks.complete`、`git.candidate`、`git.advance`、`git.publish`。不能将这 55 个处理器全部描述为当前 Agent 可调用工具。
 
 实际可见集合由 Capability 引用、运行配置、驱动能力和权限进一步限制。平台工具的模型调用名由 `devdesk_` 前缀加将点号替换为下划线的 qualified_name 生成；本文使用更容易阅读的 qualified_name。
 
