@@ -7,11 +7,12 @@ python3 tests/entrypoints/permission_schema.py
 ./scripts/check/check-defaults.sh
 ./scripts/check/check-architecture.sh
 python3 tests/entrypoints/test_architecture_checker.py
+node scripts/check/check-web-boundaries.mjs
 python3 scripts/check/check-docs.py
 python3 tests/entrypoints/test_docs_checker.py
 python3 tests/entrypoints/rpc_contract_inventory.py
 python3 tests/entrypoints/host_launcher.py
-node --test tests/entrypoints/ci_workflow_gate.mjs tests/entrypoints/configuration_query_cache.mjs
+node --test tests/entrypoints/ci_workflow_gate.mjs tests/entrypoints/configuration_query_cache.mjs tests/entrypoints/web_boundaries.mjs
 python3 -m unittest discover -s tests/live -p 'test_*.py'
 ./scripts/check/check-style.sh
 npm --prefix web run build:fixture

@@ -1,0 +1,7 @@
+{
+  "core-to-domain": [],
+  "domain-to-core": [
+    "plugins/software-development/web/entry.tsx -> web/src/App",
+    "plugins/software-development/web/entry.tsx -> web/src/domain-sdk"
+  ]
+}

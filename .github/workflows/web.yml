@@ -27,7 +27,8 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm --prefix web ci
       - run: npm --prefix web run lint
+      - run: node scripts/check/check-web-boundaries.mjs
       - run: npm --prefix web run typecheck
       - run: npm --prefix web run format:check
       - run: npm --prefix web run build
-      - run: node --test tests/entrypoints/ci_workflow_gate.mjs
+      - run: node --test tests/entrypoints/ci_workflow_gate.mjs tests/entrypoints/web_boundaries.mjs

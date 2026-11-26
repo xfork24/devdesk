@@ -41,6 +41,7 @@
 python3 scripts/check/check-docs.py
 python3 tests/entrypoints/test_docs_checker.py
 ./scripts/check/check-architecture.sh
+node scripts/check/check-web-boundaries.mjs
 cargo test --workspace --locked
 npm --prefix web run typecheck
 ./scripts/check/check-style.sh

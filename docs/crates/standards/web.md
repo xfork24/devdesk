@@ -39,6 +39,8 @@ npm --prefix web run typecheck
 npm --prefix web run build
 ```
 
+import 边界由 `node scripts/check/check-web-boundaries.mjs` 核对：Web Core 源码不得引用领域包，领域的 Web 源码不得引用 Web Core 源码。当前仍存在的越界 import 记录在 [web-boundaries.json](../../../scripts/check/web-boundaries.json)，新增即失败，消除后同步删除记录。
+
 lint 使用零警告门禁；hooks/refresh 约束保持启用，不增加数量预算。typecheck 覆盖 src 与 tests。当前 refresh 规则约束模块边界，不据此声称运行时已经验证热更新状态保留。
 
 Playwright 用例位于 tests/browser，标题描述用户可见行为，夹具放 support。新增交互覆盖加载、失败、取消、项目切换和草稿保留中与改动相关的分支；浏览器测试不代替真实模型验收。
