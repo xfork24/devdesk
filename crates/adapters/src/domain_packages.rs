@@ -231,6 +231,13 @@ static ENTITY_TYPES_SCHEMA: std::sync::LazyLock<jsonschema::Validator> =
             "../../../schemas/domain-entity-types.schema.json"
         ))
     });
+// A package's configuration bundle is a bundle of the same kind as the factory's.
+static CONFIGURATION_MANIFEST_SCHEMA: std::sync::LazyLock<jsonschema::Validator> =
+    std::sync::LazyLock::new(|| {
+        embedded_schema(include_str!(
+            "../../../schemas/template-manifest.schema.json"
+        ))
+    });
 
 fn decode_contract<T: serde::de::DeserializeOwned>(
     validator: &jsonschema::Validator,
@@ -500,6 +507,13 @@ impl Package {
                 {
                     return Err(invalid("领域呈现入口无效"));
                 }
+            }
+        }
+        if let Some(body) = files.get("configurations/manifest.json") {
+            let value: Value =
+                serde_json::from_slice(body).map_err(|_| invalid("领域配置包清单不是有效 JSON"))?;
+            if !CONFIGURATION_MANIFEST_SCHEMA.is_valid(&value) {
+                return Err(invalid("领域配置包清单不符合出厂资源使用的 Schema"));
             }
         }
         let (sources, defaults, configuration) =
@@ -1730,6 +1744,30 @@ mod tests {
                 software(|manifest| manifest["requires"][field] = value.clone()).unwrap_err();
             assert_eq!(error.code, code, "{field}");
         }
+    }
+
+    #[test]
+    fn the_configuration_bundle_manifest_is_a_bundle_manifest() {
+        crate::factory_bundle::initialize().unwrap();
+        let mut original = zip::ZipArchive::new(Cursor::new(SOFTWARE)).unwrap();
+        let mut files = BTreeMap::new();
+        for index in 0..original.len() {
+            let mut entry = original.by_index(index).unwrap();
+            let mut body = Vec::new();
+            entry.read_to_end(&mut body).unwrap();
+            files.insert(entry.name().to_owned(), body);
+        }
+        let mut bundle: Value =
+            serde_json::from_slice(&files["configurations/manifest.json"]).unwrap();
+        // The package lists every source type, as the factory bundle does.
+        assert_eq!(bundle["types"].as_object().unwrap().len(), 15);
+        bundle["types"].as_object_mut().unwrap().remove("sandbox");
+        files.insert(
+            "configurations/manifest.json".into(),
+            serde_json::to_vec(&bundle).unwrap(),
+        );
+        let error = Package::read(&zip(files)).map(|_| ()).unwrap_err();
+        assert_eq!(error.code, "invalid_domain_package");
     }
 
     #[test]

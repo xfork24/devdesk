@@ -169,7 +169,9 @@ def package(target, identity, title, handler, core):
             }),
         ])
         usage = runpy.run_path(str(ROOT.parents[2] / "scripts/check/configuration_usage.py"))["usage_index"]
-        types = {}
+        # A bundle manifest lists every source type, as the factory's does; unused ones stay empty.
+        types = {kind: [] for kind in json.loads(
+            (ROOT.parents[2] / "schemas/template-manifest.schema.json").read_text())["properties"]["types"]["required"]}
         for record in sources:
             path = f"{record['identity']}.json"
             files[f"configurations/{path}"] = json.dumps(record).encode()

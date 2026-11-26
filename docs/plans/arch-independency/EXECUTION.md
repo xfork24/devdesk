@@ -78,6 +78,7 @@
 | K-1 | 清单格式 2：`format` 2、`domain_protocol` 2、`requires`。格式与协议在 Schema 之前核对，旧格式的包得到指明两个版本的 `domain_protocol_unsupported` |
 | K-2 | `GET /capabilities` 增加 `package_format`、`platform_handlers`、`core_inputs`、`extensions`、`rpc`，`domain_protocol` 为 2 |
 | K-3 | 安装期协商：Host 版本、平台处理器、扩展组、RPC 四类依赖逐项核对，错误指明缺什么。扩展组同时登记自己提供的处理器与内核输入；包只有声明依赖某个组，才能发布该组处理器上的工具、把它列为交付的生产者、声明该组的内核输入，或绑定该组的钩子与资源 |
+| K-4 | 领域包的配置包清单在安装时套用与出厂资源相同的 Schema。两个构建脚本输出全部 15 个类型键，未使用的留空 |
 
 ### 初步验收
 
@@ -99,6 +100,8 @@
 | | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 无警告 |
 | | `python3 tests/entrypoints/lifecycle_contract.py target/fixtures/debug/devdesk-host` | 通过，含新增的能力目录断言 |
 | | `node tests/entrypoints/domain_packages.mjs target/debug/devdesk-host web/dist/core <格式 2 的软件开发包>` | 退出码 0。真实 Docker worker 与浏览器：安装、激活、调用钩子、渲染页面 |
+| K-4 | `cargo test -p devdesk-adapters --locked --lib domain_packages::tests` | 9 通过。新增一项：从真实包的配置包清单里删去一个类型键后被拒绝 |
+| | `cargo test -p devdesk-adapters --locked --features test-fixtures,fixture-catalog --test schema_contracts --test project_test_configuration` | 28 通过，2 忽略 |
 
 ### N-8 的依据
 

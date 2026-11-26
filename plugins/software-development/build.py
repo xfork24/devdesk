@@ -165,7 +165,10 @@ def build(target, web):
                  "required": ["head", "base", "title", "body"],
                  "properties": {key: {"type": "string", "minLength": 1}
                                 for key in ("head", "base", "title", "body")}}
-    types = {}
+
+    # A bundle manifest lists every source type, as the factory's does; unused ones stay empty.
+    types = {kind: [] for kind in json.loads(
+        (REPO / "schemas/template-manifest.schema.json").read_text())["properties"]["types"]["required"]}
     files = {"runtime/worker.mjs": (PACKAGE / "runtime/worker.mjs").read_bytes()}
     reporters = {"node_test": "runtime/node-reporter.mjs",
                  "python_unittest": "runtime/project-tests.py", "command": "runtime/project-tests.py"}
