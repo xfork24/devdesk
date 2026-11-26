@@ -10,15 +10,9 @@ RANKS = {'devdesk-domain': 0, 'devdesk-core': 1, 'devdesk-adapters': 2,
          'devdesk-host': 3}
 KERNEL_SOURCE_SUFFIXES = {'.rs', '.toml', '.mjs', '.json'}
 # Kernel code that still names a domain package or a retired factory identity. Each entry
-# is an audit item of docs/plans/arch-independency: the reasons it exists, and the rules it
-# is allowed to trip. Delete the entry together with the code.
-KNOWN_DOMAIN_REFERENCES = {
-    'crates/core/src/configuration_catalog.rs': (
-        'A1 legacy software roles', ('names a retired factory identity',)),
-    'crates/adapters/src/experience_index.rs': (
-        'A2 domain role namespace', ('names a domain package namespace',
-                                     'names a retired factory identity')),
-}
+# is the reason it exists and the rules it is allowed to trip. The list must match exactly:
+# a new reference fails, and so does an entry whose code is gone. It is empty today.
+KNOWN_DOMAIN_REFERENCES = {}
 # The build script embedding the factory bundle is the only kernel code that names its directory.
 FACTORY_BUNDLE_LOADER = 'crates/adapters/build.rs'
 # Source types the factory bundle no longer publishes. A literal naming one of their old

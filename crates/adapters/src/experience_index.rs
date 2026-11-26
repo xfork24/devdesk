@@ -98,9 +98,7 @@ pub(super) fn entries(
                 .get("role_ref")
                 .and_then(Value::as_str)
                 .and_then(|id| state.configuration(id).ok())
-                .is_some_and(|source| {
-                    source.r#type == "role" && role_matches(role, &source.definition_id)
-                });
+                .is_some_and(|source| source.r#type == "role" && source.definition_id == role);
             if !matches {
                 return false;
             }
@@ -209,16 +207,4 @@ pub(super) fn entries(
         // content_digest is already sealed in the immutable experience fact. Detail reads still verify the manifest.
     }
     Ok(rows)
-}
-
-// The six original software Roles were moved into the domain package under
-// these identities. Historical captures still pin the original Role revision.
-fn role_matches(selected: &str, source: &str) -> bool {
-    selected == source
-        || source.strip_prefix("builtin-role-").is_some_and(|role| {
-            matches!(
-                role,
-                "analyst" | "architect" | "developer" | "project-manager" | "reviewer" | "tester"
-            ) && selected.strip_prefix("software-development.role-") == Some(role)
-        })
 }

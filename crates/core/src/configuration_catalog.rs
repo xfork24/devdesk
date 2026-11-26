@@ -46,20 +46,6 @@ pub fn package_role_identity(record: &ConfigurationRecord) -> Option<&str> {
     identity.contains('.').then_some(identity)
 }
 
-fn legacy_software_role(record: &ConfigurationRecord) -> bool {
-    record.scope.is_global()
-        && record.r#type == "role"
-        && matches!(
-            record.definition_id.as_str(),
-            "builtin-role-analyst"
-                | "builtin-role-architect"
-                | "builtin-role-developer"
-                | "builtin-role-project-manager"
-                | "builtin-role-reviewer"
-                | "builtin-role-tester"
-        )
-}
-
 /// An adapter may attach its memory reservation to the view's complete lifetime.
 /// Old views can remain pinned by readers after eviction from the current cache.
 pub trait SnapshotAllocation: Send + Sync {}
@@ -224,16 +210,6 @@ impl ConfigurationCatalogSnapshot {
             self.historical_sources = sources;
         }
         self
-    }
-
-    pub fn archive_legacy_software_roles(self) -> Self {
-        let mut sources = self.historical_sources.clone();
-        sources.extend(
-            self.records("role")
-                .filter(|r| legacy_software_role(r))
-                .map(|r| r.id.clone()),
-        );
-        self.with_historical_sources(sources)
     }
 
     pub fn with_allocation(mut self, allocation: impl SnapshotAllocation + 'static) -> Self {
@@ -561,23 +537,15 @@ mod tests {
                 true,
             )
         };
-        let legacy = role("builtin-role-reviewer", Scope::global());
         let project_copy = role("old-project-global-reviewer", Scope::global());
         let project_role = role("project-reviewer", Scope::project("project"));
         let packaged = role("software-development.role-reviewer", Scope::global());
-        let global = ConfigurationCatalogSnapshot::new(
-            EngineeringState {
-                governance: vec![legacy.clone()],
-                ..Default::default()
-            },
-            1,
-            false,
-        )
-        .unwrap();
+        let global =
+            ConfigurationCatalogSnapshot::new(EngineeringState::default(), 1, false).unwrap();
         let local = Arc::new(
             ConfigurationCatalogSnapshot::new(
                 EngineeringState {
-                    governance: vec![legacy.clone(), project_copy.clone(), project_role.clone()],
+                    governance: vec![project_copy.clone(), project_role.clone()],
                     ..Default::default()
                 },
                 1,
@@ -591,8 +559,7 @@ mod tests {
             std::slice::from_ref(&local),
             |_| true,
         )
-        .unwrap()
-        .archive_legacy_software_roles();
+        .unwrap();
         assert!(directory.record(&project_copy.id).is_none());
         let view = compose_configuration_catalog(&directory, &local, "project").unwrap();
         let sources =
@@ -607,9 +574,7 @@ mod tests {
             ids,
             BTreeSet::from([packaged.id.as_str(), project_role.id.as_str()])
         );
-        assert_eq!(view.record(&legacy.id), Some(&legacy));
         assert_eq!(view.record(&project_copy.id), Some(&project_copy));
-        assert!(view.is_archived(&legacy));
         assert!(view.is_archived(&project_copy));
     }
 

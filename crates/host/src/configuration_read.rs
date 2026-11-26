@@ -125,9 +125,6 @@ impl Workspace {
                         .is_none_or(|scope| scope.includes(project))
                 },
             )?;
-            if visibility.is_some() {
-                view = view.archive_legacy_software_roles();
-            }
             if let Some(sources) = domain_sources {
                 view = view.with_automation_sources(sources.automation);
             }
