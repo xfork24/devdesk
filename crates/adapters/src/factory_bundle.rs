@@ -111,7 +111,7 @@ pub(crate) fn packaged_harness(provider: HarnessProvider) -> Result<Configuratio
     }
     Err(err("configuration_required", "默认 Harness 缺失"))
 }
-pub(crate) fn packaged_runtime(provider: HarnessProvider) -> Result<ExecutionRecipe> {
+pub fn packaged_runtime(provider: HarnessProvider) -> Result<ExecutionRecipe> {
     let manifest: Value = serde_json::from_str(resource("manifest.json")?).map_err(storage)?;
     let defaults: Value = serde_json::from_str(resource(
         manifest["defaults"]

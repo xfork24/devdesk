@@ -9,17 +9,18 @@ const NODE_REPORTER_DIGEST: &str =
 const PROJECT_REPORTER_DIGEST: &str =
     "9538ce6eb3cabe73f2238cff30dbf961c2f2a0b4b66b70768d143f5df49cfe84";
 
+// The executor regression embeds frozen reporter fixtures; packages supply their own.
 #[cfg(any(feature = "fixture-catalog", feature = "test-fixtures", test))]
-fn legacy_reporter(runner: &TestRunner) -> Result<&'static [u8]> {
+fn fixture_reporter(runner: &TestRunner) -> Result<&'static [u8]> {
     Ok(if *runner == TestRunner::NodeTest {
-        include_bytes!("../../../plugins/software-development/runtime/node-reporter.mjs")
+        include_bytes!("../../../tests/fixtures/reporters/node-reporter.mjs")
     } else {
-        include_bytes!("../../../plugins/software-development/runtime/project-tests.py")
+        include_bytes!("../../../tests/fixtures/reporters/project-tests.py")
     })
 }
 
 #[cfg(not(any(feature = "fixture-catalog", feature = "test-fixtures", test)))]
-fn legacy_reporter(_runner: &TestRunner) -> Result<&'static [u8]> {
+fn fixture_reporter(_runner: &TestRunner) -> Result<&'static [u8]> {
     Err(err(
         "configuration_required",
         "请选择提供该测试运行器报告器的领域包",
@@ -228,7 +229,7 @@ impl CommandTests {
                 )?;
                 source.content.as_bytes()
             } else {
-                legacy_reporter(&recipe.runner)?
+                fixture_reporter(&recipe.runner)?
             };
             fs::write(&reporter, content).map_err(storage)?;
             let command = Self::command(&recipe)?;
@@ -590,7 +591,7 @@ mod reporter_tests {
     fn node_reporter_classifies_failures_and_ignores_forged_stdout() {
         let dir = tempfile::tempdir().unwrap();
         let reporter = dir.path().join("reporter.mjs");
-        fs::write(&reporter, legacy_reporter(&TestRunner::NodeTest).unwrap()).unwrap();
+        fs::write(&reporter, fixture_reporter(&TestRunner::NodeTest).unwrap()).unwrap();
         let test = dir.path().join("contract.test.mjs");
         fs::write(
             &test,

@@ -32,6 +32,7 @@ mod conversation_queries;
 mod conversation_reads;
 mod conversation_sources;
 mod factory_bundle;
+pub use factory_bundle::packaged_runtime;
 mod payload_store;
 pub mod project_migration;
 mod project_records;
