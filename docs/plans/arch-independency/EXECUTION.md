@@ -75,6 +75,9 @@
 | G-3 | 删除 core 对六个单体时代角色标识的归档逻辑，经验按角色筛选只匹配确切标识；架构检查的已知例外清空 |
 | N-8 | 结论：**无仓库的项目可以直接运行 Agent 步骤**，不需要新增文档工作区。新增回归测试 `title_only_project_runs_an_agent_step_without_a_repository_or_workspace` |
 | K-5 | 工程钩子从清单 `runtime` 的顶层字段移到 `extensions`，按内核登记的扩展组绑定。新增 `core/src/extensions.rs` 登记两个扩展组；core 的 `DomainReader` 端口只剩 `read`、`has_hook`、`hook`、`resource`；五个工程调用点改走通用钩子，结果的语义校验移到内核调用方 |
+| K-1 | 清单格式 2：`format` 2、`domain_protocol` 2、`requires`。格式与协议在 Schema 之前核对，旧格式的包得到指明两个版本的 `domain_protocol_unsupported` |
+| K-2 | `GET /capabilities` 增加 `package_format`、`platform_handlers`、`core_inputs`、`extensions`、`rpc`，`domain_protocol` 为 2 |
+| K-3 | 安装期协商：Host 版本、平台处理器、扩展组、RPC 四类依赖逐项核对，错误指明缺什么。扩展组同时登记自己提供的处理器与内核输入；包只有声明依赖某个组，才能发布该组处理器上的工具、把它列为交付的生产者、声明该组的内核输入，或绑定该组的钩子与资源 |
 
 ### 初步验收
 
@@ -90,6 +93,12 @@
 | | `cargo test --workspace --locked` | 60 个套件，786 通过，0 失败，39 忽略 |
 | | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 无警告 |
 | | `./scripts/check/check-architecture.sh`、`check-permissions.sh`、`check-defaults.sh`、`check-docs.py`、`check-web-boundaries.mjs`、`rpc_contract_inventory.py` | 全部通过 |
+| K-1、K-2、K-3 | `cargo test -p devdesk-core --locked --lib domain_protocol` | 2 通过。版本比较与四类协商错误 |
+| | `cargo test -p devdesk-adapters --locked --lib domain_packages::tests` | 8 通过。协商与门禁用真实软件开发包改写清单：格式或协议为 1、Host 版本过高、缺处理器、缺扩展组、缺 RPC，以及未声明依赖的工程工具、内核输入、钩子与资源 |
+| | `cargo test --workspace --locked` | 60 个套件，792 通过，0 失败，39 忽略 |
+| | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 无警告 |
+| | `python3 tests/entrypoints/lifecycle_contract.py target/fixtures/debug/devdesk-host` | 通过，含新增的能力目录断言 |
+| | `node tests/entrypoints/domain_packages.mjs target/debug/devdesk-host web/dist/core <格式 2 的软件开发包>` | 退出码 0。真实 Docker worker 与浏览器：安装、激活、调用钩子、渲染页面 |
 
 ### N-8 的依据
 
@@ -99,6 +108,10 @@
 
 - **仅标题的项目仍然带有工作区定义。** `project.create` 总是写入 `workspace_definition`，其中 `repository` 为空字符串、`mainline` 为 `main`。这说明内核的项目模型带着工程形状，由 N-4 处理。
 - **历史 ZIP 夹具不能再用于测试。** 三个单元测试和两个 Docker 用例直接安装 `software-development-0.3.0.zip`，清单形状一变它就不再合法。夹具改为由 `plugins/software-development/build.py --runtime-only` 生成的当前格式包 `software-development-current.zip`，只含运行端与配置。`domain_release.mjs` 原来用历史 ZIP 做跨版本回切，现在改用这份夹具并从清单读取版本号；该用例需要单独构建的制品和 Docker，本轮没有运行。
+- **`requires.extensions` 由包显式声明，不从内容推导。** 声明依赖表达包作者的意图，内核负责核对包的内容没有越出声明。`requires.handlers` 则由构建脚本从包引用的工具推导，包内定义与出厂定义都算。
+- **`requires.host` 取自 `Cargo.toml` 的 workspace 版本。** 包与 Host 从同一检出构建时，恰好满足“不低于”。
+- **格式与协议在 JSON Schema 之前核对。** Schema 的 `const` 只能回答“不符合 Schema”，说不出本 Host 接受什么。
+- **能力目录暂时不含 worker 的运行时限制。** 这些数字现在写死在 worker 的容器参数里，N-5 重写 worker 时以具名常量发布。
 - **钩子要求的内核输入是登记的数据。** 扩展组登记表里的每个钩子声明自己要求的内核输入，通用校验只核对“绑定到钩子的处理器声明了输入输出 Schema，并使用该输入”，不再写死“测试识别要用 Git 快照”。
 - **报告器的扩展名规则不再由清单校验负责。** 清单只做通用的有界 UTF-8 文件检查；落地时的文件名一直由测试运行器自己决定。
 - **读取项目的钩子与资源时用 `try_read`。** 与 `configuration_scope` 的做法一致：项目 RPC 可能已经持有一份读锁，切换领域时直接返回 `domain_busy`，不等待嵌套的锁。

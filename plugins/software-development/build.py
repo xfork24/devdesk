@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import runpy
+import tomllib
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 PACKAGE = Path(__file__).resolve().parent
@@ -15,6 +16,40 @@ BRANCH = f"{DOMAIN}.branch.plan"
 CONNECT = f"{DOMAIN}.project.connect"
 PR_CREATE = f"{DOMAIN}.pull-request.create"
 AUTHORIZE = f"{DOMAIN}.delivery.authorize"
+# The lowest Host this package runs on is the one built from the same checkout.
+HOST_VERSION = tomllib.loads((REPO / "Cargo.toml").read_text())["workspace"]["package"]["version"]
+# What the package uses beyond the kernel-wide surface. The kernel checks at install that
+# every engineering handler, kernel input and hook the package touches belongs to a declared group.
+EXTENSION_GROUPS = ["engineering.git/1", "engineering.tests/1"]
+
+
+def platform_handlers(entries):
+    """Platform tool handlers the package calls through its own or the kernel's tool definitions."""
+    tools = {f"{record['identity']}:{record['revision']}": record["data"]
+             for record in entries if record["type"] == "tool"}
+    kernel = json.loads((REPO / "plugins/core/manifest.json").read_text())
+    for path in kernel["types"]["tool"]:
+        record = json.loads((REPO / "plugins/core" / path).read_text())
+        tools[f"{record['identity']}:{record['revision']}"] = record["data"]
+
+    def visit(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key == "tool_ref" and isinstance(item, str):
+                    used.add(item)
+                elif key in ("tools", "tool_refs") and isinstance(item, list):
+                    used.update(ref for ref in item if isinstance(ref, str))
+                else:
+                    visit(item)
+        elif isinstance(value, list):
+            for item in value:
+                visit(item)
+
+    used = set()
+    for record in entries:
+        visit(record)
+    return sorted(tools[ref]["qualified_name"] for ref in used
+                  if tools.get(ref, {}).get("implementation") == "platform")
 
 
 def source(kind, key, data, **references):
@@ -170,7 +205,10 @@ def build(target, web):
                                        ("BranchQueue", "DeliveryWorkbench", "EngineeringSettings"), strict=True)
             ]}],
         }
-    manifest = {"format": 1, "id": DOMAIN, "version": VERSION, "entity_types": entity_types,
+    manifest = {"format": 2, "id": DOMAIN, "version": VERSION, "domain_protocol": 2,
+                "requires": {"host": HOST_VERSION, "handlers": platform_handlers(entries),
+                             "extensions": EXTENSION_GROUPS},
+                "entity_types": entity_types,
                 "files": {path: hashlib.sha256(contents).hexdigest() for path, contents in files.items()},
                 "extensions": {
                     "engineering.git/1": {"handlers": {"worktree_branch": BRANCH,

@@ -9,6 +9,19 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 ROOT = Path(__file__).parent
 
 
+HOST_VERSION = (  # read without a TOML parser: the workspace version line in Cargo.toml
+    next(line.split('"')[1] for line in (ROOT.parents[2] / "Cargo.toml").read_text().splitlines()
+         if line.startswith("version = ")))
+KERNEL_TOOLS = {}
+for _path in json.loads((ROOT.parents[2] / "plugins/core/manifest.json").read_text())["types"]["tool"]:
+    _record = json.loads((ROOT.parents[2] / "plugins/core" / _path).read_text())
+    KERNEL_TOOLS[f"{_record['identity']}:{_record['revision']}"] = _record["data"]
+
+
+def requires(handlers, extensions):
+    return {"host": HOST_VERSION, "handlers": sorted(handlers), "extensions": sorted(extensions)}
+
+
 def package(target, identity, title, handler, core):
     method = f"{identity}.{handler}"
     contribution = f"{identity}.overview"
@@ -170,8 +183,17 @@ def package(target, identity, title, handler, core):
                                     f"{identity}.proof-reader:1": f"{identity}.proof-reader-agent:1"},
         }).encode()
         files["configurations/usage.json"] = json.dumps({"references": usage(sources)}).encode()
+    # Handlers the fixture reaches: its own domain.read tools and the kernel tools its editor adopts.
+    adopted = {"builtin-tool-workflow-inspect", "builtin-tool-workflow-step-dispatch",
+               "builtin-tool-workflow-step-accept", "builtin-tool-workflow-decision-request",
+               "builtin-tool-workflow-complete"}
+    handlers = set() if core else {"domain.read"} | {
+        data["qualified_name"] for reference, data in KERNEL_TOOLS.items()
+        if reference.rsplit(":", 1)[0].removeprefix("builtin-tool-") in adopted
+        and data.get("implementation") == "platform"}
     manifest = {
-        "format": 1, "id": identity, "version": "1",
+        "format": 2, "id": identity, "version": "1", "domain_protocol": 2,
+        "requires": requires(handlers, ["engineering.git/1"] if core == "git_head" else []),
         **({"entity_types": entity_types} if entity_types else {}),
         "files": {path: hashlib.sha256(value).hexdigest() for path, value in files.items()},
         "runtime": {

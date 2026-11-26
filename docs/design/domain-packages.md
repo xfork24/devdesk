@@ -6,12 +6,28 @@ DevDesk v0.5 独立交付 Rust Host、Web Core 和领域 ZIP。Host 带有 Model
 
 | 内容 | 职责 |
 |---|---|
-| `manifest.json` | 包 ID、版本、标记、文件 SHA-256、配置与可选运行时或呈现目标 |
+| `manifest.json` | 包 ID、版本、格式与协议版本、依赖声明、文件 SHA-256，以及可选的扩展绑定、运行时或呈现目标 |
 | `configurations/` | 不可变源定义和默认选择，以及实体 Schema、工作流绑定和引用索引 |
 | `runtime/` | 可选 JavaScript 处理器、输入输出合同关联和运行辅助文件 |
 | `ui/` | 可选客户端贡献声明与目标专属资产 |
 
 格式由[领域包 Schema](../../schemas/domain-package.schema.json)、[对象定义](../../schemas/domain-entity-types.schema.json)和[客户端贡献](../../schemas/domain-contributions.schema.json)共同描述。源码分别位于 [plugins/core](../../plugins/core/manifest.json) 和 [plugins/software-development](../../plugins/software-development/README.md)。软件开发包的 Feature、Task 使用冻结证据授权，仓库识别、分支命名、PR 文案、测试报告和页面入口也随包发布。
+
+## 依赖与协商
+
+领域包使用清单格式 2、`domain_protocol` 2，并在 `requires` 中声明依赖：最低 Host 版本 `host`、调用的平台处理器 `handlers`、需要的扩展组 `extensions`，以及可选的 RPC `rpc`。`GET /capabilities` 以同样的名字列出本 Host 提供的全部内容：`package_format`、`domain_protocol`、`platform_handlers`、`core_inputs`、`extensions`、`rpc`。构建工具从包的实际引用推导 `handlers`。
+
+安装时先核对格式与协议，再逐项核对依赖。失败时错误指明缺什么：
+
+| 错误码 | 含义 |
+|---|---|
+| `domain_protocol_unsupported` | 包的格式或协议版本不是本 Host 接受的版本 |
+| `host_version_unsupported` | 包要求的最低 Host 版本高于当前版本 |
+| `handler_unsupported` | 本 Host 没有列出的平台处理器 |
+| `extension_unavailable` | 本 Host 没有列出的扩展组；或包使用了某个扩展组提供的工具、内核输入、钩子与资源，却没有声明依赖该组 |
+| `rpc_unsupported` | 本 Host 没有列出的 RPC |
+
+Git、GitHub 与测试属于扩展组 `engineering.git/1` 和 `engineering.tests/1`。只有声明依赖的包才能发布这些处理器上的工具定义、把处理器列为交付的生产者、声明 Git 内核输入，或在清单的 `extensions` 下把处理器绑定到该组的钩子。钩子与资源集合由内核登记：`worktree_branch` 与 `pull_request_creation` 属于 Git 组，`test_discovery` 与 `reporters` 资源属于测试组。
 
 ## 安装、激活和版本
 

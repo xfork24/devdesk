@@ -24,6 +24,9 @@ struct Manifest {
     format: u32,
     id: String,
     version: String,
+    domain_protocol: u32,
+    #[serde(default)]
+    requires: devdesk_core::domain_protocol::Requires,
     files: BTreeMap<String, String>,
     runtime: Option<Runtime>,
     ui: Option<Ui>,
@@ -315,10 +318,19 @@ impl Package {
         let data = files
             .remove("manifest.json")
             .ok_or_else(|| invalid("缺少领域清单"))?;
+        // The format and protocol are answered before any schema runs, so a package
+        // written for another generation learns what this Host speaks.
+        let declared: Value =
+            serde_json::from_slice(&data).map_err(|_| invalid("领域清单不是有效 JSON"))?;
+        let number =
+            |value: &Value| u32::try_from(value.as_u64().unwrap_or(u64::MAX)).unwrap_or(u32::MAX);
+        devdesk_core::domain_protocol::Capabilities::current().admit(
+            number(&declared["format"]),
+            number(&declared["domain_protocol"]),
+        )?;
         let manifest: Manifest = decode_contract(&MANIFEST_SCHEMA, &data)?;
-        if manifest.format != 1 || !is_identifier(&manifest.id) || !is_identifier(&manifest.version)
-        {
-            return Err(invalid("领域包格式或标识不受支持"));
+        if !is_identifier(&manifest.id) || !is_identifier(&manifest.version) {
+            return Err(invalid("领域包标识不受支持"));
         }
         if manifest.files.len() != files.len()
             || manifest
@@ -558,6 +570,9 @@ impl Package {
                 )?;
             }
         }
+        let capabilities = devdesk_core::domain_protocol::Capabilities::current();
+        capabilities.negotiate(&manifest.requires)?;
+        gate_extensions(&manifest, &sources)?;
         let automation_sources = automation_sources(&sources, &entity_types, &defaults)?;
         Ok(Self {
             digest: digest(bytes),
@@ -596,6 +611,74 @@ impl Package {
             .get(key)
             .map(String::as_str)
     }
+}
+
+/// A package reaches an extension group only by requiring it, whether through a hook it
+/// binds, a kernel input it declares or a platform tool it publishes or names as a producer.
+fn gate_extensions(manifest: &Manifest, sources: &[ConfigurationRecord]) -> Result<()> {
+    let declared = manifest
+        .extensions
+        .keys()
+        .any(|reference| !manifest.requires.extensions.contains(reference));
+    if declared {
+        return Err(err(
+            "extension_unavailable",
+            "领域包在扩展组下绑定了钩子或资源，但没有在 requires.extensions 中声明依赖",
+        ));
+    }
+    let group = |provided: Option<&'static devdesk_core::extensions::ExtensionGroup>,
+                 what: &str| {
+        match provided {
+            None => Ok(()),
+            Some(group) => (manifest.requires.extensions.contains(&group.reference()))
+                .then_some(())
+                .ok_or_else(|| {
+                    err(
+                        "extension_unavailable",
+                        format!(
+                            "{what}由扩展组 {} 提供，领域包没有声明依赖",
+                            group.reference()
+                        ),
+                    )
+                }),
+        }
+    };
+    if let Some(runtime) = &manifest.runtime {
+        for handler in runtime.handlers.values() {
+            if let Some(core) = &handler.core {
+                group(
+                    devdesk_core::extensions::group_of_core_input(core.name()),
+                    "这个内核输入 ",
+                )?;
+            }
+        }
+    }
+    for source in sources {
+        match source.r#type.as_str() {
+            "tool" if source.data["implementation"] == "platform" => {
+                let name = source.data["qualified_name"].as_str().unwrap_or_default();
+                group(
+                    devdesk_core::extensions::group_of_handler(name),
+                    &format!("平台工具 {name} "),
+                )?;
+            }
+            "delivery_type" => {
+                for name in source.data["producer"]["tools"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                {
+                    group(
+                        devdesk_core::extensions::group_of_handler(name),
+                        &format!("交付的来源工具 {name} "),
+                    )?;
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 // Entity workflows own their private closure. Anything also reached by an
@@ -1454,6 +1537,19 @@ mod tests {
     const GIT: &str = "engineering.git/1";
     const TESTS: &str = "engineering.tests/1";
 
+    const SOFTWARE: &[u8] =
+        include_bytes!("../../../tests/fixtures/domain-packages/software-development-current.zip");
+
+    fn zip(files: BTreeMap<String, Vec<u8>>) -> Vec<u8> {
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        for (name, body) in files {
+            zip.start_file(name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(&body).unwrap();
+        }
+        zip.finish().unwrap().into_inner()
+    }
+
     fn archive(manifest: Value, extra: &[(&str, &[u8])]) -> Vec<u8> {
         let mut files =
             BTreeMap::from([(ENTRY.to_owned(), b"export const handlers = {};".to_vec())]);
@@ -1471,13 +1567,29 @@ mod tests {
             "manifest.json".into(),
             serde_json::to_vec(&manifest).unwrap(),
         );
-        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-        for (name, body) in files {
-            zip.start_file(name, zip::write::SimpleFileOptions::default())
-                .unwrap();
-            zip.write_all(&body).unwrap();
+        zip(files)
+    }
+
+    /// The software package with `edit` applied to its manifest; file digests are untouched.
+    /// Returns what the accepted package requires.
+    fn software(edit: impl FnOnce(&mut Value)) -> Result<devdesk_core::domain_protocol::Requires> {
+        crate::factory_bundle::initialize()?;
+        let mut original = zip::ZipArchive::new(Cursor::new(SOFTWARE)).unwrap();
+        let mut files = BTreeMap::new();
+        for index in 0..original.len() {
+            let mut entry = original.by_index(index).unwrap();
+            let mut body = Vec::new();
+            entry.read_to_end(&mut body).unwrap();
+            files.insert(entry.name().to_owned(), body);
         }
-        zip.finish().unwrap().into_inner()
+        let mut manifest: Value =
+            serde_json::from_slice(&files.remove("manifest.json").unwrap()).unwrap();
+        edit(&mut manifest);
+        files.insert(
+            "manifest.json".into(),
+            serde_json::to_vec(&manifest).unwrap(),
+        );
+        Ok(Package::read(&zip(files))?.manifest.requires)
     }
 
     fn handler(core: Option<&str>) -> Value {
@@ -1495,7 +1607,9 @@ mod tests {
     fn package(extensions: Value, handlers: Value) -> Vec<u8> {
         archive(
             json!({
-                "format": 1, "id": "sample", "version": "1", "extensions": extensions,
+                "format": 2, "id": "sample", "version": "1", "domain_protocol": 2,
+                "requires": {"extensions": [GIT, TESTS]},
+                "extensions": extensions,
                 "runtime": {"entry": ENTRY, "handlers": handlers},
             }),
             &[("runtime/reporter.mjs", b"// reporter")],
@@ -1568,6 +1682,81 @@ mod tests {
         ] {
             assert!(Package::read(&package(extensions, handlers.clone())).is_err());
         }
+    }
+
+    #[test]
+    fn the_software_package_declares_the_surface_it_uses() {
+        let requires = software(|_| {}).unwrap();
+        assert!(requires.handlers.contains(&"tests.run".to_owned()));
+        assert!(
+            requires
+                .extensions
+                .contains(&"engineering.git/1".to_owned())
+        );
+        assert!(
+            requires
+                .extensions
+                .contains(&"engineering.tests/1".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_package_must_speak_the_host_format_and_protocol() {
+        for (pointer, value) in [("/format", json!(1)), ("/domain_protocol", json!(1))] {
+            let error =
+                software(|manifest| *manifest.pointer_mut(pointer).unwrap() = value.clone())
+                    .unwrap_err();
+            assert_eq!(error.code, "domain_protocol_unsupported", "{pointer}");
+        }
+    }
+
+    #[test]
+    fn requirements_name_what_the_host_lacks() {
+        for (field, value, code) in [
+            ("host", json!("999.0.0"), "host_version_unsupported"),
+            (
+                "handlers",
+                json!(["workflow.teleport"]),
+                "handler_unsupported",
+            ),
+            (
+                "extensions",
+                json!(["engineering.git/1", "engineering.git/9"]),
+                "extension_unavailable",
+            ),
+            ("rpc", json!(["query.nowhere"]), "rpc_unsupported"),
+        ] {
+            let error =
+                software(|manifest| manifest["requires"][field] = value.clone()).unwrap_err();
+            assert_eq!(error.code, code, "{field}");
+        }
+    }
+
+    #[test]
+    fn engineering_capabilities_need_a_declared_extension_group() {
+        for groups in [
+            json!([]),
+            json!(["engineering.tests/1"]),
+            json!(["engineering.git/1"]),
+        ] {
+            let error = software(|manifest| manifest["requires"]["extensions"] = groups.clone())
+                .unwrap_err();
+            assert_eq!(error.code, "extension_unavailable", "{groups}");
+        }
+        // Without any bound hook, a published engineering tool still needs its group.
+        let error = software(|manifest| {
+            manifest["extensions"]
+                .as_object_mut()
+                .unwrap()
+                .remove("engineering.tests/1");
+            manifest["requires"]["extensions"] = json!(["engineering.git/1"]);
+        })
+        .unwrap_err();
+        assert!(
+            error.message.contains("engineering.tests/1"),
+            "the published tool still needs the group: {}",
+            error.message
+        );
     }
 
     #[test]

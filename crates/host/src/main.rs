@@ -492,8 +492,9 @@ async fn capabilities(State(app): State<Arc<App>>) -> Json<Value> {
         (current.clone(), app.lifecycle.snapshot())
     };
     let providers: Vec<&str> = HARNESS_PROVIDERS.iter().map(|p| p.as_str()).collect();
+    let domain = devdesk_core::domain_protocol::Capabilities::current();
     Json(
-        json!({"version":env!("CARGO_PKG_VERSION"),"protocol_version":1,"setup_required":workspace.is_none(),"lifecycle":lifecycle,"domain_protocol":1,"project_selection":"frontend","storage_layout":"global-and-project-databases","execution_mode":"live","live":"requires_registered_runtime_and_credentials","conversations":{"providers":providers,"managed_linux_workers":true,"engineering_run_contract":true},"platform":{"linux":"runtime_verified_by_reports","macos":"runtime_verified_by_reports"},"runtime":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},"harness":{"providers":providers,"capabilities":["structured-output","cancel","poll"]},"sandbox":{"provider":"docker","capabilities":["managed-container","resource-cleanup"]}}),
+        json!({"version":env!("CARGO_PKG_VERSION"),"protocol_version":1,"setup_required":workspace.is_none(),"lifecycle":lifecycle,"domain_protocol":domain.domain_protocol,"package_format":domain.package_format,"platform_handlers":domain.platform_handlers,"core_inputs":domain.core_inputs,"extensions":domain.extensions,"rpc":domain.rpc,"project_selection":"frontend","storage_layout":"global-and-project-databases","execution_mode":"live","live":"requires_registered_runtime_and_credentials","conversations":{"providers":providers,"managed_linux_workers":true,"engineering_run_contract":true},"platform":{"linux":"runtime_verified_by_reports","macos":"runtime_verified_by_reports"},"runtime":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},"harness":{"providers":providers,"capabilities":["structured-output","cancel","poll"]},"sandbox":{"provider":"docker","capabilities":["managed-container","resource-cleanup"]}}),
     )
 }
 async fn artifact(

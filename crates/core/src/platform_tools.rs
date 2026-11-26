@@ -1,6 +1,11 @@
 //! Managed engineering operations. Handler identifiers are protocols, not business actions.
 use crate::*;
 
+/// Every platform handler this kernel implements, whether or not a catalog publishes it.
+pub fn platform_handlers() -> &'static [&'static str] {
+    PLATFORM_HANDLERS
+}
+
 pub(crate) const PLATFORM_HANDLERS: &[&str] = &[
     "spec.lint",
     "domain.read",

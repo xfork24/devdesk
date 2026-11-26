@@ -12,6 +12,7 @@ pub use configuration_publication::{
     validate_domain_configuration,
 };
 pub mod credential_updates;
+pub mod domain_protocol;
 pub mod experience_directory;
 pub mod extensions;
 pub mod integration_operations;

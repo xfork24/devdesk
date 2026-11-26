@@ -17,7 +17,7 @@
 
 ## 领域包接口
 
-从 `GET /capabilities` 读取 `domain_protocol`。浏览器和普通 HTTP 客户端均通过 `POST /session` 建立会话。已认证客户端从 `query.domain.active` 获取当前 `epoch`、活动包、公共界面贡献和源修订。静止时 `active` 为空表示空领域。
+从 `GET /capabilities` 读取 `domain_protocol`（当前为 2）、`package_format` 以及本 Host 提供的 `platform_handlers`、`core_inputs`、`extensions` 与 `rpc`，领域包的 `requires` 逐项与之核对。浏览器和普通 HTTP 客户端均通过 `POST /session` 建立会话。已认证客户端从 `query.domain.active` 获取当前 `epoch`、活动包、公共界面贡献和源修订。静止时 `active` 为空表示空领域。
 
 | 方法或入口 | 作用和前置条件 |
 |---|---|

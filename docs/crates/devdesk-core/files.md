@@ -46,6 +46,7 @@
 | [src/default_permissions.rs](../../../crates/core/src/default_permissions.rs) | `template_permission_defaults`、`ensure_default_permissions`、`reset_factory_catalog` |
 | [src/delivery_recovery.rs](../../../crates/core/src/delivery_recovery.rs) | [返工、计划变更与恢复](workflow-changes.md) |
 | [src/domain_entities.rs](../../../crates/core/src/domain_entities.rs) | Domain-owned object data is scoped to a single project and package version. |
+| [src/domain_protocol.rs](../../../crates/core/src/domain_protocol.rs) | What a domain package asks of the kernel, and what this Host answers. |
 | [src/driver_capabilities.rs](../../../crates/core/src/driver_capabilities.rs) | Executable protocol facts are supplied by the installed adapters, never by source declarations. |
 | [src/environment.rs](../../../crates/core/src/environment.rs) | Scoped application sources make scheduling and recovery reproducible in tests. |
 | [src/experience_directory.rs](../../../crates/core/src/experience_directory.rs) | [工程资源与外部工具的应用流程](integrations-and-repositories.md) |

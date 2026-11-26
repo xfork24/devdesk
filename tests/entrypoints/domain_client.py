@@ -159,7 +159,7 @@ def submitted_proof(client, epoch, receipt, timeout=25):
 def run(origin, action, args):
     client = Client(origin)
     with client.request("/capabilities") as response:
-        assert json.load(response)["domain_protocol"] == 1
+        assert json.load(response)["domain_protocol"] == 2
     active = client.call("query.domain.active")
     epoch = active["epoch"]
     if action == "install-contract":

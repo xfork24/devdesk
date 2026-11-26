@@ -19,6 +19,10 @@ pub struct Hook {
 pub struct ExtensionGroup {
     pub id: &'static str,
     pub version: u32,
+    /// Platform tool handlers only a package requiring this group may call.
+    pub handlers: &'static [&'static str],
+    /// Kernel inputs only such a package may declare for its handlers.
+    pub core_inputs: &'static [&'static str],
     pub hooks: &'static [Hook],
     /// Named file collections a package may publish for this group.
     pub resources: &'static [&'static str],
@@ -38,6 +42,19 @@ pub const EXTENSION_GROUPS: &[ExtensionGroup] = &[
     ExtensionGroup {
         id: "engineering.git",
         version: 1,
+        handlers: &[
+            "workspace.current",
+            "workspace.snapshot",
+            "workspace.checkpoint",
+            "workspace.target",
+            "git.source.publish",
+            "git.delivery.open",
+            "git.delivery.merge",
+            "git.candidate",
+            "git.advance",
+            "git.publish",
+        ],
+        core_inputs: &["git_head", "git_snapshot"],
         hooks: &[
             Hook {
                 name: "worktree_branch",
@@ -53,6 +70,8 @@ pub const EXTENSION_GROUPS: &[ExtensionGroup] = &[
     ExtensionGroup {
         id: "engineering.tests",
         version: 1,
+        handlers: &["tests.run", "tests.project"],
+        core_inputs: &[],
         hooks: &[Hook {
             name: "test_discovery",
             core: Some("git_snapshot"),
@@ -65,6 +84,28 @@ pub fn extension_group(reference: &str) -> Option<&'static ExtensionGroup> {
     EXTENSION_GROUPS
         .iter()
         .find(|group| group.reference() == reference)
+}
+
+/// Every kernel input an extension group lets a package declare.
+pub fn core_inputs() -> Vec<&'static str> {
+    EXTENSION_GROUPS
+        .iter()
+        .flat_map(|group| group.core_inputs.iter().copied())
+        .collect()
+}
+
+/// The group providing a platform tool handler; `None` for a kernel-wide handler.
+pub fn group_of_handler(handler: &str) -> Option<&'static ExtensionGroup> {
+    EXTENSION_GROUPS
+        .iter()
+        .find(|group| group.handlers.contains(&handler))
+}
+
+/// The group a kernel input belongs to; `None` for a kernel-wide input.
+pub fn group_of_core_input(input: &str) -> Option<&'static ExtensionGroup> {
+    EXTENSION_GROUPS
+        .iter()
+        .find(|group| group.core_inputs.contains(&input))
 }
 
 /// The groups engineering consults; packages decide which of their handlers to bind.
