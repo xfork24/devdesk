@@ -22,6 +22,9 @@ def requires(handlers, extensions):
     return {"host": HOST_VERSION, "handlers": sorted(handlers), "extensions": sorted(extensions)}
 
 
+GIT_HEAD = "engineering.git.head"
+
+
 def package(target, identity, title, handler, core, sdk=1):
     method = f"{identity}.{handler}"
     contribution = f"{identity}.overview"
@@ -195,7 +198,7 @@ def package(target, identity, title, handler, core, sdk=1):
         and data.get("implementation") == "platform"}
     manifest = {
         "format": 2, "id": identity, "version": "1", "domain_protocol": 2,
-        "requires": requires(handlers, ["engineering.git/1"] if core == "git_head" else []),
+        "requires": requires(handlers, ["engineering.git/1"] if core == GIT_HEAD else []),
         **({"entity_types": entity_types} if entity_types else {}),
         "files": {path: hashlib.sha256(value).hexdigest() for path, value in files.items()},
         "runtime": {
@@ -225,7 +228,7 @@ def package(target, identity, title, handler, core, sdk=1):
 if __name__ == "__main__":
     root = Path(sys.argv[1])
     root.mkdir(parents=True, exist_ok=True)
-    package(root, "git-probe", "Git repository", "repository.head", "git_head")
+    package(root, "git-probe", "Git repository", "repository.head", GIT_HEAD)
     package(root, "manuscript", "Manuscript", "title.read", None)
     # Written for a Web SDK major this Core does not speak; it installs, but its pages do not run.
     package(root, "stray-kit", "Stray kit", "title.read", None, sdk=2)

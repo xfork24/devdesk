@@ -54,7 +54,7 @@ pub const EXTENSION_GROUPS: &[ExtensionGroup] = &[
             "git.advance",
             "git.publish",
         ],
-        core_inputs: &["git_head", "git_snapshot"],
+        core_inputs: &["engineering.git.head", "engineering.git.snapshot"],
         hooks: &[
             Hook {
                 name: "worktree_branch",
@@ -74,7 +74,7 @@ pub const EXTENSION_GROUPS: &[ExtensionGroup] = &[
         core_inputs: &[],
         hooks: &[Hook {
             name: "test_discovery",
-            core: Some("git_snapshot"),
+            core: Some("engineering.git.snapshot"),
         }],
         resources: &["reporters"],
     },
@@ -86,12 +86,13 @@ pub fn extension_group(reference: &str) -> Option<&'static ExtensionGroup> {
         .find(|group| group.reference() == reference)
 }
 
-/// Every kernel input an extension group lets a package declare.
-pub fn core_inputs() -> Vec<&'static str> {
-    EXTENSION_GROUPS
-        .iter()
-        .flat_map(|group| group.core_inputs.iter().copied())
-        .collect()
+/// Kernel inputs every package may declare for its handlers, whatever extensions it requires.
+/// An input of an extension group is listed with that group and needs the group to be required.
+pub const KERNEL_INPUTS: &[&str] = &[];
+
+/// Whether a kernel input of this name exists on this Host.
+pub fn core_input_known(input: &str) -> bool {
+    KERNEL_INPUTS.contains(&input) || group_of_core_input(input).is_some()
 }
 
 /// The group providing a platform tool handler; `None` for a kernel-wide handler.

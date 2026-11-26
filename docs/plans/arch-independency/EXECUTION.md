@@ -79,6 +79,7 @@
 | K-2 | `GET /capabilities` 增加 `package_format`、`platform_handlers`、`core_inputs`、`extensions`、`rpc`，`domain_protocol` 为 2 |
 | K-3 | 安装期协商：Host 版本、平台处理器、扩展组、RPC 四类依赖逐项核对，错误指明缺什么。扩展组同时登记自己提供的处理器与内核输入；包只有声明依赖某个组，才能发布该组处理器上的工具、把它列为交付的生产者、声明该组的内核输入，或绑定该组的钩子与资源 |
 | K-4 | 领域包的配置包清单在安装时套用与出厂资源相同的 Schema。两个构建脚本输出全部 15 个类型键，未使用的留空 |
+| N-6（第一部分） | 内核输入改为能力目录中的名称：`git_head`、`git_snapshot` 更名为 `engineering.git.head`、`engineering.git.snapshot`，名称带着提供它的扩展组。Schema 不再枚举取值；处理器声明了本 Host 没有的内核输入时，按名称报 `handler_unsupported`。`/capabilities` 的 `core_inputs` 只列每个包都能用的内核输入，`extensions` 的每一项改为带 `handlers`、`core_inputs`、`hooks` 的对象，与 SDK 合同第 4 节一致 |
 | W-5 | 呈现目标用 `sdk`（Web SDK 主版本）取代 `api`，新增 `kit`（组件套件对应的 Web Core 版本）与绑定的 `home`（进入领域时打开的首页，取代“第一个绑定”）。Web Core 只加载 `sdk` 与自身一致、`kit` 与自身版本一致的目标，其余目标提示“领域包与 Web Core 版本不兼容”。内核只校验 `sdk` 不小于 1、每个目标最多一个首页；SDK 版本是否可用由 Web Core 判断 |
 
 ### 初步验收
@@ -102,6 +103,12 @@
 | | `python3 tests/entrypoints/lifecycle_contract.py target/fixtures/debug/devdesk-host` | 通过，含新增的能力目录断言 |
 | | `node tests/entrypoints/domain_packages.mjs target/debug/devdesk-host web/dist/core <格式 2 的软件开发包>` | 退出码 0。真实 Docker worker 与浏览器：安装、激活、调用钩子、渲染页面 |
 | K-4 | `cargo test -p devdesk-adapters --locked --lib domain_packages::tests` | 9 通过。新增一项：从真实包的配置包清单里删去一个类型键后被拒绝 |
+| N-6（第一部分） | `cargo test -p devdesk-core --locked --lib domain_protocol` | 2 通过。协商按扩展组对象核对，断言 Git 组发布的处理器、内核输入与钩子 |
+| | `cargo test -p devdesk-adapters --locked --lib domain_packages::tests` | 11 通过。新增一项：真实包的 `tests.discover` 使用 `engineering.git.snapshot`；改回旧名称或不存在的名称时被拒，错误信息带着该名称 |
+| | `cargo test --workspace --locked` | 60 个套件，795 通过，0 失败，39 忽略 |
+| | `cargo clippy --workspace --all-targets --locked -- -D warnings`、`./scripts/check/check-style.sh` | 无警告；rustfmt、ESLint、TypeScript、Prettier、Web 构建通过 |
+| | `python3 tests/entrypoints/lifecycle_contract.py target/fixtures/debug/devdesk-host` 及事件尾流、模板重置、数据集协议、运行环境准备四组合同 | 通过。能力目录断言改为扩展组对象 |
+| | `node tests/entrypoints/domain_packages.mjs target/debug/devdesk-host web/dist/core <带页面的格式 2 软件开发包>` | 退出码 0。真实包经新名称读取 Git 快照 |
 | W-5 | `cargo test -p devdesk-adapters --locked --lib domain_packages::tests` | 10 通过。新增一项：一个目标标记两个首页后被拒绝 |
 | | `cargo test --workspace --locked` | 60 个套件，794 通过，0 失败，39 忽略 |
 | | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 无警告 |

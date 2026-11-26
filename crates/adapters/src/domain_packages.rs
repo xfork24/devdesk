@@ -68,18 +68,20 @@ struct Handler {
     git_snapshot: Option<crate::git::GitSnapshotSelection>,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
+/// A kernel input a handler receives, written as the name the capability catalog lists.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 enum CoreInput {
+    #[serde(rename = "engineering.git.head")]
     GitHead,
+    #[serde(rename = "engineering.git.snapshot")]
     GitSnapshot,
 }
 
 impl CoreInput {
     fn name(&self) -> &'static str {
         match self {
-            Self::GitHead => "git_head",
-            Self::GitSnapshot => "git_snapshot",
+            Self::GitHead => "engineering.git.head",
+            Self::GitSnapshot => "engineering.git.snapshot",
         }
     }
 }
@@ -342,6 +344,22 @@ impl Package {
             number(&declared["format"]),
             number(&declared["domain_protocol"]),
         )?;
+        // A kernel input is a name in the capability catalog; an input this Host does not
+        // have is reported by name, not as a schema violation.
+        for (handler, declared) in declared["runtime"]["handlers"]
+            .as_object()
+            .into_iter()
+            .flatten()
+        {
+            if let Some(input) = declared.get("core").and_then(Value::as_str)
+                && !devdesk_core::extensions::core_input_known(input)
+            {
+                return Err(err(
+                    "handler_unsupported",
+                    format!("处理器 {handler} 使用本 Host 没有的内核输入 {input}"),
+                ));
+            }
+        }
         let manifest: Manifest = decode_contract(&MANIFEST_SCHEMA, &data)?;
         if !is_identifier(&manifest.id) || !is_identifier(&manifest.version) {
             return Err(invalid("领域包标识不受支持"));
@@ -1653,7 +1671,7 @@ mod tests {
                 TESTS: {"handlers": {"test_discovery": "sample.discover"},
                         "resources": {"reporters": {"node_test": "runtime/reporter.mjs"}}},
             }),
-            json!({"sample.branch": handler(None), "sample.discover": handler(Some("git_snapshot"))}),
+            json!({"sample.branch": handler(None), "sample.discover": handler(Some("engineering.git.snapshot"))}),
         )
     }
 
@@ -1680,7 +1698,7 @@ mod tests {
 
     #[test]
     fn a_hook_only_accepts_handlers_with_the_kernel_input_of_its_group() {
-        let branches = json!({"sample.branch": handler(Some("git_head"))});
+        let branches = json!({"sample.branch": handler(Some("engineering.git.head"))});
         let invalid = package(
             json!({GIT: {"handlers": {"worktree_branch": "sample.branch"}}}),
             branches,
@@ -1728,6 +1746,32 @@ mod tests {
                 .extensions
                 .contains(&"engineering.tests/1".to_owned())
         );
+    }
+
+    #[test]
+    fn a_kernel_input_is_a_name_of_the_catalog() {
+        let requires = software(|manifest| {
+            manifest["runtime"]["handlers"]["software-development.tests.discover"]["core"] =
+                json!("engineering.git.snapshot");
+        })
+        .unwrap();
+        assert!(
+            requires
+                .extensions
+                .contains(&"engineering.git/1".to_owned())
+        );
+        for (input, code) in [
+            ("git_snapshot", "handler_unsupported"),
+            ("engineering.git.merge", "handler_unsupported"),
+        ] {
+            let error = software(|manifest| {
+                manifest["runtime"]["handlers"]["software-development.tests.discover"]["core"] =
+                    json!(input);
+            })
+            .unwrap_err();
+            assert_eq!(error.code, code, "{input}");
+            assert!(error.message.contains(input), "{}", error.message);
+        }
     }
 
     #[test]

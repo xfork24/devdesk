@@ -86,9 +86,11 @@ def run():
             assert ready["setup_required"] is False and ready["lifecycle"]["status"] == "ready"
             # The capability catalog answers what a domain package may require.
             assert ready["domain_protocol"] == 2 and ready["package_format"] == 2
-            assert ready["extensions"] == ["engineering.git/1", "engineering.tests/1"]
+            groups = {f"{group['id']}/{group['version']}": group for group in ready["extensions"]}
+            assert set(groups) == {"engineering.git/1", "engineering.tests/1"}
+            assert "engineering.git.snapshot" in groups["engineering.git/1"]["core_inputs"]
+            assert groups["engineering.tests/1"]["hooks"] == ["test_discovery"]
             assert {"workflow.start", "tests.run"} <= set(ready["platform_handlers"])
-            assert "git_snapshot" in ready["core_inputs"]
             assert "query.domain.active" in ready["rpc"]
             stale = command(initial)
             assert request("/shutdown", stale)[1]["code"] == "revision_conflict"

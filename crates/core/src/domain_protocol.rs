@@ -21,6 +21,25 @@ pub struct Requires {
     pub rpc: Vec<String>,
 }
 
+/// What one extension group provides on this Host.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ExtensionCapabilities {
+    pub id: &'static str,
+    pub version: u32,
+    /// Platform tool handlers only a package requiring this group may call.
+    pub handlers: Vec<&'static str>,
+    /// Kernel inputs only such a package may declare for its handlers.
+    pub core_inputs: Vec<&'static str>,
+    pub hooks: Vec<&'static str>,
+}
+
+impl ExtensionCapabilities {
+    /// The name a package writes in `requires.extensions`.
+    pub fn reference(&self) -> String {
+        format!("{}/{}", self.id, self.version)
+    }
+}
+
 /// The surface this Host provides: the answer to every entry of [Requires].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Capabilities {
@@ -28,8 +47,9 @@ pub struct Capabilities {
     pub package_format: u32,
     pub domain_protocol: u32,
     pub platform_handlers: Vec<&'static str>,
+    /// Kernel inputs available to every package.
     pub core_inputs: Vec<&'static str>,
-    pub extensions: Vec<String>,
+    pub extensions: Vec<ExtensionCapabilities>,
     pub rpc: Vec<String>,
 }
 
@@ -40,10 +60,16 @@ impl Capabilities {
             package_format: PACKAGE_FORMAT,
             domain_protocol: DOMAIN_PROTOCOL,
             platform_handlers: platform_tools::platform_handlers().to_vec(),
-            core_inputs: extensions::core_inputs(),
+            core_inputs: extensions::KERNEL_INPUTS.to_vec(),
             extensions: extensions::EXTENSION_GROUPS
                 .iter()
-                .map(|group| group.reference())
+                .map(|group| ExtensionCapabilities {
+                    id: group.id,
+                    version: group.version,
+                    handlers: group.handlers.to_vec(),
+                    core_inputs: group.core_inputs.to_vec(),
+                    hooks: group.hooks.iter().map(|hook| hook.name).collect(),
+                })
                 .collect(),
             rpc: rpc_contracts::inventory()
                 .values()
@@ -80,13 +106,6 @@ impl Capabilities {
                 ),
             ));
         }
-        let missing = |required: &[String], provided: &[&str]| {
-            required
-                .iter()
-                .filter(|name| !provided.contains(&name.as_str()))
-                .cloned()
-                .collect::<Vec<_>>()
-        };
         let absent = missing(&requires.handlers, &self.platform_handlers);
         if !absent.is_empty() {
             return Err(err(
@@ -94,20 +113,21 @@ impl Capabilities {
                 format!("本 Host 没有这些平台处理器：{}", absent.join("、")),
             ));
         }
-        let groups = self
-            .extensions
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>();
-        let absent = missing(&requires.extensions, &groups);
+        let absent = missing(
+            &requires.extensions,
+            &self
+                .extensions
+                .iter()
+                .map(ExtensionCapabilities::reference)
+                .collect::<Vec<_>>(),
+        );
         if !absent.is_empty() {
             return Err(err(
                 "extension_unavailable",
                 format!("本 Host 没有这些扩展组：{}", absent.join("、")),
             ));
         }
-        let methods = self.rpc.iter().map(String::as_str).collect::<Vec<_>>();
-        let absent = missing(&requires.rpc, &methods);
+        let absent = missing(&requires.rpc, &self.rpc);
         if !absent.is_empty() {
             return Err(err(
                 "rpc_unsupported",
@@ -116,6 +136,19 @@ impl Capabilities {
         }
         Ok(())
     }
+}
+
+/// The required names the Host does not provide.
+fn missing(required: &[String], provided: &[impl AsRef<str>]) -> Vec<String> {
+    required
+        .iter()
+        .filter(|name| {
+            !provided
+                .iter()
+                .any(|provided| provided.as_ref() == name.as_str())
+        })
+        .cloned()
+        .collect()
 }
 
 /// Numeric `major.minor.patch` comparison. A pre-release or build suffix is not compared;
@@ -192,10 +225,24 @@ mod tests {
         let requires = Requires {
             host: Some("0.0.1".into()),
             handlers: vec![capabilities.platform_handlers[0].to_owned()],
-            extensions: capabilities.extensions.clone(),
+            extensions: capabilities
+                .extensions
+                .iter()
+                .map(ExtensionCapabilities::reference)
+                .collect(),
             rpc: vec![capabilities.rpc[0].clone()],
         };
         capabilities.negotiate(&requires).unwrap();
+        // A group's handlers and kernel inputs are published with the group.
+        let git = capabilities
+            .extensions
+            .iter()
+            .find(|group| group.id == "engineering.git")
+            .unwrap();
+        assert_eq!(git.reference(), "engineering.git/1");
+        assert!(git.handlers.contains(&"workspace.snapshot"));
+        assert!(git.core_inputs.contains(&"engineering.git.snapshot"));
+        assert!(git.hooks.contains(&"pull_request_creation"));
         let too_new = Requires {
             host: Some("999.0.0".into()),
             ..Default::default()

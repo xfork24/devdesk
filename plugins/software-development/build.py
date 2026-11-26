@@ -228,7 +228,7 @@ def build(target, web):
                     PR_CREATE: {"input_schema": pr_request, "output_schema": pr_result},
                     CONNECT: {"input_schema": connection_input, "output_schema": connection_result},
                     BRANCH: {"input_schema": branch_request, "output_schema": branch_result},
-                    DISCOVER: {"core": "git_snapshot", "input_schema": coordinate, "output_schema": output,
+                    DISCOVER: {"core": "engineering.git.snapshot", "input_schema": coordinate, "output_schema": output,
                                "git_snapshot": {
                                    "files": [".devdesk/tests.json", "package.json", "pyproject.toml", "pytest.ini",
                                              "setup.cfg", "Cargo.toml", "go.mod"],
