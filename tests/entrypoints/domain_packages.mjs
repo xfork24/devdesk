@@ -152,6 +152,10 @@ try {
   assert.equal(webResult.head, head);
   assert.equal((await native("install-contract", gitZip)).digest, digests[0]);
 
+  await activate(path.join(tmp, "stray-kit.zip"));
+  await page.getByRole("button", { name: "Stray kit", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: "领域包与 Web Core 版本不兼容。" }).waitFor();
+
   await activate(manuscriptZip);
   await second.getByRole("button", { name: "Manuscript", exact: true }).waitFor();
   await second.getByRole("button", { name: "Git repository" }).waitFor({ state: "detached" });

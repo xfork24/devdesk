@@ -79,6 +79,7 @@
 | K-2 | `GET /capabilities` 增加 `package_format`、`platform_handlers`、`core_inputs`、`extensions`、`rpc`，`domain_protocol` 为 2 |
 | K-3 | 安装期协商：Host 版本、平台处理器、扩展组、RPC 四类依赖逐项核对，错误指明缺什么。扩展组同时登记自己提供的处理器与内核输入；包只有声明依赖某个组，才能发布该组处理器上的工具、把它列为交付的生产者、声明该组的内核输入，或绑定该组的钩子与资源 |
 | K-4 | 领域包的配置包清单在安装时套用与出厂资源相同的 Schema。两个构建脚本输出全部 15 个类型键，未使用的留空 |
+| W-5 | 呈现目标用 `sdk`（Web SDK 主版本）取代 `api`，新增 `kit`（组件套件对应的 Web Core 版本）与绑定的 `home`（进入领域时打开的首页，取代“第一个绑定”）。Web Core 只加载 `sdk` 与自身一致、`kit` 与自身版本一致的目标，其余目标提示“领域包与 Web Core 版本不兼容”。内核只校验 `sdk` 不小于 1、每个目标最多一个首页；SDK 版本是否可用由 Web Core 判断 |
 
 ### 初步验收
 
@@ -101,6 +102,11 @@
 | | `python3 tests/entrypoints/lifecycle_contract.py target/fixtures/debug/devdesk-host` | 通过，含新增的能力目录断言 |
 | | `node tests/entrypoints/domain_packages.mjs target/debug/devdesk-host web/dist/core <格式 2 的软件开发包>` | 退出码 0。真实 Docker worker 与浏览器：安装、激活、调用钩子、渲染页面 |
 | K-4 | `cargo test -p devdesk-adapters --locked --lib domain_packages::tests` | 9 通过。新增一项：从真实包的配置包清单里删去一个类型键后被拒绝 |
+| W-5 | `cargo test -p devdesk-adapters --locked --lib domain_packages::tests` | 10 通过。新增一项：一个目标标记两个首页后被拒绝 |
+| | `cargo test --workspace --locked` | 60 个套件，794 通过，0 失败，39 忽略 |
+| | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 无警告 |
+| | `npm --prefix web run build:core` | TypeScript 与 Vite 构建通过 |
+| | `node tests/entrypoints/domain_packages.mjs target/debug/devdesk-host web/dist/core <格式 2 的软件开发包>` | 退出码 0。新增一段：安装 `sdk: 2` 的夹具包后打开它的页面，显示不兼容提示。软件开发包激活后落在标记为首页的“工作总览” |
 | | `cargo test -p devdesk-adapters --locked --features test-fixtures,fixture-catalog --test schema_contracts --test project_test_configuration` | 28 通过，2 忽略 |
 
 ### N-8 的依据
@@ -116,6 +122,7 @@
 - **格式与协议在 JSON Schema 之前核对。** Schema 的 `const` 只能回答“不符合 Schema”，说不出本 Host 接受什么。
 - **能力目录暂时不含 worker 的运行时限制。** 这些数字现在写死在 worker 的容器参数里，N-5 重写 worker 时以具名常量发布。
 - **钩子要求的内核输入是登记的数据。** 扩展组登记表里的每个钩子声明自己要求的内核输入，通用校验只核对“绑定到钩子的处理器声明了输入输出 Schema，并使用该输入”，不再写死“测试识别要用 Git 快照”。
+- **测试夹具包不声明首页。** 声明首页后，Web Core 按设计不再提供自己的“领域工作流”入口，而端到端用例要在那里读取执行。首页路径改由真实软件开发包的那一段覆盖，夹具包继续覆盖没有首页的形态。
 - **报告器的扩展名规则不再由清单校验负责。** 清单只做通用的有界 UTF-8 文件检查；落地时的文件名一直由测试运行器自己决定。
 - **读取项目的钩子与资源时用 `try_read`。** 与 `configuration_scope` 的做法一致：项目 RPC 可能已经持有一份读锁，切换领域时直接返回 `domain_busy`，不等待嵌套的锁。
 - **单独运行适配器的集成测试需要 `--features test-fixtures,fixture-catalog`。** 只开 `test-fixtures` 时出厂目录不含角色与 Agent，依赖默认绑定的用例会失败。`cargo test --workspace` 通过 Host 的开发依赖带上了这两个 feature，所以完整检查不受影响。这正是 T-6 要消除的耦合。

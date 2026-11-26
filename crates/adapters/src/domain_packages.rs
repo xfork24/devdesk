@@ -95,7 +95,11 @@ struct Ui {
 #[serde(deny_unknown_fields)]
 struct Target {
     renderer: String,
-    api: u32,
+    /// The major version of the Web SDK the target was written for.
+    sdk: u32,
+    /// The Web Core release whose component kit the target uses, as `major.minor`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    kit: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     styles: Vec<String>,
     bindings: Vec<Binding>,
@@ -107,6 +111,9 @@ struct Binding {
     contribution: String,
     entry: String,
     export: String,
+    /// The page the workbench opens when the domain is entered.
+    #[serde(default)]
+    home: bool,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -487,10 +494,19 @@ impl Package {
             }
             let mut targets = BTreeSet::new();
             for target in &ui.targets {
+                require(
+                    target
+                        .bindings
+                        .iter()
+                        .filter(|binding| binding.home)
+                        .count()
+                        <= 1,
+                    "领域呈现目标最多标记一个首页",
+                )?;
                 let mut bindings = BTreeSet::new();
                 if !is_identifier(&target.renderer)
                     || !targets.insert(&target.renderer)
-                    || target.api == 0
+                    || target.sdk == 0
                     || target.styles.iter().any(|style| {
                         target.renderer != "web.react"
                             || !style.starts_with("ui/web/")
@@ -1768,6 +1784,38 @@ mod tests {
         );
         let error = Package::read(&zip(files)).map(|_| ()).unwrap_err();
         assert_eq!(error.code, "invalid_domain_package");
+    }
+
+    #[test]
+    fn a_presentation_target_marks_at_most_one_home() {
+        let page = |(id, home): (&str, bool)| json!({"contribution": id, "entry": "ui/web/page.mjs", "export": "Page", "home": home});
+        let package = |bindings: Value| {
+            archive(
+                json!({
+                    "format": 2, "id": "sample", "version": "1", "domain_protocol": 2,
+                    "runtime": {"entry": ENTRY, "handlers": {"sample.read": handler(None)}},
+                    "ui": {"contributions": "ui/contributions.json", "targets": [
+                        {"renderer": "web.react", "sdk": 1, "bindings": bindings}]},
+                }),
+                &[
+                    ("ui/web/page.mjs", b"export function Page() {}"),
+                    ("ui/contributions.json", br#"[{"id":"sample.first","title":"First","kind":"page","context":"project","query":"sample.read","fields":[]},{"id":"sample.second","title":"Second","kind":"page","context":"project","query":"sample.read","fields":[]}]"#),
+                ],
+            )
+        };
+        for bindings in [
+            json!([page(("sample.first", false)), page(("sample.second", true))]),
+            json!([page(("sample.first", true)), page(("sample.second", false))]),
+        ] {
+            Package::read(&package(bindings)).unwrap();
+        }
+        let error = Package::read(&package(json!([
+            page(("sample.first", true)),
+            page(("sample.second", true))
+        ])))
+        .map(|_| ())
+        .unwrap_err();
+        assert_eq!(error.code, "blocked");
     }
 
     #[test]

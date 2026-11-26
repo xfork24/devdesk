@@ -22,7 +22,7 @@ def requires(handlers, extensions):
     return {"host": HOST_VERSION, "handlers": sorted(handlers), "extensions": sorted(extensions)}
 
 
-def package(target, identity, title, handler, core):
+def package(target, identity, title, handler, core, sdk=1):
     method = f"{identity}.{handler}"
     contribution = f"{identity}.overview"
     artifact_method = f"{identity}.artifact.create" if identity == "manuscript" else None
@@ -211,7 +211,7 @@ def package(target, identity, title, handler, core):
         },
         "ui": {
             "contributions": "ui/contributions.json",
-            "targets": [{"renderer": "web.react", "api": 1, "bindings": [{
+            "targets": [{"renderer": "web.react", "sdk": sdk, "bindings": [{
                 "contribution": contribution, "entry": "ui/web/page.mjs", "export": "DomainPage",
             }]}],
         },
@@ -227,3 +227,5 @@ if __name__ == "__main__":
     root.mkdir(parents=True, exist_ok=True)
     package(root, "git-probe", "Git repository", "repository.head", "git_head")
     package(root, "manuscript", "Manuscript", "title.read", None)
+    # Written for a Web SDK major this Core does not speak; it installs, but its pages do not run.
+    package(root, "stray-kit", "Stray kit", "title.read", None, sdk=2)

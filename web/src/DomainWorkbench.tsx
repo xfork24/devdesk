@@ -26,6 +26,7 @@ import { HistoricalDiscussionAgents } from "./components/discussion-role-options
 import { WorkbenchLayout } from "./workbench-layout";
 import { KernelAuthentication } from "./components/KernelConnection";
 import type { Data, DomainContext } from "./domain-sdk";
+import { version } from "../package.json";
 
 type Package = { id: string; version: string; digest: string };
 type Contribution = {
@@ -36,7 +37,12 @@ type Contribution = {
   fields: { key: string; label: string }[];
   inputs: { key: string; label: string }[];
 };
-type Binding = { contribution: string; entry: string; export: string };
+type Binding = {
+  contribution: string;
+  entry: string;
+  export: string;
+  home?: boolean;
+};
 type Directory = {
   epoch: number;
   active: Package | null;
@@ -44,7 +50,8 @@ type Directory = {
   targets:
     | {
         renderer: string;
-        api: number;
+        sdk: number;
+        kit?: string;
         bindings: Binding[];
         styles?: string[];
       }[]
@@ -58,6 +65,18 @@ type CoreRecord = { id: string; name: string; type: string };
 const CorePages = lazy(() =>
   import("./CorePages").then(({ CorePages }) => ({ default: CorePages })),
 );
+// The Web SDK major this Core speaks, and the release of the component kit it ships.
+const WEB_SDK_MAJOR = 1;
+const WEB_KIT_RELEASE = version.split(".").slice(0, 2).join(".");
+const reactTargets = (directory?: Directory) =>
+  directory?.targets?.filter(({ renderer }) => renderer === "web.react") ?? [];
+// A target runs here only when it was written for this SDK major. A kit from another
+// release is refused as a whole instead of rendering pages that may not fit.
+const supportedTarget = (directory?: Directory) =>
+  reactTargets(directory).find(
+    ({ sdk, kit }) =>
+      sdk === WEB_SDK_MAJOR && (kit === undefined || kit === WEB_KIT_RELEASE),
+  );
 const DomainStorageSettings = lazy(() =>
   import("./components/DomainStorageSettings").then(
     ({ DomainStorageSettings }) => ({ default: DomainStorageSettings }),
@@ -176,9 +195,7 @@ function DomainPage({
   directory: Directory;
   contribution: Contribution;
 }) {
-  const target = directory.targets?.find(
-    ({ renderer, api }) => renderer === "web.react" && (api === 1 || api === 2),
-  );
+  const target = supportedTarget(directory);
   const binding = target?.bindings.find(
     ({ contribution: id }) => id === contribution.id,
   );
@@ -281,7 +298,13 @@ function DomainPage({
       directory.contributions,
     ],
   );
-  if (target?.api === 2 && Page)
+  if (reactTargets(directory).length > 0 && !target)
+    return (
+      <main>
+        <p role="alert">领域包与 Web Core 版本不兼容。</p>
+      </main>
+    );
+  if (target && Page)
     return (
       <DomainProvider.Provider value={context}>
         <HistoricalDiscussionAgents.Provider value={historicalAgents}>
@@ -621,10 +644,8 @@ async function archive(file: File) {
 }
 
 function workbenchEntry(directory?: Directory) {
-  const target = directory?.targets?.find(
-    ({ renderer, api }) => renderer === "web.react" && api === 2,
-  );
-  return target?.bindings[0]?.contribution;
+  return supportedTarget(directory)?.bindings.find(({ home }) => home)
+    ?.contribution;
 }
 
 export function AppRoot() {

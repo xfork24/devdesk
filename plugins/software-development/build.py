@@ -18,6 +18,9 @@ PR_CREATE = f"{DOMAIN}.pull-request.create"
 AUTHORIZE = f"{DOMAIN}.delivery.authorize"
 # The lowest Host this package runs on is the one built from the same checkout.
 HOST_VERSION = tomllib.loads((REPO / "Cargo.toml").read_text())["workspace"]["package"]["version"]
+# The pages use Web Core's component kit, so they name the Web Core release they were built against.
+WEB_SDK_MAJOR, KIT_RELEASE = 1, ".".join(
+    json.loads((REPO / "web/package.json").read_text())["version"].split(".")[:2])
 # What the package uses beyond the kernel-wide surface. The kernel checks at install that
 # every engineering handler, kernel input and hook the package touches belongs to a declared group.
 EXTENSION_GROUPS = ["engineering.git/1", "engineering.tests/1"]
@@ -202,8 +205,10 @@ def build(target, web):
             files[f"ui/web/{asset.relative_to(web).as_posix()}"] = asset.read_bytes()
         ui = {
             "contributions": "ui/contributions.json",
-            "targets": [{"renderer": "web.react", "api": 2, "styles": [stylesheet], "bindings": [
-                {"contribution": row["id"], "entry": "ui/web/workbench.mjs", "export": export}
+            "targets": [{"renderer": "web.react", "sdk": WEB_SDK_MAJOR, "kit": KIT_RELEASE,
+                         "styles": [stylesheet], "bindings": [
+                {"contribution": row["id"], "entry": "ui/web/workbench.mjs", "export": export,
+                 "home": export == "BranchQueue"}
                 for row, export in zip(json.loads(contributions.read_text()),
                                        ("BranchQueue", "DeliveryWorkbench", "EngineeringSettings"), strict=True)
             ]}],

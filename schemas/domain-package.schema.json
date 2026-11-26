@@ -73,10 +73,11 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["renderer", "api", "bindings"],
+            "required": ["renderer", "sdk", "bindings"],
             "properties": {
               "renderer": { "$ref": "#/$defs/identifier" },
-              "api": { "type": "integer", "minimum": 1 },
+              "sdk": { "type": "integer", "minimum": 1 },
+              "kit": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
               "styles": {
                 "type": "array",
                 "uniqueItems": true,
@@ -91,7 +92,8 @@
                   "properties": {
                     "contribution": { "$ref": "#/$defs/identifier" },
                     "entry": { "$ref": "#/$defs/path", "pattern": "^ui/" },
-                    "export": { "$ref": "#/$defs/identifier" }
+                    "export": { "$ref": "#/$defs/identifier" },
+                    "home": { "type": "boolean" }
                   }
                 }
               }
