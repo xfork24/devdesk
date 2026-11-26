@@ -57,7 +57,7 @@ def inventory(crate: Path, index: Path) -> str:
 
 def current_documents() -> list[Path]:
     return [
-        ROOT / 'README.md', ROOT / 'AGENT.md',
+        ROOT / 'README.md', ROOT / 'README.zh-CN.md', ROOT / 'AGENT.md',
         *sorted((ROOT / 'docs').glob('*.md')),
         *sorted((ROOT / 'docs/design').rglob('*.md')),
         *sorted((ROOT / 'docs/crates').rglob('*.md')),
