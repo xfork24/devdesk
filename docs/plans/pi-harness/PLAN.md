@@ -2,7 +2,7 @@
 
 日期：2026-11-25。状态：**待实施**。范围：接入 pi 1.6.0（`@earendil-works/pi-coding-agent`，MIT）为第三个 Harness，能力对齐 DSH：四家模型服务商、讨论会话、workflow 步骤工具。不含根编排。
 
-> **批次与依赖**：pi 属**批次 A**，单独先行，不依赖共享地基先完成。相反，共享地基里与厂商无关的通用管线（Provider 能力表、凭据泛化、全局库 v25 与升级命令、Schema 枚举机制、按 harness 渲染的设置页、`model_profile_digest` 按 provider 分派）由本计划 P1 **首次落地**，批次 B（mcode/opencode/zcode）只做增量。跨计划口径（终态映射、审批语义、全局库版本、旧数据升级流程）以 [Harness 扩展共享地基](../harness-shared-foundation/PLAN.md) 为准。
+> **批次与依赖**：pi 属**批次 A**，单独先行，不依赖共享地基先完成。相反，共享地基里与厂商无关的通用管线（Provider 能力表、凭据泛化、全局库 v25 与升级命令、Schema 枚举机制、按 harness 渲染的设置页、`model_profile_digest` 按 provider 分派）由本计划 P1 **首次落地**，批次 B（mcode/opencode/zcode）只做增量。跨计划口径（终态映射、审批语义、全局库版本、旧数据升级流程）以 [Harness 扩展共享地基](../harness-shared-foundation/PLAN.md) 为准。与[架构独立性改造](../arch-independency/PLAN.md)的交叠（出厂资源路径、引用索引入口、测试夹具、前端文件位置、工具种类）按[共享地基](../harness-shared-foundation/PLAN.md)第 8 章处理；该改造的 K-6 落地后，本文的 `plugins/core/...` 读作 `kernel/core/...`。
 
 ## 0. 已确认决策
 
@@ -112,7 +112,7 @@
 6. `crates/adapters/src/docker.rs`：按 provider 选择内嵌策略（pi 挂到 `/run/devdesk/tool-policy.js`，codex/dsh 行为不变）；`ContainerSpec` 新增 `bridge_file` → `/run/devdesk/dynamic-tools.json`。
 7. `runtime_verification.rs`（pi 探针：`get_state`，无密钥无网络）、`runtime_registry.rs`、`runtime_preparation.rs`（`default_pi_recipe_digest`）、`session_resources.rs`（独立准备锁、凭据分支）、`examples/export_runtime_recipes.rs`（改用 `HARNESS_PROVIDERS`）、`lib.rs` 导出。
 8. `harness.rs` 此阶段只加让枚举穷尽的占位分支（`managed_adapter_contract` 为 `pi-rpc/v1`、`provider!(PiHarness, Pi)`、`RoutingHarness` 路由，命令分支返回 `unsupported`），P2 替换。
-9. 出厂配置：Harness/服务商/Model/目录/原生工具源，登记 `plugins/core/manifest.json`，用 `scripts/check/configuration_usage.py --write` 重生成 `reference-usage.json`；目录的 `recipe_digest` 取自 `export_runtime_recipes` 输出。`tests/fixtures/configuration/engineering-catalog.json` 同步加入同样的源（`schema_contracts` 会遍历全部 provider）。
+9. 出厂配置：Harness/服务商/Model/目录/原生工具源，登记 `plugins/core/manifest.json`，用 `scripts/check/configuration_usage.py --write` 重生成 `reference-usage.json`；目录的 `recipe_digest` 取自 `export_runtime_recipes` 输出。`tests/fixtures/configuration/engineering-catalog.json` 同步加入同样的源（`schema_contracts` 会遍历全部 provider）。路径、命令与夹具按共享地基第 8 章。
 10. 凭据泛化：`core/src/credential_updates.rs`、`host/src/model_providers.rs`、`adapters/src/{credentials,catalog,credentials_macos}.rs`。
 11. 全局库：schema、`catalog.rs` 启动版本检查（只接受 `0 | 25`）、升级命令（实现在 `adapters/src/global_migration.rs`，CLI 为 `host/src/main.rs` 的 `storage upgrade-global`；设计见共享地基第 3 章）。
 12. Schema 枚举更新。
@@ -150,6 +150,7 @@
 5. **重新应用权限绑定**：新增后端资产让 codex/dsh 的 `enforcement_contract` 漂移。逐目标执行 `permission.binding.preflight` + `permission.bindings.apply`（`permission.bind` 已退役）；出厂 pi 目标的默认绑定由 `template_permission_defaults` 自动套用。
 6. 既有冻结会话需创建带上下文的后继会话；进行中的执行按恢复流程核对后重跑。codex/dsh 配方不变，已登记安装继续有效，仅自动重过协议探针。
 7. `devdesk-recovery/20261119-large-snapshot/` 是恢复快照，不升级。
+8. 本流程保留的是全局库与运行安装。之后如果落地[架构独立性改造](../arch-independency/PLAN.md)，它的 P4 会提升项目库版本，届时既有项目库按该计划归档重建；本节的升级命令与全局库部分仍然有效，见共享地基第 8 章。
 
 ## 5. 验证
 

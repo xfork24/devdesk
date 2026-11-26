@@ -21,7 +21,7 @@
 |---|---|
 | 内核定位 | 领域无关。`model`、`harness`、`sandbox`、`skill`、`tool`、`permission`、`workflow`、`delivery`、`spec`、`standard`、`role`、`capability`、`agent` 等通用概念由内核定义，领域相关的必须迁移 |
 | 工程能力去向 | 内置扩展模块。Rust 实现移出通用 crate，经通用扩展点注册；Feature、Task 改为软件开发包的对象类型 |
-| 兼容范围 | 不兼容。软件开发包随内核重发，旧数据集归档后重建，不写兼容层 |
+| 兼容范围 | 不兼容。软件开发包随内核重发，旧数据集归档后重建，不写兼容层。本计划实际改动的是领域包格式与项目库；全局库由 Harness 计划负责，是否一并重建见 U10 |
 | 单体测试模式 | 移除并改造测试 |
 | 第二个领域 | 电商出库，下单、库房操作、物流配送三个完整流程，纯文档与纯函数 |
 
@@ -48,15 +48,27 @@
 
 先读报告，再读两份契约，最后读领域设计。本文的工作项用“审计项”指 [AUDIT](AUDIT.md) 的编号，用“K 节”指[目标内核 SDK 契约](CONTRACT-kernel-sdk.md)的节号，用“W 节”指[目标 Web SDK 契约](CONTRACT-web-sdk.md)的节号。
 
-### 0.5 与其他计划的关系
+### 0.5 与 Harness 扩展计划的关系
 
-[Harness 扩展共享地基](../harness-shared-foundation/PLAN.md)及其四条接入线会改动 `plugins/core` 下的 Harness 定义、RPC Schema 的 provider 枚举和全局库版本。本计划与其有三处交叠，约定如下：
+[Harness 扩展共享地基](../harness-shared-foundation/PLAN.md)及其四条接入线（pi、mcode、opencode、zcode）与本计划都待实施，有十一处交叠。Harness 是内核定义的通用概念，两份计划在定位上一致：它们向内核增加 Harness，本计划不改 Harness 的归属。交叠在路径、测试基建和工具种类上，规则见下表。同一张表也写在共享地基的第 8 章。两处不一致时，以先落地的一方当时写入的为准，并由后落地的一方同步另一处。
 
-- 全局库版本由 Harness 计划负责，本计划不改。
-- `plugins/core` 改名为 `kernel/core`（工作项 K-6）。Harness 计划如果先落地，新增文件随后迁到新路径；本计划如果先落地，Harness 计划直接使用新路径。
-- 两份计划都改 `schemas/rpc.schema.json`。后落地的一方负责合并，并重跑 `schema_contracts` 与 `rpc_contract_inventory`。
+| 交叠点 | Harness 计划 | 本计划 | 规则 |
+|---|---|---|---|
+| 出厂资源目录 | 在 `plugins/core/` 下新增源并登记清单 | K-6 改名为 `kernel/core` | 先落地的一方按当时的路径写。K-6 落地后，Harness 计划里的 `plugins/core/...` 一律读作 `kernel/core/...` |
+| 引用索引 | 用 `scripts/check/configuration_usage.py --write` 重生成 | S-3 把算法迁入 `devdesk-domain` | S-3 保留等价的 `--write` 入口，Harness 计划的命令随之更新 |
+| 测试夹具 | 向工程目录夹具同步新源；`native_acceptance.py` 以 `fixture-catalog` 运行适配器套件 | T-4、T-6 移除 `fixture-catalog` 与工程目录夹具 | Harness 先落地时，T-4、T-6 把新增的源带进新夹具；本计划先落地时，Harness 改为同步内核夹具目录并使用新的测试引导 |
+| 前端文件 | 修改 `App.tsx`、`RoleConversation.tsx` 等七个文件 | P2 重排 `web/src` 并迁出领域界面 | P2 之后这七个文件分属组件套件与软件开发领域界面，Harness 的修改在新位置进行并遵守 import 边界 |
+| 工具种类 | 桥与隧道按 `qualified_name` 或 `call_name()` 分派 | N-1 新增领域工具 | 见契约第 8 节。后落地的一方负责把领域工具纳入 `dynamic_tools`、桥的注册表与按名分派 |
+| 会话工作目录 | 各 Harness 的 cwd 固定 `/work`，恢复时必须不变 | N-8 文档工作区 | 文档工作区是稳定的 `/work` 挂载，恢复时路径不变。这是 Harness 计划对本计划的约束 |
+| 工作区受保护路径 | 向三处硬编码的白名单追加各 Harness 的项目级配置路径，现为 `.git`、`.codex`、`.agents` | M-3 把 `.git` 归为工程扩展，白名单改为按来源登记 | 接口不变。Harness 的条目留在内核并按 provider 登记，`.git` 由工程扩展提供。谁后落地谁合并 |
+| 适配器身份 | 新增协议模块进入 `managed_adapter_identity` 的哈希输入 | M-3 可能迁移其中的文件 | M-3 迁移其中任何文件时同步更新该函数的路径。`schemas/rpc.schema.json` 也在输入之列，两份计划对它的修改都会改变全部 provider 的驱动身份，这是既有行为 |
+| 全局库 | 其第 3 章：v24 升 v25，带升级命令 | 不改 | 全局库版本只由 Harness 计划决定 |
+| RPC Schema | 扩六处 provider 枚举 | 加领域工具的实现方式等 | 后落地的一方合并，并重跑 `schema_contracts` 与 `rpc_contract_inventory` |
+| 数据集 | 升级并保留现有数据 | 领域包格式与项目库不兼容 | 本计划 P4 之后既有项目库归档重建；Harness 的升级流程对全局库部分仍然适用 |
 
 本计划提升项目库版本（工作项 M-4），取值在实施时按 [SQL 说明](../../../sql/README.md)的当时值递增。
+
+**落地先后尚未决定**（U9）。两种先后都能走通。Harness 的生产批次先落地，pi 更早可用，代价是本计划的 P2、T-4、T-6 要多迁移一批刚改过的文件，用户先后经历一次全局库升级和一次项目库重建。本计划的 P1 到 P4 先落地，用户只重建一次，Harness 批次随后直接在新的目录、组件套件和测试引导上落地，代价是 pi 推迟可用。四条接入线的 P0 都是只读探针，不受先后影响。
 
 ## 1. 现状
 
@@ -116,14 +128,14 @@
 
 | 编号 | 工作项 | 对应 | 规模 |
 |---|---|---|---|
-| N-1 | 工具定义支持 `implementation: "domain"`，带领域命名空间下的名称和处理器；移除 `domain.read` | K 节 8 | M |
+| N-1 | 工具定义支持 `implementation: "domain"`，带领域命名空间下的名称和处理器；移除 `domain.read`。明确它在 Agent 调用路径上的分类：冻结锁、`dynamic_tools`、按名分派，以及宿主 MCP 桥与 pi 隧道的工具名注册表（见 0.5 节） | K 节 8、0.5 节 | M |
 | N-2 | 通用证据门禁：按操作名守护，输入由合同的 `context` 声明，支持 `$completion`；为 `facts` 补 Schema 并与 Rust 类型做一致性测试；软件开发的交付证据改写成通用合同 | D1、D2、D3 | L |
 | N-3 | 新增 `query.domain.entities`：按类型分页列出对象，附带工作流摘要 | K 节 9 | M |
 | N-4 | 项目接入信息对内核不透明；`domain.project.remove` 对任何领域项目可用 | C5 | M |
 | N-5 | 处理器入口改为纯模块，内核提供引导模块；结构化错误传回调用者 | K 节 7 | M |
 | N-6 | 内核输入 `domain.entities`；`git_head`、`git_snapshot` 更名为 `engineering.git.*` | C2 | M |
 | N-7 | 工作流输入声明 `provided_by`，取代按名字自动填充 | D5 | M |
-| N-8 | 验证无仓库项目的 Agent 步骤能否运行。不能则增加通用的文档工作区 | 第 6 节 V1 | S 或 M |
+| N-8 | 验证无仓库项目的 Agent 步骤能否运行。不能则增加通用的文档工作区。它必须是稳定的 `/work` 挂载，会话恢复时 cwd 不变，这是全部 Harness 的既有约束 | 第 6 节 V1、0.5 节 | S 或 M |
 | N-9 | 通用平台工具 `entities.create`：Agent 在归属对象下创建声明类型的对象并建立关系。随 P4 落地 | K 节 8 | M |
 
 ### WS4 SDK 制品、脚手架与构建独立
@@ -132,7 +144,7 @@
 |---|---|---|---|
 | S-1 | 组装 `@devdesk/domain-sdk`：Schema、处理器引导模块、命令行工具、Web 的模块与类型、构建配置 | K 节 10 | M |
 | S-2 | `devdesk-domain` 的 `init`、`check`、`build`、`verify` | K 节 10 | L |
-| S-3 | 引用索引算法迁入命令行工具，只保留一份实现；内核的 Python 检查脚本改为调用它 | F1、F4 | M |
+| S-3 | 引用索引算法迁入命令行工具，只保留一份实现；内核的 Python 检查脚本改为调用它；`scripts/check/configuration_usage.py --write` 保留等价入口 | F1、F4 | M |
 | S-4 | 软件开发包改为声明式的 `domain.json`；`build.py` 在代码里生成的配置源改为目录文件 | F1 | M |
 | S-5 | 打包脚本增加 `sdk` 入口；领域入口改为调用命令行工具 | — | S |
 | S-6 | CI 增加独立构建作业：只有 SDK 制品和领域目录 | — | S |
@@ -174,7 +186,8 @@
 | T-1 | 测试引导：正式 Host、正式 Web Core、运行时安装领域 ZIP 的公共步骤 | — | M |
 | T-2 | 6 个 entrypoint 测试改为对正式 Host 加夹具领域包运行 | B2 | M |
 | T-3 | 34 个浏览器用例按归属拆到 `kernel/` 与 `software-development/` | B2 | L |
-| T-4 | 移除 `fixture-catalog`、`build:fixture`、单体工作台夹具和两份工程目录夹具；更新 `check.sh` 与 CI | B2 | M |
+| T-4 | 移除 `fixture-catalog` feature、`build:fixture` 与单体工作台夹具；更新 `check.sh` 与 CI。两份工程目录夹具的去留见 T-6 | B2 | M |
+| T-6 | 适配器与 Host 集成测试的配置来源。这些测试现在靠 `fixture-catalog` 把工程目录夹具当作出厂资源，`tests/support/defaults.rs` 还从它读默认绑定。改为出厂资源只来自 `kernel/core`，测试需要的工程内容改由夹具领域包提供；`retired-engineering.json` 的去留随 M-4 确定。Harness 计划的 `native_acceptance.py` 现以 `fixture-catalog` 运行，改造后用新的测试引导 | B2、0.5 节 | L |
 | T-5 | 最小领域包的夹具构建器改为使用 `devdesk-domain` | — | S |
 
 ### WS8 工程扩展模块迁移
@@ -186,7 +199,7 @@
 | M-0 | 设计步骤：确定 crate 划分、模块注册接口、工具语义属性、Feature 与 Task 的对象化方案，以及 `tasks.create`、`feature.create`、`query.feature_branches` 的替代。产出一份工程扩展模块的契约文档 | D4、D6 | M |
 | M-1 | 平台处理器从常量列表改为模块注册 | D7 | M |
 | M-2 | 工具语义改为定义属性，引擎移除工具名字面量 | D4 | L |
-| M-3 | 工程的 Rust 代码迁入工程 crate：适配器、应用逻辑、类型、Host 入口 | C、D 类剩余项 | XL |
+| M-3 | 工程的 Rust 代码迁入工程 crate：适配器、应用逻辑、类型、Host 入口。Harness 协议模块与 `jsonl.rs` 不迁；`managed_adapter_identity` 哈希输入里的文件若被迁移，同步更新该函数的路径；工作区受保护路径白名单里的 `.git` 改由工程扩展登记 | C、D 类剩余项、0.5 节 | XL |
 | M-4 | Feature、Task 成为软件开发包的对象类型；内核的归属只剩项目和领域对象；移除对应的表并提升项目库版本；通用工具 `entities.create` | D6 | XL |
 | M-5 | 软件开发包重发：对象类型、流程、工具引用，分支队列等改为领域页面 | D6、E2 | L |
 | M-6 | 守卫收紧：内核 crate 不得命中工程词表。词表由人工维护，以棘轮方式运行 | — | S |
@@ -236,7 +249,7 @@
 - Web Core 制品的 import 图不含领域目录。
 - 软件开发 UI 从 `plugins/software-development/web` 构建，只依赖 SDK 制品；独立构建作业通过。
 - Web Core 源码中没有 DOM 探测和 `MutationObserver` 插槽；边界 lint 为错误级别。
-- 单体模式移除：没有 `fixture-catalog`、`build:fixture` 和单体工作台夹具。
+- 单体模式移除：没有 `fixture-catalog`、`build:fixture` 和单体工作台夹具；`cargo test --workspace` 与 `native_acceptance.py` 不再依赖 `fixture-catalog`。
 - 全部浏览器用例在“正式 Host、正式 Web Core、安装的 ZIP”上通过，debug 与 release 各一遍。
 - 完整检查通过。
 
@@ -298,6 +311,7 @@
 | R4 | 与 Harness 计划并行时的路径和 Schema 冲突 | 按 0.5 节的约定 |
 | R5 | 电商领域的真实模型验收依赖模型凭据和 Docker | 与自动化测试分开记录，不阻塞门禁 3 的其余各项 |
 | R6 | 组件套件的配置编辑器可能仍带有工程假设，例如要求仓库就绪 | P3 中逐页核对，发现的假设登记为抽象缺口 |
+| R7 | 与 Harness 扩展计划并行：十一处交叠，其中测试夹具、工具种类与工作区受保护路径是语义交叠 | 按 0.5 节的规则；先落地的一方不留临时路径，后落地的一方负责同步另一份计划 |
 
 ## 7. 未决问题
 
@@ -313,6 +327,8 @@
 | U6 | 电商领域 Agent 的模型绑定 | 首版沿用内核出厂的默认 Model 与 Harness，每个角色一套 |
 | U7 | 组件套件是否对外承诺稳定 | 首版只承诺给仓库内的领域使用 |
 | U8 | 工程 crate 的划分 | 由 M-0 确定。倾向是沿内核的分层分成类型与应用逻辑、适配器两个 crate |
+| U9 | 与 Harness 扩展计划的落地先后 | 未定。倾向本计划的 P1 到 P4 先落地：用户只重建一次数据，Harness 的升级路径在此之后仍然有效。代价是 pi 推迟可用，见 0.5 节 |
+| U10 | “不兼容”是否包括全局库 | 本计划只改动领域包格式与项目库，全局库沿用 Harness 计划的升级路径。如果你要连全局库也重建，Harness 计划第 3 章的升级路径就没有对象，本计划的 T-2 也要相应调整 |
 
 ## 8. 实施约束
 
@@ -321,3 +337,4 @@
 - 改变业务路径时核对冻结历史的读取与恢复。新数据集上的在途执行仍须能恢复。
 - 调整 crate 文件后运行文档索引的更新命令。修改行为时同步更新设计与当前文档。
 - 每个阶段的执行报告放在本目录，只保留 Markdown。
+- 与 Harness 扩展计划交叠的改动按 0.5 节处理。

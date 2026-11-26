@@ -2,7 +2,7 @@
 
 日期：2026-11-25。状态：**待实施（受 P0 门控）**。范围：接入 mcode 0.7.9（`@minimax-ai/code`，MIT）为新增 Harness（批次 B 先行），能力对齐 DSH：四家模型服务商、讨论会话、workflow 步骤工具。不含根编排。
 
-前置依赖：[Harness 扩展共享地基](../harness-shared-foundation/PLAN.md)（批次 B；其第 6 章的统一语义口径与第 7 章的通用 P0 清单对本计划有约束力）。本计划只写 mcode 自身的运行形态、协议映射、权限资产、模型配置与工作项；跨 Harness 的决策（终态映射、审批语义、接纳语义、工具桥执行链路、全局库版本）只引用共享地基，不另立口径。
+前置依赖：[Harness 扩展共享地基](../harness-shared-foundation/PLAN.md)（批次 B；其第 6 章的统一语义口径与第 7 章的通用 P0 清单对本计划有约束力）。本计划只写 mcode 自身的运行形态、协议映射、权限资产、模型配置与工作项；跨 Harness 的决策（终态映射、审批语义、接纳语义、工具桥执行链路、全局库版本）只引用共享地基，不另立口径。与[架构独立性改造](../arch-independency/PLAN.md)的交叠（出厂资源路径、引用索引入口、测试夹具、前端文件位置、工具种类）按[共享地基](../harness-shared-foundation/PLAN.md)第 8 章处理；该改造的 K-6 落地后，本文的 `plugins/core/...` 读作 `kernel/core/...`。
 
 ## 0. 已确认决策
 
@@ -166,7 +166,7 @@
 6. `crates/adapters/src/model_providers.rs`：`mcode_model_patch`（生成 `config.yaml`/provider 配置，参照 `dsh_model_patch`）；`binding_model_connection` 放宽到 `Dsh|Pi|Mcode|Zcode|Opencode`；`session_resources.rs` 与 `source_views.rs` 的 `model_profile_digest` 按 provider 选 patch。
 7. `crates/adapters/src/runtime_verification.rs`：mcode 探针（`initialize` + `session/new`，无密钥无网络）；`runtime_registry.rs`、`runtime_preparation.rs`（`default_mcode_recipe_digest`）、`session_resources.rs`（独立准备锁、凭据分支）。
 8. `crates/adapters/src/harness.rs`：新增 `harness_acp.rs` 与 `harness_mcode.rs`（按 `harness_startup.rs` 的挂载方式），此阶段只提供让枚举穷尽的占位分支（`managed_adapter_contract` 为 `mcode-acp/v1`、`provider!(McodeHarness, Mcode)`、`RoutingHarness` 路由、命令分支返回 `unsupported`），P2 替换。
-9. 出厂配置：`plugins/core/harnesses/builtin-harness-mcode-managed-v1.json`、服务商/Model 源、目录、`plugins/core/manifest.json`、`configuration_usage.py --write`、`tests/fixtures/configuration/engineering-catalog.json`。
+9. 出厂配置：`plugins/core/harnesses/builtin-harness-mcode-managed-v1.json`、服务商/Model 源、目录、`plugins/core/manifest.json`、`configuration_usage.py --write`、`tests/fixtures/configuration/engineering-catalog.json`。路径、命令与夹具按共享地基第 8 章。
 10. 凭据泛化的增量部分（共享地基 2.3：mcode 的账户前缀与测试表）；全局库 v25 与升级命令已在批次 A 落地，**此处不改全局库版本**，只核对 CHECK 已含 `mcode`。
 11. Schema 枚举更新。
 12. 前端（共享地基 2.6.1）。

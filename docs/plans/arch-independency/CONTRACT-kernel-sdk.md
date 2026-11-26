@@ -138,7 +138,7 @@
 内核侧对应三个变化：
 
 - core 的 `DomainReader` 端口只保留通用方法：`read`、`invoke_hook(group, hook, input)`、`core_input(name, selection)`。
-- 工程模块在注册时声明自己提供的钩子名和内核输入名。内核按组查找，不认识 `worktree_branch` 这样的具体名字。
+- 工程模块在注册时声明自己提供的钩子名、内核输入名，以及它要求在工作区内屏蔽的路径（`.git`）。各 Harness 要求屏蔽的项目级配置路径按 provider 登记，留在内核。内核按组查找，不认识 `worktree_branch` 这样的具体名字。
 - 基线中的 `git_head`、`git_snapshot` 更名为 `engineering.git.head`、`engineering.git.snapshot`。
 
 ## 7. 处理器运行时
@@ -188,6 +188,8 @@ export const handlers = {
 ```
 
 它既可以作为工具执行器步骤，也可以被 Capability 采用后由 Agent 直接调用。基线中唯一的入口 `domain.read` 及其固定的 `{handler, input}` 参数随之移除。
+
+领域工具在 Agent 调用路径上是单独的一类，不能落进既有两类的任何一类。它进入冻结锁的工具集合，按 `qualified_name` 匹配；调用走平台只读准入，需要工作流执行归属或 controller 授权；由领域处理器执行，并受第 7 节的沙箱限制。它先经现有的 Codex、DSH 协议通道交付。[Harness 扩展共享地基](../harness-shared-foundation/PLAN.md)新增的宿主 MCP 桥与 pi 隧道落地时，其工具名注册表把领域工具作为单独一类，MCP 暴露名按桥的确定性映射生成。谁后落地，谁负责补齐。
 
 **证据门禁是通用的。** 基线只读取 `git.delivery` 一个键并写死了输入字段。目标形态：
 
@@ -254,7 +256,7 @@ export const handlers = {
 
 **构建独立。** 领域包的构建只需要 SDK 制品、领域目录、Node 和 Python。不需要 `crates/`、`web/src`、`schemas/`、`scripts/`。CI 中用一个只提供这些输入的独立作业来证明。
 
-引用索引算法只保留一份实现，位于 `devdesk-domain`。内核现有的 Python 检查脚本改为调用它。
+引用索引算法只保留一份实现，位于 `devdesk-domain`。内核现有的 Python 检查脚本改为调用它。Harness 扩展计划引用的 `scripts/check/configuration_usage.py --write` 保留等价入口。
 
 ## 11. 与基线的对照
 

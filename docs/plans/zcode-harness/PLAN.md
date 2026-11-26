@@ -2,7 +2,7 @@
 
 日期：2026-11-25。状态：**待实施（受 P0 门控）**。范围：接入 ZCode CLI（`zcode-app-cli`，MIT 启动器 + 随包专有运行时）为新增 Harness，能力对齐 DSH：讨论会话、workflow 步骤工具、模型服务商。不含根编排。
 
-前置依赖：[Harness 扩展共享地基](../harness-shared-foundation/PLAN.md)（批次 B；其第 6 章的统一语义口径与第 7 章的通用 P0 清单对本计划有约束力）。本计划只写 zcode 自身的运行形态、协议映射、权限资产、模型配置与工作项；跨 Harness 的决策只引用共享地基，不另立口径。
+前置依赖：[Harness 扩展共享地基](../harness-shared-foundation/PLAN.md)（批次 B；其第 6 章的统一语义口径与第 7 章的通用 P0 清单对本计划有约束力）。本计划只写 zcode 自身的运行形态、协议映射、权限资产、模型配置与工作项；跨 Harness 的决策只引用共享地基，不另立口径。与[架构独立性改造](../arch-independency/PLAN.md)的交叠（出厂资源路径、引用索引入口、测试夹具、前端文件位置、工具种类）按[共享地基](../harness-shared-foundation/PLAN.md)第 8 章处理；该改造的 K-6 落地后，本文的 `plugins/core/...` 读作 `kernel/core/...`。
 
 > **门控**：本计划整体以第 3 章 P0 的实跑结论为门。ZCode Protocol 未公开文档化，若 P0 证明「无法稳定驱动一轮对话并取回终态」，则**不进入 P1**，改为在 `docs/plans/` 留一份「不可行/需上游支持」的结论记录，并回退到已文档化的一次性接口路线（见第 5 章备选路线）。
 

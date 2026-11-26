@@ -4,6 +4,8 @@
 
 配套计划：[pi 接入](../pi-harness/PLAN.md)、[mcode 接入](../mcode-harness/PLAN.md)、[opencode 接入](../opencode-harness/PLAN.md)、[zcode 接入](../zcode-harness/PLAN.md)。
 
+相关计划：[架构独立性改造](../arch-independency/PLAN.md)（内核改为领域无关，待实施）。它与四条接入线有十一处交叠，处理规则见第 8 章（2026-11-26 增补）。
+
 **本文件是跨计划决策的唯一权威口径**：全局库版本号与 CHECK 取值、终态映射、审批语义、接纳语义、工具桥执行链路、仓库内配置隔离、漂移轮次，一律以本文件为准；各 Harness 计划只引用，不另立口径。任一 Harness 的 P0 结论变化时，先改本文件的地基判断，再改对应 Harness 计划。
 
 ## 0. 结论与范围
@@ -180,6 +182,7 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
 4. **工具集合**：`tools/list` 返回该会话**冻结**的动态工具集（来源同 `harness.rs:1718 dynamic_tools(binding)`：集成绑定工具、未绑定工具、平台工具、上下文工具，且按冻结 `tool_refs` 过滤）。**工具名注册表**：集成/未绑定工具用 `definition.qualified_name`，平台工具与上下文工具用 `definition.call_name()`（core 侧也按这两种名字分别匹配：`conversation_observations.rs:410-418` 用 `qualified_name`，`platform_observations.rs:46-55` 用 `call_name()`）。桥侧保留 `MCP 暴露名 → (种类, 冻结引用, 原名)` 的反查表；`qualified_name` 与 `call_name` 撞名且无法用冻结引用消歧的条目**不暴露**。未在冻结集合内的名字一律拒绝。
    - **MCP 工具名约束**：暴露名必须满足 `^[A-Za-z0-9_-]{1,64}$`（多数客户端与模型提供方的共同约束）；原名含其他字符时做确定性映射（`.` → `_` 等），`tools/call.name` 经反查表还原为原名后再产出观察。MCP 服务名取短名（建议 `devdesk`）。
    - **客户端命名空间化**（P0 必测）：各 harness 会给 MCP 工具加服务器前缀后再暴露给模型（pi 文档即有 `mcp__<server>__<tool>` 形态），模型可见名与 DevDesk 指令文本里的工具名可能不一致。P0 记录每条线的模型可见名与长度；指令文本对工具名的引用改为「按前缀识别」的措辞，或在 `tools/list` 的 description 中说明。
+   - **工具种类**：现有三类是集成工具、平台工具（`implementation: "platform"`）和上下文工具，按 `qualified_name` 或 `call_name()` 匹配。[架构独立性改造](../arch-independency/PLAN.md)会新增**领域工具**（`implementation: "domain"`，名称在领域命名空间下，由领域处理器执行，只读）。该改造先落地时，`dynamic_tools(binding)`、桥的工具名注册表与 core 的按名分派要同步纳入领域工具：按 `qualified_name` 匹配，走平台只读准入，MCP 暴露名按同一条确定性映射处理。本计划先落地时，由该改造的 N-1 在桥与隧道两处补齐。
    - **一期暴露范围：四类全暴露**（含平台工具）。桥产出观察时 `tool` 取**原名**，core 已有按名分派：命中集成工具 `qualified_name` 的走常规接纳（`admit_provider_observations`），其余（平台工具）自动走平台准入路径（`admit_platform_provider_observation`，`conversation_runtime.rs:334-345`）→ 桥**不需要**新增 grant 路由或新端口。
    - **平台工具的可调用前提（必须写进 `limitations`）**：平台调用要么有 **controller 授权**（`poll.authority.controller` 存在且有效，`platform_observations.rs:140-194`），要么有 **workflow 执行归属**（`poll.authority.workflow` 存在，`platform_observations.rs:263-290`）；两者皆无的普通讨论会话调用平台工具会被 core 以 `tool_not_authorized` 拒绝。桥把 core 的拒绝原因原样返回（MCP `isError` + 可读原因），不能让模型反复重试。
 5. **权限与审批（更正后的口径）**：
@@ -232,7 +235,7 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
 1. `sql/global/schema.sql`：`runtime_installations.provider` CHECK 扩到 `('codex','dsh','pi','mcode','zcode','opencode')`；`PRAGMA user_version` 按第 3 章的合并决策一次性推进。
 2. 全局库升级命令与启动版本检查见第 3 章。**启动只接受 `0` 与 `25`**；v24 数据集启动时给出指向升级命令的明确错误，不得静默放行。
 3. `schemas/rpc.schema.json`（六处 provider 枚举）、`schemas/permission-backend.schema.json`（两处）同步枚举。
-4. 出厂配置：`plugins/core/harnesses/builtin-harness-{mcode,zcode,opencode}-managed-v1.json`，对应 `builtin-model-catalog-{mcode,zcode,opencode}-v1.json`；登记 `plugins/core/manifest.json`；`scripts/check/configuration_usage.py --write` 重生成 `reference-usage.json`；`tests/fixtures/configuration/engineering-catalog.json` 同步（`schema_contracts` 会遍历全部 provider）。
+4. 出厂配置：`plugins/core/harnesses/builtin-harness-{mcode,zcode,opencode}-managed-v1.json`，对应 `builtin-model-catalog-{mcode,zcode,opencode}-v1.json`；登记 `plugins/core/manifest.json`；`scripts/check/configuration_usage.py --write` 重生成 `reference-usage.json`；`tests/fixtures/configuration/engineering-catalog.json` 同步（`schema_contracts` 会遍历全部 provider）。路径与命令按第 8 章：[架构独立性改造](../arch-independency/PLAN.md)落地后，出厂资源目录是 `kernel/core/`，引用索引由 `devdesk-domain` 的等价入口重生成，测试夹具改为该改造提供的内核夹具目录。
 5. 目录 `recipe_digest` 取自 `examples/export_runtime_recipes.rs` 输出（该示例改用 `HARNESS_PROVIDERS`）。
 6. **配方生成面扩展（两条新线的前置改造）**：现有 `compose_execution_recipe` 只有一条安装通道——`RUN npm install --global --omit=dev {package}@{version}`（`crates/domain/src/execution_recipe.rs:219-222`），且 `HarnessInstallation.package` 必填非空（`:119-129`、校验 `:165-171`）；`native_releases` 只服务**宿主侧登录组件**（`runtime_preparation.rs:216-230`），不是镜像安装通道。扩展需满足四条约束：
    - **字节稳定**：未使用新字段的 Harness（codex/dsh/pi/zcode）生成的 Dockerfile 必须与改造前**逐字节相同**，`recipe_digest` 不变 → 已登记的安装继续有效、Harness 与 Model 目录的 `recipe_digest` 钉定不受影响、无需重新准备镜像。`installation_identity`（`execution_recipe.rs:183`）的哈希输入只在字段存在时追加。回归测试：`export_runtime_recipes` 对 codex/dsh/pi 的 `recipe_digest` 在改造前后一致（写成常量断言）。此前版本称「配方生成一变，全部 provider 的配方摘要都变」——按本约束**不成立**，权限资产漂移也不因此多出轮次。
@@ -243,9 +246,9 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
 
 ### 2.6 前端与测试基建
 
-1. 前端：`RuntimeSettings.tsx`（类型与下拉）、`AgentCatalog.tsx`、`RuntimePreparationStatus.tsx`、`Integrations.tsx`、`RoleConversation.tsx`、`App.tsx`（凭据键前缀）；`DshProviderSettings.tsx` 改为按 harness 渲染，供 dsh/pi/mcode/zcode/opencode 共用。
+1. 前端：`RuntimeSettings.tsx`（类型与下拉）、`AgentCatalog.tsx`、`RuntimePreparationStatus.tsx`、`Integrations.tsx`、`RoleConversation.tsx`、`App.tsx`（凭据键前缀）；`DshProviderSettings.tsx` 改为按 harness 渲染，供 dsh/pi/mcode/zcode/opencode 共用。这些文件的位置随架构独立性改造变化，见第 8 章。
 2. **能力与限制可见**：Agent 编辑器与权限页展示所选 Harness 的 `limitations`（例如「不支持 harness 层工具禁网」「不支持 Agent 提问」「远程 Docker daemon 下步骤工具不可用」）；组合不可用时在保存前拦截，而不是运行期才失败。
-3. 测试支撑：`crates/adapters/tests/support/mod.rs`（`DEVDESK_TEST_PI_IMAGE`、`DEVDESK_TEST_MCODE_IMAGE`、`DEVDESK_TEST_ZCODE_IMAGE`、`DEVDESK_TEST_OPENCODE_IMAGE`）、`tests/support/runtime.rs`、`tests/entrypoints/native_acceptance.py`、`scripts/check/doctor.py`。
+3. 测试支撑：`crates/adapters/tests/support/mod.rs`（`DEVDESK_TEST_PI_IMAGE`、`DEVDESK_TEST_MCODE_IMAGE`、`DEVDESK_TEST_ZCODE_IMAGE`、`DEVDESK_TEST_OPENCODE_IMAGE`）、`tests/support/runtime.rs`、`tests/entrypoints/native_acceptance.py`、`scripts/check/doctor.py`。`native_acceptance.py` 现以 `fixture-catalog` feature 运行适配器套件，架构独立性改造落地后改用其新的测试引导，见第 8 章。
 
 ## 3. 全局库版本与旧数据集升级
 
@@ -271,6 +274,7 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
    7. codex/dsh 的配方摘要不变（2.5.6 字节稳定），已登记安装仍有效，仅按新驱动身份重新通过协议探针（自动）。
 5. **漂移轮次口径**：每新增一批权限后端都会改动 `asset_digests()`（`crates/adapters/src/permissions.rs:42-45`，覆盖 `permissions/backends/manifest.json` 全文与全部资产摘要）→ codex/dsh 的 `enforcement_contract` 漂移、冻结会话 `permission_asset_mismatch`。按 0.5 的两批次安排，**每批次之后**都要重跑第 4 条的流程，并在验收记录里写明这是第几轮漂移。
 6. `devdesk-recovery/20261119-large-snapshot/` 是恢复快照，**不升级**；确有需要时在同一命令下另行处理。
+7. **与架构独立性改造叠加**：该改造不兼容的是领域包格式与项目库，不改全局库。它的 P4 落地后，既有项目库按该计划归档重建；本节的升级流程对全局库部分（运行安装、凭据引用、设置）仍然适用。两份计划的落地先后见第 8 章。
 
 ## 4. 未决问题与后续关注点
 
@@ -339,3 +343,28 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
 | 8 | 恢复：会话 id 稳定、不重放历史或重放可被有界丢弃、模型与 MCP 配置在恢复后仍然生效 | 见 2.2.7 |
 | 9 | 宿主桥连通性（仅 HostMcp 线）：agent 宣告对应 MCP 传输能力；容器内能连到宿主端点；macOS 与 Linux 两种绑定地址；工具名经客户端后的模型可见名与长度 | 见 2.4.4、2.4.6 |
 | 10 | 模型路由与凭据：API key 型自定义 provider 的最小配置；零凭据启动的探针配置 | 探针必须零凭据、零网络 |
+
+## 8. 与架构独立性改造的交叠（2026-11-26 增补）
+
+[架构独立性改造](../arch-independency/PLAN.md)把内核改为领域无关，状态是待实施。Harness 是内核定义的通用概念，两份计划在定位上一致，交叠在路径、测试基建和工具种类上。同一张表也写在该计划的 0.5 节。两处不一致时，以先落地的一方当时写入的为准，并由后落地的一方同步另一处。
+
+| 交叠点 | 本计划 | 架构独立性改造 | 规则 |
+|---|---|---|---|
+| 出厂资源目录 | 在 `plugins/core/` 下新增源并登记清单 | K-6 改名为 `kernel/core` | 先落地的一方按当时的路径写。K-6 落地后，本文件与四条接入线里的 `plugins/core/...` 一律读作 `kernel/core/...` |
+| 引用索引 | 用 `scripts/check/configuration_usage.py --write` 重生成 | S-3 把算法迁入 `devdesk-domain` | S-3 保留等价的 `--write` 入口；它落地后本计划的这条命令以新入口为准 |
+| 测试夹具 | 向 `tests/fixtures/configuration/engineering-catalog.json` 同步新源；`native_acceptance.py` 以 `fixture-catalog` 运行适配器套件 | T-4、T-6 移除 `fixture-catalog` 与工程目录夹具 | 本计划先落地时，T-4、T-6 把新增的源原样带进新的夹具；该改造先落地时，本计划改为同步内核夹具目录，并用新的测试引导 |
+| 前端文件 | 修改 2.6.1 列出的七个文件 | P2 把 `web/src` 分成 `sdk/`、`kit/`、`core/`，并把领域界面迁到领域目录 | P2 之后，`RuntimeSettings.tsx`、`AgentCatalog.tsx`、`RuntimePreparationStatus.tsx`、`Integrations.tsx`、`DshProviderSettings.tsx` 属于组件套件，`RoleConversation.tsx` 与 `App.tsx` 属于软件开发领域的界面。在该改造之后修改时，在新位置进行并遵守它的 import 边界 |
+| 工具种类 | 桥与隧道按 `qualified_name` 或 `call_name()` 分派 | N-1 新增领域工具 | 见 2.4.4 |
+| 会话工作目录 | 各 Harness 的 cwd 固定 `/work`，恢复时必须不变 | N-8 为无仓库项目提供文档工作区 | 文档工作区必须是稳定的 `/work` 挂载，恢复时路径不变。这是本计划对该改造提出的约束 |
+| 工作区受保护路径 | 三处硬编码的白名单按 Harness 追加条目：`domain/src/permission.rs` 的 `default_protected_metadata`、`adapters/src/permissions.rs`、`adapters/src/docker.rs`，现为 `.git`、`.codex`、`.agents` | M-3 把 `.git` 归为工程扩展，白名单改为按来源登记 | 接口不变，三处仍返回同一份叶子名列表。Harness 的条目留在内核并按 provider 登记，`.git` 由工程扩展提供。谁后落地谁合并；Harness 计划引用的行号会变，以符号为准 |
+| 适配器身份 | 新增的协议模块纳入 `managed_adapter_identity` 的哈希输入 | M-3 可能迁移工作区准备等文件 | 输入列表以本计划新增的条目为准；M-3 迁移其中任何文件时同步更新路径。`schemas/rpc.schema.json` 也在输入之列，两份计划对它的修改都会改变全部 provider 的驱动身份，这是既有行为 |
+| 全局库 | 第 3 章 | 不改 | 全局库版本只由本计划决定 |
+| RPC Schema | 扩六处 provider 枚举 | 加领域工具的实现方式等 | 后落地的一方合并，并重跑 `schema_contracts` 与 `rpc_contract_inventory` |
+| 数据集 | 第 3 章：升级并保留现有数据 | 领域包格式与项目库不兼容 | 该改造的 P4 之后既有项目库归档重建；本计划的升级流程对全局库部分仍然适用 |
+
+**落地先后尚未决定**，登记在该改造计划的 U9。两种先后都能走通，差别在返工量和数据集的处置：
+
+- 本计划的生产批次先落地：pi 更早可用。之后该改造的 P2 要迁移这时已改过的前端文件，T-4、T-6 要把新增的源带进新夹具；用户先经历一次全局库升级，再在该改造的 P4 重建项目库。
+- 该改造的 P1 到 P4 先落地：用户只重建一次。本计划的批次随后在 `kernel/core`、组件套件和新的测试引导上直接落地，全局库升级路径在此之后仍然有效。代价是 pi 推迟可用。
+
+四条接入线的 P0 都是只读探针，不受先后影响。
