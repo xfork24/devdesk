@@ -32,7 +32,12 @@ impl Engine {
             .as_ref()
             .map_or("main", |w| w.mainline.as_str());
         if let Some(domain) = &self.domain_reader
-            && let Some(result) = domain.project_test_discovery(&project.id, mainline)?
+            && let Some(result) = extensions::project_test_discovery(
+                domain,
+                self.git.as_ref(),
+                &project.id,
+                mainline,
+            )?
         {
             return Ok(result);
         }

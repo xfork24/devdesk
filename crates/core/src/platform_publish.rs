@@ -70,7 +70,7 @@ impl Engine {
         if !inspect_only
             && let Some(domain) = &self.domain_reader
             && let Some(branch) =
-                domain.worktree_branch(project, candidate, WorktreeKind::Candidate)?
+                extensions::worktree_branch(domain, project, candidate, WorktreeKind::Candidate)?
         {
             return Ok(branch);
         }
@@ -106,7 +106,7 @@ impl Engine {
                 && request.number.is_none()
                 && let Some(domain) = &self.domain_reader
             {
-                domain.pull_request_creation(&request)?
+                extensions::pull_request_creation(domain, &request)?
             } else {
                 None
             };

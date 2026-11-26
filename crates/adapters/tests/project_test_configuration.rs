@@ -4,9 +4,10 @@ use devdesk_domain::*;
 use serde_json::json;
 use std::{fs, path::Path, process::Command};
 
-// Exercise the exact historical runtime with no Web build dependency.
+// The packaged runtime and catalog without any Web build dependency. Regenerate with
+// `python3 plugins/software-development/build.py --runtime-only <path>` after a format change.
 const SOFTWARE_DOMAIN_FIXTURE: &[u8] =
-    include_bytes!("../../../tests/fixtures/domain-packages/software-development-0.3.0.zip");
+    include_bytes!("../../../tests/fixtures/domain-packages/software-development-current.zip");
 
 fn git(repo: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
@@ -301,20 +302,23 @@ fn software_domain_branch_is_frozen_before_git_writes_and_inspected_without_rese
         fn read(&self, project: &str, handler: &str, input: Value) -> Result<Value> {
             self.packages.read_for_project(project, handler, input)
         }
-        fn worktree_branch(
+        fn hook(
             &self,
             project: &str,
-            owner: &str,
-            kind: WorktreeKind,
-        ) -> Result<Option<String>> {
-            self.packages.worktree_branch(project, owner, kind)
+            group: &str,
+            hook: &str,
+            input: Value,
+        ) -> Result<Option<Value>> {
+            self.packages.hook(project, group, hook, input)
         }
-        fn project_test_discovery(
+        fn resource(
             &self,
             project: &str,
-            mainline: &str,
-        ) -> Result<Option<ProjectTestDiscovery>> {
-            self.packages.project_test_discovery(project, mainline)
+            group: &str,
+            collection: &str,
+            key: &str,
+        ) -> Result<Option<(String, String)>> {
+            self.packages.resource(project, group, collection, key)
         }
     }
 

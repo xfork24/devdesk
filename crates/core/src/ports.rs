@@ -258,7 +258,9 @@ pub enum ConversationObservation {
 }
 
 /// Validations perform no I/O. Calls are asynchronously dispatched after persistence.
-/// Read-only operations furnished by the active domain for its project.
+/// Read-only services furnished by the active domain package for its projects. The port
+/// names no capability of its own: a package binds handlers to the hooks of an extension
+/// group, and publishes files in the collections that group declares.
 pub trait DomainReader: Send + Sync {
     fn read(
         &self,
@@ -267,35 +269,30 @@ pub trait DomainReader: Send + Sync {
         input: serde_json::Value,
     ) -> Result<serde_json::Value>;
 
-    fn worktree_branch(
+    /// Whether the package of `project` binds a handler to `hook` of the extension `group`.
+    fn has_hook(&self, _project: &str, _group: &str, _hook: &str) -> Result<bool> {
+        Ok(false)
+    }
+
+    /// Runs the handler bound to that hook; `None` when the package binds none.
+    fn hook(
         &self,
         _project: &str,
-        _owner: &str,
-        _kind: devdesk_domain::WorktreeKind,
-    ) -> Result<Option<String>> {
+        _group: &str,
+        _hook: &str,
+        _input: serde_json::Value,
+    ) -> Result<Option<serde_json::Value>> {
         Ok(None)
     }
 
-    fn pull_request_creation(
-        &self,
-        _request: &PullRequestRequest,
-    ) -> Result<Option<devdesk_domain::PullRequestCreation>> {
-        Ok(None)
-    }
-
-    fn test_reporter(
+    /// A UTF-8 file of `collection` in that group with its digest; `None` when absent.
+    fn resource(
         &self,
         _project: &str,
-        _runner: &devdesk_domain::TestRunner,
-    ) -> Result<Option<TestReporter>> {
-        Ok(None)
-    }
-
-    fn project_test_discovery(
-        &self,
-        _project: &str,
-        _mainline: &str,
-    ) -> Result<Option<devdesk_domain::ProjectTestDiscovery>> {
+        _group: &str,
+        _collection: &str,
+        _key: &str,
+    ) -> Result<Option<(String, String)>> {
         Ok(None)
     }
 }
@@ -340,6 +337,14 @@ pub trait Git: Send + Sync {
         _mainline: &str,
     ) -> Result<devdesk_domain::ProjectTestDiscovery> {
         Ok(devdesk_domain::ProjectTestDiscovery::default())
+    }
+    /// The registered local repository and the exact commit its `mainline` points to.
+    fn registered_revision(
+        &self,
+        _project: &str,
+        _mainline: &str,
+    ) -> Result<Option<(String, String)>> {
+        Ok(None)
     }
     fn observe_delivery_target(&self, _context: &GitContext) -> Result<Option<String>> {
         Err(err("unsupported", "Git 未实现远端目标只读观察"))

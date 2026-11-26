@@ -2013,6 +2013,14 @@ impl ports::Git for CliGit {
     ) -> Result<ProjectTestDiscovery> {
         self.discover_tests(project, mainline)
     }
+    fn registered_revision(
+        &self,
+        project: &str,
+        mainline: &str,
+    ) -> Result<Option<(String, String)>> {
+        Ok(CliGit::registered_revision(self, project, mainline)?
+            .map(|(repository, revision)| (repository.to_string_lossy().into_owned(), revision)))
+    }
     fn observe_delivery_target(&self, c: &GitContext) -> Result<Option<String>> {
         self.remote_head(&self.context(c)?, &c.target.branch)
     }

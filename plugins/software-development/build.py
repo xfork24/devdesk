@@ -155,27 +155,30 @@ def build(target, web):
             result_type: {"name": "Test configuration", "schema": output},
         }).encode(),
     })
-    if not (web / "workbench.mjs").is_file():
-        raise ValueError(f"Missing Web entry in {web}; run npm --prefix web run build:software")
-    contributions = PACKAGE / "web/contributions.json"
-    files["ui/contributions.json"] = contributions.read_bytes()
-    stylesheet = "ui/web/workbench.css"
-    files[stylesheet] = (PACKAGE / "web/workbench.css").read_bytes()
-    for asset in web.rglob("*.mjs"):
-        files[f"ui/web/{asset.relative_to(web).as_posix()}"] = asset.read_bytes()
-    ui = {
-        "contributions": "ui/contributions.json",
-        "targets": [{"renderer": "web.react", "api": 2, "styles": [stylesheet], "bindings": [
-            {"contribution": row["id"], "entry": "ui/web/workbench.mjs", "export": export}
-            for row, export in zip(json.loads(contributions.read_text()),
-                                   ("BranchQueue", "DeliveryWorkbench", "EngineeringSettings"), strict=True)
-        ]}],
-    }
+    if web is not None:
+        contributions = PACKAGE / "web/contributions.json"
+        files["ui/contributions.json"] = contributions.read_bytes()
+        stylesheet = "ui/web/workbench.css"
+        files[stylesheet] = (PACKAGE / "web/workbench.css").read_bytes()
+        for asset in web.rglob("*.mjs"):
+            files[f"ui/web/{asset.relative_to(web).as_posix()}"] = asset.read_bytes()
+        ui = {
+            "contributions": "ui/contributions.json",
+            "targets": [{"renderer": "web.react", "api": 2, "styles": [stylesheet], "bindings": [
+                {"contribution": row["id"], "entry": "ui/web/workbench.mjs", "export": export}
+                for row, export in zip(json.loads(contributions.read_text()),
+                                       ("BranchQueue", "DeliveryWorkbench", "EngineeringSettings"), strict=True)
+            ]}],
+        }
     manifest = {"format": 1, "id": DOMAIN, "version": VERSION, "entity_types": entity_types,
                 "files": {path: hashlib.sha256(contents).hexdigest() for path, contents in files.items()},
-                "runtime": {"entry": "runtime/worker.mjs", "worktree_branch": BRANCH, "test_discovery": DISCOVER,
-                            "project_connection": CONNECT, "test_reporters": reporters,
-                            "pull_request_creation": PR_CREATE, "handlers": {
+                "extensions": {
+                    "engineering.git/1": {"handlers": {"worktree_branch": BRANCH,
+                                                       "pull_request_creation": PR_CREATE}},
+                    "engineering.tests/1": {"handlers": {"test_discovery": DISCOVER},
+                                            "resources": {"reporters": reporters}},
+                },
+                "runtime": {"entry": "runtime/worker.mjs", "project_connection": CONNECT, "handlers": {
                     PR_CREATE: {"input_schema": pr_request, "output_schema": pr_result},
                     CONNECT: {"input_schema": connection_input, "output_schema": connection_result},
                     BRANCH: {"input_schema": branch_request, "output_schema": branch_result},
@@ -208,7 +211,8 @@ def build(target, web):
             "properties": {"allowed": {"type":"boolean"}, "reason": {"type":"string"}},
         }
     }
-    manifest["ui"] = ui
+    if web is not None:
+        manifest["ui"] = ui
     files["manifest.json"] = json.dumps(manifest).encode()
     target.parent.mkdir(parents=True, exist_ok=True)
     with ZipFile(target, "w") as archive:
@@ -221,5 +225,7 @@ if __name__ == "__main__":
     parser.add_argument("--version", action="version", version=VERSION)
     parser.add_argument("target", type=Path)
     parser.add_argument("--web-dir", type=Path, default=REPO / "target/web/software")
+    parser.add_argument("--runtime-only", action="store_true",
+                        help="omit the Web target; used to build test fixtures")
     args = parser.parse_args()
-    build(args.target, args.web_dir)
+    build(args.target, None if args.runtime_only else args.web_dir)

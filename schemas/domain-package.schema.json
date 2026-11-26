@@ -15,21 +15,14 @@
       "propertyNames": { "$ref": "#/$defs/path" },
       "additionalProperties": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
     },
+    "extensions": { "$ref": "#/$defs/extensions" },
     "runtime": {
       "type": "object",
       "additionalProperties": false,
       "required": ["entry", "handlers"],
       "properties": {
         "entry": { "$ref": "#/$defs/path", "pattern": "^runtime/.+[.]mjs$" },
-        "worktree_branch": { "$ref": "#/$defs/identifier" },
-        "test_discovery": { "$ref": "#/$defs/identifier" },
         "project_connection": { "$ref": "#/$defs/identifier" },
-        "pull_request_creation": { "$ref": "#/$defs/identifier" },
-        "test_reporters": {
-          "type": "object",
-          "propertyNames": { "enum": ["node_test", "python_unittest", "command"] },
-          "additionalProperties": { "$ref": "#/$defs/path", "pattern": "^runtime/" }
-        },
         "handlers": {
           "type": "object",
           "minProperties": 1,
@@ -108,6 +101,35 @@
   },
   "$defs": {
     "identifier": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,139}$" },
+    "group": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,139}/[1-9][0-9]{0,9}$" },
+    "extensions": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": { "$ref": "#/$defs/group" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "handlers": {
+            "type": "object",
+            "maxProperties": 32,
+            "propertyNames": { "$ref": "#/$defs/identifier" },
+            "additionalProperties": { "$ref": "#/$defs/identifier" }
+          },
+          "resources": {
+            "type": "object",
+            "maxProperties": 16,
+            "propertyNames": { "$ref": "#/$defs/identifier" },
+            "additionalProperties": {
+              "type": "object",
+              "maxProperties": 32,
+              "propertyNames": { "$ref": "#/$defs/identifier" },
+              "additionalProperties": { "$ref": "#/$defs/path", "pattern": "^runtime/.+" }
+            }
+          }
+        }
+      }
+    },
     "path": { "type": "string", "maxLength": 256, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,139}(/[A-Za-z0-9][A-Za-z0-9._-]{0,139})*$" }
   }
 }

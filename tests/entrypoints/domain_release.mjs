@@ -24,10 +24,10 @@ const domainVersion = (await execFile("python3", [
   path.join(root, "plugins/software-development/build.py"), "--version",
 ])).stdout.trim();
 const candidate = path.join(releaseDir, `software-development-${domainVersion}.zip`);
-const legacy = path.join(
-  baselineDir ?? path.join(root, "tests/fixtures/domain-packages"),
-  "software-development-0.3.0.zip",
-);
+const legacy = path.join(root, "tests/fixtures/domain-packages", "software-development-current.zip");
+const legacyVersion = (await execFile("python3", ["-c",
+  "import json,sys,zipfile;print(json.loads(zipfile.ZipFile(sys.argv[1]).read('manifest.json'))['version'])",
+  legacy])).stdout.trim();
 const manuscript = path.join(temp, "manuscript.zip");
 const incompatible = path.join(temp, "unsupported.zip");
 const repository = path.join(temp, "repository");
@@ -198,14 +198,14 @@ with ZipFile(sys.argv[1]) as original, ZipFile(sys.argv[2], "w", ZIP_DEFLATED) a
     assert(permissions.profiles.some((row) => row.identity === "builtin-permission-harness-read-only"));
     await client.canRender("core", (page) => page.getByText("GPT-6.2 Sol High").first());
     const state = await client.activate((await client.install(legacy)).digest);
-    assert.equal(state.active.version, "0.3.0");
+    assert.equal(state.active.version, legacyVersion);
     await client.rejected(baselineDir ? candidate : incompatible);
     if (baselineDir) pass.push("Web Core upgrade with previous Host and domain");
     return client.native("software", repository, head);
   }, { legacyHost: Boolean(baselineDir) });
 
   await withHost(current.host, previous.web, async (client) => {
-    assert.equal((await client.active()).active.version, "0.3.0");
+    assert.equal((await client.active()).active.version, legacyVersion);
     const read = await client.native("read", original.run.project_id, original.run.execution_id);
     assert.equal(read.record.data.status, "completed");
     assert.equal(read.domain_submission.entities.test_configuration, original.proof_id);
@@ -224,9 +224,9 @@ with ZipFile(sys.argv[1]) as original, ZipFile(sys.argv[2], "w", ZIP_DEFLATED) a
     const samples = await Promise.all(Array.from({ length: 100 }, () => client.active()));
     assert(samples.every((state) => state.active.digest === upgraded.digest));
     const result = await client.native("software", repository, head);
-    const old = (await client.result("query.domain.installed")).find((row) => row.version === "0.3.0");
+    const old = (await client.result("query.domain.installed")).find((row) => row.version === legacyVersion);
     const frozen = await client.activate(old.digest);
-    assert.equal(frozen.active.version, "0.3.0");
+    assert.equal(frozen.active.version, legacyVersion);
     assert.equal((await client.native("read", original.run.project_id, original.run.execution_id)).record.id, original.run.execution_id);
     await client.activate(upgraded.digest);
     pass.push("Runtime ZIP activation, version rollback and 100 concurrent directory requests");

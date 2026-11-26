@@ -598,7 +598,7 @@ mod tests {
             let packages = DomainPackages::open(&host).unwrap();
             let digest = packages
                 .install(include_bytes!(
-                    "../../../../tests/fixtures/domain-packages/software-development-0.3.0.zip"
+                    "../../../../tests/fixtures/domain-packages/software-development-current.zip"
                 ))
                 .unwrap()["digest"]
                 .as_str()
@@ -692,7 +692,7 @@ mod tests {
         let digest = {
             let packages = DomainPackages::open(&host).unwrap();
             let archive = include_bytes!(
-                "../../../../tests/fixtures/domain-packages/software-development-0.3.0.zip"
+                "../../../../tests/fixtures/domain-packages/software-development-current.zip"
             );
             let digest = packages.install(archive).unwrap()["digest"]
                 .as_str()

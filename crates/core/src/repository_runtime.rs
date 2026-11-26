@@ -634,8 +634,10 @@ impl Engine {
             } = &mut dispatched.action
                 && branch.is_none()
                 && let Some(domain) = &self.domain_reader
+                && let Some(planned) =
+                    extensions::worktree_branch(domain, &op.project_id, owner, *worktree_kind)?
             {
-                *branch = domain.worktree_branch(&op.project_id, owner, *worktree_kind)?;
+                *branch = Some(planned);
             }
             dispatched.status = RepositoryOperationStatus::Dispatched;
             dispatched.revision += 1;

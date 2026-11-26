@@ -28,6 +28,8 @@ struct Manifest {
     runtime: Option<Runtime>,
     ui: Option<Ui>,
     entity_types: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    extensions: BTreeMap<String, Extension>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -36,15 +38,18 @@ struct Runtime {
     entry: String,
     handlers: BTreeMap<String, Handler>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    worktree_branch: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    test_discovery: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     project_connection: Option<String>,
+}
+
+/// What a package binds to one extension group: its handlers on the group's hooks,
+/// and files in the collections the group names.
+#[derive(Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct Extension {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    test_reporters: BTreeMap<String, String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pull_request_creation: Option<String>,
+    handlers: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    resources: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -65,6 +70,15 @@ struct Handler {
 enum CoreInput {
     GitHead,
     GitSnapshot,
+}
+
+impl CoreInput {
+    fn name(&self) -> &'static str {
+        match self {
+            Self::GitHead => "git_head",
+            Self::GitSnapshot => "git_snapshot",
+        }
+    }
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -355,44 +369,14 @@ impl Package {
             return Err(invalid("领域运行入口或处理器无效"));
         }
         if let Some(runtime) = &manifest.runtime {
-            for (runner, path) in &runtime.test_reporters {
-                let extension = if runner == "node_test" { ".mjs" } else { ".py" };
-                require(
-                    path.starts_with("runtime/")
-                        && path.ends_with(extension)
-                        && files.get(path).is_some_and(|body| {
-                            !body.is_empty()
-                                && body.len() <= 64 * 1024
-                                && std::str::from_utf8(body).is_ok()
-                        }),
-                    "领域测试报告器需要对应运行器的有界文本资源",
-                )?;
-            }
-            if let Some(handler) = &runtime.test_discovery {
+            if let Some(handler) = &runtime.project_connection {
                 require(
                     runtime.handlers.get(handler).is_some_and(|handler| {
-                        matches!(handler.core, Some(CoreInput::GitSnapshot))
-                            && handler.input_schema.is_some()
-                            && handler.output_schema.is_some()
-                    }),
-                    "项目测试识别需要声明输入输出的 Git 快照处理器",
-                )?;
-            }
-            for name in [
-                &runtime.worktree_branch,
-                &runtime.project_connection,
-                &runtime.pull_request_creation,
-            ]
-            .into_iter()
-            .flatten()
-            {
-                require(
-                    runtime.handlers.get(name).is_some_and(|handler| {
                         handler.core.is_none()
                             && handler.input_schema.is_some()
                             && handler.output_schema.is_some()
                     }),
-                    "领域项目接入、分支和 PR 策略需要声明输入输出的纯处理器",
+                    "领域项目接入需要声明输入输出的纯处理器",
                 )?;
             }
             for handler in runtime.handlers.values() {
@@ -414,6 +398,44 @@ impl Package {
                     .offline()
                     .build(schema)
                     .map_err(|_| invalid("领域处理器 Schema 不可用"))?;
+            }
+        }
+        for (reference, extension) in &manifest.extensions {
+            let group = devdesk_core::extensions::extension_group(reference)
+                .ok_or_else(|| invalid("领域包声明了未知的扩展组"))?;
+            for (name, handler) in &extension.handlers {
+                let declared = group
+                    .hook(name)
+                    .ok_or_else(|| invalid("扩展组没有声明这个钩子"))?;
+                require(
+                    manifest
+                        .runtime
+                        .as_ref()
+                        .and_then(|runtime| runtime.handlers.get(handler))
+                        .is_some_and(|handler| {
+                            handler.input_schema.is_some()
+                                && handler.output_schema.is_some()
+                                && handler.core.as_ref().map(CoreInput::name) == declared.core
+                        }),
+                    "领域钩子需要声明输入输出的处理器，并使用该钩子要求的内核输入",
+                )?;
+            }
+            for (collection, entries) in &extension.resources {
+                require(
+                    group.resources.contains(&collection.as_str()),
+                    "扩展组没有声明这个资源集合",
+                )?;
+                for path in entries.values() {
+                    require(
+                        path.starts_with("runtime/")
+                            && files.get(path).is_some_and(|body| {
+                                !body.is_empty()
+                                    && body.len() <= 64 * 1024
+                                    && std::str::from_utf8(body).is_ok()
+                            }),
+                        "扩展资源需要 runtime/ 下的有界文本文件",
+                    )?;
+                }
             }
         }
         let mut contributions: Vec<Contribution> = vec![];
@@ -557,6 +579,22 @@ impl Package {
 
     fn runtime(&self) -> Option<&Runtime> {
         self.manifest.runtime.as_ref()
+    }
+
+    /// The handler bound to `hook` of the extension `group`; `None` when none is bound.
+    fn hook(&self, group: &str, hook: &str) -> Option<(&String, &Handler)> {
+        let name = self.manifest.extensions.get(group)?.handlers.get(hook)?;
+        self.runtime()?.handlers.get_key_value(name)
+    }
+
+    fn resource(&self, group: &str, collection: &str, key: &str) -> Option<&str> {
+        self.manifest
+            .extensions
+            .get(group)?
+            .resources
+            .get(collection)?
+            .get(key)
+            .map(String::as_str)
     }
 }
 
@@ -949,6 +987,10 @@ impl DomainPackages {
             .handlers
             .get(name)
             .ok_or_else(|| err("method_not_found", "领域操作未注册"))?;
+        Self::run(package, name, handler, input)
+    }
+
+    fn run(package: &Package, name: &str, handler: &Handler, input: Value) -> Result<Value> {
         validate_exchange(handler.input_schema.as_ref(), &input)?;
         let core = match handler.core {
             Some(CoreInput::GitHead) => crate::git::local_git(&input, false)?,
@@ -961,6 +1003,9 @@ impl DomainPackages {
             }
             None => Value::Null,
         };
+        let runtime = package
+            .runtime()
+            .ok_or_else(|| invalid("领域运行入口缺失"))?;
         let result = worker::invoke(package, runtime, name, input, core)?;
         validate_exchange(handler.output_schema.as_ref(), &result)?;
         Ok(result)
@@ -972,124 +1017,64 @@ impl DomainPackages {
         Self::run_handler(package, name, input)
     }
 
-    pub fn worktree_branch(
-        &self,
-        project: &str,
-        owner: &str,
-        kind: WorktreeKind,
-    ) -> Result<Option<String>> {
-        let active = self.active.read().unwrap();
-        if self.project_domain(project)?.is_none() {
-            return Ok(None);
-        }
-        let package = self.require_project(&active, project)?;
-        let Some(handler) = package
-            .runtime()
-            .and_then(|runtime| runtime.worktree_branch.as_deref())
-        else {
-            return Ok(None);
+    /// Whether the package of `project` binds a handler to `hook` of the extension `group`.
+    pub fn has_hook(&self, project: &str, group: &str, hook: &str) -> Result<bool> {
+        let Some(package) = self.bound_package(project)? else {
+            return Ok(false);
         };
-        let value = Self::run_handler(package, handler, json!({"owner":owner,"kind":kind}))?;
-        require(
-            value["owner"] == owner && value["kind"] == json!(kind),
-            "领域策略改变了工作副本归属",
-        )?;
-        value["branch"]
-            .as_str()
-            .filter(|branch| {
-                !branch.is_empty()
-                    && branch.len() <= 240
-                    && !branch.starts_with('-')
-                    && !branch.chars().any(char::is_control)
-            })
-            .map(|value| Some(value.to_owned()))
-            .ok_or_else(|| invalid("领域策略返回了无效的分支"))
+        Ok(package.hook(group, hook).is_some())
     }
 
-    pub fn pull_request_creation(
-        &self,
-        request: &PullRequestRequest,
-    ) -> Result<Option<PullRequestCreation>> {
-        let active = self.active.read().unwrap();
-        if self.project_domain(&request.project)?.is_none() {
-            return Ok(None);
-        }
-        let package = self.require_project(&active, &request.project)?;
-        let Some(handler) = package
-            .runtime()
-            .and_then(|runtime| runtime.pull_request_creation.as_deref())
-        else {
-            return Ok(None);
-        };
-        let result = Self::run_handler(
-            package,
-            handler,
-            json!({"request":request,"marker":request.marker()}),
-        )?;
-        let creation: PullRequestCreation = serde_json::from_value(result)
-            .map_err(|error| err("domain_contract", error.to_string()))?;
-        creation.validate(request)?;
-        Ok(Some(creation))
-    }
-
-    pub fn test_reporter(
+    /// Runs the handler bound to that hook; `None` when the package binds none.
+    pub fn hook(
         &self,
         project: &str,
-        runner: &TestRunner,
-    ) -> Result<Option<ports::TestReporter>> {
-        let active = self.active.read().unwrap();
-        if self.project_domain(project)?.is_none() {
+        group: &str,
+        hook: &str,
+        input: Value,
+    ) -> Result<Option<Value>> {
+        let Some(package) = self.bound_package(project)? else {
             return Ok(None);
-        }
-        let package = self.require_project(&active, project)?;
-        let key = json!(runner);
-        let Some(path) = package
-            .runtime()
-            .and_then(|runtime| key.as_str().and_then(|key| runtime.test_reporters.get(key)))
-        else {
+        };
+        let Some((name, handler)) = package.hook(group, hook) else {
+            return Ok(None);
+        };
+        Some(Self::run(&package, name, handler, input)).transpose()
+    }
+
+    /// A UTF-8 file of `collection` in that group with its digest; `None` when none is published.
+    pub fn resource(
+        &self,
+        project: &str,
+        group: &str,
+        collection: &str,
+        key: &str,
+    ) -> Result<Option<(String, String)>> {
+        let Some(package) = self.bound_package(project)? else {
+            return Ok(None);
+        };
+        let Some(path) = package.resource(group, collection, key) else {
             return Ok(None);
         };
         let content = std::str::from_utf8(&package.files[path]).map_err(storage)?;
-        Ok(Some(ports::TestReporter {
-            digest: package.manifest.files[path].clone(),
-            content: content.to_owned(),
-        }))
+        Ok(Some((
+            package.manifest.files[path].clone(),
+            content.to_owned(),
+        )))
     }
 
-    pub fn project_test_discovery(
-        &self,
-        project: &str,
-        mainline: &str,
-    ) -> Result<Option<ProjectTestDiscovery>> {
+    /// The active package when `project` belongs to it. Project RPCs can already hold a
+    /// read lease, so a concurrent switch fails the read instead of waiting on a nested one.
+    fn bound_package(&self, project: &str) -> Result<Option<Arc<Package>>> {
         if self.project_domain(project)?.is_none() {
             return Ok(None);
         }
-        // Project RPCs can already own a read lease. A concurrent switch
-        // must fail this read promptly instead of waiting on a nested lease.
         let active = self
             .active
             .try_read()
-            .map_err(|_| err("domain_busy", "领域正在切换，请重新读取测试配置"))?;
-        let package = self.require_project(&active, project)?;
-        let Some(handler) = package
-            .runtime()
-            .and_then(|runtime| runtime.test_discovery.as_deref())
-        else {
-            return Ok(None);
-        };
-        let git = crate::git::CliGit::new(&self.root)?;
-        let Some((repo, revision)) = git.registered_revision(project, mainline)? else {
-            return Ok(Some(ProjectTestDiscovery::default()));
-        };
-        let reply = Self::run_handler(package, handler, json!({"path":repo,"revision":revision}))?;
-        let result: ProjectTestDiscovery = serde_json::from_value(reply)
-            .map_err(|error| err("domain_contract", error.to_string()))?;
-        require(
-            result.revision.as_deref() == Some(revision.as_str()),
-            "测试入口改变了原 Git 修订",
-        )?;
-        result.configuration.validate()?;
-        Ok(Some(result))
+            .map_err(|_| err("domain_busy", "领域正在切换，请重新读取"))?;
+        self.require_project(&active, project)?;
+        Ok(active.package.clone())
     }
 
     pub fn with_workflow<T>(
@@ -1458,4 +1443,177 @@ fn next_epoch(epoch: u64) -> Result<u64> {
     epoch
         .checked_add(1)
         .ok_or_else(|| err("storage", "领域代次溢出"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    const ENTRY: &str = "runtime/worker.mjs";
+    const GIT: &str = "engineering.git/1";
+    const TESTS: &str = "engineering.tests/1";
+
+    fn archive(manifest: Value, extra: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut files =
+            BTreeMap::from([(ENTRY.to_owned(), b"export const handlers = {};".to_vec())]);
+        for (name, body) in extra {
+            files.insert((*name).to_owned(), body.to_vec());
+        }
+        let mut manifest = manifest;
+        manifest["files"] = json!(
+            files
+                .iter()
+                .map(|(name, body)| (name.clone(), digest(body)))
+                .collect::<BTreeMap<_, _>>()
+        );
+        files.insert(
+            "manifest.json".into(),
+            serde_json::to_vec(&manifest).unwrap(),
+        );
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        for (name, body) in files {
+            zip.start_file(name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(&body).unwrap();
+        }
+        zip.finish().unwrap().into_inner()
+    }
+
+    fn handler(core: Option<&str>) -> Value {
+        let mut handler = json!({
+            "input_schema": {"type": "object"},
+            "output_schema": {"type": "object"},
+        });
+        if let Some(core) = core {
+            handler["core"] = json!(core);
+            handler["git_snapshot"] = json!({"files": [], "searches": {}});
+        }
+        handler
+    }
+
+    fn package(extensions: Value, handlers: Value) -> Vec<u8> {
+        archive(
+            json!({
+                "format": 1, "id": "sample", "version": "1", "extensions": extensions,
+                "runtime": {"entry": ENTRY, "handlers": handlers},
+            }),
+            &[("runtime/reporter.mjs", b"// reporter")],
+        )
+    }
+
+    fn bound() -> Vec<u8> {
+        package(
+            json!({
+                GIT: {"handlers": {"worktree_branch": "sample.branch"}},
+                TESTS: {"handlers": {"test_discovery": "sample.discover"},
+                        "resources": {"reporters": {"node_test": "runtime/reporter.mjs"}}},
+            }),
+            json!({"sample.branch": handler(None), "sample.discover": handler(Some("git_snapshot"))}),
+        )
+    }
+
+    #[test]
+    fn hooks_and_resources_resolve_through_the_declared_group() {
+        let package = Package::read(&bound()).unwrap();
+        assert_eq!(
+            package
+                .hook(GIT, "worktree_branch")
+                .map(|(name, _)| name.as_str()),
+            Some("sample.branch")
+        );
+        assert!(package.hook(GIT, "test_discovery").is_none());
+        assert!(package.hook(TESTS, "worktree_branch").is_none());
+        assert_eq!(
+            package.resource(TESTS, "reporters", "node_test"),
+            Some("runtime/reporter.mjs")
+        );
+        assert_eq!(
+            package.resource(TESTS, "reporters", "python_unittest"),
+            None
+        );
+    }
+
+    #[test]
+    fn a_hook_only_accepts_handlers_with_the_kernel_input_of_its_group() {
+        let branches = json!({"sample.branch": handler(Some("git_head"))});
+        let invalid = package(
+            json!({GIT: {"handlers": {"worktree_branch": "sample.branch"}}}),
+            branches,
+        );
+        assert!(Package::read(&invalid).is_err());
+        let discovers = json!({"sample.discover": handler(None)});
+        let invalid = package(
+            json!({TESTS: {"handlers": {"test_discovery": "sample.discover"}}}),
+            discovers,
+        );
+        assert!(Package::read(&invalid).is_err());
+        let without_schemas = json!({"sample.branch": json!({"core": null})});
+        let invalid = package(
+            json!({GIT: {"handlers": {"worktree_branch": "sample.branch"}}}),
+            without_schemas,
+        );
+        assert!(Package::read(&invalid).is_err());
+    }
+
+    #[test]
+    fn groups_hooks_and_collections_must_be_declared_by_the_kernel() {
+        let handlers = json!({"sample.branch": handler(None)});
+        for extensions in [
+            json!({"engineering.unknown/1": {"handlers": {"worktree_branch": "sample.branch"}}}),
+            json!({GIT: {"handlers": {"rename_worktree": "sample.branch"}}}),
+            json!({GIT: {"resources": {"reporters": {"node_test": "runtime/reporter.mjs"}}}}),
+            json!({TESTS: {"resources": {"images": {"node_test": "runtime/reporter.mjs"}}}}),
+            json!({TESTS: {"resources": {"reporters": {"node_test": "runtime/missing.mjs"}}}}),
+        ] {
+            assert!(Package::read(&package(extensions, handlers.clone())).is_err());
+        }
+    }
+
+    #[test]
+    fn project_hooks_and_resources_follow_the_bound_package() {
+        let temporary = tempfile::tempdir().unwrap();
+        let packages = DomainPackages::open(temporary.path()).unwrap();
+        let installed = packages.install(&bound()).unwrap();
+        let package_digest = installed["digest"].as_str().unwrap();
+        let project = Uuid::new_v4().to_string();
+        {
+            let db = packages.db.lock().unwrap();
+            db.execute(
+                "UPDATE active_domain SET epoch=1,digest=? WHERE singleton=1",
+                [package_digest],
+            )
+            .unwrap();
+            db.execute(
+                "INSERT INTO domain_projects VALUES(?,?)",
+                params![project, package_digest],
+            )
+            .unwrap();
+        }
+        let packages = DomainPackages::open(temporary.path()).unwrap();
+        let outsider = Uuid::new_v4().to_string();
+        assert!(packages.has_hook(&project, GIT, "worktree_branch").unwrap());
+        assert!(
+            !packages
+                .has_hook(&project, GIT, "pull_request_creation")
+                .unwrap()
+        );
+        assert!(
+            !packages
+                .has_hook(&outsider, GIT, "worktree_branch")
+                .unwrap()
+        );
+        assert_eq!(
+            packages
+                .resource(&project, TESTS, "reporters", "node_test")
+                .unwrap(),
+            Some((digest(&b"// reporter"[..]), "// reporter".to_owned()))
+        );
+        assert_eq!(
+            packages
+                .resource(&outsider, TESTS, "reporters", "node_test")
+                .unwrap(),
+            None
+        );
+    }
 }

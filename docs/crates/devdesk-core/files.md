@@ -49,6 +49,7 @@
 | [src/driver_capabilities.rs](../../../crates/core/src/driver_capabilities.rs) | Executable protocol facts are supplied by the installed adapters, never by source declarations. |
 | [src/environment.rs](../../../crates/core/src/environment.rs) | Scoped application sources make scheduling and recovery reproducible in tests. |
 | [src/experience_directory.rs](../../../crates/core/src/experience_directory.rs) | [工程资源与外部工具的应用流程](integrations-and-repositories.md) |
+| [src/extensions.rs](../../../crates/core/src/extensions.rs) | Extension groups are kernel-provided capabilities that only some domains need. A domain package binds its own handlers to the hooks a group declares. |
 | [src/formal_inputs.rs](../../../crates/core/src/formal_inputs.rs) | [会话、运行资源与结果处理](session-resources-and-permissions.md) |
 | [src/formal_sessions.rs](../../../crates/core/src/formal_sessions.rs) | [会话、运行资源与结果处理](session-resources-and-permissions.md) |
 | [src/frozen_views.rs](../../../crates/core/src/frozen_views.rs) | [配置加载、发布与编译](configuration-and-catalog.md) |

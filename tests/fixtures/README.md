@@ -10,4 +10,4 @@
 新增协议样本时记录供应商版本、脱敏方式和读取它的测试，并保持现有回放时序。
 
 
-`configuration/engineering-catalog.json` 保存旧工程目录的冻结数据，供 `fixture-catalog` 的 Rust 和浏览器回归使用。正式 Host 只内嵌核心目录。 `domain-packages/software-development-0.3.0.zip` 是历史运行端版本，用来验证实际 ZIP 的回切与恢复。
+`configuration/engineering-catalog.json` 保存旧工程目录的冻结数据，供 `fixture-catalog` 的 Rust 和浏览器回归使用。正式 Host 只内嵌核心目录。 `domain-packages/software-development-current.zip` 是当前格式的软件开发包（只含运行端与配置，不含 Web），供需要真实目录内容的 Rust 测试安装；清单格式变化后用 `python3 plugins/software-development/build.py --runtime-only tests/fixtures/domain-packages/software-development-current.zip` 重新生成。

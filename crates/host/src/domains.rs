@@ -15,36 +15,28 @@ impl DomainReader for ProjectReader {
         self.packages.read_for_project(project, handler, input)
     }
 
-    fn worktree_branch(
-        &self,
-        project: &str,
-        owner: &str,
-        kind: devdesk_domain::WorktreeKind,
-    ) -> devdesk_domain::Result<Option<String>> {
-        self.packages.worktree_branch(project, owner, kind)
+    fn has_hook(&self, project: &str, group: &str, hook: &str) -> devdesk_domain::Result<bool> {
+        self.packages.has_hook(project, group, hook)
     }
 
-    fn pull_request_creation(
-        &self,
-        request: &devdesk_domain::PullRequestRequest,
-    ) -> devdesk_domain::Result<Option<devdesk_domain::PullRequestCreation>> {
-        self.packages.pull_request_creation(request)
-    }
-
-    fn test_reporter(
+    fn hook(
         &self,
         project: &str,
-        runner: &devdesk_domain::TestRunner,
-    ) -> devdesk_domain::Result<Option<devdesk_core::ports::TestReporter>> {
-        self.packages.test_reporter(project, runner)
+        group: &str,
+        hook: &str,
+        input: Value,
+    ) -> devdesk_domain::Result<Option<Value>> {
+        self.packages.hook(project, group, hook, input)
     }
 
-    fn project_test_discovery(
+    fn resource(
         &self,
         project: &str,
-        mainline: &str,
-    ) -> devdesk_domain::Result<Option<devdesk_domain::ProjectTestDiscovery>> {
-        self.packages.project_test_discovery(project, mainline)
+        group: &str,
+        collection: &str,
+        key: &str,
+    ) -> devdesk_domain::Result<Option<(String, String)>> {
+        self.packages.resource(project, group, collection, key)
     }
 }
 

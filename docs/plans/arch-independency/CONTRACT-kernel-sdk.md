@@ -131,13 +131,15 @@
 ```json
 "extensions": {
   "engineering.git/1": { "handlers": { "worktree_branch": "…", "pull_request_creation": "…" } },
-  "engineering.tests/1": { "handlers": { "test_discovery": "…" }, "reporters": { "node_test": "runtime/…" } }
+  "engineering.tests/1": { "handlers": { "test_discovery": "…" },
+                           "resources": { "reporters": { "node_test": "runtime/…" } } }
 }
 ```
 
-内核侧对应三个变化：
+`project_connection` 不是工程钩子，留在 `runtime` 下。内核侧对应三个变化：
 
-- core 的 `DomainReader` 端口只保留通用方法：`read`、`invoke_hook(group, hook, input)`、`core_input(name, selection)`。
+- core 的 `DomainReader` 端口只保留通用方法：`read`、`has_hook(group, hook)`、`hook(group, hook, input)`、`resource(group, collection, key)`。
+- 每个钩子在内核的扩展组登记表里声明自己要求的内核输入。绑定到钩子的处理器必须声明输入输出 Schema，并使用该内核输入；资源集合同样由组声明，文件位于 `runtime/` 下。未登记的组、钩子和集合在安装时被拒绝。
 - 工程模块在注册时声明自己提供的钩子名、内核输入名，以及它要求在工作区内屏蔽的路径（`.git`）。各 Harness 要求屏蔽的项目级配置路径按 provider 登记，留在内核。内核按组查找，不认识 `worktree_branch` 这样的具体名字。
 - 基线中的 `git_head`、`git_snapshot` 更名为 `engineering.git.head`、`engineering.git.snapshot`。
 

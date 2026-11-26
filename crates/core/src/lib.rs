@@ -13,6 +13,7 @@ pub use configuration_publication::{
 };
 pub mod credential_updates;
 pub mod experience_directory;
+pub mod extensions;
 pub mod integration_operations;
 pub mod project_creation;
 pub mod project_reservation;

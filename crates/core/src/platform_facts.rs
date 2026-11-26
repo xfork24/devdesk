@@ -674,7 +674,11 @@ impl Engine {
                                 .domain_reader
                                 .as_ref()
                                 .map(|domain| {
-                                    domain.test_reporter(&context.project, &recipe.runner)
+                                    extensions::test_reporter(
+                                        domain,
+                                        &context.project,
+                                        &recipe.runner,
+                                    )
                                 })
                                 .transpose()?
                                 .flatten();
