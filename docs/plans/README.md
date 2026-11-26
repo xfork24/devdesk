@@ -6,7 +6,7 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
-| [架构独立性改造](arch-independency/PLAN.md) | [审阅报告](arch-independency/REPORT.md)、[审计清单](arch-independency/AUDIT.md)；目标契约与领域设计见计划目录（本计划待实施） | 内核改为领域无关，工程能力迁为内置扩展模块；用第二个领域 ecommerce-outbound（下单、库房操作、物流配送三个流程）验证抽象；消除内核、Web Core 与领域包之间的源码级耦合，建立版本协商、脚手架与构建独立；不做兼容层，移除单体测试模式；六个阶段交付（P0 守卫、P1 协议核心、P2 Web 与测试、P3 第二个领域、P4 工程迁移、P5 收尾）；与 Harness 扩展计划的十一处交叠见计划 0.5 节 |
+| [架构独立性改造](arch-independency/PLAN.md) | [审阅报告](arch-independency/REPORT.md)、[审计清单](arch-independency/AUDIT.md)；目标契约与领域设计见计划目录；[执行报告](arch-independency/EXECUTION.md)（实施中，P0 已完成） | 内核改为领域无关，工程能力迁为内置扩展模块；用第二个领域 ecommerce-outbound（下单、库房操作、物流配送三个流程）验证抽象；消除内核、Web Core 与领域包之间的源码级耦合，建立版本协商、脚手架与构建独立；不做兼容层，移除单体测试模式；六个阶段交付（P0 守卫、P1 协议核心、P2 Web 与测试、P3 第二个领域、P4 工程迁移、P5 收尾）；与 Harness 扩展计划的十一处交叠见计划 0.5 节 |
 | [Harness 扩展共享地基](harness-shared-foundation/PLAN.md) | 本计划（待实施） | pi/mcode/zcode/opencode 四条接入线的跨计划权威口径：Provider 能力表、ACP 与 ZCode 线协议、凭据泛化、宿主侧 MCP 工具桥、配方生成面、统一语义口径、全局库 v25 与旧数据集升级；两批次交付（P0 批次前置，pi 先行）；与架构独立性改造的十一处交叠见本计划第 8 章 |
 | [mcode Harness 接入](mcode-harness/PLAN.md) | 本计划（待实施，受 P0 门控） | MiniMax Code CLI 0.7.9 作为新增 Harness（批次 B 先行）；ACP 标准协议、四家模型服务商、宿主 MCP 工具桥；P0 判定 Linux 原生依赖 |
 | [opencode Harness 接入](opencode-harness/PLAN.md) | 本计划（待实施，受 P0 门控） | opencode CLI 2.4.1 作为新增 Harness（批次 B）；与 mcode 共用 ACP 适配器、GitHub 发行二进制、插件钩子策略；禁用后台服务与 `--auto`；P0 确认指令注入通道 |

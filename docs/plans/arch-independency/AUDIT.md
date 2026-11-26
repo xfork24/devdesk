@@ -84,6 +84,7 @@
 - **现象**：在测试或 fixture feature 下，`include_bytes!` 引入 `plugins/software-development/runtime/` 下的报告器文件，并硬编码两个摘要常量。
 - **影响**：领域运行时文件一改，内核测试就要同步摘要。文件名是 `tests.rs`，但它是一个生产模块，`lib.rs` 第 60 行以 `pub mod tests` 声明。
 - **方向**：夹具文件复制到 `tests/fixtures/`，由测试自行加载。
+- **状态**：已处理，P0 的 G-4。
 
 ### B2 单体模式的工程目录夹具与 feature
 
@@ -97,6 +98,7 @@
 - **位置**：[export_runtime_recipes.rs](../../../crates/adapters/examples/export_runtime_recipes.rs) 第 7 行
 - **现象**：示例从源码目录读取出厂资源包。
 - **影响**：低。随 E1 一并处理。
+- **状态**：已处理，P0 的 G-4。示例程序改为经公开的 `packaged_runtime` 读取内嵌资源。
 
 ## C. 内核被首个领域塑形：领域包协议
 
@@ -266,6 +268,7 @@
 - **现象**：脚本检查四个 crate 之间的依赖方向、domain 的纯度等，没有任何规则涉及 `plugins/`。
 - **影响**：A1、A2、B1 这类引用可以无阻拦地进入内核。
 - **方向**：增加规则：`crates/` 的非测试代码不得出现 `plugins/` 路径与已注册的领域包标识。
+- **状态**：已处理，P0 的 G-1。
 
 ### G2 Web 核心包的守卫是三个文件的黑名单
 
@@ -273,12 +276,14 @@
 - **现象**：只有 `App.tsx`、`FeatureBranchQueue.tsx`、`RepositorySettings.tsx` 被禁止进入核心包。
 - **影响**：名单靠人维护。`GitHubConnection.tsx`、`WorkflowController.tsx` 等领域文件不在名单里，只要被核心引用就会混入。
 - **方向**：改为白名单：核心包的 import 图里不允许出现领域目录；领域包的 import 图里不允许出现核心源码。
+- **状态**：守卫已就位，P0 的 G-2，现存 2 条越界记入基线。三个文件的黑名单仍在，由 P2 的 W-1 替换。
 
 ### G3 文档与源码的处理器数量不一致
 
 - **位置**：[tools-and-primitives.md](../../../docs/design/reference/tools-and-primitives.md) 第 7 行
 - **现象**：文档写“54 个平台处理器”，源码是 55 个；文档列出的 5 个未发布处理器没有包含 `domain.read`。
 - **方向**：数量从源码生成，或把登记表作为唯一来源。
+- **状态**：已处理，P0 的 G-5。
 
 ### G4 配置包清单在两处的校验深度不同
 
@@ -293,3 +298,4 @@
 - **现象**：前者把 Feature、Task 列为“核心概念”，后者把“从 Feature、Task 到 PR 合入”描述为软件开发包提供的流程。
 - **影响**：读者无法判断它们属于内核还是领域。
 - **方向**：随 D6 的决策统一。
+- **状态**：已补充当前归属与去向的说明（P0 的 G-5），迁移在 P4。
