@@ -41,12 +41,12 @@ async function bytes(zip) {
 
 async function extract(artifacts, cwd, verify) {
   const filenames = await readdir(artifacts);
-  const hostPrefix = verify ? "devdesk-core-host-0.5.0-" : "devdesk-core-host-";
+  const hostPrefix = verify ? "devdesk-core-host-0.6.0-" : "devdesk-core-host-";
   const hosts = filenames.filter((file) =>
     file.startsWith(hostPrefix) && file.endsWith(".tar.gz") && !/-(speed|symbols)\.tar\.gz$/.test(file));
   assert.equal(hosts.length, 1, "Expected one Host archive for the current machine");
   const webArchives = filenames.filter((file) => verify
-    ? file === "devdesk-core-web-0.5.0.tar.gz"
+    ? file === "devdesk-core-web-0.6.0.tar.gz"
     : /^devdesk-core-web(?:-.*)?\.tar\.gz$/.test(file));
   assert.equal(webArchives.length, 1, "Expected one Web Core archive");
   const [web] = webArchives;
@@ -155,7 +155,7 @@ async function withHost(host, web, operation, { crashAfter = false, legacyHost =
 
 try {
   const current = await extract(releaseDir, temp, true);
-  assert.equal((await execFile(current.host, ["--version"])).stdout.trim(), "devdesk-host 0.5.0");
+  assert.equal((await execFile(current.host, ["--version"])).stdout.trim(), "devdesk-host 0.6.0");
   const previous = baselineDir
     ? await extract(baselineDir, await mkdtemp(path.join(temp, "previous-")), false)
     : current;

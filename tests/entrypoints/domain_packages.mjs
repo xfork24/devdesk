@@ -94,7 +94,7 @@ try {
   await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
   await page.getByRole("heading", { name: "基础组件", exact: true }).waitFor();
   await second.getByRole("heading", { name: "基础组件", exact: true }).waitFor();
-  await page.getByText("v0.5.0", { exact: true }).waitFor();
+  await page.getByText("v0.6.0", { exact: true }).waitFor();
   await page.getByText("GPT-6.2 Sol High", { exact: false }).first().waitFor();
   await rpc(page, "model.create", { command_id: crypto.randomUUID(), payload: {
     name: "Domain smoke model", scope: "global", data: {

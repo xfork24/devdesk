@@ -371,13 +371,12 @@ def run(origin, action, args):
         defaults = active["defaults"]
         assert {defaults["workflow_ref"], defaults["task_workflow_ref"]} <= set(active["agent_workflows"])
         assert defaults["standard_ref"].rsplit(":", 1)[0] == "software-development.standard-engineering-delivery"
-        if active["active"]["version"] in ("0.5.0", "0.5.1", "0.5.2"):
-            assert defaults["workflow_ref"] == "software-development.workflow-feature-development:6"
-            assert defaults["task_workflow_ref"] == "software-development.workflow-task-development:5"
-            for row in active["sources"]:
-                if row["id"] in (defaults["workflow_ref"], defaults["task_workflow_ref"]):
-                    assert "delivery_policy" not in row["data"]
-                    assert row["data"]["operation_evidence"]["git.delivery"]["checks"]["$completion"] == ["delivery_receipt"]
+        assert defaults["workflow_ref"] == "software-development.workflow-feature-development:6"
+        assert defaults["task_workflow_ref"] == "software-development.workflow-task-development:5"
+        for row in active["sources"]:
+            if row["id"] in (defaults["workflow_ref"], defaults["task_workflow_ref"]):
+                assert "delivery_policy" not in row["data"]
+                assert row["data"]["operation_evidence"]["git.delivery"]["checks"]["$completion"] == ["delivery_receipt"]
         coordinate = {"path": path, "revision": revision}
         actual = client.call("query.domain.invoke", epoch=epoch,
                              handler="software-development.tests.discover", input=coordinate)

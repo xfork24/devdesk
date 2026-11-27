@@ -14,10 +14,10 @@ Host、Web Core 和领域 ZIP 独立发行。运行已打包的制品无需 Pyth
 
 ## 领域工作台独立发行
 
-解压与操作系统及 CPU 匹配的 `devdesk-core-host-0.5.0-<target>.tar.gz` 和 `devdesk-core-web-0.5.0.tar.gz`。启动后，在工作台「领域管理」页导入并激活 `software-development-0.5.2.zip`。发行渠道提供的 SHA-256 校验文件可用于核对下载内容。
+解压与操作系统及 CPU 匹配的 `devdesk-core-host-0.6.0-<target>.tar.gz` 和 `devdesk-core-web-0.6.0.tar.gz`。启动后，在工作台「领域管理」页导入并激活 `software-development-0.6.0.zip`。发行渠道提供的 SHA-256 校验文件可用于核对下载内容。
 
 ```bash
-./devdesk-host --data /path/to/new-dataset --web-dir /path/to/devdesk-core-web-0.5.0
+./devdesk-host --data /path/to/new-dataset --web-dir /path/to/devdesk-core-web-0.6.0
 ```
 
 空领域工作台提供核心配置、历史记录和设置。Git 查询通过核心 RPC 提供。领域包支持运行时导入、激活和卸载。切换更新所有客户端的活动代次，并检查在途工作流和待核对的仓库操作。只要该领域没有正在执行的工作流，即可卸载。同一领域的不同版本共享项目目录和历史，打开同一 GitHub 仓库及主分支会复用已有项目。运行领域处理器需要可用的 Docker 及下文的固定 Node 镜像。
@@ -30,10 +30,9 @@ docker pull node@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced3
 
 | 工件 | 合同和兼容性 |
 | --- | --- |
-| Core Host 0.5.0 | JSON-RPC 2.0、领域协议 1、领域包清单格式 1。支持既有贡献投影及按原摘要回切 |
-| Web Core 0.5.0 | 同时支持 `web.react` API 1 与 API 2。API 1 使用早期动态模块接口。API 2 提供共享 React 实例、组件、布局、项目 RPC 和事件作用域。模块从 `/assets/devdesk-ui.mjs` 获取运行时，类型声明和 JSON Schema 随 Web Core 放在 `sdk/` |
-| 软件开发 ZIP 0.5.2 | 角色讨论使用 Role 与 Agent 定义，按角色汇总经验。需要支持 `query.role_experience` 的 Host |
-| 软件开发 ZIP 0.5.1 | 使用 API 2 呈现绑定和工作流显式交付证据合同。需要支持 `operation_evidence` 的 Host。可与同一领域的旧版 ZIP 一起安装 |
+| Core Host 0.6.0 | JSON-RPC 2.0、领域协议 2、领域包清单格式 2。`GET /capabilities` 发布能力目录，安装时协商 Host 版本、平台处理器、扩展组与 RPC；只接受格式 2 的包。项目库版本 63 |
+| Web Core 0.6.0 | 呈现目标为 `web.react`、Web SDK 主版本 1，使用组件套件时声明 `kit`（`0.6`）。只加载 `sdk` 与自身一致、`kit` 与自身版本一致的目标。提供共享 React 实例、组件、布局、项目 RPC 和事件作用域。模块从 `/assets/devdesk-ui.mjs` 获取运行时，类型声明和 JSON Schema 随 Web Core 放在 `sdk/` |
+| 软件开发 ZIP 0.6.0 | 清单格式 2。领域工具的 `implementation` 为 `domain`；工作流的 `test_configuration` 输入声明 `engineering.tests/1` 为提供者；运行入口是只导出处理器表的纯模块。要求 Host 不低于 0.6.0 |
 
 非浏览器客户端先调用 `POST /session` 建立 Host 会话，随后从 `query.domain.active` 读取活动代次和贡献目录，并监听 `GET /domain-events`。项目事件流和已有项目 RPC 携带 `project_id` 及 `domain_epoch`。声明 `projection: true` 的贡献用 `query.domain.contribution` 读取，其他贡献的包处理器沿用 `query.domain.invoke`。
 
@@ -112,7 +111,7 @@ sudo ./devdesk-host sandbox-policy --install
 
 ```bash
 ./devdesk-host --host 192.168.1.10 --port 4317 --data "/完整路径/DevDesk 数据" \
-  --web-dir ./devdesk-core-web-0.5.0
+  --web-dir ./devdesk-core-web-0.6.0
 ```
 
 客户端通过“连接内核”探测并打开目标工作台，输入同一连接密钥。数据、Docker、Git 和凭据均位于目标 Host 机器。

@@ -10,7 +10,7 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 PACKAGE = Path(__file__).resolve().parent
 REPO = PACKAGE.parents[1]
 DOMAIN = "software-development"
-VERSION = "0.5.2"
+VERSION = "0.6.0"
 DISCOVER = f"{DOMAIN}.tests.discover"
 BRANCH = f"{DOMAIN}.branch.plan"
 CONNECT = f"{DOMAIN}.project.connect"

@@ -113,7 +113,7 @@ DEVDESK_DSH_MOCK_IMAGE=sha256:… cargo test -p devdesk-adapters --features test
 ```bash
 python3 tests/live/probe_configured_workflow.py --binary target/debug/devdesk-host --codex-auth-source /专用/auth.json
 python3 tests/live/probe_streamlined_workflow.py --binary target/release/devdesk-host \
-  --domain-zip dist/software-development-0.5.2.zip --mode agent \
+  --domain-zip dist/software-development-0.6.0.zip --mode agent \
   --codex-auth-source /专用/auth.json --github-repo owner/dedicated-test-repo \
   --requirement-file /专用/requirement.md --report-directory /新的证据目录 --performance
 ```
