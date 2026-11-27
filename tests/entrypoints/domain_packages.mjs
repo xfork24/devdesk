@@ -203,10 +203,25 @@ try {
   assert.deepEqual(queued.workflow.last, {
     id: started.result.execution_id, status: "queued", workflow_ref: "manuscript.workflow:1",
   });
+  // A project with a workflow in flight stays where it is; the Host says why.
+  await assert.rejects(rpc(page, "domain.project.remove", {
+    epoch: manuscriptEpoch, project_id: started.result.project_id, command_id: crypto.randomUUID(),
+  }), /domain_busy/);
   const manual = await native("manual", started.result.project_id, started.result.execution_id);
   assert(await native("check-foreign-entity", manual.project_id, result.entity_id));
   // A tool step reads the entities of the project it runs in, without naming a project.
   assert.deepEqual(await native("list-through-step"), ["Draft", "Local manuscript"]);
+  // Any project of the domain can be removed, also where the package has no project connection.
+  const removable = await rpc(page, "domain.project.create", {
+    epoch: manuscriptEpoch, command_id: crypto.randomUUID(), title: "Removable",
+  });
+  const listed = async () => (await rpc(page, "query.project_directory", { domain_epoch: manuscriptEpoch }))
+    .projects.some((row) => row.id === removable.id);
+  assert.equal(await listed(), true);
+  assert.deepEqual(await rpc(page, "domain.project.remove", {
+    epoch: manuscriptEpoch, project_id: removable.id, command_id: crypto.randomUUID(),
+  }), { id: removable.id, removed: true });
+  assert.equal(await listed(), false);
 
   await second.getByRole("button", { name: "Manuscript", exact: true }).click();
   await second.getByLabel("领域处理器").waitFor();

@@ -19,6 +19,7 @@ fn fixture(root: &std::path::Path) -> (Arc<SqliteStore>, Connection) {
             path: "/fixture/repository".into(),
             mainline: "main".into(),
         }),
+        connection: None,
         execution_mode: "live".into(),
         concurrency: 2,
         revision: 1,

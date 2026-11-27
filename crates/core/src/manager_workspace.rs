@@ -715,6 +715,7 @@ mod read_contract_tests {
             title: "project".into(),
             workspace: String::new(),
             workspace_definition: None,
+            connection: None,
             execution_mode: "live".into(),
             concurrency: 1,
             revision: 1,

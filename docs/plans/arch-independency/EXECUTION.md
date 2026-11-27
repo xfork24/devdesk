@@ -85,6 +85,7 @@
 | N-5 | 包的运行入口是纯模块，只导出处理器表 `handlers`，不再读写标准输入输出。容器里运行的是内核的引导模块（`crates/adapters/runtime/domain-worker.mjs`，编入 Host），它读取请求、加载入口、按名称调用处理器并写回结果，激活时的握手也由它应答。处理器拒绝或失败时抛出 Error：带 `code` 的错误连同信息由 Host 以 `domain_handler_rejected` 返回调用方，RPC 错误的 `data.handler_code` 与 `data.handler` 是处理器的代码与名称；没有代码的记为 `handler_failed`。入口、引导模块与传输的问题记为 `domain_worker_failed`，信息来自 worker。软件开发包与夹具的入口改为纯模块，软件开发包的五处拒绝带了代码。`GET /capabilities` 新增 `worker`：协议版本 2、镜像摘要、`node-24`、15 秒、128 MiB、1 CPU、48 个进程、无网络、只读文件系统，取值与沙箱参数同源 |
 | N-1 | 工具定义新增 `implementation: "domain"`：名称在包的命名空间下，`handler` 指向包内注册的处理器，参数就是处理器的输入。它既可以作为工作流的工具执行器步骤，也可以被 Capability 采用后由 Agent 直接调用：调用名与平台工具同一规则（`devdesk_` 加下划线），经平台只读准入（需要工作流执行归属），由领域处理器在沙箱里执行。它在 Agent 的冻结工具锁里单独成类（`domain_tools`），Harness 像告知内核工具一样把它告知 provider。安装时核对领域工具的命名空间与处理器，并拒绝发布了本 Host 没有的平台处理器的工具。`domain.read` 及其平台处理器、RPC 登记一并移除，平台处理器为 54 个。软件开发包的 `detect-test-entry` 与夹具的工具改为领域工具 |
 | N-7 | 工作流的输入端口可以声明 `provided_by`，取值为扩展组。启动时内核只为声明了提供者的输入自动取值：提供者必须是该扩展组登记提供的输入（扩展组登记表新增 `provided_inputs`，能力目录里每个扩展组也列出它），否则发布工作流时返回 `invalid_configuration`；有活动领域包时，项目所属的包必须声明依赖该组，否则启动时返回 `extension_unavailable`；没有活动领域包时工作流来自内核自己的目录，提供者按构造可用。调用方不能覆盖内核提供的输入。按名字自动填充 `test_configuration` 的约定移除，目前唯一的提供者是 `engineering.tests/1` 的 `test_configuration`。软件开发包的两个工作流与单体测试模式的冻结工程目录都声明了提供者 |
+| N-4 | 项目的接入信息对内核不透明。`domain.project.create` 带 `connection` 时，活动包的 `project_connection` 处理器解析它，结果原样保存为项目的 `connection`（不超过 64 KiB 的 JSON 对象，随 `query.workspace` 等返回）。只有声明了 `engineering.git/1` 的包，内核的工程部分才从接入信息里读出仓库与主分支（`extensions::git_connection`），据此登记仓库、复用或接管 GitHub 项目；通用 RPC 不再按 GitHub 校验。`domain.project.remove` 对任何领域项目可用：移除会藏起来的在途工作（在途根流程、可运行或待核对的仓库操作）时返回 `domain_busy`，空闲的连接复核不阻止移除。为此项目库新增一列，工程库版本升到 63，带 62 及更早版本的离线升级。Web 的移除入口不再以包声明 `project_connection` 为前提 |
 | W-5 | 呈现目标用 `sdk`（Web SDK 主版本）取代 `api`，新增 `kit`（组件套件对应的 Web Core 版本）与绑定的 `home`（进入领域时打开的首页，取代“第一个绑定”）。Web Core 只加载 `sdk` 与自身一致、`kit` 与自身版本一致的目标，其余目标提示“领域包与 Web Core 版本不兼容”。内核只校验 `sdk` 不小于 1、每个目标最多一个首页；SDK 版本是否可用由 Web Core 判断 |
 
 ### 初步验收
@@ -142,6 +143,12 @@
 | | `cargo clippy --workspace --all-targets --locked -- -D warnings`、`./scripts/check/check-style.sh` | 无警告；rustfmt、ESLint、TypeScript、Prettier、Web 构建通过 |
 | | `python3 tests/entrypoints/lifecycle_contract.py target/fixtures/debug/devdesk-host` 及四组夹具合同、`project_test_configuration -- --ignored` | 通过 |
 | | `node tests/entrypoints/domain_packages.mjs target/debug/devdesk-host web/dist/core <带页面的格式 2 软件开发包>` | 退出码 0。软件开发包带着两个声明了提供者的工作流安装并运行 |
+| N-4 | `cargo test -p devdesk-adapters --locked --features test-fixtures,fixture-catalog --test project_creation -- a_project_keeps_the_connection` | 1 通过。接入信息原样保存，重新打开后仍在；不是对象或超过上限的被拒 |
+| | `cargo test -p devdesk-adapters --locked --features test-fixtures,fixture-catalog --test dataset_preflight -- a_project_database_of_version_62` | 1 通过。62 升到 63，项目行不变，再次迁移报告无变化 |
+| | `cargo test --workspace --locked` | 60 个套件，805 通过，0 失败，39 忽略 |
+| | `cargo clippy --workspace --all-targets --locked -- -D warnings`、`./scripts/check/check-style.sh` | 无警告；rustfmt、ESLint、TypeScript、Prettier、Web 构建通过 |
+| | `python3 tests/entrypoints/lifecycle_contract.py target/fixtures/debug/devdesk-host` 及四组夹具合同、`project_test_configuration -- --ignored` | 通过 |
+| | `node tests/entrypoints/domain_packages.mjs target/debug/devdesk-host web/dist/core <带页面的格式 2 软件开发包>` | 退出码 0。新增两段：有在途工作流的项目不能移除；没有声明 `project_connection` 的领域里，只凭标题创建的项目可以移除，并不再列出 |
 | W-5 | `cargo test -p devdesk-adapters --locked --lib domain_packages::tests` | 10 通过。新增一项：一个目标标记两个首页后被拒绝 |
 | | `cargo test --workspace --locked` | 60 个套件，794 通过，0 失败，39 忽略 |
 | | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 无警告 |
@@ -176,6 +183,9 @@
 - **领域工具目前只在工作流执行归属下可被 Agent 调用。** Controller 授权路径仍只认经理与编排的工具清单。宿主 MCP 桥与 pi 隧道的工具名注册表要把 `domain_tools` 作为单独一类，按 0.5 节“谁后落地，谁负责补齐”。
 - **“扩展已启用”需要一条明确的规则。** 没有活动领域包时，工作流只能来自内核自己的目录，它声明的提供者按构造可用；只有在有活动领域包时才核对包是否依赖该组。单体测试模式（冻结工程目录）依赖这一条。P2 移除单体测试模式后，这条规则只剩“空领域”一种情形。
 - **冻结工程目录是单体测试模式的数据。** `tests/fixtures/configuration/engineering-catalog.json` 里两个工作流的 `test_configuration` 输入补了 `provided_by`，随测试改造一并处理。
+- **“忙”有两种。** 切换与卸载用的 `domain_project_busy` 把空闲的连接复核也算在内，因为复核入口会随切换消失。移除项目只会藏起在途工作，复核可以等到重新打开。两处判定分开，第一次验收时复用同一个检查，软件开发包里一个带待复核连接的项目因此不能像以前那样移除。
+- **新增持久化字段要跟着工程库版本走。** 仓库对项目库有版本号与离线升级（暂存候选库、校验、备份），这里按既有做法补了 62 到 63，而不是只改建表语句；已有数据集打开时仍被接受，经升级后才有这一列。
+- **内核外壳里还没有项目管理页。** “移除项目”插槽目前只在软件开发包的工作台里渲染。按领域移除项目的界面入口随 W-4 的项目操作插槽落地，RPC 与 Web 的门槛条件已就位。
 - **报告器的扩展名规则不再由清单校验负责。** 清单只做通用的有界 UTF-8 文件检查；落地时的文件名一直由测试运行器自己决定。
 - **读取项目的钩子与资源时用 `try_read`。** 与 `configuration_scope` 的做法一致：项目 RPC 可能已经持有一份读锁，切换领域时直接返回 `domain_busy`，不等待嵌套的锁。
 - **单独运行适配器的集成测试需要 `--features test-fixtures,fixture-catalog`。** 只开 `test-fixtures` 时出厂目录不含角色与 Agent，依赖默认绑定的用例会失败。`cargo test --workspace` 通过 Host 的开发依赖带上了这两个 feature，所以完整检查不受影响。这正是 T-6 要消除的耦合。

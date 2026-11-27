@@ -209,3 +209,45 @@ fn pre_integration_global_resource_layout_is_rejected_without_writes() {
     drop(conn);
     reject_unchanged(root.path(), "数据集协议不兼容");
 }
+
+#[test]
+fn a_project_database_of_version_62_is_upgraded_with_its_project_intact() {
+    let root = tempfile::tempdir().unwrap();
+    GlobalStore::open(root.path()).unwrap();
+    let project = id();
+    let store = SqliteStore::open_project(root.path(), &project).unwrap();
+    let path = Path::new(&store.root()).join("engineering.sqlite3");
+    drop(store);
+    reserve(root.path(), &project, true);
+    {
+        // As version 62 kept it: no column for a project's connection.
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch("ALTER TABLE projects DROP COLUMN connection; PRAGMA user_version=62;")
+            .unwrap();
+        conn.execute(
+            "INSERT INTO projects(id,title,workspace,execution_mode,concurrency,revision,workspace_definition)
+             VALUES(?1,'Before','work','live',2,1,
+                    json_object('repository','','mainline','main','path','work'))",
+            [&project],
+        )
+        .unwrap();
+    }
+    let report = devdesk_adapters::project_migration::migrate(root.path(), &project).unwrap();
+    assert_eq!(report["version"], 63, "{report}");
+    assert_eq!(report["changed"], true, "{report}");
+    let store = SqliteStore::open_project(root.path(), &project).unwrap();
+    let restored = store.project_metadata().unwrap();
+    assert_eq!(restored.title, "Before");
+    assert_eq!(
+        restored
+            .workspace_definition
+            .as_ref()
+            .map(|w| w.mainline.as_str()),
+        Some("main")
+    );
+    assert_eq!(restored.connection, None);
+    drop(store);
+    // The report of a database that is already current says so and changes nothing.
+    let again = devdesk_adapters::project_migration::migrate(root.path(), &project).unwrap();
+    assert_eq!(again["changed"], false, "{again}");
+}

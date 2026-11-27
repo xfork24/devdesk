@@ -76,7 +76,9 @@ pub use catalog::GlobalStore;
 use devdesk_core::*;
 use devdesk_domain::*;
 pub use runtime_registry::configuration_digest;
-const PROJECT_SCHEMA_VERSION: u32 = 62;
+const PROJECT_SCHEMA_VERSION: u32 = 63;
+/// The version that introduced the source dependency index.
+pub(crate) const SOURCE_PROJECT_SCHEMA_VERSION: u32 = 62;
 const PAYLOAD_PROJECT_SCHEMA_VERSION: u32 = 61;
 const LEGACY_PROJECT_SCHEMA_VERSION: u32 = 60;
 use rusqlite::{
@@ -514,6 +516,7 @@ fn open_engineering_connection(path: &Path) -> Result<connection_pool::ManagedCo
             version,
             0 | LEGACY_PROJECT_SCHEMA_VERSION
                 | PAYLOAD_PROJECT_SCHEMA_VERSION
+                | SOURCE_PROJECT_SCHEMA_VERSION
                 | PROJECT_SCHEMA_VERSION
         ),
         "数据集协议不兼容；请使用新的空数据目录",

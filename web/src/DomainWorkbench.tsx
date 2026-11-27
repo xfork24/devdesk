@@ -134,7 +134,7 @@ function DomainProjectRemoval({
       <ActionButton
         type="button"
         disabled={busy}
-        title="再次打开同一仓库和主分支即可恢复"
+        title="从工作台列表移除，保留项目数据"
         onClick={async () => {
           const current = new URLSearchParams(location.search);
           setBusy(true);
@@ -658,16 +658,17 @@ export function AppRoot() {
   const [auth, setAuth] = useState(false);
   const [needsDataset, setNeedsDataset] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Any project of the domain can be removed; the Host refuses while something runs in it.
   const projectAction = useCallback(
     (project: string) =>
-      directory?.project_connection ? (
+      directory ? (
         <DomainProjectRemoval
           key={project}
           epoch={directory.epoch}
           project={project}
         />
       ) : null,
-    [directory?.epoch, directory?.project_connection],
+    [directory],
   );
   const refresh = useCallback(async () => {
     const [next, installed] = await Promise.all([
@@ -796,11 +797,7 @@ export function AppRoot() {
     );
   return (
     <WorkbenchLayout
-      domainProjectAction={
-        contribution && directory?.project_connection
-          ? projectAction
-          : undefined
-      }
+      domainProjectAction={contribution ? projectAction : undefined}
       domainSettings={
         directory?.active && contribution ? (
           <Suspense fallback={null}>

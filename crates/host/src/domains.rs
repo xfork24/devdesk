@@ -229,17 +229,31 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
                 if reuse && let Some(previous) = workspace.global.replay_commit(&open_id, &fingerprint)? {
                     return Ok(previous.result);
                 }
+                // The kernel keeps what the package's handler made of the connection as it
+                // is. Only a package that requires the Git extension connects the project to
+                // a repository, and only then is a GitHub project reused or taken over.
+                let git = if let Some(plan) = &plan
+                    && packages.requires(devdesk_core::extensions::ENGINEERING_GIT)?
+                {
+                    let (repository, mainline) = devdesk_core::extensions::git_connection(plan)?;
+                    Some((
+                        crate::workspace::github_projects::repository_name(&repository)?,
+                        mainline,
+                    ))
+                } else {
+                    None
+                };
                 if let Some(plan) = &plan {
-                    let repository = plan["repository"].as_str().ok_or_else(|| err("domain_contract", "连接缺少仓库"))?;
-                    let mainline = plan["mainline"].as_str().ok_or_else(|| err("domain_contract", "连接缺少目标分支"))?;
-                    let repository = crate::workspace::github_projects::repository_name(repository)?;
+                    payload["connection"] = plan.clone();
+                }
+                if let Some((repository, mainline)) = &git {
                     if reuse {
                         let visibility = packages.project_visibility(Some(expected_epoch))?;
-                        existing_project = workspace.global.domain_github_project(&repository, mainline, &visibility)?
+                        existing_project = workspace.global.domain_github_project(repository, mainline, &visibility)?
                             .map(|project| json!(project));
                         if existing_project.is_none() {
                             let root = packages.project_import_root(digest)?;
-                            if let Some(project) = workspace.global.copied_github_project(&root, &repository, mainline)? {
+                            if let Some(project) = workspace.global.copied_github_project(&root, repository, mainline)? {
                                 packages.bind_copied_project(&project.id, digest, &root)?;
                                 existing_project = Some(workspace.load_copied_project(&project)?);
                             }
@@ -276,7 +290,9 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
                     result => (result?, false),
                 };
                 engine.adopt_domain_sources(sources)?;
-                if let Some(plan) = plan {
+                if let Some(plan) = plan
+                    && git.is_some()
+                {
                     let state = engine.store.read_resources(&[devdesk_core::concurrency::ResourceKey::new(
                         "repository_project_state", project,
                     )])?.remove(0);
@@ -310,18 +326,15 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
                     .domain_project_open
                     .lock()
                     .map_err(|e| err("storage", e.to_string()))?;
-                let existing = workspace
+                workspace
                     .global
                     .project(project)?
                     .ok_or_else(|| err("not_found", "项目不存在"))?;
-                if existing
-                    .workspace_definition
-                    .as_ref()
-                    .is_none_or(|workspace| workspace.repository.is_empty())
-                {
+                // Any project of the domain can be removed once nothing is running in it.
+                if workspace.domain_project_removal_blocked(project)? {
                     return Err(err(
-                        "invalid_params",
-                        "只有已登记 GitHub 仓库的项目可以移除",
+                        "domain_busy",
+                        format!("请先结束项目 {project} 的在途领域工作流或核对仓库操作"),
                     ));
                 }
                 let id = format!(

@@ -26,8 +26,8 @@
 | `query.domain.installed` | 列出安装的版本和摘要 |
 | `query.domain.contribution` | 提交当前 `epoch`、贡献 ID 和 `input`，返回公开投影 |
 | `query.domain.invoke` | 提交当前 `epoch`、声明的 `handler` 和 `input`。返回领域只读运行端的结果。处理器使用内核输入 `domain.entities` 时还需 `project_id`，内核从该项目的库读取对象。处理器抛出的错误以 `domain_handler_rejected` 返回，带处理器的代码与信息；worker 本身失败时为 `domain_worker_failed` |
-| `domain.project.create` | 提交 `epoch`、`title` 和 `command_id` 创建项目。设置 `reuse_connection:true` 并提供 `connection` 时，优先复用同一领域 ID 下同仓库、同主分支的已有项目 |
-| `domain.project.remove` | 提交 `epoch`、`project_id` 和 `command_id`，从工作台列表移除 GitHub 项目，保留原项目存储。用 `domain.project.create` 和 `reuse_connection:true` 打开同一仓库及主分支可恢复 |
+| `domain.project.create` | 提交 `epoch`、`title` 和 `command_id` 创建项目。提供 `connection` 时由活动包的 `project_connection` 处理器解析，结果原样保存为项目的 `connection`（不超过 64 KiB 的 JSON 对象），内核不读取它。包声明了 `engineering.git/1` 时，内核的工程部分再从中读出仓库与主分支并登记仓库；此时设置 `reuse_connection:true` 会优先复用同一领域 ID 下同仓库、同主分支的已有项目 |
+| `domain.project.remove` | 提交 `epoch`、`project_id` 和 `command_id`，从工作台列表移除任何领域项目，保留原项目存储；项目里有在途的领域工作流或待核对的仓库操作时返回 `domain_busy`。对 GitHub 项目，用 `domain.project.create` 和 `reuse_connection:true` 打开同一仓库及主分支可恢复 |
 | `query.domain.storage` | 按 `epoch` 读取领域新项目数据目录、可用状态 `available`、配置版本和仍有项目数据库的可用目录 |
 | `domain.storage.configure` | 按 `epoch` 和 `expected_revision` 验证并保存绝对路径 `data_root`，接受已登记给同一领域的目录。接回已移动的项目，并自动接入所选外部目录中的兼容项目。跳过其他 Host 正在使用的项目，清除已移除项目指向不存在的旧目录的存储路径。传 `null` 使用 Host 数据目录 |
 | `domain.workflow.start` | 提交 `epoch`、确切的 `workflow_ref` 和 `command_id`。实体工作流还需 `project_id`、`entity_id` 和 `expected_revision`。默认 `rust`，也可选 `manual`。活动目录的 `agent_workflows` 列出可由 `agent` 调度的修订 |

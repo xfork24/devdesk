@@ -580,7 +580,10 @@ pub(super) fn check_engineering_baseline(path: &Path) -> Result<()> {
     require(
         matches!(
             version,
-            LEGACY_PROJECT_SCHEMA_VERSION | PAYLOAD_PROJECT_SCHEMA_VERSION | PROJECT_SCHEMA_VERSION
+            LEGACY_PROJECT_SCHEMA_VERSION
+                | PAYLOAD_PROJECT_SCHEMA_VERSION
+                | SOURCE_PROJECT_SCHEMA_VERSION
+                | PROJECT_SCHEMA_VERSION
         ),
         "数据集协议不兼容；请使用新的空数据目录",
     )?;

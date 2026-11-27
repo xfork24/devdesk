@@ -26,6 +26,7 @@ fn fixture(root: &std::path::Path) -> (Arc<GlobalStore>, Project) {
         title: "Revision 1".into(),
         workspace: String::new(),
         workspace_definition: None,
+        connection: None,
         execution_mode: "live".into(),
         concurrency: 2,
         revision: 1,

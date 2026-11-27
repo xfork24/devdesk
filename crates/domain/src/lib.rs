@@ -193,6 +193,10 @@ pub struct Project {
     pub title: String,
     pub workspace: String,
     pub workspace_definition: Option<Workspace>,
+    /// What the package's project connection handler returned for this project. The kernel
+    /// keeps it as it is; an extension that recognizes it reads it its own way.
+    #[serde(default)]
+    pub connection: Option<Value>,
     pub execution_mode: String,
     pub concurrency: u32,
     pub revision: u64,

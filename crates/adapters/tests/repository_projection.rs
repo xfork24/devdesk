@@ -23,6 +23,7 @@ impl Fixture {
             title: "Before registration".into(),
             workspace: "/unattached".into(),
             workspace_definition: None,
+            connection: None,
             execution_mode: "live".into(),
             concurrency: 2,
             revision: 1,

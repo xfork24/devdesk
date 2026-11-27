@@ -5,7 +5,7 @@ use devdesk_domain::{
     ProjectTestDiscovery, PullRequestCreation, PullRequestRequest, TestRunner, WorktreeKind, err,
     require,
 };
-use serde_json::json;
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -128,6 +128,24 @@ pub fn group_of_handler(handler: &str) -> Option<&'static ExtensionGroup> {
     EXTENSION_GROUPS
         .iter()
         .find(|group| group.handlers.contains(&handler))
+}
+
+/// What a package that requires the Git extension means by a project connection: the
+/// repository to register and the mainline to follow. It belongs with the engineering code
+/// and leaves with it.
+pub fn git_connection(connection: &Value) -> Result<(String, String)> {
+    let field = |name: &str, missing: &str| {
+        connection[name]
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .ok_or_else(|| err("domain_contract", missing))
+    };
+    Ok((
+        field("repository", "连接缺少仓库")?,
+        field("mainline", "连接缺少目标分支")?,
+    ))
 }
 
 /// How the group fills a workflow input it is declared to provide.

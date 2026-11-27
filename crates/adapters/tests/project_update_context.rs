@@ -17,6 +17,7 @@ fn fixture(root: &std::path::Path) -> Arc<SqliteStore> {
         title: "Original".into(),
         workspace: "/original".into(),
         workspace_definition: None,
+        connection: None,
         execution_mode: "live".into(),
         concurrency: 2,
         revision: 1,

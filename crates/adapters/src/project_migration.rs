@@ -348,7 +348,9 @@ pub fn migrate(data: &Path, project: &str) -> Result<Value> {
     require(
         matches!(
             version,
-            LEGACY_PROJECT_SCHEMA_VERSION | PAYLOAD_PROJECT_SCHEMA_VERSION
+            LEGACY_PROJECT_SCHEMA_VERSION
+                | PAYLOAD_PROJECT_SCHEMA_VERSION
+                | SOURCE_PROJECT_SCHEMA_VERSION
         ),
         "工程库版本不支持此迁移",
     )?;
@@ -376,8 +378,17 @@ pub fn migrate(data: &Path, project: &str) -> Result<Value> {
             json!({})
         };
         let index = candidate.transaction().map_err(storage)?;
-        source_dependencies::create(&index)?;
-        counts["source_dependencies"] = source_dependencies::backfill(&index)?;
+        if version < SOURCE_PROJECT_SCHEMA_VERSION {
+            source_dependencies::create(&index)?;
+            counts["source_dependencies"] = source_dependencies::backfill(&index)?;
+        }
+        // Since version 63 a project keeps the connection its package's handler returned.
+        index
+            .execute_batch(
+                "ALTER TABLE projects ADD COLUMN connection JSON
+                 CHECK(connection IS NULL OR json_valid(connection));",
+            )
+            .map_err(storage)?;
         index
             .pragma_update(None, "user_version", PROJECT_SCHEMA_VERSION)
             .map_err(storage)?;
@@ -472,7 +483,10 @@ pub fn rebuild_workflow_display(data: &Path, project: &str) -> Result<Value> {
     require(
         matches!(
             version,
-            LEGACY_PROJECT_SCHEMA_VERSION | PAYLOAD_PROJECT_SCHEMA_VERSION | PROJECT_SCHEMA_VERSION
+            LEGACY_PROJECT_SCHEMA_VERSION
+                | PAYLOAD_PROJECT_SCHEMA_VERSION
+                | SOURCE_PROJECT_SCHEMA_VERSION
+                | PROJECT_SCHEMA_VERSION
         ),
         "工程库版本不支持流程展示回填",
     )?;

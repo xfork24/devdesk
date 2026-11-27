@@ -57,6 +57,44 @@ fn one_hundred_competing_creations_have_one_project_context_and_original_provena
 }
 
 #[test]
+fn a_project_keeps_the_connection_its_package_returned_as_it_was() {
+    // The kernel does not read a connection: it stores what the package's handler returned.
+    let root = tempfile::tempdir().unwrap();
+    let plan = json!({"shop": "beta-3", "api": {"region": "cn"}, "flags": [true, null]});
+    let limit = devdesk_core::project_creation::MAX_PROJECT_CONNECTION;
+    let project = devdesk_core::id();
+    let store = Arc::new(SqliteStore::open_project(root.path(), &project).unwrap());
+    for connection in [
+        json!("shop"),
+        json!(["a"]),
+        json!({"blob": "x".repeat(limit)}),
+    ] {
+        let mut command = command("create", "Not a connection");
+        command.payload["connection"] = connection.clone();
+        let error = create(
+            store.as_ref(),
+            &command,
+            &InvocationContext::human(Some(project.clone())),
+        )
+        .expect_err("a connection has to be a bounded JSON object");
+        assert_eq!(error.code, "blocked", "{connection}");
+    }
+    let mut command = command("create", "Connected");
+    command.payload["connection"] = plan.clone();
+    create(
+        store.as_ref(),
+        &command,
+        &InvocationContext::human(Some(project.clone())),
+    )
+    .unwrap();
+    assert_eq!(json!(store.project_metadata().unwrap())["connection"], plan);
+    // The same after the database was closed and opened again.
+    drop(store);
+    let store = SqliteStore::open_project(root.path(), &project).unwrap();
+    assert_eq!(json!(store.project_metadata().unwrap())["connection"], plan);
+}
+
+#[test]
 fn one_hundred_original_replays_preserve_one_creation_and_reject_other_parameters() {
     let root = tempfile::tempdir().unwrap();
     let store = Arc::new(SqliteStore::open_project(root.path(), PROJECT).unwrap());

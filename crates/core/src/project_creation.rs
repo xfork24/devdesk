@@ -4,6 +4,9 @@ use crate::{concurrency::*, *};
 
 pub const INITIAL_PROJECT_REVISION: u64 = 1;
 
+/// The most a project's connection may take, as JSON.
+pub const MAX_PROJECT_CONNECTION: usize = 64 * 1024;
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CreateProject {
@@ -12,6 +15,7 @@ struct CreateProject {
     repository: Option<String>,
     mainline: Option<String>,
     use_builtin_defaults: Option<bool>,
+    connection: Option<serde_json::Value>,
 }
 fn context_id(project: &str, command: &str) -> String {
     let digest = configuration_hash(&("project-context/v1", project, command));
@@ -82,6 +86,12 @@ pub fn create_with_concurrency(
     let mainline = input.mainline.unwrap_or_else(|| "main".into());
     require(!mainline.trim().is_empty(), "mainline 不可为空")?;
     require((1..=32).contains(&concurrency), "并发额度需为 1—32")?;
+    if let Some(connection) = &input.connection {
+        require(
+            connection.is_object() && connection.to_string().len() <= MAX_PROJECT_CONNECTION,
+            "项目接入信息需要是有界的 JSON 对象",
+        )?;
+    }
     let workspace = input.workspace.unwrap_or_default();
     let value = Project {
         id: project.clone(),
@@ -92,6 +102,7 @@ pub fn create_with_concurrency(
             path: workspace,
             mainline,
         }),
+        connection: input.connection,
         execution_mode: "live".into(),
         concurrency,
         revision: INITIAL_PROJECT_REVISION,

@@ -421,6 +421,16 @@ impl Workspace {
                 || !self.global.project_removed(project)?))
     }
 
+    /// Whether removing the project would hide work in flight: a running root workflow, or
+    /// a repository operation that is runnable or waits for reconciliation. An idle connection
+    /// review can wait until the project is opened again.
+    pub(super) fn domain_project_removal_blocked(&self, project: &str) -> Result<bool> {
+        Ok(
+            self.domain_project_activity(project, "domain_project_busy")?["active_when_removed"]
+                == true,
+        )
+    }
+
     pub(super) fn domain_project_has_running_workflow(&self, project: &str) -> Result<bool> {
         Ok(
             self.domain_project_activity(project, "domain_project_running_workflow")?["active"]

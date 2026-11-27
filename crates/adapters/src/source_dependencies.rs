@@ -18,7 +18,7 @@ pub(super) fn enabled(conn: &Connection) -> Result<bool> {
     let version: u32 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(storage)?;
-    Ok(version >= PROJECT_SCHEMA_VERSION)
+    Ok(version >= SOURCE_PROJECT_SCHEMA_VERSION)
 }
 
 pub(super) fn classify(data: &Value) -> Option<BTreeSet<String>> {

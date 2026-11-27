@@ -138,7 +138,8 @@ CREATE TABLE projects (
  "execution_mode" TEXT NOT NULL,
  "concurrency" INTEGER NOT NULL,
  "revision" INTEGER NOT NULL
-, workspace_definition JSON CHECK(workspace_definition IS NULL OR json_valid(workspace_definition)));
+, workspace_definition JSON CHECK(workspace_definition IS NULL OR json_valid(workspace_definition))
+, connection JSON CHECK(connection IS NULL OR json_valid(connection)));
 
 CREATE TABLE proposals (
  id TEXT PRIMARY KEY,project_id TEXT NOT NULL,session_id TEXT NOT NULL,turn_id TEXT NOT NULL,
@@ -877,5 +878,5 @@ CREATE TABLE governance_source_scans (
         reference TEXT NOT NULL, PRIMARY KEY(consumer,reference)
     ) WITHOUT ROWID;
     CREATE INDEX idx_governance_source_ref ON governance_source_refs(reference,consumer);
-PRAGMA user_version=62;
+PRAGMA user_version=63;
 COMMIT;

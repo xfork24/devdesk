@@ -1286,6 +1286,24 @@ impl DomainPackages {
         Ok(package.hook(group, hook).is_some())
     }
 
+    /// Whether the active package declared that it requires the extension `group`.
+    pub fn requires(&self, group: &str) -> Result<bool> {
+        Ok(self
+            .active
+            .read()
+            .unwrap()
+            .package
+            .as_deref()
+            .is_some_and(|package| {
+                package
+                    .manifest
+                    .requires
+                    .extensions
+                    .iter()
+                    .any(|required| required == group)
+            }))
+    }
+
     /// Whether the package of `project` declared that it requires the extension `group`.
     pub fn extension_enabled(&self, project: &str, group: &str) -> Result<bool> {
         Ok(self.bound_package(project)?.is_some_and(|package| {
