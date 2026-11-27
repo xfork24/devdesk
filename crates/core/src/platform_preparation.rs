@@ -194,7 +194,10 @@ impl Engine {
                 .definitions
                 .get(tool_ref)
                 .ok_or_else(|| err("configuration_required", "原工具未冻结"))?;
-            if row.data["implementation"] != "platform" {
+            if !matches!(
+                row.data["implementation"].as_str(),
+                Some("platform" | "domain")
+            ) {
                 return Ok(None);
             }
             let definition: ToolDefinition = row.decode()?;
@@ -226,8 +229,10 @@ impl Engine {
             request.owner_id == resources.instance.owner_id
                 && request.project_id == resources.instance.project_id
                 && request.runtime.is_none()
-                && crate::platform_tools::PLATFORM_HANDLERS
-                    .contains(&request.definition.qualified_name.as_str()),
+                // The kernel runs a platform handler or the handler of a domain tool.
+                && (crate::platform_tools::PLATFORM_HANDLERS
+                    .contains(&request.definition.qualified_name.as_str())
+                    || request.definition.implementation == "domain"),
             "平台请求归属或处理器不符",
         )?;
         self.tool_executor

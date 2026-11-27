@@ -126,7 +126,7 @@ pub use configured_runtime::{
 };
 pub use configured_workflows::{ConfiguredWorkflowPlan, compile_workflow_sources};
 pub use platform_preparation::PreparedConfiguredPlatform;
-pub use platform_tools::PlatformToolRequest;
+pub use platform_tools::{PlatformToolRequest, platform_handlers};
 mod command_catalog;
 pub mod frozen_views;
 pub mod template_reset_jobs;

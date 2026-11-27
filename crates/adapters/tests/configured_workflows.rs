@@ -2686,6 +2686,148 @@ fn entities_are_listed_by_type_with_the_workflow_of_their_owner() {
     );
 }
 
+/// Answers each handler with its input, and remembers what the kernel asked for.
+#[derive(Default)]
+struct EchoReader {
+    calls: Mutex<Vec<(String, Value)>>,
+}
+
+impl ports::DomainReader for EchoReader {
+    fn read(&self, _project: &str, handler: &str, input: Value) -> Result<Value> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push((handler.to_owned(), input.clone()));
+        Ok(json!({"echo": input}))
+    }
+}
+
+#[test]
+fn a_domain_tool_runs_its_handler_from_a_step_and_from_an_agent() {
+    // A tool of the active package carries the package's name and one of its handlers; the
+    // arguments are the handler's input. It is neither a kernel tool nor an integration tool.
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = engine(dir.path());
+    let reader = Arc::new(EchoReader::default());
+    e.domain_reader = Some(reader.clone());
+    let tool = command(
+        &e,
+        "tool.create",
+        None,
+        json!({"name":"Echo","data":{"qualified_name":"sample.echo","implementation":"domain",
+            "handler":"sample.echo","input_schema":{"type":"object","required":["text"]},
+            "output_schema":{"type":"object"},"capabilities":[]}}),
+    )
+    .unwrap();
+    // Without its handler it is not a tool.
+    let error = command(
+        &e,
+        "tool.create",
+        None,
+        json!({"name":"Lost","data":{"qualified_name":"sample.lost","implementation":"domain",
+            "input_schema":{"type":"object"},"output_schema":{"type":"object"},"capabilities":[]}}),
+    )
+    .unwrap_err();
+    assert!(error.message.contains("领域处理器"), "{error}");
+
+    // From a step: the handler's input is bound like any tool argument.
+    let workflow = publish(
+        &e,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"Echo"}],
+            "steps":[{"key":"echo","name":"Echo","stage":"work",
+                "executor":{"type":"tool","tool_ref":tool["id"],
+                    "arguments":{"text":{"type":"constant","value":"from a step"}}},
+                "outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
+    );
+    let project = command(&e, "project.create", None, json!({"title":"领域工具"})).unwrap();
+    let stepped = command(
+        &e,
+        "workflow.start",
+        project["id"].as_str(),
+        json!({"workflow_ref":workflow["id"],"role_agent_bindings":{}}),
+    )
+    .unwrap();
+    drive_platform_fixture(&e, 6);
+    assert_eq!(instance(&e, &stepped["id"])["status"], "completed");
+    assert_eq!(
+        *reader.calls.lock().unwrap(),
+        [("sample.echo".to_owned(), json!({"text":"from a step"}))]
+    );
+
+    // From an agent that adopted the tool: the frozen lock keeps it as its own class.
+    let harness = Arc::new(PlatformCallingAgent {
+        call_tool: Some("devdesk_sample_echo".into()),
+        call_arguments: Some(json!({"text":"from an agent"})),
+        final_outputs: Some(json!({"finding":{"scope":"echoed"}})),
+        ..Default::default()
+    });
+    e.harness = harness.clone();
+    let role = command(
+        &e,
+        "role.create",
+        None,
+        json!({"name":"Caller","data":{"instructions":"Call the package's tool"}}),
+    )
+    .unwrap();
+    let capability = command(
+        &e,
+        "capability.create",
+        None,
+        json!({"name":"Echo ability","data":{},"model_ref":DEFAULT_MODEL_ID,
+            "harness_ref":DEFAULT_HARNESS_ID,"skills":[],"tools":[DEFAULT_NATIVE_TOOL_ID,tool["id"]]}),
+    )
+    .unwrap();
+    let agent = command(
+        &e,
+        "agent.create",
+        None,
+        json!({"name":"Caller","role_ref":role["id"],"capability_ref":capability["id"],"data":{}}),
+    )
+    .unwrap();
+    let state = e.store.snapshot().unwrap();
+    let composition = state.resolve_agent(agent["id"].as_str().unwrap()).unwrap();
+    let lock = devdesk_core::freeze_integrations(&state, &composition, None).unwrap();
+    assert_eq!(
+        lock.domain_tools
+            .iter()
+            .map(|tool| tool.id.as_str())
+            .collect::<Vec<_>>(),
+        [tool["id"].as_str().unwrap()]
+    );
+    assert!(lock.platform_tools.is_empty());
+    // The step's frozen Profile names the tool, as for a kernel tool.
+    let calling = publish(
+        &e,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"Call"}],
+            "steps":[{"key":"study","name":"Call","stage":"work",
+                "executor":{"type":"agent","role_ref":role["id"]},
+                "task_instructions":"Call the package's tool for the text.",
+                "access":{"tool_refs":[tool["id"]]},
+                "outputs":{"finding":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
+    );
+    let _run = command(
+        &e,
+        "workflow.start",
+        project["id"].as_str(),
+        json!({"workflow_ref":calling["id"],
+            "role_agent_bindings":{role["id"].as_str().unwrap():agent["id"]}}),
+    )
+    .unwrap();
+    drive_platform_fixture(&e, 12);
+    let receipts = harness.replies.lock().unwrap();
+    assert_eq!(receipts.len(), 1);
+    assert!(receipts[0].success, "{:?}", receipts[0].error);
+    assert_eq!(
+        receipts[0].structured_content.as_ref().unwrap()["echo"]["text"],
+        "from an agent"
+    );
+    assert_eq!(reader.calls.lock().unwrap().len(), 2);
+    assert_eq!(
+        reader.calls.lock().unwrap()[1].1,
+        json!({"text":"from an agent"})
+    );
+}
+
 #[test]
 fn cancelling_a_child_under_a_paused_ancestor_still_releases_the_invocation() {
     let dir = tempfile::tempdir().unwrap();

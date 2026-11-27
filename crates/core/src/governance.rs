@@ -65,10 +65,12 @@ pub(crate) fn validate_source_payload(
                 match t.implementation.as_str() {
                     "platform" => crate::platform_tools::PLATFORM_HANDLERS
                         .contains(&t.qualified_name.as_str()),
+                    // It names a handler of the active domain package, which checks that.
+                    "domain" => t.handler.as_deref().is_some_and(|h| !h.trim().is_empty()),
                     "harness.native" => true,
                     _ => false,
                 },
-                "未知 Tool 执行原语或平台处理器",
+                "未知 Tool 执行原语、平台处理器或领域处理器",
             )?;
             require(
                 t.harness_provider

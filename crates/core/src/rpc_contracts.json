@@ -493,16 +493,6 @@
       ]
     },
     {
-      "method": "domain.read",
-      "access": "platform_read",
-      "scope": "explicit",
-      "precondition": "frozen_project_and_handler",
-      "sites": [
-        "crates/core/src/platform_facts.rs",
-        "crates/core/src/platform_tools.rs"
-      ]
-    },
-    {
       "method": "domain.storage.configure",
       "access": "mutation",
       "scope": "global",

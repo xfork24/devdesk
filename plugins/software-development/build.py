@@ -122,12 +122,12 @@ def build(target, web):
                spec_refs=[f"{DOMAIN}.preflight-contract:1"]),
         source("delivery_type", "test-configuration", {
             "format": "json", "content_schema": output,
-            "producer": {"kind": "platform", "tools": ["domain.read"]},
+            "producer": {"kind": "platform", "tools": [f"{DOMAIN}.detect-test-entry"]},
         }, spec_refs=[f"{DOMAIN}.preflight-contract:1"]),
+        # A tool of this package: it names one of its own handlers and takes the handler's input.
         source("tool", "detect-test-entry", {
-            "qualified_name": "domain.read", "implementation": "platform",
-            "input_schema": {"type": "object", "required": ["handler", "input"]},
-            "output_schema": output,
+            "qualified_name": f"{DOMAIN}.detect-test-entry", "implementation": "domain",
+            "handler": DISCOVER, "input_schema": coordinate, "output_schema": output,
         }),
         source("workflow", "repository-preflight", {
             "schema_version": 6, "stages": [{"key": "prepare", "name": "Prepare"}],
@@ -135,8 +135,8 @@ def build(target, web):
             "steps": [{"key": "discover", "name": "Discover tests", "stage": "prepare",
                        "inputs": {"repository": {"type": "source", "source": {"step": "$input", "port": "repository"}}},
                        "executor": {"type": "tool", "tool_ref": tool, "arguments": {
-                           "handler": {"type": "constant", "value": DISCOVER},
-                           "input": {"type": "source", "source": {"step": "$input", "port": "repository"}},
+                           "path": {"type": "source", "source": {"step": "$input", "port": "repository", "pointer": "/path"}},
+                           "revision": {"type": "source", "source": {"step": "$input", "port": "repository", "pointer": "/revision"}},
                        }}, "outputs": {"test_configuration": {"delivery_ref": result_type}}}],
             "outputs": {"test_configuration": {"step": "discover", "port": "test_configuration"}},
         }),

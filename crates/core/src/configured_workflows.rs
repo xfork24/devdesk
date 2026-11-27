@@ -874,7 +874,11 @@ pub fn compile_workflow_sources(
                     }
                     for tool in &composition.tools {
                         let definition = reference(state, tool, "tool", scope)?;
-                        if definition.data["implementation"] != "platform" {
+                        // An adopted tool the kernel runs itself: a platform tool or a domain tool.
+                        if !matches!(
+                            definition.data["implementation"].as_str(),
+                            Some("platform" | "domain")
+                        ) {
                             continue;
                         }
                         let definition: ToolDefinition = definition.decode()?;
@@ -932,8 +936,7 @@ pub fn compile_workflow_sources(
                             let tool: ToolDefinition =
                                 reference(state, tool_ref, "tool", scope)?.decode()?;
                             require(
-                                tool.implementation == "platform"
-                                    && tools.contains(&tool.qualified_name),
+                                tool.kernel_executed() && tools.contains(&tool.qualified_name),
                                 "Delivery 必须由声明的平台工具产生",
                             )?;
                         }
@@ -1003,19 +1006,34 @@ pub fn compile_workflow_sources(
             match &step.executor {
                 StepExecutor::Tool { tool_ref, .. } => {
                     let tool = reference(state, tool_ref, "tool", scope)?;
+                    // A tool step the kernel executes itself names a platform handler or,
+                    // for a domain tool, a handler of the active package.
+                    let kernel_executed = matches!(
+                        tool.data["implementation"].as_str(),
+                        Some("platform" | "domain")
+                    );
                     require(
-                        tool.data["integration_ref"].is_string()
-                            || tool.data["implementation"] == "platform",
+                        tool.data["integration_ref"].is_string() || kernel_executed,
                         "工具 Step 需要可调用工具，原生工具组不能独立调用",
                     )?;
                     plan.definitions.insert(tool.id.clone(), tool.clone());
-                    if tool.data["implementation"] == "platform" {
+                    if kernel_executed {
                         let definition: ToolDefinition = tool.decode()?;
-                        require(
-                            crate::platform_tools::PLATFORM_HANDLERS
-                                .contains(&definition.qualified_name.as_str()),
-                            "平台工具处理器不受支持",
-                        )?;
+                        if definition.implementation == "platform" {
+                            require(
+                                crate::platform_tools::PLATFORM_HANDLERS
+                                    .contains(&definition.qualified_name.as_str()),
+                                "平台工具处理器不受支持",
+                            )?;
+                        } else {
+                            require(
+                                definition
+                                    .handler
+                                    .as_deref()
+                                    .is_some_and(|h| !h.trim().is_empty()),
+                                "领域工具缺少处理器",
+                            )?;
+                        }
                         if let Some(validator) = validator {
                             validator.validate_schema(&definition.input_schema)?;
                             validator.validate_schema(&definition.output_schema)?;

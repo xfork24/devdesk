@@ -47,7 +47,7 @@ impl Engine {
             .integration_lock
             .as_ref()
             .and_then(|l| {
-                l.platform_tools.iter().find(|r| {
+                l.platform_tools.iter().chain(&l.domain_tools).find(|r| {
                     r.decode::<ToolDefinition>()
                         .is_ok_and(|d| d.call_name() == *tool)
                 })
@@ -333,8 +333,10 @@ impl Engine {
             } else {
                 let rejection = permission_result
                     .and_then(|_| {
+                        // A domain tool is run by the handler of the active package.
                         require(
-                            PLATFORM_HANDLERS.contains(&parsed.qualified_name.as_str()),
+                            PLATFORM_HANDLERS.contains(&parsed.qualified_name.as_str())
+                                || parsed.implementation == "domain",
                             "平台处理器不可用",
                         )?;
                         require(

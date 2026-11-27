@@ -60,6 +60,7 @@ impl ContextCall {
         } else {
             configuration.integration_lock.as_ref().is_some_and(|l| {
                 l.platform_tools.iter().any(|t| t.id == reference)
+                    || l.domain_tools.iter().any(|t| t.id == reference)
                     || (definition.implementation == "unbound"
                         && !row.data["error"].is_null()
                         && l.unbound_tools.iter().any(|t| t.id == reference))

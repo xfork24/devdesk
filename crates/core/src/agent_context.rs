@@ -29,6 +29,7 @@ pub fn context_tool_definition(
             harness_provider: None,
             qualified_name: name.into(),
             implementation: "unbound".into(),
+            handler: None,
             input_schema: source.data["input_schema"].clone(),
             output_schema: json!({"type":"object"}),
             capabilities: vec![],
@@ -78,7 +79,8 @@ impl Engine {
             return Ok(None);
         };
         if poll.authority.workflow.is_none() && poll.authority.controller.is_none() {
-            for record in &lock.platform_tools {
+            // A domain tool is the package's; it is offered like a kernel tool, on its own.
+            for record in lock.platform_tools.iter().chain(&lock.domain_tools) {
                 let definition: ToolDefinition = record.decode()?;
                 if definition.call_name() == *tool {
                     return Ok(Some(ProviderContextDefinition {
@@ -99,6 +101,7 @@ impl Engine {
                 harness_provider: None,
                 qualified_name: tool.clone(),
                 implementation: "unbound".into(),
+                handler: None,
                 input_schema: record.data["input_schema"].clone(),
                 output_schema: json!({"type":"object"}),
                 capabilities: vec![],

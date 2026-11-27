@@ -604,6 +604,7 @@ impl Package {
                 )?;
             }
         }
+        check_tools(&prefix, &manifest, &sources)?;
         for (owner, entity) in &entity_types {
             for (reference, binding) in &entity.workflows {
                 let workflow = sources
@@ -686,6 +687,38 @@ impl Package {
             .get(key)
             .map(String::as_str)
     }
+}
+
+/// A tool of the package names one of its own handlers under its own namespace; a platform
+/// tool it publishes names a handler this kernel has.
+fn check_tools(prefix: &str, manifest: &Manifest, sources: &[ConfigurationRecord]) -> Result<()> {
+    for source in sources.iter().filter(|source| source.r#type == "tool") {
+        let Some(implementation) = source.data["implementation"].as_str() else {
+            continue;
+        };
+        if implementation == "domain" {
+            let tool: devdesk_domain::ToolDefinition = source.decode()?;
+            require(
+                tool.qualified_name.starts_with(prefix)
+                    && tool.handler.as_deref().is_some_and(|handler| {
+                        manifest
+                            .runtime
+                            .as_ref()
+                            .is_some_and(|runtime| runtime.handlers.contains_key(handler))
+                    }),
+                "领域工具需要本包命名空间下的名称和本包注册的处理器",
+            )?;
+        } else if implementation == "platform" {
+            let name = source.data["qualified_name"].as_str().unwrap_or_default();
+            if !devdesk_core::platform_handlers().contains(&name) {
+                return Err(err(
+                    "handler_unsupported",
+                    format!("领域包发布了本 Host 没有的平台处理器 {name} 上的工具"),
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// A package reaches an extension group only by requiring it, whether through a hook it
@@ -1987,6 +2020,64 @@ mod tests {
             .unwrap(),
             json!({"ok":true})
         );
+    }
+
+    #[test]
+    fn a_domain_tool_names_a_handler_of_its_package() {
+        let record = |data: Value| {
+            serde_json::from_value(json!({
+                "id": "sample.tool:1", "type": "tool", "definition_id": "sample.tool",
+                "scope": "global", "name": "Tool", "version": 1, "supersedes": null,
+                "content_hash": "hash", "refs": {}, "data": data, "immutable": false,
+                "revision": 1, "created_at": 0,
+            }))
+            .unwrap()
+        };
+        let schema = json!({"type": "object"});
+        let domain = |qualified_name: &str, handler: Option<&str>| {
+            record(
+                json!({"qualified_name": qualified_name, "implementation": "domain",
+                "handler": handler, "input_schema": schema, "output_schema": schema}),
+            )
+        };
+        let manifest: Manifest = serde_json::from_value(json!({
+            "format": 2, "id": "sample", "version": "1", "domain_protocol": 2,
+            "files": {},
+            "runtime": {"entry": ENTRY, "handlers": {"sample.echo": {
+                "input_schema": schema, "output_schema": schema}}},
+        }))
+        .unwrap();
+        check_tools(
+            "sample.",
+            &manifest,
+            &[domain("sample.echo", Some("sample.echo"))],
+        )
+        .unwrap();
+        for (tool, code) in [
+            (domain("sample.echo", Some("sample.missing")), "blocked"),
+            (domain("sample.echo", None), "blocked"),
+            (domain("other.echo", Some("sample.echo")), "blocked"),
+            // The single entry point of the baseline is gone with its platform handler.
+            (
+                record(
+                    json!({"qualified_name": "domain.read", "implementation": "platform",
+                    "input_schema": schema, "output_schema": schema}),
+                ),
+                "handler_unsupported",
+            ),
+        ] {
+            let error = check_tools("sample.", &manifest, &[tool]).unwrap_err();
+            assert_eq!(error.code, code);
+        }
+        check_tools(
+            "sample.",
+            &manifest,
+            &[record(
+                json!({"qualified_name": "workflow.inspect", "implementation": "platform",
+                "input_schema": schema, "output_schema": schema}),
+            )],
+        )
+        .unwrap();
     }
 
     #[test]

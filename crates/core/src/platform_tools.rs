@@ -8,7 +8,6 @@ pub fn platform_handlers() -> &'static [&'static str] {
 
 pub(crate) const PLATFORM_HANDLERS: &[&str] = &[
     "spec.lint",
-    "domain.read",
     "project.overview",
     "project.records.list",
     "project.record.read",

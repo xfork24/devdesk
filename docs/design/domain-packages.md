@@ -31,6 +31,8 @@ Git、GitHub 与测试属于扩展组 `engineering.git/1` 和 `engineering.tests
 
 处理器在 `core` 中声明一个内核输入，内核在调用前准备好数据，放进请求的 `core` 字段。每个包都能用的内核输入列在 `/capabilities` 的 `core_inputs`，目前是 `domain.entities`：处理器用 `entities` 选择要读取的对象类型和数量上限（`types`、`max_items`，默认 100，最多 200），类型必须由本包声明。内核返回该项目中这些类型的对象，每条带有与 `query.domain.entities` 相同的 `workflow` 摘要；超过数量上限或总大小超过 512 KiB 时停止，并用 `truncated` 说明有对象没有给出。扩展组的内核输入随组发布，例如 `engineering.git.head`、`engineering.git.snapshot`，包需要先声明依赖该组。
 
+领域包发布两类工具定义。采用内核工具时 `implementation` 为 `platform`，处理器须在本 Host 的能力目录里，并列入 `requires.handlers`。领域自己的工具 `implementation` 为 `domain`：名称在包的命名空间下，`handler` 指向包内注册的处理器，输入 Schema 就是处理器的输入。它既可以作为工作流的工具执行器步骤（参数按处理器的输入绑定），也可以被 Capability 采用后由 Agent 直接调用：调用名是 `devdesk_` 加上把点换成下划线的工具名，经与平台只读工具相同的准入，由领域处理器在沙箱里执行。领域工具在 Agent 的冻结工具锁里单独成一类，既不算内核工具，也不算接入工具。基线中唯一的入口 `domain.read` 及其固定的 `{handler, input}` 参数已移除。
+
 ## 安装、激活和版本
 
 安装核对清单、逐文件摘要、引用和包定义。用户可在 Host 运行时显式激活已安装的包。活动目录记录包 ID、摘要和活动代次，整个工作台共享一个活动领域。切换更新代次，客户端重新发现贡献。停用保留已安装的版本，卸载撤掉对应版本的运行入口。切换与停用检查在途工作流和待核对的仓库操作。已移除项目搁置的仓库接入核对可在重新打开项目后继续。

@@ -30,6 +30,7 @@ pub fn agent_context_tools() -> Vec<ToolDefinition> {
         harness_provider: None,
         qualified_name: name.into(),
         implementation: "platform".into(),
+        handler: None,
         input_schema,
         output_schema: json!({"type":"object"}),
         capabilities: vec![],

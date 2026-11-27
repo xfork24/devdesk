@@ -248,15 +248,22 @@ pub struct ToolDefinition {
     pub harness_provider: Option<String>,
     pub qualified_name: String,
     pub implementation: String,
+    /// The handler a tool with implementation `domain` runs; it belongs to the active package.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handler: Option<String>,
     pub input_schema: Value,
     pub output_schema: Value,
     #[serde(default)]
     pub capabilities: Vec<String>,
 }
 impl ToolDefinition {
+    /// The kernel runs this tool itself, through a platform handler or a package's handler.
+    pub fn kernel_executed(&self) -> bool {
+        matches!(self.implementation.as_str(), "platform" | "domain")
+    }
     /// Provider function names use portable identifier characters; handler IDs remain unchanged.
     pub fn call_name(&self) -> String {
-        if self.implementation == "platform" {
+        if self.kernel_executed() {
             format!("devdesk_{}", self.qualified_name.replace('.', "_"))
         } else {
             self.qualified_name.clone()

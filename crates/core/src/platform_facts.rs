@@ -442,335 +442,347 @@ impl Engine {
                 &request.execution_id,
                 "platform-effect",
             )?);
-        plan.action = match request.definition.qualified_name.as_str() {
-            "domain.read" => PlatformAction::DomainRead {
+        // A domain tool is one handler of the active package; the arguments are its input.
+        if request.definition.implementation == "domain" {
+            plan.action = PlatformAction::DomainRead {
                 project: request.project_id.clone(),
-                handler: text(p, "handler")?,
-                input: p["input"].clone(),
-            },
-            "materials.capture" => PlatformAction::Value(
-                json!({"inputs":p,"captured_at":now(),"operation_id":request.execution_id}),
-            ),
-            "spec.lint" => {
-                let (value, reads) = self.native_platform_lint(request, &resources)?;
-                plan.basis = plan.basis.merge(reads.versions().iter().cloned())?;
-                PlatformAction::Value(value)
-            }
-            "workflow.outputs.read" => {
-                let (value, reads) = self.native_platform_outputs(request, &resources)?;
-                plan.basis = plan.basis.merge(reads.versions().iter().cloned())?;
-                PlatformAction::Value(value)
-            }
-            "tasks.create" => {
-                let (value, reads, changes) = self.native_platform_tasks(request, &resources)?;
-                plan.basis = plan.basis.merge(reads.versions().iter().cloned())?;
-                plan.changes = changes;
-                PlatformAction::Value(value)
-            }
-            "tasks.complete" => {
-                let tid = text(p, "task_id")?;
-                let owner = WorkOwnerFacts::read(self.store.as_ref(), &tid)?;
-                owner.require_editable()?;
-                let raw = owner.owner.value.as_ref().unwrap();
-                require(
-                    owner.owner.resource.kind == "task"
-                        && owner.project == request.project_id
-                        && (tid == request.owner_id || raw["feature_id"] == request.owner_id),
-                    "Task 不属于当前执行范围",
-                )?;
-                let dependencies: Vec<Id> = serde_json::from_value(raw["dependencies"].clone())
-                    .map_err(|e| err("storage", e.to_string()))?;
-                require(
-                    dependencies.len() <= WORKFLOW_STEP_LIMIT,
-                    "Task 依赖超出预算",
-                )?;
-                plan.basis = plan
-                    .basis
-                    .merge(owner.read_set.versions().iter().cloned())?;
-                for id in dependencies {
-                    let row = one(self.store.as_ref(), "task", &id)?;
-                    require(
-                        row.value.as_ref().is_some_and(|t| {
-                            t["feature_id"] == raw["feature_id"] && t["status"] == "completed"
-                        }),
-                        "Task 依赖尚未完成",
-                    )?;
-                    plan.basis = plan.basis.merge([version(&row)])?;
+                handler: request
+                    .definition
+                    .handler
+                    .clone()
+                    .ok_or_else(|| err("invalid_configuration", "领域工具缺少处理器"))?,
+                input: p.clone(),
+            };
+        } else {
+            plan.action = match request.definition.qualified_name.as_str() {
+                "materials.capture" => PlatformAction::Value(
+                    json!({"inputs":p,"captured_at":now(),"operation_id":request.execution_id}),
+                ),
+                "spec.lint" => {
+                    let (value, reads) = self.native_platform_lint(request, &resources)?;
+                    plan.basis = plan.basis.merge(reads.versions().iter().cloned())?;
+                    PlatformAction::Value(value)
                 }
-                let project = one(self.store.as_ref(), "project", &request.project_id)?;
-                let configured_repository =
-                    project
+                "workflow.outputs.read" => {
+                    let (value, reads) = self.native_platform_outputs(request, &resources)?;
+                    plan.basis = plan.basis.merge(reads.versions().iter().cloned())?;
+                    PlatformAction::Value(value)
+                }
+                "tasks.create" => {
+                    let (value, reads, changes) =
+                        self.native_platform_tasks(request, &resources)?;
+                    plan.basis = plan.basis.merge(reads.versions().iter().cloned())?;
+                    plan.changes = changes;
+                    PlatformAction::Value(value)
+                }
+                "tasks.complete" => {
+                    let tid = text(p, "task_id")?;
+                    let owner = WorkOwnerFacts::read(self.store.as_ref(), &tid)?;
+                    owner.require_editable()?;
+                    let raw = owner.owner.value.as_ref().unwrap();
+                    require(
+                        owner.owner.resource.kind == "task"
+                            && owner.project == request.project_id
+                            && (tid == request.owner_id || raw["feature_id"] == request.owner_id),
+                        "Task 不属于当前执行范围",
+                    )?;
+                    let dependencies: Vec<Id> = serde_json::from_value(raw["dependencies"].clone())
+                        .map_err(|e| err("storage", e.to_string()))?;
+                    require(
+                        dependencies.len() <= WORKFLOW_STEP_LIMIT,
+                        "Task 依赖超出预算",
+                    )?;
+                    plan.basis = plan
+                        .basis
+                        .merge(owner.read_set.versions().iter().cloned())?;
+                    for id in dependencies {
+                        let row = one(self.store.as_ref(), "task", &id)?;
+                        require(
+                            row.value.as_ref().is_some_and(|t| {
+                                t["feature_id"] == raw["feature_id"] && t["status"] == "completed"
+                            }),
+                            "Task 依赖尚未完成",
+                        )?;
+                        plan.basis = plan.basis.merge([version(&row)])?;
+                    }
+                    let project = one(self.store.as_ref(), "project", &request.project_id)?;
+                    let configured_repository = project
                         .value
                         .as_ref()
                         .ok_or_else(|| err("not_found", "Task 项目缺失"))?["workspace_definition"]
                         ["repository"]
                         .as_str()
                         .is_some_and(|repository| !repository.is_empty());
-                plan.basis = plan.basis.merge([version(&project)])?;
-                if configured_repository || raw["worktree"].as_str().is_some_and(|p| !p.is_empty())
-                {
-                    let (context, _, reads) = self.platform_native_context(request, Some(&tid))?;
-                    plan.basis = plan.basis.merge(reads.versions().iter().cloned())?;
-                    self.platform_plan_fence(&mut plan, request, &context.source.worktree)?;
-                }
-                let mut next = raw.clone();
-                next["status"] = json!(Status::Completed);
-                next["revision"] = json!(owner.owner.revision + 1);
-                plan.changes.push(ResourceChange {
-                    resource: owner.owner.resource,
-                    value: next,
-                });
-                PlatformAction::Value(
-                    json!({"task_id":tid,"status":"completed","operation_id":request.execution_id}),
-                )
-            }
-            "workspace.current" => {
-                let (context, workspace, reads) =
-                    self.platform_native_context(request, p["owner_id"].as_str())?;
-                plan.basis = plan.basis.merge(reads.versions().iter().cloned())?;
-                PlatformAction::WorkspaceCurrent { context, workspace }
-            }
-            "workspace.target" | "git.source.publish" | "git.delivery.open"
-            | "git.delivery.merge" => {
-                self.prepare_delivery_action(request, &resources, &mut plan)?
-            }
-            "workspace.snapshot"
-            | "workspace.checkpoint"
-            | "tests.run"
-            | "tests.project"
-            | "git.candidate"
-            | "git.advance"
-            | "git.publish" => {
-                let (context, workspace, reads) =
-                    self.platform_native_grant(request, &resources)?;
-                plan.basis = plan.basis.merge(reads.versions().iter().cloned())?;
-                match request.definition.qualified_name.as_str() {
-                    "workspace.snapshot" | "workspace.checkpoint" => {
-                        self.platform_plan_fence(&mut plan, request, &context.source.worktree)?;
-                        plan.head = Some(one(
-                            self.store.as_ref(),
-                            "head",
-                            &if context.source.owner == request.project_id {
-                                format!("main:{}", request.project_id)
-                            } else {
-                                context.source.owner.clone()
-                            },
-                        )?);
-                        let allowed_paths: Vec<String> =
-                            serde_json::from_value(p["allowed_paths"].clone())
-                                .map_err(|e| err("invalid_params", e.to_string()))?;
-                        let protected_paths: Vec<String> = serde_json::from_value(
-                            p.get("protected_paths").cloned().unwrap_or(json!([])),
-                        )
-                        .map_err(|e| err("invalid_params", e.to_string()))?;
-                        require(
-                            !allowed_paths.is_empty()
-                                && allowed_paths.len() <= WORKFLOW_STEP_LIMIT
-                                && protected_paths.len() <= WORKFLOW_STEP_LIMIT,
-                            "快照原路径集合超出预算",
-                        )?;
-                        let scope_base = if let Some(base) = p.get("diff_base") {
-                            require(
-                                base["workspace_id"] == p["workspace"]["workspace_id"],
-                                "范围 Diff 必须使用同一工作空间",
-                            )?;
-                            let mut original = request.clone();
-                            original.arguments["workspace"] = base.clone();
-                            let (_, _, reads) =
-                                self.platform_native_grant(&original, &resources)?;
-                            plan.basis = plan.basis.merge(reads.versions().iter().cloned())?;
-                            Some(text(base, "revision")?)
-                        } else {
-                            None
-                        };
-                        PlatformAction::Snapshot {
-                            operation: RepositoryOperation {
-                                id: operation.clone(),
-                                project_id: request.project_id.clone(),
-                                action: if request.definition.qualified_name
-                                    == "workspace.checkpoint"
-                                {
-                                    let interfaces = p
-                                        .get("interfaces")
-                                        .map(TestInterface::parse_list)
-                                        .transpose()?
-                                        .unwrap_or_default();
-                                    RepositoryAction::Checkpoint {
-                                        context,
-                                        expected: text(&p["workspace"], "revision")?,
-                                        allowed_paths,
-                                        protected_paths,
-                                        interfaces,
-                                    }
-                                } else {
-                                    RepositoryAction::Snapshot {
-                                        run: operation,
-                                        context,
-                                        expected: text(&p["workspace"], "revision")?,
-                                        allowed_paths,
-                                        protected_paths,
-                                    }
-                                },
-                                status: RepositoryOperationStatus::Dispatched,
-                                receipt: None,
-                                reason: String::new(),
-                                revision: 1,
-                            },
-                            workspace,
-                            include_diff: p["include_diff"] == true,
-                            scope_base,
-                        }
-                    }
-                    "tests.run" | "tests.project" => {
-                        let configuration = resources.instance.inputs.get("test_configuration");
-                        if request.definition.qualified_name == "tests.project"
-                            && configuration
-                                .and_then(|c| c.get("regression"))
-                                .is_some_and(Value::is_null)
-                        {
-                            PlatformAction::Value(
-                                json!({"operation_id":operation,"candidate":text(&p["workspace"], "revision")?,"status":"succeeded","skipped":true,"reason":"no_regression_configured","summary":"未配置项目回归测试，按项目配置直接通过","expected_failure":false,"assertion_failed":false,"writer_revoked":true,"exit_code":0,"counts":{"tests":0,"passed":0,"failed":0},"execution":null,"environment":null}),
-                            )
-                        } else {
-                            let runtime = request.runtime.clone().ok_or_else(|| {
-                                err("configuration_required", "测试工具缺少冻结环境")
-                            })?;
-                            let mut recipe = if request.definition.qualified_name == "tests.project"
-                            {
-                                configuration.ok_or_else(|| {
-                                    err("configuration_required", "项目回归缺少冻结配置")
-                                })?["regression"]
-                                    .clone()
-                            } else {
-                                p["recipe"].clone()
-                            };
-                            if let Some(configuration) = configuration {
-                                if request.definition.qualified_name == "tests.run" {
-                                    require(
-                                        recipe["runner"] == configuration["independent_runner"],
-                                        "独立测试执行器必须匹配冻结项目配置",
-                                    )?;
-                                }
-                                if let Some(image) = recipe
-                                    .get("image")
-                                    .and_then(Value::as_str)
-                                    .filter(|_| request.definition.qualified_name == "tests.run")
-                                {
-                                    require(
-                                        runtime.sandbox.image.as_deref() == Some(image),
-                                        "测试配方镜像与冻结运行环境不同",
-                                    )?;
-                                }
-                            }
-                            recipe["image"] =
-                                json!(runtime.sandbox.image.as_ref().ok_or_else(|| err(
-                                    "configuration_required",
-                                    "测试镜像未冻结"
-                                ))?);
-                            let recipe: TestRecipe = serde_json::from_value(recipe)
-                                .map_err(|e| err("invalid_params", e.to_string()))?;
-                            recipe.validate()?;
-                            let reporter = self
-                                .domain_reader
-                                .as_ref()
-                                .map(|domain| {
-                                    extensions::test_reporter(
-                                        domain,
-                                        &context.project,
-                                        &recipe.runner,
-                                    )
-                                })
-                                .transpose()?
-                                .flatten();
-                            PlatformAction::Test(ports::TestRequest {
-                                reporter,
-                                operation_id: runtime.operation_id.clone(),
-                                session_id: None,
-                                candidate: text(&p["workspace"], "revision")?,
-                                environment: runtime.id.clone(),
-                                origin: Origin::External,
-                                code: Some(context),
-                                runtime: Some(runtime),
-                                recipe: Some(recipe),
-                                expect_assertion_failure: p["expect_assertion_failure"] == true,
-                            })
-                        }
-                    }
-                    "git.candidate" => PlatformAction::Candidate {
-                        context,
-                        source: text(&p["workspace"], "revision")?,
-                        target: text(p, "target_revision")?,
-                        operation,
-                        workspace: workspace.id,
-                    },
-                    "git.advance" => {
-                        let candidate = &p["candidate"];
-                        plan.basis = plan.basis.merge([self.platform_receipt_proof(
-                            &resources.instance.root_instance_id,
-                            "git.candidate",
-                            candidate,
-                        )?])?;
-                        let (permit, reads) = self.platform_native_permit(request, &resources)?;
-                        plan.permit = Some(permit);
+                    plan.basis = plan.basis.merge([version(&project)])?;
+                    if configured_repository
+                        || raw["worktree"].as_str().is_some_and(|p| !p.is_empty())
+                    {
+                        let (context, _, reads) =
+                            self.platform_native_context(request, Some(&tid))?;
                         plan.basis = plan.basis.merge(reads.versions().iter().cloned())?;
-                        self.platform_plan_fence(&mut plan, request, &context.target.worktree)?;
-                        plan.head = Some(one(
-                            self.store.as_ref(),
-                            "head",
-                            &if context.target.owner == request.project_id {
-                                format!("main:{}", request.project_id)
-                            } else {
-                                context.target.owner.clone()
-                            },
-                        )?);
-                        PlatformAction::Advance {
-                            context,
-                            expected: text(candidate, "target_revision")?,
-                            candidate: text(candidate, "revision")?,
-                            operation,
-                        }
+                        self.platform_plan_fence(&mut plan, request, &context.source.worktree)?;
                     }
-                    _ => {
-                        let candidate = &p["candidate"];
-                        let accepted = &p["accepted"];
-                        require(
-                            accepted["revision"] == candidate["revision"]
-                                && accepted["previous"] == candidate["target_revision"],
-                            "发布需要确切候选的本地接纳",
-                        )?;
-                        plan.basis = plan.basis.merge([self.platform_receipt_proof(
-                            &resources.instance.root_instance_id,
-                            "git.advance",
-                            accepted,
-                        )?])?;
-                        let operations =
-                            one(self.store.as_ref(), "governance", &request.execution_id)?;
-                        plan.basis = plan.basis.merge([version(&operations)])?;
-                        if let Some(reused) = crate::publication_retry::completed_publication(
-                            self.store.as_ref(),
-                            request,
-                            &resources.execution,
-                            &resources.instance.root_instance_id,
-                            &context,
-                        )? {
-                            plan.basis =
-                                plan.basis.merge(reused.reads.versions().iter().cloned())?;
-                            reused.action
-                        } else {
-                            PlatformAction::Publish {
+                    let mut next = raw.clone();
+                    next["status"] = json!(Status::Completed);
+                    next["revision"] = json!(owner.owner.revision + 1);
+                    plan.changes.push(ResourceChange {
+                        resource: owner.owner.resource,
+                        value: next,
+                    });
+                    PlatformAction::Value(
+                        json!({"task_id":tid,"status":"completed","operation_id":request.execution_id}),
+                    )
+                }
+                "workspace.current" => {
+                    let (context, workspace, reads) =
+                        self.platform_native_context(request, p["owner_id"].as_str())?;
+                    plan.basis = plan.basis.merge(reads.versions().iter().cloned())?;
+                    PlatformAction::WorkspaceCurrent { context, workspace }
+                }
+                "workspace.target" | "git.source.publish" | "git.delivery.open"
+                | "git.delivery.merge" => {
+                    self.prepare_delivery_action(request, &resources, &mut plan)?
+                }
+                "workspace.snapshot"
+                | "workspace.checkpoint"
+                | "tests.run"
+                | "tests.project"
+                | "git.candidate"
+                | "git.advance"
+                | "git.publish" => {
+                    let (context, workspace, reads) =
+                        self.platform_native_grant(request, &resources)?;
+                    plan.basis = plan.basis.merge(reads.versions().iter().cloned())?;
+                    match request.definition.qualified_name.as_str() {
+                        "workspace.snapshot" | "workspace.checkpoint" => {
+                            self.platform_plan_fence(&mut plan, request, &context.source.worktree)?;
+                            plan.head = Some(one(
+                                self.store.as_ref(),
+                                "head",
+                                &if context.source.owner == request.project_id {
+                                    format!("main:{}", request.project_id)
+                                } else {
+                                    context.source.owner.clone()
+                                },
+                            )?);
+                            let allowed_paths: Vec<String> =
+                                serde_json::from_value(p["allowed_paths"].clone())
+                                    .map_err(|e| err("invalid_params", e.to_string()))?;
+                            let protected_paths: Vec<String> = serde_json::from_value(
+                                p.get("protected_paths").cloned().unwrap_or(json!([])),
+                            )
+                            .map_err(|e| err("invalid_params", e.to_string()))?;
+                            require(
+                                !allowed_paths.is_empty()
+                                    && allowed_paths.len() <= WORKFLOW_STEP_LIMIT
+                                    && protected_paths.len() <= WORKFLOW_STEP_LIMIT,
+                                "快照原路径集合超出预算",
+                            )?;
+                            let scope_base = if let Some(base) = p.get("diff_base") {
+                                require(
+                                    base["workspace_id"] == p["workspace"]["workspace_id"],
+                                    "范围 Diff 必须使用同一工作空间",
+                                )?;
+                                let mut original = request.clone();
+                                original.arguments["workspace"] = base.clone();
+                                let (_, _, reads) =
+                                    self.platform_native_grant(&original, &resources)?;
+                                plan.basis = plan.basis.merge(reads.versions().iter().cloned())?;
+                                Some(text(base, "revision")?)
+                            } else {
+                                None
+                            };
+                            PlatformAction::Snapshot {
+                                operation: RepositoryOperation {
+                                    id: operation.clone(),
+                                    project_id: request.project_id.clone(),
+                                    action: if request.definition.qualified_name
+                                        == "workspace.checkpoint"
+                                    {
+                                        let interfaces = p
+                                            .get("interfaces")
+                                            .map(TestInterface::parse_list)
+                                            .transpose()?
+                                            .unwrap_or_default();
+                                        RepositoryAction::Checkpoint {
+                                            context,
+                                            expected: text(&p["workspace"], "revision")?,
+                                            allowed_paths,
+                                            protected_paths,
+                                            interfaces,
+                                        }
+                                    } else {
+                                        RepositoryAction::Snapshot {
+                                            run: operation,
+                                            context,
+                                            expected: text(&p["workspace"], "revision")?,
+                                            allowed_paths,
+                                            protected_paths,
+                                        }
+                                    },
+                                    status: RepositoryOperationStatus::Dispatched,
+                                    receipt: None,
+                                    reason: String::new(),
+                                    revision: 1,
+                                },
+                                workspace,
+                                include_diff: p["include_diff"] == true,
+                                scope_base,
+                            }
+                        }
+                        "tests.run" | "tests.project" => {
+                            let configuration = resources.instance.inputs.get("test_configuration");
+                            if request.definition.qualified_name == "tests.project"
+                                && configuration
+                                    .and_then(|c| c.get("regression"))
+                                    .is_some_and(Value::is_null)
+                            {
+                                PlatformAction::Value(
+                                    json!({"operation_id":operation,"candidate":text(&p["workspace"], "revision")?,"status":"succeeded","skipped":true,"reason":"no_regression_configured","summary":"未配置项目回归测试，按项目配置直接通过","expected_failure":false,"assertion_failed":false,"writer_revoked":true,"exit_code":0,"counts":{"tests":0,"passed":0,"failed":0},"execution":null,"environment":null}),
+                                )
+                            } else {
+                                let runtime = request.runtime.clone().ok_or_else(|| {
+                                    err("configuration_required", "测试工具缺少冻结环境")
+                                })?;
+                                let mut recipe =
+                                    if request.definition.qualified_name == "tests.project" {
+                                        configuration.ok_or_else(|| {
+                                            err("configuration_required", "项目回归缺少冻结配置")
+                                        })?["regression"]
+                                            .clone()
+                                    } else {
+                                        p["recipe"].clone()
+                                    };
+                                if let Some(configuration) = configuration {
+                                    if request.definition.qualified_name == "tests.run" {
+                                        require(
+                                            recipe["runner"] == configuration["independent_runner"],
+                                            "独立测试执行器必须匹配冻结项目配置",
+                                        )?;
+                                    }
+                                    if let Some(image) =
+                                        recipe.get("image").and_then(Value::as_str).filter(|_| {
+                                            request.definition.qualified_name == "tests.run"
+                                        })
+                                    {
+                                        require(
+                                            runtime.sandbox.image.as_deref() == Some(image),
+                                            "测试配方镜像与冻结运行环境不同",
+                                        )?;
+                                    }
+                                }
+                                recipe["image"] =
+                                    json!(runtime.sandbox.image.as_ref().ok_or_else(|| err(
+                                        "configuration_required",
+                                        "测试镜像未冻结"
+                                    ))?);
+                                let recipe: TestRecipe = serde_json::from_value(recipe)
+                                    .map_err(|e| err("invalid_params", e.to_string()))?;
+                                recipe.validate()?;
+                                let reporter = self
+                                    .domain_reader
+                                    .as_ref()
+                                    .map(|domain| {
+                                        extensions::test_reporter(
+                                            domain,
+                                            &context.project,
+                                            &recipe.runner,
+                                        )
+                                    })
+                                    .transpose()?
+                                    .flatten();
+                                PlatformAction::Test(ports::TestRequest {
+                                    reporter,
+                                    operation_id: runtime.operation_id.clone(),
+                                    session_id: None,
+                                    candidate: text(&p["workspace"], "revision")?,
+                                    environment: runtime.id.clone(),
+                                    origin: Origin::External,
+                                    code: Some(context),
+                                    runtime: Some(runtime),
+                                    recipe: Some(recipe),
+                                    expect_assertion_failure: p["expect_assertion_failure"] == true,
+                                })
+                            }
+                        }
+                        "git.candidate" => PlatformAction::Candidate {
+                            context,
+                            source: text(&p["workspace"], "revision")?,
+                            target: text(p, "target_revision")?,
+                            operation,
+                            workspace: workspace.id,
+                        },
+                        "git.advance" => {
+                            let candidate = &p["candidate"];
+                            plan.basis = plan.basis.merge([self.platform_receipt_proof(
+                                &resources.instance.root_instance_id,
+                                "git.candidate",
+                                candidate,
+                            )?])?;
+                            let (permit, reads) =
+                                self.platform_native_permit(request, &resources)?;
+                            plan.permit = Some(permit);
+                            plan.basis = plan.basis.merge(reads.versions().iter().cloned())?;
+                            self.platform_plan_fence(&mut plan, request, &context.target.worktree)?;
+                            plan.head = Some(one(
+                                self.store.as_ref(),
+                                "head",
+                                &if context.target.owner == request.project_id {
+                                    format!("main:{}", request.project_id)
+                                } else {
+                                    context.target.owner.clone()
+                                },
+                            )?);
+                            PlatformAction::Advance {
                                 context,
                                 expected: text(candidate, "target_revision")?,
                                 candidate: text(candidate, "revision")?,
-                                operation: request.execution_id.clone(),
-                                operations:
-                                    operations.value.as_ref().unwrap()["data"]["operations"].clone(),
+                                operation,
+                            }
+                        }
+                        _ => {
+                            let candidate = &p["candidate"];
+                            let accepted = &p["accepted"];
+                            require(
+                                accepted["revision"] == candidate["revision"]
+                                    && accepted["previous"] == candidate["target_revision"],
+                                "发布需要确切候选的本地接纳",
+                            )?;
+                            plan.basis = plan.basis.merge([self.platform_receipt_proof(
+                                &resources.instance.root_instance_id,
+                                "git.advance",
+                                accepted,
+                            )?])?;
+                            let operations =
+                                one(self.store.as_ref(), "governance", &request.execution_id)?;
+                            plan.basis = plan.basis.merge([version(&operations)])?;
+                            if let Some(reused) = crate::publication_retry::completed_publication(
+                                self.store.as_ref(),
+                                request,
+                                &resources.execution,
+                                &resources.instance.root_instance_id,
+                                &context,
+                            )? {
+                                plan.basis =
+                                    plan.basis.merge(reused.reads.versions().iter().cloned())?;
+                                reused.action
+                            } else {
+                                PlatformAction::Publish {
+                                    context,
+                                    expected: text(candidate, "target_revision")?,
+                                    candidate: text(candidate, "revision")?,
+                                    operation: request.execution_id.clone(),
+                                    operations:
+                                        operations.value.as_ref().unwrap()["data"]["operations"]
+                                            .clone(),
+                                }
                             }
                         }
                     }
                 }
-            }
-            _ => return Err(err("unsupported", "平台执行工具未声明该处理器")),
-        };
+                _ => return Err(err("unsupported", "平台执行工具未声明该处理器")),
+            };
+        }
         if let Some(head) = &plan.head {
             require(head.value.is_some(), "代码头尚未登记")?;
             plan.basis = plan.basis.merge([version(head)])?;

@@ -1724,7 +1724,8 @@ fn dynamic_tools(binding: &RuntimeBinding) -> Result<Vec<Value>> {
     {
         dynamic.extend(lock.tools.iter().map(|t|json!({"type":"function","name":t.definition.qualified_name,"description":t.definition.description,"inputSchema":t.definition.input_schema})));
         dynamic.extend(lock.unbound_tools.iter().map(|t|json!({"type":"function","name":t.data["qualified_name"],"description":t.name,"inputSchema":t.data["input_schema"]})));
-        for tool in &lock.platform_tools {
+        // Domain tools are the package's own; they reach the provider like kernel tools.
+        for tool in lock.platform_tools.iter().chain(&lock.domain_tools) {
             // Capability is the available catalog; the frozen step Profile is
             // the actual scope. Do not advertise tools this execution cannot use.
             if binding
@@ -1755,6 +1756,46 @@ fn dynamic_tools(binding: &RuntimeBinding) -> Result<Vec<Value>> {
         dynamic.extend(agent_context_tools().into_iter().map(|t|json!({"type":"function","name":t.call_name(),"description":t.input_schema["description"].as_str().unwrap_or(&t.qualified_name),"inputSchema":t.input_schema})));
     }
     Ok(dynamic)
+}
+
+#[cfg(test)]
+#[test]
+fn a_domain_tool_is_advertised_to_the_provider_like_a_kernel_tool() {
+    let mut binding: RuntimeBinding = serde_json::from_value(json!({
+        "installation":{"id":"fixture","key":{"provider":"codex","version":"fixture","os":"linux","arch":"aarch64"},"artifact":{"kind":"docker_image","image_id":format!("sha256:{}","a".repeat(64))},"source":"fixture","license":"test"},
+        "adapter_version":"codex-app-server/v1+build.0000000000000000","model":"fixture",
+        "tool_policy":"read_only","work_type":"discussion","configuration_digest":"fixture"
+    }))
+    .unwrap();
+    let schema = json!({"type":"object"});
+    binding.agent_configuration = Some(AgentExecutionConfiguration {
+        context_protocol: None,
+        integration_lock: Some(IntegrationLock {
+            domain_tools: vec![serde_json::from_value(json!({
+                "id": "shop.order-validate:1", "type": "tool", "definition_id": "shop.order-validate",
+                "scope": "global", "name": "Order validation", "version": 1, "supersedes": null,
+                "content_hash": "hash", "refs": {}, "immutable": false, "revision": 1, "created_at": 0,
+                "data": {"qualified_name": "shop.order-validate", "implementation": "domain",
+                         "handler": "shop.order.validate", "input_schema": schema,
+                         "output_schema": schema, "capabilities": []}
+            }))
+            .unwrap()],
+            ..Default::default()
+        }),
+        agent_instance_id: "fixture".into(),
+        agent_revision_id: "fixture".into(),
+        composition_hash: "fixture".into(),
+        model_revision_id: "fixture".into(),
+        harness_revision_id: "fixture".into(),
+        model_provider: "openai".into(),
+        model_parameters: Default::default(),
+        tool_revisions: vec![],
+    });
+    let advertised = dynamic_tools(&binding).unwrap();
+    assert_eq!(advertised.len(), 1);
+    // The provider function name uses portable characters, as for a kernel tool.
+    assert_eq!(advertised[0]["name"], "devdesk_shop_order-validate");
+    assert_eq!(advertised[0]["inputSchema"], schema);
 }
 
 #[cfg(test)]

@@ -22,6 +22,31 @@ def requires(handlers, extensions):
     return {"host": HOST_VERSION, "handlers": sorted(handlers), "extensions": sorted(extensions)}
 
 
+def platform_handlers(sources):
+    """Platform handlers the fixture reaches through the kernel tools its sources adopt."""
+    tools = {**KERNEL_TOOLS, **{f"{record['identity']}:{record['revision']}": record["data"]
+                                for record in sources if record["type"] == "tool"}}
+    used = set()
+
+    def visit(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key == "tool_ref" and isinstance(item, str):
+                    used.add(item)
+                elif key in ("tools", "tool_refs") and isinstance(item, list):
+                    used.update(ref for ref in item if isinstance(ref, str))
+                else:
+                    visit(item)
+        elif isinstance(value, list):
+            for item in value:
+                visit(item)
+
+    # A capability's tools are references on the record, next to its data.
+    visit(sources)
+    return sorted({tools[ref]["qualified_name"] for ref in used
+                   if tools.get(ref, {}).get("implementation") == "platform"})
+
+
 GIT_HEAD = "engineering.git.head"
 # Handler bodies of the fixture entries, by name without the package prefix.
 HANDLERS = {
@@ -67,6 +92,7 @@ def package(target, identity, title, handler, core, sdk=1):
         "ui/web/page.mjs": (ROOT / "page.mjs").read_bytes(),
     }
     entity_types = None
+    sources = []
     if identity == "manuscript":
         entity_types = "configurations/entity-types/editorial.json"
         manuscript_schema = {
@@ -105,8 +131,9 @@ def package(target, identity, title, handler, core, sdk=1):
         sources = [
             source("delivery_type", "input", {"format": "json", "content_schema": manuscript_schema},
                    spec_refs=[f"{identity}.observation-spec:1"]),
-            source("tool", "read-title", {"qualified_name": "domain.read", "implementation": "platform",
-                   "input_schema": {"type": "object", "required": ["handler", "input"]},
+            # Tools of the package: each names one of its handlers and takes the handler's input.
+            source("tool", "read-title", {"qualified_name": f"{identity}.read-title", "implementation": "domain",
+                   "handler": method, "input_schema": {"type": "object", "required": ["title"]},
                    "output_schema": {"type": "object", "required": ["title", "observedBy"]}}),
             source("spec", "observation-spec", {
                 "schema_version": 3, "body": "Record the title emitted by the worker.",
@@ -115,7 +142,8 @@ def package(target, identity, title, handler, core, sdk=1):
             source("delivery_type", "observation", {
                 "format": "json",
                 "content_schema": {"type": "object", "required": ["title", "observedBy"]},
-                "producer": {"kind": "platform", "tools": ["domain.read"]},
+                "producer": {"kind": "platform",
+                             "tools": [f"{identity}.read-title", f"{identity}.read-inventory"]},
             }, spec_refs=[f"{identity}.observation-spec:1"]),
             source("skill", "title-review", {"body": "Review the manuscript title.", "rules": []}),
             source("role", "editor", {"instructions": (
@@ -145,8 +173,7 @@ def package(target, identity, title, handler, core, sdk=1):
                     "key": "title", "name": "Read title", "stage": "read", "confirmation": "human",
                     "inputs": {"manuscript": {"type": "source", "source": {"step": "$input", "port": "manuscript"}}},
                     "executor": {"type": "tool", "tool_ref": tool, "arguments": {
-                        "handler": {"type": "constant", "value": method},
-                        "input": {"type": "source", "source": {"step": "$input", "port": "manuscript"}},
+                        "title": {"type": "source", "source": {"step": "$input", "port": "manuscript", "pointer": "/title"}},
                     }},
                     "outputs": {"observation": {"delivery_ref": delivery}},
                 }],
@@ -157,11 +184,12 @@ def package(target, identity, title, handler, core, sdk=1):
                            "properties": {"kind": {"const": "artifact"}, "title": {"type": "string"}}}
         sources.extend([
             source("tool", "seal-material", {
-                "qualified_name": "domain.read", "implementation": "platform",
-                "input_schema": {"type": "object", "required": ["handler", "input"]},
+                "qualified_name": f"{identity}.seal-material", "implementation": "domain",
+                "handler": artifact_method,
+                "input_schema": {"type": "object", "required": ["title"]},
                 "output_schema": artifact_schema}),
             source("delivery_type", "sealed-material", {"format": "json", "content_schema": artifact_schema,
-                   "producer": {"kind": "platform", "tools": ["domain.read"]}},
+                   "producer": {"kind": "platform", "tools": [f"{identity}.seal-material"]}},
                    spec_refs=[f"{identity}.observation-spec:1"]),
             source("delivery_type", "read-material", {"format": "json",
                    "content_schema": {"type": "object", "required": ["title", "observedBy"]},
@@ -183,8 +211,7 @@ def package(target, identity, title, handler, core, sdk=1):
                 "steps": [{
                     "key": "seal", "name": "Seal material", "stage": "workspace",
                     "executor": {"type": "tool", "tool_ref": f"{identity}.seal-material:1", "arguments": {
-                        "handler": {"type": "constant", "value": artifact_method},
-                        "input": {"type": "source", "source": {"step": "$input", "port": "manuscript"}},
+                        "title": {"type": "source", "source": {"step": "$input", "port": "manuscript", "pointer": "/title"}},
                     }},
                     "outputs": {"sealed": {"delivery_ref": f"{identity}.sealed-material:1"}},
                 }, {
@@ -201,8 +228,9 @@ def package(target, identity, title, handler, core, sdk=1):
         # A tool step whose handler reads the kernel input domain.entities.
         sources.extend([
             source("tool", "read-inventory", {
-                "qualified_name": "domain.read", "implementation": "platform",
-                "input_schema": {"type": "object", "required": ["handler", "input"]},
+                "qualified_name": f"{identity}.read-inventory", "implementation": "domain",
+                "handler": entity_methods[1],
+                "input_schema": {"type": "object", "additionalProperties": False},
                 "output_schema": {"type": "object", "required": ["title", "observedBy"]}}),
             source("workflow", "inventory", {
                 "schema_version": 6,
@@ -211,10 +239,7 @@ def package(target, identity, title, handler, core, sdk=1):
                 "steps": [{
                     "key": "title", "name": "List titles", "stage": "read", "confirmation": "human",
                     "inputs": {"manuscript": {"type": "source", "source": {"step": "$input", "port": "manuscript"}}},
-                    "executor": {"type": "tool", "tool_ref": f"{identity}.read-inventory:1", "arguments": {
-                        "handler": {"type": "constant", "value": entity_methods[1]},
-                        "input": {"type": "constant", "value": {}},
-                    }},
+                    "executor": {"type": "tool", "tool_ref": f"{identity}.read-inventory:1", "arguments": {}},
                     "outputs": {"observation": {"delivery_ref": delivery}},
                 }],
                 "outputs": {"observation": {"step": "title", "port": "observation"}},
@@ -237,14 +262,9 @@ def package(target, identity, title, handler, core, sdk=1):
                                     f"{identity}.proof-reader:1": f"{identity}.proof-reader-agent:1"},
         }).encode()
         files["configurations/usage.json"] = json.dumps({"references": usage(sources)}).encode()
-    # Handlers the fixture reaches: its own domain.read tools and the kernel tools its editor adopts.
-    adopted = {"builtin-tool-workflow-inspect", "builtin-tool-workflow-step-dispatch",
-               "builtin-tool-workflow-step-accept", "builtin-tool-workflow-decision-request",
-               "builtin-tool-workflow-complete"}
-    handlers = set() if core else {"domain.read"} | {
-        data["qualified_name"] for reference, data in KERNEL_TOOLS.items()
-        if reference.rsplit(":", 1)[0].removeprefix("builtin-tool-") in adopted
-        and data.get("implementation") == "platform"}
+    # Handlers the fixture reaches: the kernel tools its sources adopt. Its own tools are
+    # domain tools and name its own handlers.
+    handlers = platform_handlers(sources)
     entity_handlers = {name: {
         "core": "domain.entities",
         "entities": {"types": [f"{identity}.document:1"], "max_items": 50},

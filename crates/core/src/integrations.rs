@@ -79,6 +79,23 @@ fn freeze_agent_integrations(
             lock.platform_tools.push(r.clone());
             continue;
         }
+        if r.data["implementation"] == "domain" {
+            // The package's handler runs it; it is neither a kernel nor an integration tool.
+            if !deferred {
+                live(s, r)?;
+            }
+            let definition: ToolDefinition = r.decode()?;
+            require(
+                definition
+                    .handler
+                    .as_deref()
+                    .is_some_and(|h| !h.trim().is_empty()),
+                "领域工具缺少处理器",
+            )?;
+            require(names.insert(definition.call_name()), "工具名称冲突")?;
+            lock.domain_tools.push(r.clone());
+            continue;
+        }
         if !r.data["integration_ref"].is_string() {
             continue;
         }

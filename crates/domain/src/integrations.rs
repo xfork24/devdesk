@@ -304,6 +304,9 @@ pub struct IntegrationLock {
     pub tools: Vec<BoundTool>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub platform_tools: Vec<ConfigurationRecord>,
+    /// Tools the active domain package runs: its own handlers, its own namespace.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub domain_tools: Vec<ConfigurationRecord>,
     #[serde(default)]
     pub skills: BTreeMap<Id, SkillPackage>,
 }

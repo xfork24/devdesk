@@ -193,6 +193,18 @@ pub(crate) fn validate_capability(
             )?;
             continue;
         }
+        if t.implementation == "domain" {
+            // It reaches the provider through the same bridge a platform tool does.
+            require(
+                driver_supports(&harness.provider, "platform-tools"),
+                "此 Harness 尚不支持平台工具桥",
+            )?;
+            require(
+                t.handler.as_deref().is_some_and(|h| !h.trim().is_empty()),
+                "领域工具缺少处理器",
+            )?;
+            continue;
+        }
         require(
             t.implementation == "harness.native",
             "Tool 尚无可执行处理器",
