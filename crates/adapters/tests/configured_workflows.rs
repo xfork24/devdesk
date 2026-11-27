@@ -2495,6 +2495,198 @@ fn title_only_project_runs_an_agent_step_without_a_repository_or_workspace() {
 }
 
 #[test]
+fn entities_are_listed_by_type_with_the_workflow_of_their_owner() {
+    // What a work queue of any domain reads: the entities of certain types, each with
+    // the state of the workflow that owns it, one stable page at a time.
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine(dir.path());
+    let project = command(
+        &engine,
+        "project.create",
+        None,
+        json!({"title": "对象队列"}),
+    )
+    .unwrap();
+    let project = project["id"].as_str().unwrap().to_owned();
+    let put = |kind: &str, data: Value| {
+        let id = id();
+        engine
+            .write_domain_entity(
+                "package-digest",
+                &std::collections::BTreeMap::new(),
+                &Command {
+                    command_id: format!("put:{id}"),
+                    target: Some(id.clone()),
+                    expected_revision: Some(0),
+                    payload: json!({"type_ref": kind, "data": data, "relations": {}}),
+                },
+                &InvocationContext::human(Some(project.clone())),
+            )
+            .unwrap();
+        id
+    };
+    let first = put("sample.item:1", json!({"title": "first"}));
+    let second = put("sample.item:1", json!({"title": "second"}));
+    let note = put("sample.note:1", json!({"body": "note"}));
+    let page = |types: &[&str], after: Option<&str>, limit| {
+        engine
+            .domain_entities(EntityQuery {
+                types: types.iter().map(|kind| (*kind).to_owned()).collect(),
+                after: after.map(str::to_owned),
+                limit,
+            })
+            .unwrap()
+    };
+    let ids = |page: &Value| {
+        page["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["id"].as_str().unwrap().to_owned())
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    let items = std::collections::BTreeSet::from([first.clone(), second.clone()]);
+    assert_eq!(ids(&page(&["sample.item:1"], None, 10)), items);
+    assert_eq!(
+        page(&["sample.item:1"], None, 10)["next_after"],
+        json!(null)
+    );
+    assert_eq!(
+        ids(&page(&["sample.note:1"], None, 10)),
+        std::collections::BTreeSet::from([note])
+    );
+    for row in page(&["sample.item:1"], None, 10)["records"]
+        .as_array()
+        .unwrap()
+    {
+        assert_eq!(row["project_id"], project);
+        assert_eq!(row["revision"], 1);
+        assert_eq!(row["workflow"], json!({"active": false, "last": null}));
+    }
+    // A workflow started for an entity stays in flight until it ends.
+    let kind = command(
+        &engine,
+        "delivery_type.create",
+        None,
+        json!({"name":"材料","spec_refs":["fixture-spec:1"],"data":{"body":"输入材料","format":"json",
+            "content_schema":{"type":"object"}}}),
+    )
+    .unwrap();
+    let workflow = publish(
+        &engine,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"工作"}],
+            "inputs":{"manuscript":{"delivery_ref":kind["id"]}},
+            "steps":[{"key":"gate","name":"等待确认","stage":"work","executor":{"type":"control"},"confirmation":"human"}]}),
+    );
+    let run = engine
+        .start_domain_workflow(
+            &Command {
+                command_id: id(),
+                target: Some(first.clone()),
+                expected_revision: Some(1),
+                payload: json!({"workflow_ref":workflow["id"],"orchestration":{"mode":"manual"},
+                    "role_agent_bindings":{},"inputs":{}}),
+            },
+            &DomainWorkflowBinding {
+                digest: "package-digest".into(),
+                owner_type: "sample.item:1".into(),
+                input: "manuscript".into(),
+                outputs: Default::default(),
+            },
+        )
+        .unwrap();
+    let record = |id: &str| {
+        page(&["sample.item:1"], None, 10)["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == id)
+            .unwrap()
+            .clone()
+    };
+    let owner = record(&first);
+    assert_eq!(owner["workflow"]["active"], true);
+    assert_eq!(owner["workflow"]["last"]["id"], run["id"]);
+    assert_eq!(owner["workflow"]["last"]["workflow_ref"], workflow["id"]);
+    assert_eq!(
+        record(&second)["workflow"],
+        json!({"active": false, "last": null})
+    );
+    // Pages do not overlap and continue after the last entity of the page before.
+    let mut seen = std::collections::BTreeSet::new();
+    let mut after = None;
+    for _ in 0..3 {
+        let next = page(&["sample.item:1"], after.as_deref(), 1);
+        assert_eq!(next["records"].as_array().unwrap().len(), 1);
+        assert!(seen.insert(next["records"][0]["id"].as_str().unwrap().to_owned()));
+        if next["next_after"].is_null() {
+            break;
+        }
+        after = next["next_after"].as_str().map(str::to_owned);
+    }
+    assert_eq!(seen, items);
+    // A handler's kernel input is the same read with a bound.
+    let input = |max_items| {
+        devdesk_core::handler_entities(
+            engine.store.as_ref(),
+            &project,
+            &EntitySelection {
+                types: vec!["sample.item:1".into()],
+                max_items,
+            },
+        )
+        .unwrap()
+    };
+    let bounded = input(1);
+    assert_eq!(bounded["entities"].as_array().unwrap().len(), 1);
+    assert_eq!(bounded["truncated"], true);
+    let whole = input(200);
+    assert_eq!(whole["entities"].as_array().unwrap().len(), 2);
+    assert_eq!(whole["truncated"], false);
+    assert_eq!(whole["entities"][0]["id"], bounded["entities"][0]["id"]);
+    for query in [
+        EntityQuery {
+            types: vec![],
+            after: None,
+            limit: 10,
+        },
+        EntityQuery {
+            types: vec!["sample.item:1".into(), "sample.item:1".into()],
+            after: None,
+            limit: 10,
+        },
+        EntityQuery {
+            types: vec!["sample.item:1".into()],
+            after: None,
+            limit: 0,
+        },
+        EntityQuery {
+            types: vec!["sample.item:1".into()],
+            after: None,
+            limit: 101,
+        },
+        EntityQuery {
+            types: vec!["sample.item:1".into()],
+            after: Some("not-an-id".into()),
+            limit: 10,
+        },
+    ] {
+        assert!(engine.domain_entities(query).is_err());
+    }
+    assert!(
+        devdesk_core::handler_entities(
+            engine.store.as_ref(),
+            &project,
+            &EntitySelection {
+                types: vec!["sample.item:1".into()],
+                max_items: 201,
+            },
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn cancelling_a_child_under_a_paused_ancestor_still_releases_the_invocation() {
     let dir = tempfile::tempdir().unwrap();
     let engine = engine(dir.path());

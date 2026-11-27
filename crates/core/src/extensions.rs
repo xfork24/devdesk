@@ -88,7 +88,7 @@ pub fn extension_group(reference: &str) -> Option<&'static ExtensionGroup> {
 
 /// Kernel inputs every package may declare for its handlers, whatever extensions it requires.
 /// An input of an extension group is listed with that group and needs the group to be required.
-pub const KERNEL_INPUTS: &[&str] = &[];
+pub const KERNEL_INPUTS: &[&str] = &["domain.entities"];
 
 /// Whether a kernel input of this name exists on this Host.
 pub fn core_input_known(input: &str) -> bool {

@@ -66,7 +66,13 @@ struct Handler {
     core: Option<CoreInput>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     git_snapshot: Option<crate::git::GitSnapshotSelection>,
+    /// The entities a handler with the `domain.entities` input reads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    entities: Option<devdesk_core::EntitySelection>,
 }
+
+/// The project store a handler reads the kernel input `domain.entities` from.
+pub type EntitySource<'a> = &'a Arc<dyn devdesk_core::EngineeringStore>;
 
 /// A kernel input a handler receives, written as the name the capability catalog lists.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
@@ -75,6 +81,8 @@ enum CoreInput {
     GitHead,
     #[serde(rename = "engineering.git.snapshot")]
     GitSnapshot,
+    #[serde(rename = "domain.entities")]
+    DomainEntities,
 }
 
 impl CoreInput {
@@ -82,6 +90,7 @@ impl CoreInput {
         match self {
             Self::GitHead => "engineering.git.head",
             Self::GitSnapshot => "engineering.git.snapshot",
+            Self::DomainEntities => "domain.entities",
         }
     }
 }
@@ -423,11 +432,28 @@ impl Package {
                     "领域项目接入需要声明输入输出的纯处理器",
                 )?;
             }
+            // Each kernel input has the one selection that describes it, and no other.
             for handler in runtime.handlers.values() {
-                match (&handler.core, &handler.git_snapshot) {
-                    (Some(CoreInput::GitSnapshot), Some(selection)) => selection.validate()?,
-                    (Some(CoreInput::GitSnapshot), None) | (_, Some(_)) => {
-                        return Err(invalid("Git 快照需要独立的跟踪文件和搜索声明"));
+                match (&handler.core, &handler.git_snapshot, &handler.entities) {
+                    (Some(CoreInput::GitSnapshot), Some(selection), None) => {
+                        selection.validate()?
+                    }
+                    (Some(CoreInput::DomainEntities), None, Some(selection)) => {
+                        selection.validate()?;
+                        if selection
+                            .types
+                            .iter()
+                            .any(|kind| !entity_types.contains_key(kind))
+                        {
+                            return Err(invalid("领域处理器读取的对象类型没有在本包声明"));
+                        }
+                    }
+                    (Some(CoreInput::GitSnapshot | CoreInput::DomainEntities), _, _)
+                    | (_, Some(_), _)
+                    | (_, _, Some(_)) => {
+                        return Err(invalid(
+                            "内核输入需要与它对应的选择声明：Git 快照或领域对象",
+                        ));
                     }
                     _ => {}
                 }
@@ -1100,17 +1126,30 @@ impl DomainPackages {
             .ok_or_else(|| err("method_not_found", "领域查询贡献未注册"))
     }
 
-    pub fn invoke(&self, epoch: u64, name: &str, input: Value) -> Result<Value> {
+    /// Runs a handler of the active package. `store` is the project a handler with the
+    /// `domain.entities` input reads; without one such a handler is refused.
+    pub fn invoke(
+        &self,
+        epoch: u64,
+        name: &str,
+        input: Value,
+        store: Option<EntitySource<'_>>,
+    ) -> Result<Value> {
         let active = self.active.read().unwrap();
         check_epoch(epoch, active.epoch)?;
         let package = active
             .package
             .as_deref()
             .ok_or_else(|| err("domain_inactive", "当前没有活动领域"))?;
-        Self::run_handler(package, name, input)
+        Self::run_handler(package, name, input, store)
     }
 
-    fn run_handler(package: &Package, name: &str, input: Value) -> Result<Value> {
+    fn run_handler(
+        package: &Package,
+        name: &str,
+        input: Value,
+        store: Option<EntitySource<'_>>,
+    ) -> Result<Value> {
         let runtime = package
             .runtime()
             .ok_or_else(|| err("method_not_found", "领域没有运行端"))?;
@@ -1118,10 +1157,18 @@ impl DomainPackages {
             .handlers
             .get(name)
             .ok_or_else(|| err("method_not_found", "领域操作未注册"))?;
-        Self::run(package, name, handler, input)
+        Self::run(package, name, handler, input, store)
     }
 
-    fn run(package: &Package, name: &str, handler: &Handler, input: Value) -> Result<Value> {
+    /// Inputs of extension groups are resolved from the handler's input; `domain.entities`
+    /// is read from the store of the project the handler runs in.
+    fn run(
+        package: &Package,
+        name: &str,
+        handler: &Handler,
+        input: Value,
+        store: Option<EntitySource<'_>>,
+    ) -> Result<Value> {
         validate_exchange(handler.input_schema.as_ref(), &input)?;
         let core = match handler.core {
             Some(CoreInput::GitHead) => crate::git::local_git(&input, false)?,
@@ -1131,6 +1178,21 @@ impl DomainPackages {
                     .as_ref()
                     .ok_or_else(|| invalid("Git 快照声明缺失"))?;
                 json!(crate::git::local_git_snapshot(&input, selection)?)
+            }
+            Some(CoreInput::DomainEntities) => {
+                let selection = handler
+                    .entities
+                    .as_ref()
+                    .ok_or_else(|| invalid("领域对象输入声明缺失"))?;
+                let Some((store, project)) = store
+                    .and_then(|store| store.project_id().map(|project| (store.as_ref(), project)))
+                else {
+                    return Err(err(
+                        "invalid_params",
+                        "这个处理器读取项目中的领域对象，需要指定项目",
+                    ));
+                };
+                json!(devdesk_core::handler_entities(store, &project, selection)?)
             }
             None => Value::Null,
         };
@@ -1142,10 +1204,44 @@ impl DomainPackages {
         Ok(result)
     }
 
-    pub fn read_for_project(&self, project: &str, name: &str, input: Value) -> Result<Value> {
+    pub fn read_for_project(
+        &self,
+        project: &str,
+        name: &str,
+        input: Value,
+        store: EntitySource<'_>,
+    ) -> Result<Value> {
         let active = self.active.read().unwrap();
         let package = self.require_project(&active, project)?;
-        Self::run_handler(package, name, input)
+        Self::run_handler(package, name, input, Some(store))
+    }
+
+    /// A page of the entities of `types` in `project`, which has to belong to the active
+    /// package. The package decides which types exist; `list` reads the project.
+    pub fn entities(
+        &self,
+        project: &str,
+        epoch: u64,
+        types: &[String],
+        after: Option<&str>,
+        limit: usize,
+        list: impl FnOnce(&[String], Option<&str>, usize) -> Result<Value>,
+    ) -> Result<Value> {
+        let active = self.active.read().unwrap();
+        check_epoch(epoch, active.epoch)?;
+        let package = self.require_project(&active, project)?;
+        let undeclared = types
+            .iter()
+            .filter(|kind| !package.entity_types.contains_key(*kind))
+            .cloned()
+            .collect::<Vec<_>>();
+        if !undeclared.is_empty() {
+            return Err(err(
+                "not_found",
+                format!("活动包未声明领域对象类型 {}", undeclared.join("、")),
+            ));
+        }
+        list(types, after, limit)
     }
 
     /// Whether the package of `project` binds a handler to `hook` of the extension `group`.
@@ -1163,6 +1259,7 @@ impl DomainPackages {
         group: &str,
         hook: &str,
         input: Value,
+        store: EntitySource<'_>,
     ) -> Result<Option<Value>> {
         let Some(package) = self.bound_package(project)? else {
             return Ok(None);
@@ -1170,7 +1267,7 @@ impl DomainPackages {
         let Some((name, handler)) = package.hook(group, hook) else {
             return Ok(None);
         };
-        Some(Self::run(&package, name, handler, input)).transpose()
+        Some(Self::run(&package, name, handler, input, Some(store))).transpose()
     }
 
     /// A UTF-8 file of `collection` in that group with its digest; `None` when none is published.
@@ -1296,7 +1393,7 @@ impl DomainPackages {
                     .runtime()
                     .and_then(|runtime| runtime.project_connection.as_deref())
                     .ok_or_else(|| err("unsupported", "活动领域没有声明项目连接处理器"))?;
-                Self::run_handler(package, handler, input.clone())
+                Self::run_handler(package, handler, input.clone(), None)
             })
             .transpose()?;
         action(&package.digest, &package.sources, plan)
@@ -1772,6 +1869,63 @@ mod tests {
             assert_eq!(error.code, code, "{input}");
             assert!(error.message.contains(input), "{}", error.message);
         }
+    }
+
+    #[test]
+    fn an_entity_input_names_types_the_package_declares() {
+        let types =
+            br#"{"sample.item:1":{"name":"Item","schema":{"type":"object"},"relations":{}}}"#;
+        let listing = |handler: Value| {
+            archive(
+                json!({
+                    "format": 2, "id": "sample", "version": "1", "domain_protocol": 2,
+                    "requires": {}, "extensions": {},
+                    "entity_types": "configurations/entity-types/sample.json",
+                    "runtime": {"entry": ENTRY, "handlers": {"sample.list": handler}},
+                }),
+                &[("configurations/entity-types/sample.json", types)],
+            )
+        };
+        let entity_handler = |entities: Option<Value>| {
+            let mut handler = handler(None);
+            handler["core"] = json!("domain.entities");
+            if let Some(entities) = entities {
+                handler["entities"] = entities;
+            }
+            handler
+        };
+        // The input belongs to the kernel: a package requires no extension group to use it.
+        for selection in [
+            json!({"types": ["sample.item:1"]}),
+            json!({"types": ["sample.item:1"], "max_items": 200}),
+        ] {
+            let package = Package::read(&listing(entity_handler(Some(selection.clone()))));
+            assert!(package.is_ok(), "{selection}: {:?}", package.err());
+        }
+        for selection in [
+            json!({"types": ["sample.other:1"]}),
+            json!({"types": ["item:1"]}),
+            json!({"types": []}),
+            json!({"types": ["sample.item:1", "sample.item:1"]}),
+            json!({"types": ["sample.item:1"], "max_items": 0}),
+            json!({"types": ["sample.item:1"], "max_items": 201}),
+            json!({"types": ["sample.item:1"], "related": []}),
+        ] {
+            let error = Package::read(&listing(entity_handler(Some(selection.clone()))))
+                .err()
+                .expect("an entity input outside the package's types is refused");
+            assert_eq!(error.code, "invalid_domain_package", "{selection}");
+        }
+        let error = Package::read(&listing(entity_handler(None)))
+            .err()
+            .expect("the entity input needs its selection");
+        assert_eq!(error.code, "invalid_domain_package");
+        let mut stray = handler(None);
+        stray["entities"] = json!({"types": ["sample.item:1"]});
+        let error = Package::read(&listing(stray))
+            .err()
+            .expect("a selection without its input is refused");
+        assert_eq!(error.code, "invalid_domain_package");
     }
 
     #[test]

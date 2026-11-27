@@ -29,8 +29,13 @@ def package(target, identity, title, handler, core, sdk=1):
     method = f"{identity}.{handler}"
     contribution = f"{identity}.overview"
     artifact_method = f"{identity}.artifact.create" if identity == "manuscript" else None
+    # Handlers reading the kernel input domain.entities: a list for pages and RPC, and one
+    # whose result fits the Proof type, for a tool step of a workflow.
+    entity_methods = ([f"{identity}.documents.list", f"{identity}.inventory.read"]
+                      if identity == "manuscript" else [])
     worker = (ROOT / "worker.mjs").read_text().replace(
-        '["PLACEHOLDER_HANDLER"]', json.dumps(sorted([method] + ([artifact_method] if artifact_method else [])))
+        '["PLACEHOLDER_HANDLER"]',
+        json.dumps(sorted([method] + ([artifact_method] if artifact_method else []) + entity_methods)),
     )
     files = {
         "runtime/worker.mjs": worker.encode(),
@@ -59,6 +64,9 @@ def package(target, identity, title, handler, core, sdk=1):
                 }, "manuscript.resource-workflow:1": {
                     "input": "manuscript", "outputs": {"proof": "manuscript.proof:1"},
                     "owner_relations": {"proof": ["manuscript"]},
+                }, "manuscript.inventory:1": {
+                    "input": "manuscript", "outputs": {"observation": "manuscript.proof:1"},
+                    "owner_relations": {"observation": ["manuscript"]},
                 }}},
             "manuscript.proof:1": {"name": "Proof",
                 "relations": {"manuscript": {"target": "manuscript.document:1", "min_items": 1, "max_items": 1}},
@@ -171,6 +179,28 @@ def package(target, identity, title, handler, core, sdk=1):
                 }], "outputs": {"proof": {"step": "read", "port": "proof"}},
             }),
         ])
+        # A tool step whose handler reads the kernel input domain.entities.
+        sources.extend([
+            source("tool", "read-inventory", {
+                "qualified_name": "domain.read", "implementation": "platform",
+                "input_schema": {"type": "object", "required": ["handler", "input"]},
+                "output_schema": {"type": "object", "required": ["title", "observedBy"]}}),
+            source("workflow", "inventory", {
+                "schema_version": 6,
+                "inputs": {"manuscript": {"delivery_ref": f"{identity}.input:1"}},
+                "stages": [{"key": "read", "name": "Read"}],
+                "steps": [{
+                    "key": "title", "name": "List titles", "stage": "read", "confirmation": "human",
+                    "inputs": {"manuscript": {"type": "source", "source": {"step": "$input", "port": "manuscript"}}},
+                    "executor": {"type": "tool", "tool_ref": f"{identity}.read-inventory:1", "arguments": {
+                        "handler": {"type": "constant", "value": entity_methods[1]},
+                        "input": {"type": "constant", "value": {}},
+                    }},
+                    "outputs": {"observation": {"delivery_ref": delivery}},
+                }],
+                "outputs": {"observation": {"step": "title", "port": "observation"}},
+            }),
+        ])
         usage = runpy.run_path(str(ROOT.parents[2] / "scripts/check/configuration_usage.py"))["usage_index"]
         # A bundle manifest lists every source type, as the factory's does; unused ones stay empty.
         types = {kind: [] for kind in json.loads(
@@ -196,6 +226,16 @@ def package(target, identity, title, handler, core, sdk=1):
         data["qualified_name"] for reference, data in KERNEL_TOOLS.items()
         if reference.rsplit(":", 1)[0].removeprefix("builtin-tool-") in adopted
         and data.get("implementation") == "platform"}
+    entity_handlers = {name: {
+        "core": "domain.entities",
+        "entities": {"types": [f"{identity}.document:1"], "max_items": 50},
+        "input_schema": {"type": "object", "additionalProperties": False},
+        "output_schema": schema,
+    } for name, schema in zip(entity_methods, (
+        {"type": "object", "required": ["titles", "observedBy"]},
+        {"type": "object", "required": ["title", "observedBy"], "additionalProperties": False,
+         "properties": {"title": {"type": "string"}, "observedBy": {"type": "string"}}},
+    ))}
     manifest = {
         "format": 2, "id": identity, "version": "1", "domain_protocol": 2,
         "requires": requires(handlers, ["engineering.git/1"] if core == GIT_HEAD else []),
@@ -203,14 +243,19 @@ def package(target, identity, title, handler, core, sdk=1):
         "files": {path: hashlib.sha256(value).hexdigest() for path, value in files.items()},
         "runtime": {
             "entry": "runtime/worker.mjs",
-            "handlers": {method: {
-                **({"core": core} if core else {}),
-                "input_schema": {"type": "object", "required": ["path" if core else "title"]},
-                "output_schema": {"type": "object", "required": ["head" if core else "title", "observedBy"]},
-            }, **({artifact_method: {
-                "input_schema": {"type": "object", "required": ["title"]},
-                "output_schema": artifact_schema,
-            }} if artifact_method else {})},
+            "handlers": {
+                method: {
+                    **({"core": core} if core else {}),
+                    "input_schema": {"type": "object", "required": ["path" if core else "title"]},
+                    "output_schema": {"type": "object",
+                                      "required": ["head" if core else "title", "observedBy"]},
+                },
+                **({artifact_method: {
+                    "input_schema": {"type": "object", "required": ["title"]},
+                    "output_schema": artifact_schema,
+                }} if artifact_method else {}),
+                **entity_handlers,
+            },
         },
         "ui": {
             "contributions": "ui/contributions.json",

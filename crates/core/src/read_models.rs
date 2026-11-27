@@ -621,3 +621,31 @@ pub struct TailEvent {
     /// A large persisted event is a reset boundary, never a silently clipped event.
     pub omitted: bool,
 }
+
+/// One page request of a project's domain entities: the types to include, the storage
+/// key of the entity the page continues after, and the page size.
+#[derive(Debug)]
+pub struct DomainEntityQuery {
+    pub types: Vec<String>,
+    pub after: Option<String>,
+    pub limit: usize,
+}
+
+/// An entity row with the workflow state of its owner. The payload is the entity as its
+/// package wrote it, still encoded.
+#[derive(Debug)]
+pub struct DomainEntityRow {
+    pub revision: u64,
+    pub payload: String,
+    /// Whether a root workflow of the owner is in flight.
+    pub active: bool,
+    /// The latest root workflow started for the owner, as a JSON object.
+    pub last: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct DomainEntityPage {
+    pub records: Vec<DomainEntityRow>,
+    /// Whether more entities of these types follow.
+    pub more: bool,
+}

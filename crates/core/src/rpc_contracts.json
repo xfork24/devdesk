@@ -1460,6 +1460,15 @@
       ]
     },
     {
+      "method": "query.domain.entities",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "active_epoch",
+      "sites": [
+        "crates/host/src/domains.rs"
+      ]
+    },
+    {
       "method": "query.domain.installed",
       "access": "read",
       "scope": "global",
@@ -3009,6 +3018,7 @@
     "configuration.global.write",
     "context.revised",
     "decision.changed",
+    "domain.entities",
     "execution.cleanup_retry_requested",
     "execution.reconciled",
     "execution.stopped",

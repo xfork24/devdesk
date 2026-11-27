@@ -36,6 +36,89 @@ pub struct DomainRelation {
 type Relations = BTreeMap<String, Vec<Id>>;
 const MAX_RELATION_OBJECTS: usize = 256;
 
+/// The entities a handler asks the kernel for: every object of these types in its project.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EntitySelection {
+    pub types: Vec<Id>,
+    #[serde(default = "default_entity_limit")]
+    pub max_items: usize,
+}
+
+/// One page of a project's entities of certain types. `after` is the id of the last
+/// entity of the page before. The order is stable but says nothing about time.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EntityQuery {
+    pub types: Vec<Id>,
+    pub after: Option<Id>,
+    pub limit: usize,
+}
+
+/// The most entities one handler receives.
+pub const MAX_ENTITY_ITEMS: usize = 200;
+/// The most entities one page returns.
+pub const MAX_ENTITY_PAGE: usize = 100;
+/// A handler's entity input stops growing past this size.
+const MAX_ENTITY_INPUT: usize = 512 * 1024;
+/// Entities read from the store at a time while a handler's input is assembled.
+const ENTITY_READ: usize = 64;
+
+fn default_entity_limit() -> usize {
+    100
+}
+
+/// Distinct type references, at most the 32 a package can declare.
+fn distinct_types(types: &[Id]) -> bool {
+    !types.is_empty()
+        && types.len() <= 32
+        && types.iter().collect::<BTreeSet<_>>().len() == types.len()
+}
+
+impl EntitySelection {
+    /// Checked when the package that declares the handler is installed.
+    pub fn validate(&self) -> Result<()> {
+        if !distinct_types(&self.types) {
+            return Err(err(
+                "invalid_domain_package",
+                "领域对象输入需要 1 到 32 个不重复的对象类型",
+            ));
+        }
+        if !(1..=MAX_ENTITY_ITEMS).contains(&self.max_items) {
+            return Err(err(
+                "invalid_domain_package",
+                "领域对象输入的数量上限需要在 1 到 200 之间",
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl EntityQuery {
+    pub fn validate(&self) -> Result<()> {
+        if !distinct_types(&self.types) {
+            return Err(err(
+                "invalid_params",
+                "领域对象查询需要 1 到 32 个不重复的对象类型",
+            ));
+        }
+        if self.after.as_deref().is_some_and(|id| {
+            uuid::Uuid::parse_str(id).map_or(true, |parsed| parsed.to_string() != id)
+        }) {
+            return Err(err(
+                "invalid_params",
+                "领域对象查询的游标需要是上一页最后的对象 ID",
+            ));
+        }
+        if !(1..=MAX_ENTITY_PAGE).contains(&self.limit) {
+            return Err(err(
+                "invalid_params",
+                "领域对象查询的页大小需要在 1 到 100 之间",
+            ));
+        }
+        Ok(())
+    }
+}
+
 fn relations(value: Option<&Value>) -> Result<Relations> {
     value.map_or_else(
         || Ok(BTreeMap::new()),
@@ -112,6 +195,12 @@ fn relation_versions(
 }
 
 impl Engine {
+    /// A page of this project's entities of certain types, each with the state of its workflows.
+    pub fn domain_entities(&self, query: EntityQuery) -> Result<Value> {
+        let project = self.domain_entity_project()?;
+        entity_page(self.store.as_ref(), &project, query)
+    }
+
     pub fn read_domain_entity(&self, id: &str) -> Result<Value> {
         let project = self.domain_entity_project()?;
         let row = one(
@@ -221,6 +310,91 @@ impl Engine {
             .project_id()
             .ok_or_else(|| err("invalid_scope", "领域对象需要项目库"))
     }
+}
+
+/// A page of the project's entities of certain types. Each record is the entity as
+/// `read_domain_entity` returns it, with a `workflow` summary: whether a root workflow of
+/// its owner is in flight, and the latest root workflow started for it.
+pub fn entity_page(
+    store: &dyn EngineeringStore,
+    project: &str,
+    query: EntityQuery,
+) -> Result<Value> {
+    query.validate()?;
+    let page = store.domain_entity_page(&crate::read_models::DomainEntityQuery {
+        types: query.types.clone(),
+        after: query
+            .after
+            .as_deref()
+            .map(|id| domain_entity_key(project, id)),
+        limit: query.limit,
+    })?;
+    let records = page
+        .records
+        .into_iter()
+        .map(|row| {
+            let mut entity: Value = serde_json::from_str(&row.payload)
+                .map_err(|error| err("storage", error.to_string()))?;
+            require(
+                entity["project_id"] == project
+                    && entity["revision"].as_u64() == Some(row.revision),
+                "领域对象与存储行不符",
+            )?;
+            let last = row
+                .last
+                .map(|last| serde_json::from_str::<Value>(&last))
+                .transpose()
+                .map_err(|error| err("storage", error.to_string()))?;
+            entity["workflow"] = json!({"active": row.active, "last": last});
+            Ok(entity)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let next_after = page
+        .more
+        .then(|| records.last().and_then(|record| record["id"].as_str()))
+        .flatten()
+        .map(str::to_owned);
+    Ok(json!({"records": records, "next_after": next_after}))
+}
+
+/// The kernel input `domain.entities`: the entities of the selection's types in the
+/// project, at most `max_items` of them and about `MAX_ENTITY_INPUT` bytes in all.
+/// `truncated` says that matching entities were left out.
+pub fn handler_entities(
+    store: &dyn EngineeringStore,
+    project: &str,
+    selection: &EntitySelection,
+) -> Result<Value> {
+    selection.validate()?;
+    let mut entities = Vec::new();
+    let mut bytes = 0usize;
+    let mut truncated = false;
+    let mut after = None;
+    'pages: loop {
+        let page = entity_page(
+            store,
+            project,
+            EntityQuery {
+                types: selection.types.clone(),
+                after,
+                limit: selection.max_items.min(ENTITY_READ),
+            },
+        )?;
+        let more = page["next_after"].is_string();
+        for record in page["records"].as_array().into_iter().flatten() {
+            if entities.len() == selection.max_items || bytes > MAX_ENTITY_INPUT {
+                truncated = true;
+                break 'pages;
+            }
+            bytes += record.to_string().len();
+            entities.push(record.clone());
+        }
+        if !more {
+            break;
+        }
+        after = page["next_after"].as_str().map(str::to_owned);
+    }
+    Ok(json!({"entities": entities, "truncated": truncated}))
 }
 
 fn storage_record(

@@ -3,6 +3,7 @@ mod configuration_backend;
 mod configuration_cache;
 mod configuration_reset;
 mod connection_pool;
+mod domain_entity_page;
 mod execution_read;
 mod experience_directory;
 mod named_artifacts;
@@ -1289,6 +1290,12 @@ impl EngineeringStore for SqliteStore {
         id: &str,
     ) -> Result<Option<devdesk_core::read_models::ExperienceDirectorySource>> {
         experience_directory::source(&self.connection, self.project_id.as_deref(), id)
+    }
+    fn domain_entity_page(
+        &self,
+        query: &devdesk_core::read_models::DomainEntityQuery,
+    ) -> Result<devdesk_core::read_models::DomainEntityPage> {
+        domain_entity_page::page(&self.connection, self.project_id.as_deref(), query)
     }
     fn event_cursor(&self) -> Result<u64> {
         store_changes::cursor(&*self.connection.read()?)

@@ -160,6 +160,18 @@ try {
   await second.getByRole("button", { name: "Manuscript", exact: true }).waitFor();
   await second.getByRole("button", { name: "Git repository" }).waitFor({ state: "detached" });
   const result = await native("workflow");
+  const manuscriptEpoch = (await rpc(page, "query.domain.active")).epoch;
+  assert(await native("entities", result.project_id, result.entity_id, result.sibling_id,
+    result.proof_id, result.execution_id));
+  const documents = await rpc(page, "query.domain.invoke", {
+    epoch: manuscriptEpoch, handler: "manuscript.documents.list", input: {}, project_id: result.project_id,
+  });
+  // Titles come back as stored, with the editor's surrounding spaces.
+  assert.deepEqual(documents.titles.map((title) => title.trim()).sort(), ["Draft", "Local manuscript"]);
+  assert.equal(documents.truncated, false);
+  await assert.rejects(rpc(page, "query.domain.invoke", {
+    epoch: manuscriptEpoch, handler: "manuscript.documents.list", input: {},
+  }), /invalid_params/);
   await page.getByRole("button", { name: "领域工作流" }).click();
   await page.getByLabel("项目 ID", { exact: true }).fill(result.project_id);
   await page.getByLabel("执行 ID").fill(result.execution_id);
@@ -183,8 +195,18 @@ try {
   await page.getByRole("button", { name: "启动工作流" }).click();
   const started = await (await starting).json();
   assert(!started.error, JSON.stringify(started.error));
+  // The queue read reports the workflow of the owner as in flight: started, not yet dispatched.
+  const queued = (await rpc(page, "query.domain.entities", {
+    epoch: manuscriptEpoch, project_id: started.result.project_id, types: ["manuscript.document:1"],
+  })).records.find((row) => row.id === owner.id);
+  assert.equal(queued.workflow.active, true);
+  assert.deepEqual(queued.workflow.last, {
+    id: started.result.execution_id, status: "queued", workflow_ref: "manuscript.workflow:1",
+  });
   const manual = await native("manual", started.result.project_id, started.result.execution_id);
   assert(await native("check-foreign-entity", manual.project_id, result.entity_id));
+  // A tool step reads the entities of the project it runs in, without naming a project.
+  assert.deepEqual(await native("list-through-step"), ["Draft", "Local manuscript"]);
 
   await second.getByRole("button", { name: "Manuscript", exact: true }).click();
   await second.getByLabel("领域处理器").waitFor();

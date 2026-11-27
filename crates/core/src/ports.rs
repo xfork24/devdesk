@@ -769,6 +769,14 @@ pub trait EngineeringStore: Send + Sync {
     ) -> Result<Option<crate::read_models::ExperienceDirectorySource>> {
         Err(err("unsupported", "存储未实现有界经验目录来源"))
     }
+    /// A page of the project's domain entities of certain types, in the order of their
+    /// storage keys and after the given key, each with the workflow state of its owner.
+    fn domain_entity_page(
+        &self,
+        _query: &crate::read_models::DomainEntityQuery,
+    ) -> Result<crate::read_models::DomainEntityPage> {
+        Err(err("unsupported", "存储未实现领域对象分页"))
+    }
     fn repository_registration_facts(
         &self,
     ) -> Result<crate::repository_updates::RepositoryRegistrationFacts> {

@@ -8,11 +8,14 @@ use devdesk_core::{
 
 pub(super) struct ProjectReader {
     pub packages: Arc<DomainPackages>,
+    /// The store of the project this reader serves, for the kernel input `domain.entities`.
+    pub store: Arc<dyn devdesk_core::EngineeringStore>,
 }
 
 impl DomainReader for ProjectReader {
     fn read(&self, project: &str, handler: &str, input: Value) -> devdesk_domain::Result<Value> {
-        self.packages.read_for_project(project, handler, input)
+        self.packages
+            .read_for_project(project, handler, input, &self.store)
     }
 
     fn has_hook(&self, project: &str, group: &str, hook: &str) -> devdesk_domain::Result<bool> {
@@ -26,7 +29,7 @@ impl DomainReader for ProjectReader {
         hook: &str,
         input: Value,
     ) -> devdesk_domain::Result<Option<Value>> {
-        self.packages.hook(project, group, hook, input)
+        self.packages.hook(project, group, hook, input, &self.store)
     }
 
     fn resource(
@@ -470,8 +473,57 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
                 .dispatch_public_rpc(&method, Value::Object(input))
                 .map(|reply| reply.value)
         }
+        "query.domain.entities" => {
+            let project = text("project_id")?;
+            let types = params["types"]
+                .as_array()
+                .ok_or_else(|| err("invalid_params", "types 需要是对象类型的数组"))?
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .map(str::to_owned)
+                        .ok_or_else(|| err("invalid_params", "对象类型需要是字符串"))
+                })
+                .collect::<devdesk_domain::Result<Vec<_>>>()?;
+            let after = match params.get("after") {
+                None | Some(Value::Null) => None,
+                Some(Value::String(after)) => Some(after.as_str()),
+                _ => return Err(err("invalid_params", "after 需要是上一页最后的对象 ID")),
+            };
+            let limit = params["limit"].as_u64().unwrap_or(50);
+            packages.entities(
+                project,
+                epoch()?,
+                &types,
+                after,
+                usize::try_from(limit).unwrap_or(usize::MAX),
+                |types, after, limit| {
+                    workspace.project_engine(Some(project))?.domain_entities(
+                        devdesk_core::EntityQuery {
+                            types: types.to_vec(),
+                            after: after.map(str::to_owned),
+                            limit,
+                        },
+                    )
+                },
+            )
+        }
         "query.domain.invoke" => {
-            packages.invoke(epoch()?, text("handler")?, params["input"].clone())
+            // A handler reading the entities of a project needs the project's store.
+            let store = match params.get("project_id") {
+                None | Some(Value::Null) => None,
+                Some(Value::String(project)) => {
+                    Some(workspace.project_engine(Some(project))?.store.clone())
+                }
+                _ => return Err(err("invalid_params", "project_id 需要是项目 ID")),
+            };
+            packages.invoke(
+                epoch()?,
+                text("handler")?,
+                params["input"].clone(),
+                store.as_ref(),
+            )
         }
         _ => Err(err("method_not_found", "领域 RPC 未注册")),
     }

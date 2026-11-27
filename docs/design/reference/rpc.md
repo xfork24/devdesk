@@ -25,7 +25,7 @@
 | `domain.activate`、`domain.deactivate`、`domain.uninstall` | 提交 `digest` 和原 `epoch`。激活核对已安装 ZIP，打开可用的项目。切换和停用检查在途工作流及待核对的仓库操作。卸载仅在该领域有工作流正在执行时返回 `domain_busy` |
 | `query.domain.installed` | 列出安装的版本和摘要 |
 | `query.domain.contribution` | 提交当前 `epoch`、贡献 ID 和 `input`，返回公开投影 |
-| `query.domain.invoke` | 提交当前 `epoch`、声明的 `handler` 和 `input`。返回领域只读运行端的结果 |
+| `query.domain.invoke` | 提交当前 `epoch`、声明的 `handler` 和 `input`。返回领域只读运行端的结果。处理器使用内核输入 `domain.entities` 时还需 `project_id`，内核从该项目的库读取对象 |
 | `domain.project.create` | 提交 `epoch`、`title` 和 `command_id` 创建项目。设置 `reuse_connection:true` 并提供 `connection` 时，优先复用同一领域 ID 下同仓库、同主分支的已有项目 |
 | `domain.project.remove` | 提交 `epoch`、`project_id` 和 `command_id`，从工作台列表移除 GitHub 项目，保留原项目存储。用 `domain.project.create` 和 `reuse_connection:true` 打开同一仓库及主分支可恢复 |
 | `query.domain.storage` | 按 `epoch` 读取领域新项目数据目录、可用状态 `available`、配置版本和仍有项目数据库的可用目录 |
@@ -34,6 +34,7 @@
 | `query.domain.workflow` | 按原项目、执行 ID 及当前 `epoch` 读取流程详情。结束后从 `domain_submission.entities` 回读已提交的领域对象 ID |
 | `domain.entity.put` | 携带 `epoch`、`project_id`、`entity_id`、`type_ref`、`expected_revision`、`command_id` 和 `data`。新建使用修订 0。更新保留对象类型，Host 按该类型的 Schema 校验载荷 |
 | `query.domain.entity` | 按 `epoch`、`project_id` 和 `entity_id` 读取对象当前修订 |
+| `query.domain.entities` | 按 `epoch`、`project_id` 和对象类型数组 `types` 分页列出对象，每页最多 `limit` 个（默认 50，最多 100），`after` 是上一页 `next_after` 返回的对象 ID。类型须由活动包声明。顺序稳定但不代表时间先后。每条记录是 `query.domain.entity` 的对象加上 `workflow`：`active` 表示归属对象有在途的根流程，`last` 是最近一次启动的根流程（`id`、`status`、`workflow_ref`），没有则为空 |
 | `GET /domain-events` | 连接时收到当前代次，后续收到 `domain` 事件。客户端据此重读活动目录 |
 | `GET /domain-assets/{epoch}/{digest}/{path}` | Web 读取活动包的渲染资源。当前代次和摘要都需匹配 |
 | `query.core.git.head`、`query.core.git.diff` | 读取指定宿主本地仓库的 HEAD 或通过两个完整 OID 比较修订 |

@@ -272,6 +272,7 @@ fn software_domain_worker_matches_legacy_test_discovery() {
                 epoch,
                 "software-development.tests.discover",
                 json!({"path":repo,"revision":head}),
+                None,
             )
             .unwrap_or_else(|error| panic!("software domain failed on {files:?}: {error}"));
         let actual: ProjectTestDiscovery = serde_json::from_value(result).unwrap();
@@ -297,10 +298,15 @@ fn software_domain_branch_is_frozen_before_git_writes_and_inspected_without_rese
 
     struct PackageReader {
         packages: DomainPackages,
+        store: Arc<dyn EngineeringStore>,
     }
     impl DomainReader for PackageReader {
         fn read(&self, project: &str, handler: &str, input: Value) -> Result<Value> {
-            self.packages.read_for_project(project, handler, input)
+            self.packages
+                .read_for_project(project, handler, input, &self.store)
+        }
+        fn has_hook(&self, project: &str, group: &str, hook: &str) -> Result<bool> {
+            self.packages.has_hook(project, group, hook)
         }
         fn hook(
             &self,
@@ -309,7 +315,7 @@ fn software_domain_branch_is_frozen_before_git_writes_and_inspected_without_rese
             hook: &str,
             input: Value,
         ) -> Result<Option<Value>> {
-            self.packages.hook(project, group, hook, input)
+            self.packages.hook(project, group, hook, input, &self.store)
         }
         fn resource(
             &self,
@@ -328,6 +334,13 @@ fn software_domain_branch_is_frozen_before_git_writes_and_inspected_without_rese
         reads: AtomicUsize,
     }
     impl Git for LostReplyGit {
+        fn registered_revision(
+            &self,
+            project: &str,
+            mainline: &str,
+        ) -> Result<Option<(String, String)>> {
+            self.actual.registered_revision(project, mainline)
+        }
         fn repository_operation(&self, op: &RepositoryOperation) -> Result<RepositoryReceipt> {
             self.writes.fetch_add(1, Ordering::Relaxed);
             let result = self.actual.repository_operation(op)?;
@@ -418,7 +431,10 @@ fn software_domain_branch_is_frozen_before_git_writes_and_inspected_without_rese
         .activate(digest, 0, |_| Ok(()), |_| Ok(()))
         .unwrap();
     packages.bind_project(&project, digest).unwrap();
-    engine.domain_reader = Some(Arc::new(PackageReader { packages }));
+    engine.domain_reader = Some(Arc::new(PackageReader {
+        packages,
+        store: engine.store.clone(),
+    }));
     let discovery = engine.discover_project_tests().unwrap();
     assert_eq!(discovery.revision.as_deref(), Some(revision.as_str()));
     assert_eq!(
@@ -490,10 +506,11 @@ fn software_domain_branch_is_frozen_before_git_writes_and_inspected_without_rese
         .find(|op| op.status == RepositoryOperationStatus::NeedsReconciliation)
         .expect("the applied Git effect lost its reply");
     let busy = ResourceKey::new("domain_project_busy", &project);
-    assert_eq!(
-        store.read_resources(std::slice::from_ref(&busy)).unwrap()[0].value,
-        Some(json!({"active":true}))
-    );
+    let activity = store.read_resources(std::slice::from_ref(&busy)).unwrap()[0]
+        .value
+        .clone()
+        .unwrap();
+    assert_eq!(activity["active"], true, "{activity}");
     assert_eq!(git_effects.writes.load(Ordering::Relaxed), 2);
     assert_eq!(git_effects.reads.load(Ordering::Relaxed), 0);
     engine
@@ -512,10 +529,11 @@ fn software_domain_branch_is_frozen_before_git_writes_and_inspected_without_rese
     }
     assert_eq!(git_effects.writes.load(Ordering::Relaxed), 2);
     assert_eq!(git_effects.reads.load(Ordering::Relaxed), 1);
-    assert_eq!(
-        store.read_resources(&[busy]).unwrap()[0].value,
-        Some(json!({"active":false}))
-    );
+    let activity = store.read_resources(&[busy]).unwrap()[0]
+        .value
+        .clone()
+        .unwrap();
+    assert_eq!(activity["active"], false, "{activity}");
     let stored = store.snapshot().unwrap();
     assert_eq!(stored.repository_operations.len(), 2);
     assert_eq!(stored.repository_worktrees.len(), 2);

@@ -80,6 +80,8 @@
 | K-3 | 安装期协商：Host 版本、平台处理器、扩展组、RPC 四类依赖逐项核对，错误指明缺什么。扩展组同时登记自己提供的处理器与内核输入；包只有声明依赖某个组，才能发布该组处理器上的工具、把它列为交付的生产者、声明该组的内核输入，或绑定该组的钩子与资源 |
 | K-4 | 领域包的配置包清单在安装时套用与出厂资源相同的 Schema。两个构建脚本输出全部 15 个类型键，未使用的留空 |
 | N-6（第一部分） | 内核输入改为能力目录中的名称：`git_head`、`git_snapshot` 更名为 `engineering.git.head`、`engineering.git.snapshot`，名称带着提供它的扩展组。Schema 不再枚举取值；处理器声明了本 Host 没有的内核输入时，按名称报 `handler_unsupported`。`/capabilities` 的 `core_inputs` 只列每个包都能用的内核输入，`extensions` 的每一项改为带 `handlers`、`core_inputs`、`hooks` 的对象，与 SDK 合同第 4 节一致 |
+| N-3 | 新增 `query.domain.entities`：按对象类型分页列出项目的对象，每页最多 100 个，`after` 是上一页最后一个对象的 ID，顺序按存储键稳定，不代表时间先后。类型须由活动包声明。每条记录是 `query.domain.entity` 返回的对象加上 `workflow`：`active` 表示归属对象有在途的根流程，`last` 是最近一次启动的根流程（`id`、`status`、`workflow_ref`） |
+| N-6（第二部分） | 新增内核输入 `domain.entities`。处理器用 `entities: {types, max_items}` 声明要读取的类型和数量上限，类型须由本包声明，不需要任何扩展组。内核在调用前从处理器所在项目的库读取对象，返回 `{entities, truncated}`；超过数量上限或总大小约 512 KiB 时停止，并说明有对象没有给出。三条调用路径都接通：RPC `query.domain.invoke` 需带 `project_id`，缺失时返回 `invalid_params`；工作流的工具步骤经内核的 `DomainReader` 读取，Host 的项目读取器持有该项目的库，调用方不必指定项目；钩子同理。能力目录的 `core_inputs` 列出它 |
 | W-5 | 呈现目标用 `sdk`（Web SDK 主版本）取代 `api`，新增 `kit`（组件套件对应的 Web Core 版本）与绑定的 `home`（进入领域时打开的首页，取代“第一个绑定”）。Web Core 只加载 `sdk` 与自身一致、`kit` 与自身版本一致的目标，其余目标提示“领域包与 Web Core 版本不兼容”。内核只校验 `sdk` 不小于 1、每个目标最多一个首页；SDK 版本是否可用由 Web Core 判断 |
 
 ### 初步验收
@@ -109,6 +111,13 @@
 | | `cargo clippy --workspace --all-targets --locked -- -D warnings`、`./scripts/check/check-style.sh` | 无警告；rustfmt、ESLint、TypeScript、Prettier、Web 构建通过 |
 | | `python3 tests/entrypoints/lifecycle_contract.py target/fixtures/debug/devdesk-host` 及事件尾流、模板重置、数据集协议、运行环境准备四组合同 | 通过。能力目录断言改为扩展组对象 |
 | | `node tests/entrypoints/domain_packages.mjs target/debug/devdesk-host web/dist/core <带页面的格式 2 软件开发包>` | 退出码 0。真实包经新名称读取 Git 快照 |
+| N-3、N-6（第二部分） | `cargo test -p devdesk-adapters --locked --features test-fixtures,fixture-catalog --test configured_workflows -- entities_are_listed` | 1 通过。真实项目库：按类型过滤、游标分页不重不漏、在途根流程的 `active` 与 `last`、处理器输入的数量上限与 `truncated`、非法查询被拒 |
+| | `cargo test -p devdesk-adapters --locked --lib domain_packages::tests` | 12 通过。新增一项：`entities` 选择里的类型须由本包声明，缺少选择或多了选择都被拒绝，不需要扩展组 |
+| | `cargo test -p devdesk-adapters --locked --features test-fixtures,fixture-catalog --test project_test_configuration -- --ignored` | 2 通过。显式启用的 Docker worker 用例，见“执行中的发现” |
+| | `cargo test --workspace --locked` | 60 个套件，797 通过，0 失败，39 忽略 |
+| | `cargo clippy --workspace --all-targets --locked -- -D warnings`、`./scripts/check/check-style.sh` | 无警告；rustfmt、ESLint、TypeScript、Prettier、Web 构建通过 |
+| | `python3 tests/entrypoints/lifecycle_contract.py target/fixtures/debug/devdesk-host` 及四组夹具合同 | 通过。能力目录的 `core_inputs` 为 `["domain.entities"]` |
+| | `node tests/entrypoints/domain_packages.mjs target/debug/devdesk-host web/dist/core <带页面的格式 2 软件开发包>` | 退出码 0。新增三段：经 RPC 分页读取文稿与校样，带在途与已完成工作流的摘要，未声明的类型与非法参数被拒；经 `query.domain.invoke` 带 `project_id` 调用读取对象的处理器，不带项目时被拒；工作流的一个工具步骤经内核读到所在项目的两个文稿，结果成为校样对象 |
 | W-5 | `cargo test -p devdesk-adapters --locked --lib domain_packages::tests` | 10 通过。新增一项：一个目标标记两个首页后被拒绝 |
 | | `cargo test --workspace --locked` | 60 个套件，794 通过，0 失败，39 忽略 |
 | | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 无警告 |
@@ -130,6 +139,11 @@
 - **能力目录暂时不含 worker 的运行时限制。** 这些数字现在写死在 worker 的容器参数里，N-5 重写 worker 时以具名常量发布。
 - **钩子要求的内核输入是登记的数据。** 扩展组登记表里的每个钩子声明自己要求的内核输入，通用校验只核对“绑定到钩子的处理器声明了输入输出 Schema，并使用该输入”，不再写死“测试识别要用 Git 快照”。
 - **测试夹具包不声明首页。** 声明首页后，Web Core 按设计不再提供自己的“领域工作流”入口，而端到端用例要在那里读取执行。首页路径改由真实软件开发包的那一段覆盖，夹具包继续覆盖没有首页的形态。
+- **对象行的类型只在载荷里。** `domain_entity` 行的 `definition_id` 是存储键（`domain-entity:<摘要>`），不是对象类型；类型是 `name` 列，也在载荷里。对象列举按载荷的 `type_ref` 过滤，以载荷为准。
+- **对象的 `created_at` 不是创建时间。** 通用写入在更新时会覆盖除 `id` 以外的全部列，每次修订都刷新它。因此分页顺序用不可变的存储键，客户端需要时间顺序时从对象自己的数据里取。
+- **在途判定只有一份定义。** 对象列举与 `workflow_active_owner` 虚拟资源使用同一段 SQL（`active_root_workflows`）；“最近一次”按 `rowid`，即启动顺序。
+- **两个默认忽略的 Docker 用例早已失效。** `project_test_configuration.rs` 里显式启用的两个用例从 K-5 起失败：测试替身没有实现 `has_hook`，包装的 Git 没有转发 `registered_revision`。其中一处断言更早（main 的 `6184df1d`）就因 `domain_project_busy` 增加 `active_when_removed` 字段而过期。已修复，并把断言改为只看 `active`。这类用例不在任何门禁里，纳入测试改造。
+- **内核输入的名称形如 RPC 方法。** `domain.entities` 会被 RPC 登记检查当作未登记的方法字面量，需要列入 `non_methods`。
 - **报告器的扩展名规则不再由清单校验负责。** 清单只做通用的有界 UTF-8 文件检查；落地时的文件名一直由测试运行器自己决定。
 - **读取项目的钩子与资源时用 `try_read`。** 与 `configuration_scope` 的做法一致：项目 RPC 可能已经持有一份读锁，切换领域时直接返回 `domain_busy`，不等待嵌套的锁。
 - **单独运行适配器的集成测试需要 `--features test-fixtures,fixture-catalog`。** 只开 `test-fixtures` 时出厂目录不含角色与 Agent，依赖默认绑定的用例会失败。`cargo test --workspace` 通过 Host 的开发依赖带上了这两个 feature，所以完整检查不受影响。这正是 T-6 要消除的耦合。

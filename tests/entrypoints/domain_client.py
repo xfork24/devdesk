@@ -96,7 +96,7 @@ def prepare_document(client, epoch):
         assert "not_found" in str(failure), failure
     else:
         raise AssertionError("accepted relation to a different project")
-    return client.call("query.domain.entity", **target)
+    return {**client.call("query.domain.entity", **target), "sibling_id": sibling["entity_id"]}
 
 
 def start_for(client, epoch, entity, mode):
@@ -118,7 +118,8 @@ def wait_view(client, epoch, receipt, matches, timeout=25):
             return details
         status = details["record"]["data"]["status"]
         if status in {"failed", "cancelled", "needs_reconciliation"}:
-            raise AssertionError((status, receipt))
+            raise AssertionError((status, receipt, [(step["step"], step["status"], step.get("reason"))
+                                                   for step in details["runtime"]["steps"]]))
         time.sleep(0.25)
     raise AssertionError((receipt, [(step["step"], step["status"], step["reason"])
                                    for step in (details or {}).get("runtime", {}).get("steps", [])]))
@@ -190,7 +191,75 @@ def run(origin, action, args):
         assert "domain_submission" not in view
         confirm_proof(client, epoch, receipt, view)
         proof = submitted_proof(client, epoch, receipt)
-        return {**receipt, "entity_id": entity["id"], "proof_id": proof["id"]}
+        return {**receipt, "entity_id": entity["id"], "proof_id": proof["id"],
+                "sibling_id": entity["sibling_id"]}
+    if action == "entities":
+        project, owner, sibling, proof, execution = args
+        documents = ["manuscript.document:1"]
+        first = client.call("query.domain.entities", epoch=epoch, project_id=project,
+                            types=documents, limit=1)
+        assert len(first["records"]) == 1 and first["next_after"], first
+        second = client.call("query.domain.entities", epoch=epoch, project_id=project,
+                             types=documents, limit=1, after=first["next_after"])
+        assert len(second["records"]) == 1 and second["next_after"] is None, second
+        rows = {row["id"]: row for row in first["records"] + second["records"]}
+        assert set(rows) == {owner, sibling}, list(rows)
+        done = rows[owner]
+        # The stored data is what the editor wrote; only the worker's output is trimmed.
+        assert done["revision"] == 2 and done["data"]["title"].strip() == "Local manuscript", done
+        assert done["workflow"] == {"active": False, "last": {
+            "id": execution, "status": "completed", "workflow_ref": "manuscript.workflow:1"}}, done
+        assert rows[sibling]["workflow"] == {"active": False, "last": None}
+        proofs = client.call("query.domain.entities", epoch=epoch, project_id=project,
+                             types=["manuscript.proof:1"])
+        assert [row["id"] for row in proofs["records"]] == [proof] and proofs["next_after"] is None
+        assert proofs["records"][0]["origin"]["root_id"] == execution
+        assert proofs["records"][0]["workflow"] == {"active": False, "last": None}
+        for params, expected in [
+            ({"types": ["manuscript.unknown:1"]}, "not_found"),
+            ({"types": []}, "invalid_params"),
+            ({"types": documents, "limit": 0}, "invalid_params"),
+            ({"types": documents, "after": "not-an-id"}, "invalid_params"),
+        ]:
+            try:
+                client.call("query.domain.entities", epoch=epoch, project_id=project, **params)
+            except RuntimeError as failure:
+                assert expected in str(failure), (params, failure)
+            else:
+                raise AssertionError(f"accepted {params}")
+        try:
+            client.call("query.domain.invoke", epoch=epoch, handler="manuscript.documents.list", input={})
+        except RuntimeError as failure:
+            assert "invalid_params" in str(failure), failure
+        else:
+            raise AssertionError("a handler reading entities ran without a project")
+        return True
+    if action == "list-through-step":
+        # A tool step whose handler reads domain.entities: the kernel resolves the input
+        # from the project the step runs in.
+        entity = prepare_document(client, epoch)
+        receipt = client.call("domain.workflow.start", epoch=epoch, workflow_ref="manuscript.inventory:1",
+                              mode="manual", project_id=entity["project_id"], entity_id=entity["id"],
+                              expected_revision=entity["revision"], command_id=uuid.uuid4().hex)
+        view = lookup(client, epoch, receipt)
+        client.call("workflow.step.dispatch", command_id=uuid.uuid4().hex, domain_epoch=epoch,
+                    project_id=receipt["project_id"], target=receipt["execution_id"],
+                    expected_revision=view["record"]["revision"],
+                    payload={"execution_id": view["runtime"]["steps"][0]["id"], "step": "title"})
+        view = wait_view(client, epoch, receipt,
+                         lambda view: view["runtime"]["steps"][0]["status"] == "waiting_confirmation")
+        confirm_proof(client, epoch, receipt, view)
+        view = lookup(client, epoch, receipt)
+        client.call("workflow.complete", command_id=uuid.uuid4().hex, domain_epoch=epoch,
+                    project_id=receipt["project_id"], target=receipt["execution_id"],
+                    expected_revision=view["record"]["revision"], payload={})
+        completed = wait_view(client, epoch, receipt,
+                              lambda view: view["record"]["data"]["status"] == "completed")
+        # The accepted output becomes a proof entity whose data is the handler's result.
+        outputs = client.call("query.domain.entity", epoch=epoch, project_id=receipt["project_id"],
+                              entity_id=completed["domain_submission"]["entities"]["observation"])["data"]
+        assert outputs["observedBy"] == "domain-worker", outputs
+        return outputs["title"].split("\n")
     if action == "prepare-owner":
         return prepare_document(client, epoch)
     if action == "manual":

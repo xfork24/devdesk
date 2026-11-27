@@ -577,6 +577,7 @@ impl Workspace {
         if let Some(packages) = self.domains.get() {
             e.domain_reader = Some(Arc::new(crate::domains::ProjectReader {
                 packages: packages.as_ref().map_err(Clone::clone)?.clone(),
+                store: e.store.clone(),
             }));
         }
         let e = Arc::new(e);

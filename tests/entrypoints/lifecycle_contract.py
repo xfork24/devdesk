@@ -91,6 +91,7 @@ def run():
             assert "engineering.git.snapshot" in groups["engineering.git/1"]["core_inputs"]
             assert groups["engineering.tests/1"]["hooks"] == ["test_discovery"]
             assert {"workflow.start", "tests.run"} <= set(ready["platform_handlers"])
+            assert ready["core_inputs"] == ["domain.entities"]
             assert "query.domain.active" in ready["rpc"]
             stale = command(initial)
             assert request("/shutdown", stale)[1]["code"] == "revision_conflict"

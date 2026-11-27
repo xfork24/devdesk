@@ -29,6 +29,8 @@ DevDesk v0.5 独立交付 Rust Host、Web Core 和领域 ZIP。Host 带有 Model
 
 Git、GitHub 与测试属于扩展组 `engineering.git/1` 和 `engineering.tests/1`。只有声明依赖的包才能发布这些处理器上的工具定义、把处理器列为交付的生产者、声明该组的内核输入（Git 组为 `engineering.git.head` 与 `engineering.git.snapshot`），或在清单的 `extensions` 下把处理器绑定到该组的钩子。内核输入以能力目录中的名称书写，名称带着提供它的扩展组。钩子与资源集合由内核登记：`worktree_branch` 与 `pull_request_creation` 属于 Git 组，`test_discovery` 与 `reporters` 资源属于测试组。
 
+处理器在 `core` 中声明一个内核输入，内核在调用前准备好数据，放进请求的 `core` 字段。每个包都能用的内核输入列在 `/capabilities` 的 `core_inputs`，目前是 `domain.entities`：处理器用 `entities` 选择要读取的对象类型和数量上限（`types`、`max_items`，默认 100，最多 200），类型必须由本包声明。内核返回该项目中这些类型的对象，每条带有与 `query.domain.entities` 相同的 `workflow` 摘要；超过数量上限或总大小超过 512 KiB 时停止，并用 `truncated` 说明有对象没有给出。扩展组的内核输入随组发布，例如 `engineering.git.head`、`engineering.git.snapshot`，包需要先声明依赖该组。
+
 ## 安装、激活和版本
 
 安装核对清单、逐文件摘要、引用和包定义。用户可在 Host 运行时显式激活已安装的包。活动目录记录包 ID、摘要和活动代次，整个工作台共享一个活动领域。切换更新代次，客户端重新发现贡献。停用保留已安装的版本，卸载撤掉对应版本的运行入口。切换与停用检查在途工作流和待核对的仓库操作。已移除项目搁置的仓库接入核对可在重新打开项目后继续。
