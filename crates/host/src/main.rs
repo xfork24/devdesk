@@ -68,7 +68,21 @@ impl App {
     }
 }
 fn failure(e: Error) -> Value {
-    json!({"code":match e.code.as_str(){"method_not_found"=>-32601,"invalid_params"=>-32602,_=>-32000},"message":e.message,"data":{"code":e.code}})
+    let code = match e.code.as_str() {
+        "method_not_found" => -32601,
+        "invalid_params" => -32602,
+        _ => -32000,
+    };
+    let mut data = json!({"code": e.code});
+    // A caller acts on the code a domain handler refused with, so it travels with the error.
+    for context in e.context.iter().filter(|c| c.operation == "domain handler") {
+        if let Some(details) = context.details.as_object() {
+            data.as_object_mut()
+                .expect("error data object")
+                .extend(details.clone());
+        }
+    }
+    json!({"code": code, "message": e.message, "data": data})
 }
 async fn guard(State(app): State<Arc<App>>, request: Request, next: Next) -> Response {
     let path = request.uri().path();
@@ -494,7 +508,7 @@ async fn capabilities(State(app): State<Arc<App>>) -> Json<Value> {
     let providers: Vec<&str> = HARNESS_PROVIDERS.iter().map(|p| p.as_str()).collect();
     let domain = devdesk_core::domain_protocol::Capabilities::current();
     Json(
-        json!({"version":env!("CARGO_PKG_VERSION"),"protocol_version":1,"setup_required":workspace.is_none(),"lifecycle":lifecycle,"domain_protocol":domain.domain_protocol,"package_format":domain.package_format,"platform_handlers":domain.platform_handlers,"core_inputs":domain.core_inputs,"extensions":domain.extensions,"rpc":domain.rpc,"project_selection":"frontend","storage_layout":"global-and-project-databases","execution_mode":"live","live":"requires_registered_runtime_and_credentials","conversations":{"providers":providers,"managed_linux_workers":true,"engineering_run_contract":true},"platform":{"linux":"runtime_verified_by_reports","macos":"runtime_verified_by_reports"},"runtime":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},"harness":{"providers":providers,"capabilities":["structured-output","cancel","poll"]},"sandbox":{"provider":"docker","capabilities":["managed-container","resource-cleanup"]}}),
+        json!({"version":env!("CARGO_PKG_VERSION"),"protocol_version":1,"setup_required":workspace.is_none(),"lifecycle":lifecycle,"domain_protocol":domain.domain_protocol,"package_format":domain.package_format,"platform_handlers":domain.platform_handlers,"core_inputs":domain.core_inputs,"extensions":domain.extensions,"rpc":domain.rpc,"worker":devdesk_adapters::domain_packages::worker_limits(),"project_selection":"frontend","storage_layout":"global-and-project-databases","execution_mode":"live","live":"requires_registered_runtime_and_credentials","conversations":{"providers":providers,"managed_linux_workers":true,"engineering_run_contract":true},"platform":{"linux":"runtime_verified_by_reports","macos":"runtime_verified_by_reports"},"runtime":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},"harness":{"providers":providers,"capabilities":["structured-output","cancel","poll"]},"sandbox":{"provider":"docker","capabilities":["managed-container","resource-cleanup"]}}),
     )
 }
 async fn artifact(
@@ -961,6 +975,24 @@ mod connection_tests {
         assert!(connection_key("0.0.0.0".parse().unwrap(), false, Some("x".repeat(32))).is_err());
         assert!(connection_key("0.0.0.0".parse().unwrap(), true, Some("x".repeat(32))).is_ok());
         assert!(connection_key("::1".parse().unwrap(), false, Some("short".into())).is_err());
+    }
+
+    #[test]
+    fn an_error_keeps_its_code_and_a_handler_refusal_its_own() {
+        assert_eq!(
+            failure(err("invalid_params", "缺少 x")),
+            json!({"code": -32602, "message": "缺少 x", "data": {"code": "invalid_params"}})
+        );
+        let refusal = err("domain_handler_rejected", "订单结构不合法").with_context(
+            "domain handler",
+            json!({"handler": "shop.order.validate", "handler_code": "order_invalid"}),
+        );
+        assert_eq!(
+            failure(refusal),
+            json!({"code": -32000, "message": "订单结构不合法", "data": {
+                "code": "domain_handler_rejected", "handler": "shop.order.validate",
+                "handler_code": "order_invalid"}})
+        );
     }
 
     #[test]

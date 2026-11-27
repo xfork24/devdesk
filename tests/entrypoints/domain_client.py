@@ -233,6 +233,15 @@ def run(origin, action, args):
             assert "invalid_params" in str(failure), failure
         else:
             raise AssertionError("a handler reading entities ran without a project")
+        # A handler's refusal comes back to the caller with its own code and message.
+        try:
+            client.call("query.domain.invoke", epoch=epoch, handler="manuscript.title.read",
+                        input={"title": "refuse"})
+        except RuntimeError as failure:
+            assert "domain_handler_rejected" in str(failure), failure
+            assert "title_rejected" in str(failure) and "文稿标题不被接受" in str(failure), failure
+        else:
+            raise AssertionError("a handler's refusal was not returned to the caller")
         return True
     if action == "list-through-step":
         # A tool step whose handler reads domain.entities: the kernel resolves the input

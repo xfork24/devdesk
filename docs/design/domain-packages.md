@@ -55,7 +55,9 @@ Git、GitHub 与测试属于扩展组 `engineering.git/1` 和 `engineering.tests
 
 「打开 GitHub 项目」按仓库和主分支匹配已登记项目。如果没有可复用的登记，会在当前领域数据目录的 `projects/<project-id>` 中查找可兼容的旧项目数据库。将完整项目目录拷回原路径后可保留原项目 ID、仓库和历史。遇到多个匹配目录或仓库路径不符时，Host 提示核对目录。
 
-领域 JavaScript 处理器由 Host 调度到受限的 Docker worker 进程，使用 JSON-RPC 处理调用。Host 验证输入、范围、返回值和运行证据。核心 Git、持久化模型、调度与发起外部操作的权限仍由平台管理。
+领域包的运行入口是纯模块，只导出处理器表：`export const handlers = { "<包>.<处理器>": (input, core) => 结果 }`，自身不读写标准输入输出。容器里运行的是内核的引导模块：它读取请求、加载入口、按名称调用处理器并写回结果，激活时的握手也由它应答，所以入口导出的处理器必须与清单一致。处理器拒绝或失败时抛出 Error；带 `code` 属性（小写字母、数字、下划线）的错误连同信息由 Host 以 `domain_handler_rejected` 返回调用方，`data.context` 里是处理器的代码。没有代码的错误记为 `handler_failed`。入口、引导模块和传输本身的问题记为 `domain_worker_failed`。Host 在调用前后按处理器声明的 Schema 验证输入与返回值。验证器的拒绝不是错误，仍是正常结果。
+
+沙箱边界写在 `GET /capabilities` 的 `worker` 里，领域作者可以直接读到：没有网络，文件系统只读且只挂载引导模块与入口，内存 128 MiB、1 CPU、48 个进程，宿主侧 15 秒，入口是单个文件，不能有本地 import 和 npm 依赖。核心 Git、持久化模型、调度与发起外部操作的权限仍由平台管理。
 
 呈现目标声明 `renderer`、它所用的 Web SDK 主版本 `sdk`，以及使用组件套件时对应的 Web Core 版本 `kit`（`major.minor`）。Web Core 只加载 `sdk` 与自身一致、且 `kit` 与自身版本一致的目标，否则提示领域包与 Web Core 版本不兼容。绑定可以用 `home: true` 标记进入领域时打开的首页。Web Core 使用 `web.react` SDK 1 将活动包的 ES 模块装进同一 React 树。组件获取当前项目、导航、RPC 和订阅上下文。领域页共用布局和主题，以包提供的样式表扩展。执行脚本与核心前端共用浏览器上下文，前端资源请求需要匹配当前包摘要和代次。
 

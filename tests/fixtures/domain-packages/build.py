@@ -23,6 +23,26 @@ def requires(handlers, extensions):
 
 
 GIT_HEAD = "engineering.git.head"
+# Handler bodies of the fixture entries, by name without the package prefix.
+HANDLERS = {
+    "repository.head": '(_input, core) => ({ head: core.head, observedBy: "domain-worker" })',
+    # A refusal: the kernel returns the handler's code and message to the caller.
+    "title.read": """(input) => {
+      const title = String(input.title ?? "").trim();
+      if (title === "refuse") throw Object.assign(new Error("文稿标题不被接受"), { code: "title_rejected" });
+      return { title, observedBy: "domain-worker" };
+    }""",
+    "artifact.create": '(input) => ({ kind: "artifact", title: String(input.title ?? "").trim() })',
+    # The kernel input domain.entities: the documents of the project the handler runs in.
+    "documents.list": """(_input, core) => {
+      const titles = core.entities.map((entity) => entity.data.title);
+      return { title: titles.join("\\n"), titles, truncated: core.truncated, observedBy: "domain-worker" };
+    }""",
+    "inventory.read": """(_input, core) => ({
+      title: core.entities.map((entity) => entity.data.title.trim()).sort().join("\\n"),
+      observedBy: "domain-worker",
+    })""",
+}
 
 
 def package(target, identity, title, handler, core, sdk=1):
@@ -33,10 +53,9 @@ def package(target, identity, title, handler, core, sdk=1):
     # whose result fits the Proof type, for a tool step of a workflow.
     entity_methods = ([f"{identity}.documents.list", f"{identity}.inventory.read"]
                       if identity == "manuscript" else [])
-    worker = (ROOT / "worker.mjs").read_text().replace(
-        '["PLACEHOLDER_HANDLER"]',
-        json.dumps(sorted([method] + ([artifact_method] if artifact_method else []) + entity_methods)),
-    )
+    names = [method] + ([artifact_method] if artifact_method else []) + entity_methods
+    worker = (ROOT / "worker.mjs").read_text().replace("/* HANDLERS */", ",\n".join(
+        f'  "{name}": {HANDLERS[name.removeprefix(identity + ".")]}' for name in names))
     files = {
         "runtime/worker.mjs": worker.encode(),
         "ui/contributions.json": json.dumps([{

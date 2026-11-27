@@ -1,5 +1,7 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+// Handlers of the software-development package. The kernel's worker bootstrap loads this
+// module and calls a handler with (input, core); the module does no I/O of its own. A refusal
+// is an Error that carries a code: the kernel answers the caller with it and the message.
+const refuse = (code, message) => Object.assign(new Error(message), { code });
 
 const discover = "software-development.tests.discover";
 const planBranch = "software-development.branch.plan";
@@ -41,10 +43,10 @@ export function discoverTests({ revision, files, paths, omitted, matches }) {
     try {
       configured = JSON.parse(files[".devdesk/tests.json"]);
     } catch {
-      throw new Error(".devdesk/tests.json 格式无效");
+      throw refuse("tests_json_invalid", ".devdesk/tests.json 格式无效");
     }
     if (configured?.regression?.image && !/^sha256:[0-9a-f]{64}$/.test(configured.regression.image)) {
-      throw new Error(".devdesk/tests.json 的镜像标识无效");
+      throw refuse("tests_image_invalid", ".devdesk/tests.json 的镜像标识无效");
     }
     if (configured?.regression) delete configured.regression.image;
     return {
@@ -106,7 +108,7 @@ export function discoverTests({ revision, files, paths, omitted, matches }) {
 
 export function worktreeBranch({ kind, owner }) {
   const directory = { feature: "features", task: "tasks", candidate: "candidates" }[kind];
-  if (!directory) throw new Error("unknown worktree kind");
+  if (!directory) throw refuse("worktree_kind_unknown", "unknown worktree kind");
   return { owner, kind, branch: `devdesk/${directory}/${owner}` };
 }
 
@@ -118,11 +120,11 @@ export function connectProject(input) {
   repository = repository.replace(/\/$/, "").replace(/[.]git$/, "");
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)
       || repository.split("/").some((part) => part === "." || part === "..")) {
-    throw new Error("Expected a GitHub owner/repository");
+    throw refuse("repository_invalid", "Expected a GitHub owner/repository");
   }
   const mainline = (input.mainline ?? "main").trim();
   if (!mainline || mainline.startsWith("-") || /\s/.test(mainline)) {
-    throw new Error("Invalid target branch");
+    throw refuse("branch_invalid", "Invalid target branch");
   }
   return { repository, mainline };
 }
@@ -149,31 +151,13 @@ export function pullRequestCreation({ request, marker }) {
   };
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const request = JSON.parse(readFileSync(0, "utf8"));
-  const handlers = new Map([
-    [planBranch, ({ input }) => worktreeBranch(input)],
-    ['software-development.delivery.authorize', ({ input }) => authorizeDelivery(input)],
-    [connect, ({ input }) => connectProject(input)],
-    [createPullRequest, ({ input }) => pullRequestCreation(input)],
-    [discover, ({ core }) => discoverTests(core)],
-  ]);
-  try {
-    const handler = handlers.get(request.params?.handler);
-    let result;
-    if (request.method === "describe") {
-      result = { api: 1, handlers: [...handlers.keys()] };
-    } else if (request.method === "invoke" && handler) {
-      result = handler(request.params);
-    } else {
-      throw new Error("unknown software development operation");
-    }
-    process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: request.id, result }));
-  } catch (error) {
-    process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: request.id,
-      error: { code: -32000, message: error.message } }));
-  }
-}
+export const handlers = {
+  [planBranch]: (input) => worktreeBranch(input),
+  ["software-development.delivery.authorize"]: (input) => authorizeDelivery(input),
+  [connect]: (input) => connectProject(input),
+  [createPullRequest]: (input) => pullRequestCreation(input),
+  [discover]: (_input, core) => discoverTests(core),
+};
 
 export function authorizeDelivery(input) {
   const { operation, source_revision, source_branch, destination, candidate_revision,

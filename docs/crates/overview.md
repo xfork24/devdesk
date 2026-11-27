@@ -19,7 +19,7 @@
 |---|---|
 | [web](../../web) | 独立发布的 Web Core、SDK 与领域页面组件 |
 | [plugins](../../plugins/README.md) | manifest 发布的源定义、正文、安装资源和默认选择 |
-| [crates/adapters/runtime](../../crates/adapters/runtime) | 适配器使用的工具 worker；当前 HTTP/MCP 实现在 tool-worker.mjs |
+| [crates/adapters/runtime](../../crates/adapters/runtime) | 适配器使用的 worker 资产：HTTP/MCP 等接入的 tool-worker.mjs，领域处理器引导模块 domain-worker.mjs |
 | [schemas](../../schemas/README.md) | 数据形状及协议合同 |
 | [sql](../../sql/README.md) | 当前数据库基线和结构 |
 | [permissions](../../permissions/README.md) | 实际权限后端资产 |

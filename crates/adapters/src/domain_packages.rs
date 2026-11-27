@@ -13,6 +13,7 @@ use uuid::Uuid;
 mod storage;
 mod worker;
 pub(crate) use storage::{externally_stored_projects, project_storage_root};
+pub use worker::limits as worker_limits;
 
 pub const MAX_ARCHIVE: usize = 2 * 1024 * 1024;
 pub const DOMAIN_STORAGE_UNAVAILABLE: &str = "domain_storage_unavailable";
@@ -1926,6 +1927,66 @@ mod tests {
             .err()
             .expect("a selection without its input is refused");
         assert_eq!(error.code, "invalid_domain_package");
+    }
+
+    #[test]
+    fn a_handler_refusal_reaches_the_caller_with_its_code() {
+        let worker = |error: Value| {
+            worker::answer(
+                json!({"jsonrpc":"2.0","id":"1","error":error}),
+                "1",
+                Some("shop.order.validate"),
+            )
+        };
+        let refusal = worker(json!({"code":-32000,"message":"订单结构不合法",
+            "data":{"code":"order_invalid","refused":true}}))
+        .unwrap_err();
+        assert_eq!(refusal.code, "domain_handler_rejected");
+        assert_eq!(refusal.message, "订单结构不合法");
+        assert_eq!(
+            refusal.context[0].details,
+            json!({"handler":"shop.order.validate","handler_code":"order_invalid"})
+        );
+        // A handler that fails without a code of its own is still the handler's answer.
+        for data in [
+            json!({"code":"handler_failed","refused":true}),
+            json!({"refused":true}),
+            json!({"code":"Not Snake","refused":true}),
+        ] {
+            let failed = worker(json!({"code":-32000,"message":"boom","data":data})).unwrap_err();
+            assert_eq!(failed.code, "domain_handler_rejected", "{data}");
+            assert_eq!(
+                failed.context[0].details["handler_code"], "handler_failed",
+                "{data}"
+            );
+        }
+        // The entry, the bootstrap and the transport are the kernel's to report.
+        let broken = worker(json!({"code":-32000,"message":"the entry has no handler x",
+            "data":{"code":"worker_failed"}}))
+        .unwrap_err();
+        assert_eq!(broken.code, "domain_worker_failed");
+        assert!(broken.message.contains("the entry has no handler x"));
+        assert!(
+            worker::answer(json!({"jsonrpc":"2.0","id":"2","result":{}}), "1", None)
+                .unwrap_err()
+                .code
+                == "domain_worker_failed"
+        );
+        assert!(
+            worker::answer(json!({"jsonrpc":"2.0","id":"1"}), "1", None)
+                .unwrap_err()
+                .code
+                == "domain_worker_failed"
+        );
+        assert_eq!(
+            worker::answer(
+                json!({"jsonrpc":"2.0","id":"1","result":{"ok":true}}),
+                "1",
+                None
+            )
+            .unwrap(),
+            json!({"ok":true})
+        );
     }
 
     #[test]

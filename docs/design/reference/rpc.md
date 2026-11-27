@@ -25,7 +25,7 @@
 | `domain.activate`、`domain.deactivate`、`domain.uninstall` | 提交 `digest` 和原 `epoch`。激活核对已安装 ZIP，打开可用的项目。切换和停用检查在途工作流及待核对的仓库操作。卸载仅在该领域有工作流正在执行时返回 `domain_busy` |
 | `query.domain.installed` | 列出安装的版本和摘要 |
 | `query.domain.contribution` | 提交当前 `epoch`、贡献 ID 和 `input`，返回公开投影 |
-| `query.domain.invoke` | 提交当前 `epoch`、声明的 `handler` 和 `input`。返回领域只读运行端的结果。处理器使用内核输入 `domain.entities` 时还需 `project_id`，内核从该项目的库读取对象 |
+| `query.domain.invoke` | 提交当前 `epoch`、声明的 `handler` 和 `input`。返回领域只读运行端的结果。处理器使用内核输入 `domain.entities` 时还需 `project_id`，内核从该项目的库读取对象。处理器抛出的错误以 `domain_handler_rejected` 返回，带处理器的代码与信息；worker 本身失败时为 `domain_worker_failed` |
 | `domain.project.create` | 提交 `epoch`、`title` 和 `command_id` 创建项目。设置 `reuse_connection:true` 并提供 `connection` 时，优先复用同一领域 ID 下同仓库、同主分支的已有项目 |
 | `domain.project.remove` | 提交 `epoch`、`project_id` 和 `command_id`，从工作台列表移除 GitHub 项目，保留原项目存储。用 `domain.project.create` 和 `reuse_connection:true` 打开同一仓库及主分支可恢复 |
 | `query.domain.storage` | 按 `epoch` 读取领域新项目数据目录、可用状态 `available`、配置版本和仍有项目数据库的可用目录 |

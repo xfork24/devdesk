@@ -6,6 +6,7 @@ import http.cookiejar
 import json
 from pathlib import Path
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -92,6 +93,12 @@ def run():
             assert groups["engineering.tests/1"]["hooks"] == ["test_discovery"]
             assert {"workflow.start", "tests.run"} <= set(ready["platform_handlers"])
             assert ready["core_inputs"] == ["domain.entities"]
+            # What a handler can rely on when it runs.
+            worker = ready["worker"]
+            assert worker["api"] == 2 and worker["runtime"] == "node-24"
+            assert re.fullmatch(r"sha256:[0-9a-f]{64}", worker["image"]), worker
+            assert (worker["timeout_seconds"], worker["memory_mb"], worker["cpus"], worker["pids"]) == (15, 128, 1, 48)
+            assert worker["network"] == "none" and worker["filesystem"] == "read-only"
             assert "query.domain.active" in ready["rpc"]
             stale = command(initial)
             assert request("/shutdown", stale)[1]["code"] == "revision_conflict"

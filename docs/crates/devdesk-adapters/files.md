@@ -11,6 +11,7 @@
 | [Cargo.toml](../../../crates/adapters/Cargo.toml) | Cargo.toml |
 | [build.rs](../../../crates/adapters/build.rs) | [适配器工厂与配置装载](factory-and-configuration.md) |
 | [examples/export_runtime_recipes.rs](../../../crates/adapters/examples/export_runtime_recipes.rs) | Export current factory recipes for native acceptance without duplicating the compiler. |
+| [runtime/domain-worker.mjs](../../../crates/adapters/runtime/domain-worker.mjs) | 领域处理器的引导模块：加载包的入口模块、按名称调用处理器、把处理器的拒绝交回 Host，见 [适配器概览](overview.md) |
 | [runtime/tool-worker.mjs](../../../crates/adapters/runtime/tool-worker.mjs) | [HTTP、MCP、OAuth 与 Skill 接入](external-integrations.md) |
 | [src/catalog.rs](../../../crates/adapters/src/catalog.rs) | [适配器工厂与配置装载](factory-and-configuration.md) |
 | [src/codex_auth.rs](../../../crates/adapters/src/codex_auth.rs) | [凭据与权限后端](credentials-and-permissions.md) |
@@ -28,7 +29,7 @@
 | [src/docker.rs](../../../crates/adapters/src/docker.rs) | [Harness 协议与 Docker 容器](harness-and-protocols.md) |
 | [src/domain_entity_page.rs](../../../crates/adapters/src/domain_entity_page.rs) | One page of a project's domain entities with the workflow state of each owner. Rows are filtered and ordered in SQL; the kernel decodes what it reads. |
 | [src/domain_packages/storage.rs](../../../crates/adapters/src/domain_packages/storage.rs) | Optional external project storage. A project's root is fixed when it is bound. |
-| [src/domain_packages/worker.rs](../../../crates/adapters/src/domain_packages/worker.rs) | Bounded read-only domain process transport for the first extension slice. |
+| [src/domain_packages/worker.rs](../../../crates/adapters/src/domain_packages/worker.rs) | 领域处理器的 Docker 沙箱与 JSON-RPC 传输：挂载引导模块与包入口，把 worker 的应答映射为结果、`domain_handler_rejected` 或 `domain_worker_failed`，并向能力目录提供运行限制 |
 | [src/domain_packages.rs](../../../crates/adapters/src/domain_packages.rs) | Installed domain bundles and the active generation, scoped to one dataset. |
 | [src/execution_read.rs](../../../crates/adapters/src/execution_read.rs) | Bounded execution-page facts, read from one committed snapshot. |
 | [src/experience.rs](../../../crates/adapters/src/experience.rs) | Read-only, AgentID-scoped projection over authoritative project stores. |

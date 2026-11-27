@@ -82,6 +82,7 @@
 | N-6（第一部分） | 内核输入改为能力目录中的名称：`git_head`、`git_snapshot` 更名为 `engineering.git.head`、`engineering.git.snapshot`，名称带着提供它的扩展组。Schema 不再枚举取值；处理器声明了本 Host 没有的内核输入时，按名称报 `handler_unsupported`。`/capabilities` 的 `core_inputs` 只列每个包都能用的内核输入，`extensions` 的每一项改为带 `handlers`、`core_inputs`、`hooks` 的对象，与 SDK 合同第 4 节一致 |
 | N-3 | 新增 `query.domain.entities`：按对象类型分页列出项目的对象，每页最多 100 个，`after` 是上一页最后一个对象的 ID，顺序按存储键稳定，不代表时间先后。类型须由活动包声明。每条记录是 `query.domain.entity` 返回的对象加上 `workflow`：`active` 表示归属对象有在途的根流程，`last` 是最近一次启动的根流程（`id`、`status`、`workflow_ref`） |
 | N-6（第二部分） | 新增内核输入 `domain.entities`。处理器用 `entities: {types, max_items}` 声明要读取的类型和数量上限，类型须由本包声明，不需要任何扩展组。内核在调用前从处理器所在项目的库读取对象，返回 `{entities, truncated}`；超过数量上限或总大小约 512 KiB 时停止，并说明有对象没有给出。三条调用路径都接通：RPC `query.domain.invoke` 需带 `project_id`，缺失时返回 `invalid_params`；工作流的工具步骤经内核的 `DomainReader` 读取，Host 的项目读取器持有该项目的库，调用方不必指定项目；钩子同理。能力目录的 `core_inputs` 列出它 |
+| N-5 | 包的运行入口是纯模块，只导出处理器表 `handlers`，不再读写标准输入输出。容器里运行的是内核的引导模块（`crates/adapters/runtime/domain-worker.mjs`，编入 Host），它读取请求、加载入口、按名称调用处理器并写回结果，激活时的握手也由它应答。处理器拒绝或失败时抛出 Error：带 `code` 的错误连同信息由 Host 以 `domain_handler_rejected` 返回调用方，RPC 错误的 `data.handler_code` 与 `data.handler` 是处理器的代码与名称；没有代码的记为 `handler_failed`。入口、引导模块与传输的问题记为 `domain_worker_failed`，信息来自 worker。软件开发包与夹具的入口改为纯模块，软件开发包的五处拒绝带了代码。`GET /capabilities` 新增 `worker`：协议版本 2、镜像摘要、`node-24`、15 秒、128 MiB、1 CPU、48 个进程、无网络、只读文件系统，取值与沙箱参数同源 |
 | W-5 | 呈现目标用 `sdk`（Web SDK 主版本）取代 `api`，新增 `kit`（组件套件对应的 Web Core 版本）与绑定的 `home`（进入领域时打开的首页，取代“第一个绑定”）。Web Core 只加载 `sdk` 与自身一致、`kit` 与自身版本一致的目标，其余目标提示“领域包与 Web Core 版本不兼容”。内核只校验 `sdk` 不小于 1、每个目标最多一个首页；SDK 版本是否可用由 Web Core 判断 |
 
 ### 初步验收
@@ -118,6 +119,14 @@
 | | `cargo clippy --workspace --all-targets --locked -- -D warnings`、`./scripts/check/check-style.sh` | 无警告；rustfmt、ESLint、TypeScript、Prettier、Web 构建通过 |
 | | `python3 tests/entrypoints/lifecycle_contract.py target/fixtures/debug/devdesk-host` 及四组夹具合同 | 通过。能力目录的 `core_inputs` 为 `["domain.entities"]` |
 | | `node tests/entrypoints/domain_packages.mjs target/debug/devdesk-host web/dist/core <带页面的格式 2 软件开发包>` | 退出码 0。新增三段：经 RPC 分页读取文稿与校样，带在途与已完成工作流的摘要，未声明的类型与非法参数被拒；经 `query.domain.invoke` 带 `project_id` 调用读取对象的处理器，不带项目时被拒；工作流的一个工具步骤经内核读到所在项目的两个文稿，结果成为校样对象 |
+| N-5 | `node --test tests/entrypoints/domain_worker.mjs` | 6 通过。引导模块在本机 Node 上运行：握手按序列出处理器、处理器收到输入与内核输入、带代码与不带代码的拒绝、入口与引导模块的失败、不能序列化的结果、不是 JSON 的请求 |
+| | `cargo test -p devdesk-adapters --locked --lib domain_packages::tests` | 13 通过。新增一项：worker 应答映射为结果、`domain_handler_rejected`（带处理器的代码）或 `domain_worker_failed` |
+| | `cargo test -p devdesk-host --locked --bin devdesk-host an_error_keeps` | 1 通过。RPC 错误保留内核错误码，领域处理器的拒绝另带处理器名与代码 |
+| | `cargo test -p devdesk-adapters --locked --features test-fixtures,fixture-catalog --test project_test_configuration -- --ignored` | 2 通过。真实 Docker worker 经引导模块执行软件开发包的处理器 |
+| | `cargo test --workspace --locked` | 60 个套件，799 通过，0 失败，39 忽略 |
+| | `cargo clippy --workspace --all-targets --locked -- -D warnings`、`./scripts/check/check-style.sh` | 无警告；rustfmt、ESLint、TypeScript、Prettier、Web 构建通过 |
+| | `python3 tests/entrypoints/lifecycle_contract.py target/fixtures/debug/devdesk-host` 及四组夹具合同 | 通过。新增能力目录 `worker` 字段的断言 |
+| | `node tests/entrypoints/domain_packages.mjs target/debug/devdesk-host web/dist/core <带页面的格式 2 软件开发包>` | 退出码 0。全部处理器调用经引导模块；新增一段：处理器拒绝后，RPC 错误带着它的代码 `title_rejected` 与信息 |
 | W-5 | `cargo test -p devdesk-adapters --locked --lib domain_packages::tests` | 10 通过。新增一项：一个目标标记两个首页后被拒绝 |
 | | `cargo test --workspace --locked` | 60 个套件，794 通过，0 失败，39 忽略 |
 | | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 无警告 |
@@ -144,6 +153,9 @@
 - **在途判定只有一份定义。** 对象列举与 `workflow_active_owner` 虚拟资源使用同一段 SQL（`active_root_workflows`）；“最近一次”按 `rowid`，即启动顺序。
 - **两个默认忽略的 Docker 用例早已失效。** `project_test_configuration.rs` 里显式启用的两个用例从 K-5 起失败：测试替身没有实现 `has_hook`，包装的 Git 没有转发 `registered_revision`。其中一处断言更早（main 的 `6184df1d`）就因 `domain_project_busy` 增加 `active_when_removed` 字段而过期。已修复，并把断言改为只看 `active`。这类用例不在任何门禁里，纳入测试改造。
 - **内核输入的名称形如 RPC 方法。** `domain.entities` 会被 RPC 登记检查当作未登记的方法字面量，需要列入 `non_methods`。
+- **处理器的代码原本在 RPC 边界丢失。** Host 的 RPC 错误只带内核的错误码与信息。现在 `domain_handler_rejected` 的 `data` 另带 `handler` 与 `handler_code`，其余错误的形状不变。
+- **不能序列化的结果算处理器的失败。** 结果来自处理器，记为 `handler_failed`；引导模块与传输的问题才是 `domain_worker_failed`。
+- **引导模块的测试进了两处门禁。** `check.sh` 的 Node 单元测试列表与 `rust.yml` 的 Rust 作业都会运行它，它不需要 Docker。
 - **报告器的扩展名规则不再由清单校验负责。** 清单只做通用的有界 UTF-8 文件检查；落地时的文件名一直由测试运行器自己决定。
 - **读取项目的钩子与资源时用 `try_read`。** 与 `configuration_scope` 的做法一致：项目 RPC 可能已经持有一份读锁，切换领域时直接返回 `domain_busy`，不等待嵌套的锁。
 - **单独运行适配器的集成测试需要 `--features test-fixtures,fixture-catalog`。** 只开 `test-fixtures` 时出厂目录不含角色与 Agent，依赖默认绑定的用例会失败。`cargo test --workspace` 通过 Host 的开发依赖带上了这两个 feature，所以完整检查不受影响。这正是 T-6 要消除的耦合。

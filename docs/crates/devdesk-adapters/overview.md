@@ -14,6 +14,8 @@ adapters 把 core 的能力请求转换成数据库、文件、进程或远端�
 | [凭据与权限](credentials-and-permissions.md) | Keychain/Secret Service、权限编译、平台资产 |
 | [外部接入](external-integrations.md) | NativeTools、HTTP/MCP worker、OAuth 和 Skill 导入 |
 
+领域包的处理器在沙箱里运行的是内核的引导模块 [runtime/domain-worker.mjs](../../../crates/adapters/runtime/domain-worker.mjs)。它加载包的入口模块、按名称调用处理器、把处理器的拒绝交回 Host，并回答激活时的握手。协议见[领域包设计](../../design/domain-packages.md#运行端与前端)。
+
 `src/tests.rs` 是生产测试执行器 CommandTests，不能因为文件名而把它当作单元测试文件。跨包行为回归主要在本包 tests 目录，其中许多测试同时覆盖 core。
 
 入口：[lib.rs](../../../crates/adapters/src/lib.rs)。完整文件表：[files.md](files.md)。验证选择见[测试指南](../testing-and-extension.md)。
