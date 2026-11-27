@@ -15,6 +15,20 @@ pub struct Hook {
     pub core: Option<&'static str>,
 }
 
+/// Where the value of a provided workflow input comes from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProvidedSource {
+    /// The test configuration selected for the project the workflow runs in.
+    ProjectTestConfiguration,
+}
+
+/// A workflow input an extension group fills.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProvidedInput {
+    pub name: &'static str,
+    pub source: ProvidedSource,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExtensionGroup {
     pub id: &'static str,
@@ -26,6 +40,8 @@ pub struct ExtensionGroup {
     pub hooks: &'static [Hook],
     /// Named file collections a package may publish for this group.
     pub resources: &'static [&'static str],
+    /// Workflow inputs a workflow may declare this group the provider of.
+    pub provided_inputs: &'static [ProvidedInput],
 }
 
 impl ExtensionGroup {
@@ -35,6 +51,13 @@ impl ExtensionGroup {
 
     pub fn hook(&self, name: &str) -> Option<&'static Hook> {
         self.hooks.iter().find(|hook| hook.name == name)
+    }
+
+    pub fn provided(&self, name: &str) -> Option<ProvidedSource> {
+        self.provided_inputs
+            .iter()
+            .find(|input| input.name == name)
+            .map(|input| input.source)
     }
 }
 
@@ -66,6 +89,7 @@ pub const EXTENSION_GROUPS: &[ExtensionGroup] = &[
             },
         ],
         resources: &[],
+        provided_inputs: &[],
     },
     ExtensionGroup {
         id: "engineering.tests",
@@ -77,6 +101,10 @@ pub const EXTENSION_GROUPS: &[ExtensionGroup] = &[
             core: Some("engineering.git.snapshot"),
         }],
         resources: &["reporters"],
+        provided_inputs: &[ProvidedInput {
+            name: "test_configuration",
+            source: ProvidedSource::ProjectTestConfiguration,
+        }],
     },
 ];
 
@@ -100,6 +128,11 @@ pub fn group_of_handler(handler: &str) -> Option<&'static ExtensionGroup> {
     EXTENSION_GROUPS
         .iter()
         .find(|group| group.handlers.contains(&handler))
+}
+
+/// How the group fills a workflow input it is declared to provide.
+pub fn input_provider(group: &str, input: &str) -> Option<ProvidedSource> {
+    extension_group(group)?.provided(input)
 }
 
 /// The group a kernel input belongs to; `None` for a kernel-wide input.

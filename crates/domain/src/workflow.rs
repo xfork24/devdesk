@@ -203,6 +203,9 @@ pub struct PortDefinition {
     pub required: bool,
     #[serde(default)]
     pub content_checks: bool,
+    /// The extension group that fills this workflow input when a workflow starts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provided_by: Option<Id>,
 }
 fn required() -> bool {
     true

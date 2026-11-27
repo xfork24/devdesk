@@ -3934,6 +3934,10 @@
         },
         "content_checks": {
           "type": "boolean"
+        },
+        "provided_by": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,139}/[1-9][0-9]{0,9}$"
         }
       },
       "required": [

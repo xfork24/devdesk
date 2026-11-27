@@ -31,6 +31,8 @@ pub struct ExtensionCapabilities {
     /// Kernel inputs only such a package may declare for its handlers.
     pub core_inputs: Vec<&'static str>,
     pub hooks: Vec<&'static str>,
+    /// Workflow inputs a workflow may declare this group the provider of.
+    pub provided_inputs: Vec<&'static str>,
 }
 
 impl ExtensionCapabilities {
@@ -69,6 +71,11 @@ impl Capabilities {
                     handlers: group.handlers.to_vec(),
                     core_inputs: group.core_inputs.to_vec(),
                     hooks: group.hooks.iter().map(|hook| hook.name).collect(),
+                    provided_inputs: group
+                        .provided_inputs
+                        .iter()
+                        .map(|input| input.name)
+                        .collect(),
                 })
                 .collect(),
             rpc: rpc_contracts::inventory()
@@ -243,6 +250,13 @@ mod tests {
         assert!(git.handlers.contains(&"workspace.snapshot"));
         assert!(git.core_inputs.contains(&"engineering.git.snapshot"));
         assert!(git.hooks.contains(&"pull_request_creation"));
+        assert!(git.provided_inputs.is_empty());
+        let tests = capabilities
+            .extensions
+            .iter()
+            .find(|group| group.id == "engineering.tests")
+            .unwrap();
+        assert_eq!(tests.provided_inputs, ["test_configuration"]);
         let too_new = Requires {
             host: Some("999.0.0".into()),
             ..Default::default()

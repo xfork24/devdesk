@@ -84,6 +84,7 @@
 | N-6（第二部分） | 新增内核输入 `domain.entities`。处理器用 `entities: {types, max_items}` 声明要读取的类型和数量上限，类型须由本包声明，不需要任何扩展组。内核在调用前从处理器所在项目的库读取对象，返回 `{entities, truncated}`；超过数量上限或总大小约 512 KiB 时停止，并说明有对象没有给出。三条调用路径都接通：RPC `query.domain.invoke` 需带 `project_id`，缺失时返回 `invalid_params`；工作流的工具步骤经内核的 `DomainReader` 读取，Host 的项目读取器持有该项目的库，调用方不必指定项目；钩子同理。能力目录的 `core_inputs` 列出它 |
 | N-5 | 包的运行入口是纯模块，只导出处理器表 `handlers`，不再读写标准输入输出。容器里运行的是内核的引导模块（`crates/adapters/runtime/domain-worker.mjs`，编入 Host），它读取请求、加载入口、按名称调用处理器并写回结果，激活时的握手也由它应答。处理器拒绝或失败时抛出 Error：带 `code` 的错误连同信息由 Host 以 `domain_handler_rejected` 返回调用方，RPC 错误的 `data.handler_code` 与 `data.handler` 是处理器的代码与名称；没有代码的记为 `handler_failed`。入口、引导模块与传输的问题记为 `domain_worker_failed`，信息来自 worker。软件开发包与夹具的入口改为纯模块，软件开发包的五处拒绝带了代码。`GET /capabilities` 新增 `worker`：协议版本 2、镜像摘要、`node-24`、15 秒、128 MiB、1 CPU、48 个进程、无网络、只读文件系统，取值与沙箱参数同源 |
 | N-1 | 工具定义新增 `implementation: "domain"`：名称在包的命名空间下，`handler` 指向包内注册的处理器，参数就是处理器的输入。它既可以作为工作流的工具执行器步骤，也可以被 Capability 采用后由 Agent 直接调用：调用名与平台工具同一规则（`devdesk_` 加下划线），经平台只读准入（需要工作流执行归属），由领域处理器在沙箱里执行。它在 Agent 的冻结工具锁里单独成类（`domain_tools`），Harness 像告知内核工具一样把它告知 provider。安装时核对领域工具的命名空间与处理器，并拒绝发布了本 Host 没有的平台处理器的工具。`domain.read` 及其平台处理器、RPC 登记一并移除，平台处理器为 54 个。软件开发包的 `detect-test-entry` 与夹具的工具改为领域工具 |
+| N-7 | 工作流的输入端口可以声明 `provided_by`，取值为扩展组。启动时内核只为声明了提供者的输入自动取值：提供者必须是该扩展组登记提供的输入（扩展组登记表新增 `provided_inputs`，能力目录里每个扩展组也列出它），否则发布工作流时返回 `invalid_configuration`；有活动领域包时，项目所属的包必须声明依赖该组，否则启动时返回 `extension_unavailable`；没有活动领域包时工作流来自内核自己的目录，提供者按构造可用。调用方不能覆盖内核提供的输入。按名字自动填充 `test_configuration` 的约定移除，目前唯一的提供者是 `engineering.tests/1` 的 `test_configuration`。软件开发包的两个工作流与单体测试模式的冻结工程目录都声明了提供者 |
 | W-5 | 呈现目标用 `sdk`（Web SDK 主版本）取代 `api`，新增 `kit`（组件套件对应的 Web Core 版本）与绑定的 `home`（进入领域时打开的首页，取代“第一个绑定”）。Web Core 只加载 `sdk` 与自身一致、`kit` 与自身版本一致的目标，其余目标提示“领域包与 Web Core 版本不兼容”。内核只校验 `sdk` 不小于 1、每个目标最多一个首页；SDK 版本是否可用由 Web Core 判断 |
 
 ### 初步验收
@@ -134,6 +135,13 @@
 | | `cargo clippy --workspace --all-targets --locked -- -D warnings`、`./scripts/check/check-style.sh` | 无警告；rustfmt、ESLint、TypeScript、Prettier、Web 构建通过 |
 | | `python3 tests/entrypoints/lifecycle_contract.py target/fixtures/debug/devdesk-host` 及四组夹具合同、`project_test_configuration -- --ignored` | 通过。软件开发包的测试入口识别经领域工具步骤在真实 Docker worker 上执行 |
 | | `node tests/entrypoints/domain_packages.mjs target/debug/devdesk-host web/dist/core <带页面的格式 2 软件开发包>` | 退出码 0。夹具的三个工具步骤都是领域工具步骤 |
+| N-7 | `cargo test -p devdesk-adapters --locked --features test-fixtures,fixture-catalog --test configured_workflows -- a_workflow_input_is_filled` | 1 通过。未声明提供者的同名输入不再被填充；声明了不提供该输入的组时发布被拒；包没有依赖该组时启动返回 `extension_unavailable`；依赖之后，以及没有活动领域包时，都按项目的测试配置填充 |
+| | 同一套件中依赖这一约定的 `actual_git_candidate_is_a_test_grant_only_in_its_original_root`，以及使用冻结工程目录的 `actual_defaults_compile_the_streamlined_suite_and_freeze_project_tests` 等 4 个用例 | 5 通过 |
+| | `cargo test -p devdesk-core --locked --lib domain_protocol` | 2 通过。能力目录里每个扩展组带 `provided_inputs` |
+| | `cargo test --workspace --locked` | 60 个套件，803 通过，0 失败，39 忽略 |
+| | `cargo clippy --workspace --all-targets --locked -- -D warnings`、`./scripts/check/check-style.sh` | 无警告；rustfmt、ESLint、TypeScript、Prettier、Web 构建通过 |
+| | `python3 tests/entrypoints/lifecycle_contract.py target/fixtures/debug/devdesk-host` 及四组夹具合同、`project_test_configuration -- --ignored` | 通过 |
+| | `node tests/entrypoints/domain_packages.mjs target/debug/devdesk-host web/dist/core <带页面的格式 2 软件开发包>` | 退出码 0。软件开发包带着两个声明了提供者的工作流安装并运行 |
 | W-5 | `cargo test -p devdesk-adapters --locked --lib domain_packages::tests` | 10 通过。新增一项：一个目标标记两个首页后被拒绝 |
 | | `cargo test --workspace --locked` | 60 个套件，794 通过，0 失败，39 忽略 |
 | | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 无警告 |
@@ -166,6 +174,8 @@
 - **夹具的 `requires.handlers` 自 K-3 起就是错的。** 夹具构建器按错误的键格式筛选采用的内核工具，结果一直只有 `domain.read`。现在从源记录里的 `tool_ref`、`tools`、`tool_refs` 推导，与软件开发包的构建脚本同一做法；文稿夹具声明了它采用的 5 个 `workflow` 处理器。
 - **“由内核执行的工具”原先散落在多处。** 发布、Capability 组合、冻结锁、工作流编译的采用工具与工具步骤、交付生产者、平台请求的准备与准入、动态工具，都以 `implementation == "platform"` 判断。现在由 `ToolDefinition::kernel_executed` 与同一模式 `platform | domain` 表达；只有按处理器名分派的地方才区分两者。
 - **领域工具目前只在工作流执行归属下可被 Agent 调用。** Controller 授权路径仍只认经理与编排的工具清单。宿主 MCP 桥与 pi 隧道的工具名注册表要把 `domain_tools` 作为单独一类，按 0.5 节“谁后落地，谁负责补齐”。
+- **“扩展已启用”需要一条明确的规则。** 没有活动领域包时，工作流只能来自内核自己的目录，它声明的提供者按构造可用；只有在有活动领域包时才核对包是否依赖该组。单体测试模式（冻结工程目录）依赖这一条。P2 移除单体测试模式后，这条规则只剩“空领域”一种情形。
+- **冻结工程目录是单体测试模式的数据。** `tests/fixtures/configuration/engineering-catalog.json` 里两个工作流的 `test_configuration` 输入补了 `provided_by`，随测试改造一并处理。
 - **报告器的扩展名规则不再由清单校验负责。** 清单只做通用的有界 UTF-8 文件检查；落地时的文件名一直由测试运行器自己决定。
 - **读取项目的钩子与资源时用 `try_read`。** 与 `configuration_scope` 的做法一致：项目 RPC 可能已经持有一份读锁，切换领域时直接返回 `domain_busy`，不等待嵌套的锁。
 - **单独运行适配器的集成测试需要 `--features test-fixtures,fixture-catalog`。** 只开 `test-fixtures` 时出厂目录不含角色与 Agent，依赖默认绑定的用例会失败。`cargo test --workspace` 通过 Host 的开发依赖带上了这两个 feature，所以完整检查不受影响。这正是 T-6 要消除的耦合。

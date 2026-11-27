@@ -72,6 +72,66 @@ impl Engine {
         self.start_workflow(c, &fingerprint, &context, Some(binding))
     }
 
+    /// Fills the workflow inputs that name an extension group as their provider. The group
+    /// has to provide the input, and the package of the project has to require the group.
+    pub(crate) fn fill_provided_inputs(
+        &self,
+        project: &str,
+        plan: &ConfiguredWorkflowPlan,
+        configuration: &ConfigurationRecord,
+        inputs: &mut BTreeMap<String, Value>,
+    ) -> Result<()> {
+        for (name, port) in &plan.document.inputs {
+            let Some(group) = &port.provided_by else {
+                continue;
+            };
+            let source = extensions::input_provider(group, name).ok_or_else(|| {
+                err(
+                    "invalid_configuration",
+                    format!("扩展组 {group} 不提供工作流输入 {name}"),
+                )
+            })?;
+            // Without an active package the workflow comes from the kernel's own catalog,
+            // so a provider it names is there by construction.
+            let enabled = match self.domain_reader.as_ref() {
+                None => true,
+                Some(domain) => domain.extension_enabled(project, group)?,
+            };
+            if !enabled {
+                return Err(err(
+                    "extension_unavailable",
+                    format!("工作流输入 {name} 的提供者 {group} 没有启用"),
+                ));
+            }
+            let value = match source {
+                extensions::ProvidedSource::ProjectTestConfiguration => {
+                    let tests = configuration
+                        .data
+                        .get("test_configuration")
+                        .filter(|v| !v.is_null())
+                        .cloned()
+                        .map_or_else(
+                            || {
+                                self.discover_project_tests()
+                                    .map(|found| json!(found.configuration))
+                            },
+                            Ok,
+                        )?;
+                    serde_json::from_value::<ProjectTestConfiguration>(tests.clone())
+                        .map_err(|e| err("invalid_params", e.to_string()))?
+                        .validate()?;
+                    tests
+                }
+            };
+            require(
+                inputs.get(name).is_none_or(|given| given == &value),
+                "不能覆盖内核提供的工作流输入",
+            )?;
+            inputs.insert(name.clone(), value);
+        }
+        Ok(())
+    }
+
     fn start_workflow(
         &self,
         c: &Command,
@@ -241,27 +301,7 @@ impl Engine {
             )?;
             inputs.insert(binding.input.clone(), entity["data"].clone());
         }
-        if plan.document.inputs.contains_key("test_configuration") {
-            let tests = configuration
-                .data
-                .get("test_configuration")
-                .filter(|v| !v.is_null())
-                .cloned();
-            let tests = match tests {
-                Some(tests) => tests,
-                None => {
-                    json!(self.discover_project_tests()?.configuration)
-                }
-            };
-            serde_json::from_value::<ProjectTestConfiguration>(tests.clone())
-                .map_err(|e| err("invalid_params", e.to_string()))?
-                .validate()?;
-            require(
-                inputs.get("test_configuration").is_none_or(|v| v == &tests),
-                "不能覆盖冻结项目测试配置",
-            )?;
-            inputs.insert("test_configuration".into(), tests.clone());
-        }
+        self.fill_provided_inputs(&owner.project, &plan, &configuration, &mut inputs)?;
         self.validate_workflow_inputs(&catalog, &plan, &inputs)?;
         let instance_id =
             stable_object_id(self.store.as_ref(), &c.command_id, "workflow-instance")?;

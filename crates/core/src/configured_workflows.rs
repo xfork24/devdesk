@@ -924,6 +924,15 @@ pub fn compile_workflow_sources(
                 let output = reference(state, &port.delivery_ref, "delivery_type", scope)?;
                 let definition: DeliveryTypeDefinition = output.decode()?;
                 state.validate_delivery_specs(&output.refs, &definition, scope)?;
+                if !is_output
+                    && let Some(group) = &port.provided_by
+                    && extensions::input_provider(group, name).is_none()
+                {
+                    return Err(err(
+                        "invalid_configuration",
+                        format!("扩展组 {group} 不提供工作流输入 {name}"),
+                    ));
+                }
                 if is_output {
                     match (&definition.producer, &step.executor) {
                         (Some(DeliveryProducer::Agent), StepExecutor::Agent { .. })

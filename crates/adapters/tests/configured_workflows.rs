@@ -2686,6 +2686,18 @@ fn entities_are_listed_by_type_with_the_workflow_of_their_owner() {
     );
 }
 
+/// Says the project's package requires every extension group it is asked about.
+struct EnabledReader;
+
+impl ports::DomainReader for EnabledReader {
+    fn read(&self, _project: &str, _handler: &str, _input: Value) -> Result<Value> {
+        Err(err("unsupported", "this fixture has no handler"))
+    }
+    fn extension_enabled(&self, _project: &str, _group: &str) -> Result<bool> {
+        Ok(true)
+    }
+}
+
 /// Answers each handler with its input, and remembers what the kernel asked for.
 #[derive(Default)]
 struct EchoReader {
@@ -2825,6 +2837,90 @@ fn a_domain_tool_runs_its_handler_from_a_step_and_from_an_agent() {
     assert_eq!(
         reader.calls.lock().unwrap()[1].1,
         json!({"text":"from an agent"})
+    );
+}
+
+#[test]
+fn a_workflow_input_is_filled_only_when_it_declares_its_provider() {
+    // The name of an input says nothing to the kernel; the input names the extension
+    // group that fills it, and that group has to be enabled for the project.
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = engine(dir.path());
+    let project = command(&e, "project.create", None, json!({"title": "输入的提供者"})).unwrap();
+    let document = |provided_by: Option<&str>| {
+        let mut port = json!({"delivery_ref": "builtin-delivery-project-test-configuration:2"});
+        if let Some(group) = provided_by {
+            port["provided_by"] = json!(group);
+        }
+        json!({"schema_version":6,"stages":[{"key":"work","name":"等待"}],
+            "inputs": {"test_configuration": port},
+            "steps":[{"key":"gate","name":"等待确认","stage":"work",
+                "executor":{"type":"control"},"confirmation":"human"}]})
+    };
+    let start = |e: &Engine, workflow: &Value| {
+        command(
+            e,
+            "workflow.start",
+            project["id"].as_str(),
+            json!({"workflow_ref":workflow["id"],"role_agent_bindings":{}}),
+        )
+    };
+
+    // Without a declared provider the input is an ordinary one that nobody filled.
+    let plain = publish(&e, document(None));
+    let error = start(&e, &plain).unwrap_err();
+    assert!(
+        error.message.contains("缺少流程输入 test_configuration"),
+        "{error}"
+    );
+
+    // A group that does not provide the input is refused when the workflow is published.
+    let draft = command(
+        &e,
+        "workflow.create",
+        None,
+        json!({"name": "错误的提供者", "document": document(Some("engineering.git/1"))}),
+    )
+    .unwrap();
+    let error = command(&e, "workflow.publish", draft["id"].as_str(), json!({})).unwrap_err();
+    assert!(
+        error
+            .message
+            .contains("engineering.git/1 不提供工作流输入 test_configuration"),
+        "{error}"
+    );
+
+    let declared = publish(&e, document(Some("engineering.tests/1")));
+    // A package that does not require the group leaves the provider disabled.
+    e.domain_reader = Some(Arc::new(EchoReader::default()));
+    let error = start(&e, &declared).unwrap_err();
+    assert_eq!(error.code, "extension_unavailable", "{error}");
+    assert!(error.message.contains("没有启用"), "{error}");
+
+    // Enabled: the kernel fills the input from the project's test configuration.
+    let discovered = json!(e.discover_project_tests().unwrap().configuration);
+    e.domain_reader = Some(Arc::new(EnabledReader));
+    let run = start(&e, &declared).unwrap();
+    assert_eq!(
+        instance(&e, &run["id"])["inputs"]["test_configuration"],
+        discovered
+    );
+    command(
+        &e,
+        "workflow.cancel",
+        run["id"].as_str(),
+        json!({"reason": "the next case starts on the same project"}),
+    )
+    .unwrap();
+    // The waiting step has to take the cancellation before the owner is free again.
+    drive(&e, 6);
+    // Without an active package the workflow is the kernel's own, so a provider it
+    // names is there by construction.
+    e.domain_reader = None;
+    let run = start(&e, &declared).unwrap();
+    assert_eq!(
+        instance(&e, &run["id"])["inputs"]["test_configuration"],
+        discovered
     );
 }
 
@@ -4477,6 +4573,8 @@ fn actual_git_candidate(
         })
         .unwrap();
     engine.git = adapter.clone();
+    // The workflow's test configuration input names engineering.tests/1 as its provider.
+    engine.domain_reader = Some(Arc::new(EnabledReader));
     std::fs::write(
         std::path::Path::new(&work.path).join("addition.txt"),
         "actual change\n",
@@ -4537,7 +4635,7 @@ fn actual_git_candidate(
         }
     }
     if regression.is_some() {
-        document["inputs"] = json!({"test_configuration":{"delivery_ref":"builtin-delivery-project-test-configuration:2"}});
+        document["inputs"] = json!({"test_configuration":{"delivery_ref":"builtin-delivery-project-test-configuration:2","provided_by":"engineering.tests/1"}});
         document["steps"].as_array_mut().unwrap().push(json!({"key":"project_regression","name":"项目回归","stage":"work","dependencies":["candidate"],"executor":{"type":"tool","tool_ref":"simplified-tool-project-tests:3","arguments":{"workspace":{"type":"source","source":{"step":"candidate","port":"candidate"}}}},"outputs":{"result":{"delivery_ref":"builtin-delivery-regression-test-receipt:2"}},"completion":{"op":"equals","source":{"step":"project_regression","port":"result","pointer":"/status"},"value":"succeeded"}}));
     }
     let workflow = publish(&engine, document);

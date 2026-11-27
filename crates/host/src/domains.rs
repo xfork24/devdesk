@@ -22,6 +22,10 @@ impl DomainReader for ProjectReader {
         self.packages.has_hook(project, group, hook)
     }
 
+    fn extension_enabled(&self, project: &str, group: &str) -> devdesk_domain::Result<bool> {
+        self.packages.extension_enabled(project, group)
+    }
+
     fn hook(
         &self,
         project: &str,

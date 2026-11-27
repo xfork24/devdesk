@@ -201,27 +201,7 @@ impl Engine {
         let mut inputs: BTreeMap<String, Value> =
             serde_json::from_value(selection["inputs"].clone())
                 .map_err(|e| err("invalid_params", e.to_string()))?;
-        if plan.document.inputs.contains_key("test_configuration") {
-            let tests = configuration
-                .data
-                .get("test_configuration")
-                .filter(|v| !v.is_null())
-                .cloned();
-            let tests = match tests {
-                Some(tests) => tests,
-                None => {
-                    json!(self.discover_project_tests()?.configuration)
-                }
-            };
-            serde_json::from_value::<ProjectTestConfiguration>(tests.clone())
-                .map_err(|e| err("invalid_params", e.to_string()))?
-                .validate()?;
-            require(
-                inputs.get("test_configuration").is_none_or(|v| v == &tests),
-                "不能覆盖冻结项目测试配置",
-            )?;
-            inputs.insert("test_configuration".into(), tests.clone());
-        }
+        self.fill_provided_inputs(&project, &plan, &configuration, &mut inputs)?;
         self.validate_workflow_inputs(&catalog, &plan, &inputs)?;
         let start = c.payload["start_workflow"] != false;
         let feature = Feature {

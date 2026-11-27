@@ -36,7 +36,8 @@
     ],
     "inputs": {
       "test_configuration": {
-        "delivery_ref": "software-development.delivery-project-test-configuration:2"
+        "delivery_ref": "software-development.delivery-project-test-configuration:2",
+        "provided_by": "engineering.tests/1"
       }
     },
     "steps": [

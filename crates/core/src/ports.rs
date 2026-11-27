@@ -274,6 +274,11 @@ pub trait DomainReader: Send + Sync {
         Ok(false)
     }
 
+    /// Whether the package of `project` declared that it requires the extension `group`.
+    fn extension_enabled(&self, _project: &str, _group: &str) -> Result<bool> {
+        Ok(false)
+    }
+
     /// Runs the handler bound to that hook; `None` when the package binds none.
     fn hook(
         &self,
