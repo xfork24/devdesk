@@ -385,6 +385,11 @@ impl NativeTools {
         tool: Option<&ExternalTool>,
         arguments: Value,
     ) -> Result<Value> {
+        if permissions.enforcement.asset_digests != permissions::asset_digests() {
+            return Err(
+                err("permission_asset_mismatch", "冻结工具权限资产已变化").technical_not_applied()
+            );
+        }
         require(
             image.starts_with("sha256:") && image.len() == 71,
             "Tool Executor 需要确切 Docker 镜像身份",
@@ -457,6 +462,7 @@ impl NativeTools {
             nested_sandbox: p.isolation.nested_sandbox,
             credential_env_file: None,
             profile_file: None,
+            bridge_file: None,
             runner_file: None,
             skill_directory: None,
             command_output_directory: None,

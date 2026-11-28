@@ -135,7 +135,8 @@
     "HarnessProvider": {
       "enum": [
         "codex",
-        "dsh"
+        "dsh",
+        "pi"
       ]
     },
     "SettingsUpdate": {
@@ -309,7 +310,10 @@
       ],
       "properties": {
         "provider": {
-          "const": "dsh"
+          "enum": [
+            "dsh",
+            "pi"
+          ]
         },
         "api_key": {
           "type": "string",
@@ -1387,6 +1391,7 @@
                 "enum": [
                   "codex",
                   "dsh",
+                  "pi",
                   "codex-auth"
                 ]
               },
@@ -1417,7 +1422,8 @@
         "provider": {
           "enum": [
             "codex",
-            "dsh"
+            "dsh",
+            "pi"
           ]
         }
       }
@@ -1435,7 +1441,8 @@
         "provider": {
           "enum": [
             "codex",
-            "dsh"
+            "dsh",
+            "pi"
           ]
         },
         "version": {
@@ -3768,7 +3775,8 @@
         "harness_provider": {
           "enum": [
             "codex",
-            "dsh"
+            "dsh",
+            "pi"
           ]
         },
         "runtime": {

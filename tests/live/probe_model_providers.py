@@ -77,7 +77,9 @@ def main():
                 home.parent.chmod(0o700)
                 shutil.copyfile(args.codex_auth_source, home / 'auth.json')
                 (home / 'auth.json').chmod(0o600)
-            assert len(c.rpc('query.model_providers')['providers']) == 5
+            providers = {(row['harness'], row['id']) for row in c.rpc('query.model_providers')['providers']}
+            assert {('codex', 'openai'), ('dsh', 'ollama'), ('pi', 'pi-ollama')} <= providers
+            assert c.rpc('credentials.status', {'model_provider': 'pi-ollama'})['auth_kind'] == 'none'
             assert c.rpc('credentials.status', {'model_provider': 'ollama'})['auth_kind'] == 'none'
             project = c.command('project.create', payload={'title': 'Isolated provider acceptance'})['id']
             c.open(project)

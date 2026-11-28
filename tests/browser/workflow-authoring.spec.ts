@@ -210,6 +210,7 @@ test("原生工具目录提供独立当前入口且不编辑 Schema", async ({ p
   await expect(list.locator("button strong")).toHaveText([
     "Codex Native Tools",
     "DeepSeek Native Tools",
+    "Pi Native Tools",
   ]);
   const selected = list.getByRole("button", { name: /Codex Native Tools/ });
   await expect(selected).toHaveAttribute("aria-pressed", "true");

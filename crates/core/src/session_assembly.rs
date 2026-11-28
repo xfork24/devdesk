@@ -428,7 +428,7 @@ impl Engine {
                     .map_err(|_| err("invalid_params", "无效 Agent 执行配置"))
             })
             .transpose()?;
-        let model_connection = if provider == HarnessProvider::Dsh {
+        let model_connection = if provider.traits().host_model_route {
             let a = agent_configuration
                 .as_ref()
                 .ok_or_else(|| err("invalid_configuration", "缺少 Agent 执行配置"))?;
@@ -448,7 +448,7 @@ impl Engine {
             resources.credential_reference(provider, model_connection.as_ref(), state)?;
         let model_profile_digest = model_connection
             .as_ref()
-            .map(|c| resources.model_profile_digest(c, &model))
+            .map(|c| resources.model_profile_digest(provider, c, &model))
             .transpose()?;
         let mut binding = RuntimeBinding {
             model_connection,

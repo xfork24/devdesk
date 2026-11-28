@@ -1245,6 +1245,7 @@ fn v2_binding_compiles_into_real_codex_and_dsh_file_and_network_boundaries() {
             nested_sandbox: true,
             credential_env_file,
             profile_file,
+            bridge_file: None,
             runner_file,
             skill_directory: None,
             command_output_directory: None,

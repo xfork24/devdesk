@@ -95,6 +95,9 @@ impl GlobalStore {
             HarnessProvider::Dsh => {
                 command.args(["-c", "exec dsh --profile sdk"]);
             }
+            HarnessProvider::Pi => {
+                command.args(["-c", "export PI_CODING_AGENT_DIR=/state/pi PI_OFFLINE=1 PI_TELEMETRY=0 PI_SKIP_VERSION_CHECK=1; exec pi --mode rpc -ne --no-approve --no-mcp"]);
+            }
         }
         let mut wire = jsonl::JsonlProcess::spawn(command)?;
         let observations = match installation.key.provider {
@@ -126,6 +129,12 @@ impl GlobalStore {
                 wire.request("initialize",json!({"cwd":"/tmp","provider":route.route,"model":"probe-no-inference","maxTokens":route.min_output_request,
                     "approvalRequests":true,"capabilities":{"userQuestions":true}}))?;
                 vec!["initialize"]
+            }
+            HarnessProvider::Pi => {
+                wire.pi_rpc();
+                let state = wire.request("get_state", json!({}))?;
+                require(state["sessionId"].is_string(), "pi 探针没有返回会话身份")?;
+                vec!["get_state"]
             }
         };
         drop(wire);

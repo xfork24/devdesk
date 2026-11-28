@@ -6,7 +6,7 @@ use std::{process::Command, time::Duration};
 pub fn default_version(provider: HarnessProvider) -> String {
     packaged_recipe(provider).version
 }
-fn packaged_recipe(provider: HarnessProvider) -> ExecutionRecipe {
+pub(crate) fn packaged_recipe(provider: HarnessProvider) -> ExecutionRecipe {
     factory_bundle::packaged_runtime(provider).expect("validated Harness/Sandbox installation")
 }
 
@@ -16,14 +16,23 @@ pub fn default_codex_recipe_digest() -> String {
 pub fn default_dsh_recipe_digest() -> String {
     packaged_recipe(HarnessProvider::Dsh).recipe_digest()
 }
+pub fn default_pi_recipe_digest() -> String {
+    packaged_recipe(HarnessProvider::Pi).recipe_digest()
+}
 
 impl GlobalStore {
-    pub fn default_execution_recipe(
+    pub fn default_execution_harness(
         &self,
         provider: HarnessProvider,
-    ) -> Result<(ConfigurationRecord, ExecutionRecipe)> {
+    ) -> Result<ConfigurationRecord> {
         let catalog = self.configuration_snapshot()?;
-        let state = catalog.state.as_ref();
+        Self::select_execution_harness(catalog.state.as_ref(), provider).cloned()
+    }
+
+    fn select_execution_harness(
+        state: &EngineeringState,
+        provider: HarnessProvider,
+    ) -> Result<&ConfigurationRecord> {
         let packaged = factory_bundle::packaged_harness(provider)?;
         let defaults = devdesk_core::current_template_defaults(state).unwrap_or_default();
         let selected = defaults["harness_ref"]
@@ -54,6 +63,16 @@ impl GlobalStore {
             template_record_current(state, harness) && !configuration_retired(state, harness),
             "默认 Harness 已退出当前目录或被停用",
         )?;
+        Ok(harness)
+    }
+
+    pub fn default_execution_recipe(
+        &self,
+        provider: HarnessProvider,
+    ) -> Result<(ConfigurationRecord, ExecutionRecipe)> {
+        let catalog = self.configuration_snapshot()?;
+        let state = catalog.state.as_ref();
+        let harness = Self::select_execution_harness(state, provider)?;
         let selection = permission_selection(state)?;
         let sandbox = state.configuration(&selection.sandbox_ref)?.clone();
         Ok((

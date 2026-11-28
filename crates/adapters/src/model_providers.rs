@@ -1,27 +1,25 @@
-//! Deterministic DSH route configuration. Profiles contain references, never key values.
+//! Deterministic Host-supplied model route configuration. Profiles contain references, never key values.
 //! Routing authority was frozen at bind time against the Harness catalog; here the
 //! frozen snapshot only re-validates itself (content, never runtime version strings).
 use super::*;
 
 pub fn binding_model_connection(binding: &RuntimeBinding) -> Result<ModelConnection> {
+    let provider = binding.installation.key.provider;
     require(
-        binding.installation.key.provider == HarnessProvider::Dsh,
-        "需要 DSH 绑定",
+        provider.traits().host_model_route,
+        "此 Harness 不使用 Host 模型路由",
     )?;
     let parameters = binding.effective_model_parameters();
     let Some(connection) = &binding.model_connection else {
         return Err(err(
             "invalid_configuration",
-            "DSH 绑定缺少冻结模型连接；请通过 Agent 配置重新解析",
+            "运行绑定缺少冻结模型连接；请通过 Agent 配置重新解析",
         ));
     };
     connection.validate(&binding.model, parameters)?;
     require(
         binding.model_profile_digest.as_deref()
-            == Some(
-                configuration_digest(&json!(dsh_model_patch(connection, &binding.model)?))?
-                    .as_str(),
-            ),
+            == Some(model_profile_digest(provider, connection, &binding.model)?.as_str()),
         "冻结模型 profile 摘要不一致",
     )?;
     require(
@@ -32,6 +30,41 @@ pub fn binding_model_connection(binding: &RuntimeBinding) -> Result<ModelConnect
         "Agent 服务商与模型连接不一致",
     )?;
     Ok(connection.clone())
+}
+
+pub fn model_profile_digest(
+    provider: HarnessProvider,
+    connection: &ModelConnection,
+    model: &str,
+) -> Result<String> {
+    let patch = match provider {
+        HarnessProvider::Dsh => dsh_model_patch(connection, model)?,
+        HarnessProvider::Pi => pi_model_patch(connection, model)?,
+        HarnessProvider::Codex => {
+            return Err(err("invalid_configuration", "Codex 使用自身模型路由"));
+        }
+    };
+    configuration_digest(&json!(patch))
+}
+
+pub fn pi_model_patch(connection: &ModelConnection, model: &str) -> Result<String> {
+    connection.validate(model, &Default::default())?;
+    require(!connection.native, "pi 需要可核验的 Host 模型端点")?;
+    let key = if connection.credential_account.is_empty() {
+        "ollama".to_owned()
+    } else {
+        format!("${}", connection.api_key_env)
+    };
+    let mut route = json!({
+        "baseUrl": connection.worker_endpoint,
+        "api": connection.protocol,
+        "apiKey": key,
+        "models": [{"id":model,"name":model,"contextWindow":connection.context_window,"maxTokens":connection.max_output_tokens}]
+    });
+    if connection.kind == ProviderKind::LocalServer {
+        route["compat"] = json!({"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens","supportsStrictMode":false});
+    }
+    serde_json::to_string(&json!({"providers":{connection.route.clone():route}})).map_err(storage)
 }
 
 pub fn dsh_model_patch(connection: &ModelConnection, model: &str) -> Result<String> {

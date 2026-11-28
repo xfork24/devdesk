@@ -28,7 +28,10 @@ fn validate(command: &ConfigureCredential) -> Result<()> {
         !command.command_id.is_empty() && command.command_id.len() <= 1024,
         "需要有效的命令身份",
     )?;
-    require(command.provider == "dsh", "Codex 使用独立 OAuth 接口")?;
+    require(
+        HarnessProvider::from_name(&command.provider).is_some_and(|p| p.traits().host_model_route),
+        "所选 Harness 不支持 Host API key 配置",
+    )?;
     require(
         !command.model_provider.is_empty() && command.model_provider.len() <= 128,
         "需要有效的模型服务商",
@@ -52,8 +55,8 @@ fn validate(command: &ConfigureCredential) -> Result<()> {
     )?;
     Ok(())
 }
-pub fn binding_key(provider: &str) -> ResourceKey {
-    ResourceKey::new("setting", format!("credentials.dsh.{provider}"))
+pub fn binding_key(harness: &str, provider: &str) -> ResourceKey {
+    ResourceKey::new("setting", format!("credentials.{harness}.{provider}"))
 }
 fn version(resource: ResourceKey, revision: u64) -> ResourceVersion {
     ResourceVersion { resource, revision }
@@ -101,7 +104,7 @@ pub fn configure(
             .ok()
             .filter(|n| *n > 0)
             .ok_or_else(|| err("invalid_params", "服务商源版本无效"))?;
-        let binding = binding_key(&command.model_provider);
+        let binding = binding_key(&command.provider, &command.model_provider);
         let intent = ResourceKey::new(
             "setting",
             format!(
@@ -155,7 +158,7 @@ pub fn configure(
         require(
             provider.id == command.model_provider
                 && provider.requires_key
-                && provider.harness == "dsh",
+                && provider.harness == command.provider,
             "服务商与凭据请求不符或无需密钥",
         )?;
         let token = configuration_hash(&("credential-candidate", store.root(), &fingerprint));

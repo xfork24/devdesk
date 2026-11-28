@@ -140,7 +140,7 @@ impl Workspace {
             let (provider_ref, p) = self.selected_provider_record(params)?;
             if method == "models.list" {
                 return if p.kind == ProviderKind::LocalServer {
-                    devdesk_adapters::model_providers::discover_ollama_models(
+                    let mut catalog = devdesk_adapters::model_providers::discover_ollama_models(
                         match params.get("endpoint") {
                             None => p.endpoint.as_str(),
                             Some(Value::String(s)) => s,
@@ -148,7 +148,9 @@ impl Workspace {
                                 return Err(err("invalid_params", "endpoint 必须为服务地址字符串"));
                             }
                         },
-                    )
+                    )?;
+                    catalog["provider"] = json!(p.id);
+                    Ok(catalog)
                 } else {
                     require(
                         params.get("endpoint").is_none(),
@@ -176,11 +178,14 @@ impl Workspace {
                 };
             }
             if let Some(h) = params.get("provider") {
-                require(h == "dsh", "Codex 使用现有 OAuth 接口")?;
+                require(
+                    h.as_str() == Some(p.harness.as_str()),
+                    "所选服务商归属其他 Harness",
+                )?;
             }
             let root = PathBuf::from(self.global.root());
             let vault = credentials::CredentialVault::new(&root)?;
-            let key = devdesk_core::credential_updates::binding_key(&p.id);
+            let key = devdesk_core::credential_updates::binding_key(&p.harness, &p.id);
             let binding = self
                 .global
                 .read_resources(std::slice::from_ref(&key))?
@@ -235,13 +240,27 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let w = Workspace::open(root.path()).unwrap();
         let catalog = w.dispatch("query.model_providers", json!({})).unwrap();
-        assert_eq!(catalog["providers"].as_array().unwrap().len(), 5);
-        let status = w
-            .dispatch("credentials.status", json!({"model_provider":"ollama"}))
-            .unwrap();
-        assert_eq!(status["auth_kind"], "none");
-        assert_eq!(status["available"], true);
-        assert_eq!(status["reference"], "");
+        let providers = catalog["providers"].as_array().unwrap();
+        for (harness, model_provider) in
+            [("codex", "openai"), ("dsh", "ollama"), ("pi", "pi-ollama")]
+        {
+            assert!(
+                providers
+                    .iter()
+                    .any(|row| row["harness"] == harness && row["id"] == model_provider)
+            );
+        }
+        for model_provider in ["ollama", "pi-ollama"] {
+            let status = w
+                .dispatch(
+                    "credentials.status",
+                    json!({"model_provider":model_provider}),
+                )
+                .unwrap();
+            assert_eq!(status["auth_kind"], "none");
+            assert_eq!(status["available"], true);
+            assert_eq!(status["reference"], "");
+        }
         for params in [
             json!({"model_provider":"unknown"}),
             json!({"model_provider":7}),

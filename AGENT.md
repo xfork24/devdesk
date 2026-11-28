@@ -32,7 +32,7 @@
 
 ## 数据与并发
 
-- 一个数据集由一个 Host 独占，全局、项目与全局讨论分库。生产布局为 `single-host-domain-packages-v1`，数据标记为 `devdesk-profile-runtime-v2`，SQLite 基线为 global 24、project 62。
+- 一个数据集由一个 Host 独占，全局、项目与全局讨论分库。生产布局为 `single-host-domain-packages-v1`，数据标记为 `devdesk-profile-runtime-v2`，SQLite 基线为 global 25、project 62。
 - 同一工作台有一个活动领域，可为空。客户端按代次访问，过期代次由 Host 拒绝。项目按领域 ID 归属并保留登记时的包摘要。每个标签页独立选择项目。
 - 普通读使用已提交快照或有界版本视图。业务写带上原版本、读写集合与幂等身份，版本检查和事实提交保持原子。
 - SQLite 短事务的物理竞争允许有界重试。副作用重发需要单独的核对。显示和缓存允许最终一致。编辑冲突保留草稿与原版本。

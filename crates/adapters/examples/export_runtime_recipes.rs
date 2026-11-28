@@ -1,5 +1,5 @@
 //! Export current factory recipes for native acceptance without duplicating the compiler.
-use devdesk_domain::{HarnessProvider, SourceDefinition, compose_execution_recipe};
+use devdesk_domain::{HARNESS_PROVIDERS, SourceDefinition, compose_execution_recipe};
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, fs, path::Path};
 
@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .get(defaults["sandbox_ref"].as_str().ok_or("missing Sandbox")?)
         .ok_or("default Sandbox is not published")?;
     let mut recipes = BTreeMap::new();
-    for provider in [HarnessProvider::Codex, HarnessProvider::Dsh] {
+    for provider in HARNESS_PROVIDERS {
         let harness = sources
             .values()
             .find(|source| {

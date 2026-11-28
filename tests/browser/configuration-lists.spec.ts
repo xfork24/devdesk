@@ -298,6 +298,8 @@ test("配置各 Tab 的共享目录按名称排序并默认选中首个已有条
         "GLM 5.3",
         "GPT-6.2 Sol High",
         "MiniMax M3.1 Flash",
+        "Pi · GLM 5.3",
+        "Pi · MiniMax M3.1 Flash",
       ]);
       await page.screenshot({
         path: info.outputPath("model-default-selection.png"),
@@ -308,6 +310,7 @@ test("配置各 Tab 的共享目录按名称排序并默认选中首个已有条
       await expect(items.locator("strong")).toHaveText([
         "Codex",
         "DeepSeek Harness",
+        "Pi Harness",
       ]);
     }
   }

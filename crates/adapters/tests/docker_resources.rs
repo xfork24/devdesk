@@ -21,6 +21,7 @@ fn reject_outside_mounts_before_touching_docker() {
         nested_sandbox: false,
         credential_env_file: None,
         profile_file: None,
+        bridge_file: None,
         runner_file: None,
         skill_directory: None,
         command_output_directory: None,
@@ -93,6 +94,7 @@ fn check_runtime_cache(shared: bool) {
             nested_sandbox: false,
             credential_env_file: None,
             profile_file: None,
+            bridge_file: None,
             runner_file: None,
             skill_directory: None,
             command_output_directory: None,
@@ -206,7 +208,7 @@ fn real_container_ownership_idempotence_stop_and_cleanup() {
     let sandbox = DockerSandbox::new(root.path()).unwrap();
     let operation = id();
     let spec=ContainerSpec { host_gateway:false, permissions: None,
-        purpose:ContainerPurpose::Tests,nested_sandbox:false,credential_env_file:None,profile_file:None,runner_file:None,skill_directory:None,command_output_directory:None,sensitive_output:false,profile_target:None,project_id:id(),session_id:id(),operation_id:operation.clone(),image_id:support::image("codex"),worktree:work.clone(),state,writable:true,writable_subdirectories:vec![],read_only_subdirectories:vec![],network:false,command:vec!["sh".into(),"-c".into(),"test ! -s /work/.git && test ! -e /var/run/docker.sock && (! touch /outside 2>/dev/null) && printf real-container > /work/proof && sleep 30".into()]};
+        purpose:ContainerPurpose::Tests,nested_sandbox:false,credential_env_file:None,profile_file:None,bridge_file:None,runner_file:None,skill_directory:None,command_output_directory:None,sensitive_output:false,profile_target:None,project_id:id(),session_id:id(),operation_id:operation.clone(),image_id:support::image("codex"),worktree:work.clone(),state,writable:true,writable_subdirectories:vec![],read_only_subdirectories:vec![],network:false,command:vec!["sh".into(),"-c".into(),"test ! -s /work/.git && test ! -e /var/run/docker.sock && (! touch /outside 2>/dev/null) && printf real-container > /work/proof && sleep 30".into()]};
     let first = sandbox.create(&spec).unwrap();
     assert!(!first.running);
     assert_eq!(first.id, sandbox.create(&spec).unwrap().id);
@@ -296,6 +298,7 @@ fn nested_sandbox_cannot_broaden_the_outer_test_directory_write_grant() {
         nested_sandbox: true,
         credential_env_file: None,
         profile_file: None,
+        bridge_file: None,
         runner_file: None,
         skill_directory: None,
         command_output_directory: None,
@@ -404,6 +407,7 @@ fn dsh_runner_masks_private_state_and_proc_without_expanding_docker_privileges()
         nested_sandbox: true,
         credential_env_file: None,
         profile_file: None,
+        bridge_file: None,
         runner_file: Some(runner),
         skill_directory: None,
         command_output_directory: None,
@@ -455,7 +459,7 @@ fn original_command_outputs_are_a_separate_read_only_worker_mount() {
     fs::write(output.join("original.json"), "original full output").unwrap();
     let sandbox = DockerSandbox::new(root.path()).unwrap();
     let operation = id();
-    let spec=ContainerSpec{host_gateway:false,permissions:None,purpose:ContainerPurpose::Tests,nested_sandbox:false,credential_env_file:None,profile_file:None,runner_file:None,skill_directory:None,command_output_directory:Some(output.clone()),sensitive_output:false,profile_target:None,project_id:id(),session_id:id(),operation_id:operation.clone(),image_id:support::image("codex"),worktree:work,state,writable:false,writable_subdirectories:vec![],read_only_subdirectories:vec![],network:false,command:vec!["sh".into(),"-c".into(),"cat /run/devdesk/command-output/original.json; if printf corrupted > /run/devdesk/command-output/original.json 2>/dev/null; then exit 3; fi; test ! -e /run/devdesk/coordinator".into()]};
+    let spec=ContainerSpec{host_gateway:false,permissions:None,purpose:ContainerPurpose::Tests,nested_sandbox:false,credential_env_file:None,profile_file:None,bridge_file:None,runner_file:None,skill_directory:None,command_output_directory:Some(output.clone()),sensitive_output:false,profile_target:None,project_id:id(),session_id:id(),operation_id:operation.clone(),image_id:support::image("codex"),worktree:work,state,writable:false,writable_subdirectories:vec![],read_only_subdirectories:vec![],network:false,command:vec!["sh".into(),"-c".into(),"cat /run/devdesk/command-output/original.json; if printf corrupted > /run/devdesk/command-output/original.json 2>/dev/null; then exit 3; fi; test ! -e /run/devdesk/coordinator".into()]};
     sandbox.create(&spec).unwrap();
     sandbox.start(&operation).unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);

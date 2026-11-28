@@ -68,8 +68,14 @@ export function RuntimePreparationStatus({
             className={p.status === "failed" ? "error" : "notice"}
             role="status"
           >
-            {displayText(p.provider === "dsh" ? "DeepSeek Harness" : "Codex")} ·{" "}
-            {displayText(p.message)}
+            {displayText(
+              p.provider === "pi"
+                ? "Pi Harness"
+                : p.provider === "dsh"
+                  ? "DeepSeek Harness"
+                  : "Codex",
+            )}{" "}
+            · {displayText(p.message)}
           </div>
         ))}
     </>

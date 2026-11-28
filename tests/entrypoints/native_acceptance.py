@@ -44,7 +44,7 @@ def main():
     scope.add_argument('--docker-only', action='store_true', help='run the Docker tests; no GitHub credentials required')
     scope.add_argument('--github-request', type=Path, help='existing dedicated PR request; include GitHub acceptance')
     parser.add_argument('--github-repo', help='dedicated acceptance repository, required with --github-request')
-    parser.add_argument('--prepare', action='store_true', help='build the selected packaged Codex and DSH recipes')
+    parser.add_argument('--prepare', action='store_true', help='build the selected packaged runtime recipes')
     parser.add_argument('--reports', type=Path)
     args = parser.parse_args()
     if bool(args.github_request) != bool(args.github_repo):
@@ -83,6 +83,12 @@ def main():
         return value['Id']
 
     try:
+        run('pi-host-build', ['cargo', 'build', '--locked', '-p', 'devdesk-host', '--bin', 'devdesk-host'])
+        host = Path(env.get('CARGO_TARGET_DIR', 'target')) / 'debug/devdesk-host'
+        pi_reports = reports / 'pi-host'
+        run('pi-host', ['python3', 'tests/entrypoints/pi_harness.py', '--binary', str(host), '--reports', str(pi_reports)])
+        pi_image = json.loads((pi_reports / 'runtime.json').read_text())['artifact']['image_id']
+        report['images']['DEVDESK_TEST_PI_IMAGE'] = inspect(pi_image)
         if args.prepare:
             recipes = json.loads(run('recipes', ['cargo', 'run', '--quiet', '--locked', '-p', 'devdesk-adapters', '--example', 'export_runtime_recipes']))
             for provider in ['codex', 'dsh']:

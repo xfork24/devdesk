@@ -40,6 +40,14 @@
       "provider": "codex",
       "version": "0.167.0",
       "assets": []
+    },
+    {
+      "id": "pi-extension-v1",
+      "provider": "pi",
+      "version": "1.6.0",
+      "assets": [
+        "pi/tool-policy.js"
+      ]
     }
   ],
   "upstream": {
@@ -67,6 +75,9 @@
     },
     "dsh/tool-policy.mjs": {
       "sha256": "e3e4e2d15a7d12597fb83dc81f4a307430424fdbdd0a109dd91a2d9dd8833e1e"
+    },
+    "pi/tool-policy.js": {
+      "sha256": "38f7293aa8ff22a7489bfea96dc4023c07e86fcba0ebba3d9e5147c1bf1bdedc"
     }
   }
 }

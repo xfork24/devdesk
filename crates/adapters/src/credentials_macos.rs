@@ -48,6 +48,9 @@ fn validate(service: &str, account: &str) -> Result<()> {
         "deepseek-api-key-",
         "dsh-zai-coding-cn-api-key-",
         "dsh-minimax-cn-api-key-",
+        "pi-minimax-cn-api-key-",
+        "pi-zai-coding-cn-api-key-",
+        "pi-deepseek-api-key-",
         "integration-key-",
     ]
     .iter()

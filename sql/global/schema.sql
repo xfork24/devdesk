@@ -47,7 +47,7 @@ CREATE TABLE project_catalog (
 
 CREATE TABLE runtime_installations (
     id TEXT PRIMARY KEY,
-    provider TEXT NOT NULL CHECK(provider IN ('codex','dsh')),
+    provider TEXT NOT NULL CHECK(provider IN ('codex','dsh','pi','mcode','zcode','opencode')),
     version TEXT NOT NULL,
     os TEXT NOT NULL,
     arch TEXT NOT NULL,
@@ -123,5 +123,5 @@ CREATE INDEX idx_tool_call_drivable ON governance_records(id) WHERE type='tool_c
 CREATE TABLE dataset_layout(id INTEGER PRIMARY KEY CHECK(id=1),contract TEXT NOT NULL);
 INSERT INTO dataset_layout VALUES(1,'single-host-domain-packages-v1');
 
-PRAGMA user_version=24;
+PRAGMA user_version=25;
 COMMIT;

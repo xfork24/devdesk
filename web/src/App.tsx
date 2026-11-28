@@ -805,7 +805,7 @@ function App({
               ({ resource }) =>
                 resource?.kind === "runtime_installation" ||
                 (resource?.kind === "setting" &&
-                  (resource.id.startsWith("credentials.dsh.") ||
+                  (resource.id.startsWith("credentials.") ||
                     resource.id === "default_harness")),
             )
           )

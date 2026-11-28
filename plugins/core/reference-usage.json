@@ -3,6 +3,7 @@
   "references": {
     "builtin-tool-codex-native:2": [],
     "builtin-tool-dsh-native:2": [],
+    "builtin-tool-pi-native:1": [],
     "builtin-tool-spec-lint:2": [],
     "builtin-tool-workflow-complete:3": [],
     "builtin-tool-workflow-decision-request:5": [],

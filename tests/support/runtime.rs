@@ -339,7 +339,12 @@ impl ports::SessionResources for ResourceFixture<'_> {
     ) -> Result<Option<String>> {
         Ok(None)
     }
-    fn model_profile_digest(&self, _: &ModelConnection, _: &str) -> Result<String> {
+    fn model_profile_digest(
+        &self,
+        _: HarnessProvider,
+        _: &ModelConnection,
+        _: &str,
+    ) -> Result<String> {
         Ok("a".repeat(64))
     }
     fn runtime_digest(&self, a: &Definition, b: &RuntimeBinding) -> Result<String> {

@@ -293,7 +293,7 @@ fn current_databases_exclude_retired_permission_storage_and_conversion_indexes()
     let project = id();
     let _project = SqliteStore::open_project(dir.path(), &project).unwrap();
     for (path, version) in [
-        (dir.path().join("global.sqlite3"), 24),
+        (dir.path().join("global.sqlite3"), 25),
         (
             SqliteStore::project_path(dir.path(), &project)
                 .unwrap()
@@ -399,9 +399,11 @@ fn native_configuration_has_no_prototype_provider_or_execution_controls() {
     let e = engine(dir.path());
     let state = e.store.snapshot().unwrap();
     assert!(
-        state.harnesses.iter().all(
-            |h| h.origin == Origin::External && ["codex", "dsh"].contains(&h.provider.as_str())
-        )
+        state
+            .harnesses
+            .iter()
+            .all(|h| h.origin == Origin::External
+                && HarnessProvider::from_name(&h.provider).is_some())
     );
     assert!(
         state

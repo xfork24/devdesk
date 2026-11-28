@@ -1,0 +1,70 @@
+{
+  "type": "model_catalog",
+  "identity": "builtin-model-catalog-pi",
+  "revision": 1,
+  "name": "Pi 固定模型目录",
+  "scope": "global",
+  "data": {
+    "recipe_digest": "a04608bc0d75d6fc218bf13ebe78a8cf3caf8fa9207d1c67fadd51afe857f0ed",
+    "providers": [
+      {
+        "provider_ref": "builtin-model-provider-pi-deepseek:1",
+        "models": []
+      },
+      {
+        "provider_ref": "builtin-model-provider-pi-zai-coding-cn:1",
+        "models": [
+          {
+            "id": "glm-4.6v",
+            "context_window": 128000,
+            "max_output_tokens": 32768
+          },
+          {
+            "id": "glm-5.3",
+            "context_window": 1000000,
+            "max_output_tokens": 131072
+          },
+          {
+            "id": "glm-5.3-flash",
+            "context_window": 1000000,
+            "max_output_tokens": 131072
+          },
+          {
+            "id": "glm-5.3-highspeed",
+            "context_window": 1000000,
+            "max_output_tokens": 131072
+          }
+        ]
+      },
+      {
+        "provider_ref": "builtin-model-provider-pi-minimax-cn:1",
+        "models": [
+          {
+            "id": "MiniMax-M2.7",
+            "context_window": 204800,
+            "max_output_tokens": 131072
+          },
+          {
+            "id": "MiniMax-M2.7-highspeed",
+            "context_window": 204800,
+            "max_output_tokens": 131072
+          },
+          {
+            "id": "MiniMax-M3",
+            "context_window": 1000000,
+            "max_output_tokens": 524288
+          },
+          {
+            "id": "MiniMax-M3.1-Flash",
+            "context_window": 1000000,
+            "max_output_tokens": 524288
+          }
+        ]
+      },
+      {
+        "provider_ref": "builtin-model-provider-pi-ollama:1",
+        "models": []
+      }
+    ]
+  }
+}

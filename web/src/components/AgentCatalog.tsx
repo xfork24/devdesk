@@ -14,6 +14,7 @@ import { RoleManager } from "./RoleManager";
 import { ConfigurationList } from "./ConfigurationList";
 import { ConfigurationUsage } from "./ConfigurationUsage";
 import {
+  isOllamaProvider,
   modelProviderLabel,
   normalizeOllamaServiceAddress,
 } from "./ollama-endpoint";
@@ -437,10 +438,11 @@ export function ResourceEditor({
     setError("");
     try {
       const payload = structuredClone(data);
-      if (kind === "model" && payload.provider === "ollama")
+      if (kind === "model" && isOllamaProvider(payload.provider))
         payload.endpoint = normalizeOllamaServiceAddress(
           payload.endpoint ||
-            providers.find((provider) => provider.id === "ollama")?.endpoint ||
+            providers.find((provider) => provider.id === payload.provider)
+              ?.endpoint ||
             "",
         );
       if (kind === "model" && !payload.model)
@@ -899,6 +901,9 @@ export function ResourceEditor({
                   >
                     <option value="codex">Codex</option>
                     <option value="dsh">DSH</option>
+                    {providers.some((item) => item.harness === "pi") ? (
+                      <option value="pi">Pi</option>
+                    ) : null}
                   </ActionSelect>
                 </label>
                 {field("Harness 发行版本", "runtime_version", true)}

@@ -9,20 +9,93 @@ pub const WORKSPACE_RUNTIME_DIRECTORY: &str = "/tmp/devdesk-runtime";
 pub enum HarnessProvider {
     Codex,
     Dsh,
+    Pi,
 }
 
-/// The complete harness provider registry; provider gates read this, never literals.
-pub const HARNESS_PROVIDERS: &[HarnessProvider] = &[HarnessProvider::Codex, HarnessProvider::Dsh];
+/// Compiled providers. Factory sources and the host driver registry validate availability.
+pub const HARNESS_PROVIDERS: &[HarnessProvider] = &[
+    HarnessProvider::Codex,
+    HarnessProvider::Dsh,
+    HarnessProvider::Pi,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputIdentity {
+    ProviderTurn,
+    ProviderMessage,
+    HostTurn,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolTransport {
+    ProtocolRequest,
+    UiDialog,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HarnessTraits {
+    pub identity: InputIdentity,
+    pub owns_history: bool,
+    pub streams: bool,
+    pub protocol_interrupt: bool,
+    pub host_model_route: bool,
+    pub tool_transport: ToolTransport,
+    pub command_output: bool,
+    pub orchestration: bool,
+}
 
 pub fn known_harness_provider(name: &str) -> bool {
-    HARNESS_PROVIDERS.iter().any(|p| p.as_str() == name)
+    HarnessProvider::from_name(name).is_some()
 }
 
 impl HarnessProvider {
-    pub fn as_str(self) -> &'static str {
+    pub fn from_name(name: &str) -> Option<Self> {
+        HARNESS_PROVIDERS
+            .iter()
+            .copied()
+            .find(|p| p.as_str() == name)
+    }
+
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Codex => "codex",
             Self::Dsh => "dsh",
+            Self::Pi => "pi",
+        }
+    }
+
+    pub const fn traits(self) -> HarnessTraits {
+        match self {
+            Self::Codex => HarnessTraits {
+                identity: InputIdentity::ProviderTurn,
+                owns_history: true,
+                streams: true,
+                protocol_interrupt: true,
+                host_model_route: false,
+                tool_transport: ToolTransport::ProtocolRequest,
+                command_output: true,
+                orchestration: true,
+            },
+            Self::Dsh => HarnessTraits {
+                identity: InputIdentity::ProviderMessage,
+                owns_history: false,
+                streams: false,
+                protocol_interrupt: false,
+                host_model_route: true,
+                tool_transport: ToolTransport::ProtocolRequest,
+                command_output: false,
+                orchestration: false,
+            },
+            Self::Pi => HarnessTraits {
+                identity: InputIdentity::HostTurn,
+                owns_history: true,
+                streams: true,
+                protocol_interrupt: true,
+                host_model_route: true,
+                tool_transport: ToolTransport::UiDialog,
+                command_output: false,
+                orchestration: false,
+            },
         }
     }
 }

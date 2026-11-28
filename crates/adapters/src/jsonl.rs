@@ -80,40 +80,75 @@ impl Journal {
             other => other.clone(),
         }
     }
-    fn inbound(&self, frame: Value) -> Result<Option<Value>> {
-        let method = frame["method"].as_str().unwrap_or("");
-        if method == "item/agentMessage/delta" {
-            let p = &frame["params"];
-            let key = serde_json::to_string(&json!([p["threadId"], p["turnId"], p["itemId"]]))
-                .map_err(storage)?;
-            let mut tails = self.stream_tails.lock().map_err(storage)?;
-            require(
-                tails.len() < 64 || tails.contains_key(&key),
-                "流式项目超过限制",
-            )?;
-            let raw = tails.entry(key).or_default();
-            raw.push_str(p["delta"].as_str().unwrap_or(""));
-            let retain = self.secrets.iter().map(|s| s.len()).max().unwrap_or(0);
-            let mut cut = raw.len().saturating_sub(retain);
-            while !raw.is_char_boundary(cut) {
-                cut -= 1;
-            }
-            for secret in self.secrets.iter().filter(|s| !s.is_empty()) {
-                for (start, _) in raw.match_indices(secret) {
-                    if start < cut && start + secret.len() > cut {
-                        cut = start;
-                    }
+    fn redact_delta(&self, key: String, delta: &str) -> Result<Option<Value>> {
+        let mut tails = self.stream_tails.lock().map_err(storage)?;
+        require(
+            tails.len() < 64 || tails.contains_key(&key),
+            "流式项目超过限制",
+        )?;
+        let raw = tails.entry(key).or_default();
+        raw.push_str(delta);
+        let retain = self
+            .secrets
+            .iter()
+            .map(|secret| secret.len())
+            .max()
+            .unwrap_or(0);
+        let mut cut = raw.len().saturating_sub(retain);
+        while !raw.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        for secret in self.secrets.iter().filter(|secret| !secret.is_empty()) {
+            for (start, _) in raw.match_indices(secret) {
+                if start < cut && start + secret.len() > cut {
+                    cut = start;
                 }
             }
-            if cut == 0 {
+        }
+        if cut == 0 {
+            return Ok(None);
+        }
+        let text = raw[..cut].to_owned();
+        raw.drain(..cut);
+        Ok(Some(self.sanitize(&json!(text), "delta")))
+    }
+    fn inbound(&self, frame: Value) -> Result<Option<Value>> {
+        let method = frame["method"].as_str().unwrap_or("");
+        if method == "item/agentMessage/delta"
+            || frame["assistantMessageEvent"]["type"] == "text_delta"
+        {
+            let pi = frame["type"] == "message_update";
+            let params = if pi {
+                &frame["assistantMessageEvent"]
+            } else {
+                &frame["params"]
+            };
+            let key = if pi {
+                "pi-assistant".into()
+            } else {
+                serde_json::to_string(&json!([
+                    params["threadId"],
+                    params["turnId"],
+                    params["itemId"]
+                ]))
+                .map_err(storage)?
+            };
+            let Some(text) = self.redact_delta(key, params["delta"].as_str().unwrap_or(""))? else {
                 return Ok(None);
-            }
-            let text = raw[..cut].to_string();
-            *raw = raw[cut..].to_string();
-            drop(tails);
+            };
             let mut clean = self.sanitize(&frame, "");
-            clean["params"]["delta"] = self.sanitize(&json!(text), "delta");
+            clean[if pi {
+                "assistantMessageEvent"
+            } else {
+                "params"
+            }]["delta"] = text;
             return Ok(Some(clean));
+        }
+        if frame["type"] == "message_end" && frame["message"]["role"] == "assistant" {
+            self.stream_tails
+                .lock()
+                .map_err(storage)?
+                .remove("pi-assistant");
         }
         if method == "item/completed" {
             let p = &frame["params"];
@@ -155,6 +190,19 @@ impl Journal {
             return Ok(());
         }
         let mut frame = frame.clone();
+        if frame["type"] == "message_update" && frame["assistantMessageEvent"].is_object() {
+            frame["assistantMessageEvent"] = json!({"type":frame["assistantMessageEvent"]["type"],"content":"[stream delta omitted]"});
+            if let Some(object) = frame.as_object_mut() {
+                object.remove("message");
+            }
+        }
+        if frame["type"] == "extension_ui_request"
+            && frame["title"]
+                .as_str()
+                .is_some_and(|title| title.starts_with("devdesk.tool_call.v1 "))
+        {
+            frame["title"] = json!("devdesk.tool_call.v1 [arguments omitted]");
+        }
         // Raw deltas can split a secret across frames. Retain their boundaries, not reconstructable text.
         if frame["params"]["delta"].is_string() {
             frame["params"]["delta"] =
@@ -227,6 +275,7 @@ pub(crate) struct JsonlProcess {
     capture: bool,
     pending: VecDeque<Value>,
     rpc2: bool,
+    pi_rpc: bool,
     pub login_completed: Option<(String, bool)>,
 }
 impl JsonlProcess {
@@ -454,11 +503,15 @@ impl JsonlProcess {
             journal,
             pending: VecDeque::new(),
             rpc2: false,
+            pi_rpc: false,
             login_completed: None,
         })
     }
     pub fn rpc2(&mut self) {
         self.rpc2 = true;
+    }
+    pub fn pi_rpc(&mut self) {
+        self.pi_rpc = true;
     }
     pub fn send(&mut self, value: &Value) -> Result<()> {
         require(!self.failed.load(Ordering::Acquire), "协议连接已失效")?;
@@ -497,7 +550,18 @@ impl JsonlProcess {
         if method == "thread/resume" {
             self.resume_replies.lock().map_err(storage)?.insert(id);
         }
-        if let Err(error) = self.send(&json!({"id":id,"method":method,"params":params})) {
+        let frame = if self.pi_rpc {
+            let mut command = params
+                .as_object()
+                .cloned()
+                .ok_or_else(|| err("provider_protocol", "pi RPC 参数必须是对象"))?;
+            command.insert("id".into(), json!(id));
+            command.insert("type".into(), json!(method));
+            Value::Object(command)
+        } else {
+            json!({"id":id,"method":method,"params":params})
+        };
+        if let Err(error) = self.send(&frame) {
             self.resume_replies.lock().map_err(storage)?.remove(&id);
             return Err(error);
         }
@@ -546,7 +610,13 @@ impl JsonlProcess {
             {
                 self.login_completed = Some((login.into(), success));
             }
-            if frame["id"] == id && frame.get("method").is_none() {
+            if self.pi_rpc && frame["id"] == id && frame["type"] == "response" {
+                if frame["success"] != true {
+                    return Err(err("provider_failure", "pi 拒绝请求，请核对协议与模型配置"));
+                }
+                return Ok(frame.get("data").cloned().unwrap_or(Value::Null));
+            }
+            if !self.pi_rpc && frame["id"] == id && frame.get("method").is_none() {
                 if frame.get("error").is_some() {
                     return Err(err("provider_failure", "运行时拒绝请求，请核对协议与认证"));
                 }

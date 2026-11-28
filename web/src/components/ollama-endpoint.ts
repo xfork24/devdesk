@@ -26,6 +26,10 @@ export function normalizeOllamaServiceAddress(value: string) {
   return url.origin;
 }
 
+export function isOllamaProvider(id: unknown) {
+  return id === "ollama" || id === "pi-ollama";
+}
+
 export function modelProviderLabel(provider: { id: string; label: string }) {
-  return provider.id === "ollama" ? "本地 Ollama" : provider.label;
+  return isOllamaProvider(provider.id) ? "本地 Ollama" : provider.label;
 }

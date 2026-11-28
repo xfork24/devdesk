@@ -1,0 +1,22 @@
+{
+  "type": "model_provider",
+  "identity": "builtin-model-provider-pi-ollama",
+  "revision": 1,
+  "name": "Pi · 本机 Ollama",
+  "scope": "global",
+  "data": {
+    "id": "pi-ollama",
+    "label": "本机 Ollama",
+    "kind": "local_server",
+    "harness": "pi",
+    "endpoint": "http://127.0.0.1:11434/v1",
+    "route": "ollama",
+    "protocol": "openai-completions",
+    "api_key_env": "",
+    "requires_key": false,
+    "native": false,
+    "capacity_required": true,
+    "min_output_request": 1,
+    "credential_account": ""
+  }
+}

@@ -2,10 +2,12 @@
 
 | 文件 | 数据库 | user_version |
 |---|---|---:|
-| `global/schema.sql` | `<data>/global.sqlite3`，共享源配置、安装与项目索引 | 24 |
+| `global/schema.sql` | `<data>/global.sqlite3`，共享源配置、安装与项目索引 | 25 |
 | `project/schema.sql` | `<data>/projects/<id>/engineering.sqlite3`，项目源选择、材料与执行事实 | 60 |
 
-数据集标记为 `devdesk-profile-runtime-v2`。空库在事务中创建当前结构；清空后仅剩标记、锁及 Finder 元数据的目录可重新初始化。其他包含数据的目录若协议或数据库版本不兼容则直接拒绝，不执行升级、回退或转换，也不改写旧库。
+数据集标记为 `devdesk-profile-runtime-v2`。空库在事务中创建当前结构；清空后仅剩标记、锁及 Finder 元数据的目录可重新初始化。Host 启动时按当前版本检查已初始化的全局库。
+
+global 24 使用 `devdesk-host storage upgrade-global --data PATH` 离线升级到 25。迁移保留安装登记、配置与凭据引用。命令在数据集独占锁下完成 WAL 检查点、库外备份和原子升级。
 
 `source_definitions` 是源配置的唯一存储，主键为 `(identity, revision)`，`reference` 为 `identity:revision` 的虚拟唯一列。源修订不可更新或删除。正文只属于一个源修订，Permission 正文不重复身份、名称及版本。没有 `definitions`、`harnesses`、`sandboxes` 投影表。
 

@@ -96,7 +96,7 @@ python3 tests/entrypoints/native_acceptance.py --docker-only --prepare --reports
 python3 tests/entrypoints/native_acceptance.py --prepare --github-request /专用/pr-request.json --github-repo owner/dedicated-test-repo --reports /tmp/devdesk-native-all
 ```
 
-GitHub request 的 repository/number 必须指定已存在的验收 PR；测试先读取它，再按原 marker 两次恢复同一回执，并核对 number/head/marker/merged。此项需要本机 `gh` 授权，只访问专用仓库；不要用业务仓库或凭据文件代替 request。入口按测试二进制核对实际执行数量，失败不会被 skip 或重试掩盖，日志、镜像身份与源内容摘要写入指定临时证据目录；执行期间源码输入改变也会使验收失败。已有准备好的镜像时可省略 `--prepare`，但必须提供 `DEVDESK_TEST_CODEX_IMAGE`、`DEVDESK_TEST_DSH_IMAGE`、`DEVDESK_DSH_MOCK_IMAGE`、`DEVDESK_TOOL_TEST_IMAGE`、`DEVDESK_ACCEPTANCE_NODE_IMAGE` 五个确切 `sha256:` ID。外部服务与模型响应使用明确的协议夹具；这不等于通过真实付费模型的工程验收。
+GitHub request 的 repository/number 必须指定已存在的验收 PR；测试先读取它，再按原 marker 两次恢复同一回执，并核对 number/head/marker/merged。此项需要本机 `gh` 授权，只访问专用仓库；不要用业务仓库或凭据文件代替 request。入口按测试二进制核对实际执行数量，失败不会被 skip 或重试掩盖，日志、镜像身份与源内容摘要写入指定临时证据目录；执行期间源码输入改变也会使验收失败。Pi 套件通过 Host `runtime.prepare` 准备并记录不可变镜像，再用本地模型夹具验收。Codex 和 DSH 已有准备好的镜像时可省略 `--prepare`，但必须提供 `DEVDESK_TEST_CODEX_IMAGE`、`DEVDESK_TEST_DSH_IMAGE`、`DEVDESK_DSH_MOCK_IMAGE`、`DEVDESK_TOOL_TEST_IMAGE`、`DEVDESK_ACCEPTANCE_NODE_IMAGE` 五个确切 `sha256:` ID。外部服务与模型响应使用明确的协议夹具；这不等于通过真实付费模型的工程验收。
 
 DSH 原生 SDK 夹具使用不可变镜像和禁外网容器内的本地端点，不调用真实模型：
 
@@ -126,7 +126,14 @@ macOS 钥匙串的后台调用和显式授权隔离由 `cargo test -p devdesk-ad
 
 日志、JSON/JSONL、截图和临时脚本写入临时目录；计划目录只保留 Markdown 计划、合同和执行报告。
 
-Harness 编排回归：`crates/adapters/tests/orchestration.rs` 验证显式驱动、版本、替代材料、绕过、有界委托和真实原生调用来源（Harness 端口夹具）。`tests/entrypoints/dataset_protocol.py` 验证拒绝旧数据协议且不改写源数据。
+Harness 编排回归由 `crates/adapters/tests/orchestration.rs` 验证显式驱动、版本、替代材料、绕过、有界委托和原生调用来源。`tests/entrypoints/dataset_protocol.py` 覆盖不兼容旧库保护及 v24 → v25 离线升级。
+
+已有旧版 Host 时，可用本地模型重演旧讨论、权限漂移、后继会话与升级后的 Pi 工具链。探针创建隔离数据集并执行实际 Docker，无需系统凭据。
+
+```bash
+python3 tests/entrypoints/pi_harness.py --binary target/debug/devdesk-host \
+  --v24-binary /path/to/v24/devdesk-host --reports /tmp/devdesk-pi-upgrade
+```
 
 `tests/live/probe_harness_orchestration.py` 使用实际 Codex 项目经理和业务 Agent，验证运行时绕过、实际平台调用及暂停重启后的后继 Session。`probe_streamlined_workflow.py` 使用独立数据集、专用 GitHub 仓库与真实 Codex、Docker、Git 执行默认 Feature/Task；人工确认精确绑定当前材料，不覆盖拒绝。二者必须显式提供二进制与认证源；临时复制凭据在退出时清理。
 

@@ -30,7 +30,7 @@ DSH 原生 `workspace-write` 始终允许会话 cwd 写入；`scoped` 中比 Exe
 
 ## 后端与平台
 
-Codex 0.167.0 全权限使用 App Server externalSandbox；受限配置使用原生命名权限 profile。DSH 0.2.2-rc.1 使用原生 permission preset、sandbox-policy 和 approval；额外的工具过滤器读取同一份只读冻结策略。
+Codex 0.167.0 全权限使用 App Server externalSandbox；受限配置使用原生命名权限 profile。DSH 0.2.2-rc.1 使用原生 permission preset、sandbox-policy 和 approval；额外的工具过滤器读取同一份只读冻结策略。Pi 1.6.0 用受管扩展执行冻结文件范围、工具名单与人工审批。Pi Shell 只在两层均为 Full Access 且允许容器信任时执行。受限执行使用文件工具及 Docker 冻结挂载，Pi 工具级禁网当前不可用。
 
 `docker-default-v1` 使用 Docker 默认 seccomp/AppArmor，无需安装专用嵌套策略。`docker-nested-v1` 使用 `docker/seccomp/nested-v1.json`；启用 AppArmor 的 Linux 宿主还需安装命名 profile：
 

@@ -19,7 +19,7 @@
 | [model_providers.rs](../../../crates/adapters/src/model_providers.rs) | 解析服务连接并生成供应商 profile |
 | [codex_auth.rs](../../../crates/adapters/src/codex_auth.rs) | Codex 本机认证准备 |
 
-Host 通过这些服务展示进度和错误。读安装列表与主动安装是不同操作；读取不应自动下载、登录或替换运行资源。
+Host 通过这些服务展示进度和错误。读安装列表与主动安装是不同操作；读取不应自动下载、登录或替换运行资源。Pi 准备会登记所选 Harness 修订的物化回执。断网启动探针用 `get_state` 核对 RPC 会话身份，无需模型凭据。
 
 ## 兼容性怎样判断
 

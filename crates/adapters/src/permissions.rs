@@ -2,27 +2,28 @@
 use super::*;
 use std::collections::BTreeMap;
 
+pub(crate) const PI_TOOL_POLICY: &[u8] =
+    include_bytes!("../../../permissions/backends/pi/tool-policy.js");
+
 pub const LINUX_APPARMOR_POLICY: &str =
     include_str!("../../../permissions/backends/docker/apparmor/devdesk-harness-v1.apparmor");
 
 pub fn capabilities(provider: HarnessProvider) -> PermissionCapabilities {
     PermissionCapabilities {
         backend: provider.as_str().into(),
-        version: match provider {
-            HarnessProvider::Codex => runtime_preparation::default_version(HarnessProvider::Codex),
-            HarnessProvider::Dsh => runtime_preparation::default_version(HarnessProvider::Dsh),
-        },
+        version: runtime_preparation::default_version(provider),
         recipe_digest: match provider {
             HarnessProvider::Codex => runtime_preparation::default_codex_recipe_digest(),
             HarnessProvider::Dsh => runtime_preparation::default_dsh_recipe_digest(),
+            HarnessProvider::Pi => runtime_preparation::default_pi_recipe_digest(),
         },
         filesystem: vec![
             "full_access".into(),
             "read_only".into(),
             "scoped_worktree_writes".into(),
         ],
-        network: vec!["enabled".into(), "disabled_tools".into()],
-        tools: if provider == HarnessProvider::Dsh {
+        network: if provider == HarnessProvider::Pi { vec!["enabled".into()] } else { vec!["enabled".into(), "disabled_tools".into()] },
+        tools: if provider.traits().host_model_route {
             vec!["all_available".into(), "restricted".into()]
         } else {
             vec!["all_available".into()]
@@ -31,10 +32,10 @@ pub fn capabilities(provider: HarnessProvider) -> PermissionCapabilities {
             "network allowlist requires an enforcing proxy and is unsupported".into(),
             "scope is constrained by the registered worktree and Docker mounts".into(),
             "Full access trusts every process inside this container".into(),
-            if provider == HarnessProvider::Dsh {
-                "scoped writes must be enforceable by the frozen execution-scope mounts".into()
-            } else {
-                "scoped writes use the native named permissions profile".into()
+            match provider {
+                HarnessProvider::Dsh => "scoped writes must be enforceable by the frozen execution-scope mounts".into(),
+                HarnessProvider::Codex => "scoped writes use the native named permissions profile".into(),
+                HarnessProvider::Pi => "shell requires full access and a trusted container; read-only and scoped modes use file tools and frozen mounts".into(),
             },
         ],
     }
@@ -62,6 +63,7 @@ fn embedded_asset_digests() -> BTreeMap<String, String> {
             "dsh/tool-policy.mjs",
             include_bytes!("../../../permissions/backends/dsh/tool-policy.mjs").as_slice(),
         ),
+        ("pi/tool-policy.js", PI_TOOL_POLICY),
     ]
     .into_iter()
     .map(|(n, b)| (n.into(), format!("{:x}", Sha256::digest(b))))
@@ -85,8 +87,9 @@ pub fn compile_resolved_permissions(
             ));
         }
     }
-    let nested = harness.policy.filesystem != FilesystemPermission::FullAccess
-        || harness.policy.network != NetworkPermission::Enabled;
+    let nested = provider != HarnessProvider::Pi
+        && (harness.policy.filesystem != FilesystemPermission::FullAccess
+            || harness.policy.network != NetworkPermission::Enabled);
     let mut result = ExecutionPermissions {
         binding_lock: None,
         harness: harness.clone(),
@@ -123,6 +126,7 @@ pub fn compile_resolved_permissions(
                     }
                     (FilesystemPermission::ReadOnly, HarnessProvider::Dsh) => "read-only",
                     (_, HarnessProvider::Dsh) => "workspace-write",
+                    (_, HarnessProvider::Pi) => "frozen-mounts",
                 }
                 .into(),
                 profile: "devdesk".into(),
@@ -134,7 +138,11 @@ pub fn compile_resolved_permissions(
                 .into(),
             }),
             compiler_version: "permission-compiler/v2".into(),
-            harness_backend: format!("{}-native-v1", provider.as_str()),
+            harness_backend: if provider == HarnessProvider::Pi {
+                "pi-extension-v1".into()
+            } else {
+                format!("{}-native-v1", provider.as_str())
+            },
             sandbox_backend: if nested {
                 "docker-nested-v1"
             } else {
@@ -142,10 +150,23 @@ pub fn compile_resolved_permissions(
             }
             .into(),
             rules: [
-                ("harness.filesystem".into(), "provider-native".into()),
+                (
+                    "harness.filesystem".into(),
+                    if provider == HarnessProvider::Pi {
+                        "pi-extension-and-docker-mounts"
+                    } else {
+                        "provider-native"
+                    }
+                    .into(),
+                ),
                 (
                     "harness.network".into(),
-                    "provider-native-or-confined-runner".into(),
+                    if provider == HarnessProvider::Pi {
+                        "docker-network"
+                    } else {
+                        "provider-native-or-confined-runner"
+                    }
+                    .into(),
                 ),
                 ("sandbox.filesystem".into(), "docker-mounts-and-user".into()),
                 ("sandbox.network".into(), "docker-network".into()),
@@ -230,9 +251,12 @@ pub fn validate_execution_permissions(
                 ));
             }
         }
+        HarnessProvider::Pi if p.harness.policy.network != NetworkPermission::Enabled => {
+            return Err(err("permission_unsupported", "pi 缺少独立工具禁网执行器"));
+        }
         _ => {}
     }
-    if provider == HarnessProvider::Dsh
+    if provider.traits().host_model_route
         && let FilesystemPermission::Scoped { rules } = &p.harness.policy.filesystem
     {
         // DSH's immutable session cwd always grants the whole workspace in
@@ -272,7 +296,7 @@ pub fn validate_execution_permissions(
         if !enforced {
             return Err(err(
                 "permission_unsupported",
-                "DSH 原生 workspace-write 不能缩小会话 cwd；scoped 限制须由冻结 ExecutionScope 挂载落实",
+                "所选 Harness 的 scoped 限制须由冻结 ExecutionScope 挂载落实",
             ));
         }
     }

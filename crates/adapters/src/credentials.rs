@@ -167,9 +167,15 @@ impl CredentialVault {
     }
     fn provider(provider: HarnessProvider) -> Result<()> {
         require(
-            provider == HarnessProvider::Dsh,
-            "Codex 使用原生 OAuth 登录流程，不通过 DSH API key 接口配置",
+            provider.traits().host_model_route,
+            "所选 Harness 不使用 Host API key 接口",
         )
+    }
+    fn model_harness(facts: &ProviderFacts) -> Result<HarnessProvider> {
+        let provider = HarnessProvider::from_name(&facts.harness)
+            .ok_or_else(|| err("invalid_configuration", "服务商归属未知 Harness"))?;
+        Self::provider(provider)?;
+        Ok(provider)
     }
     fn status_value(
         &self,
@@ -217,7 +223,10 @@ impl CredentialVault {
         deepseek: &ProviderFacts,
         secret: &str,
     ) -> Result<CredentialStatus> {
-        Self::provider(provider)?;
+        require(
+            provider == Self::model_harness(deepseek)?,
+            "服务商归属其他 Harness",
+        )?;
         self.configure_model(deepseek, secret)
     }
     /// Account namespaces come from the provider's published facts, never a code roster.
@@ -230,6 +239,7 @@ impl CredentialVault {
         candidate_id: &str,
         secret: &str,
     ) -> Result<CredentialStatus> {
+        let provider = Self::model_harness(facts)?;
         require(facts.requires_key, "本地服务无需保存 API key")?;
         require(
             uuid::Uuid::parse_str(candidate_id).is_ok(),
@@ -275,7 +285,7 @@ impl CredentialVault {
             "当前系统没有受支持的凭据库",
         ));
         #[allow(unreachable_code)]
-        Ok(self.model_status_value(facts, &account, true))
+        Ok(self.model_status_value(provider, facts, &account, true))
     }
     fn candidate_secret(&self, account: &str, reference: &str) -> Result<Option<Vec<u8>>> {
         #[cfg(target_os = "macos")]
@@ -358,7 +368,10 @@ impl CredentialVault {
         deepseek: &ProviderFacts,
         reference: Option<&str>,
     ) -> Result<CredentialStatus> {
-        Self::provider(provider)?;
+        require(
+            provider == Self::model_harness(deepseek)?,
+            "服务商归属其他 Harness",
+        )?;
         self.status_model_reference(deepseek, reference)
     }
     pub fn status_model_reference(
@@ -366,9 +379,10 @@ impl CredentialVault {
         facts: &ProviderFacts,
         reference: Option<&str>,
     ) -> Result<CredentialStatus> {
+        let provider = Self::model_harness(facts)?;
         if !facts.requires_key {
             return Ok(CredentialStatus {
-                provider: HarnessProvider::Dsh,
+                provider,
                 model_provider: facts.id.clone(),
                 auth_kind: "none",
                 configured: true,
@@ -378,7 +392,7 @@ impl CredentialVault {
             });
         }
         let Some(reference) = reference else {
-            return Ok(self.model_status_value(facts, "", false));
+            return Ok(self.model_status_value(provider, facts, "", false));
         };
         let account = self.model_account(facts, reference)?;
 
@@ -394,15 +408,16 @@ impl CredentialVault {
         let configured = true;
         #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         let configured = false;
-        Ok(self.model_status_value(facts, &account, configured))
+        Ok(self.model_status_value(provider, facts, &account, configured))
     }
     fn model_status_value(
         &self,
+        provider: HarnessProvider,
         p: &ProviderFacts,
         account: &str,
         configured: bool,
     ) -> CredentialStatus {
-        let mut status = self.status_value(HarnessProvider::Dsh, account, configured);
+        let mut status = self.status_value(provider, account, configured);
         status.model_provider = p.id.clone();
         if account.is_empty() {
             status.reference.clear();
@@ -546,6 +561,7 @@ impl devdesk_core::credential_updates::CredentialCandidates for CredentialVault 
         candidate_id: &str,
         secret: &str,
     ) -> Result<devdesk_core::credential_updates::CredentialCandidate> {
+        let provider = Self::model_harness(facts)?;
         require(
             uuid::Uuid::parse_str(candidate_id).is_ok(),
             "凭据候选身份无效",
@@ -563,7 +579,7 @@ impl devdesk_core::credential_updates::CredentialCandidates for CredentialVault 
         )?;
         Ok(devdesk_core::credential_updates::CredentialCandidate {
             reference,
-            status: serde_json::to_value(self.model_status_value(facts, &account, true))
+            status: serde_json::to_value(self.model_status_value(provider, facts, &account, true))
                 .map_err(storage)?,
         })
     }

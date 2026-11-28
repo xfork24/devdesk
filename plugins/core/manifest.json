@@ -14,11 +14,14 @@
     "model": [
       "models/builtin-model-gpt-6-2-sol-high-v1.json",
       "models/builtin-model-minimax-m3-1-flash-v1.json",
-      "models/builtin-model-glm-5-3-v1.json"
+      "models/builtin-model-glm-5-3-v1.json",
+      "models/builtin-model-pi-glm-5-3-v1.json",
+      "models/builtin-model-pi-minimax-m3-1-flash-v1.json"
     ],
     "harness": [
       "harnesses/builtin-harness-dsh-multi-provider-v2.json",
-      "harnesses/builtin-harness-codex-managed-v2.json"
+      "harnesses/builtin-harness-codex-managed-v2.json",
+      "harnesses/builtin-harness-pi-managed-v1.json"
     ],
     "sandbox": [
       "sandboxes/builtin-sandbox-docker-v2.json"
@@ -34,7 +37,8 @@
       "tools/builtin-tool-workflow-step-accept-v3.json",
       "tools/builtin-tool-workflow-decision-request-v5.json",
       "tools/builtin-tool-workflow-complete-v3.json",
-      "tools/builtin-tool-spec-lint-v2.json"
+      "tools/builtin-tool-spec-lint-v2.json",
+      "tools/builtin-tool-pi-native-v1.json"
     ],
     "permission_profile": [
       "permissions/profiles/builtin-permission-harness-full-access-v2.json",
@@ -46,10 +50,15 @@
       "model-providers/builtin-model-provider-deepseek-v1.json",
       "model-providers/builtin-model-provider-zai-coding-cn-v1.json",
       "model-providers/builtin-model-provider-minimax-cn-v1.json",
-      "model-providers/builtin-model-provider-ollama-v1.json"
+      "model-providers/builtin-model-provider-ollama-v1.json",
+      "model-providers/builtin-model-provider-pi-deepseek-v1.json",
+      "model-providers/builtin-model-provider-pi-ollama-v1.json",
+      "model-providers/builtin-model-provider-pi-zai-coding-cn-v1.json",
+      "model-providers/builtin-model-provider-pi-minimax-cn-v1.json"
     ],
     "model_catalog": [
-      "harnesses/builtin-model-catalog-dsh-v1.json"
+      "harnesses/builtin-model-catalog-dsh-v1.json",
+      "harnesses/builtin-model-catalog-pi-v1.json"
     ]
   },
   "defaults": "defaults.json"

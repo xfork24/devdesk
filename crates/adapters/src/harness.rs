@@ -10,6 +10,8 @@ use ports::{
     WorkerStop,
 };
 use std::{collections::HashMap, sync::Arc};
+#[path = "harness_pi.rs"]
+mod pi;
 #[path = "harness_startup.rs"]
 mod startup;
 #[path = "harness_workspace.rs"]
@@ -21,12 +23,15 @@ fn managed_adapter_contract(provider: HarnessProvider) -> &'static str {
     match provider {
         HarnessProvider::Codex => "codex-app-server/v1",
         HarnessProvider::Dsh => "dsh-sdk/v1",
+        HarnessProvider::Pi => "pi-rpc/v1",
     }
 }
 
 pub fn managed_adapter_identity(provider: HarnessProvider) -> String {
     let mut hash = Sha256::new();
     hash.update(include_bytes!("harness.rs"));
+    hash.update(include_bytes!("harness_pi.rs"));
+    hash.update(permissions::PI_TOOL_POLICY);
     hash.update(include_bytes!("harness_startup.rs"));
     hash.update(include_bytes!("harness_workspace.rs"));
     hash.update(include_bytes!("../../domain/src/agent_context.rs"));
@@ -185,6 +190,43 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
     file.write_all(bytes).map_err(storage)?;
     file.sync_all().map_err(storage)
 }
+fn provider_environment(
+    root: &Path,
+    meta: &Path,
+    binding: &RuntimeBinding,
+    connection: &ModelConnection,
+    secrets: &mut Vec<String>,
+) -> Result<Option<PathBuf>> {
+    if connection.credential_account.is_empty() {
+        require(
+            binding.credential_ref.is_none(),
+            "免密 Ollama 不应持有真实凭据",
+        )?;
+        return Ok(None);
+    }
+    let reference = binding
+        .credential_ref
+        .as_deref()
+        .ok_or_else(|| err("credentials_required", "缺少所选服务商凭据引用"))?;
+    let mut key = CredentialVault::new(root)?.read_connection_reference(connection, reference)?;
+    let prepared = (|| {
+        let secret =
+            std::str::from_utf8(&key).map_err(|_| err("credentials_required", "凭据编码无效"))?;
+        require(!secret.contains(['\n', '\r']), "凭据包含无效换行")?;
+        let path = meta.join("provider.env");
+        let mut line = format!("{}=", connection.api_key_env).into_bytes();
+        line.extend_from_slice(&key);
+        line.push(b'\n');
+        let written = write_private(&path, &line);
+        line.fill(0);
+        written?;
+        secrets.push(secret.to_owned());
+        Ok(Some(path))
+    })();
+    key.fill(0);
+    prepared
+}
+
 fn string(value: &Value, key: &str) -> Result<String> {
     value[key]
         .as_str()
@@ -204,10 +246,12 @@ struct Activity {
     done: bool,
     buffered: Vec<Value>,
     serial: u64,
+    assistant_item: u64,
 }
 struct Request {
     id: Value,
     method: String,
+    context_digest: Option<String>,
     answered: bool,
 }
 struct Worker {
@@ -398,7 +442,12 @@ impl RuntimeWorkers {
             .map(|snapshot| {
                 prompt_snapshot(
                     snapshot,
-                    (binding.installation.key.provider == HarnessProvider::Codex)
+                    binding
+                        .installation
+                        .key
+                        .provider
+                        .traits()
+                        .owns_history
                         .then_some(r.session.external_session.as_ref())
                         .flatten()
                         .map(|_| r.session.id.as_str()),
@@ -423,7 +472,7 @@ impl RuntimeWorkers {
             .collect();
         let provider = binding.installation.key.provider;
         let log = meta.join(format!("{}.jsonl", r.execution.operation_id));
-        let command_output_directory = if provider == HarnessProvider::Codex {
+        let command_output_directory = if provider.traits().command_output {
             let path = crate::native_command_output::directory(&log)?;
             private_dir(&path)?;
             Some(path)
@@ -445,7 +494,7 @@ impl RuntimeWorkers {
         } else {
             "/work".into()
         };
-        let model_connection = if provider == HarnessProvider::Dsh {
+        let model_connection = if provider.traits().host_model_route {
             Some(crate::model_providers::binding_model_connection(binding)?)
         } else {
             None
@@ -461,6 +510,12 @@ impl RuntimeWorkers {
         let mut env = None;
         let mut profile = None;
         let mut runner = None;
+        let mut bridge = None;
+        let session_id = r
+            .session
+            .external_session
+            .as_deref()
+            .unwrap_or(&r.session.id);
         let command = match provider {
             HarnessProvider::Codex => {
                 let home = state.join("codex");
@@ -540,39 +595,7 @@ impl RuntimeWorkers {
                 let connection = model_connection
                     .as_ref()
                     .ok_or_else(|| err("invalid_configuration", "缺少 DSH 模型连接"))?;
-                let requires_key = !connection.credential_account.is_empty();
-                let mut key = if requires_key {
-                    let reference = binding
-                        .credential_ref
-                        .as_deref()
-                        .ok_or_else(|| err("credentials_required", "DSH 缺少所选服务商凭据引用"))?;
-                    CredentialVault::new(&self.root)?
-                        .read_connection_reference(connection, reference)?
-                } else {
-                    require(
-                        binding.credential_ref.is_none(),
-                        "免密 Ollama 不应持有真实凭据",
-                    )?;
-                    b"ollama".to_vec()
-                };
-                require(
-                    !key.contains(&b'\n') && !key.contains(&b'\r'),
-                    "凭据包含无效换行",
-                )?;
-                if requires_key {
-                    secrets.push(
-                        String::from_utf8(key.clone())
-                            .map_err(|_| err("credentials_required", "凭据编码无效"))?,
-                    );
-                }
-                let path = meta.join("provider.env");
-                let mut bytes = format!("{}=", connection.api_key_env).into_bytes();
-                bytes.extend_from_slice(&key);
-                bytes.push(b'\n');
-                write_private(&path, &bytes)?;
-                key.fill(0);
-                bytes.fill(0);
-                env = Some(path);
+                env = provider_environment(&self.root, &meta, binding, connection, &mut secrets)?;
                 let mode = if binding.tool_policy == ToolPolicy::ReadOnly {
                     "read-only"
                 } else {
@@ -622,6 +645,37 @@ impl RuntimeWorkers {
                     "/run/devdesk/profile".into(),
                 ]
             }
+            HarnessProvider::Pi => {
+                let permissions = binding
+                    .permissions
+                    .as_ref()
+                    .ok_or_else(|| err("policy_not_enforced", "pi 需要冻结权限"))?;
+                permissions::validate_execution_permissions(permissions, provider)?;
+                let connection = model_connection
+                    .as_ref()
+                    .ok_or_else(|| err("invalid_configuration", "pi 缺少冻结模型连接"))?;
+                let home = state.join("pi");
+                private_dir(&home)?;
+                write_private(
+                    &home.join("models.json"),
+                    crate::model_providers::pi_model_patch(connection, &binding.model)?.as_bytes(),
+                )?;
+                write_private(
+                    &home.join("settings.json"),
+                    br#"{"defaultProjectTrust":"never","cacheWarming":"off"}"#,
+                )?;
+                let path = meta.join("profile.txt");
+                write_private(&path, instructions.as_bytes())?;
+                profile = Some(path);
+                let path = meta.join("dynamic-tools.json");
+                write_private(
+                    &path,
+                    &serde_json::to_vec(&pi::tool_definitions(binding)?).map_err(storage)?,
+                )?;
+                bridge = Some(path);
+                env = provider_environment(&self.root, &meta, binding, connection, &mut secrets)?;
+                pi::command(session_id, connection, &binding.model)
+            }
         };
         let sandbox = DockerSandbox::for_dataset(&root, &self.root)?;
         let created = sandbox.create(&ContainerSpec {
@@ -653,6 +707,7 @@ impl RuntimeWorkers {
                 .is_none_or(|p| p.isolation.nested_sandbox),
             credential_env_file: env.clone(),
             profile_file: profile,
+            bridge_file: bridge,
             runner_file: runner,
             skill_directory,
             command_output_directory,
@@ -775,6 +830,14 @@ impl RuntimeWorkers {
                     }
                     Ok(sid)
                 }
+                HarnessProvider::Pi => pi::initialize(
+                    &mut wire,
+                    session_id,
+                    model_connection
+                        .as_ref()
+                        .ok_or_else(|| err("invalid_configuration", "pi 缺少模型连接"))?,
+                    &binding.model,
+                ),
             }
         })();
         let sid = match initialized {
@@ -879,10 +942,10 @@ impl RuntimeWorkers {
         if let Some(w) = slot.as_mut() {
             require(w.operation == e.operation_id, "停止请求与 worker 不一致")?;
             if w.activity.as_ref().is_none_or(|a| a.done) {
-                mode = if w.provider == HarnessProvider::Codex {
-                    "codex_terminal_then_container_stop"
-                } else {
-                    "dsh_quiescent_then_container_stop"
+                mode = match w.provider {
+                    HarnessProvider::Codex => "codex_terminal_then_container_stop",
+                    HarnessProvider::Dsh => "dsh_quiescent_then_container_stop",
+                    HarnessProvider::Pi => "pi_quiescent_then_container_stop",
                 }
                 .into();
                 requires_successor = false;
@@ -906,6 +969,16 @@ impl RuntimeWorkers {
                     }
                     .into();
                 }
+            } else if w.provider.traits().protocol_interrupt {
+                let acknowledgement =
+                    w.wire
+                        .request_for("abort", json!({}), std::time::Duration::from_secs(2));
+                mode = if acknowledgement.is_ok() {
+                    "pi_abort_acknowledged_then_container_stop"
+                } else {
+                    "pi_abort_unconfirmed_then_container_stop"
+                }
+                .into();
             } else {
                 mode = "dsh_owned_container_forced_stop".into();
             }
@@ -937,6 +1010,9 @@ impl Worker {
             }
             require(a.done, "原生 worker 尚未静止")?;
         }
+        if self.provider.traits().tool_transport == ToolTransport::UiDialog {
+            self.requests.clear();
+        }
         // Install the activity before writing: any transport error remains ambiguous, never retry.
         let budget = std::time::Duration::from_secs(
             r.configured_task
@@ -956,6 +1032,7 @@ impl Worker {
             done: false,
             buffered: vec![],
             serial: 0,
+            assistant_item: 0,
         });
         let (method, params) = match self.provider {
             HarnessProvider::Codex => ("turn/start", {
@@ -983,6 +1060,7 @@ impl Worker {
                 "session/prompt",
                 json!({"sessionId":self.session,"contentBlocks":[{"type":"text","text":provider_turn_text(r)?}]}),
             ),
+            HarnessProvider::Pi => ("prompt", json!({"message":provider_turn_text(r)?})),
         };
         let request = self.wire.submit(method, params)?;
         self.activity.as_mut().unwrap().request = request;
@@ -1005,7 +1083,11 @@ impl Worker {
         let Some(mut a) = self.activity.take() else {
             return Ok(vec![]);
         };
-        let result = self.project(&mut a, frames);
+        let result = if self.provider.traits().tool_transport == ToolTransport::UiDialog {
+            pi::project(self, &mut a, frames)
+        } else {
+            self.project(&mut a, frames)
+        };
         self.activity = Some(a);
         result
     }
@@ -1041,6 +1123,7 @@ impl Worker {
                 let external = match self.provider {
                     HarnessProvider::Codex => string(&f["result"]["turn"], "id")?,
                     HarnessProvider::Dsh => string(&f["result"], "messageId")?,
+                    HarnessProvider::Pi => unreachable!("pi has its own event projector"),
                 };
                 a.external = Some(external.clone());
                 out.push(Obs::Admitted {
@@ -1114,6 +1197,7 @@ impl Worker {
                     self.requests.entry(key).or_insert(Request {
                         id: f["id"].clone(),
                         method: method.into(),
+                        context_digest: None,
                         answered: false,
                     });
                     out.push(Obs::ToolCall {
@@ -1134,6 +1218,7 @@ impl Worker {
             let ours = match self.provider {
                 HarnessProvider::Codex => p["threadId"] == self.session,
                 HarnessProvider::Dsh => p["sessionId"] == self.session,
+                HarnessProvider::Pi => unreachable!("pi has its own event projector"),
             };
             if !ours {
                 continue;
@@ -1145,6 +1230,7 @@ impl Worker {
             }
             a.serial += 1;
             match self.provider {
+                HarnessProvider::Pi => unreachable!("pi has its own event projector"),
                 HarnessProvider::Codex => {
                     if p["turnId"]
                         .as_str()
@@ -1405,6 +1491,7 @@ impl Worker {
             Request {
                 id: f["id"].clone(),
                 method: method.into(),
+                context_digest: None,
                 answered: false,
             },
         );
@@ -1429,6 +1516,9 @@ impl Worker {
         Ok(())
     }
     fn answer_tool(&mut self, request: &Value, receipt: &ToolReceipt) -> Result<()> {
+        if self.provider.traits().tool_transport == ToolTransport::UiDialog {
+            return pi::answer_tool(self, request, receipt);
+        }
         let key = serde_json::to_string(request).map_err(storage)?;
         let entry = self
             .requests
@@ -1470,6 +1560,9 @@ impl Worker {
                 .is_some_and(|p| p.approval == ApprovalPolicy::Never)
         {
             return Err(err("permission_denied", "冻结 Permission 禁止审批授权"));
+        }
+        if self.provider.traits().tool_transport == ToolTransport::UiDialog {
+            return pi::answer(self, i);
         }
         let req = self
             .requests
@@ -1922,18 +2015,21 @@ fn detached_session_journal_does_not_require_a_project_directory() {
 }
 provider!(CodexHarness, Codex);
 provider!(DshHarness, Dsh);
+provider!(PiHarness, Pi);
 
 /// Route native sessions using their frozen provider binding.
 pub struct RoutingHarness {
     codex: CodexHarness,
     dsh: DshHarness,
+    pi: PiHarness,
 }
 impl RoutingHarness {
     pub fn new(root: &Path) -> Result<Self> {
         let workers = RuntimeWorkers::new(root)?;
         Ok(Self {
             codex: CodexHarness::new(workers.clone()),
-            dsh: DshHarness::new(workers),
+            dsh: DshHarness::new(workers.clone()),
+            pi: PiHarness::new(workers),
         })
     }
     fn route(&self, s: &Session) -> Result<&dyn ports::Harness> {
@@ -1944,6 +2040,7 @@ impl RoutingHarness {
         {
             Some(HarnessProvider::Codex) => Ok(&self.codex),
             Some(HarnessProvider::Dsh) => Ok(&self.dsh),
+            Some(HarnessProvider::Pi) => Ok(&self.pi),
             None => Err(err("blocked", "真实 Session 缺少冻结供应商")),
         }
     }
@@ -2014,7 +2111,7 @@ pub fn driver_capability_registry()
                     .into_iter()
                     .map(str::to_owned),
             );
-            if *provider == HarnessProvider::Codex {
+            if provider.traits().orchestration {
                 features.insert("orchestration".into());
             }
             (
@@ -2120,6 +2217,7 @@ mod protocol_tests {
                 done: false,
                 buffered: vec![],
                 serial: 0,
+                assistant_item: 0,
             };
             let method = if provider == HarnessProvider::Codex {
                 "item/tool/call"
@@ -2181,6 +2279,7 @@ mod protocol_tests {
             done: false,
             buffered: vec![],
             serial: 0,
+            assistant_item: 0,
         };
         let request = json!(2);
         let observed = worker.project(&mut activity, vec![json!({
@@ -2293,6 +2392,7 @@ mod protocol_tests {
             done: false,
             buffered: vec![],
             serial: 0,
+            assistant_item: 0,
         };
         let observations = worker.project(&mut activity, frames).unwrap();
         assert!(

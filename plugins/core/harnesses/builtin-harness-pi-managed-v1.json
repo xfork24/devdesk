@@ -1,0 +1,44 @@
+{
+  "type": "harness",
+  "identity": "builtin-harness-pi-managed",
+  "revision": 1,
+  "name": "Pi Harness",
+  "scope": "global",
+  "model_catalog_ref": "builtin-model-catalog-pi:1",
+  "model_providers": [
+    "builtin-model-provider-pi-deepseek:1",
+    "builtin-model-provider-pi-zai-coding-cn:1",
+    "builtin-model-provider-pi-minimax-cn:1",
+    "builtin-model-provider-pi-ollama:1"
+  ],
+  "data": {
+    "capabilities": [
+      "structured-output",
+      "tool-calling",
+      "cancel",
+      "poll",
+      "dynamic-tools",
+      "external-tools",
+      "platform-tools"
+    ],
+    "provider": "pi",
+    "runtime_version": "1.6.0",
+    "installation": {
+      "package": "@earendil-works/pi-coding-agent",
+      "license": "MIT",
+      "entrypoint": [
+        "pi",
+        "--mode",
+        "rpc"
+      ],
+      "environment": {
+        "PI_CODING_AGENT_DIR": "/state/pi",
+        "PI_OFFLINE": "1",
+        "PI_TELEMETRY": "0",
+        "PI_SKIP_VERSION_CHECK": "1"
+      },
+      "files": [],
+      "native_releases": {}
+    }
+  }
+}

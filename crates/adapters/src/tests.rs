@@ -267,6 +267,7 @@ impl CommandTests {
                 nested_sandbox: false,
                 credential_env_file: None,
                 profile_file: Some(reporter),
+                bridge_file: None,
                 runner_file: None,
                 skill_directory: None,
                 command_output_directory: None,

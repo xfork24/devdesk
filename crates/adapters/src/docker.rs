@@ -128,6 +128,8 @@ pub struct ContainerSpec {
     pub credential_env_file: Option<PathBuf>,
     #[serde(default)]
     pub profile_file: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bridge_file: Option<PathBuf>,
     #[serde(default)]
     pub runner_file: Option<PathBuf>,
     #[serde(default)]
@@ -531,6 +533,21 @@ impl DockerSandbox {
             .as_ref()
             .map(|p| self.checked_file(p, &work, &state, false))
             .transpose()?;
+        let bridge = spec
+            .bridge_file
+            .as_ref()
+            .map(|path| self.checked_file(path, &work, &state, false))
+            .transpose()?;
+        if bridge.is_some() {
+            require(
+                spec.purpose == ContainerPurpose::Harness
+                    && spec
+                        .permissions
+                        .as_ref()
+                        .is_some_and(|p| p.enforcement.harness_backend == "pi-extension-v1"),
+                "动态工具配置仅可挂载到固定的 Pi Harness",
+            )?;
+        }
         require(
             !work.starts_with(&state) && !state.starts_with(&work),
             "工作目录与会话状态目录必须隔离",
@@ -552,6 +569,7 @@ impl DockerSandbox {
         canonical.state = state.clone();
         canonical.credential_env_file = credential.clone();
         canonical.profile_file = profile.clone();
+        canonical.bridge_file = bridge.clone();
         canonical.runner_file = runner.clone();
         let apparmor = if spec.nested_sandbox {
             self.nested_apparmor()?
@@ -559,6 +577,12 @@ impl DockerSandbox {
             None
         };
         let mut identity = json!({"spec":canonical,"profile_digest":profile.as_ref().map(|p|fs::read(p).map(|data|format!("{:x}",Sha256::digest(data)))).transpose().map_err(storage)?,"nested_policy":if spec.nested_sandbox {Some(format!("{:x}",Sha256::digest(include_bytes!("../../../permissions/backends/docker/seccomp/nested-v1.json"))))} else {None}});
+        if let Some(path) = &bridge {
+            identity["bridge_digest"] = json!(format!(
+                "{:x}",
+                Sha256::digest(fs::read(path).map_err(storage)?)
+            ));
+        }
         if let Some(digest) = &apparmor {
             identity["apparmor_policy"] = json!({"name":"devdesk-harness-v1","sha256":digest});
         }
@@ -601,10 +625,22 @@ impl DockerSandbox {
                 fs::read(&policy).map_err(storage)? == body,
                 "冻结权限文件发生漂移",
             )?;
-            let tool = include_bytes!("../../../permissions/backends/dsh/tool-policy.mjs");
+            let (tool, suffix, target) = if p.enforcement.harness_backend == "pi-extension-v1" {
+                (
+                    permissions::PI_TOOL_POLICY,
+                    "js",
+                    "/run/devdesk/tool-policy.js",
+                )
+            } else {
+                (
+                    include_bytes!("../../../permissions/backends/dsh/tool-policy.mjs").as_slice(),
+                    "mjs",
+                    "/run/devdesk/tool-policy.mjs",
+                )
+            };
             let tool_path = self
                 .root
-                .join(format!(".tool-policy-{:x}.mjs", Sha256::digest(tool)));
+                .join(format!(".tool-policy-{:x}.{suffix}", Sha256::digest(tool)));
             reject_symlink(&tool_path)?;
             if !tool_path.exists() {
                 fs::write(&tool_path, tool).map_err(storage)?;
@@ -613,7 +649,7 @@ impl DockerSandbox {
                 fs::read(&tool_path).map_err(storage)? == tool,
                 "工具后端发生漂移",
             )?;
-            Some((policy, tool_path))
+            Some((policy, tool_path, target))
         } else {
             None
         };
@@ -698,11 +734,8 @@ impl DockerSandbox {
                 }
             }
         }
-        if let Some((policy, tool)) = policy_files {
-            for (path, target) in [
-                (policy, "/run/devdesk/permission"),
-                (tool, "/run/devdesk/tool-policy.mjs"),
-            ] {
+        if let Some((policy, tool, target)) = policy_files {
+            for (path, target) in [(policy, "/run/devdesk/permission"), (tool, target)] {
                 args.extend([
                     "--mount".into(),
                     format!(
@@ -711,6 +744,15 @@ impl DockerSandbox {
                     ),
                 ]);
             }
+        }
+        if let Some(path) = bridge {
+            args.extend([
+                "--mount".into(),
+                format!(
+                    "type=bind,source={},target=/run/devdesk/dynamic-tools.json,readonly",
+                    path.display()
+                ),
+            ]);
         }
         if spec.nested_sandbox {
             args.extend([

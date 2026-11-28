@@ -20,6 +20,7 @@ test("DSH 服务商凭据独立，Ollama 免密且模型草稿可保存", async 
     await expect(page.getByLabel("数据目录")).toHaveCount(0);
   }
   const configured: string[] = [];
+  const configuredHarnesses: string[] = [];
   // Vault writes are simulated. This test never stores a key or calls a model.
   await page.route("**/rpc", async (route) => {
     const call = route.request().postDataJSON();
@@ -50,7 +51,11 @@ test("DSH 服务商凭据独立，Ollama 免密且模型草稿可保存", async 
       });
     if (!call.method.startsWith("credentials.")) return route.fallback();
     const provider = call.params.model_provider || "deepseek";
-    if (call.method === "credentials.configure") configured.push(provider);
+    const harness = call.params.provider || "dsh";
+    if (call.method === "credentials.configure") {
+      configured.push(provider);
+      configuredHarnesses.push(harness);
+    }
     await route.fulfill({
       json: {
         jsonrpc: "2.0",
@@ -58,20 +63,27 @@ test("DSH 服务商凭据独立，Ollama 免密且模型草稿可保存", async 
         result: {
           model_provider: provider,
           credential_version: {
-            resource: { kind: "setting", id: `credentials.dsh.${provider}` },
+            resource: {
+              kind: "setting",
+              id: `credentials.${harness}.${provider}`,
+            },
             revision: configured.includes(provider) ? 1 : 0,
           },
           provider_ref: `fixture-provider-${provider}:1`,
           configured: configured.includes(provider),
           available: true,
           storage: "fixture_vault",
-          auth_kind: provider === "ollama" ? "none" : "api_key",
+          auth_kind: provider.endsWith("ollama") ? "none" : "api_key",
         },
       },
     });
   });
   await page.getByRole("button", { name: "设置", exact: true }).click();
-  const select = page.getByLabel("DSH 模型服务商", { exact: true });
+  const dsh = page.getByRole("region", {
+    name: "DeepSeek Harness",
+    exact: true,
+  });
+  const select = dsh.getByLabel("DSH 模型服务商", { exact: true });
   const harnessHeading = page.getByRole("heading", {
     name: "DeepSeek Harness",
     exact: true,
@@ -82,29 +94,49 @@ test("DSH 服务商凭据独立，Ollama 免密且模型草稿可保存", async 
   for (const provider of ["zai-coding-cn", "minimax-cn"]) {
     await select.selectOption(provider);
     await expect(harnessHeading).toBeVisible();
-    await page
+    await dsh
       .getByLabel("配置或更换 API key", { exact: true })
       .fill("FAKE_BROWSER_TEST_VALUE");
-    await page.getByRole("button", { name: "保存密钥", exact: true }).click();
+    await dsh.getByRole("button", { name: "保存密钥", exact: true }).click();
     await expect(
-      page.getByLabel("配置或更换 API key", { exact: true }),
+      dsh.getByLabel("配置或更换 API key", { exact: true }),
     ).toHaveValue("");
     await expect(
-      page.getByText("已保存到系统凭据库", { exact: true }),
+      dsh.getByText("已保存到系统凭据库", { exact: true }),
     ).toBeVisible();
   }
   expect(configured).toEqual(["zai-coding-cn", "minimax-cn"]);
+  const pi = page.getByRole("region", { name: "Pi Harness", exact: true });
+  const piProvider = pi.getByLabel("Pi 模型服务商", { exact: true });
+  await expect(
+    page.getByLabel("默认 Agent Harness").locator('option[value="pi"]'),
+  ).toHaveText("Pi Harness");
+  await expect(piProvider.locator("option")).toHaveCount(4);
+  await piProvider.selectOption("pi-zai-coding-cn");
+  await pi
+    .getByLabel("配置或更换 API key", { exact: true })
+    .fill("FAKE_PI_BROWSER_KEY");
+  await pi.getByRole("button", { name: "保存密钥", exact: true }).click();
+  await expect(
+    pi.getByText("已保存到系统凭据库", { exact: true }),
+  ).toBeVisible();
+  expect(configured).toEqual([
+    "zai-coding-cn",
+    "minimax-cn",
+    "pi-zai-coding-cn",
+  ]);
+  expect(configuredHarnesses).toEqual(["dsh", "dsh", "pi"]);
   await select.selectOption("ollama");
   await expect(select.locator('option[value="ollama"]')).toHaveText(
     "本地 Ollama",
   );
   await expect(harnessHeading).toBeVisible();
-  await expect(page.getByLabel("配置或更换 API key")).toHaveCount(0);
+  await expect(dsh.getByLabel("配置或更换 API key")).toHaveCount(0);
   await expect(page.getByText(/本地服务无需 API key/)).toBeVisible();
-  const address = page.getByLabel("Ollama 协议地址", { exact: true });
+  const address = dsh.getByLabel("Ollama 协议地址", { exact: true });
   await expect(address).toHaveValue("http://127.0.0.1:11434");
   await address.fill("http://127.0.0.1:11435/v1");
-  await page
+  await dsh
     .getByRole("button", { name: "保存 Ollama 地址", exact: true })
     .click();
   await expect(address).toHaveValue("http://127.0.0.1:11435");

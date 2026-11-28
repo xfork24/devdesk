@@ -1,0 +1,15 @@
+{
+  "frames": [
+    {"type":"message_end","message":{"role":"user"}},
+    {"id":2,"type":"response","command":"prompt","success":true,"data":{"disposition":"started"}},
+    {"type":"tool_execution_start","toolCallId":"fixture-call","toolName":"devdesk_agent_experience_list","args":{}},
+    {"type":"extension_ui_request","id":"fixture-unmanaged","method":"confirm","title":"Unmanaged dialog"},
+    {"type":"extension_ui_request","id":"fixture-approval","method":"select","title":"devdesk.approval.v1 write","options":["Allow once","Reject"]},
+    {"type":"extension_ui_request","id":"fixture-dialog","method":"input","title":"devdesk.tool_call.v1 {\"tool\":\"devdesk_agent_experience_list\",\"call\":\"fixture-call\",\"arguments\":{}}"},
+    {"type":"tool_execution_end","toolCallId":"fixture-call","toolName":"devdesk_agent_experience_list","isError":false},
+    {"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"PI_"}},
+    {"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"OK"}},
+    {"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"PI_OK"}],"stopReason":"stop"}},
+    {"type":"agent_settled","aborted":false}
+  ]
+}

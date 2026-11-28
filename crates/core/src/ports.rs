@@ -1188,6 +1188,7 @@ pub trait SessionResources {
     ) -> Result<Option<String>>;
     fn model_profile_digest(
         &self,
+        provider: devdesk_domain::HarnessProvider,
         connection: &devdesk_domain::ModelConnection,
         model: &str,
     ) -> Result<String>;

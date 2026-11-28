@@ -165,14 +165,26 @@ test("凭据冲突保留密钥草稿、原始服务商修订和命令身份", as
     const second = await other.newPage();
     await configure(page);
     await configure(second);
-    const firstSecret = page.getByLabel("配置或更换 API key", { exact: true });
+    const firstDsh = page.getByRole("region", {
+      name: "DeepSeek Harness",
+      exact: true,
+    });
+    const secondDsh = second.getByRole("region", {
+      name: "DeepSeek Harness",
+      exact: true,
+    });
+    const firstSecret = firstDsh.getByLabel("配置或更换 API key", {
+      exact: true,
+    });
     await firstSecret.fill("FIRST_DUMMY_CREDENTIAL");
-    await second
+    await secondDsh
       .getByLabel("配置或更换 API key", { exact: true })
       .fill("SECOND_DUMMY_CREDENTIAL");
-    await second.getByRole("button", { name: "保存密钥", exact: true }).click();
+    await secondDsh
+      .getByRole("button", { name: "保存密钥", exact: true })
+      .click();
     await expect(
-      second.getByLabel("配置或更换 API key", { exact: true }),
+      secondDsh.getByLabel("配置或更换 API key", { exact: true }),
     ).toHaveValue("");
     const before = statusReads;
     await page.evaluate(() =>
@@ -180,10 +192,14 @@ test("凭据冲突保留密钥草稿、原始服务商修订和命令身份", as
     );
     await expect.poll(() => statusReads).toBeGreaterThan(before);
     await expect(firstSecret).toHaveValue("FIRST_DUMMY_CREDENTIAL");
-    await page.getByRole("button", { name: "保存密钥", exact: true }).click();
+    await firstDsh
+      .getByRole("button", { name: "保存密钥", exact: true })
+      .click();
     await expect(page.getByText(/revision_conflict/)).toBeVisible();
     await expect(firstSecret).toHaveValue("FIRST_DUMMY_CREDENTIAL");
-    await page.getByRole("button", { name: "保存密钥", exact: true }).click();
+    await firstDsh
+      .getByRole("button", { name: "保存密钥", exact: true })
+      .click();
     await expect.poll(() => submissions.length).toBe(3);
     expect(submissions[1].expected_revision).toBe(0);
     expect(submissions[1].provider_ref).toBe("fixture-provider:1");

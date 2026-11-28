@@ -471,7 +471,7 @@ impl EngineeringState {
                     binding.agent_configuration.is_none(),
                     "完整 Agent 必须使用其冻结 Model 的参数",
                 )?;
-                if binding.installation.key.provider == HarnessProvider::Codex {
+                if !binding.installation.key.provider.traits().host_model_route {
                     for (key, value) in &binding.model_parameters {
                         require(
                             key == "reasoning_effort"

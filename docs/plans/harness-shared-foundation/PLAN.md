@@ -1,10 +1,10 @@
 # Harness 扩展共享地基（pi / mcode / zcode / opencode 四条接入线）
 
-日期：2026-11-25。状态：**待实施**。范围：四条接入线共同依赖的 Provider 能力表、协议传输、凭据泛化、宿主侧工具桥、配方生成面与全局库地基。本文件不含任何单一 Harness 的协议细节。
+日期：2026-11-25。状态：**批次 A 地基已实现，批次 B 等待入批验证**。范围：四条接入线共同依赖的 Provider 能力表、协议传输、凭据泛化、宿主侧工具桥、配方生成面与全局库地基。本文件不含任何单一 Harness 的协议细节。
 
 配套计划：[pi 接入](../pi-harness/PLAN.md)、[mcode 接入](../mcode-harness/PLAN.md)、[opencode 接入](../opencode-harness/PLAN.md)、[zcode 接入](../zcode-harness/PLAN.md)。
 
-相关计划：[架构独立性改造](../arch-independency/PLAN.md)（内核改为领域无关，待实施）。它与四条接入线有十一处交叠，处理规则见第 8 章（2026-11-26 增补）。
+相关计划：[架构独立性改造](../arch-independency/PLAN.md)（内核改为领域无关）。两项工作并行推进，后期合并，交叠处理见第 8 章。
 
 **本文件是跨计划决策的唯一权威口径**：全局库版本号与 CHECK 取值、终态映射、审批语义、接纳语义、工具桥执行链路、仓库内配置隔离、漂移轮次，一律以本文件为准；各 Harness 计划只引用，不另立口径。任一 Harness 的 P0 结论变化时，先改本文件的地基判断，再改对应 Harness 计划。
 
@@ -15,8 +15,8 @@
 | 计划 | Harness | 驱动协议 | 定位 | 批次 |
 |---|---|---|---|---|
 | [pi](../pi-harness/PLAN.md) | pi 1.6.0（`@earendil-works/pi-coding-agent`，MIT） | 自有 `--mode rpc`（JSON Lines，无握手） | 调研最完整、风险最低；**单独先行** | A |
-| [mcode](../mcode-harness/PLAN.md) | MiniMax Code CLI 0.7.9（`@minimax-ai/code`，MIT） | **ACP 标准协议**（`mcode acp`，常驻 stdio） | 批次 B 先行；Linux 原生依赖有风险，P0 判定成立性 | B |
-| [opencode](../opencode-harness/PLAN.md) | opencode CLI 2.4.1（MIT，Bun 单体） | **ACP 标准协议**（`opencode acp`，常驻 stdio） | 与 mcode 共用 ACP 适配器；许可最干净；需二进制安装面 | B |
+| [mcode](../mcode-harness/PLAN.md) | MiniMax Code CLI 0.7.9（`@minimax-ai/code`，MIT） | **ACP 标准协议**（`mcode acp`，常驻 stdio） | ACP 首个接入候选，P0 验证 npm 安装脚本与 Linux 原生依赖 | B |
+| [opencode](../opencode-harness/PLAN.md) | opencode CLI 2.4.1（MIT，Bun 单体） | **ACP 标准协议**（`opencode acp`，常驻 stdio） | 两个 ACP 候选均通过 P0 时优先接入，需二进制安装面 | B |
 | [zcode](../zcode-harness/PLAN.md) | ZCode CLI（`zcode-app-cli`，MIT 启动器 + 随包专有运行时） | **ZCode Protocol**（`zcode app-server`，常驻 stdio） | 协议未公开文档化，整体以 P0 实跑结论为门 | B（P0 通过才进） |
 
 ### 0.2 可复用性判定
@@ -39,14 +39,14 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
 
 ### 0.3 关键设计决策
 
-1. 一份计划覆盖四个 Harness 的公共地基；**mcode 先行、opencode 次之**；zcode 以 **P0 实跑结论为门**（协议未文档化，未跑通不进入 P1）。
+1. 本计划拥有公共地基。批次 B 的首个 ACP 接入者由 G0 结论决定，ZCode 以私有协议实跑证据和再分发条件为准（见 0.5）。
 2. mcode 驱动方式用 **`mcode acp`**（ACP 标准协议，常驻进程），不采用一次性 `exec --output-format stream-json`。
-3. zcode 走 **`zcode app-server`** 协议路线纳入实施（若 P0 证伪则整体回退，见 zcode 计划的 P0 门控）。
+3. zcode 走 **`zcode app-server`**。P0 证伪时退回设计，备选协议须单独评审。
 4. opencode 驱动方式用 **`opencode acp`**，**与 mcode 共用同一个 ACP 适配器模块**（`harness_acp.rs`），差异收敛到一份「ACP 方言」配置（见 2.2.6）；v2 HTTP/SSE API 作为文档化备选路线记录在 opencode 计划。
 5. **workflow 步骤工具（dynamic tools）一期必须打通**：mcode、opencode、zcode 都没有可用的「进程内注册宿主工具」通道，统一走 **宿主侧 MCP 服务端**（streamable HTTP，带会话令牌）。**pi 保持已确认的 UI 隧道方案**（用户已决策，不因本计划改变）。
 6. **统一执行口径：所有宿主代执行工具调用都经 core 接纳/审计链路**。桥与隧道都只负责传输与寻址，**不执行工具、不自造审批、不旁路治理记录**；工具调用在会话记录中可见、可审计、可幂等重放。
 7. **审批语义以 core 现状为准**（本轮评审更正，见 2.4.5）：`approval` 策略只作用于 **provider 自己发起的审批请求**；宿主代执行工具的准入由 core 按冻结权限判定，**适配器与桥不得为其发明审批流**。
-8. **接纳语义**：既有骨架把「对宿主请求的应答帧」当作接纳凭证。ACP 与 ZCode 的轮次应答可能到轮次末才回，因此这两类协议改为 **首个 provider 证据到达时合成接纳**（见 2.2.7）。
+8. **接纳语义**：轮次末才应答的协议，在收到能归属到当前轮次的首个 provider 证据时合成接纳（见 2.2.8）。
 9. **Provider 能力表替代字面量比较**（见 2.1）：现有 `== Codex` / `== Dsh` 判断多数表达的是能力而非厂商，六个 provider 并存前必须收敛成一张表。
 10. **终态映射统一**（见第 6 章）：输出被截断（`max_tokens` / `length`）一律判 Failed，与 DSH 的 `DSH_MAX_TOKENS_AS_SUCCESS=false`、pi 的口径一致。
 11. **策略装载证明（fail-closed）**（见 2.1.7）：冻结策略在容器内「静默不生效」是最危险失败模式，必须有可验证的装载证明。
@@ -61,21 +61,26 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
 
 ### 0.5 交付形态与实施顺序
 
-**阶段 G0：P0 批次前置（四条线并行，只读探针，不写生产代码）。** 各线的 P0 都是「手工构建镜像 + 最小协议闭环」级别的验证，先全部跑完再动生产代码，避免在 pi 全部落地之后才发现 mcode 不成立、opencode 需要另一种安装面。产出：各线 P0 结论回写计划，并修订本文件的地基判断（尤其是 mcode 是否成立、zcode 是否进门、宿主桥连通性、MCP 工具名命名空间、策略钩子发现路径、opencode 指令注入通道）。通用 P0 清单见第 7 章。
+**阶段 G0，四条线并行跑 P0。** 用隔离镜像、探针夹具和脱敏样本验证安装及协议，三条 HostMcp 线共用一个探针服务。开始前为各线定时间盒，ZCode 沿用 1 个工作日。各线以「通过」「退回设计」「延期」收口，回写 7 章所列证据。G0 结束时确定首个 ACP 接入者、批次 B 所需安装能力及 ZCode 是否入批。延期或退回设计的线按时收口，其余通过的线可以继续实施。
 
-**批次 A（pi 单独落地）：pi P1–P4。** 其中**与厂商无关的通用管线由 pi 首次落地**，批次 B 只做增量：
+**批次 A，通用管线与 pi P1–P4。** 先完成通用管线，再用 pi 验证完整讨论和步骤工具路径。pi 的 P0 需重新设计时，通用管线可独立推进，在 Codex/DSH 与 v24 库副本上验证。批次 B 依赖通用管线完成。表中列出两批的增量。
 
 | 通用管线 | 首次落地 | 批次 B 的增量 |
 |---|---|---|
-| 凭据泛化（`credentials.{harness}.{provider}`） | pi P1 | 加入 mcode/zcode/opencode 的账户前缀 |
+| 凭据泛化（`credentials.{harness}.{provider}`） | 批次 A 通用管线 | 加入通过验收的 provider 账户前缀 |
 | 全局库 v25 + `storage upgrade-global` + 启动版本检查 | pi P1 | **无**（CHECK 在批次 A 即写入全部六个 provider） |
-| Schema 枚举机制（`rpc.schema.json`、`permission-backend.schema.json`） | pi P1 | 逐处追加三个取值 |
-| 按 harness 渲染的服务商设置页、`model_profile_digest` 按 provider 分派 | pi P1 | 接入三个新 harness |
-| Provider 能力表（2.1） | pi P1 建表并迁移现有判断 | 每个新 provider 增加一行 |
+| Schema 枚举机制（`rpc.schema.json`、`permission-backend.schema.json`） | 批次 A 通用管线 | 逐处追加已通过的取值 |
+| 按 harness 渲染的服务商设置页、`model_profile_digest` 按 provider 分派 | 批次 A 通用管线 | 接入通过验收的 Harness |
+| Provider 能力表（2.1） | 批次 A 建表并迁移现有判断 | 每个通过 P0 的 provider 增加一行 |
 
-**批次 B（三条新线合并落地）：本文件剩余项 + mcode → opencode → zcode（仅 P0 通过者）。** 三条线的权限后端与资产必须**在同一次变更中登记**，合并为一次漂移。
+**批次 B，先做共享地基，再接入通过 P0 的 Harness。**
 
-**漂移轮次合计 = 2**（批次 A 一次、批次 B 一次）。若 zcode 的 P0 通过但实施推迟到批次 B 之后，会多出第三次漂移 → 在 G0 末尾一次性决定 zcode 的批次归属。
+1. 本计划负责共用的 `harness_acp.rs`、Host MCP 服务端、`harness_bridge.rs` 收件箱与回执路由、唤醒以及配方接口（2.2、2.4、2.5.6）。按入批 Harness 实现所需安装能力。至少一条 ACP 线入批才需交付 ACP 模块。
+2. mcode 和 opencode 均通过 P0 时，先用 opencode 验证 ACP 与 MCP 桥端到端，再接 mcode。仅一条通过时，由该线完成首个 ACP 验收。各线只实现自己的配置、方言和策略资产。
+3. zcode 通过协议、权限与再分发门槛后，可在 MCP 桥具备测试闭环时并行适配。最终验收复用同一套桥判据。
+4. 各线可分开开发和合并内部改动。P1 的注册、准备和验收入口仅供内部制品使用。讨论、步骤工具与权限验证通过后，将本批的公开入口、出厂源、权限后端及资产集中纳入同一发布制品，合并为一次权限合同漂移。
+
+按 pi 随 A 发布、批次 B 集中发布的安排，预计有两轮权限合同漂移。批次 B 之后再发布的权限后端会增加一轮。G0 先确定入批范围，发布前以实际资产变更确认漂移轮次。
 
 ### 0.6 本次工作约束
 
@@ -96,13 +101,13 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
 - **出厂目录更新是显式命令**：`configuration.templates.reset`（`preserve_custom: true` → `update_factory_catalog`，`crates/core/src/templates.rs:309`）。Host 启动时**不会**把新出厂源自动并入现有数据集。
 - 全局库：`sql/global/schema.sql` 的 `runtime_installations.provider` CHECK 为 `('codex','dsh')`，`PRAGMA user_version=24`；模型服务商公开 id 必须全局唯一（`crates/core/src/configuration.rs:366` `validate_model_provider`）；凭据引用的账户必须以服务商的 `credential_account` 为前缀（`credentials.rs` `account_for_prefix`）。
 - 权限后端资产清单：`permissions/backends/manifest.json`（后端 + 资产 sha256）。新增后端会让 codex/dsh 的 `enforcement_contract` 漂移、冻结会话 `permission_asset_mismatch`。
-- 现有数据集事实：`data/`（v24，3 条运行安装）、`data1/`（v24，32 条源，无安装记录、无权限绑定 → 近空库，适合先演练升级）、`devdesk-recovery/20261119-large-snapshot/`（快照）。只读打开 WAL 库需要 `-shm` 文件，`data1` 直接只读打开报错 14 即此原因，并非损坏。
+- 历史调研曾使用 `data/`（v24，有运行安装）和 `data1/`（v24，近空库）。实施时以实际可用的 v24 副本或等价夹具为准，覆盖近空库和含安装、绑定、历史会话的数据集。
 
 ## 2. 共享地基工作项
 
 ### 2.1 Provider 注册、能力表与显式分支
 
-1. `crates/domain/src/runtime.rs`：新增 `HarnessProvider::Pi`、`Mcode`、`Zcode`、`Opencode`，并入 `HARNESS_PROVIDERS`（provider 门禁只读该注册表，禁止散落字面量）。
+1. `crates/domain/src/runtime.rs`：按入批范围新增 `HarnessProvider::Pi`、`Mcode`、`Zcode`、`Opencode`，并入 `HARNESS_PROVIDERS`。该注册表描述编译进制品的 provider，发布入口按 0.5 验收后启用。
 2. 遍历 provider 的测试改用 `HARNESS_PROVIDERS`（`harness.rs`、`permission_profiles.rs`、`tests/{permissions,schema_contracts,permission_profiles}.rs`）。
 3. **能力表**：在 `crates/domain/src/runtime.rs` 增加 `HarnessProvider::traits(self) -> HarnessTraits`（纯数据、`const` 可求值），把现有 `== Codex` / `== Dsh` 判断逐处替换为能力判断：
 
@@ -110,7 +115,7 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
    |---|---|---|---|---|---|---|---|
    | `identity` 输入身份 | ProviderTurn | ProviderMessage | HostTurn | HostTurn | HostTurn | HostTurn（P0） | `conversation_observations.rs:358,395`、`provider_tools.rs:712` |
    | `admission` 接纳凭证 | OnResponse | OnResponse | OnResponse | OnFirstEvidence | OnFirstEvidence | OnFirstEvidence（P0） | `harness.rs:1033-1058` |
-   | `owns_history` 恢复时 provider 自持历史 | 是 | 否 | 否 | 否 | 否 | 否 | `harness.rs:401` |
+   | `owns_history` 恢复时 provider 自持历史 | 是 | 否 | 是 | 否 | 否 | 否 | `harness.rs:401` |
    | `streams` 输出流式增量 | 是 | 否 | 是 | 是 | 是 | 是（P0） | `harness.rs:1148` 起的投影分支 |
    | `interrupt` 协议中断 | Protocol | ContainerOnly | Protocol | Protocol | Protocol | Protocol（P0） | `harness.rs:882-911` |
    | `host_model_route` 宿主下发模型路由 | 否 | 是 | 是 | 是 | 是 | 是 | `harness.rs:448`、`session_assembly.rs:431`、`conversation.rs:474`、凭据链路 |
@@ -133,10 +138,10 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
 
    全部新文件纳入 `managed_adapter_identity` 的哈希输入。
 5. **协议合同命名**：`managed_adapter_contract` 分别为 `pi-rpc/v1`、`mcode-acp/v1`、`opencode-acp/v1`、`zcode-protocol/v1`（ACP 适配器共用，但合同按 provider 命名，便于单线升级）。
-6. **能力登记随 P0 结论而定**：`driver_capability_registry` 只在该 provider 的传输被 P0 证实后才登记 `dynamic-tools`、`external-tools`、`platform-tools`；未证实者不登记，其 Harness 源也不得声明对应能力（`validate_harness` 会拒绝）。
+6. **能力登记随验证结果而定**：P0 证实传输后可在内部制品登记 `dynamic-tools`、`external-tools`、`platform-tools`；出厂 Harness 源随对应实现通过 0.5 的发布验收后启用。公开的能力声明须与 `driver_capability_registry` 一致（`validate_harness`）。
 7. **策略装载证明（fail-closed）**：每次打开会话，Host 在发送首轮输入前必须确信冻结策略已在容器内生效，拿不到即终止会话并报 `policy_not_enforced`，**不得降级运行**。证明分两级：
    - **会话级信号**（能做到的优先做）：pi 的 DevDesk 扩展在装载时发一条 `extension_ui_request{method:"notify", message:"devdesk.policy.loaded.v1"}`，Host 在初始化阶段必须观察到它。
-   - **配置独占 + 镜像探针**（会话级信号不可得时的最低要求）：Harness 的全部配置来源由 Host 独占生成（会话私有的 `/state/<harness>`、仓库内配置发现已关闭或屏蔽、环境变量钉死），并在 `verify_runtime_protocol` 的镜像探针中加入一次「策略生效」验证，保证同一镜像每次准备都复核。
+   - **配置独占 + 镜像探针**（会话级信号不可得时的最低要求）：Harness 的全部配置来源由 Host 独占生成（会话私有的 `/state/<harness>`、仓库内配置发现已关闭或屏蔽、环境变量钉死），在 `verify_runtime_protocol` 验证策略实际阻断，并将验证结果绑定到镜像、驱动和权限资产摘要。打开会话时核对当前制品及挂载配置与验证条件一致。无法证明时以同一错误终止。
 8. **仓库内运行时配置隔离**：指令类文件（`AGENTS.md`）与 Codex 现状同等对待（作为不可信输入读取）；**可执行配置**（项目级插件、钩子、MCP 服务、权限规则）必须用启动开关关闭，关不掉的路径加入 `protected_metadata`。`protected_metadata` 是 `/work` 下的叶子名：目录挂空目录、文件挂空文件（`docker.rs:996-1025`），白名单硬编码在三处，新增条目三处同步：`crates/domain/src/permission.rs:255`、`crates/adapters/src/permissions.rs:97`、`crates/adapters/src/docker.rs:1004`。
 
    | Harness | 仓库内会被读取的可执行配置 | 一期处置 |
@@ -157,9 +162,10 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
 3. **外部请求 id 的字符串化与还原**：`Obs::Interaction.request` 是 `String`，而 ACP/ZCode 的入站 `id` 是数字 → 适配器负责字符串化（`"<provider>:<id>"` 以免不同 provider 的 id 空间碰撞），`answer_interaction` 侧再反解回原始 id 回帧。
 4. **等待应答期间的入站帧处置**：`JsonlProcess::request_for` 在 `capture == false` 时会把任何带 `id`+`method` 的帧**自动回 `-32601`**（`jsonl.rs:558-563`）。Harness worker 必须始终保持 `capture == true`（`journal` 存在即为 true），否则 ACP 的 `session/request_permission` 会被误答。
 5. `Journal` 脱敏补强——新增「按结构脱敏」规则：凡 `headers` 数组/对象中 `name`/键命中 `authorization|token|api[-_]?key|secret` 的条目，其值必须替换为 `[redacted]`（宿主 MCP 桥令牌会以 `headers` 形式出现在 `session/new` 与 settings 写入参数里，现有按键名白名单挡不住）。三种载体形状都要覆盖：ACP 的 `headers:[{name,value}]` 数组、ZCode/opencode 的 `headers:{k:v}` 对象、以及 `mcp.servers` 下的多层嵌套。
-6. **ACP 方言**：`harness_acp.rs` 不含 provider 分支，差异全部来自一份 `AcpDialect` 配置：恢复方式（`session/resume` 优先）、MCP 注入方式（`session/new.mcpServers` 或配置文件）、指令注入方式（CLI 开关或 `session/new.systemPrompt`）、权限选项映射、工具事件归一。`initialize` 应答的 `agentCapabilities` 必须逐项核对并据此选择路径：`mcpCapabilities.http` 为假则步骤工具不可用（直接给出明确原因）；`sessionCapabilities.resume` 缺失才退回 `session/load`。
-7. **ACP 恢复与历史重放**：ACP 规范要求 `session/load` 在应答前把整段对话以 `session/update` **重放**给客户端（`agentclientprotocol.com/protocol/v1/session-setup`）。DevDesk 自持会话记录，不需要重放；而现有初始化缓冲上限 256 帧（「初始化事件超出限制」），长会话恢复必然失败。→ **优先使用 `session/resume`（不重放）**；不得不使用 `session/load` 时，必须在等待其应答期间**有界地丢弃**重放的 `session/update`（不进入观察、不占初始化缓冲）。
-8. **宿主合成接纳**：`admission == OnFirstEvidence` 的 provider 在派发时生成轮次 id 存入 Activity，并在**首个 provider 证据**到达的那次 `poll()` 里先产出 `Obs::Admitted{external_turn: 该 id}` 再处理证据。「首个证据」= 该轮次的第一条通知，或轮次应答本身（空轮次）。若在证据之前先收到轮次请求的**错误应答**，判 `provider_rejected`，不计为已应用。详见 mcode 计划 §2.2。
+6. **ACP 方言**：`harness_acp.rs` 根据 `AcpDialect` 选择恢复方式、MCP 注入方式、指令注入方式、权限选项映射和工具事件归一。ACP 参数注入 HTTP MCP 时要求 `mcpCapabilities.http`，方言使用私有配置注入时以该路径的实测结果为准。指令通过 ACP `systemPrompt` 注入时须确认 agent 宣告相应能力。
+7. **ACP 恢复与历史重放**：优先在 agent 声明 `sessionCapabilities.resume` 时用 `session/resume`。缺少该能力时，仅在 `agentCapabilities.loadSession == true` 时使用 `session/load`，两者均缺失则给出明确的恢复不可用错误。`session/load` 会在应答前经 `session/update` 重放历史。在等待应答期间按会话识别并有界丢弃历史重放，避免占用 256 帧初始化缓冲，保留需要应答的入站请求和其他初始化证据。恢复后核对冻结模型、注入指令和步骤工具。见 [ACP 会话规范](https://agentclientprotocol.com/protocol/v1/session-setup)。
+8. **宿主合成接纳**：派发时为 `OnFirstEvidence` 生成并保存轮次 id。收到可归属到当前派发的轮次通知、审批请求或经过验证的 MCP 工具请求时，先产出一次 `Obs::Admitted{external_turn: 该 id}`，再处理该证据。空轮次可以用匹配当前请求的成功终态应答接纳。会话级状态更新、恢复重放、其他会话及迟到帧不能作为接纳凭证。首个证据之前的明确拒绝判 `provider_rejected`，接纳后的错误保留已接纳事实，按终态或待核对处理。
+   - **早到请求**：P0 记录审批与 MCP 请求相对首条通知的实际顺序。协议允许请求先到时，用真实请求或协议夹具验证归属与应答。可归属的请求走正常接纳和应答，归属不明的请求及时返回明确错误。会话令牌只鉴别会话和 worker，不能单独证明请求的轮次归属。桥在入队时绑定已核对的轮次与 worker，出队再核对。跨轮次复用传输必须有可验证的关联或静止边界，避免把迟到请求归到下一轮。
 9. **唤醒**：任何非协议帧来源的观察（桥收件箱）入队时必须调用 `RuntimeWorkers.wakeups.notify()`，否则 provider 在等待结果期间不产生协议帧，worker 不会被轮询。
 10. **私有请求**：zcode 的 `interaction/requestProviderRuntimeHeaders` 应答含 API key → 与 Codex 的 `account/`、`auth/` 同等登记为私有请求（不落日志）；桥令牌与 API key 一律进入 `JsonlProcess` 的 secrets 列表。
 
@@ -179,11 +185,10 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
    - **令牌生命周期 = worker 操作生命周期**：worker 停止或 `cleanup_worker` 时撤销；Host 关闭时全部撤销。令牌只写进容器内进程可见的会话级配置（`write_private`，0600），**不进仓库、不进日志**。
    - opencode 与 zcode 的含令牌配置文件位于宿主侧的会话状态目录（`/state/<harness>` 的绑定挂载），会话结束后残留在磁盘 → 清理时必须覆盖或删除，并由撤销保证残留令牌不可用。
 3. **协议**：实现 MCP `initialize`、`notifications/initialized`、`ping`、`tools/list`（含 cursor 分页）、`tools/call`，并处理 `notifications/cancelled` 与 `DELETE`；响应一律 JSON（不开 SSE 流）。协议版本集合与 `crates/adapters/runtime/tool-worker.mjs` 保持一致（`2025-11-25` 的 `Mcp-Session-Id` 头与 `2026-07-28` 的 `_meta` 版本协商）。其余方法与未带令牌的请求一律拒绝。校验 `Host` 头；请求体上限与协议帧一致（1 MiB）。
-4. **工具集合**：`tools/list` 返回该会话**冻结**的动态工具集（来源同 `harness.rs:1718 dynamic_tools(binding)`：集成绑定工具、未绑定工具、平台工具、上下文工具，且按冻结 `tool_refs` 过滤）。**工具名注册表**：集成/未绑定工具用 `definition.qualified_name`，平台工具与上下文工具用 `definition.call_name()`（core 侧也按这两种名字分别匹配：`conversation_observations.rs:410-418` 用 `qualified_name`，`platform_observations.rs:46-55` 用 `call_name()`）。桥侧保留 `MCP 暴露名 → (种类, 冻结引用, 原名)` 的反查表；`qualified_name` 与 `call_name` 撞名且无法用冻结引用消歧的条目**不暴露**。未在冻结集合内的名字一律拒绝。
+4. **工具集合**：`tools/list` 与 pi 隧道从 `dynamic_tools(binding)` 的候选集选择当前会话冻结且可执行的工具，按实际适用的 `tool_refs` 过滤。桥保留 `MCP 暴露名 → (种类, 冻结引用, 原名)` 的反查表。集成绑定工具使用 `definition.qualified_name`，平台和上下文工具使用 `definition.call_name()`。无法消歧、未冻结或无合法执行路径的名字在投放时过滤，收到调用时返回明确拒绝。
    - **MCP 工具名约束**：暴露名必须满足 `^[A-Za-z0-9_-]{1,64}$`（多数客户端与模型提供方的共同约束）；原名含其他字符时做确定性映射（`.` → `_` 等），`tools/call.name` 经反查表还原为原名后再产出观察。MCP 服务名取短名（建议 `devdesk`）。
    - **客户端命名空间化**（P0 必测）：各 harness 会给 MCP 工具加服务器前缀后再暴露给模型（pi 文档即有 `mcp__<server>__<tool>` 形态），模型可见名与 DevDesk 指令文本里的工具名可能不一致。P0 记录每条线的模型可见名与长度；指令文本对工具名的引用改为「按前缀识别」的措辞，或在 `tools/list` 的 description 中说明。
-   - **工具种类**：现有三类是集成工具、平台工具（`implementation: "platform"`）和上下文工具，按 `qualified_name` 或 `call_name()` 匹配。[架构独立性改造](../arch-independency/PLAN.md)会新增**领域工具**（`implementation: "domain"`，名称在领域命名空间下，由领域处理器执行，只读）。该改造先落地时，`dynamic_tools(binding)`、桥的工具名注册表与 core 的按名分派要同步纳入领域工具：按 `qualified_name` 匹配，走平台只读准入，MCP 暴露名按同一条确定性映射处理。本计划先落地时，由该改造的 N-1 在桥与隧道两处补齐。
-   - **一期暴露范围：四类全暴露**（含平台工具）。桥产出观察时 `tool` 取**原名**，core 已有按名分派：命中集成工具 `qualified_name` 的走常规接纳（`admit_provider_observations`），其余（平台工具）自动走平台准入路径（`admit_platform_provider_observation`，`conversation_runtime.rs:334-345`）→ 桥**不需要**新增 grant 路由或新端口。
+   - **core 分派**：已绑定集成工具走 `provider_tool_intent`，上下文工具走 `agent_context_call`，平台工具走现有 workflow 或 controller 平台调用路径。`dynamic_tools(binding)` 的 `unbound_tools` 目前没有对应的 core 执行路径，新传输一期从工具列表隐藏这类条目，收到显式调用返回 `tool_not_authorized`。后期合并 N-1 时，按架构改造合同将只读领域工具纳入 `dynamic_tools`、桥和 pi 隧道以及 core 分派，见第 8 章。
    - **平台工具的可调用前提（必须写进 `limitations`）**：平台调用要么有 **controller 授权**（`poll.authority.controller` 存在且有效，`platform_observations.rs:140-194`），要么有 **workflow 执行归属**（`poll.authority.workflow` 存在，`platform_observations.rs:263-290`）；两者皆无的普通讨论会话调用平台工具会被 core 以 `tool_not_authorized` 拒绝。桥把 core 的拒绝原因原样返回（MCP `isError` + 可读原因），不能让模型反复重试。
 5. **权限与审批（更正后的口径）**：
    - **provider 自己发起的审批请求**（`session/request_permission`、`interaction/requestPermission`、pi 的 `devdesk.approval.v1`）走既有 `Obs::Interaction{ToolApproval}` 流；冻结审批策略为 `never` 时适配器**自动拒绝、不弹窗**（与 Codex `interaction()` 的自动 decline 同构）。允许时一律选 `kind == allow_once` 的选项，**永不选 `allow_always`**。
@@ -196,29 +201,29 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
 7. **验收底线**：容器内只能访问该桥端点与被授权的外部地址；桥令牌泄漏后撤销即失效；桥发起的工具调用必须与 provider 发起的工具调用**同等可审计**（第 9 条）。
 8. **统一执行口径：桥调用一律经 core 接纳/审计链路**——桥只负责**传输与寻址**，不执行工具、不自造审批、不旁路治理记录。链路与 Codex/DSH 同构：
 
-   1. **投递**：MCP 服务端校验令牌与会话 → 生成 `call_id` → 经 `ports::ToolBridge` 把调用投递到该会话 worker 的**桥收件箱**（有界，超限报错）→ **触发 `wakeups.notify()`** → HTTP 处理器等待回执（超时 = 工具执行预算 + 余量）。
+   1. **投递**：MCP 服务端校验令牌与会话，关联调用身份，经 `ports::ToolBridge` 投递到该会话 worker 的有界收件箱并触发 `wakeups.notify()`。轮次归属按 2.2.8 核对。HTTP 处理器等待回执，超时按工具执行预算加余量设置。
    2. **观察**：worker 的 `poll()` 在抽取协议帧的同时抽取桥收件箱 → 产出与既有形状**完全一致**的观察：
       `Obs::ToolCall{turn, request:{"kind":"bridge","call_id":"<id>"}, thread:<会话 external_session>, external_turn:<轮次的宿主生成 id>, call:<call_id>, tool:<原名>, arguments:<MCP arguments>, worktree}`。
       `request` 是 `Value`（`ports.rs:220`），用 `kind` 判别传输来源。
-   3. **接纳**：core 走既有链路——`validate_provider_call_scope`（`conversation_observations.rs:338-369`）、冻结工具解析、`provider_tool_intent` 治理记录。越权工具、跨轮次调用、已停止轮次一律在这里被拒。
-   4. **执行**：core 的工具调用驱动器（`crates/core/src/integrations.rs:365-440`）经 `tool_executor.start/poll` 执行（`ports.rs:303-315`，实现是 adapters 的 `NativeTools`），产出 `ToolReceipt`。
+   3. **接纳**：core 核对会话、轮次、worker、冻结工具和权限，再按本节第 4 条进入对应的接纳与治理路径。接纳被拒时沿 worker 回传可读原因。
+   4. **执行**：已绑定集成工具由 core 的工具调用驱动器执行并产生 `ToolReceipt`。上下文及平台工具沿各自的 core 路径执行和回执。
    5. **回执**：core 调 `harness.answer_tool_call(session, request, &receipt)` → 适配器识别 `request.kind == "bridge"` → 交回桥的 pending 表 → 唤醒 HTTP 处理器 → MCP 结果：`content` 中 text/image 直接映射、其余类型序列化为 text，`structuredContent` = `structured_content`，`isError = !success` 且把 `error` 文本放入 content。
-   6. **幂等与审计**：意图持久化 + `replay_commit` 指纹 → 同一 `(session, turn, worker, call_id)` 重放不重复执行；工具调用进入会话记录（`ConversationEventKind::Tool`）与治理记录。**幂等范围需如实表述**：core 层对同一 `call_id` 的重放不重复执行；HTTP 层的客户端重试是新的 `call_id`，桥只对「同会话、同参数指纹、仍在途」的调用做合并等待，不承诺跨重试的恰好一次。
+   6. **幂等与审计**：重放以 `(session, turn, worker, call_id)` 核对 core 中的原记录与回执。同一稳定请求身份的重试复用原调用，身份相同而内容变化则拒绝。参数相同的独立请求保留独立身份。P0 记录客户端的请求身份与自动重试行为。写调用超时且效果未知时返回 `needs_reconciliation`，保留原意图及回执核对路径。若客户端重试会换身份，写工具验收须验证可禁用此类重试，或由 core 按可核对的操作身份阻止再次执行。按工具种类验证会话事件、治理记录和回执可相互追溯。
 
    - **不新增 core 端口**：桥的观察由 **worker（适配器）** 产出，仍是合法的 `Obs` 生产者；回执复用既有 `Harness::answer_tool_call`，只是 `request` 的判别式不同。
-   - **线程模型**：MCP HTTP 处理器阻塞在等待回执上；core 的轮询循环独立运行（provider 侧仍在等待 MCP 结果，轮次保持 `running`）→ 不产生死锁。前提是入队即唤醒（第 1 步）。
-   - **撤销与超时**：会话撤销、轮次取消或观察到终态 → 所有在途桥调用立即失败并向容器返回 `isError`；回执超时未达 → MCP 返回明确的可重试错误，**不得**在宿主侧重复执行。
+   - **并发模型**：HTTP 处理器异步等待回执，core 的轮询独立进行。入队即唤醒，早到调用按 2.2.8 处理。
+   - **撤销与超时**：会话撤销、轮次取消或观察到终态时停止接纳新调用，并立即结束等待。尚未接纳的请求返回明确的未应用结果。已接纳且效果未知的请求保留原意图并按第 6 步核对，HTTP 取消或超时本身不能证明副作用已停止。
    - **资源上限**：每会话在途桥调用上限（建议 8）、全局并发上限、HTTP 读超时与空闲超时均为显式常量。
 9. **桥的验收判据（三个计划共用，缺一不可）**：
-   1. **往返**：容器内一次 `tools/call` 能拿到 MCP 结果，且宿主侧产生 `ToolReceipt`。
-   2. **可审计**：该次工具调用出现在**会话记录**中，且存在对应的 `provider_tool_intent` 治理记录。
+   1. **往返**：容器内 `tools/call` 能拿到 MCP 结果。已绑定集成工具验证 `ToolReceipt`，上下文和平台工具验证各自的返回结果与错误路径。
+   2. **可审计**：按已绑定集成工具、上下文工具、平台工具分别核对会话记录及本节第 4 条的治理记录。未绑定工具不可见，显式调用有可读拒绝。
    3. **受冻结权限约束**：不在冻结 `tool_refs` 内的工具名被拒；只读 Profile 下写入类工具被拒。
-   4. **幂等**：同一 `call_id` 重放不产生第二次执行。
+   4. **幂等**：同一 `call_id` 重放不产生第二次执行。覆盖超时后结果未知时的写调用重试、已落账的迟到回执及相同参数的独立调用。
    5. **撤销**：撤销会话令牌后，桥调用立即失败。
    6. **审批口径正确**：`approval == never` 的默认 Profile 下步骤工具**正常执行**（不得被拒）；`on-request` 下平台写操作被 core 拒绝且原因可读、不弹审批窗。
    7. **脱敏**：桥令牌与工具参数不出现在协议日志与桥日志中（2.2.5）。
    8. **平台工具**：在有 controller 授权或 workflow 执行归属的会话里，平台工具调用被正确路由到平台准入路径并完成；在两者皆无的普通讨论会话里被**明确拒绝**（`tool_not_authorized` 语义），模型不反复重试。
-   9. **唤醒**：provider 在等待 MCP 结果期间不产生任何协议帧时，桥调用仍在一个调度周期内被处理（不得依赖任何协议帧的到来）。
+   9. **唤醒与轮次归属**：provider 等待 MCP 结果期间无协议帧时，桥调用仍在一个调度周期内被处理。覆盖首条通知前的调用及上一轮迟到请求，验证会话令牌、worker 和轮次绑定。
 10. **传输对照与演进**：
 
    | | Codex / DSH | pi | mcode / opencode / zcode |
@@ -237,7 +242,7 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
 3. `schemas/rpc.schema.json`（六处 provider 枚举）、`schemas/permission-backend.schema.json`（两处）同步枚举。
 4. 出厂配置：`plugins/core/harnesses/builtin-harness-{mcode,zcode,opencode}-managed-v1.json`，对应 `builtin-model-catalog-{mcode,zcode,opencode}-v1.json`；登记 `plugins/core/manifest.json`；`scripts/check/configuration_usage.py --write` 重生成 `reference-usage.json`；`tests/fixtures/configuration/engineering-catalog.json` 同步（`schema_contracts` 会遍历全部 provider）。路径与命令按第 8 章：[架构独立性改造](../arch-independency/PLAN.md)落地后，出厂资源目录是 `kernel/core/`，引用索引由 `devdesk-domain` 的等价入口重生成，测试夹具改为该改造提供的内核夹具目录。
 5. 目录 `recipe_digest` 取自 `examples/export_runtime_recipes.rs` 输出（该示例改用 `HARNESS_PROVIDERS`）。
-6. **配方生成面扩展（两条新线的前置改造）**：现有 `compose_execution_recipe` 只有一条安装通道——`RUN npm install --global --omit=dev {package}@{version}`（`crates/domain/src/execution_recipe.rs:219-222`），且 `HarnessInstallation.package` 必填非空（`:119-129`、校验 `:165-171`）；`native_releases` 只服务**宿主侧登录组件**（`runtime_preparation.rs:216-230`），不是镜像安装通道。扩展需满足四条约束：
+6. **配方生成面扩展**：共享地基统一设计 npm 安装参数与镜像内二进制安装接口，按 P0 入批范围交付，各安装路径可独立落地。当前 `compose_execution_recipe` 只生成 npm 安装行，`HarnessInstallation.package` 必填，`native_releases` 用于宿主登录组件（`execution_recipe.rs:146`、`runtime_preparation.rs:216`）。扩展依据以下约束。
    - **字节稳定**：未使用新字段的 Harness（codex/dsh/pi/zcode）生成的 Dockerfile 必须与改造前**逐字节相同**，`recipe_digest` 不变 → 已登记的安装继续有效、Harness 与 Model 目录的 `recipe_digest` 钉定不受影响、无需重新准备镜像。`installation_identity`（`execution_recipe.rs:183`）的哈希输入只在字段存在时追加。回归测试：`export_runtime_recipes` 对 codex/dsh/pi 的 `recipe_digest` 在改造前后一致（写成常量断言）。此前版本称「配方生成一变，全部 provider 的配方摘要都变」——按本约束**不成立**，权限资产漂移也不因此多出轮次。
    - **注入防护**：进入 Dockerfile `RUN` 行的字段一律白名单校验。npm 参数字段只接受枚举开关与受限取值（如 `--include=optional`、`--allow-scripts=<包名列表>`），字符集受限；二进制字段 url 仅 https、无内嵌凭据/查询/片段，sha256 为 64 位十六进制，member 为不含 `..`、非绝对的相对路径；所有插值经 `serde_json::to_string` 转义（与现有 COPY 行一致）。出厂 Harness 源是数据，可经 `harness.create`/`revise` 编辑，不能假定可信。
    - **构建期完整性**：二进制发行物在 `docker build` 内完成 sha256 校验后才落位（`ADD --checksum` 或镜像内 Node 脚本 fetch + verify），不依赖宿主预下载；按 `TARGETARCH` 选择资产；**一份配方覆盖 linux/x86_64 与 linux/aarch64**（摘要覆盖全部平台资产），以维持「一个 Harness 一个 `recipe_digest`」的现有语义。
@@ -259,38 +264,36 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
    2. 读取 `user_version`：0 → 无需升级；24 → 继续；25 → 幂等返回；其他 → 拒绝。
    3. 对 `global.sqlite3` 做 WAL checkpoint，保证备份完整。
    4. 备份到数据集目录之外（沿用仓库现有的 `.devdesk-storage-backups` 约定），文件名含时间戳与源版本。
-   5. 单事务内重建 `runtime_installations`（新 CHECK）并重建其索引，推进 `user_version`，**保留全部既有行**（现有 `data/` 的 3 条运行安装）。
+   5. 单事务内重建 `runtime_installations`（新 CHECK）及索引，推进 `user_version`，保留全部既有行。
    6. 校验：行数一致、`sqlite_master` 中该表与索引的定义与 v25 基线一致、`PRAGMA integrity_check` 通过。
    7. 输出 JSON 报告（源版本、目标版本、行数、备份路径）。
    - 启动版本检查（`catalog.rs:41`）同步改为只接受 `0 | 25`。
 3. `tests/entrypoints/dataset_protocol.py` 扩展：覆盖 v24→v25 升级路径、幂等重跑、Host 运行中拒绝升级、升级后旧二进制被拒绝。
-4. **旧数据集的完整升级流程**（重建表只是第一步，以下缺一不可）：
-   1. 停止 Host，执行 `storage upgrade-global`。**先在 `data1/` 的副本上演练，再对 `data1/`、最后对 `data/` 执行**，每次保留备份。
-   2. 启动新 Host。
-   3. **更新出厂目录**：`configuration.templates.reset`（`preserve_custom: true`）。新增的 Harness/服务商/Model/原生工具源不会自动进入现有数据集，不做这一步旧数据集里根本选不到新 Harness。核对 `query.template_catalog` 的计数。
-   4. 重新应用权限绑定：新增后端资产让 codex/dsh 的 `enforcement_contract` 漂移。逐目标执行 `permission.binding.preflight` + `permission.bindings.apply`（`permission.bind` 已退役）。**待核实**：出厂目录更新随后的 `template_permission_defaults` 是否会因合同变化而重新绑定出厂目标；若会，这一步只需覆盖自定义目标与 Workflow 步骤的显式 Profile。
-   5. 新 Harness 目标的默认权限绑定：出厂 Harness 修订由 `template_permission_defaults` 自动套用默认 Profile；自定义目标必须显式应用绑定，否则会话打开失败。
-   6. 既有冻结会话需创建带上下文的后继会话；进行中的执行按恢复流程核对后重跑。
-   7. codex/dsh 的配方摘要不变（2.5.6 字节稳定），已登记安装仍有效，仅按新驱动身份重新通过协议探针（自动）。
-5. **漂移轮次口径**：每新增一批权限后端都会改动 `asset_digests()`（`crates/adapters/src/permissions.rs:42-45`，覆盖 `permissions/backends/manifest.json` 全文与全部资产摘要）→ codex/dsh 的 `enforcement_contract` 漂移、冻结会话 `permission_asset_mismatch`。按 0.5 的两批次安排，**每批次之后**都要重跑第 4 条的流程，并在验收记录里写明这是第几轮漂移。
+4. **旧数据集发布流程**。批次 A 先在近空 v24 副本和含安装、绑定、历史会话的代表性 v24 副本上演练。批次 B 从经过 A 的 v25 副本继续演练。实库切换前安排维护窗口、核对停机和备份。
+   1. 批次 A 在 Host 停止后执行 `storage upgrade-global`，保留备份，然后启动新 Host。批次 B 在确认 v25 后启动新版 Host。
+   2. **更新出厂目录**：执行 `configuration.templates.reset`（`preserve_custom: true`），用 `query.template_catalog` 核对新增的 Harness、服务商、Model 和工具源。
+   3. **重新应用漂移的绑定**：`template_permission_defaults` 只补缺失的出厂目标（`crates/core/src/default_permissions.rs:58`）。逐目标核对现有出厂与自定义的 Harness/Sandbox 绑定，已有绑定发生漂移时用原 Profile 显式执行 `permission.binding.preflight` 与 `permission.bindings.apply`。同时核对 workflow 冻结步骤与显式 Profile 的后继执行路径。新增自定义目标也需要显式绑定。
+   4. 验证旧会话历史仍可读取，受资产漂移影响的会话创建带上下文的后继会话。对进行中的执行按恢复流程核对已产生的效果和回执，再决定是否重跑。
+   5. 验证 Codex、DSH 和本批新增 Harness 在升级后的副本各完成一轮。既有安装应以原 `recipe_digest` 被识别，并按新版驱动身份重新通过协议探针。
+5. **漂移轮次口径**：权限语义摘要包含完整 manifest 与嵌入的资产摘要（`crates/adapters/src/permission_profiles.rs:57`），冻结会话也会核对资产摘要（`crates/adapters/src/harness.rs:68`）。每个实际变更权限资产的发布重跑第 4 条的目录、绑定和会话验证步骤，记录漂移轮次。全局库升级只在批次 A 执行一次。
 6. `devdesk-recovery/20261119-large-snapshot/` 是恢复快照，**不升级**；确有需要时在同一命令下另行处理。
-7. **与架构独立性改造叠加**：该改造不兼容的是领域包格式与项目库，不改全局库。它的 P4 落地后，既有项目库按该计划归档重建；本节的升级流程对全局库部分（运行安装、凭据引用、设置）仍然适用。两份计划的落地先后见第 8 章。
+7. **与架构独立性改造叠加**：后期合并时，在同一份代表性数据集副本上验证本节的全局库升级与架构计划的项目库归档重建。保留全局安装、凭据引用和设置，项目历史按架构计划归档。合并要求见第 8 章。
 
 ## 4. 未决问题与后续关注点
 
 | # | 问题 | 影响 | 处置 |
 |---|---|---|---|
 | 1 | mcode 在 Linux 容器内能否启动（无 linux 原生预编译） | 决定 mcode 计划是否成立 | mcode 计划 P0.1；失败则回到用户决策（换发行物 / 换基础镜像 / 放弃 mcode） |
-| 2 | `PreToolUse` Hook 能否真正阻断工具调用（mcode 与 zcode） | 决定冻结策略能否在容器内落实 | mcode 计划 P0.4 / zcode 计划 P0.6；不能则如实降级并写入 `limitations` |
+| 2 | `PreToolUse` Hook 能否真正阻断工具调用（mcode 与 zcode） | 决定冻结策略能否在容器内落实 | mcode P0.4 / zcode P0.6 实测，阻断或装载证明失败则退回设计 |
 | 3 | ACP `session/new` 的 `mcpServers`（http + headers）在容器内能否连通宿主端点；agent 是否宣告 `mcpCapabilities.http` | 决定步骤工具一期能否打通 | mcode 计划 P0.3；备选见 mcode 计划 §2.3 第 7 条；opencode 侧优先改用配置文件注入 |
-| 4 | 宿主 MCP 桥在 macOS/Linux 的监听地址策略 | 决定桥的可用性与暴露面 | mcode 计划 P0.3 双形态实测；独立监听器 + 每会话令牌 |
+| 4 | 宿主 MCP 桥在 macOS/Linux 的监听地址策略 | 决定桥的可用性与暴露面 | G0 共用探针双形态实测，独立监听器 + 每会话令牌 |
 | 5 | ZCode Protocol 的权威终态事件与权限应答形状 | 决定 zcode 计划能否进入 P1 | zcode 计划 P0.2/P0.4；未确认即停止 |
-| 6 | zcode 随包专有运行时的再分发条款是否允许进入 DevDesk 镜像 | 合规风险 | zcode 计划 P1 前由维护者/法务确认；至少完整携带 `LICENSES/` 与声明 |
-| 7 | 全局库版本合并 vs 逐级升级 | 影响一次性影响面与验收工作量 | **已定：两批次、全局库只升一次**（批次 A 把 CHECK 写成六个 provider）；漂移轮次 2；见第 3.1 条与 0.5 |
-| 8 | pi 的 UI 隧道与新宿主 MCP 桥是否合并为同一套桥接实现 | 长期一致性 | **执行口径已统一**（都经 core 接纳/审计链路，请求判别式见 2.4.10）；合并实现列入后续演进。上游 ACP 若实现「客户端承载的 MCP」，三条 ACP/ZCode 以外的线可改走协议通道（2.4.10） |
+| 6 | zcode 随包运行时及第三方内容能否放入 DevDesk 发布镜像 | 决定能否进入批次 B | G0 由维护者确认许可及声明义务，必要时交法务核对，按结论处理镜像内容 |
+| 7 | 全局库版本合并 vs 逐级升级 | 影响一次性影响面与验收工作量 | 批次 A 的 v24→v25 覆盖六个 CHECK 取值。权限合同漂移按发布中实际登记的资产计，见 0.5 和第 3 章 |
+| 8 | pi 的 UI 隧道与新宿主 MCP 桥是否合并为同一套桥接实现 | 长期一致性 | 共用 core 接纳与审计。若上游支持客户端承载的 MCP，可再考虑让 ACP 线改走协议通道（2.4.10） |
 | 9 | opencode ACP 模式是否隐式使用后台服务 | 多会话共享服务进程，破坏会话隔离 | opencode 计划 P0.3；必要时 `--standalone` 或改走其 v2 HTTP/SSE 备选路线 |
 | 10 | opencode 发行二进制在容器内是否可直接运行（glibc/依赖） | 决定 opencode 计划是否成立 | opencode 计划 P0.1；`native_releases` 不是镜像安装通道，容器安装走 2.5.6 |
-| 11 | 三条接入线的实施顺序 | 影响交付节奏 | **已定：P0 批次前置（G0），随后批次 A（pi）、批次 B（mcode → opencode → zcode）**；见 0.5 |
+| 11 | 三条接入线的实施顺序 | 影响交付节奏 | G0 → 批次 A → 批次 B 共享地基 → 首个通过 P0 的 ACP 实现。ZCode 通过门槛后依赖 MCP 桥并行接入，见 0.5 |
 | 12 | 宿主 MCP 桥的调用执行路由：(a) 转发到 core 既有接纳链路，(b) 桥自行执行并写入会话事件 | 决定步骤工具是否可审计、可幂等重放 | **已定 (a)**（2.4.8）；桥只做传输与寻址 |
 | 13 | 是否新增「二进制发行物」安装面 | 决定 opencode 能否用 v2 发行二进制 | **已定：新增**（2.5.6），并对既有配方字节稳定 |
 | 14 | ACP 的接纳（`Obs::Admitted`）语义 | 决定流式输出与长轮次是否可用 | **已定**：按首个 provider 证据合成（2.2.8）；轮次应答改判终态 |
@@ -301,7 +304,7 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
 | 19 | opencode provider 的 `npm` 包（如 `@ai-sdk/openai-compatible`）在容器内的安装路径 | 运行时从未固定的 npm 拉取包不可接受 | **P0 必测**：预装并钉版本，或使用其内置协议；见 opencode 计划 P0.7 |
 | 20 | 同厂商 API key 跨 Harness 复用 | 用户需为每个 Harness 重复保存同一把 key | 一期保持按 `(Harness, 服务商)` 隔离并在 UI 提示；一键复用列入后续演进（2.3.4） |
 | 21 | opencode 的指令注入通道 | DevDesk 的角色指令、快照与合同无法送达 | **P0 必测**：`acp` 无系统提示开关 → ACP `sessionCapabilities.systemPrompt`，退路为配置 `instructions` |
-| 22 | ACP 恢复使用 `session/load` 会重放整段历史 | 长会话恢复触发初始化缓冲上限而失败 | **已定口径**：优先 `session/resume`；退回 `session/load` 时有界丢弃重放（2.2.7） |
+| 22 | ACP 恢复使用 `session/load` 会重放整段历史 | 长会话恢复触发初始化缓冲上限而失败 | 优先 `session/resume`，agent 声明 `loadSession` 时可回退并有界丢弃重放（2.2.7） |
 | 23 | 宿主代执行工具是否走人工审批 | 按此前描述实现会让默认 Profile 下的步骤工具被全部拒绝 | **已更正**：适配器与桥不设审批，准入由 core 按冻结权限判定（2.4.5） |
 
 ## 5. 实施阶段的通用约束
@@ -311,7 +314,7 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
 3. 镜像构建固定版本与摘要；`compose_execution_recipe` 产出的 Dockerfile 与锁文件摘要进入出厂配置。
 4. 涉及全局库变更时，先在副本数据集演练升级，再对真实数据集执行并保留备份。
 5. 每次改动后运行受影响的最小测试集，最后跑 `./scripts/check/check.sh` 全量；报告写明命令、制品版本、实际结果与未验证范围。
-6. **P0 批次全部完成之前不写生产代码**；任一 P0 结论变化时先修订本文件，再改对应 Harness 计划。
+6. G0 期间使用隔离探针与夹具。G0 收口后，按通过的范围实施生产改动。P0 结论变化时先更新本文件，再更新对应计划。
 7. 进入 Dockerfile 的任何配置字段都按不可信数据处理（2.5.6 注入防护）。
 
 ## 6. 统一语义口径（四条线一致）
@@ -323,7 +326,7 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
 | `max_turn_requests`、`refusal`、`error` | Failed | — |
 | 用户取消、`aborted`、`cancelled` | Cancelled | — |
 | 工具调用失败 | 只记为 Tool 事件，**不改变轮次终态** | 与 Codex/DSH 一致：agent 可以从失败的工具调用中恢复 |
-| 「消息已消费」 | 用户消息证据到达时产出 `Obs::Consumed`；provider 不回显用户消息时（ACP）与接纳同时产出 | mcode 计划 P0.2 确认 |
+| 「消息已消费」 | 有用户消息回显时据此产出 `Obs::Consumed`，无回显时与接纳同时产出。成功终态入账前要有消费证据 | 各线 P0 实测 |
 | 助手终稿 | 以工具调用为边界**分段**封存，每次工具调用前封存当前段；不能把整轮拼成一条 | 多步轮次里工具调用前后的文本属于不同消息 |
 | Agent 提问 | 适配器直接应答取消，不产生 `Obs::Interaction` | core 对任何 `Obs::Interaction` 都会把轮次置为 `WaitingInteraction` |
 | 推理内容 | 不展示、不入账 | 与 Codex 不展示 reasoning 一致 |
@@ -331,40 +334,37 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
 
 ## 7. 通用 P0 清单（各线 P0 必含，结论回写对应计划）
 
+各线记录制品版本及摘要、验证环境与命令、实际结果、脱敏协议样本及未验证范围。所有适用的必验项有证据才判「通过」。必验项被实测证伪则「退回设计」，时间盒内缺少环境、凭据或充分证据则「延期」。备选方案改动协议或交付范围时另行评审。ZCode 的再分发结论也是入批条件。
+
 | # | 验证项 | 判定 |
 |---|---|---|
-| 1 | 镜像可构建、`--version` 正确、协议进程可在 `--network none`、只读根文件系统、`--cap-drop ALL` 下启动并完成最小握手 | 启动期若有强制外联，探针会在这里失败 |
-| 2 | 最小闭环：建会话 → 发一轮 → 收到流式增量与权威终态 → 取消一轮 | 连续 3 次结果一致 |
-| 3 | 轮次请求的**应答时机**（立即回执 vs 轮次末）与 `stopReason` 的实际取值和大小写 | 决定 `admission` 取值与终态映射 |
-| 4 | 冻结策略钩子：发现路径、装载信号、能否阻断工具调用 | 三者齐备才登记 `tools: restricted` |
-| 5 | 仓库内可执行配置是否被读取；关闭开关是否生效 | 见 2.1.8 |
+| 1 | 构建指定镜像，核对 `--version`。在零凭据、`--network none`、只读根文件系统、`--cap-drop ALL` 下验证启动和最小协议往返 | 独立启动探针，记录各安装路径及支持的平台 |
+| 2 | 用容器内真实 CLI 连接获授权模型或受控模型夹具，验证建会话、流式增量、步骤工具往返、权威终态和取消 | 连续 3 次最小闭环一致。成功、失败、取消分类均有实测证据 |
+| 3 | 轮次应答时机、终态值、早到审批与早到 MCP 调用、上一轮迟到请求 | 确定 `admission` 和终态映射，验证 2.2.8 的归属与正常应答 |
+| 4 | 冻结策略钩子的发现路径、装载证明及实际阻断 | 通过 2.1.7 的任一证明路径，且实际阻断成功 |
+| 5 | 在仓库放置项目级插件、Hook、MCP 和权限规则，验证隔离 | 可执行配置不被装载，见 2.1.8 |
 | 6 | 启动期外联（模型目录、更新检查、遥测）逐项确认并关闭 | 不得有未固定的运行时下载 |
 | 7 | 指令注入通道可用，且注入内容确实进入模型上下文 | — |
 | 8 | 恢复：会话 id 稳定、不重放历史或重放可被有界丢弃、模型与 MCP 配置在恢复后仍然生效 | 见 2.2.7 |
-| 9 | 宿主桥连通性（仅 HostMcp 线）：agent 宣告对应 MCP 传输能力；容器内能连到宿主端点；macOS 与 Linux 两种绑定地址；工具名经客户端后的模型可见名与长度 | 见 2.4.4、2.4.6 |
-| 10 | 模型路由与凭据：API key 型自定义 provider 的最小配置；零凭据启动的探针配置 | 探针必须零凭据、零网络 |
+| 9 | 宿主桥连通性（仅 HostMcp 线）：通过实际选择的注入方式连通共用探针，在 macOS 和 Linux 验证监听与往返，记录客户端的模型可见工具名、超时、请求身份和重试行为 | 见 2.2.6、2.4.4、2.4.6、2.4.8 |
+| 10 | 模型路由与凭据：API key 型自定义 provider 的最小配置 | 确认冻结模型和凭据的生效路径，恢复后复核 |
 
-## 8. 与架构独立性改造的交叠（2026-11-26 增补）
+## 8. 与架构独立性改造的后期合并
 
-[架构独立性改造](../arch-independency/PLAN.md)把内核改为领域无关，状态是待实施。Harness 是内核定义的通用概念，两份计划在定位上一致，交叠在路径、测试基建和工具种类上。同一张表也写在该计划的 0.5 节。两处不一致时，以先落地的一方当时写入的为准，并由后落地的一方同步另一处。
+[架构独立性改造](../arch-independency/PLAN.md)与 Harness 扩展在各自分支并行推进，后期合并。Harness 用当前基线完成 G0、批次 A 和批次 B 的实现与验收。下表用于合并时核对两边的行为与路径，架构计划 0.5 节提供对应工作项。
 
 | 交叠点 | 本计划 | 架构独立性改造 | 规则 |
 |---|---|---|---|
-| 出厂资源目录 | 在 `plugins/core/` 下新增源并登记清单 | K-6 改名为 `kernel/core` | 先落地的一方按当时的路径写。K-6 落地后，本文件与四条接入线里的 `plugins/core/...` 一律读作 `kernel/core/...` |
-| 引用索引 | 用 `scripts/check/configuration_usage.py --write` 重生成 | S-3 把算法迁入 `devdesk-domain` | S-3 保留等价的 `--write` 入口；它落地后本计划的这条命令以新入口为准 |
-| 测试夹具 | 向 `tests/fixtures/configuration/engineering-catalog.json` 同步新源；`native_acceptance.py` 以 `fixture-catalog` 运行适配器套件 | T-4、T-6 移除 `fixture-catalog` 与工程目录夹具 | 本计划先落地时，T-4、T-6 把新增的源原样带进新的夹具；该改造先落地时，本计划改为同步内核夹具目录，并用新的测试引导 |
-| 前端文件 | 修改 2.6.1 列出的七个文件 | P2 把 `web/src` 分成 `sdk/`、`kit/`、`core/`，并把领域界面迁到领域目录 | P2 之后，`RuntimeSettings.tsx`、`AgentCatalog.tsx`、`RuntimePreparationStatus.tsx`、`Integrations.tsx`、`DshProviderSettings.tsx` 属于组件套件，`RoleConversation.tsx` 与 `App.tsx` 属于软件开发领域的界面。在该改造之后修改时，在新位置进行并遵守它的 import 边界 |
-| 工具种类 | 桥与隧道按 `qualified_name` 或 `call_name()` 分派 | N-1 新增领域工具 | 见 2.4.4 |
+| 出厂资源目录 | 在 `plugins/core/` 下新增源并登记清单 | K-6 改名为 `kernel/core` | 将 Harness 新源和清单登记迁入 `kernel/core/`，保留源身份、修订及引用 |
+| 引用索引 | 用 `scripts/check/configuration_usage.py --write` 重生成 | S-3 把算法迁入 `devdesk-domain` | 合并后用新入口重生成索引 |
+| 测试夹具 | `engineering-catalog.json` 与 `fixture-catalog` 提供测试源 | T-4、T-6 移除单体夹具 | 将新 Harness 源迁入对应夹具，切换 `native_acceptance.py` 到新的测试引导 |
+| 前端文件 | 修改 2.6.1 列出的文件 | P2 重排 `web/src` 并迁出领域界面 | 将设置、准备状态等改动移至组件套件，将 `RoleConversation.tsx`、`App.tsx` 的改动移至软件开发领域界面，遵守新的 import 边界 |
+| 工具种类 | 桥与隧道按 `qualified_name` 或 `call_name()` 分派 | N-1 新增领域工具 | 按 N-1 合同同步冻结工具集、桥和 pi 隧道的工具名注册表及 core 分派，验证只读领域工具往返 |
 | 会话工作目录 | 各 Harness 的 cwd 固定 `/work`，恢复时必须不变 | N-8 为无仓库项目提供文档工作区 | 文档工作区必须是稳定的 `/work` 挂载，恢复时路径不变。这是本计划对该改造提出的约束 |
-| 工作区受保护路径 | 三处硬编码的白名单按 Harness 追加条目：`domain/src/permission.rs` 的 `default_protected_metadata`、`adapters/src/permissions.rs`、`adapters/src/docker.rs`，现为 `.git`、`.codex`、`.agents` | M-3 把 `.git` 归为工程扩展，白名单改为按来源登记 | 接口不变，三处仍返回同一份叶子名列表。Harness 的条目留在内核并按 provider 登记，`.git` 由工程扩展提供。谁后落地谁合并；Harness 计划引用的行号会变，以符号为准 |
+| 工作区受保护路径 | 三处硬编码白名单按 Harness 追加条目 | M-3 把 `.git` 归为工程扩展，白名单改为按来源登记 | 合并到按来源登记的机制。Harness 条目由内核按 provider 登记，`.git` 由工程扩展提供 |
 | 适配器身份 | 新增的协议模块纳入 `managed_adapter_identity` 的哈希输入 | M-3 可能迁移工作区准备等文件 | 输入列表以本计划新增的条目为准；M-3 迁移其中任何文件时同步更新路径。`schemas/rpc.schema.json` 也在输入之列，两份计划对它的修改都会改变全部 provider 的驱动身份，这是既有行为 |
 | 全局库 | 第 3 章 | 不改 | 全局库版本只由本计划决定 |
-| RPC Schema | 扩六处 provider 枚举 | 加领域工具的实现方式等 | 后落地的一方合并，并重跑 `schema_contracts` 与 `rpc_contract_inventory` |
+| RPC Schema | 扩六处 provider 枚举 | 加领域工具的实现方式等 | 合并两边的变更，并重跑 `schema_contracts` 与 `rpc_contract_inventory` |
 | 数据集 | 第 3 章：升级并保留现有数据 | 领域包格式与项目库不兼容 | 该改造的 P4 之后既有项目库归档重建；本计划的升级流程对全局库部分仍然适用 |
 
-**落地先后尚未决定**，登记在该改造计划的 U9。两种先后都能走通，差别在返工量和数据集的处置：
-
-- 本计划的生产批次先落地：pi 更早可用。之后该改造的 P2 要迁移这时已改过的前端文件，T-4、T-6 要把新增的源带进新夹具；用户先经历一次全局库升级，再在该改造的 P4 重建项目库。
-- 该改造的 P1 到 P4 先落地：用户只重建一次。本计划的批次随后在 `kernel/core`、组件套件和新的测试引导上直接落地，全局库升级路径在此之后仍然有效。代价是 pi 推迟可用。
-
-四条接入线的 P0 都是只读探针，不受先后影响。
+合并负责人在集成分支按表处理冲突，重跑合同检查和当前制品入口的原生、浏览器验收。至少覆盖 pi 隧道、已入批的 MCP 桥及领域工具、Codex/DSH 回归、无仓库项目的工作区恢复、全局库与项目库的组合发布流程。核对合并制品的驱动与权限摘要，按第 3 章记录实际的重验和漂移范围。

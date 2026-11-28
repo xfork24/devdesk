@@ -1,15 +1,15 @@
 # pi Harness 接入（pi coding agent 1.6.0）
 
-日期：2026-11-25。状态：**待实施**。范围：接入 pi 1.6.0（`@earendil-works/pi-coding-agent`，MIT）为第三个 Harness，能力对齐 DSH：四家模型服务商、讨论会话、workflow 步骤工具。不含根编排。
+日期：2026-11-25。状态：**批次 A 已实现，Linux amd64 原生验收通过**。范围：接入 pi 1.6.0（`@earendil-works/pi-coding-agent`，MIT）为第三个 Harness，能力对齐 DSH：四家模型服务商、讨论会话、workflow 步骤工具。不含根编排。
 
-> **批次与依赖**：pi 属**批次 A**，单独先行，不依赖共享地基先完成。相反，共享地基里与厂商无关的通用管线（Provider 能力表、凭据泛化、全局库 v25 与升级命令、Schema 枚举机制、按 harness 渲染的设置页、`model_profile_digest` 按 provider 分派）由本计划 P1 **首次落地**，批次 B（mcode/opencode/zcode）只做增量。跨计划口径（终态映射、审批语义、全局库版本、旧数据升级流程）以 [Harness 扩展共享地基](../harness-shared-foundation/PLAN.md) 为准。与[架构独立性改造](../arch-independency/PLAN.md)的交叠（出厂资源路径、引用索引入口、测试夹具、前端文件位置、工具种类）按[共享地基](../harness-shared-foundation/PLAN.md)第 8 章处理；该改造的 K-6 落地后，本文的 `plugins/core/...` 读作 `kernel/core/...`。
+> **批次与依赖**：pi 是批次 A 首条接入线，和通用管线一起交付。Provider 能力表、凭据与设置页泛化、全局库 v25、Schema 枚举和 `model_profile_digest` 分派可独立实现，pi 的 UI 隧道待重设计时仍可用 Codex/DSH 验证通用改动。跨计划口径见 [Harness 扩展共享地基](../harness-shared-foundation/PLAN.md)。架构独立性改造并行推进，pi 按当前基线实施，后期归并按共享地基第 8 章执行。
 
 ## 0. 已确认决策
 
 | 决策 | 结论 |
 |---|---|
 | 工具桥 | 纳入。容器内 DevDesk 扩展经 pi `extension_ui_request` 对话框通道（`input`）把 Host 代执行工具转发给 Host，Host 回执经 `extension_ui_response` 返回 |
-| 全局库升级 | 离线命令 `devdesk-host storage upgrade-global --data PATH` 的**实现口径按共享地基 2.5.2 与第 3 章**（版本号与 CHECK 取值只以共享地基为准）；**旧数据集的升级改造与实际执行属于本计划范围**，验收阶段对现有数据集实际执行。全局库**只在本批次升级一次**，CHECK 届时写入全部六个 provider |
+| 全局库升级 | 批次 A 实现 `devdesk-host storage upgrade-global --data PATH`，先在副本验收，再按共享地基第 3 章的发布流程切换指定数据集 |
 | 模型服务商 | 智谱编程订阅、MiniMax 订阅、DeepSeek 官方 API、本机 Ollama 全部接入 |
 | 根编排 | pi 不获得 `orchestration` 能力（与 DSH 一致） |
 | Agent 提问 | 首期不支持（pi 无原生能力，RPC 模式无多选对话框） |
@@ -35,7 +35,7 @@
 - 适配器单文件协议分支：`crates/adapters/src/harness.rs`（2325 行）+ `jsonl.rs`（传输）+ `permissions.rs`/`permission_profiles.rs`（权限编译）。
 - 镜像配方：`compose_execution_recipe`（`crates/domain/src/execution_recipe.rs`）从 npm 包生成 Dockerfile；pi 可直接复用，codex/dsh 配方不变。
 - **一次性影响（系统既定设计）**：权限语义摘要覆盖 `permissions/backends/manifest.json` 全文与全部资产摘要，新增 pi 后端/资产后 codex/dsh 的 `enforcement_contract` 漂移、冻结会话 `permission_asset_mismatch`；全局库 `runtime_installations` CHECK 需重建表。
-- 现数据集：`data/`（global 24，3 条运行安装）、`data1/`（global 24，32 条源，无安装记录与权限绑定——近空库，**先在它上面演练升级**）、`devdesk-recovery/20261119-large-snapshot/`（恢复快照，不升级）。`data1` 只读打开报错 14 是 WAL 库缺 `-shm` 所致，并非损坏。`dist/data` 为构建产物目录，可重新初始化。
+- 旧库验收使用近空 v24 副本以及含运行安装、权限绑定和历史会话的代表性 v24 副本。演练基线见共享地基第 3 章。
 - **轮询是唤醒驱动的**：协议帧入队后 `JsonlProcess` 调用 `wakeups.notify()`。pi 的 UI 隧道走协议帧，天然满足；批次 B 的宿主 MCP 桥不产生协议帧，必须自己触发同一通道（共享地基 2.2.9）。
 - **出厂目录更新是显式命令**（`configuration.templates.reset`，`preserve_custom: true`）：升级后的旧数据集不会自动出现新增 Harness 源，旧数据升级流程必须包含这一步（第 4 章）。
 - **宿主代执行工具没有适配器层审批**：core 对平台写操作的口径是 `approval == never` 且文件系统非只读才直接执行，`on-request` 下由 core 拒绝（`crates/core/src/platform_observations.rs:351-366`）。
@@ -65,11 +65,11 @@
 
 - 扩展从 `/run/devdesk/dynamic-tools.json` 读取工具定义并 `pi.registerTool`；`execute` 内用 `ctx.ui.input` 发出带 `devdesk.tool_call.v1` 前缀的请求，Host 转成 `Obs::ToolCall{request:{"kind":"dialog","id":"<对话框 id>"}}`（请求判别式与宿主 MCP 桥统一，见共享地基 2.4.10 的传输对照表），`answer_tool` 回 `extension_ui_response{value: <ToolReceipt JSON>}`（载荷与 DSH 分支相同）。
 - 审批：`approval !== never` 时，`tool_call` 钩子对 bash/edit/write 用 `ctx.ui.select` 发 `devdesk.approval.v1` 请求 → `Obs::Interaction{ToolApproval}`。
-- `tool_call` 钩子同时执行冻结策略（读 `/run/devdesk/permission`），与 DSH 的 `tool-policy.mjs` 同构；桥接工具放行，由 Host 按冻结 Tool 引用核验。
+- `tool_call` 钩子同时执行冻结策略（读 `/run/devdesk/permission`），与 DSH 的 `tool-policy.mjs` 同构；桥接工具放行，由 Host 按冻结 Tool 引用核验。Shell 需要 Harness 与 Sandbox 两层 Full Access 且冻结策略允许容器信任。只读和 scoped 依赖文件工具与冻结 Docker 挂载。
 - 无前缀或跨轮次的对话框一律回 `cancelled: true`。
-- **执行口径与共享地基统一**：pi 的 UI 隧道与宿主 MCP 桥是**同一条链路的两个传输实现**——都产出 `Obs::ToolCall` → core 接纳（冻结引用核验、`provider_tool_intent` 治理记录、轮次状态与 guards 版本）→ `ToolExecutor` 执行 → `answer_tool` 回执 → 工具调用进入会话记录、可审计、可幂等重放。差别只在传输与请求判别式：pi 用 `{"kind":"dialog"}`，宿主 MCP 桥用 `{"kind":"bridge"}`（共享地基 2.4.8、2.4.10）。
+- **执行和审计**：UI 隧道以 `{"kind":"dialog"}` 产出 `Obs::ToolCall`，由 core 核对冻结引用与轮次后按工具种类执行和记账，再经 `answer_tool` 返回。验收分别核对已绑定集成工具、上下文工具与平台工具的治理记录及同一调用重放（共享地基 2.4.4、2.4.8、2.4.10）。
 - **审批只对 provider 自己发起的请求**（共享地基 2.4.5）：`devdesk.approval.v1` 是 pi 扩展针对 bash/edit/write 发起的审批，经 core 的 `PendingInteraction` 流程；宿主代执行工具（隧道调用）**不设适配器层审批**，准入由 core 按冻结权限判定。
-- **平台工具同此**：隧道产出的观察按工具名走 core 的既有分派（集成/未绑定工具用 `qualified_name`、平台工具用 `call_name()`），平台工具仅在具备 controller 授权或 workflow 执行归属的会话可调用，普通讨论会话被 `tool_not_authorized` 拒绝 → 写入 `limitations`。pi 的隧道走协议通道，不依赖容器→宿主网络与宿主监听，因此在远程 Docker daemon 下同样可用（宿主 MCP 桥的限制不适用于 pi）。
+- **工具投放**：按共享地基 2.4.4 过滤冻结工具集，隐藏未绑定工具，保留有合法执行路径的集成、上下文和平台工具。平台工具需要 controller 授权或 workflow 执行归属，普通讨论的显式调用返回 `tool_not_authorized`。隧道沿已有协议通道传输，远程 Docker 可用性随该通道验收。
 
 ### 2.4 权限
 
@@ -93,16 +93,19 @@
 
 ## 3. 工作项
 
-### P0 可行性验证（先于其余改动）
+### P0 可行性验证（G0 并行）
 
-1. 用生成的 Dockerfile 手工构建 pi 镜像：确认 `npm install --global --omit=dev` 能干净安装，`pi --version`、`pi --list-models` 输出符合预期，容器内 `get_state` 往返成功。合成器是否需要 `--ignore-scripts` 以实测为准。
+本轮 G0 结论为 **通过（Linux amd64，真实 CLI + 受控模型）**。见 [共享实施记录](../harness-shared-foundation/EXECUTION.md)。
+
+1. 用手工 Dockerfile 构建固定版本镜像，检查 `pi --version`、`pi --list-models`。用独立零凭据、断网的容器探针验证 `get_state` 往返。合成器是否需要 `--ignore-scripts` 以实测为准。
 2. 用本机 pi 1.6.0 跑一个最小扩展，确认工具 `execute` 里的 `ctx.ui.input` 确实发出 `extension_ui_request` 并能被应答；同一扩展里确认 `ctx.ui.notify` 的装载信号能被 Host 读到（§2.4 的策略装载证明）。
 3. 反证配置隔离：在 `/work` 放置含扩展、skills 与 MCP 声明的 `.pi/` 及 `AGENTS.md`，确认启动开关下均未被加载。
-4. 本计划文件与 `docs/plans/README.md` 登记（已完成）。
+4. 用真实 pi CLI 和获授权模型或受控模型夹具验证讨论轮次、三类终态、取消、恢复及步骤工具。验证冻结扩展实际阻断一次禁用操作，并用可追踪的测试指令确认模型上下文收到角色指令。
+5. 按共享地基第 7 章记录证据及「通过」「退回设计」「延期」结论。UI 隧道或策略装载、阻断被证伪时，pi 接入返回设计，批次 A 通用管线可独立推进。
 
 ### P1 注册、配置、权限、凭据与界面入口
 
-结果：pi 可被选择，`runtime.prepare` 能构建镜像并通过协议探针。
+结果：内部制品可注册 pi 并经 `runtime.prepare` 构建镜像、通过协议探针。公开设置页和出厂源随 P4 验收发布。
 
 1. `crates/domain/src/runtime.rs`：`HarnessProvider::Pi`、`HARNESS_PROVIDERS`、`as_str`。
 2. **建立 Provider 能力表**（共享地基 2.1.3）：新增 `HarnessProvider::traits()`，把现有约 25 处 `== Codex` / `== Dsh` 判断迁移为能力判断——`harness.rs`（模型连接、stop 模式名、应答形状、历史复用、命令输出导出）、`core/src/session_assembly.rs`、`domain/src/conversation.rs`、`core/src/credential_updates.rs`、`adapters/src/credentials.rs`；`conversation_observations.rs` 与 `provider_tools.rs` 的 `== Dsh → external_message` 改为 `identity == ProviderMessage`（行为不变）。批次 B 的新 provider 只需在表里各加一行。
@@ -131,26 +134,26 @@
 ### P3 工具桥与审批
 
 1. 扩展：注册动态工具、`input` 隧道、`select` 审批。
-2. Rust：`project` 识别隧道请求并产出 `Obs::ToolCall{request:{"kind":"dialog","id":…}}`；`answer_tool`、`answer` 的 pi 形状；`approval == Never` 时自动拒绝 pi 扩展自己发起的审批对话框（隧道工具调用不经交互流）；打开会话时用现有的 `dynamic_tools(binding)` 写出桥接文件。
-3. 测试：隧道往返、无前缀对话框取消、审批自动拒绝；**桥接调用进入会话记录与治理记录（可审计）**、同一调用重放不重复执行；真实镜像上的 `#[ignore]` Docker 用例（被策略拦截的工具、一次桥接调用）。
+2. Rust：`project` 识别隧道请求并产出 `Obs::ToolCall{request:{"kind":"dialog","id":…}}`，接入 `answer_tool` 与审批回执。会话打开时从 `dynamic_tools(binding)` 的候选中选择有合法执行路径的冻结工具写入桥接文件。审批按 2.3 执行。
+3. 测试覆盖隧道往返、无前缀对话框取消、审批自动拒绝，各工具种类的回执与治理记录、未绑定工具拒绝及同一调用幂等重放。真实镜像 Docker 用例验证策略阻断和步骤工具往返。
 
 ### P4 验收与文档
 
 1. `native_acceptance.py` 增加 pi 套件；`tests/live/probe_*.py` 的 provider 选项；浏览器用例里枚举 Harness 选项的 spec。
 2. 文档：`docs/design/agent-runtime.md`、`docs/design/reference/integrations.md`、`docs/crates/devdesk-adapters/{harness-and-protocols,runtime-preparation,credentials-and-permissions}.md`、`permissions/README.md`、`sql/README.md`、`AGENT.md`（global 25）、`docs/design/run-binary.md`、`tests/README.md`；`check-docs.py --write` 刷新文件索引。本计划取代 dsh-model-providers 计划里「不引入 Pi CLI」的决定，历史计划原文不改。
+3. 讨论、步骤工具、权限和旧库副本验收通过后，将 pi 的可选入口、出厂源和权限资产纳入批次 A 发布制品。
 
 ## 4. 旧数据集升级（本计划范围）
 
 重建表只是第一步，以下流程缺一不可（完整口径见共享地基第 3 章）：
 
-1. **升级命令** `devdesk-host storage upgrade-global --data PATH`（实现在 `adapters/src/global_migration.rs`）：经 `lock_dataset` 独占锁确认无 Host 运行 → 判定版本（0 无需、24 继续、25 幂等返回、其他拒绝）→ WAL checkpoint → 备份到数据集目录之外 → 单事务重建 `runtime_installations`（CHECK 写成 `('codex','dsh','pi','mcode','zcode','opencode')`）及其索引并推进 `user_version` 24 → 25，保留全部既有行（含 `data/` 现有 3 条安装）→ 校验行数、表与索引定义与 v25 基线一致、`integrity_check` → 输出 JSON 报告。启动版本检查改为只接受 `0 | 25`。
+1. 实现共享地基第 3 章的 `devdesk-host storage upgrade-global --data PATH`。沿用该章规定的独占锁、备份、事务、完整性检查和版本口径。
 2. `tests/entrypoints/dataset_protocol.py` 扩展：v24→v25 升级路径、幂等重跑、Host 运行中拒绝升级、升级后旧二进制被拒绝。
-3. **演练顺序**：先在 `data1/` 的副本上演练，再对 `data1/`、最后对 `data/` 执行，每次保留备份。
+3. 先在近空 v24 副本和代表性 v24 副本上演练。实库切换按共享地基第 3 章安排维护窗口并保留备份。
 4. **更新出厂目录**：启动新 Host 后执行 `configuration.templates.reset`（`preserve_custom: true`）。不做这一步，旧数据集里选不到 pi，也看不到 pi 的服务商与 Model 源。
-5. **重新应用权限绑定**：新增后端资产让 codex/dsh 的 `enforcement_contract` 漂移。逐目标执行 `permission.binding.preflight` + `permission.bindings.apply`（`permission.bind` 已退役）；出厂 pi 目标的默认绑定由 `template_permission_defaults` 自动套用。
-6. 既有冻结会话需创建带上下文的后继会话；进行中的执行按恢复流程核对后重跑。codex/dsh 配方不变，已登记安装继续有效，仅自动重过协议探针。
-7. `devdesk-recovery/20261119-large-snapshot/` 是恢复快照，不升级。
-8. 本流程保留的是全局库与运行安装。之后如果落地[架构独立性改造](../arch-independency/PLAN.md)，它的 P4 会提升项目库版本，届时既有项目库按该计划归档重建；本节的升级命令与全局库部分仍然有效，见共享地基第 8 章。
+5. `template_permission_defaults` 只补缺失的出厂目标。已有出厂或自定义目标发生漂移时，按原 Profile 执行 `permission.binding.preflight` 与 `permission.bindings.apply`。
+6. 验证历史读取。受影响的冻结会话创建带上下文的后继会话，进行中的执行先核对效果与回执再决定是否重跑。Codex/DSH 复用原安装并通过新版协议探针。
+7. 后期归并架构独立性改造时，在同一份副本验证全局升级和项目库归档重建，见共享地基第 8 章。
 
 ## 5. 验证
 
@@ -187,4 +190,3 @@ python3 tests/entrypoints/native_acceptance.py --docker-only --prepare
 - **`harness.rs` 继续膨胀**：pi 逻辑放独立模块；该文件任何改动都会改变全部 provider 的构建摘要（既有行为）。
 - **升级后的旧数据集看不到 pi**：出厂目录更新是显式命令，漏做时用户会以为升级失败 → 纳入第 4 章流程与验收第 6 步。
 - **本批次落地的通用管线被批次 B 复用**：能力表、凭据泛化、升级命令若只按 pi 的形状写死，批次 B 要返工 → 实现时按共享地基 2.1.3 的完整能力表与 2.3 的键名规则落地，并为其写「新增一个 provider 只需加一行」的回归测试。
-- **工具桥借用 UI 通道**（保留）：属于有节制的用法变通。pi 版本固定在镜像里不会意外失效，升级 pi 时需重新验证隧道。

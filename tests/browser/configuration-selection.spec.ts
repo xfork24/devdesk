@@ -25,13 +25,15 @@ for (const [group, kind, label] of [
     const names = await entries.locator("strong").allTextContents();
     expect(names.length).toBeGreaterThan(0);
 
+    const exactEntry = (name: string) =>
+      entries.filter({ has: page.getByText(name, { exact: true }) });
     for (const index of [
       0,
       Math.floor(names.length / 2),
       names.length - 1,
       0,
     ]) {
-      const entry = entries.filter({ hasText: names[index] });
+      const entry = exactEntry(names[index]);
       await entry.click();
       await expect(entry).toHaveClass(/selected/);
       await expect(list.locator("button.selected:has(strong)")).toHaveCount(1);
@@ -40,7 +42,7 @@ for (const [group, kind, label] of [
 
     // Restoring a saved selection also loads the full record over the index.
     await page.reload();
-    await expect(entries.filter({ hasText: names[0] })).toHaveClass(/selected/);
+    await expect(exactEntry(names[0])).toHaveClass(/selected/);
     await expect(entries.locator("strong")).toHaveText(names);
   });
 }

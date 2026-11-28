@@ -709,7 +709,9 @@ impl Engine {
                 return Err(err("revision_conflict", "原生工具原执行资格已撤销"));
             }
             let observed = &intent.data["value"];
-            let external = if binding.installation.key.provider == HarnessProvider::Dsh {
+            let external = if binding.installation.key.provider.traits().identity
+                == InputIdentity::ProviderMessage
+            {
                 &turn["external_message"]
             } else {
                 &turn["external_turn"]

@@ -1126,7 +1126,9 @@ export function RoleConversation({
                 currentBinding.agent_configuration?.model_provider ||
                 (currentBinding.installation.key.provider === "dsh"
                   ? "deepseek"
-                  : "openai"),
+                  : currentBinding.installation.key.provider === "pi"
+                    ? "pi-deepseek"
+                    : "openai"),
             )}{" "}
             · {displayText(currentBinding.model)} ·{" "}
             {displayText(detail.session.lifecycle)} · 原生会话{" "}

@@ -1,5 +1,6 @@
 //! Runtime profile files and the v2 compiler. Imports never execute policy assets.
 use super::*;
+use std::collections::BTreeMap;
 
 pub fn permission_contract(s: &EngineeringState, target: &PermissionTargetRef) -> Result<String> {
     let r = s.configuration(&target.revision_id)?;
@@ -23,9 +24,13 @@ pub fn permission_contract(s: &EngineeringState, target: &PermissionTargetRef) -
             harness_execution_recipe(s, r)?;
             // Execution build identity remains frozen separately in RuntimeBinding.
             // A model-catalog/UI/schema change does not change permission semantics.
+            let backend = match provider {
+                HarnessProvider::Pi => "pi-extension-v1",
+                HarnessProvider::Codex => "codex-native-v2",
+                HarnessProvider::Dsh => "dsh-native-v2",
+            };
             Ok(format!(
-                "{}-native-v2:{}",
-                provider.as_str(),
+                "{backend}:{}",
                 permission_semantics_digest(provider)
             ))
         }
@@ -47,9 +52,11 @@ fn permission_semantics_digest(provider: HarnessProvider) -> &'static str {
     // revisions, bindings, scopes and live assets are still checked on each use.
     static CODEX: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     static DSH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    static PI: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     match provider {
         HarnessProvider::Codex => &CODEX,
         HarnessProvider::Dsh => &DSH,
+        HarnessProvider::Pi => &PI,
     }
     .get_or_init(|| compute_permission_semantics_digest(provider))
 }
@@ -68,22 +75,104 @@ pub fn compile_permission_profiles(
     lock: &VersionedPermissionLock,
     scope: Option<ExecutionScope>,
 ) -> Result<ExecutionPermissions> {
+    compile_permission_profiles_at(s, lock, scope, false)
+}
+
+/// v24 stored source choices but no asset map. Reconstruct only the recorded
+/// baseline for reads. The old asset map keeps its execution gate closed.
+pub(crate) fn restore_permission_profiles(
+    s: &EngineeringState,
+    lock: &VersionedPermissionLock,
+    scope: ExecutionScope,
+    assets: Option<&Value>,
+) -> Result<ExecutionPermissions> {
+    let current = permissions::asset_digests();
+    let v24: BTreeMap<String, String> = [
+        (
+            "docker/apparmor/devdesk-harness-v1.apparmor",
+            "3af35216df62da5ff6bfbe54b47506b219f26ccc99c944d84b826d66870cdb2c",
+        ),
+        (
+            "docker/seccomp/nested-v1.json",
+            "59f1355dfae05a77e70c47612c5ff348e73eace00985ade538d87969290f3120",
+        ),
+        (
+            "dsh/bwrap-runner.sh",
+            "e91f503cd7dd11241ce676b8b0ce7d4c2e6e8b31d6a6182e62701dbf7be49766",
+        ),
+        (
+            "dsh/tool-policy.mjs",
+            "e3e4e2d15a7d12597fb83dc81f4a307430424fdbdd0a109dd91a2d9dd8833e1e",
+        ),
+    ]
+    .into_iter()
+    .map(|(path, digest)| (path.into(), digest.into()))
+    .collect();
+    let historical = assets.is_none_or(|assets| *assets == json!(v24));
+    require(
+        historical || assets.is_some_and(|assets| *assets == json!(current)),
+        "冻结权限资产版本无法还原",
+    )?;
+    let mut compiled = compile_permission_profiles_at(s, lock, Some(scope), historical)?;
+    if historical {
+        compiled.enforcement.asset_digests = v24;
+    }
+    Ok(compiled)
+}
+
+fn v24_permission_contract(
+    provider: HarnessProvider,
+    kind: PermissionTargetKind,
+) -> Result<&'static str> {
+    match (kind, provider) {
+        (PermissionTargetKind::Sandbox, _) => {
+            Ok("docker-worker/v2:3feccb12fca08ceb44e6bf5c812b534559f3eb17b7bc72a1b32dff462e77d3ac")
+        }
+        (PermissionTargetKind::Harness, HarnessProvider::Codex) => {
+            Ok("codex-native-v2:3feccb12fca08ceb44e6bf5c812b534559f3eb17b7bc72a1b32dff462e77d3ac")
+        }
+        (PermissionTargetKind::Harness, HarnessProvider::Dsh) => {
+            Ok("dsh-native-v2:cda3d9f5b1e11873902258b101ffa0f60e85b408b18bbab25e87e68d21145176")
+        }
+        _ => Err(err(
+            "permission_asset_mismatch",
+            "v24 没有此 Harness 的权限资产",
+        )),
+    }
+}
+
+fn compile_permission_profiles_at(
+    s: &EngineeringState,
+    lock: &VersionedPermissionLock,
+    scope: Option<ExecutionScope>,
+    historical: bool,
+) -> Result<ExecutionPermissions> {
+    let harness: HarnessDefinition = s
+        .configuration(&lock.harness.binding.target.revision_id)?
+        .decode()?;
+    let provider: HarnessProvider =
+        serde_json::from_value(json!(harness.provider)).map_err(storage)?;
+    if historical && provider == HarnessProvider::Pi {
+        return Err(err("permission_asset_mismatch", "v24 没有 pi 的权限资产"));
+    }
     for bound in [&lock.harness, &lock.sandbox] {
         let mut profile = bound.profile.clone();
         profile.normalize()?;
+        let current = permission_contract(s, &bound.binding.target)?;
+        let contract = if bound.binding_revision_id == bound.profile.id {
+            format!("direct-profile:{}", bound.binding.target.content_hash)
+        } else if historical {
+            v24_permission_contract(provider, bound.binding.target.kind)?.to_owned()
+        } else {
+            current
+        };
         if profile != bound.profile
             || bound.profile_hash
                 != content_digest(&References::new(), &permission_profile_data(&profile))
             || bound.binding_hash != content_digest(&References::new(), &json!(bound.binding))
             || bound.binding.permission_revision_id != profile.id
             || bound.binding.target.kind != profile.target_kind
-            || bound.binding.enforcement_contract
-                != if bound.binding_revision_id == bound.profile.id {
-                    permission_contract(s, &bound.binding.target)?;
-                    format!("direct-profile:{}", bound.binding.target.content_hash)
-                } else {
-                    permission_contract(s, &bound.binding.target)?
-                }
+            || bound.binding.enforcement_contract != contract
         {
             return Err(err(
                 "permission_asset_mismatch",
@@ -91,11 +180,6 @@ pub fn compile_permission_profiles(
             ));
         }
     }
-    let harness: HarnessDefinition = s
-        .configuration(&lock.harness.binding.target.revision_id)?
-        .decode()?;
-    let provider: HarnessProvider =
-        serde_json::from_value(json!(harness.provider)).map_err(storage)?;
     let h = lock.harness.profile.policy.portable();
     let approval = lock
         .harness

@@ -492,11 +492,15 @@ test("真实接入设置偏好、密钥表单与浏览器 OAuth 链接", async (
   await page.reload();
   await page.getByRole("button", { name: "设置", exact: true }).click();
   await expect(defaultHarness).toHaveValue("dsh");
-  const password = page.getByLabel("配置或更换 API key");
+  const dsh = page.getByRole("region", {
+    name: "DeepSeek Harness",
+    exact: true,
+  });
+  const password = dsh.getByLabel("配置或更换 API key");
   await expect(password).toHaveAttribute("type", "password");
   // Explicit synthetic fixture, intercepted before the host: this never writes a real Keychain item.
   await password.fill("synthetic-browser-fixture");
-  await page.getByRole("button", { name: "保存密钥", exact: true }).click();
+  await dsh.getByRole("button", { name: "保存密钥", exact: true }).click();
   await expect(password).toHaveValue("");
   await expect(
     page.getByText("已保存到系统凭据库", { exact: true }),

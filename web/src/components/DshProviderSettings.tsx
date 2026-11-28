@@ -16,6 +16,7 @@ import {
 } from "../configuration-client";
 import { type Request, type Row, type ResourceVersion } from "./rpc-types";
 import {
+  isOllamaProvider,
   modelProviderLabel,
   normalizeOllamaServiceAddress,
   ollamaServiceAddress,
@@ -41,7 +42,20 @@ type Status = {
 };
 
 /** Provider keys stay in component memory until submitted to the OS vault. */
-export function DshProviderSettings({ request }: { request: Request }) {
+export function HarnessProviderSettings({
+  request,
+  harness,
+  providers,
+}: {
+  request: Request;
+  harness: "dsh" | "pi";
+  providers: ModelProvider[];
+}) {
+  const prefix = harness === "dsh" ? "" : `${harness}-`;
+  const label = harness === "dsh" ? "DeepSeek Harness" : "Pi Harness";
+  const defaultProvider = `${prefix}minimax-cn`;
+  const localProvider = `${prefix}ollama`;
+  const deepseekProvider = `${prefix}deepseek`;
   const {
     message,
     setMessage,
@@ -50,8 +64,7 @@ export function DshProviderSettings({ request }: { request: Request }) {
     endFeedback,
   } = useActionFeedback();
 
-  const [providers, setProviders] = useState<ModelProvider[]>([]);
-  const [provider, setProvider] = useState("minimax-cn");
+  const [provider, setProvider] = useState(defaultProvider);
   const [status, setStatus] = useState<Status>();
   const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState(false);
@@ -67,27 +80,11 @@ export function DshProviderSettings({ request }: { request: Request }) {
     | undefined
   >(undefined);
 
-  useEffect(() => {
-    let active = true;
-    request("query.model_providers")
-      .then((value) => {
-        if (active)
-          setProviders(
-            value.providers.filter((p: ModelProvider) => p.harness === "dsh"),
-          );
-      })
-      .catch(() => {
-        if (active) setMessage("无法读取模型服务商目录");
-      });
-    return () => {
-      active = false;
-    };
-  }, [request, setMessage, modelEpoch]);
   const ollamaReference = providers.find(
-    (provider) => provider.id === "ollama",
+    (provider) => provider.id === localProvider,
   )?.reference;
   useEffect(() => {
-    if (provider !== "ollama" || !ollamaReference || endpointDraft.current)
+    if (provider !== localProvider || !ollamaReference || endpointDraft.current)
       return;
     let active = true;
     void request("query.configuration_records", { refs: [ollamaReference] })
@@ -107,11 +104,14 @@ export function DshProviderSettings({ request }: { request: Request }) {
     return () => {
       active = false;
     };
-  }, [provider, ollamaReference, request, setMessage]);
+  }, [provider, localProvider, ollamaReference, request, setMessage]);
   useEffect(() => {
     let active = true;
     setStatus(undefined);
-    request("credentials.status", { model_provider: provider })
+    request("credentials.status", {
+      provider: harness,
+      model_provider: provider,
+    })
       .then((value) => {
         if (active) setStatus(value);
       })
@@ -121,7 +121,7 @@ export function DshProviderSettings({ request }: { request: Request }) {
     return () => {
       active = false;
     };
-  }, [request, provider, setMessage, modelEpoch]);
+  }, [request, harness, provider, setMessage, modelEpoch]);
   async function save(event: FormEvent) {
     captureFeedback();
 
@@ -134,7 +134,7 @@ export function DshProviderSettings({ request }: { request: Request }) {
       if (!baseline) throw new Error("缺少凭据的原始版本，请重新读取状态");
       setStatus(
         await request("credentials.configure", {
-          provider: "dsh",
+          provider: harness,
           model_provider: provider,
           command_id: baseline.commandId,
           expected_revision: baseline.version.revision,
@@ -160,7 +160,7 @@ export function DshProviderSettings({ request }: { request: Request }) {
     setBusy(true);
     setMessage("");
     try {
-      await request(method, { model_provider: provider });
+      await request(method, { provider: harness, model_provider: provider });
       setMessage("已验证凭据可读取；尚未验证模型调用");
     } catch (error) {
       setMessage(String(error));
@@ -207,14 +207,22 @@ export function DshProviderSettings({ request }: { request: Request }) {
     }
   }
   const selected = providers.find((p) => p.id === provider);
+  const keyInput =
+    harness === "dsh" && provider === deepseekProvider
+      ? "deepseek-api-key"
+      : `${harness}-provider-api-key`;
+  const providerLabel = harness === "dsh" ? "DSH 模型服务商" : "Pi 模型服务商";
   return (
-    <div className="setting-row">
+    <section
+      className="setting-row"
+      aria-labelledby={`${harness}-model-service-heading`}
+    >
       <div>
-        <h3>DeepSeek Harness</h3>
+        <h3 id={`${harness}-model-service-heading`}>{label}</h3>
         <label>
-          DSH 模型服务商
+          {providerLabel}
           <ActionSelect
-            aria-label="DSH 模型服务商"
+            aria-label={providerLabel}
             value={provider}
             disabled={busy}
             onChange={(event) => {
@@ -238,11 +246,11 @@ export function DshProviderSettings({ request }: { request: Request }) {
                 </option>
               ))
             ) : (
-              <option value="minimax-cn">MiniMax 订阅 国内</option>
+              <option value={defaultProvider}>MiniMax 订阅 国内</option>
             )}
           </ActionSelect>
         </label>
-        {provider === "ollama" ? (
+        {provider === localProvider ? (
           <>
             <p className="muted">
               本地服务无需 API key。在 Model
@@ -287,9 +295,11 @@ export function DshProviderSettings({ request }: { request: Request }) {
               )}
             </p>
             <p className="muted">
-              密钥保存在本机系统凭据库。
+              密钥按 Harness 和服务商分别保存在系统凭据库。
               {displayText(
-                provider === "deepseek" ? "" : "请使用所选国内订阅套餐的 key。",
+                provider === deepseekProvider
+                  ? ""
+                  : "请使用所选国内订阅套餐的 key。",
               )}
             </p>
             {status?.available === false && (
@@ -326,21 +336,9 @@ export function DshProviderSettings({ request }: { request: Request }) {
               </div>
             )}
             <ActionForm onSubmit={save}>
-              <label
-                htmlFor={
-                  provider === "deepseek"
-                    ? "deepseek-api-key"
-                    : "dsh-provider-api-key"
-                }
-              >
-                配置或更换 API key
-              </label>
+              <label htmlFor={keyInput}>配置或更换 API key</label>
               <input
-                id={
-                  provider === "deepseek"
-                    ? "deepseek-api-key"
-                    : "dsh-provider-api-key"
-                }
+                id={keyInput}
                 type="password"
                 autoComplete="off"
                 spellCheck={false}
@@ -381,7 +379,7 @@ export function DshProviderSettings({ request }: { request: Request }) {
             </ActionForm>
           </>
         )}
-        {provider !== "ollama" && selected?.endpoint && (
+        {provider !== localProvider && selected?.endpoint && (
           <p className="muted">
             默认服务地址：<code>{displayText(selected.endpoint)}</code>
           </p>
@@ -390,7 +388,7 @@ export function DshProviderSettings({ request }: { request: Request }) {
           {displayText(message)}
         </p>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -424,7 +422,7 @@ export function ModelFields({
   const modelEpoch = useSyncExternalStore(subscribeModels, getModelEpoch);
   const [readAt, setReadAt] = useState(0);
   const codex = data.provider === "openai";
-  const ollama = data.provider === "ollama";
+  const ollama = isOllamaProvider(data.provider);
   const selected = providers.find((provider) => provider.id === data.provider);
   const endpoint = ollama ? data.endpoint || selected?.endpoint : undefined;
 

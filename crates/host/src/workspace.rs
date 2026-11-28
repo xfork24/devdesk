@@ -1326,6 +1326,12 @@ impl Workspace {
         if method == "runtime.prepare" {
             let provider = serde_json::from_value(params["provider"].clone())
                 .map_err(|_| err("invalid_params", "需要 Harness provider"))?;
+            if provider == HarnessProvider::Pi {
+                let harness = self.global.default_execution_harness(provider)?;
+                return Ok(json!(
+                    self.materialize_harness(&self.configuration, &harness)?
+                ));
+            }
             return Ok(json!(self.ensure_runtime(provider, None)?));
         }
         if let Some(result) = self.permission_resource_api(method, &params) {

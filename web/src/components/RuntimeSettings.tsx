@@ -2,10 +2,14 @@ import { displayText } from "../display-text";
 import { ActionButton, ActionSelect } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
 import { type ResourceVersion, type Request } from "./rpc-types";
-import { useEffect, useState } from "react";
-import { DshProviderSettings } from "./DshProviderSettings";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { getModelEpoch, subscribeModels } from "../configuration-client";
+import {
+  HarnessProviderSettings,
+  type ModelProvider,
+} from "./DshProviderSettings";
 
-type Provider = "codex" | "dsh";
+type Provider = "codex" | "dsh" | "pi";
 type Installation = {
   id: string;
   key: { provider: Provider; version: string; os: string; arch: string };
@@ -43,6 +47,23 @@ export function RuntimeSettings({
   const [preparing, setPreparing] = useState(false);
   const [runtimePreparing, setRuntimePreparing] = useState(false);
   const [phase, setPhase] = useState("");
+  const [modelProviders, setModelProviders] = useState<ModelProvider[]>([]);
+  const modelEpoch = useSyncExternalStore(subscribeModels, getModelEpoch);
+  useEffect(() => {
+    let active = true;
+    void request("query.model_providers")
+      .then((value) => {
+        if (active) setModelProviders(value.providers ?? []);
+      })
+      .catch(() => {
+        if (active) setMessage("无法读取模型服务商目录");
+      });
+    return () => {
+      active = false;
+    };
+  }, [request, setMessage, modelEpoch]);
+  const piProviders = modelProviders.filter((item) => item.harness === "pi");
+  const dshProviders = modelProviders.filter((item) => item.harness === "dsh");
   const loginComponents = installations.filter(
     (runtime) =>
       runtime.key.provider === "codex" &&
@@ -149,6 +170,9 @@ export function RuntimeSettings({
         >
           <option value="codex">Codex</option>
           <option value="dsh">DeepSeek Harness</option>
+          {piProviders.length > 0 || provider === "pi" ? (
+            <option value="pi">Pi Harness</option>
+          ) : null}
         </ActionSelect>
       </div>
       <div className="setting-row">
@@ -382,7 +406,18 @@ export function RuntimeSettings({
           )}
         </div>
       </div>
-      <DshProviderSettings request={request} />
+      <HarnessProviderSettings
+        request={request}
+        harness="dsh"
+        providers={dshProviders}
+      />
+      {piProviders.length > 0 ? (
+        <HarnessProviderSettings
+          request={request}
+          harness="pi"
+          providers={piProviders}
+        />
+      ) : null}
       {phase && <p role="status">{displayText(phase)}</p>}
       {message && (
         <p role="status" aria-live="polite">

@@ -321,7 +321,8 @@ fn pack_reference(state: &EngineeringState, value: &Value) -> Result<Option<Valu
         let lock: VersionedPermissionLock =
             serde_json::from_value(value["binding_lock"].clone()).map_err(storage)?;
         return Ok(Some(
-            json!({"$source":"execution_permissions","harness_choice":devdesk_core::frozen_views::permission_choice(&lock.harness),"sandbox_choice":devdesk_core::frozen_views::permission_choice(&lock.sandbox),"scope":value["scope"]}),
+            json!({"$source":"execution_permissions","harness_choice":devdesk_core::frozen_views::permission_choice(&lock.harness),"sandbox_choice":devdesk_core::frozen_views::permission_choice(&lock.sandbox),"scope":value["scope"],
+                "asset_digests":value["enforcement"]["asset_digests"]}),
         ));
     }
     if value.get("files").is_some()
@@ -583,8 +584,10 @@ fn restore_reference(
             let profile_digest = connection
                 .as_ref()
                 .map(|connection| {
-                    model_providers::dsh_model_patch(connection, &model.model)
-                        .and_then(|v| configuration_digest(&json!(v)))
+                    let definition: HarnessDefinition = harness_record.decode()?;
+                    let provider = HarnessProvider::from_name(&definition.provider)
+                        .ok_or_else(|| err("invalid_configuration", "冻结 Harness 不受支持"))?;
+                    model_providers::model_profile_digest(provider, connection, &model.model)
                 })
                 .transpose()?;
             let permissions: Option<ExecutionPermissions> =
@@ -672,10 +675,11 @@ fn restore_reference(
                 )?,
             };
             let scope = serde_json::from_value(value["scope"].clone()).map_err(storage)?;
-            let compiled = json!(permission_profiles::compile_permission_profiles(
+            let compiled = json!(permission_profiles::restore_permission_profiles(
                 state,
                 &lock,
-                Some(scope)
+                scope,
+                value.get("asset_digests"),
             )?);
             // Share the existing memo's entry bound and skip oversized grants.
             if memo.len() < 128 && key.len() + compiled.to_string().len() <= 64 * 1024 {

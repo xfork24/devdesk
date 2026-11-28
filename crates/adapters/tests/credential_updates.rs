@@ -138,7 +138,9 @@ fn factory_reset_preserves_the_provider_reference_but_fences_an_in_flight_save()
     let calls = vault.calls.load(Ordering::Relaxed);
     assert_eq!(save(&in_flight).unwrap_err().code, "revision_conflict");
     assert_eq!(vault.calls.load(Ordering::Relaxed), calls);
-    let binding = store.read_resources(&[binding_key("minimax-cn")]).unwrap();
+    let binding = store
+        .read_resources(&[binding_key("dsh", "minimax-cn")])
+        .unwrap();
     assert_eq!(binding[0].revision, 1);
     assert_eq!(binding[0].value.as_ref(), Some(&first.result["reference"]));
 
@@ -183,7 +185,7 @@ fn one_hundred_original_version_publications_have_one_winner() {
     }
     assert_eq!(winners, 1);
     let binding = store
-        .read_resources(&[binding_key("minimax-cn")])
+        .read_resources(&[binding_key("dsh", "minimax-cn")])
         .unwrap()
         .remove(0);
     assert_eq!(binding.revision, 1);
@@ -230,7 +232,10 @@ fn one_hundred_same_commands_replay_one_publication_and_one_logical_vault_candid
     ));
     assert_eq!(vault.writes.load(Ordering::Relaxed), 1);
     assert_eq!(
-        store.read_resources(&[binding_key("minimax-cn")]).unwrap()[0].revision,
+        store
+            .read_resources(&[binding_key("dsh", "minimax-cn")])
+            .unwrap()[0]
+            .revision,
         1
     );
     let request = command("same-command", &provider, 0);
@@ -278,7 +283,7 @@ fn an_unknown_vault_outcome_reconciles_the_original_candidate_and_never_persists
         "needs_reconciliation"
     );
     let binding = store
-        .read_resources(&[binding_key("minimax-cn")])
+        .read_resources(&[binding_key("dsh", "minimax-cn")])
         .unwrap()
         .remove(0);
     assert_eq!(binding.revision, 0);
@@ -388,7 +393,7 @@ fn a_provider_change_during_vault_io_fences_publication_and_preserves_the_old_bi
     )
     .unwrap();
     let previous = store
-        .read_resources(&[binding_key("minimax-cn")])
+        .read_resources(&[binding_key("dsh", "minimax-cn")])
         .unwrap()
         .remove(0);
     let publisher = store.clone();
@@ -430,7 +435,7 @@ fn a_provider_change_during_vault_io_fences_publication_and_preserves_the_old_bi
         "revision_conflict"
     );
     let current = store
-        .read_resources(&[binding_key("minimax-cn")])
+        .read_resources(&[binding_key("dsh", "minimax-cn")])
         .unwrap()
         .remove(0);
     assert_eq!(current.revision, previous.revision);

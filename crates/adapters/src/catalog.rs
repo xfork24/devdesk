@@ -3,6 +3,7 @@ use super::*;
 use rusqlite::{OptionalExtension, params};
 
 const DOMAIN_DATASET_LAYOUT: &str = "single-host-domain-packages-v1";
+use crate::global_migration::GLOBAL_SCHEMA_VERSION;
 pub(super) const REMOVED_PROJECT_PREFIX: &str = "project.removed:";
 
 pub struct GlobalStore {
@@ -22,7 +23,7 @@ impl GlobalStore {
     pub fn model_credential_reference(&self, provider: &ProviderFacts) -> Result<Option<String>> {
         Ok(setting(
             &*self.connection.read()?,
-            &format!("credentials.dsh.{}", provider.id),
+            &devdesk_core::credential_updates::binding_key(&provider.harness, &provider.id).id,
         )?
         .and_then(|v| v.as_str().map(str::to_owned)))
     }
@@ -37,22 +38,18 @@ impl GlobalStore {
         let version: u32 = connection
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(storage)?;
+        if version == 24 {
+            return Err(err(
+                "incompatible_dataset",
+                "全局库版本 24 需要离线升级，请停止 Host 后运行 devdesk-host storage upgrade-global --data PATH",
+            ));
+        }
         require(
-            version == 0 || version == 24,
+            version == 0 || version == GLOBAL_SCHEMA_VERSION,
             "数据集协议不兼容；请使用新的空数据目录",
         )?;
-        if version == 24 {
-            let layout = connection.query_row(
-                "SELECT contract FROM dataset_layout WHERE id=1",
-                [],
-                |row| row.get::<_, String>(0),
-            );
-            if !layout.is_ok_and(|value| value == DOMAIN_DATASET_LAYOUT) {
-                return Err(err(
-                    "incompatible_dataset",
-                    "数据集资源协议不兼容。领域平台需要新的数据目录，原数据保持原样",
-                ));
-            }
+        if version == GLOBAL_SCHEMA_VERSION {
+            validate_global_layout(&connection)?;
             storage_maintenance::checkpoint(&connection)?;
             preflight_engineering_databases(&root, &connection)?;
         }
@@ -476,6 +473,21 @@ impl GlobalStore {
 // Check compatibility before bootstrap, recovery or journal mode changes can
 // write global facts. Incomplete reservations may have no database yet; a
 // published project may not silently become a newly initialized empty project.
+pub(crate) fn validate_global_layout(connection: &Connection) -> Result<()> {
+    let layout = connection.query_row(
+        "SELECT contract FROM dataset_layout WHERE id=1",
+        [],
+        |row| row.get::<_, String>(0),
+    );
+    if !layout.is_ok_and(|value| value == DOMAIN_DATASET_LAYOUT) {
+        return Err(err(
+            "incompatible_dataset",
+            "数据集资源协议不兼容。领域平台需要新的数据目录，原数据保持原样",
+        ));
+    }
+    Ok(())
+}
+
 fn preflight_engineering_databases(root: &Path, global: &Connection) -> Result<()> {
     use devdesk_core::template_reset_jobs::{ACTIVE_SETTING, TemplateResetJob};
     let reset = setting(global, ACTIVE_SETTING)?

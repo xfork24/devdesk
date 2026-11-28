@@ -6,7 +6,7 @@
 
 [credentials.rs](../../../crates/adapters/src/credentials.rs) 提供 CredentialVault 等平台访问。[credentials_macos.rs](../../../crates/adapters/src/credentials_macos.rs) 核对 Host 的代码签名和账户范围，并调用 macOS Security Framework。
 
-配置保存不透明引用，适配器按供应商和数据集范围访问凭据。macOS 由 Host 访问钥匙串。Linux 使用 Secret Service。Codex OAuth 通过 [codex_auth.rs](../../../crates/adapters/src/codex_auth.rs) 管理数据集私有认证材料。
+配置保存不透明引用，适配器按 Harness、服务商和数据集范围访问凭据。服务商绑定键采用 `credentials.{harness}.{provider}`。DSH 既有绑定保持兼容。macOS 由 Host 访问钥匙串。Linux 使用 Secret Service。Codex OAuth 通过 [codex_auth.rs](../../../crates/adapters/src/codex_auth.rs) 管理数据集私有认证材料。
 
 显式授权独占进程内的钥匙串调用，后台读写期间关闭授权弹窗。需要用户确认时，读写操作返回错误，用户可从设置页或命令行发起[授权](signing-and-keychain.md)。
 
@@ -16,7 +16,7 @@
 
 输入是固定 Profile、目标运行和上下文；输出包括实际可执行的策略、挂载/工具限制及校验结果。若当前平台不能完整实施选定规则，应拒绝执行，不能删除不支持部分后继续。
 
-Harness 权限限制程序和原生工具，Sandbox 权限限制容器边界。替换其中一层不表示放开另一层。受限 DSH 等运行可能需要嵌套后端；Linux AppArmor 资产必须经过相应安装和摘要检查。
+Harness 权限限制程序和原生工具，Sandbox 权限限制容器边界。替换其中一层不表示放开另一层。受限 DSH 等运行可能需要嵌套后端。Linux AppArmor 资产必须经过相应安装和摘要检查。Pi 扩展核对冻结的文件与工具权限。Shell 要求两层均为 Full Access 且允许信任容器内进程。Pi 的工具级网络隔离返回不支持。
 
 ## 常见修改风险
 

@@ -16,10 +16,12 @@
 
 | core 操作 | 供应商转换 |
 |---|---|
-| 打开或恢复会话 | Codex thread/start 或 thread/resume；DSH 对应会话准备 |
-| dispatch_turn | Codex turn/start；DSH session/prompt |
+| 打开或恢复会话 | Codex `thread/start` 或 `thread/resume`，DSH 会话准备，Pi 固定会话 ID 后读取 `get_state` |
+| dispatch_turn | Codex `turn/start`，DSH `session/prompt`，Pi `prompt` |
 | poll_session | 将通知、响应、交互和终态转换成 ConversationObservation |
-| answer_tool_call | 回复原 item/tool/call 或 devdesk/tool/call 请求 |
+| answer_tool_call | 回复 Codex / DSH 原工具请求或 Pi 原扩展对话 |
+
+[harness_pi.rs](../../../crates/adapters/src/harness_pi.rs) 将 Pi 的输入接纳、消息增量、工具与 `agent_settled` 映射为消费及终态观察。启动时先核对冻结权限扩展的装载确认。宿主工具的参数、授权和回执仍走 core 的工具执行路径。
 
 `provider_turn_text` 选择已经准备好的任务输入；供应商线程恢复时避免把同一历史正文再重复注入。协议日志和正式响应应分别处理。
 

@@ -1,0 +1,20 @@
+{
+  "type": "tool",
+  "identity": "builtin-tool-pi-native",
+  "revision": 1,
+  "name": "Pi Native Tools",
+  "scope": "global",
+  "data": {
+    "capabilities": [],
+    "harness_provider": "pi",
+    "implementation": "harness.native",
+    "input_schema": {
+      "description": "Pi native tools constrained by the frozen DevDesk permissions and work scope.",
+      "type": "object"
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "qualified_name": "pi.native"
+  }
+}

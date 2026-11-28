@@ -7,6 +7,7 @@ use std::sync::RwLock;
 pub struct RuntimePreparation {
     codex: Mutex<()>,
     dsh: Mutex<()>,
+    pi: Mutex<()>,
     auth: Mutex<()>,
     auth_cancel: std::sync::atomic::AtomicBool,
     status: RwLock<BTreeMap<String, Value>>,
@@ -16,6 +17,7 @@ impl RuntimePreparation {
         let _guard = match key {
             "codex" => &self.codex,
             "dsh" => &self.dsh,
+            "pi" => &self.pi,
             _ => &self.auth,
         }
         .lock()
@@ -183,9 +185,10 @@ impl ports::SessionResources for SessionResourceAdapter<'_> {
     ) -> Result<Option<String>> {
         match provider {
             HarnessProvider::Codex => Ok(Some(self.codex_auth.credential_reference()?)),
-            HarnessProvider::Dsh => {
+            HarnessProvider::Dsh | HarnessProvider::Pi => {
                 let c = connection.ok_or_else(|| err("invalid_configuration", "缺少模型连接"))?;
                 let facts = state.provider_facts_any(&c.provider)?;
+                require(facts.harness == provider.as_str(), "服务商归属其他 Harness")?;
                 if !facts.requires_key {
                     return Ok(None);
                 }
@@ -204,8 +207,13 @@ impl ports::SessionResources for SessionResourceAdapter<'_> {
             }
         }
     }
-    fn model_profile_digest(&self, c: &ModelConnection, m: &str) -> Result<String> {
-        model_providers::dsh_model_patch(c, m).and_then(|p| configuration_digest(&json!(p)))
+    fn model_profile_digest(
+        &self,
+        provider: HarnessProvider,
+        c: &ModelConnection,
+        m: &str,
+    ) -> Result<String> {
+        model_providers::model_profile_digest(provider, c, m)
     }
     fn runtime_digest(&self, a: &Definition, b: &RuntimeBinding) -> Result<String> {
         runtime_digest(a, b)

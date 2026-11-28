@@ -355,7 +355,9 @@ impl Engine {
             .runtime_binding
             .as_ref()
             .ok_or_else(|| err("blocked", "缺少原运行锁"))?;
-        let input = if binding.installation.key.provider == HarnessProvider::Dsh {
+        let input = if binding.installation.key.provider.traits().identity
+            == InputIdentity::ProviderMessage
+        {
             &turn["external_message"]
         } else {
             &turn["external_turn"]
@@ -392,7 +394,9 @@ impl Engine {
             .runtime_binding
             .as_ref()
             .ok_or_else(|| err("invalid_configuration", "缺少原运行锁"))?;
-        let input = if binding.installation.key.provider == HarnessProvider::Dsh {
+        let input = if binding.installation.key.provider.traits().identity
+            == InputIdentity::ProviderMessage
+        {
             &turn["external_message"]
         } else {
             &turn["external_turn"]

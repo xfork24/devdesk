@@ -779,7 +779,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.iter().any(|a| a == "--help") {
         println!(
-            "DevDesk {}\nUsage: devdesk-host [--data PATH] [--host IP] [--port 4317] [--public-url http(s)://HOST:PORT] [--web-dir DIR]\n       devdesk-host --data PATH --authorize-credential REFERENCE\n       devdesk-host sandbox-policy --print|--check|--install\nDefault host: 127.0.0.1. Remote listening requires DEVDESK_ACCESS_TOKEN (32+ characters).\nWithout --data, choose a dataset in the Web setup page. Without --web-dir the Host serves the client protocol only.",
+            "DevDesk {}\nUsage: devdesk-host [--data PATH] [--host IP] [--port 4317] [--public-url http(s)://HOST:PORT] [--web-dir DIR]\n       devdesk-host --data PATH --authorize-credential REFERENCE\n       devdesk-host storage upgrade-global --data PATH\n       devdesk-host sandbox-policy --print|--check|--install\nDefault host: 127.0.0.1. Remote listening requires DEVDESK_ACCESS_TOKEN (32+ characters).\nWithout --data, choose a dataset in the Web setup page. Without --web-dir the Host serves the client protocol only.",
             env!("CARGO_PKG_VERSION")
         );
         return Ok(());
@@ -821,17 +821,20 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     };
     if args.first().is_some_and(|arg| arg == "storage") {
         let data = PathBuf::from(option("--data").ok_or("storage requires --data")?);
-        let project = option("--project").ok_or("storage requires --project")?;
-        let report = match args.get(1).map(String::as_str) {
-            Some("migrate") => devdesk_adapters::project_migration::migrate(&data, &project)?,
-            Some("compact") => devdesk_adapters::project_migration::compact(&data, &project)?,
-            Some("rebuild-workflow-display") => {
-                devdesk_adapters::project_migration::rebuild_workflow_display(&data, &project)?
-            }
-            _ => {
-                return Err(
-                    "Usage: devdesk-host storage (migrate|compact|rebuild-workflow-display) --data PATH --project ID".into(),
-                );
+        let action = args.get(1).map(String::as_str);
+        let report = if action == Some("upgrade-global") {
+            devdesk_adapters::global_migration::upgrade(&data)?
+        } else {
+            let project = option("--project").ok_or("storage requires --project")?;
+            match action {
+                Some("migrate") => devdesk_adapters::project_migration::migrate(&data, &project)?,
+                Some("compact") => devdesk_adapters::project_migration::compact(&data, &project)?,
+                Some("rebuild-workflow-display") => {
+                    devdesk_adapters::project_migration::rebuild_workflow_display(&data, &project)?
+                }
+                _ => {
+                    return Err("Usage: devdesk-host storage upgrade-global --data PATH | storage (migrate|compact|rebuild-workflow-display) --data PATH --project ID".into());
+                }
             }
         };
         println!("{}", serde_json::to_string_pretty(&report)?);
