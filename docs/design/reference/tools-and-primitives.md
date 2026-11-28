@@ -23,7 +23,7 @@
 | `project.record.read` | [Read Project Record](../../../plugins/software-development/catalog/tools/builtin-tool-project-record-read-v2.json) | `kind`、`id` |
 | `project.artifact.read` | [Read Project Artifact](../../../plugins/software-development/catalog/tools/builtin-tool-project-artifact-read-v2.json) | `id` |
 | `project.resources` | [Inspect Project Resources](../../../plugins/software-development/catalog/tools/builtin-tool-project-resources-v2.json) | 无；仍需运行上下文 |
-| `spec.lint` | [Validate Specification](../../../plugins/core/tools/builtin-tool-spec-lint-v2.json) | `value` |
+| `spec.lint` | [Validate Specification](../../../kernel/core/tools/builtin-tool-spec-lint-v2.json) | `value` |
 
 ## 配置查询与变更
 
@@ -51,16 +51,16 @@
 
 | 工具 | 用途与完整定义 | Schema 必需字段 |
 |---|---|---|
-| `workflow.inspect` | [Inspect Workflow](../../../plugins/core/tools/builtin-tool-workflow-inspect-v3.json) | 无；仍需运行上下文 |
-| `workflow.events.read` | [Read Workflow Events](../../../plugins/core/tools/builtin-tool-workflow-events-read-v2.json) | 无；仍需运行上下文 |
-| `workflow.outputs.read` | [Read Workflow Outputs](../../../plugins/core/tools/builtin-tool-workflow-outputs-read-v3.json) | `ids` |
-| `workflow.execution.inspect` | [Inspect Workflow Execution](../../../plugins/core/tools/builtin-tool-workflow-execution-inspect-v2.json) | `execution_id` |
+| `workflow.inspect` | [Inspect Workflow](../../../kernel/core/tools/builtin-tool-workflow-inspect-v3.json) | 无；仍需运行上下文 |
+| `workflow.events.read` | [Read Workflow Events](../../../kernel/core/tools/builtin-tool-workflow-events-read-v2.json) | 无；仍需运行上下文 |
+| `workflow.outputs.read` | [Read Workflow Outputs](../../../kernel/core/tools/builtin-tool-workflow-outputs-read-v3.json) | `ids` |
+| `workflow.execution.inspect` | [Inspect Workflow Execution](../../../kernel/core/tools/builtin-tool-workflow-execution-inspect-v2.json) | `execution_id` |
 | `workflow.change.preview` | [Preview Workflow Changes](../../../plugins/software-development/catalog/tools/builtin-tool-workflow-change-preview-v4.json) | `changeset` |
 | `workflow.controller.wait` | [Wait for Workflow Events](../../../plugins/software-development/catalog/tools/builtin-tool-workflow-controller-wait-v2.json) | `plan_revision_id`、`delivery_id`、`summary` |
 | `workflow.controller.notify` | [Notify Workflow Operators](../../../plugins/software-development/catalog/tools/builtin-tool-workflow-controller-notify-v2.json) | `plan_revision_id`、`interaction` |
 | `workflow.start` | [Start Workflow](../../../plugins/software-development/catalog/tools/builtin-tool-workflow-start-v4.json) | `workflow_ref`、`role_agent_bindings`、`expected_revision` |
-| `workflow.step.dispatch` | [Dispatch Workflow Step](../../../plugins/core/tools/builtin-tool-workflow-step-dispatch-v3.json) | `plan_revision_id`、`step`、`expected_revision`、`control_version`、`expected_step_revision`、`execution_id` |
-| `workflow.step.accept` | [Accept Step Outputs](../../../plugins/core/tools/builtin-tool-workflow-step-accept-v3.json) | `plan_revision_id`、`step`、`execution_id`、`input_digest`、`outputs`、`expected_revision`、`control_version`、`expected_step_revision` |
+| `workflow.step.dispatch` | [Dispatch Workflow Step](../../../kernel/core/tools/builtin-tool-workflow-step-dispatch-v3.json) | `plan_revision_id`、`step`、`expected_revision`、`control_version`、`expected_step_revision`、`execution_id` |
+| `workflow.step.accept` | [Accept Step Outputs](../../../kernel/core/tools/builtin-tool-workflow-step-accept-v3.json) | `plan_revision_id`、`step`、`execution_id`、`input_digest`、`outputs`、`expected_revision`、`control_version`、`expected_step_revision` |
 | `workflow.step.input` | [Provide Step Input](../../../plugins/software-development/catalog/tools/builtin-tool-workflow-step-input-v3.json) | `plan_revision_id`、`step`、`input`、`expected_revision`、`control_version`、`expected_step_revision`、`execution_id` |
 | `workflow.step.retry` | [Retry Failed Step](../../../plugins/software-development/catalog/tools/builtin-tool-workflow-step-retry-v3.json) | `plan_revision_id`、`step`、`expected_revision`、`control_version`、`expected_step_revision`、`execution_id` |
 | `workflow.step.rework` | [Rework Workflow Step](../../../plugins/software-development/catalog/tools/builtin-tool-workflow-step-rework-v4.json) | `plan_revision_id`、`step`、`expected_revision`、`control_version`、`expected_step_revision`、`execution_id` |
@@ -71,9 +71,9 @@
 | `workflow.change.apply` | [Apply Workflow Changes](../../../plugins/software-development/catalog/tools/builtin-tool-workflow-change-apply-v5.json) | `plan_revision_id`、`changeset`、`preview_hash`、`expected_revision`、`control_version` |
 | `workflow.materials.import` | [Import Workflow Artifacts](../../../plugins/software-development/catalog/tools/builtin-tool-workflow-materials-import-v3.json) | `plan_revision_id`、`delivery_ref`、`value`、`source`、`expected_revision`、`control_version` |
 | `workflow.execution.reconcile` | [Reconcile Workflow Execution](../../../plugins/software-development/catalog/tools/builtin-tool-workflow-execution-reconcile-v3.json) | `plan_revision_id`、`step`、`expected_revision`、`control_version`、`expected_step_revision`、`execution_id` |
-| `workflow.complete` | [Complete Workflow](../../../plugins/core/tools/builtin-tool-workflow-complete-v3.json) | `plan_revision_id`、`expected_revision`、`control_version` |
+| `workflow.complete` | [Complete Workflow](../../../kernel/core/tools/builtin-tool-workflow-complete-v3.json) | `plan_revision_id`、`expected_revision`、`control_version` |
 | `workflow.segment.dispatch` | [Dispatch Workflow Segment](../../../plugins/software-development/catalog/tools/builtin-tool-workflow-segment-dispatch-v5.json) | `plan_revision_id`、`reason`、`steps`、`expected_revision`、`control_version`；可显式授予普通审批材料准备与完整实例收尾 |
-| `workflow.decision.request` | [Request Human Decision](../../../plugins/core/tools/builtin-tool-workflow-decision-request-v5.json) | `plan_revision_id`、`reason`、`operation`、`arguments`、`interaction`、`expected_revision`、`control_version` |
+| `workflow.decision.request` | [Request Human Decision](../../../kernel/core/tools/builtin-tool-workflow-decision-request-v5.json) | `plan_revision_id`、`reason`、`operation`、`arguments`、`interaction`、`expected_revision`、`control_version` |
 | `workflow.rework.preview` | [Preview Workflow Rework](../../../plugins/software-development/catalog/tools/builtin-tool-workflow-rework-preview-v2.json) | `instance_id`、`plan_revision_id`、`rework` |
 
 ## 工程执行与交付

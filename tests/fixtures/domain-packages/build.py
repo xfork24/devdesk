@@ -13,8 +13,8 @@ HOST_VERSION = (  # read without a TOML parser: the workspace version line in Ca
     next(line.split('"')[1] for line in (ROOT.parents[2] / "Cargo.toml").read_text().splitlines()
          if line.startswith("version = ")))
 KERNEL_TOOLS = {}
-for _path in json.loads((ROOT.parents[2] / "plugins/core/manifest.json").read_text())["types"]["tool"]:
-    _record = json.loads((ROOT.parents[2] / "plugins/core" / _path).read_text())
+for _path in json.loads((ROOT.parents[2] / "kernel/core/manifest.json").read_text())["types"]["tool"]:
+    _record = json.loads((ROOT.parents[2] / "kernel/core" / _path).read_text())
     KERNEL_TOOLS[f"{_record['identity']}:{_record['revision']}"] = _record["data"]
 
 

@@ -119,8 +119,8 @@ def kernel_domain_errors(root: Path) -> list[str]:
     crates, plugins = root / 'crates', root / 'plugins'
     sources = kernel_sources(crates)
     test_only = test_only_modules(sources)
-    domains = sorted(p.name for p in plugins.iterdir() if p.is_dir() and p.name != 'core')
-    factory = json.loads((plugins / 'core/manifest.json').read_text())
+    domains = sorted(p.name for p in plugins.iterdir() if p.is_dir())
+    factory = json.loads((root / 'kernel/core/manifest.json').read_text())
     retired = [prefix for kind, prefix in BUSINESS_TYPES.items() if not factory['types'].get(kind)]
     alternation = '|'.join(map(re.escape, domains))
     rules = [
@@ -128,7 +128,7 @@ def kernel_domain_errors(root: Path) -> list[str]:
          re.compile(rf'plugins/(?:{alternation})\b') if domains else None, False),
         ('names a domain package namespace',
          re.compile(rf'"(?:{alternation})(?:[."])') if domains else None, False),
-        ('names the factory directory', re.compile(r'\.\./plugins"|plugins/core[/"]'), True),
+        ('names the factory directory', re.compile(r'\.\./kernel"|kernel/core[/"]'), True),
         ('names a retired factory identity', re.compile('|'.join(map(re.escape, retired))), False),
     ]
     loader = (root / FACTORY_BUNDLE_LOADER).resolve()

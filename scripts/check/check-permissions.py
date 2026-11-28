@@ -11,7 +11,7 @@ for name,entry in manifest['assets'].items():
  assert hashlib.sha256(path.read_bytes()).hexdigest()==entry['sha256'],name
 for backend in manifest['backends']:
  for name in backend['assets']:assert name in manifest['assets'],name
-catalogs = [root/'plugins/core', root/'plugins/software-development/catalog']
+catalogs = [root/'kernel/core', root/'plugins/software-development/catalog']
 presets = [
     json.loads((catalog/path).read_text())
     for catalog in catalogs

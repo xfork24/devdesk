@@ -18,7 +18,8 @@
 | 目录 | 与运行的关系 |
 |---|---|
 | [web](../../web) | 独立发布的 Web Core、SDK 与领域页面组件 |
-| [plugins](../../plugins/README.md) | manifest 发布的源定义、正文、安装资源和默认选择 |
+| [kernel](../../kernel/README.md) | 内核的出厂配置目录：模型、Harness、Sandbox、权限预设和内核处理器的工具定义，构建时内嵌进 Host |
+| [plugins](../../plugins/README.md) | 领域包的源定义、正文、运行处理器、安装资源和默认选择 |
 | [crates/adapters/runtime](../../crates/adapters/runtime) | 适配器使用的 worker 资产：HTTP/MCP 等接入的 tool-worker.mjs，领域处理器引导模块 domain-worker.mjs |
 | [schemas](../../schemas/README.md) | 数据形状及协议合同 |
 | [sql](../../sql/README.md) | 当前数据库基线和结构 |

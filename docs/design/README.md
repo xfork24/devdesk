@@ -31,4 +31,4 @@ DevDesk 将需求、Agent 执行、工程验证和人工决定组织成可追踪
 
 [术语表](glossary.md) · [RPC 参考](reference/rpc.md) · [工具和调度原语](reference/tools-and-primitives.md) · [外部接入](reference/integrations.md) · [数据格式](reference/contracts.md)
 
-配置示例以[核心目录](../../plugins/core/manifest.json)和[软件开发目录](../../plugins/software-development/catalog/manifest.json)为准。扩展协议见[领域包与客户端](domain-packages.md)，历史报告见[计划索引](../plans/README.md)和[性能基准](../benchmarks/README.md)。
+配置示例以[核心目录](../../kernel/core/manifest.json)和[软件开发目录](../../plugins/software-development/catalog/manifest.json)为准。扩展协议见[领域包与客户端](domain-packages.md)，历史报告见[计划索引](../plans/README.md)和[性能基准](../benchmarks/README.md)。

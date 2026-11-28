@@ -31,9 +31,9 @@ def platform_handlers(entries):
     """Platform tool handlers the package calls through its own or the kernel's tool definitions."""
     tools = {f"{record['identity']}:{record['revision']}": record["data"]
              for record in entries if record["type"] == "tool"}
-    kernel = json.loads((REPO / "plugins/core/manifest.json").read_text())
+    kernel = json.loads((REPO / "kernel/core/manifest.json").read_text())
     for path in kernel["types"]["tool"]:
-        record = json.loads((REPO / "plugins/core" / path).read_text())
+        record = json.loads((REPO / "kernel/core" / path).read_text())
         tools[f"{record['identity']}:{record['revision']}"] = record["data"]
 
     def visit(value):

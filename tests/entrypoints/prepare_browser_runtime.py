@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import subprocess
 
-root = Path(__file__).resolve().parents[2] / 'plugins/core'
+root = Path(__file__).resolve().parents[2] / 'kernel/core'
 manifest = json.loads((root / 'manifest.json').read_text())
 defaults = json.loads((root / manifest['defaults']).read_text())
 reference = defaults['sandbox_ref']

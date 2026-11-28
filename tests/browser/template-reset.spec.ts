@@ -71,8 +71,13 @@ async function rpc(page: Page, url: string, method: string, params = {}) {
   return value.result;
 }
 function resourceDigest() {
-  const root = resolve(import.meta.dirname, "../../plugins"),
-    hash = createHash("sha256");
+  // The kernel catalog and the domain packages; a UI edit or reset touches neither.
+  const hash = createHash("sha256"),
+    repo = resolve(import.meta.dirname, "../..");
+  for (const name of ["kernel", "plugins"]) {
+    hash.update(name);
+    visit(join(repo, name));
+  }
   function visit(path: string) {
     for (const entry of readdirSync(path, { withFileTypes: true }).sort(
       (a, b) => a.name.localeCompare(b.name),
@@ -80,12 +85,11 @@ function resourceDigest() {
       const file = join(path, entry.name);
       if (entry.isDirectory()) visit(file);
       else {
-        hash.update(file.slice(root.length));
+        hash.update(file.slice(repo.length));
         hash.update(readFileSync(file));
       }
     }
   }
-  visit(root);
   return hash.digest("hex");
 }
 

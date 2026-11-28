@@ -32,7 +32,7 @@
 
 ## 配置存放在哪里
 
-[核心 manifest](../../plugins/core/manifest.json) 管理 Host 自带的配置，[软件开发 manifest](../../plugins/software-development/catalog/manifest.json) 管理领域 ZIP 的配置。两种目录分别发布。领域激活后，项目建立前即可在配置目录读取包内定义。项目绑定决定哪些项目配置可见。
+[核心 manifest](../../kernel/core/manifest.json) 管理 Host 自带的配置，[软件开发 manifest](../../plugins/software-development/catalog/manifest.json) 管理领域 ZIP 的配置。两种目录分别发布。领域激活后，项目建立前即可在配置目录读取包内定义。项目绑定决定哪些项目配置可见。
 
 基础组件页可查看模型、运行时和工具。领域项目提供与自身范围匹配的编辑器及查询。运行时从 SQLite 的 `source_definitions` 和已保存的绑定解析所需视图。需要恢复的工作项继续使用当时冻结的配置与包摘要。
 

@@ -11,7 +11,7 @@ DevDesk v0.5 独立交付 Rust Host、Web Core 和领域 ZIP。Host 带有 Model
 | `runtime/` | 可选 JavaScript 处理器、输入输出合同关联和运行辅助文件 |
 | `ui/` | 可选客户端贡献声明与目标专属资产 |
 
-格式由[领域包 Schema](../../schemas/domain-package.schema.json)、[对象定义](../../schemas/domain-entity-types.schema.json)和[客户端贡献](../../schemas/domain-contributions.schema.json)共同描述。源码分别位于 [plugins/core](../../plugins/core/manifest.json) 和 [plugins/software-development](../../plugins/software-development/README.md)。软件开发包的 Feature、Task 使用冻结证据授权，仓库识别、分支命名、PR 文案、测试报告和页面入口也随包发布。
+格式由[领域包 Schema](../../schemas/domain-package.schema.json)、[对象定义](../../schemas/domain-entity-types.schema.json)和[客户端贡献](../../schemas/domain-contributions.schema.json)共同描述。源码分别位于 [kernel/core](../../kernel/core/manifest.json) 和 [plugins/software-development](../../plugins/software-development/README.md)。软件开发包的 Feature、Task 使用冻结证据授权，仓库识别、分支命名、PR 文案、测试报告和页面入口也随包发布。
 
 ## 依赖与协商
 

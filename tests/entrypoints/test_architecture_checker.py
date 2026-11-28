@@ -23,7 +23,7 @@ class KernelDomainBoundary(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name).resolve()
-        self.write('plugins/core/manifest.json', '{"types": {"role": [], "tool": ["tools/t.json"]}}')
+        self.write('kernel/core/manifest.json', '{"types": {"role": [], "tool": ["tools/t.json"]}}')
         (self.root / 'plugins/software-development').mkdir(parents=True)
         self.write('crates/kernel/src/lib.rs', 'pub fn entry() {}\n')
         self.write('crates/adapters/build.rs', 'fn main() {}\n')
@@ -75,18 +75,18 @@ mod nested;
         self.write(SHIM, f'pub const A: &str = {RETIRED};\n')
         self.assertEqual(architecture.kernel_domain_errors(self.root),
                          [f'{SHIM}:1 names a retired factory identity'])
-        self.write('plugins/core/manifest.json',
+        self.write('kernel/core/manifest.json',
                    '{"types": {"role": ["roles/reviewer.json"], "tool": []}}')
         self.write('crates/kernel/src/tool.rs', 'pub const A: &str = "builtin-tool-review:1";\n')
         self.assertEqual(architecture.kernel_domain_errors(self.root), [])
 
     def test_only_the_factory_loader_names_the_factory_directory(self):
         self.write('crates/adapters/examples/export.rs',
-                   'fn main() { let _ = "../../plugins/core/manifest.json"; }\n')
+                   'fn main() { let _ = "../../kernel/core/manifest.json"; }\n')
         self.assertEqual(architecture.kernel_domain_errors(self.root),
                          ['crates/adapters/examples/export.rs:1 names the factory directory'])
         self.write('crates/adapters/examples/export.rs', 'fn main() {}\n')
-        self.write('crates/adapters/build.rs', 'fn main() { let _ = "../../plugins"; }\n')
+        self.write('crates/adapters/build.rs', 'fn main() { let _ = "../../kernel"; }\n')
         self.assertEqual(architecture.kernel_domain_errors(self.root), [])
 
     def test_known_references_cover_exactly_what_remains(self):

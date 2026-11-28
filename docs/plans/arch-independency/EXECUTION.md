@@ -88,6 +88,7 @@
 | N-4 | 项目的接入信息对内核不透明。`domain.project.create` 带 `connection` 时，活动包的 `project_connection` 处理器解析它，结果原样保存为项目的 `connection`（不超过 64 KiB 的 JSON 对象，随 `query.workspace` 等返回）。只有声明了 `engineering.git/1` 的包，内核的工程部分才从接入信息里读出仓库与主分支（`extensions::git_connection`），据此登记仓库、复用或接管 GitHub 项目；通用 RPC 不再按 GitHub 校验。`domain.project.remove` 对任何领域项目可用：移除会藏起来的在途工作（在途根流程、可运行或待核对的仓库操作）时返回 `domain_busy`，空闲的连接复核不阻止移除。为此项目库新增一列，工程库版本升到 63，带 62 及更早版本的离线升级。Web 的移除入口不再以包声明 `project_connection` 为前提 |
 | K-7 | 版本号：工作区、Web Core 与软件开发包都升到 0.6.0，`domain_protocol` 为 2、清单格式为 2。制品名随版本变化：`devdesk-core-host-0.6.0-<target>.tar.gz`、`devdesk-core-web-0.6.0.tar.gz`、`software-development-0.6.0.zip`。Web 的组件套件版本为 `0.6`，软件开发包的呈现目标随之声明 `kit: "0.6"`。运行指南的兼容矩阵改为三个工件的当前合同，删去了旧版 ZIP 的行 |
 | N-2 | 证据合同通用化。合同的 `checks` 以被守护的操作为键（工具的 `qualified_name` 或 `$completion`），内核不再只读 `git.delivery` 一个键，触发点也不再按四个工程工具名写死：任何工具步骤（含领域工具）执行前，内核为守护它的每个合同封存事实、组装输入并调用验证器，拒绝时工具不执行。工作流完成前，每个带 `$completion` 的合同同样被询问；回答按事实摘要记录，事实不变时再次尝试直接沿用。验证器收到 `{contract, operation, context, facts}`：`context` 由合同声明，来源有 `owner`、`input`、`arguments`、`platform` 四种，字段可用 JSON pointer 取值；`facts` 条目由内核类型 `EvidenceFact` 产生，包在验证器的输入 Schema 里描述同一形状，并以一致性测试约束。完成证据不再强制要求平台操作：标注了平台操作的由内核见证，其余是封存的步骤产物，由验证器权衡。软件开发的 `git.delivery` 合同改写成同一形式，验证器改读声明的上下文；`platform` 来源（来源分支、目标）与子流程核对仍在内核的工程部分 |
+| K-6（第一部分） | 内核的出厂目录从 `plugins/core` 改名为 `kernel/core`：它由 Host 构建时内嵌，不是领域包，不经过 ZIP 的安装与协商。`plugins/` 下只剩领域包。构建脚本、架构守卫、默认值检查、权限检查、引用索引、测试与文档都指向新路径；`kernel/README.md` 说明它与领域包的区别，`plugins/README.md` 只列领域包 |
 | W-5 | 呈现目标用 `sdk`（Web SDK 主版本）取代 `api`，新增 `kit`（组件套件对应的 Web Core 版本）与绑定的 `home`（进入领域时打开的首页，取代“第一个绑定”）。Web Core 只加载 `sdk` 与自身一致、`kit` 与自身版本一致的目标，其余目标提示“领域包与 Web Core 版本不兼容”。内核只校验 `sdk` 不小于 1、每个目标最多一个首页；SDK 版本是否可用由 Web Core 判断 |
 
 ### 初步验收
@@ -162,6 +163,10 @@
 | | `cargo clippy --workspace --all-targets --locked -- -D warnings`、`./scripts/check/check-style.sh` | 无警告；rustfmt、ESLint、TypeScript、Prettier、Web 构建通过 |
 | | `python3 tests/entrypoints/lifecycle_contract.py target/fixtures/debug/devdesk-host` 及四组夹具合同、`project_test_configuration -- --ignored` | 通过 |
 | | `node tests/entrypoints/domain_packages.mjs target/debug/devdesk-host web/dist/core <带页面的 0.6.0 软件开发包>` | 退出码 0。软件开发包带着改写后的交付合同安装并运行 |
+| K-6（第一部分） | `python3 tests/entrypoints/test_architecture_checker.py`、`./scripts/check/check-architecture.sh`、`scripts/check/check-defaults.py`、`check-permissions.sh`、`configuration_usage.py` | 通过。架构守卫里“点名出厂目录”的规则改为 `kernel/core`，只有 `crates/adapters/build.rs` 可以点名 |
+| | `cargo test --workspace --locked` | 60 个套件，807 通过，0 失败，39 忽略 |
+| | `cargo clippy --workspace --all-targets --locked -- -D warnings`、`./scripts/check/check-style.sh` | 无警告；rustfmt、ESLint、TypeScript、Prettier、Web 构建通过 |
+| | `python3 tests/entrypoints/lifecycle_contract.py target/fixtures/debug/devdesk-host` 及四组夹具合同、`project_test_configuration -- --ignored`、`node tests/entrypoints/domain_packages.mjs` | 通过，退出码 0 |
 | W-5 | `cargo test -p devdesk-adapters --locked --lib domain_packages::tests` | 10 通过。新增一项：一个目标标记两个首页后被拒绝 |
 | | `cargo test --workspace --locked` | 60 个套件，794 通过，0 失败，39 忽略 |
 | | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 无警告 |

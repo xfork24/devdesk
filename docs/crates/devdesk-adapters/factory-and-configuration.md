@@ -10,7 +10,7 @@
 
 ## 出厂配置怎样进入程序
 
-[build.rs](../../../crates/adapters/build.rs) 从 `plugins/core/` 读取发布输入，[factory_bundle.rs](../../../crates/adapters/src/factory_bundle.rs) 装载内嵌资源并形成配置集合。manifest 是发布清单，不能将目录里未列入清单的文件自动当作有效默认。
+[build.rs](../../../crates/adapters/build.rs) 从 `kernel/core/` 读取发布输入，[factory_bundle.rs](../../../crates/adapters/src/factory_bundle.rs) 装载内嵌资源并形成配置集合。manifest 是发布清单，不能将目录里未列入清单的文件自动当作有效默认。
 
 修改核心配置后重新构建 Host。领域配置由 [domain_packages.rs](../../../crates/adapters/src/domain_packages.rs) 从 ZIP 读取，运行中按活动代次加载。
 
