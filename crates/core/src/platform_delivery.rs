@@ -5,9 +5,14 @@ use crate::{
     governance::{record, update_record},
     platform_facts::{DomainEvidenceCheck, PlatformAction, PlatformPlan, one, restored},
     platform_publish::PublishAction,
+    work_owners::WorkOwnerFacts,
     workflow_resources::{WorkflowResources, version},
     *,
 };
+use devdesk_domain::{
+    ContextOrigin, OperationEvidence, REPOSITORY_DELIVERY_EVIDENCE, json_pointer,
+};
+use std::collections::{BTreeMap, BTreeSet};
 #[path = "workflow_delivery_migration.rs"]
 mod migration;
 #[path = "platform_delivery_projection.rs"]
@@ -285,20 +290,19 @@ impl Engine {
         Ok([proof, version(&call)])
     }
 
-    fn prepare_delivery_evidence(
+    /// Selects and seals the facts a contract names for an operation. Each fact is bound to
+    /// the step that produced it; one from a platform operation or accepted by a human is
+    /// witnessed so that it cannot be replaced.
+    pub(crate) fn operation_facts(
         &self,
         binding: &OperationEvidence,
-        request: &PlatformToolRequest,
+        names: &BTreeSet<String>,
         resources: &WorkflowResources,
-        context: &GitContext,
         plan: &mut PlatformPlan,
-    ) -> Result<()> {
+        // The repository delivery binds a human review to the exact publication it reviewed.
+        publication: Option<&Value>,
+    ) -> Result<BTreeMap<String, Value>> {
         use crate::workflow_facts::FactSelection;
-        let operation = &request.definition.qualified_name;
-        let names = binding
-            .checks
-            .get(operation)
-            .ok_or_else(|| err("configuration_required", "操作缺少冻结的领域证据声明"))?;
         let mut selection = FactSelection::default();
         for name in names {
             selection.source(&binding.sources[name].source);
@@ -307,7 +311,7 @@ impl Engine {
         plan.basis = plan
             .basis
             .merge(selected.reads.versions().iter().cloned())?;
-        let mut facts = serde_json::Map::new();
+        let mut facts = BTreeMap::new();
         for name in names {
             let evidence = &binding.sources[name];
             let execution = resources
@@ -316,15 +320,27 @@ impl Engine {
                 .iter()
                 .find(|step| step.step == evidence.source.step)
                 .filter(|step| step.status == StepExecutionStatus::Completed)
-                .ok_or_else(|| err("blocked", "交付要求的步骤尚未接纳"))?;
+                .ok_or_else(|| err("blocked", "证据要求的步骤尚未接纳"))?;
             let result = selected
                 .facts
                 .value(&evidence.source)
-                .ok_or_else(|| err("blocked", "交付缺少已封存结果"))?;
-            let mut fact = json!({"step":execution.step,"execution_id":execution.id,
-                "input_digest":execution.input_digest,"output_digest":configuration_hash(result),
-                "workspace_revision":execution.inputs.get("workspace").and_then(|value| value.get("revision")),
-                "result":result});
+                .ok_or_else(|| err("blocked", "证据缺少已封存结果"))?;
+            let mut fact = EvidenceFact {
+                step: execution.step.clone(),
+                execution_id: execution.id.clone(),
+                input_digest: execution.input_digest.clone(),
+                output_digest: configuration_hash(result),
+                workspace_revision: execution
+                    .inputs
+                    .get("workspace")
+                    .and_then(|value| value.get("revision"))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                result: result.clone(),
+                platform_operation: None,
+                platform_call_id: None,
+                human_confirmation: None,
+            };
             if let Some(producer) = &evidence.platform_operation {
                 plan.basis = plan.basis.merge(self.witnessed_platform_evidence(
                     &resources.record.id,
@@ -333,33 +349,208 @@ impl Engine {
                     producer,
                     result,
                 )?)?;
-                fact["platform_operation"] = json!(producer);
-                fact["platform_call_id"] = json!(execution.tool_call_id);
+                fact.platform_operation = Some(producer.clone());
+                fact.platform_call_id = execution.tool_call_id.clone();
             }
             if evidence.human_confirmation {
-                fact["human_confirmation"] = json!(self.witnessed_human_delivery(
+                fact.human_confirmation = Some(self.witnessed_human_confirmation(
                     resources,
                     execution,
-                    &request.arguments["publication"],
+                    publication,
                     plan,
                 )?);
             }
-            facts.insert(name.clone(), fact);
+            facts.insert(name.clone(), json!(fact));
         }
+        Ok(facts)
+    }
+
+    /// The work a workflow belongs to, as a contract's context may read it: a domain
+    /// entity as the package wrote it, any other owner as it is stored.
+    fn owner_value(&self, owner: &str, project: &str) -> Result<Value> {
+        let facts = WorkOwnerFacts::read(self.store.as_ref(), owner)?;
+        if facts.owner.resource.kind == "governance"
+            && let Some(entity) = domain_entities::extract(&facts.owner, project)?
+        {
+            return Ok(entity);
+        }
+        Ok(facts.owner.value.clone().unwrap_or(Value::Null))
+    }
+
+    /// What the verifier of a contract receives: the contract, the guarded operation, the
+    /// fields the contract declares and where each comes from, and the sealed facts.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn operation_evidence_input(
+        &self,
+        contract: &str,
+        operation: &str,
+        binding: &OperationEvidence,
+        resources: &WorkflowResources,
+        owner: &str,
+        arguments: Option<&Value>,
+        platform: &Value,
+        facts: BTreeMap<String, Value>,
+    ) -> Result<Value> {
+        let mut context = serde_json::Map::new();
+        for (field, source) in &binding.context {
+            let origin = match source.from {
+                ContextOrigin::Owner => self.owner_value(owner, &resources.instance.project_id)?,
+                ContextOrigin::Input => resources
+                    .instance
+                    .inputs
+                    .get(source.port.as_deref().unwrap_or_default())
+                    .cloned()
+                    .unwrap_or(Value::Null),
+                ContextOrigin::Arguments => arguments.cloned().unwrap_or(Value::Null),
+                ContextOrigin::Platform => platform.clone(),
+            };
+            context.insert(
+                field.clone(),
+                json_pointer(&origin, &source.pointer)
+                    .cloned()
+                    .unwrap_or(Value::Null),
+            );
+        }
+        Ok(json!({"contract":contract,"operation":operation,"context":context,"facts":facts}))
+    }
+
+    /// The evidence a workflow declares for an operation other than the repository delivery,
+    /// which the engineering part prepares with what it knows about the repository.
+    pub(crate) fn prepare_operation_evidence(
+        &self,
+        contract: &str,
+        binding: &OperationEvidence,
+        request: &PlatformToolRequest,
+        resources: &WorkflowResources,
+        plan: &mut PlatformPlan,
+    ) -> Result<DomainEvidenceCheck> {
+        let operation = &request.definition.qualified_name;
+        let names = binding
+            .checks
+            .get(operation)
+            .ok_or_else(|| err("configuration_required", "操作缺少冻结的领域证据声明"))?;
+        let facts = self.operation_facts(binding, names, resources, plan, None)?;
+        Ok(DomainEvidenceCheck {
+            handler: binding.verifier.clone(),
+            input: self.operation_evidence_input(
+                contract,
+                operation,
+                binding,
+                resources,
+                &request.owner_id,
+                Some(&request.arguments),
+                &Value::Null,
+                facts,
+            )?,
+        })
+    }
+
+    fn prepare_delivery_evidence(
+        &self,
+        binding: &OperationEvidence,
+        request: &PlatformToolRequest,
+        resources: &WorkflowResources,
+        context: &GitContext,
+        plan: &mut PlatformPlan,
+    ) -> Result<()> {
+        let operation = &request.definition.qualified_name;
+        let names = binding
+            .checks
+            .get(operation)
+            .ok_or_else(|| err("configuration_required", "操作缺少冻结的领域证据声明"))?;
+        let facts = self.operation_facts(
+            binding,
+            names,
+            resources,
+            plan,
+            Some(&request.arguments["publication"]),
+        )?;
         if names.contains("children") {
             self.delivery_children_gate(resources, plan)?;
         }
-        plan.domain_check = Some(DomainEvidenceCheck {
+        // What the Git extension knows about this operation beyond its arguments.
+        let platform = json!({
+            "source_branch":context.source.branch,
+            "destination":if context.target.owner == context.project { "mainline" } else { "parent_work" },
+        });
+        plan.domain_checks.push(DomainEvidenceCheck {
             handler: binding.verifier.clone(),
-            input: json!({"operation":operation,"source_revision":request.arguments["workspace"]["revision"],
-                "source_branch":context.source.branch,
-                "destination":if context.target.owner == context.project { "mainline" } else { "parent_work" },
-                "candidate_revision":request.arguments["publication"]["revision"],
-                "regression_configured":!resources.instance.inputs.get("test_configuration")
-                    .and_then(|value| value.get("regression")).is_some_and(Value::is_null),
-                "facts":facts}),
+            input: self.operation_evidence_input(
+                REPOSITORY_DELIVERY_EVIDENCE,
+                operation,
+                binding,
+                resources,
+                &request.owner_id,
+                Some(&request.arguments),
+                &platform,
+                facts,
+            )?,
         });
         Ok(())
+    }
+
+    /// The verifier's answer to completing a workflow its contract guards.
+    pub(crate) fn completion_evidence_decision(
+        &self,
+        project: &str,
+        verifier: &str,
+        input: Value,
+    ) -> Result<Value> {
+        let reader = self
+            .domain_reader
+            .as_ref()
+            .ok_or_else(|| err("domain_inactive", "缺少原领域运行端"))?;
+        let decision = reader.read(project, verifier, input)?;
+        if decision["allowed"] != true {
+            return Err(err(
+                "domain_evidence_rejected",
+                decision["reason"].as_str().unwrap_or("领域拒绝完成流程"),
+            ));
+        }
+        Ok(decision)
+    }
+
+    /// The Human decision that accepted exactly this execution's output, when there is one
+    /// that did not override anything.
+    fn witnessed_human_confirmation(
+        &self,
+        resources: &WorkflowResources,
+        execution: &StepExecution,
+        // The repository delivery binds the review to the exact publication it reviewed.
+        publication: Option<&Value>,
+        plan: &mut PlatformPlan,
+    ) -> Result<String> {
+        require(
+            execution.status == StepExecutionStatus::Completed
+                && publication
+                    .is_none_or(|value| execution.inputs.values().any(|input| input == value)),
+            "人工审核未绑定当前确切交付",
+        )?;
+        let confirmations = one(self.store.as_ref(), "workflow_confirmations", &execution.id)?;
+        plan.basis = plan.basis.merge([version(&confirmations)])?;
+        let confirmation = confirmations
+            .value
+            .as_ref()
+            .and_then(Value::as_array)
+            .and_then(|rows| {
+                rows.iter().find(|row| {
+                    row["data"]["actor"]["kind"] == "human"
+                        && row["data"]["input_digest"] == execution.input_digest
+                        && row["data"]["outputs"] == json!(execution.outputs)
+                        && row["data"]["override_completion"] != true
+                })
+            })
+            .ok_or_else(|| err("permission_denied", "缺少办法核对当前版本的 Human 决定"))?;
+        // The accepted decision belongs to this execution in the frozen plan.
+        require(
+            resources
+                .instance
+                .steps
+                .iter()
+                .any(|step| step.id == execution.id),
+            "人工决定执行身份不符",
+        )?;
+        text(confirmation, "id")
     }
 
     pub(crate) fn prepare_delivery_action(

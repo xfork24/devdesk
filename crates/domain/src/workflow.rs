@@ -56,13 +56,64 @@ pub struct WorkflowDeliveryPolicy {
     pub children_step: Option<String>,
 }
 
-/// Frozen evidence consumed by a domain verifier before a platform operation.
+/// Evidence a workflow declares for the operations it guards. The keys of `checks` name
+/// them: a tool's qualified name or `$completion`. Before a guarded operation, and before
+/// the workflow completes, the verifier receives `{contract, operation, context, facts}`
+/// and answers `{allowed, reason}`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OperationEvidence {
     pub verifier: Id,
     pub sources: BTreeMap<String, EvidenceSource>,
     pub checks: BTreeMap<String, BTreeSet<String>>,
+    /// The fields of the verifier's context and where each comes from.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub context: BTreeMap<String, ContextSource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContextSource {
+    pub from: ContextOrigin,
+    /// The workflow input an `input` origin reads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<String>,
+    #[serde(default)]
+    pub pointer: String,
+}
+
+/// The value at `pointer` (RFC 6901) in `value`; `None` when there is none.
+pub fn json_pointer<'a>(value: &'a Value, pointer: &str) -> Option<&'a Value> {
+    if pointer.is_empty() {
+        return Some(value);
+    }
+    if !pointer.starts_with('/') {
+        return None;
+    }
+    let mut current = value;
+    for token in pointer[1..].split('/') {
+        let token = token.replace("~1", "/").replace("~0", "~");
+        current = match current {
+            Value::Object(fields) => fields.get(&token)?,
+            Value::Array(items) => items.get(token.parse::<usize>().ok()?)?,
+            _ => return None,
+        };
+    }
+    Some(current)
+}
+
+/// Where the value of a field of the verifier's context comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ContextOrigin {
+    /// The work the workflow belongs to: its owning object.
+    Owner,
+    /// A workflow input.
+    Input,
+    /// The arguments of the guarded operation.
+    Arguments,
+    /// What the kernel knows about the guarded operation beyond its arguments.
+    Platform,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -731,6 +782,18 @@ impl WorkflowDefinition {
                     && evidence.checks.len() <= 32,
                 "工作流操作证据合同无效",
             )?;
+            for (field, source) in &evidence.context {
+                require(
+                    match source.from {
+                        ContextOrigin::Input => source
+                            .port
+                            .as_deref()
+                            .is_some_and(|port| self.inputs.contains_key(port)),
+                        _ => source.port.is_none(),
+                    },
+                    format!("证据合同的上下文字段 {field} 没有可读取的来源"),
+                )?;
+            }
             for entry in evidence.sources.values() {
                 let producer = self
                     .steps

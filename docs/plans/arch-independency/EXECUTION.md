@@ -87,6 +87,7 @@
 | N-7 | 工作流的输入端口可以声明 `provided_by`，取值为扩展组。启动时内核只为声明了提供者的输入自动取值：提供者必须是该扩展组登记提供的输入（扩展组登记表新增 `provided_inputs`，能力目录里每个扩展组也列出它），否则发布工作流时返回 `invalid_configuration`；有活动领域包时，项目所属的包必须声明依赖该组，否则启动时返回 `extension_unavailable`；没有活动领域包时工作流来自内核自己的目录，提供者按构造可用。调用方不能覆盖内核提供的输入。按名字自动填充 `test_configuration` 的约定移除，目前唯一的提供者是 `engineering.tests/1` 的 `test_configuration`。软件开发包的两个工作流与单体测试模式的冻结工程目录都声明了提供者 |
 | N-4 | 项目的接入信息对内核不透明。`domain.project.create` 带 `connection` 时，活动包的 `project_connection` 处理器解析它，结果原样保存为项目的 `connection`（不超过 64 KiB 的 JSON 对象，随 `query.workspace` 等返回）。只有声明了 `engineering.git/1` 的包，内核的工程部分才从接入信息里读出仓库与主分支（`extensions::git_connection`），据此登记仓库、复用或接管 GitHub 项目；通用 RPC 不再按 GitHub 校验。`domain.project.remove` 对任何领域项目可用：移除会藏起来的在途工作（在途根流程、可运行或待核对的仓库操作）时返回 `domain_busy`，空闲的连接复核不阻止移除。为此项目库新增一列，工程库版本升到 63，带 62 及更早版本的离线升级。Web 的移除入口不再以包声明 `project_connection` 为前提 |
 | K-7 | 版本号：工作区、Web Core 与软件开发包都升到 0.6.0，`domain_protocol` 为 2、清单格式为 2。制品名随版本变化：`devdesk-core-host-0.6.0-<target>.tar.gz`、`devdesk-core-web-0.6.0.tar.gz`、`software-development-0.6.0.zip`。Web 的组件套件版本为 `0.6`，软件开发包的呈现目标随之声明 `kit: "0.6"`。运行指南的兼容矩阵改为三个工件的当前合同，删去了旧版 ZIP 的行 |
+| N-2 | 证据合同通用化。合同的 `checks` 以被守护的操作为键（工具的 `qualified_name` 或 `$completion`），内核不再只读 `git.delivery` 一个键，触发点也不再按四个工程工具名写死：任何工具步骤（含领域工具）执行前，内核为守护它的每个合同封存事实、组装输入并调用验证器，拒绝时工具不执行。工作流完成前，每个带 `$completion` 的合同同样被询问；回答按事实摘要记录，事实不变时再次尝试直接沿用。验证器收到 `{contract, operation, context, facts}`：`context` 由合同声明，来源有 `owner`、`input`、`arguments`、`platform` 四种，字段可用 JSON pointer 取值；`facts` 条目由内核类型 `EvidenceFact` 产生，包在验证器的输入 Schema 里描述同一形状，并以一致性测试约束。完成证据不再强制要求平台操作：标注了平台操作的由内核见证，其余是封存的步骤产物，由验证器权衡。软件开发的 `git.delivery` 合同改写成同一形式，验证器改读声明的上下文；`platform` 来源（来源分支、目标）与子流程核对仍在内核的工程部分 |
 | W-5 | 呈现目标用 `sdk`（Web SDK 主版本）取代 `api`，新增 `kit`（组件套件对应的 Web Core 版本）与绑定的 `home`（进入领域时打开的首页，取代“第一个绑定”）。Web Core 只加载 `sdk` 与自身一致、`kit` 与自身版本一致的目标，其余目标提示“领域包与 Web Core 版本不兼容”。内核只校验 `sdk` 不小于 1、每个目标最多一个首页；SDK 版本是否可用由 Web Core 判断 |
 
 ### 初步验收
@@ -154,6 +155,13 @@
 | | `cargo clippy --workspace --all-targets --locked -- -D warnings`、`./scripts/check/check-style.sh` | 无警告；rustfmt、ESLint、TypeScript、Prettier、Web 构建通过 |
 | | `python3 tests/entrypoints/lifecycle_contract.py target/fixtures/debug/devdesk-host` 及四组夹具合同、`project_test_configuration -- --ignored` | 通过 |
 | | `node tests/entrypoints/domain_packages.mjs target/debug/devdesk-host web/dist/core <带页面的 0.6.0 软件开发包>` | 退出码 0。界面显示 v0.6.0；软件开发包 0.6.0 以 `requires.host` 0.6.0 安装并运行 |
+| N-2 | `cargo test -p devdesk-adapters --locked --features test-fixtures,fixture-catalog --test configured_workflows -- a_contract_guards` | 1 通过。放行时验证器在工具前与完成前各被询问一次，收到声明的上下文（归属对象、操作参数、工作流输入）与封存的事实，工具在两次询问之间执行；拒绝工具时工具不执行，也不再有别的询问；拒绝完成时流程不完成，之后的尝试沿用回答 |
+| | `cargo test -p devdesk-adapters --locked --lib the_software_verifier_describes` | 1 通过。内核的事实带全部绑定时、不带绑定时都符合软件开发包验证器 Schema 里的条目形状，多出的字段与缺少的执行身份被拒 |
+| | `node --test tests/entrypoints/domain_delivery_evidence.mjs` | 4 通过。验证器按声明的上下文判断，`$completion` 放行 |
+| | `cargo test --workspace --locked` | 60 个套件，807 通过，0 失败，39 忽略 |
+| | `cargo clippy --workspace --all-targets --locked -- -D warnings`、`./scripts/check/check-style.sh` | 无警告；rustfmt、ESLint、TypeScript、Prettier、Web 构建通过 |
+| | `python3 tests/entrypoints/lifecycle_contract.py target/fixtures/debug/devdesk-host` 及四组夹具合同、`project_test_configuration -- --ignored` | 通过 |
+| | `node tests/entrypoints/domain_packages.mjs target/debug/devdesk-host web/dist/core <带页面的 0.6.0 软件开发包>` | 退出码 0。软件开发包带着改写后的交付合同安装并运行 |
 | W-5 | `cargo test -p devdesk-adapters --locked --lib domain_packages::tests` | 10 通过。新增一项：一个目标标记两个首页后被拒绝 |
 | | `cargo test --workspace --locked` | 60 个套件，794 通过，0 失败，39 忽略 |
 | | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 无警告 |
@@ -193,6 +201,11 @@
 - **内核外壳里还没有项目管理页。** “移除项目”插槽目前只在软件开发包的工作台里渲染。按领域移除项目的界面入口随 W-4 的项目操作插槽落地，RPC 与 Web 的门槛条件已就位。
 - **版本来自三处。** `Cargo.toml`、`web/package.json` 和软件开发包构建脚本的 `VERSION`。发行脚本与两个构建脚本都从这三处读取，没有第四份清单。`domain_release.mjs` 里写死的制品名同步更新；该用例需要发行制品，本阶段没有运行。
 - **协议客户端不再按旧版本号分支。** `domain_client.py` 原先按软件开发包的三个旧版本号决定是否断言默认流程，现在直接断言当前的默认流程。
+- **只读工具步骤在授权后立刻执行。** 值类与领域工具步骤在平台调用的授权提交之后马上执行，仓库交付才走效果意图与恢复路径。验证要加在前一条路径上，只改后者时门禁对这些步骤不生效。
+- **完成证据原先必须是平台操作。** 这会拒绝以人工确认为完成证据的合同。现在标注了平台操作的由内核见证，标注人工确认或未标注的是封存的步骤产物，交给合同的验证器权衡。
+- **完成前的拒绝需要被记录。** 只返回错误的话，驱动器每一轮都会重新询问验证器。回答按事实摘要记录并沿用，才有“事实不变不自动重试”。
+- **仓库交付合同还有三处留在内核的工程部分**，随工程扩展模块迁出：`platform` 来源（来源分支与目标）、名为 `children` 的事实触发的子流程核对、人工确认与发布参数的绑定。内核仍以 `git.delivery` 这个键区分该合同。
+- **按步骤 key 守护非工具步骤尚未实现。** 触发点在工具步骤的准备里。电商设计里的三个门禁守护的都是工具。
 - **报告器的扩展名规则不再由清单校验负责。** 清单只做通用的有界 UTF-8 文件检查；落地时的文件名一直由测试运行器自己决定。
 - **读取项目的钩子与资源时用 `try_read`。** 与 `configuration_scope` 的做法一致：项目 RPC 可能已经持有一份读锁，切换领域时直接返回 `domain_busy`，不等待嵌套的锁。
 - **单独运行适配器的集成测试需要 `--features test-fixtures,fixture-catalog`。** 只开 `test-fixtures` 时出厂目录不含角色与 Agent，依赖默认绑定的用例会失败。`cargo test --workspace` 通过 Host 的开发依赖带上了这两个 feature，所以完整检查不受影响。这正是 T-6 要消除的耦合。

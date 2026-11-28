@@ -616,7 +616,7 @@ impl Engine {
             saved
         } else {
             let plan = PlatformPlan {
-                domain_check: None,
+                domain_checks: Vec::new(),
                 action: PlatformAction::Delivery(Box::new(action.clone())),
                 basis: basis.clone(),
                 changes: vec![],

@@ -2111,6 +2111,51 @@ mod tests {
     }
 
     #[test]
+    fn the_software_verifier_describes_the_kernel_s_fact() {
+        // A package states the shape of a fact in its verifier's input Schema. The kernel's
+        // fact has to fit it, with and without the optional bindings, and nothing else may
+        // be in a fact.
+        crate::factory_bundle::initialize().unwrap();
+        let mut original = zip::ZipArchive::new(Cursor::new(SOFTWARE)).unwrap();
+        let mut body = Vec::new();
+        original
+            .by_name("manifest.json")
+            .unwrap()
+            .read_to_end(&mut body)
+            .unwrap();
+        let manifest: Value = serde_json::from_slice(&body).unwrap();
+        let schema = &manifest["runtime"]["handlers"]["software-development.delivery.authorize"]["input_schema"]
+            ["properties"]["facts"]["additionalProperties"];
+        let validator = jsonschema::options().offline().build(schema).unwrap();
+        let bound = devdesk_core::EvidenceFact {
+            step: "review".into(),
+            execution_id: "execution".into(),
+            input_digest: "a".repeat(64),
+            output_digest: "b".repeat(64),
+            workspace_revision: Some("c".repeat(40)),
+            result: json!({"decision": "pass"}),
+            platform_operation: Some("git.source.publish".into()),
+            platform_call_id: Some("call".into()),
+            human_confirmation: Some("confirmation".into()),
+        };
+        assert!(validator.is_valid(&json!(bound)), "{bound:?}");
+        let sealed = devdesk_core::EvidenceFact {
+            workspace_revision: None,
+            platform_operation: None,
+            platform_call_id: None,
+            human_confirmation: None,
+            ..bound
+        };
+        assert!(validator.is_valid(&json!(sealed)), "{sealed:?}");
+        let mut invented = json!(sealed);
+        invented["invented"] = json!(true);
+        assert!(!validator.is_valid(&invented));
+        let mut headless = json!(sealed);
+        headless.as_object_mut().unwrap().remove("execution_id");
+        assert!(!validator.is_valid(&headless));
+    }
+
+    #[test]
     fn a_package_must_speak_the_host_format_and_protocol() {
         for (pointer, value) in [("/format", json!(1)), ("/domain_protocol", json!(1))] {
             let error =

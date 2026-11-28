@@ -125,6 +125,7 @@ pub use configured_runtime::{
     ConfiguredAgentRequest, ConfiguredToolRequest, ConfiguredWorkflowInstance,
 };
 pub use configured_workflows::{ConfiguredWorkflowPlan, compile_workflow_sources};
+pub use platform_facts::EvidenceFact;
 pub use platform_preparation::PreparedConfiguredPlatform;
 pub use platform_tools::{PlatformToolRequest, platform_handlers};
 mod command_catalog;

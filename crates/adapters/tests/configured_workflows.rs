@@ -2924,6 +2924,192 @@ fn a_workflow_input_is_filled_only_when_it_declares_its_provider() {
     );
 }
 
+/// Answers handlers with a fixed result, remembers every call, and refuses a verifier for
+/// the operations the test names, with the reason the test gives.
+#[derive(Default)]
+struct GateReader {
+    calls: Mutex<Vec<(String, Value)>>,
+    refusals: Mutex<std::collections::BTreeMap<String, String>>,
+}
+
+impl ports::DomainReader for GateReader {
+    fn read(&self, _project: &str, handler: &str, input: Value) -> Result<Value> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push((handler.to_owned(), input.clone()));
+        Ok(match handler {
+            "sample.authorize" => match self
+                .refusals
+                .lock()
+                .unwrap()
+                .get(input["operation"].as_str().unwrap_or_default())
+            {
+                Some(reason) => json!({"allowed": false, "reason": reason}),
+                None => json!({"allowed": true}),
+            },
+            _ => json!({"ok": handler}),
+        })
+    }
+}
+
+#[test]
+fn a_contract_guards_the_operations_it_names_and_the_completion() {
+    // A contract of any domain: its verifier is asked before a tool it names runs and
+    // before the workflow completes. It receives what the contract declares and the
+    // sealed facts; when it refuses, the tool does not run and the workflow does not complete.
+    let schema = json!({"type": "object"});
+    let start = |refusals: &[(&str, &str)]| {
+        let dir = tempfile::tempdir().unwrap();
+        let mut e = engine(dir.path());
+        let reader = Arc::new(GateReader::default());
+        reader.refusals.lock().unwrap().extend(
+            refusals
+                .iter()
+                .map(|(operation, reason)| ((*operation).to_owned(), (*reason).to_owned())),
+        );
+        e.domain_reader = Some(reader.clone());
+        let tool = |name: &str| {
+            command(
+                &e,
+                "tool.create",
+                None,
+                json!({"name":name,"data":{"qualified_name":name,"implementation":"domain",
+                    "handler":name,"input_schema":schema,"output_schema":schema,"capabilities":[]}}),
+            )
+            .unwrap()
+        };
+        let collect = tool("sample.collect");
+        let publisher = tool("sample.publish");
+        let workflow = publish(
+            &e,
+            json!({"schema_version":6,"stages":[{"key":"work","name":"Work"}],
+                "inputs":{"note":{"delivery_ref":"fixture-delivery-object:1"}},
+                "operation_evidence":{"release":{
+                    "verifier":"sample.authorize",
+                    "sources":{"collected":{"source":{"step":"collect","port":"result","pointer":""}}},
+                    "checks":{"sample.publish":["collected"],"$completion":["collected"]},
+                    "context":{"owner":{"from":"owner"},
+                        "count":{"from":"arguments","pointer":"/count"},
+                        "note":{"from":"input","port":"note"}}}},
+                "steps":[
+                    {"key":"collect","name":"Collect","stage":"work",
+                     "executor":{"type":"tool","tool_ref":collect["id"],"arguments":{}},
+                     "outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}},
+                    {"key":"publish","name":"Publish","stage":"work","dependencies":["collect"],
+                     "executor":{"type":"tool","tool_ref":publisher["id"],
+                                 "arguments":{"count":{"type":"constant","value":3}}},
+                     "outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
+        );
+        let project =
+            command(&e, "project.create", None, json!({"title": "受守护的操作"})).unwrap();
+        let run = command(
+            &e,
+            "workflow.start",
+            project["id"].as_str(),
+            json!({"workflow_ref":workflow["id"],"role_agent_bindings":{},
+                "inputs":{"note":{"text":"hello"}}}),
+        )
+        .unwrap();
+        drive_platform_fixture(&e, 8);
+        // The directory has to outlive the engine that keeps its database open.
+        (dir, e, reader, run, project)
+    };
+    let asked = |reader: &GateReader| -> Vec<Value> {
+        reader
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(handler, _)| handler == "sample.authorize")
+            .map(|(_, input)| input.clone())
+            .collect()
+    };
+    let called = |reader: &GateReader| -> Vec<String> {
+        reader
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(handler, _)| handler.clone())
+            .collect()
+    };
+
+    // Allowed: the verifier sees the declared context and the sealed fact before the tool
+    // and once more before completion; the tool itself runs in between.
+    let (_dir, e, reader, run, project) = start(&[]);
+    let first = instance(&e, &run["id"]);
+    let steps: Vec<Value> = first["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|step| {
+            json!({"step":step["step"],"status":step["status"],"reason":step["reason"],
+            "error":step["error"], "attempt":step["attempt"]})
+        })
+        .collect();
+    assert_eq!(
+        first["status"],
+        "completed",
+        "{steps:?} {:?}",
+        called(&reader)
+    );
+    assert_eq!(
+        called(&reader),
+        [
+            "sample.collect",
+            "sample.authorize",
+            "sample.publish",
+            "sample.authorize"
+        ]
+    );
+    let questions = asked(&reader);
+    assert_eq!(questions.len(), 2);
+    for question in &questions {
+        assert_eq!(question["contract"], "release");
+        // The owner is the project the workflow runs for; the note is a workflow input.
+        assert_eq!(question["context"]["owner"]["id"], project["id"]);
+        assert_eq!(question["context"]["note"], json!({"text":"hello"}));
+        assert_eq!(question["facts"]["collected"]["step"], "collect");
+        assert_eq!(
+            question["facts"]["collected"]["result"],
+            json!({"ok":"sample.collect"})
+        );
+    }
+    // The operation's own arguments are there for the tool; completion has none.
+    assert_eq!(questions[0]["operation"], "sample.publish");
+    assert_eq!(questions[0]["context"]["count"], 3);
+    assert_eq!(questions[1]["operation"], "$completion");
+    assert_eq!(questions[1]["context"]["count"], Value::Null);
+
+    // Refused for the tool: the tool does not run and nothing else is asked.
+    let (_dir, e, reader, run, _) = start(&[("sample.publish", "评审未通过")]);
+    assert_eq!(
+        called(&reader),
+        ["sample.collect", "sample.authorize"],
+        "{:?}",
+        instance(&e, &run["id"])["steps"]
+    );
+    assert_ne!(instance(&e, &run["id"])["status"], "completed");
+
+    // Refused for completion: everything ran, the workflow stays uncompleted, and later
+    // attempts replay the answer instead of asking the verifier again for the same facts.
+    let (_dir, e, reader, run, _) = start(&[("$completion", "最终报告缺少签收")]);
+    assert_eq!(
+        called(&reader),
+        [
+            "sample.collect",
+            "sample.authorize",
+            "sample.publish",
+            "sample.authorize"
+        ]
+    );
+    assert_ne!(instance(&e, &run["id"])["status"], "completed");
+    drive_platform_fixture(&e, 4);
+    assert_eq!(asked(&reader).len(), 2, "{:?}", called(&reader));
+    assert_ne!(instance(&e, &run["id"])["status"], "completed");
+}
+
 #[test]
 fn cancelling_a_child_under_a_paused_ancestor_still_releases_the_invocation() {
     let dir = tempfile::tempdir().unwrap();

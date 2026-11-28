@@ -159,9 +159,18 @@ export const handlers = {
   [discover]: (_input, core) => discoverTests(core),
 };
 
-export function authorizeDelivery(input) {
-  const { operation, source_revision, source_branch, destination, candidate_revision,
-    regression_configured, facts } = input;
+// A verifier receives what the kernel sealed for a guarded operation: the contract, the
+// operation, the fields the contract declares (operation_evidence.context of the workflow)
+// and the facts. The repository delivery contract asks for the source and candidate
+// revisions, the source branch, the destination and the project's test configuration.
+export function authorizeDelivery({ contract, operation, context, facts }) {
+  if (operation === "$completion") {
+    // The kernel witnessed the delivery receipt of a real merged delivery before asking.
+    return { allowed: true };
+  }
+  const { source_revision, source_branch, destination, candidate_revision,
+    test_configuration } = context;
+  const regression_configured = test_configuration == null || test_configuration.regression !== null;
   const result = (name) => facts[name]?.result;
   const deny = (reason) => ({ allowed: false, reason });
   const tested = (name, revision, projectRegression) => {

@@ -243,7 +243,17 @@ impl PlatformCall {
                         let _external = engine
                             .store
                             .observe_native_call(&self.row.id, "native.platform.external");
-                        engine.perform_platform_action(&plan.action, true)
+                        // Every contract that guards this operation has to allow it first.
+                        plan.domain_checks
+                            .iter()
+                            .try_for_each(|check| {
+                                engine.verify_domain_operation(
+                                    &effect,
+                                    &self.request.project_id,
+                                    check,
+                                )
+                            })
+                            .and_then(|()| engine.perform_platform_action(&plan.action, true))
                     };
                     let phase = if matches!(&plan.action, PlatformAction::Test(_))
                         && matches!(&result, Ok(None))
@@ -506,12 +516,13 @@ impl PlatformCall {
         if let Some((observation, result)) = engine.platform_observed(&effect, "result")? {
             return self.receive(engine, &effect, &plan, &observation, &result);
         }
+        // Every contract that guards this operation has to allow it before the operation runs.
+        let verified = plan.domain_checks.iter().try_for_each(|check| {
+            engine.verify_domain_operation(&effect, &self.request.project_id, check)
+        });
         let result = match &plan.action {
             PlatformAction::Publish { .. } => engine.drive_platform_publish(&effect, &plan.action),
             PlatformAction::Delivery(action) => {
-                let verified = plan.domain_check.as_ref().map_or(Ok(()), |check| {
-                    engine.verify_domain_operation(&effect, &self.request.project_id, check)
-                });
                 verified.and_then(|()| engine.drive_delivery(&effect, action, false))
             }
             PlatformAction::Test(test) => {
@@ -544,7 +555,7 @@ impl PlatformCall {
                     )),
                 }
             }
-            _ => engine.perform_platform_action(&plan.action, false),
+            _ => verified.and_then(|()| engine.perform_platform_action(&plan.action, false)),
         };
         if matches!(&result, Ok(None)) {
             return Ok(());

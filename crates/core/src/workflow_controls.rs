@@ -3,7 +3,7 @@ use crate::{
     concurrency::*,
     governance::record,
     material_commands::stable_object_id,
-    platform_facts::{one, restored},
+    platform_facts::{PlatformAction, PlatformPlan, one, restored},
     workflow_commits::{WorkflowCommit, WorkflowHeaderFacts},
     workflow_facts::FactSelection,
     workflow_resources::{WorkflowResources, version},
@@ -619,9 +619,12 @@ impl Engine {
                         .facts
                         .value(&entry.source)
                         .ok_or_else(|| err("blocked", "流程完成需要已接纳的证据"))?;
-                    let operation = entry.platform_operation.as_deref().ok_or_else(|| {
-                        err("configuration_required", "完成证据需要声明平台生产操作")
-                    })?;
+                    // A source annotated with a platform operation is witnessed here. One
+                    // annotated with a Human confirmation, or left unannotated, is a sealed
+                    // step result that the contract's verifier weighs below.
+                    let Some(operation) = entry.platform_operation.as_deref() else {
+                        continue;
+                    };
                     let execution = root
                         .instance
                         .steps
@@ -635,6 +638,94 @@ impl Engine {
                         operation,
                         proof,
                     )?)?;
+                }
+                // Every contract that guards completion has to allow it, with the same
+                // facts and context an operation gets.
+                let guards: Vec<(String, OperationEvidence)> = root
+                    .instance
+                    .plan
+                    .document
+                    .operation_evidence
+                    .iter()
+                    .filter(|(_, binding)| binding.checks.contains_key("$completion"))
+                    .map(|(contract, binding)| (contract.clone(), binding.clone()))
+                    .collect();
+                for (contract, binding) in guards {
+                    let mut evidence = PlatformPlan {
+                        domain_checks: Vec::new(),
+                        action: PlatformAction::Value(Value::Null),
+                        basis: ReadSet::new(Vec::new())?,
+                        changes: Vec::new(),
+                        head: None,
+                        fence: None,
+                        permit: None,
+                    };
+                    let names = binding.checks["$completion"].clone();
+                    let sealed =
+                        self.operation_facts(&binding, &names, &resources, &mut evidence, None)?;
+                    commit.witness(evidence.basis.versions().iter().cloned())?;
+                    let input = self.operation_evidence_input(
+                        &contract,
+                        "$completion",
+                        &binding,
+                        &resources,
+                        &root.instance.owner_id,
+                        None,
+                        &Value::Null,
+                        sealed,
+                    )?;
+                    // The answer is observed against the facts it was given. Until the facts
+                    // change, a later attempt replays it instead of asking the verifier again.
+                    let mut anchor = record(
+                        "workflow_completion_evidence",
+                        root.record.id.clone(),
+                        root.record.scope.clone(),
+                        contract.clone(),
+                        1,
+                        None,
+                        json!({"contract":contract,"verifier":binding.verifier}),
+                        true,
+                    );
+                    anchor.id = format!(
+                        "workflow-completion-evidence:{}",
+                        configuration_hash(&(root.record.id.as_str(), contract.as_str()))
+                    );
+                    let phase = format!(
+                        "domain-authorization:{}",
+                        configuration_hash(&input["facts"])
+                    );
+                    let answer = if let Some((witnessed, answer)) =
+                        self.platform_observed(&anchor, &phase)?
+                    {
+                        commit.witness([witnessed])?;
+                        answer
+                    } else {
+                        let answer = self
+                            .completion_evidence_decision(
+                                &root.instance.project_id,
+                                &binding.verifier,
+                                input,
+                            )
+                            .map(Some);
+                        let witnessed = self.platform_observe(&anchor, &phase, &answer)?;
+                        commit.witness([witnessed])?;
+                        answer
+                    };
+                    let decision =
+                        answer?.ok_or_else(|| err("storage", "领域验证器没有给出决定"))?;
+                    commit.new_record(
+                        record(
+                            "workflow_completion_evidence",
+                            root.record.id.clone(),
+                            root.record.scope.clone(),
+                            contract.clone(),
+                            1,
+                            None,
+                            json!({"contract":contract,"verifier":binding.verifier,"decision":decision}),
+                            false,
+                        ),
+                        "workflow-completion-evidence",
+                    )?;
                 }
                 let decision = commit.decision(&root, None, "complete", reason)?;
                 let submitted =

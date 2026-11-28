@@ -934,6 +934,13 @@
     "operation_evidence": {
       "git.delivery": {
         "verifier": "software-development.delivery.authorize",
+        "context": {
+          "source_revision": { "from": "arguments", "pointer": "/workspace/revision" },
+          "source_branch": { "from": "platform", "pointer": "/source_branch" },
+          "destination": { "from": "platform", "pointer": "/destination" },
+          "candidate_revision": { "from": "arguments", "pointer": "/publication/revision" },
+          "test_configuration": { "from": "input", "port": "test_configuration" }
+        },
         "sources": {
           "review": {
             "source": {

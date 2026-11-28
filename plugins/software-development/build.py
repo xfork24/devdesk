@@ -12,6 +12,7 @@ REPO = PACKAGE.parents[1]
 DOMAIN = "software-development"
 VERSION = "0.6.0"
 DISCOVER = f"{DOMAIN}.tests.discover"
+AUTHORIZE_CONTRACT = "git.delivery"
 BRANCH = f"{DOMAIN}.branch.plan"
 CONNECT = f"{DOMAIN}.project.connect"
 PR_CREATE = f"{DOMAIN}.pull-request.create"
@@ -236,20 +237,46 @@ def build(target, web):
                                       "needles": ["#[test", "#[tokio::test", "#[async_std::test"]}},
                                }},
                 }}}
+    # A verifier receives the contract, the guarded operation, the fields the contract
+    # declares and the sealed facts. A fact is the kernel's EvidenceFact: the accepted result
+    # of one step, bound to its execution and to the platform call or Human decision behind it.
+    fact = {
+        "type": "object", "additionalProperties": False,
+        "required": ["step", "execution_id", "input_digest", "output_digest", "result"],
+        "properties": {
+            "step": {"type": "string", "minLength": 1},
+            "execution_id": {"type": "string", "minLength": 1},
+            "input_digest": {"type": "string", "minLength": 1},
+            "output_digest": {"type": "string", "minLength": 1},
+            "workspace_revision": {"type": "string", "minLength": 1},
+            "result": {},
+            "platform_operation": {"type": "string", "minLength": 1},
+            "platform_call_id": {"type": "string", "minLength": 1},
+            "human_confirmation": {"type": "string", "minLength": 1},
+        },
+    }
     manifest["runtime"]["handlers"][AUTHORIZE] = {
         "input_schema": {
             "type": "object", "additionalProperties": False,
-            "required": ["operation", "source_revision", "source_branch", "destination",
-                         "candidate_revision", "regression_configured", "facts"],
+            "required": ["contract", "operation", "context", "facts"],
             "properties": {
+                "contract": {"const": AUTHORIZE_CONTRACT},
                 "operation": {"enum": ["workspace.target", "git.source.publish", "git.delivery.open",
-                                       "git.delivery.merge"]},
-                "source_revision": coordinate["properties"]["revision"],
-                "source_branch": {"type":"string", "minLength":1},
-                "destination": {"enum": ["mainline", "parent_work"]},
-                "candidate_revision": {"type":["null", "string"]},
-                "regression_configured": {"type":"boolean"},
-                "facts": {"type":"object", "maxProperties": 32},
+                                       "git.delivery.merge", "$completion"]},
+                "context": {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["source_revision", "source_branch", "destination",
+                                 "candidate_revision", "test_configuration"],
+                    "properties": {
+                        "source_revision": coordinate["properties"]["revision"],
+                        "source_branch": {"type": "string", "minLength": 1},
+                        "destination": {"enum": ["mainline", "parent_work"]},
+                        "candidate_revision": {"type": ["null", "string"]},
+                        "test_configuration": {"type": ["null", "object"]},
+                    },
+                },
+                "facts": {"type": "object", "minProperties": 1, "maxProperties": 32,
+                          "additionalProperties": fact},
             },
         },
         "output_schema": {

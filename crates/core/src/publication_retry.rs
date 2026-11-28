@@ -322,7 +322,7 @@ mod tests {
         let old:StepExecution=serde_json::from_value(json!({"plan_revision_id":"plan","node_id":"node","contract_digest":"contract","id":"old-execution","workflow_instance_id":"root","workflow_revision_id":"workflow:1","path":"/publish","step":"publish","round":1,"sequence":1,"failure":{"code":"observed_after_stop","message":"stopped, applied result retained","source_ref":"observation","kind":"technical","effect":"applied"},"status":"cancelled","input_digest":"original-input","inputs":{},"outputs":{},"agent_revision_id":null,"session_id":null,"turn_id":null,"tool_call_id":"old-execution","started":1,"finished":2,"reason":"original cancellation retained"})).unwrap();
         let receipt = json!({"revision":candidate,"operation_id":"old-execution","pull_request":{"repository":"fixture/test","number":17,"url":"https://example.invalid/17","head_branch":"candidate","base_branch":"main","head":candidate,"base":expected,"merged":true,"merge_commit":candidate,"marker":"original-marker"}});
         let plan = PlatformPlan {
-            domain_check: None,
+            domain_checks: Vec::new(),
             action: PlatformAction::Publish {
                 context: context.clone(),
                 expected,

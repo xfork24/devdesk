@@ -57,6 +57,26 @@ pub(crate) enum PlatformAction {
         source_observation_id: Id,
     },
 }
+/// A fact the kernel seals for a verifier: the accepted result of one step, bound to that
+/// step's execution and, when there is one, to the platform call or the Human decision behind
+/// it. A package describes the same shape in the input Schema of its verifier.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EvidenceFact {
+    pub step: String,
+    pub execution_id: Id,
+    pub input_digest: String,
+    pub output_digest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_revision: Option<String>,
+    pub result: Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform_operation: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform_call_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub human_confirmation: Option<String>,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct DomainEvidenceCheck {
     pub handler: Id,
@@ -65,8 +85,9 @@ pub(crate) struct DomainEvidenceCheck {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct PlatformPlan {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub domain_check: Option<DomainEvidenceCheck>,
+    /// One verifier call per contract that guards the operation.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub domain_checks: Vec<DomainEvidenceCheck>,
     pub action: PlatformAction,
     pub basis: ReadSet,
     pub changes: Vec<ResourceChange>,
@@ -424,7 +445,7 @@ impl Engine {
             "平台原工作归属不符",
         )?;
         let mut plan = PlatformPlan {
-            domain_check: None,
+            domain_checks: Vec::new(),
             action: PlatformAction::Value(Value::Null),
             basis: resources.reads.clone(),
             changes: vec![],
@@ -782,6 +803,17 @@ impl Engine {
                 }
                 _ => return Err(err("unsupported", "平台执行工具未声明该处理器")),
             };
+        }
+        // Evidence the workflow declares for this operation besides the repository delivery
+        // contract, which the engineering part prepares with what it knows about the repository.
+        let operation = request.definition.qualified_name.as_str();
+        for (contract, binding) in &resources.instance.plan.document.operation_evidence {
+            if contract == REPOSITORY_DELIVERY_EVIDENCE || !binding.checks.contains_key(operation) {
+                continue;
+            }
+            let check =
+                self.prepare_operation_evidence(contract, binding, request, &resources, &mut plan)?;
+            plan.domain_checks.push(check);
         }
         if let Some(head) = &plan.head {
             require(head.value.is_some(), "代码头尚未登记")?;

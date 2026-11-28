@@ -10,14 +10,18 @@ const success = (revision, operation = "tests.project") => ({
   result: { candidate: revision, status: "succeeded", expected_failure: false, writer_revoked: true },
 });
 
+// What the kernel sends the verifier for the contract a workflow declares.
 function feature() {
   return {
+    contract: "git.delivery",
     operation: "git.delivery.merge",
-    source_revision: source,
-    source_branch: branch,
-    candidate_revision: candidate,
-    destination: "mainline",
-    regression_configured: true,
+    context: {
+      source_revision: source,
+      source_branch: branch,
+      candidate_revision: candidate,
+      destination: "mainline",
+      test_configuration: { regression: { runner: "node_test" } },
+    },
     facts: {
       review: { workspace_revision: source, result: { decision: "pass" } },
       source_regression: success(source),
@@ -50,7 +54,7 @@ test("mainline authorization requires acceptance, exact revisions and Human appr
 
 test("Task authorization requires independent Green for the same source revision", () => {
   const input = feature();
-  input.destination = "parent_work";
+  input.context.destination = "parent_work";
   delete input.facts.approval;
   delete input.facts.children;
   assert.equal(authorizeDelivery(input).allowed, false);
@@ -68,8 +72,21 @@ test("regression may be skipped only when that project's regression is unconfigu
     skipped: true, reason: "no_regression_configured",
   });
   assert.equal(authorizeDelivery(input).allowed, false);
-  input.regression_configured = false;
+  input.context.test_configuration = { regression: null };
   assert.equal(authorizeDelivery(input).allowed, true);
   input.facts.source_regression.result.reason = "unavailable";
   assert.equal(authorizeDelivery(input).allowed, false);
+});
+
+test("the context comes from where the contract says, and completion is allowed", () => {
+  // Without a test configuration input the kernel reports none; a skipped regression is then
+  // not excused, exactly as before the contract declared its context.
+  const input = feature();
+  Object.assign(input.facts.source_regression.result, {
+    skipped: true, reason: "no_regression_configured",
+  });
+  input.context.test_configuration = null;
+  assert.equal(authorizeDelivery(input).allowed, false);
+  const completion = { contract: "git.delivery", operation: "$completion", context: {}, facts: {} };
+  assert.deepEqual(authorizeDelivery(completion), { allowed: true });
 });

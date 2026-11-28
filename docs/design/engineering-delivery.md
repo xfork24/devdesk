@@ -21,7 +21,7 @@ Feature 汇总子流程后，对整体代码继续评审和回归。Feature 评�
 
 ## 谁执行，谁判断
 
-core 根据工作流准备 `tests.run`、`workspace.checkpoint`、`git.source.publish` 等操作，检查来源、版本和权限。软件开发包用 `operation_evidence` 绑定已接纳的流程事实，Docker 内的领域处理器核对确切源、评审、测试与人工批准。adapters 调用 Git、Docker 测试容器及 GitHub API/CLI，core 根据实际回执接纳结果。
+core 根据工作流准备 `tests.run`、`workspace.checkpoint`、`git.source.publish` 等操作，检查来源、版本和权限。软件开发包用 `operation_evidence` 绑定已接纳的流程事实，并声明验证器需要的上下文（源与候选修订、来源分支、目标、项目测试配置）；四次交付操作执行前与流程完成前，Docker 内的领域处理器核对这些事实与确切源、评审、测试和人工批准。证据合同的通用规则见[领域包设计](domain-packages.md#依赖与协商)。adapters 调用 Git、Docker 测试容器及 GitHub API/CLI，core 根据实际回执接纳结果。
 
 测试命令由项目测试配置和当前流程选择。测试容器不会因此获得模型凭据。测试实现细节见[工程适配器](../crates/devdesk-adapters/engineering-resources.md)。
 

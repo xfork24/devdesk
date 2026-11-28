@@ -209,7 +209,7 @@ mod tests {
             revision,
         });
         let plan = PlatformPlan {
-            domain_check: None,
+            domain_checks: Vec::new(),
             action: PlatformAction::Value(Value::Null),
             basis: ReadSet::new(versions.to_vec()).unwrap(),
             changes: vec![],
