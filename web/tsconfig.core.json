@@ -1,4 +1,4 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["src/core-main.tsx"]
+  "include": ["src/core/core-main.tsx"]
 }

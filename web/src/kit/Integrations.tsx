@@ -1,0 +1,3499 @@
+import { displayText } from "../sdk/display-text";
+import { useReadRequest } from "../sdk/use-read-request";
+import {
+  ActionButton,
+  ActionForm,
+  ActionSelect,
+  ActionInput,
+} from "../sdk/ActionFeedback";
+import { useActionFeedback } from "../sdk/action-feedback";
+import { ConfigurationList } from "./ConfigurationList";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { ResourceEditor } from "./AgentCatalog";
+import { ConfigurationUsage } from "./ConfigurationUsage";
+import {
+  latest,
+  isPristineConfigurationDraft,
+  loadCatalog,
+  loadConfigurationRecord,
+  mergeConfigurationRecords,
+  useDraft,
+  useGroupTab,
+} from "./configuration-state";
+import {
+  MarkdownField,
+  MarkdownPreview,
+  RevisionSelect,
+} from "./configuration-ui";
+import { type Request, type Row } from "../sdk/rpc-types";
+const tabs = ["http", "mcp", "skills", "native", "internal", "calls"];
+const names: Record<string, string> = {
+  http: "HTTP API",
+  mcp: "MCP",
+  skills: "Skills",
+  native: "Harness Tools",
+  internal: "Internal Tools",
+  calls: "调用记录",
+};
+const originOf = (value: string) => {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return "";
+  }
+};
+const lines = (value: string) =>
+  value
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+const command = (
+  request: Request,
+  method: string,
+  project: Row | undefined,
+  payload: Row,
+  target?: Row,
+) =>
+  request(method, {
+    local: !!project?.id,
+    project_id: project?.id,
+    command_id: crypto.randomUUID(),
+    target: target?.id,
+    expected_revision: target?.revision,
+    payload,
+  });
+async function records(request: Request, method: string, projectId?: string) {
+  const rows: Row[] = [];
+  let offset = 0;
+  for (;;) {
+    const page = await request(method, {
+      local: !!projectId,
+      project_id: projectId,
+      offset,
+      limit: 100,
+      include_history: true,
+    });
+    rows.push(...page.records);
+    offset += page.records.length;
+    if (offset >= page.total || !page.records.length) return rows;
+  }
+}
+function JsonField({
+  label,
+  value,
+  onChange,
+  optional = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (s: string) => void;
+  optional?: boolean;
+}) {
+  return (
+    <label>
+      {displayText(label)}
+      <textarea
+        aria-label={displayText(label)}
+        required={!optional}
+        rows={6}
+        spellCheck={false}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </label>
+  );
+}
+export function Integrations({
+  request: parentRequest,
+  project,
+  installations,
+  kind,
+  contentOnly = false,
+}: {
+  request: Request;
+  project?: Row;
+  installations: Row[];
+  kind?: string;
+  contentOnly?: boolean;
+}) {
+  const request = useReadRequest(parentRequest);
+  const [savedTab, setTab] = useGroupTab("integrations", tabs);
+  const tab = kind || savedTab;
+  const [skillRevision, setSkillRevision] = useState(0);
+  return (
+    <>
+      {!contentOnly && (
+        <section className="panel">
+          <div className="panel-heading">
+            <h2>工具与技能接入</h2>
+            <p>连接服务并发布具体动作，在 Capability 中选择工具与技能。</p>
+          </div>
+          <div
+            className="configuration-tabs"
+            role="tablist"
+            aria-label="接入类别"
+          >
+            {tabs.map((id) => (
+              <ActionButton
+                key={id}
+                role="tab"
+                aria-selected={tab === id}
+                onClick={() => setTab(id)}
+              >
+                {displayText(names[id])}
+              </ActionButton>
+            ))}
+          </div>
+        </section>
+      )}
+      {["http", "mcp"].includes(tab) ? (
+        <>
+          <LinkedToolDefinition request={request} project={project} />
+          <SourceManager
+            key={`${tab}:${project?.id}`}
+            kind={tab}
+            request={request}
+            project={project}
+          />
+        </>
+      ) : tab === "skills" ? (
+        <ResourceEditor
+          key={`skills:${project?.id}`}
+          request={request}
+          project={project}
+          installations={installations}
+          kind="skill"
+          revision={skillRevision}
+          additionalEditor={{
+            label: "导入 Skill 包",
+            content: (
+              <SkillImport
+                request={request}
+                project={project}
+                onImported={() => setSkillRevision((v) => v + 1)}
+              />
+            ),
+          }}
+        />
+      ) : tab === "native" || tab === "internal" ? (
+        <ToolCatalog key={tab} request={request} project={project} kind={tab} />
+      ) : (
+        <CallHistory
+          key={`calls:${project?.id}`}
+          request={request}
+          project={project}
+        />
+      )}
+    </>
+  );
+}
+function ToolCatalog({
+  request,
+  project,
+  kind,
+}: {
+  request: Request;
+  project?: Row;
+  kind: "native" | "internal";
+}) {
+  const native = kind === "native";
+  const implementation = native ? "harness.native" : "platform";
+  const { error, setError } = useActionFeedback();
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [detail, setDetail] = useState<Row>();
+  const [selection, setSelection] = useDraft(
+    `devdesk:${kind}-tools:${project?.id || "global"}`,
+    () => ({ selected: "" }),
+  );
+  const selectedRef = useRef(selection.selected);
+  const choice = useRef<AbortController | null>(null);
+  useEffect(() => () => choice.current?.abort(), []);
+  const choose = useCallback(
+    async (row: Row) => {
+      choice.current?.abort();
+      const controller = new AbortController();
+      choice.current = controller;
+      try {
+        const record = await loadConfigurationRecord(
+          request,
+          row,
+          project?.id,
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
+        if (
+          record.type !== "tool" ||
+          record.data.implementation !== implementation
+        )
+          return;
+        setRows((rows) => mergeConfigurationRecords(rows, [record]));
+        setDetail(record);
+        selectedRef.current = record.id;
+        setSelection({ selected: record.id });
+        setError("");
+        const params = new URLSearchParams(location.search);
+        params.set("config_object", record.id);
+        history.replaceState(null, "", `?${params}`);
+      } catch (error) {
+        if (!controller.signal.aborted) setError(String(error));
+      }
+    },
+    [request, project?.id, implementation, setSelection, setError],
+  );
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadCatalog(
+      request,
+      project?.id,
+      false,
+      native ? undefined : "tool",
+      false,
+      controller.signal,
+    )
+      .then(async (rows) => {
+        if (controller.signal.aborted) return;
+        setRows(rows);
+        const target = new URLSearchParams(location.search).get(
+          "config_object",
+        );
+        const tools = rows.filter(
+          (row) =>
+            row.type === "tool" && row.data.implementation === implementation,
+        );
+        const row = target
+          ? tools.find((row) => row.id === target) || {
+              id: target,
+              _index: true,
+            }
+          : tools.find((row) => row.id === selectedRef.current) ||
+            latest(tools)[0];
+        if (row) {
+          await choose(row);
+        }
+        if (!controller.signal.aborted) setLoading(false);
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          setError(String(error));
+          setLoading(false);
+        }
+      });
+    return () => controller.abort();
+  }, [request, project?.id, native, implementation, choose, setError]);
+  const selected = detail?.id === selection.selected ? detail : undefined;
+  const tools = latest(
+    rows.filter(
+      (row) =>
+        row.type === "tool" && row.data.implementation === implementation,
+    ),
+  ).map((row) =>
+    selected && selected.definition_id === row.definition_id ? selected : row,
+  );
+  const harnesses =
+    native && selected
+      ? latest(
+          rows.filter(
+            (row) =>
+              row.type === "harness" &&
+              row.data.provider === (selected.data.harness_provider || "codex"),
+          ),
+        )
+      : [];
+  return (
+    <section
+      className="panel"
+      aria-label={native ? "原生工具目录" : "Internal Tools"}
+    >
+      <div className="panel-heading">
+        <h2>{native ? "Harness Tools" : "Internal Tools"}</h2>
+      </div>
+      <div className="configuration-layout">
+        <ConfigurationList
+          records={tools}
+          selectedId={selection.selected}
+          ready={!loading}
+          autoSelectFirst={false}
+          onSelect={choose}
+          emptyMessage={native ? "尚无 Harness 原生工具。" : "尚无内部工具。"}
+        />
+        <div className="tool-catalog-detail">
+          {native && (
+            <p role="note" aria-label="原生工具组说明">
+              原生工具随 Harness 提供，无需手工配置输入或输出
+              Schema。可访问范围以实际生效的 Permission 为准。
+            </p>
+          )}
+          {selected ? (
+            <article
+              className={native ? "native-tool-group" : undefined}
+              id={`configuration-${kind}:${selected.id}`}
+              aria-label={native ? "原生工具详情" : "内部工具详情"}
+            >
+              <h3>{displayText(selected.name)}</h3>
+              <p>
+                {!native && (
+                  <>
+                    <code>{displayText(selected.data.qualified_name)}</code>{" "}
+                    ·{" "}
+                  </>
+                )}
+                v{selected.version} · {displayText(selected.scope)}
+              </p>
+              <ConfigurationUsage
+                request={request}
+                projectId={project?.id}
+                id={selected.id}
+                kind="tool"
+              />
+              {selected.data.description ? (
+                <MarkdownPreview text={selected.data.description} />
+              ) : null}
+              {harnesses.map((harness) => (
+                <p key={harness.id}>
+                  适用 Harness：
+                  {displayText(
+                    harness.data.provider === "codex"
+                      ? "Codex Harness"
+                      : harness.data.provider === "dsh"
+                        ? "DeepSeek Harness"
+                        : harness.name,
+                  )}{" "}
+                  {displayText(harness.data.runtime_version || "尚未定义")}
+                </p>
+              ))}
+              {native && !harnesses.length ? (
+                <p className="muted">尚未定义匹配的 Harness。</p>
+              ) : null}
+              {!native && <ToolContract tool={selected} />}
+            </article>
+          ) : (
+            <p className="muted">
+              {loading ? "正在读取工具…" : "请选择左侧的工具。"}
+            </p>
+          )}
+          {error ? <p role="alert">{displayText(error)}</p> : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+function ToolContract({ tool }: { tool: Row }) {
+  const { input_schema, output_schema, runtime } = tool.data;
+  return (
+    <>
+      {runtime && (
+        <p>
+          执行环境 · Harness <code>{displayText(runtime.harness_ref)}</code> ·
+          Sandbox <code>{displayText(runtime.sandbox_ref)}</code>
+        </p>
+      )}
+      <details>
+        <summary>工具输入与输出合同</summary>
+        <pre>
+          {displayText(
+            JSON.stringify(
+              { input: input_schema, output: output_schema },
+              null,
+              2,
+            ),
+          )}
+        </pre>
+      </details>
+    </>
+  );
+}
+function LinkedToolDefinition({
+  request,
+  project,
+}: {
+  request: Request;
+  project?: Row;
+}) {
+  const target = new URLSearchParams(location.search).get("tool_ref");
+  const [tool, setTool] = useState<Row>();
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (!target) return;
+    const controller = new AbortController();
+    void loadConfigurationRecord(
+      request,
+      { id: target, _index: true },
+      project?.id,
+      controller.signal,
+    )
+      .then((row) => {
+        if (!controller.signal.aborted) setTool(row);
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) setError(String(error));
+      });
+    return () => controller.abort();
+  }, [request, project?.id, target]);
+  if (!target || tool?.data.implementation?.kind === "http_api") return null;
+  return (
+    <section className="panel" aria-label="Tool 定义">
+      <div className="panel-heading">
+        <h2>{displayText(tool?.name || "Tool 定义")}</h2>
+      </div>
+      <div className="integration-content">
+        {tool?.type === "tool" ? (
+          <>
+            <p>
+              <code>{displayText(tool.data.qualified_name)}</code> · v
+              {tool.version}
+            </p>
+            <ConfigurationUsage
+              request={request}
+              projectId={project?.id}
+              id={tool.id}
+              kind="tool"
+            />
+            <MarkdownPreview text={tool.data.description || ""} />
+            <ToolContract tool={tool} />
+          </>
+        ) : (
+          <p>{error ? displayText(error) : "正在读取工具定义…"}</p>
+        )}
+      </div>
+    </section>
+  );
+}
+function SourceManager({
+  kind,
+  request,
+  project,
+}: {
+  kind: string;
+  request: Request;
+  project?: Row;
+}) {
+  const {
+    error,
+    setError,
+    message,
+    setMessage,
+    capture: captureFeedback,
+    beginFeedback,
+    endFeedback,
+  } = useActionFeedback();
+
+  const fresh = () => ({
+    selected: "",
+    name: "",
+    scope: "global",
+    description: "",
+    base_url: "",
+    transport: "streamable_http",
+    url: "",
+    protocol_version: "2026-07-28",
+    command: '["node", "/work/server.mjs"]',
+    oauth_enabled: false,
+    client_id: "",
+    authorization_url: "",
+    token_url: "",
+    revocation_url: "",
+    oauth_scopes: "",
+  });
+  const [draft, setDraft] = useDraft(
+    `devdesk:integrations:${project?.id || "global"}:${kind}:manage`,
+    fresh,
+  );
+  const [sources, setSources] = useState<Row[]>([]),
+    [catalog, setCatalog] = useState<Row[]>([]),
+    [loading, setLoading] = useState(true),
+    [busy, setBusy] = useState(false);
+  const load = useCallback(async () => {
+    const [source, catalog] = await Promise.all([
+      records(request, "query.integrations", project?.id),
+      loadCatalog(request, project?.id),
+    ]);
+    setSources(source);
+    setCatalog(catalog);
+  }, [request, project?.id]);
+  useEffect(() => {
+    void load()
+      .catch((e) => setError(String(e)))
+      .finally(() => setLoading(false));
+  }, [load, setError]);
+  const [deletedSource, setDeletedSource] = useState<Row>();
+  const sourceKind = kind === "http" ? "http_api" : "mcp";
+  const selected =
+    sources.find(
+      (r) =>
+        r.id === draft.selected &&
+        r.type === "integration" &&
+        r.data.source.kind === sourceKind,
+    ) || deletedSource;
+  const missingSource = !loading && !!draft.selected && !selected;
+  const choose = useCallback(
+    (r: Row) => {
+      setDeletedSource(undefined);
+      const params = new URLSearchParams(location.search);
+      params.set("config_object", r.id);
+      history.replaceState(null, "", `?${params}`);
+      const s = r.data.source;
+      setDraft({
+        selected: r.id,
+        name: r.name,
+        scope: r.scope === "global" ? "global" : "project",
+        description: r.data.description || "",
+        base_url: s.base_url || "",
+        transport: s.transport || "streamable_http",
+        url: s.url || "",
+        protocol_version: s.protocol_version || "2026-07-28",
+        command: JSON.stringify(s.command || [], null, 2),
+        oauth_enabled: !!r.data.oauth,
+        client_id: r.data.oauth?.client_id || "",
+        authorization_url: r.data.oauth?.authorization_url || "",
+        token_url: r.data.oauth?.token_url || "",
+        revocation_url: r.data.oauth?.revocation_url || "",
+        oauth_scopes: (r.data.oauth?.scopes || []).join("\n"),
+      });
+    },
+    [setDraft],
+  );
+  const routeConsumed = useRef(false);
+  useEffect(() => {
+    if (routeConsumed.current || !sources.length) return;
+    const target = new URLSearchParams(location.search).get("config_object");
+    const tool = catalog.find((r) => r.id === target && r.type === "tool");
+    const row = sources.find(
+      (r) =>
+        r.type === "integration" &&
+        r.data.source.kind === sourceKind &&
+        (r.id === target || r.id === tool?.data.integration_ref),
+    );
+    if (row) {
+      routeConsumed.current = true;
+      choose(row);
+    }
+  }, [sources, catalog, sourceKind, choose]);
+  const startNew = (copy = false) => {
+    routeConsumed.current = true;
+    setDeletedSource(undefined);
+    setDraft(
+      copy ? { ...draft, selected: "", name: `${draft.name} · 副本` } : fresh(),
+    );
+    setError("");
+    setMessage("");
+    const params = new URLSearchParams(location.search);
+    params.delete("config_object");
+    history.replaceState(null, "", `?${params}`);
+  };
+  async function run(fn: () => Promise<void>) {
+    captureFeedback();
+
+    beginFeedback();
+    setBusy(true);
+    setError("");
+    try {
+      await fn();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      endFeedback();
+      setBusy(false);
+    }
+  }
+  const rows = latest(
+    sources.filter(
+      (r) =>
+        r.type === "integration" &&
+        r.data.source.kind === (kind === "http" ? "http_api" : "mcp"),
+    ),
+  );
+  return (
+    <>
+      <section
+        className="panel"
+        aria-label={displayText(`${names[kind]} 接入管理`)}
+      >
+        <div className="panel-heading">
+          <h2>{displayText(names[kind])} 接入源管理</h2>
+        </div>
+        <div className="configuration-layout">
+          <ConfigurationList
+            records={rows}
+            selectedId={selected?.id}
+            ready={!loading}
+            disabled={loading || busy}
+            autoSelectFirst={
+              !new URLSearchParams(location.search).has("config_object") &&
+              isPristineConfigurationDraft(draft, fresh())
+            }
+            onSelect={(row) => {
+              captureFeedback();
+              routeConsumed.current = true;
+              choose(row);
+            }}
+            newAction={{
+              label: `新建 ${names[kind]} 接入源`,
+              selected: !selected,
+              onClick: () => {
+                captureFeedback();
+                startNew();
+              },
+            }}
+          />
+          <ActionForm
+            className="form-grid"
+            onSubmit={(e) => {
+              captureFeedback();
+
+              e.preventDefault();
+              if (loading || busy || missingSource) return;
+              void run(async () => {
+                const source =
+                  kind === "http"
+                    ? { kind: "http_api", base_url: draft.base_url }
+                    : {
+                        kind: "mcp",
+                        transport: draft.transport,
+                        protocol_version: draft.protocol_version,
+                        url:
+                          draft.transport === "streamable_http"
+                            ? draft.url
+                            : null,
+                        command:
+                          draft.transport === "stdio"
+                            ? JSON.parse(draft.command)
+                            : [],
+                      };
+                const r = await command(
+                  request,
+                  `integration.${selected ? "revise" : "create"}`,
+                  project,
+                  {
+                    name: draft.name,
+                    scope:
+                      draft.scope === "project"
+                        ? `project:${project!.id}`
+                        : "global",
+                    data: {
+                      source,
+                      description: draft.description,
+                      ...(draft.oauth_enabled
+                        ? {
+                            oauth: {
+                              client_id: draft.client_id,
+                              authorization_url: draft.authorization_url,
+                              token_url: draft.token_url,
+                              revocation_url: draft.revocation_url || null,
+                              scopes: lines(draft.oauth_scopes),
+                            },
+                          }
+                        : {}),
+                    },
+                  },
+                  selected,
+                );
+                await load();
+                choose(r);
+                setMessage("接入定义已保存；请配置绑定并发布具体工具。");
+              });
+            }}
+          >
+            <fieldset
+              disabled={loading || busy || !!deletedSource || missingSource}
+              className="integration-fields"
+            >
+              <label>
+                接入名称
+                <input
+                  required
+                  value={draft.name}
+                  onChange={(e) => {
+                    captureFeedback();
+                    return setDraft({ ...draft, name: e.target.value });
+                  }}
+                />
+              </label>
+              <label>
+                接入范围
+                <ActionSelect
+                  disabled={!!selected}
+                  value={draft.scope}
+                  onChange={(e) => {
+                    captureFeedback();
+                    return setDraft({ ...draft, scope: e.target.value });
+                  }}
+                >
+                  <option value="global">Global</option>
+                  {project && <option value="project">当前项目</option>}
+                </ActionSelect>
+              </label>
+              {kind === "http" ? (
+                <label>
+                  API Base URL
+                  <input
+                    type="url"
+                    required
+                    value={draft.base_url}
+                    onChange={(e) => {
+                      captureFeedback();
+                      return setDraft({ ...draft, base_url: e.target.value });
+                    }}
+                    placeholder="https://api.example.com/v1"
+                  />
+                </label>
+              ) : (
+                <>
+                  <label>
+                    MCP 传输
+                    <ActionSelect
+                      value={draft.transport}
+                      onChange={(e) => {
+                        captureFeedback();
+                        return setDraft({
+                          ...draft,
+                          transport: e.target.value,
+                        });
+                      }}
+                    >
+                      <option value="streamable_http">Streamable HTTP</option>
+                      <option value="stdio">stdio · Docker 中执行</option>
+                    </ActionSelect>
+                  </label>
+                  <label>
+                    MCP 协议版本
+                    <ActionSelect
+                      value={draft.protocol_version}
+                      onChange={(e) => {
+                        captureFeedback();
+                        return setDraft({
+                          ...draft,
+                          protocol_version: e.target.value,
+                        });
+                      }}
+                    >
+                      <option>2026-07-28</option>
+                      <option>2025-11-25</option>
+                    </ActionSelect>
+                  </label>
+                  {draft.transport === "streamable_http" ? (
+                    <label>
+                      MCP URL
+                      <input
+                        type="url"
+                        required
+                        value={draft.url}
+                        onChange={(e) => {
+                          captureFeedback();
+                          return setDraft({ ...draft, url: e.target.value });
+                        }}
+                      />
+                    </label>
+                  ) : (
+                    <JsonField
+                      label="MCP 启动参数（JSON 数组）"
+                      value={draft.command}
+                      onChange={(command) => {
+                        captureFeedback();
+                        return setDraft({ ...draft, command });
+                      }}
+                    />
+                  )}
+                </>
+              )}
+              <label className="inline-control">
+                <input
+                  type="checkbox"
+                  checked={draft.oauth_enabled || false}
+                  onChange={(e) => {
+                    captureFeedback();
+                    return setDraft({
+                      ...draft,
+                      oauth_enabled: e.target.checked,
+                    });
+                  }}
+                />
+                启用 OAuth 授权码 + PKCE
+              </label>
+              {draft.oauth_enabled && (
+                <fieldset>
+                  <legend>OAuth 公共客户端</legend>
+                  <label>
+                    OAuth Client ID
+                    <input
+                      required
+                      value={draft.client_id}
+                      onChange={(e) => {
+                        captureFeedback();
+                        return setDraft({
+                          ...draft,
+                          client_id: e.target.value,
+                        });
+                      }}
+                    />
+                  </label>
+                  <label>
+                    授权端点
+                    <input
+                      type="url"
+                      required
+                      value={draft.authorization_url}
+                      onChange={(e) => {
+                        captureFeedback();
+                        return setDraft({
+                          ...draft,
+                          authorization_url: e.target.value,
+                        });
+                      }}
+                    />
+                  </label>
+                  <label>
+                    Token 端点
+                    <input
+                      type="url"
+                      required
+                      value={draft.token_url}
+                      onChange={(e) => {
+                        captureFeedback();
+                        return setDraft({
+                          ...draft,
+                          token_url: e.target.value,
+                        });
+                      }}
+                    />
+                  </label>
+                  <label>
+                    撤销端点（可选）
+                    <input
+                      type="url"
+                      value={draft.revocation_url}
+                      onChange={(e) => {
+                        captureFeedback();
+                        return setDraft({
+                          ...draft,
+                          revocation_url: e.target.value,
+                        });
+                      }}
+                    />
+                  </label>
+                  <label>
+                    可授权 scopes（每行一个）
+                    <textarea
+                      value={draft.oauth_scopes}
+                      onChange={(e) => {
+                        captureFeedback();
+                        return setDraft({
+                          ...draft,
+                          oauth_scopes: e.target.value,
+                        });
+                      }}
+                    />
+                  </label>
+                  <p>
+                    在服务端登记回调地址：{displayText(window.location.origin)}
+                    /oauth/integrations/callback
+                  </p>
+                </fieldset>
+              )}
+              <MarkdownField
+                key={draft.selected || "new"}
+                label="接入说明"
+                value={draft.description}
+                onChange={(description) => {
+                  captureFeedback();
+                  return setDraft({ ...draft, description });
+                }}
+              />
+              <div className="actions">
+                <ActionButton className="primary" disabled={busy}>
+                  {displayText(selected ? "保存接入新修订" : "创建接入源")}
+                </ActionButton>
+                {selected && (
+                  <>
+                    <ActionButton
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        captureFeedback();
+                        startNew(true);
+                      }}
+                    >
+                      复制接入源
+                    </ActionButton>
+                    <ActionButton
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        captureFeedback();
+                        return void run(async () => {
+                          await command(
+                            request,
+                            "integration.delete",
+                            project,
+                            { reason: "用户删除接入源及所属动作和绑定" },
+                            selected,
+                          );
+                          setDeletedSource(selected);
+                          await load();
+                          setMessage(
+                            "接入源及所属动作、绑定已删除，历史记录保留。",
+                          );
+                        });
+                      }}
+                    >
+                      删除接入源
+                    </ActionButton>
+                    <ActionButton
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        captureFeedback();
+                        return void run(async () => {
+                          await command(
+                            request,
+                            "integration.disable",
+                            project,
+                            { reason: "用户紧急停用" },
+                            selected,
+                          );
+                          setMessage("已紧急停用，将阻止后续工具派发。");
+                        });
+                      }}
+                    >
+                      紧急停用
+                    </ActionButton>
+                  </>
+                )}
+              </div>
+              {selected && !deletedSource && (
+                <label>
+                  接入历史修订
+                  <ActionSelect
+                    value={selected.id}
+                    onChange={(e) => {
+                      captureFeedback();
+
+                      const row = sources.find((r) => r.id === e.target.value);
+                      if (row) choose(row);
+                    }}
+                  >
+                    {sources
+                      .filter(
+                        (r) =>
+                          r.type === "integration" &&
+                          r.definition_id === selected.definition_id,
+                      )
+                      .map((r) => (
+                        <option key={r.id} value={r.id}>
+                          v{displayText(r.version)} · {displayText(r.name)}
+                        </option>
+                      ))}
+                  </ActionSelect>
+                </label>
+              )}
+            </fieldset>
+          </ActionForm>
+        </div>
+        {loading && <p role="status">正在读取接入源…</p>}
+        {missingSource && (
+          <p role="alert">原接入源不可用，请选择其他接入源或新建。</p>
+        )}
+        {error && <p role="alert">{displayText(error)}</p>}
+        {message && <p role="status">{displayText(message)}</p>}
+      </section>
+      {selected && !deletedSource && (
+        <>
+          <BindingManager
+            key={selected.id}
+            source={selected}
+            request={request}
+            project={project}
+            catalog={catalog}
+            sources={sources}
+            reload={load}
+          />
+          <PublishedTools
+            source={selected}
+            request={request}
+            project={project}
+            catalog={catalog}
+            reload={load}
+          />
+          {kind === "http" && (
+            <HttpToolEditor
+              key={`tools:${selected.id}`}
+              source={selected}
+              request={request}
+              project={project}
+              catalog={catalog}
+              reload={load}
+            />
+          )}
+        </>
+      )}
+    </>
+  );
+}
+function PublishedTools({
+  source,
+  request,
+  project,
+  catalog,
+  reload,
+}: {
+  source: Row;
+  request: Request;
+  project?: Row;
+  catalog: Row[];
+  reload: () => Promise<void>;
+}) {
+  const { error, setError, beginFeedback, endFeedback, setMessage } =
+    useActionFeedback();
+  const [removed, setRemoved] = useState<Row[]>([]);
+  const [busy, setBusy] = useState(false);
+  const tools = latest(
+    catalog.filter(
+      (r) => r.type === "tool" && r.data.integration_ref === source.id,
+    ),
+  );
+  return (
+    <section className="panel" aria-label="已发布工具管理">
+      <div className="panel-heading">
+        <h2>已发布工具</h2>
+      </div>
+      <div className="integration-content">
+        {!tools.length && !removed.length && (
+          <p className="muted">尚未发布工具。</p>
+        )}
+        {[
+          ...tools,
+          ...removed.filter((r) => !tools.some((t) => t.id === r.id)),
+        ].map((tool) => (
+          <article key={tool.id}>
+            <h3>
+              {displayText(tool.name)} · v{displayText(tool.version)}
+            </h3>
+            <p>
+              <code>{displayText(tool.data.qualified_name)}</code>
+            </p>
+            <ConfigurationUsage
+              request={request}
+              projectId={project?.id}
+              id={tool.id}
+              kind="tool"
+            />
+            <div className="actions">
+              <ActionButton
+                disabled={busy || removed.some((r) => r.id === tool.id)}
+                onClick={async () => {
+                  beginFeedback();
+                  setBusy(true);
+                  setError("");
+                  try {
+                    await command(
+                      request,
+                      "integration.delete",
+                      project,
+                      {},
+                      tool,
+                    );
+                    setRemoved((rows) => [...rows, tool]);
+                    await reload();
+                    setMessage("工具已删除，历史调用和修订保留。");
+                  } catch (e) {
+                    setError(String(e));
+                  } finally {
+                    endFeedback();
+                    setBusy(false);
+                  }
+                }}
+              >
+                删除工具 · {displayText(tool.name)}
+              </ActionButton>
+            </div>
+          </article>
+        ))}
+        {error && <p role="alert">{displayText(error)}</p>}
+      </div>
+    </section>
+  );
+}
+function BindingManager({
+  source,
+  request,
+  project,
+  catalog,
+  sources,
+  reload,
+}: {
+  source: Row;
+  request: Request;
+  project?: Row;
+  catalog: Row[];
+  sources: Row[];
+  reload: () => Promise<void>;
+}) {
+  const {
+    error,
+    setError,
+    message,
+    setMessage,
+    capture: captureFeedback,
+    beginFeedback,
+    endFeedback,
+  } = useActionFeedback();
+
+  const discoveryAttempt = useRef<
+    { fingerprint: string; id: string } | undefined
+  >(undefined);
+  const bindingDefaults = useRef<Row>({});
+  const allowInitialSelection = useRef(true);
+  const [bindingReady, setBindingReady] = useState(false);
+  const fresh = () => ({
+    selected: "",
+    name: "",
+    scope: project ? "project" : "global",
+    harness_ref: bindingDefaults.current.harness_ref || "",
+    sandbox_ref: bindingDefaults.current.sandbox_ref || "",
+    auth_kind: "none",
+    credential_ref: "",
+    header: "X-API-Key",
+    account: "",
+    scopes: "",
+    origins:
+      source.data.source.base_url || source.data.source.url
+        ? originOf(source.data.source.base_url || source.data.source.url)
+        : "",
+    private_network: false,
+    allowed_tools: [] as string[],
+    timeout: 30000,
+    limit: 1048576,
+  });
+  const [draft, setDraft] = useDraft(
+    `devdesk:integration-binding:${project?.id || "global"}:${source.id}`,
+    fresh,
+  );
+  const [secret, setSecret] = useState(""),
+    [busy, setBusy] = useState(false),
+    [permissions, setPermissions] = useState<Row>({ targets: [] }),
+    [selectedNames, setSelectedNames] = useState<string[]>([]),
+    [effects, setEffects] = useState<Record<string, string>>({}),
+    [discovery, setDiscovery] = useState<Row>(),
+    [oauthState, setOauthState] = useState(""),
+    [oauthUrl, setOauthUrl] = useState("");
+  useEffect(() => {
+    let current = true;
+    void Promise.all([
+      request("query.permission_resources"),
+      request("query.configuration_defaults"),
+    ])
+      .then(([resources, defaults]) => {
+        if (!current) return;
+        bindingDefaults.current = defaults;
+        setPermissions(resources);
+        setDraft((previous) =>
+          previous.selected
+            ? previous
+            : {
+                ...previous,
+                harness_ref: previous.harness_ref || defaults.harness_ref || "",
+                sandbox_ref: previous.sandbox_ref || defaults.sandbox_ref || "",
+              },
+        );
+        setBindingReady(true);
+      })
+      .catch((e) => setError(String(e)));
+    return () => {
+      current = false;
+    };
+  }, [request, setDraft, setError]);
+  const bindings = latest(
+    sources.filter(
+      (r) =>
+        r.type === "integration_binding" &&
+        r.data.integration_ref === source.id,
+    ),
+  );
+  const [deletedBinding, setDeletedBinding] = useState<Row>();
+  const selected =
+    sources.find((r) => r.id === draft.selected) || deletedBinding;
+  const tools = latest(
+    catalog.filter(
+      (r) => r.type === "tool" && r.data.integration_ref === source.id,
+    ),
+  );
+  const choose = useCallback(
+    (r: Row) => {
+      setDeletedBinding(undefined);
+      const b = r.data;
+      setDraft({
+        selected: r.id,
+        name: r.name,
+        scope: r.scope === "global" ? "global" : "project",
+        harness_ref: b.harness_ref,
+        sandbox_ref: b.sandbox_ref,
+        auth_kind:
+          b.auth?.kind === "oauth_pending" || b.auth?.kind === "oauth"
+            ? "oauth"
+            : b.auth?.kind || "none",
+        credential_ref: b.auth?.credential_ref || "",
+        header: b.auth?.header || "X-API-Key",
+        account: b.auth?.account || "",
+        scopes: (b.auth?.scopes || []).join("\n"),
+        origins: (b.allowed_origins || []).join("\n"),
+        private_network: b.allow_private_network,
+        allowed_tools: b.allowed_tools,
+        timeout: b.timeout_ms,
+        limit: b.max_result_bytes,
+      });
+      setDiscovery(undefined);
+      setSelectedNames([]);
+    },
+    [setDraft],
+  );
+  async function run(fn: () => Promise<void>) {
+    captureFeedback();
+
+    beginFeedback();
+    setBusy(true);
+    setError("");
+    try {
+      await fn();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      endFeedback();
+      setBusy(false);
+    }
+  }
+  return (
+    <section className="panel" aria-label="接入绑定管理">
+      <div className="panel-heading">
+        <h2>账户、权限与允许工具</h2>
+        <ActionButton
+          onClick={() => {
+            captureFeedback();
+
+            allowInitialSelection.current = false;
+            setDraft(fresh());
+            setSecret("");
+            setMessage("");
+          }}
+        >
+          新建接入绑定
+        </ActionButton>
+      </div>
+      <div className="configuration-layout">
+        <ConfigurationList
+          records={bindings}
+          selectedId={selected?.id}
+          ready={bindingReady}
+          autoSelectFirst={
+            allowInitialSelection.current &&
+            isPristineConfigurationDraft(draft, fresh())
+          }
+          onSelect={(row) => {
+            captureFeedback();
+            choose(row);
+          }}
+        />
+        <ActionForm
+          className="form-grid"
+          onSubmit={(e) => {
+            captureFeedback();
+
+            e.preventDefault();
+            void run(async () => {
+              const auth =
+                draft.auth_kind === "none"
+                  ? { kind: "none" }
+                  : draft.auth_kind === "api_key"
+                    ? {
+                        kind: "api_key",
+                        credential_ref: draft.credential_ref,
+                        header: draft.header,
+                      }
+                    : draft.auth_kind === "oauth"
+                      ? {
+                          kind: draft.credential_ref
+                            ? "oauth"
+                            : "oauth_pending",
+                          ...(draft.credential_ref
+                            ? { credential_ref: draft.credential_ref }
+                            : {}),
+                          account: draft.account,
+                          scopes: lines(draft.scopes),
+                        }
+                      : {
+                          kind: "bearer",
+                          credential_ref: draft.credential_ref,
+                        };
+              const row = await command(
+                request,
+                `integration.binding.${selected ? "revise" : "create"}`,
+                project,
+                {
+                  name: draft.name,
+                  scope:
+                    draft.scope === "project"
+                      ? `project:${project!.id}`
+                      : "global",
+                  data: {
+                    integration_ref: source.id,
+                    auth,
+                    harness_ref: draft.harness_ref,
+                    sandbox_ref: draft.sandbox_ref,
+                    allowed_origins: lines(draft.origins),
+                    allow_private_network: draft.private_network,
+                    allowed_tools: draft.allowed_tools,
+                    timeout_ms: Number(draft.timeout),
+                    max_result_bytes: Number(draft.limit),
+                  },
+                },
+                selected,
+              );
+              await reload();
+              choose(row);
+              setMessage(
+                "绑定已保存；需要在项目中明确采用，并在 Capability 选择工具。",
+              );
+            });
+          }}
+        >
+          <fieldset
+            disabled={!!deletedBinding || !bindingReady}
+            className="integration-fields"
+          >
+            <label>
+              绑定名称
+              <input
+                required
+                value={draft.name}
+                onChange={(e) => {
+                  captureFeedback();
+                  return setDraft({ ...draft, name: e.target.value });
+                }}
+              />
+            </label>
+            <label>
+              绑定范围
+              <ActionSelect
+                value={draft.scope || "global"}
+                disabled={!!selected}
+                onChange={(e) => {
+                  captureFeedback();
+                  return setDraft({ ...draft, scope: e.target.value });
+                }}
+              >
+                <option value="global">Global</option>
+                {project && <option value="project">当前项目</option>}
+              </ActionSelect>
+            </label>
+            <RevisionSelect
+              label="接入 Harness"
+              records={catalog.filter((r) => r.type === "harness")}
+              value={draft.harness_ref}
+              onChange={(harness_ref) => {
+                captureFeedback();
+                return setDraft({ ...draft, harness_ref });
+              }}
+              required
+            />
+            <RevisionSelect
+              label="接入 Sandbox"
+              records={
+                permissions.targets
+                  ?.filter((r: Row) => r.target.kind === "sandbox")
+                  .map((r: Row) => ({
+                    id: r.target.revision_id,
+                    name: r.name,
+                    version: r.version,
+                    definition_id: r.target.revision_id,
+                    scope: "global",
+                  })) || []
+              }
+              value={draft.sandbox_ref}
+              onChange={(sandbox_ref) => {
+                captureFeedback();
+                return setDraft({ ...draft, sandbox_ref });
+              }}
+              required
+            />
+            <label>
+              认证方式
+              <ActionSelect
+                value={draft.auth_kind}
+                onChange={(e) => {
+                  captureFeedback();
+                  return setDraft({ ...draft, auth_kind: e.target.value });
+                }}
+              >
+                <option value="none">无需认证</option>
+                <option value="bearer">Bearer token</option>
+                <option value="api_key">API key · Header</option>
+                <option value="oauth">OAuth 2.0</option>
+              </ActionSelect>
+            </label>
+            {["bearer", "api_key"].includes(draft.auth_kind) && (
+              <>
+                <label>
+                  系统凭据引用
+                  <input
+                    required
+                    value={draft.credential_ref}
+                    onChange={(e) => {
+                      captureFeedback();
+                      return setDraft({
+                        ...draft,
+                        credential_ref: e.target.value,
+                      });
+                    }}
+                    placeholder="integration-secret:…"
+                  />
+                </label>
+                <label>
+                  新凭据
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={secret}
+                    onChange={(e) => {
+                      captureFeedback();
+                      return setSecret(e.target.value);
+                    }}
+                  />
+                </label>
+                <ActionButton
+                  type="button"
+                  disabled={busy || !secret}
+                  onClick={() => {
+                    captureFeedback();
+                    return void run(async () => {
+                      const result = await command(
+                        request,
+                        "credentials.integration.configure",
+                        project,
+                        { secret },
+                      );
+                      setDraft({ ...draft, credential_ref: result.reference });
+                      setSecret("");
+                      setMessage("凭据已写入系统存储，页面仅保留引用。");
+                    });
+                  }}
+                >
+                  保存接入凭据
+                </ActionButton>
+                {draft.credential_ref && (
+                  <ActionButton
+                    type="button"
+                    disabled={busy || !secret}
+                    onClick={() => {
+                      captureFeedback();
+                      return void run(async () => {
+                        await command(
+                          request,
+                          "credentials.integration.configure",
+                          project,
+                          { reference: draft.credential_ref, secret },
+                        );
+                        setSecret("");
+                        setMessage("同一账户凭据已轮换，原引用继续有效。");
+                      });
+                    }}
+                  >
+                    轮换同一账户凭据
+                  </ActionButton>
+                )}
+                <ActionButton
+                  type="button"
+                  disabled={busy || !draft.credential_ref}
+                  onClick={() => {
+                    captureFeedback();
+                    return void run(async () => {
+                      const r = await command(
+                        request,
+                        "credentials.integration.status",
+                        project,
+                        { reference: draft.credential_ref },
+                      );
+                      setMessage(
+                        r.available
+                          ? "凭据可用。"
+                          : "凭据不可用，请检查系统存储。",
+                      );
+                    });
+                  }}
+                >
+                  检查凭据
+                </ActionButton>
+              </>
+            )}
+            {draft.auth_kind === "api_key" && (
+              <label>
+                API key Header
+                <input
+                  required
+                  value={draft.header}
+                  onChange={(e) => {
+                    captureFeedback();
+                    return setDraft({ ...draft, header: e.target.value });
+                  }}
+                />
+              </label>
+            )}
+            {draft.auth_kind === "oauth" && (
+              <>
+                {!source.data.oauth && (
+                  <p role="alert">请先在接入源配置 OAuth 公共客户端。</p>
+                )}
+                <p>
+                  先保存待授权绑定，再发起授权。授权完成后保存新修订并由项目采用。
+                </p>
+                <p>
+                  授权状态：
+                  {displayText(
+                    draft.credential_ref ? "已取得凭据引用" : "等待授权",
+                  )}
+                </p>
+                <label>
+                  OAuth 账户
+                  <input
+                    required
+                    value={draft.account}
+                    onChange={(e) => {
+                      captureFeedback();
+                      return setDraft({ ...draft, account: e.target.value });
+                    }}
+                  />
+                </label>
+                <label>
+                  OAuth scopes
+                  <textarea
+                    value={draft.scopes}
+                    onChange={(e) => {
+                      captureFeedback();
+                      return setDraft({ ...draft, scopes: e.target.value });
+                    }}
+                  />
+                </label>
+                <div className="actions">
+                  <ActionButton
+                    type="button"
+                    disabled={busy || !selected || !source.data.oauth}
+                    onClick={() => {
+                      captureFeedback();
+                      return void run(async () => {
+                        const flow = await command(
+                          request,
+                          "integration.oauth.start",
+                          project,
+                          {
+                            binding_ref: selected!.id,
+                            account: draft.account,
+                            scopes: lines(draft.scopes),
+                            redirect_uri: `${window.location.origin}/oauth/integrations/callback`,
+                          },
+                        );
+                        setOauthState(flow.state);
+                        setOauthUrl(flow.authorization_url);
+                        setMessage("请打开授权页面，完成后点击检查授权结果。");
+                      });
+                    }}
+                  >
+                    发起 OAuth 授权
+                  </ActionButton>
+                  {oauthUrl && (
+                    <a href={oauthUrl} target="_blank" rel="noreferrer">
+                      打开服务授权页面
+                    </a>
+                  )}
+                  <ActionButton
+                    type="button"
+                    disabled={busy || !oauthState}
+                    onClick={() => {
+                      captureFeedback();
+                      return void run(async () => {
+                        const flow = await command(
+                          request,
+                          "integration.oauth.status",
+                          project,
+                          { state: oauthState },
+                        );
+                        if (flow.status === "complete") {
+                          setDraft({
+                            ...draft,
+                            credential_ref: flow.credential_ref,
+                            account: flow.account,
+                            scopes: flow.scopes.join("\n"),
+                          });
+                          setMessage("授权已完成，请保存绑定新修订。");
+                        } else setMessage(`授权状态：${flow.status}`);
+                      });
+                    }}
+                  >
+                    检查授权结果
+                  </ActionButton>
+                  <ActionButton
+                    type="button"
+                    disabled={busy || !selected?.data.auth?.credential_ref}
+                    onClick={() => {
+                      captureFeedback();
+                      return void run(async () => {
+                        const result = await command(
+                          request,
+                          "integration.oauth.revoke",
+                          project,
+                          { binding_ref: selected!.id },
+                        );
+                        setMessage(
+                          `本机授权已撤销；服务端：${result.remote_revocation}`,
+                        );
+                        setDraft({ ...draft, credential_ref: "" });
+                      });
+                    }}
+                  >
+                    撤销 OAuth 授权
+                  </ActionButton>
+                </div>
+              </>
+            )}
+            <label>
+              允许的服务 origin（每行一个）
+              <textarea
+                value={draft.origins}
+                onChange={(e) => {
+                  captureFeedback();
+                  return setDraft({ ...draft, origins: e.target.value });
+                }}
+              />
+            </label>
+            <label className="inline-control">
+              <input
+                type="checkbox"
+                checked={draft.private_network}
+                onChange={(e) => {
+                  captureFeedback();
+                  return setDraft({
+                    ...draft,
+                    private_network: e.target.checked,
+                  });
+                }}
+              />
+              允许所列 origin 的本机/内网地址
+            </label>
+            <RevisionSelect
+              label="绑定允许的确切工具修订"
+              records={tools}
+              value={draft.allowed_tools}
+              multiple
+              onChange={(allowed_tools) => {
+                captureFeedback();
+                return setDraft({
+                  ...draft,
+                  allowed_tools: allowed_tools,
+                });
+              }}
+            />
+            <p>
+              发现服务不会自动授权全部动作。请先发布具体工具，再选择允许的修订。
+            </p>
+            <label>
+              超时（毫秒）
+              <input
+                type="number"
+                min={100}
+                max={120000}
+                value={draft.timeout}
+                onChange={(e) => {
+                  captureFeedback();
+                  return setDraft({
+                    ...draft,
+                    timeout: Number(e.target.value),
+                  });
+                }}
+              />
+            </label>
+            <label>
+              结果大小上限（字节）
+              <input
+                type="number"
+                min={1024}
+                max={8388608}
+                value={draft.limit}
+                onChange={(e) => {
+                  captureFeedback();
+                  return setDraft({ ...draft, limit: Number(e.target.value) });
+                }}
+              />
+            </label>
+            {selected && (
+              <label>
+                绑定历史修订
+                <ActionSelect
+                  value={selected.id}
+                  onChange={(e) => {
+                    captureFeedback();
+
+                    const row = sources.find((r) => r.id === e.target.value);
+                    if (row) choose(row);
+                  }}
+                >
+                  {sources
+                    .filter(
+                      (r) =>
+                        r.type === "integration_binding" &&
+                        r.definition_id === selected.definition_id,
+                    )
+                    .map((r) => (
+                      <option key={r.id} value={r.id}>
+                        v{displayText(r.version)} · {displayText(r.name)}
+                      </option>
+                    ))}
+                </ActionSelect>
+              </label>
+            )}
+            <div className="actions">
+              <ActionButton className="primary" disabled={busy}>
+                {displayText(selected ? "保存绑定新修订" : "创建接入绑定")}
+              </ActionButton>
+              {selected && (
+                <>
+                  <ActionButton
+                    type="button"
+                    onClick={() => {
+                      captureFeedback();
+                      return setDraft({
+                        ...draft,
+                        selected: "",
+                        name: `${draft.name} · 副本`,
+                      });
+                    }}
+                  >
+                    复制接入绑定
+                  </ActionButton>
+                  <ActionButton
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      captureFeedback();
+                      return void run(async () => {
+                        await command(
+                          request,
+                          "integration.delete",
+                          project,
+                          {},
+                          selected,
+                        );
+                        setDeletedBinding(selected);
+                        await reload();
+                        setMessage("绑定已删除，历史记录保留。");
+                      });
+                    }}
+                  >
+                    删除接入绑定
+                  </ActionButton>
+                </>
+              )}
+              {selected && project && (
+                <ActionButton
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    captureFeedback();
+                    return void run(async () => {
+                      const rows = await records(
+                        request,
+                        "query.integration_bindings",
+                        project.id,
+                      );
+                      const current =
+                        latest(
+                          rows.filter(
+                            (r) =>
+                              r.type === "integration_project_configuration" &&
+                              r.definition_id === project.id,
+                          ),
+                        )[0]?.data || {};
+                      await command(
+                        request,
+                        "integration.project.bind",
+                        project,
+                        {
+                          project_id: project.id,
+                          bindings: { ...current, [source.id]: selected.id },
+                        },
+                      );
+                      setMessage(
+                        "项目已采用此绑定；已有冻结 Feature/Session 保留原版本。",
+                      );
+                    });
+                  }}
+                >
+                  将绑定用于当前项目
+                </ActionButton>
+              )}
+              {selected && source.data.source.kind === "mcp" && (
+                <ActionButton
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    captureFeedback();
+                    return void run(async () => {
+                      const params = {
+                        local: !!project?.id,
+                        project_id: project?.id,
+                        target: selected.id,
+                        expected_revision: selected.revision,
+                        payload: { binding_ref: selected.id },
+                      };
+                      const fingerprint = JSON.stringify(params);
+                      if (discoveryAttempt.current?.fingerprint !== fingerprint)
+                        discoveryAttempt.current = {
+                          fingerprint,
+                          id: crypto.randomUUID(),
+                        };
+                      const r = await request("integration.discover", {
+                        ...params,
+                        command_id: discoveryAttempt.current!.id,
+                      });
+                      discoveryAttempt.current = undefined;
+                      setDiscovery(r);
+                      setSelectedNames([]);
+                      await reload();
+                      setMessage("发现完成，请选择要发布的具体动作。");
+                    });
+                  }}
+                >
+                  发现 MCP 工具
+                </ActionButton>
+              )}
+            </div>
+          </fieldset>
+        </ActionForm>
+      </div>
+      {discovery && (
+        <div className="integration-content">
+          <h3>发现的 MCP 工具</h3>
+          <p>
+            新增：{displayText(discovery.data.diff?.added?.join(", ") || "无")}{" "}
+            · 移除：
+            {displayText(discovery.data.diff?.removed?.join(", ") || "无")} ·
+            契约变化：
+            {displayText(discovery.data.diff?.changed?.join(", ") || "无")}
+          </p>
+          {(discovery.data?.result?.tools || []).map((tool: Row) => (
+            <article key={tool.name}>
+              <label className="inline-control">
+                <input
+                  type="checkbox"
+                  checked={selectedNames.includes(tool.name)}
+                  onChange={(e) => {
+                    captureFeedback();
+                    return setSelectedNames(
+                      e.target.checked
+                        ? [...selectedNames, tool.name]
+                        : selectedNames.filter((name) => name !== tool.name),
+                    );
+                  }}
+                />
+                {displayText(tool.name)}
+              </label>
+              <MarkdownPreview text={tool.description || ""} />
+              <label>
+                动作影响 · {displayText(tool.name)}
+                <ActionSelect
+                  value={effects[tool.name] || "unknown"}
+                  onChange={(e) => {
+                    captureFeedback();
+                    return setEffects({
+                      ...effects,
+                      [tool.name]: e.target.value,
+                    });
+                  }}
+                >
+                  {["unknown", "read_only", "write", "destructive"].map((s) => (
+                    <option key={s} value={s}>
+                      {displayText(s)}
+                    </option>
+                  ))}
+                </ActionSelect>
+              </label>
+              <details>
+                <summary>协议契约</summary>
+                <pre>
+                  {displayText(
+                    JSON.stringify(
+                      { input: tool.inputSchema, output: tool.outputSchema },
+                      null,
+                      2,
+                    ),
+                  )}
+                </pre>
+              </details>
+            </article>
+          ))}
+          <ActionButton
+            disabled={busy || !selectedNames.length}
+            onClick={() => {
+              captureFeedback();
+              return void run(async () => {
+                await command(request, "integration.publish_tools", project, {
+                  discovery_ref: discovery.id,
+                  names: selectedNames,
+                  effects,
+                  scope: discovery.scope,
+                });
+                await reload();
+                setMessage("工具已发布，请在绑定中选择允许的修订并保存。");
+              });
+            }}
+          >
+            发布所选 MCP 工具
+          </ActionButton>
+        </div>
+      )}
+      {selected && (
+        <div className="integration-content" aria-label="接入就绪状态">
+          <h3>接入状态</h3>
+          <p>
+            定义：已保存 · 认证：
+            {displayText(
+              selected.data.auth.kind === "none"
+                ? "无需凭据"
+                : selected.data.auth.kind === "oauth_pending"
+                  ? "等待授权"
+                  : "请检查凭据",
+            )}{" "}
+            · 执行环境：
+            {displayText(
+              permissions.targets?.find(
+                (t: Row) => t.target.revision_id === selected.data.harness_ref,
+              )?.materializations?.length
+                ? "已物化"
+                : "待准备",
+            )}
+          </p>
+          <ActionButton
+            disabled={busy}
+            onClick={() => {
+              captureFeedback();
+              return void run(async () => {
+                await request("runtime.prepare_harness", {
+                  id: selected.data.harness_ref,
+                });
+                setPermissions(
+                  await request("query.permission_resources", {
+                    project_id: project?.id,
+                  }),
+                );
+                setMessage(
+                  "执行环境已准备；测试调用与 Agent 授权仍需分别确认。",
+                );
+              });
+            }}
+          >
+            准备工具执行环境
+          </ActionButton>
+          <p>
+            实际调用结果可在“调用记录”查看；Capability 和项目选择决定 Agent
+            是否拥有此工具。
+          </p>
+        </div>
+      )}
+      {selected && (
+        <ToolTest
+          request={request}
+          project={project}
+          tools={tools}
+          binding={selected}
+        />
+      )}
+      {error && <p role="alert">{displayText(error)}</p>}
+      {message && <p role="status">{displayText(message)}</p>}
+    </section>
+  );
+}
+function HttpToolEditor({
+  source,
+  request,
+  project,
+  catalog,
+  reload,
+}: {
+  source: Row;
+  request: Request;
+  project?: Row;
+  catalog: Row[];
+  reload: () => Promise<void>;
+}) {
+  const {
+    error,
+    setError,
+    message,
+    setMessage,
+    capture: captureFeedback,
+    beginFeedback,
+    endFeedback,
+  } = useActionFeedback();
+
+  const initial = () => ({
+    selected: "",
+    name: "",
+    description: "",
+    method: "GET",
+    path: "/",
+    parameters: [] as Row[],
+    body_pointer: "",
+    input: '{"type":"object","properties":{},"additionalProperties":false}',
+    output: "",
+    effect: "read_only",
+    idempotency_header: "",
+    constraints: "{}",
+    sensitive: "",
+    required_auth: "",
+  });
+  const [draft, setDraft] = useDraft(
+    `devdesk:http-tool:${project?.id || "global"}:${source.id}`,
+    initial,
+  );
+  const [openapi, setOpenapi] = useState(""),
+    [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState<Row[]>([]),
+    [operations, setOperations] = useState<string[]>([]),
+    [authScheme, setAuthScheme] = useState(""),
+    [serverIndex, setServerIndex] = useState(0),
+    [aliases, setAliases] = useState<Record<string, string>>({});
+  const tools = latest(
+    catalog.filter(
+      (r) => r.type === "tool" && r.data.integration_ref === source.id,
+    ),
+  );
+  const selected = catalog.find((r) => r.id === draft.selected);
+  const choice = useRef<AbortController | null>(null);
+  useEffect(() => () => choice.current?.abort(), []);
+  const choose = useCallback(
+    async (r: Row) => {
+      choice.current?.abort();
+      const controller = new AbortController();
+      choice.current = controller;
+      try {
+        r = await loadConfigurationRecord(
+          request,
+          r,
+          project?.id,
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
+        const t = r.data;
+        const h = t.implementation;
+        setDraft({
+          selected: r.id,
+          name: t.qualified_name,
+          description: t.description,
+          method: h.method,
+          path: h.path,
+          parameters: h.parameters || [],
+          body_pointer: h.body_pointer || "",
+          input: JSON.stringify(t.input_schema, null, 2),
+          output:
+            t.output_schema === undefined || t.output_schema === null
+              ? ""
+              : JSON.stringify(t.output_schema, null, 2),
+          effect: t.effect,
+          idempotency_header: h.idempotency_header || "",
+          constraints: JSON.stringify(t.constraints || {}, null, 2),
+          sensitive: (t.sensitive_parameters || []).join("\n"),
+          required_auth: t.required_auth
+            ? JSON.stringify(t.required_auth, null, 2)
+            : "",
+        });
+      } catch (error) {
+        if (!controller.signal.aborted) setError(String(error));
+      }
+    },
+    [request, project?.id, setDraft, setError],
+  );
+  async function run(fn: () => Promise<void>) {
+    captureFeedback();
+
+    beginFeedback();
+    setBusy(true);
+    setError("");
+    try {
+      await fn();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      endFeedback();
+      setBusy(false);
+    }
+  }
+  const routeToolSelected = useRef(false);
+  useEffect(() => {
+    if (routeToolSelected.current || !catalog.length) return;
+    const id = new URLSearchParams(location.search).get("tool_ref");
+    if (!id) return;
+    routeToolSelected.current = true;
+    const row = catalog.find((r) => r.id === id);
+    if (!row || row.data.integration_ref === source.id)
+      void choose(row || { id, _index: true });
+  }, [catalog, source.id, choose]);
+  return (
+    <section className="panel" aria-label="HTTP 动作管理">
+      <div className="panel-heading">
+        <h2>HTTP 可调用动作</h2>
+      </div>
+      <div className="configuration-layout">
+        <ConfigurationList
+          records={tools}
+          selectedId={draft.selected}
+          autoSelectFirst={
+            !new URLSearchParams(location.search).has("tool_ref") &&
+            isPristineConfigurationDraft(draft, initial())
+          }
+          onSelect={(row) => {
+            captureFeedback();
+            return choose(row);
+          }}
+          newAction={{
+            label: "新建 HTTP 动作",
+            selected: !draft.selected,
+            onClick: () => {
+              captureFeedback();
+              choice.current?.abort();
+              setDraft(initial());
+            },
+          }}
+        />
+        <ActionForm
+          className="form-grid"
+          onSubmit={(e) => {
+            captureFeedback();
+
+            e.preventDefault();
+            void run(async () => {
+              const tool = {
+                schema_version: 2,
+                qualified_name: draft.name,
+                description: draft.description,
+                integration_ref: source.id,
+                effect: draft.effect,
+                input_schema: JSON.parse(draft.input),
+                ...(draft.output.trim()
+                  ? { output_schema: JSON.parse(draft.output) }
+                  : {}),
+                constraints: JSON.parse(draft.constraints),
+                sensitive_parameters: lines(draft.sensitive || ""),
+                ...(draft.required_auth
+                  ? { required_auth: JSON.parse(draft.required_auth) }
+                  : {}),
+                implementation: {
+                  kind: "http_api",
+                  method: draft.method,
+                  path: draft.path,
+                  parameters: draft.parameters,
+                  body_pointer: draft.body_pointer || null,
+                  idempotency_header: draft.idempotency_header || null,
+                },
+              };
+              const r = await command(
+                request,
+                `integration.tool.${selected ? "revise" : "create"}`,
+                project,
+                { name: draft.name, scope: source.scope, data: tool },
+                selected,
+              );
+              await reload();
+              choose(r);
+              setMessage("HTTP 工具已发布，可在绑定和 Capability 中选择。");
+            });
+          }}
+        >
+          <label>
+            工具调用名称
+            <input
+              required
+              maxLength={64}
+              value={draft.name}
+              onChange={(e) => {
+                captureFeedback();
+                return setDraft({ ...draft, name: e.target.value });
+              }}
+            />
+          </label>
+          <ConfigurationUsage
+            request={request}
+            projectId={project?.id}
+            id={draft.selected}
+            kind="tool"
+          />
+          <MarkdownField
+            key={draft.selected || "new"}
+            label="工具说明"
+            value={draft.description}
+            required
+            onChange={(description) => {
+              captureFeedback();
+              return setDraft({ ...draft, description });
+            }}
+          />
+          <label>
+            HTTP method
+            <ActionSelect
+              value={draft.method}
+              onChange={(e) => {
+                captureFeedback();
+                return setDraft({
+                  ...draft,
+                  method: e.target.value,
+                  effect: ["GET", "HEAD"].includes(e.target.value)
+                    ? "read_only"
+                    : "unknown",
+                });
+              }}
+            >
+              {["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"].map((m) => (
+                <option key={m} value={m}>
+                  {displayText(m)}
+                </option>
+              ))}
+            </ActionSelect>
+          </label>
+          <label>
+            相对 path
+            <input
+              required
+              value={draft.path}
+              onChange={(e) => {
+                captureFeedback();
+                return setDraft({ ...draft, path: e.target.value });
+              }}
+            />
+          </label>
+          <label>
+            动作影响
+            <ActionSelect
+              value={draft.effect}
+              onChange={(e) => {
+                captureFeedback();
+                return setDraft({ ...draft, effect: e.target.value });
+              }}
+            >
+              {["read_only", "unknown", "write", "destructive"].map((s) => (
+                <option key={s} value={s}>
+                  {displayText(s)}
+                </option>
+              ))}
+            </ActionSelect>
+          </label>
+          <JsonField
+            label="调用参数 JSON Schema"
+            value={draft.input}
+            onChange={(input) => {
+              captureFeedback();
+              return setDraft({ ...draft, input });
+            }}
+          />
+          <JsonField
+            label="结构化结果 JSON Schema（可选）"
+            value={draft.output}
+            optional
+            onChange={(output) => {
+              captureFeedback();
+              return setDraft({ ...draft, output });
+            }}
+          />
+          <fieldset>
+            <legend>参数映射</legend>
+            {draft.parameters.map((p, index) => (
+              <div key={index} className="integration-parameter">
+                <label>
+                  参数名 {index + 1}
+                  <input
+                    required
+                    value={p.name}
+                    onChange={(e) => {
+                      captureFeedback();
+                      return setDraft({
+                        ...draft,
+                        parameters: draft.parameters.map((v, i) =>
+                          i === index ? { ...v, name: e.target.value } : v,
+                        ),
+                      });
+                    }}
+                  />
+                </label>
+                <label>
+                  输入 JSON Pointer {index + 1}
+                  <input
+                    required
+                    value={p.pointer}
+                    onChange={(e) => {
+                      captureFeedback();
+                      return setDraft({
+                        ...draft,
+                        parameters: draft.parameters.map((v, i) =>
+                          i === index ? { ...v, pointer: e.target.value } : v,
+                        ),
+                      });
+                    }}
+                  />
+                </label>
+                <label>
+                  参数位置 {index + 1}
+                  <ActionSelect
+                    value={p.location}
+                    onChange={(e) => {
+                      captureFeedback();
+                      return setDraft({
+                        ...draft,
+                        parameters: draft.parameters.map((v, i) =>
+                          i === index ? { ...v, location: e.target.value } : v,
+                        ),
+                      });
+                    }}
+                  >
+                    {["path", "query", "header"].map((l) => (
+                      <option key={l} value={l}>
+                        {displayText(l)}
+                      </option>
+                    ))}
+                  </ActionSelect>
+                </label>
+                <label className="inline-control">
+                  <input
+                    type="checkbox"
+                    checked={!!p.required}
+                    onChange={(e) => {
+                      captureFeedback();
+                      return setDraft({
+                        ...draft,
+                        parameters: draft.parameters.map((v, i) =>
+                          i === index
+                            ? { ...v, required: e.target.checked }
+                            : v,
+                        ),
+                      });
+                    }}
+                  />
+                  必需
+                </label>
+                <ActionButton
+                  type="button"
+                  onClick={() => {
+                    captureFeedback();
+                    return setDraft({
+                      ...draft,
+                      parameters: draft.parameters.filter(
+                        (_, i) => i !== index,
+                      ),
+                    });
+                  }}
+                >
+                  删除参数 {index + 1}
+                </ActionButton>
+              </div>
+            ))}
+            <ActionButton
+              type="button"
+              onClick={() => {
+                captureFeedback();
+                return setDraft({
+                  ...draft,
+                  parameters: [
+                    ...draft.parameters,
+                    {
+                      name: "",
+                      pointer: "/",
+                      location: "query",
+                      required: false,
+                    },
+                  ],
+                });
+              }}
+            >
+              添加参数映射
+            </ActionButton>
+          </fieldset>
+          <label>
+            JSON body 来源 Pointer（可选）
+            <input
+              value={draft.body_pointer}
+              onChange={(e) => {
+                captureFeedback();
+                return setDraft({ ...draft, body_pointer: e.target.value });
+              }}
+            />
+          </label>
+          <label>
+            幂等键 Header（服务明确支持时）
+            <input
+              value={draft.idempotency_header}
+              onChange={(e) => {
+                captureFeedback();
+                return setDraft({
+                  ...draft,
+                  idempotency_header: e.target.value,
+                });
+              }}
+            />
+          </label>
+          <JsonField
+            label="固定参数约束（Pointer 到值）"
+            value={draft.constraints}
+            onChange={(constraints) => {
+              captureFeedback();
+              return setDraft({ ...draft, constraints });
+            }}
+          />
+          <label>
+            敏感参数 Pointer（每行一个）
+            <textarea
+              value={draft.sensitive || ""}
+              onChange={(e) => {
+                captureFeedback();
+                return setDraft({ ...draft, sensitive: e.target.value });
+              }}
+            />
+          </label>
+          <JsonField
+            label="认证要求（可选 JSON）"
+            value={draft.required_auth || ""}
+            optional
+            onChange={(required_auth) => {
+              captureFeedback();
+              return setDraft({ ...draft, required_auth });
+            }}
+          />
+          {selected && (
+            <label>
+              工具历史修订
+              <ActionSelect
+                value={selected.id}
+                onChange={(e) => {
+                  captureFeedback();
+
+                  const row = catalog.find((r) => r.id === e.target.value);
+                  if (row) choose(row);
+                }}
+              >
+                {catalog
+                  .filter(
+                    (r) =>
+                      r.type === "tool" &&
+                      r.definition_id === selected.definition_id,
+                  )
+                  .map((r) => (
+                    <option key={r.id} value={r.id}>
+                      v{displayText(r.version)} · {displayText(r.name)}
+                    </option>
+                  ))}
+              </ActionSelect>
+            </label>
+          )}
+          <ActionButton
+            className="primary"
+            disabled={busy || !draft.description.trim()}
+          >
+            {displayText(selected ? "发布 HTTP 动作新修订" : "发布 HTTP 动作")}
+          </ActionButton>
+          {selected && (
+            <div className="actions">
+              <ActionButton
+                type="button"
+                onClick={() => {
+                  captureFeedback();
+                  return setDraft({
+                    ...draft,
+                    selected: "",
+                    name: `${draft.name}_copy`,
+                  });
+                }}
+              >
+                复制 HTTP 动作
+              </ActionButton>
+            </div>
+          )}
+        </ActionForm>
+      </div>
+      <details className="integration-content">
+        <summary>从 OpenAPI 3.1 导入</summary>
+        <JsonField
+          label="OpenAPI JSON / YAML"
+          value={openapi}
+          onChange={setOpenapi}
+        />
+        <label>
+          OpenAPI server 索引
+          <input
+            type="number"
+            min={0}
+            value={serverIndex}
+            onChange={(e) => {
+              captureFeedback();
+              return setServerIndex(Number(e.target.value));
+            }}
+          />
+        </label>
+        <label>
+          OpenAPI 认证方案名称（存在 OR 时必选）
+          <input
+            value={authScheme}
+            onChange={(e) => {
+              captureFeedback();
+              return setAuthScheme(e.target.value);
+            }}
+            placeholder="securitySchemes 中的名称；none 表示明确的匿名分支"
+          />
+        </label>
+        <ActionButton
+          disabled={busy || !openapi.trim()}
+          onClick={() => {
+            captureFeedback();
+            return void run(async () => {
+              const r = await command(
+                request,
+                "integration.openapi.preview",
+                project,
+                {
+                  integration_ref: source.id,
+                  document: openapi,
+                  security_scheme: authScheme || undefined,
+                  server_index: serverIndex,
+                },
+              );
+              setPreview(r.tools);
+              setOperations([]);
+              setAliases({});
+              setMessage("预览已生成，请选择具体 operation 并确认名称。");
+            });
+          }}
+        >
+          预览 OpenAPI 动作
+        </ActionButton>
+        {preview.map((t) => (
+          <article key={t.qualified_name}>
+            <label className="inline-control">
+              <input
+                type="checkbox"
+                checked={operations.includes(t.qualified_name)}
+                onChange={(e) => {
+                  captureFeedback();
+                  return setOperations(
+                    e.target.checked
+                      ? [...operations, t.qualified_name]
+                      : operations.filter((n) => n !== t.qualified_name),
+                  );
+                }}
+              />
+              {displayText(t.qualified_name)} ·{" "}
+              {displayText(t.implementation.method)}{" "}
+              {displayText(t.implementation.path)}
+            </label>
+            <label>
+              导入工具名称 · {displayText(t.qualified_name)}
+              <input
+                value={aliases[t.qualified_name] || t.qualified_name}
+                onChange={(e) => {
+                  captureFeedback();
+                  return setAliases({
+                    ...aliases,
+                    [t.qualified_name]: e.target.value,
+                  });
+                }}
+              />
+            </label>
+            <details>
+              <summary>生成的调用契约</summary>
+              <pre>{displayText(JSON.stringify(t, null, 2))}</pre>
+            </details>
+          </article>
+        ))}
+        <ActionButton
+          disabled={busy || !operations.length}
+          onClick={() => {
+            captureFeedback();
+            return void run(async () => {
+              const r = await command(
+                request,
+                "integration.openapi.import",
+                project,
+                {
+                  integration_ref: source.id,
+                  document: openapi,
+                  operations,
+                  aliases,
+                  security_scheme: authScheme || undefined,
+                  server_index: serverIndex,
+                  scope: source.scope,
+                },
+              );
+              await reload();
+              setMessage(`已导入 ${r.records.length} 个 HTTP 动作。`);
+            });
+          }}
+        >
+          导入 OpenAPI 动作
+        </ActionButton>
+      </details>
+      {error && <p role="alert">{displayText(error)}</p>}
+      {message && <p role="status">{displayText(message)}</p>}
+    </section>
+  );
+}
+function ToolTest({
+  request,
+  project,
+  tools,
+  binding,
+}: {
+  request: Request;
+  project?: Row;
+  tools: Row[];
+  binding: Row;
+}) {
+  const {
+    message,
+    setMessage,
+    error,
+    setError,
+    capture: captureFeedback,
+    beginFeedback,
+    endFeedback,
+  } = useActionFeedback();
+
+  const [tool, setTool] = useState(""),
+    [args, setArgs] = useState("{}"),
+    [busy, setBusy] = useState(false);
+  const attempt = useRef<{ fingerprint: string; id: string } | undefined>(
+    undefined,
+  );
+  return (
+    <div className="integration-content">
+      <h3>实际测试调用</h3>
+      <p>
+        使用已保存的绑定和相同执行权限。写动作会产生真实副作用，结果在调用记录中查看。
+      </p>
+      <RevisionSelect
+        label="测试工具修订"
+        records={tools.filter((t) => binding.data.allowed_tools.includes(t.id))}
+        value={tool}
+        onChange={(value) => setTool(value)}
+      />
+      <JsonField label="测试调用参数" value={args} onChange={setArgs} />
+      <ActionButton
+        disabled={!tool || busy}
+        onClick={async () => {
+          captureFeedback();
+
+          beginFeedback();
+          setBusy(true);
+          setError("");
+          try {
+            const params = {
+              local: !!project?.id,
+              project_id: project?.id,
+              expected_revision: 0,
+              payload: {
+                binding_ref: binding.id,
+                tool_ref: tool,
+                arguments: JSON.parse(args),
+              },
+            };
+            const fingerprint = JSON.stringify(params);
+            if (attempt.current?.fingerprint !== fingerprint)
+              attempt.current = { fingerprint, id: crypto.randomUUID() };
+            const result = await request("integration.test", {
+              ...params,
+              command_id: attempt.current!.id,
+            });
+            attempt.current = undefined;
+            setMessage(`调用已登记：${result.id}，请在调用记录查看实际回执。`);
+          } catch (e) {
+            setError(String(e));
+          } finally {
+            endFeedback();
+            setBusy(false);
+          }
+        }}
+      >
+        执行测试调用
+      </ActionButton>
+      {message && <p role="status">{displayText(message)}</p>}
+      {error && <p role="alert">{displayText(error)}</p>}
+    </div>
+  );
+}
+function SkillImport({
+  request,
+  project,
+  onImported,
+}: {
+  request: Request;
+  project?: Row;
+  onImported: () => void;
+}) {
+  const {
+    error,
+    setError,
+    message,
+    setMessage,
+    capture: captureFeedback,
+    beginFeedback,
+    endFeedback,
+  } = useActionFeedback();
+
+  const [name, setName] = useState(""),
+    [body, setBody] = useState(""),
+    [zip, setZip] = useState(""),
+    [gitUrl, setGitUrl] = useState(""),
+    [commit, setCommit] = useState(""),
+    [directory, setDirectory] = useState(""),
+    [mode, setMode] = useState("markdown"),
+    [sourceRevision, setSourceRevision] = useState(""),
+    [busy, setBusy] = useState(false),
+    [requires, setRequires] = useState<string[]>([]),
+    [catalog, setCatalog] = useState<Row[]>([]);
+  useEffect(() => {
+    void loadCatalog(request, project?.id)
+      .then(setCatalog)
+      .catch((e) => setError(String(e)));
+  }, [request, project?.id, setError]);
+  return (
+    <section className="panel" aria-label="Skill 包导入">
+      <div className="panel-heading">
+        <h2>导入 Skill 与静态材料</h2>
+      </div>
+      <ActionForm
+        className="integration-content"
+        onSubmit={async (e) => {
+          captureFeedback();
+
+          e.preventDefault();
+          beginFeedback();
+          setBusy(true);
+          setError("");
+          try {
+            const r = await command(request, "skill.import_package", project, {
+              name,
+              scope: project ? `project:${project.id}` : "global",
+              requires_tools: requires,
+              source_revision_id: sourceRevision || undefined,
+              ...(sourceRevision
+                ? { scope: catalog.find((r) => r.id === sourceRevision)?.scope }
+                : {}),
+              ...(mode === "zip"
+                ? { zip_base64: zip }
+                : mode === "git"
+                  ? { git_url: gitUrl, commit, directory }
+                  : { markdown: body }),
+            });
+            setMessage(
+              `Skill 已导入：${r.name}。可在 Capability 的 Skills 中选择。`,
+            );
+            setBody("");
+            setZip("");
+            setSourceRevision("");
+            setCatalog(await loadCatalog(request, project?.id));
+            onImported();
+          } catch (e) {
+            setError(String(e));
+          } finally {
+            endFeedback();
+            setBusy(false);
+          }
+        }}
+      >
+        <label>
+          导入 Skill 名称
+          <input
+            required
+            value={name}
+            onChange={(e) => {
+              captureFeedback();
+              return setName(e.target.value);
+            }}
+          />
+        </label>
+        <RevisionSelect
+          label="更新已有 Skill 修订（可选）"
+          records={catalog.filter((r) => r.type === "skill")}
+          value={sourceRevision}
+          onChange={async (value) => {
+            captureFeedback();
+
+            setSourceRevision(value);
+            const row = catalog.find((r) => r.id === value);
+            if (row) {
+              setName(row.name);
+              try {
+                const pkg = await request("skill.export", {
+                  id: value,
+                  project_id: project?.id,
+                });
+                setBody(pkg.body);
+                setRequires(pkg.requires_tools);
+              } catch (e) {
+                setError(String(e));
+              }
+            }
+          }}
+        />
+        <label>
+          Skill 来源
+          <ActionSelect
+            value={mode}
+            onChange={(e) => {
+              captureFeedback();
+              return setMode(e.target.value);
+            }}
+          >
+            <option value="markdown">文档内容</option>
+            <option value="zip">静态材料 ZIP</option>
+            <option value="git">公开 Git · 固定 commit</option>
+          </ActionSelect>
+        </label>
+        {mode === "markdown" ? (
+          <MarkdownField
+            label="Skill 内容"
+            value={body}
+            required
+            onChange={setBody}
+          />
+        ) : mode === "zip" ? (
+          <label>
+            Skill ZIP 文件
+            <ActionInput
+              type="file"
+              accept=".zip"
+              required
+              onChange={async (e) => {
+                captureFeedback();
+
+                const file = e.target.files?.[0];
+                if (!file) return;
+                if (file.size > 2097152) {
+                  setError("Skill ZIP 超过 2 MiB");
+                  return;
+                }
+                const reader = new FileReader();
+                reader.onload = () =>
+                  setZip(String(reader.result).split(",")[1]);
+                reader.readAsDataURL(file);
+              }}
+            />
+          </label>
+        ) : (
+          <>
+            <label>
+              Skill Git HTTPS URL
+              <input
+                type="url"
+                required
+                value={gitUrl}
+                onChange={(e) => {
+                  captureFeedback();
+                  return setGitUrl(e.target.value);
+                }}
+              />
+            </label>
+            <label>
+              Skill commit
+              <input
+                required
+                pattern="[0-9a-fA-F]{40}"
+                value={commit}
+                onChange={(e) => {
+                  captureFeedback();
+                  return setCommit(e.target.value);
+                }}
+              />
+            </label>
+            <label>
+              Skill 子目录
+              <input
+                value={directory}
+                onChange={(e) => {
+                  captureFeedback();
+                  return setDirectory(e.target.value);
+                }}
+              />
+            </label>
+          </>
+        )}
+        <RevisionSelect
+          label="Skill 必需工具"
+          records={catalog.filter((r) => r.type === "tool")}
+          value={requires}
+          multiple
+          onChange={(value) => setRequires(value)}
+        />
+        <p>仅导入静态指令和参考文件；包内脚本不会自动安装或执行。</p>
+        <ActionButton
+          className="primary"
+          disabled={
+            busy ||
+            (mode === "markdown" && !body.trim()) ||
+            (mode === "zip" && !zip)
+          }
+        >
+          导入 Skill 包
+        </ActionButton>
+        {message && <p role="status">{displayText(message)}</p>}
+        {error && <p role="alert">{displayText(error)}</p>}
+      </ActionForm>
+    </section>
+  );
+}
+type HistoryEntry =
+  | { type: "event"; time: number; event: Row }
+  | { type: "tool_call"; time: number; call: Row };
+
+function HistoryEvent({
+  event,
+  position,
+  request,
+  projectId,
+  scope,
+}: {
+  event: Row;
+  position: number;
+  request: Request;
+  projectId?: string;
+  scope?: string;
+}) {
+  const [detail, setDetail] = useState<Row>();
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const detailId = useId();
+  const current = detail || event;
+  return (
+    <div className="history-row">
+      <span className="event-id" title={displayText(`事件 #${event.id}`)}>
+        #{position}
+      </span>
+      <div>
+        <strong>{displayText(event.kind)}</strong>
+        <p
+          id={detailId}
+          className={detail ? "history-event-detail" : undefined}
+        >
+          持久化事件 · {displayText(current.detail)}
+        </p>
+        {event.metadata_only && (
+          <ActionButton
+            type="button"
+            disabled={loading}
+            aria-busy={loading}
+            aria-expanded={!!detail}
+            aria-controls={detailId}
+            onClick={async () => {
+              if (detail) {
+                setDetail(undefined);
+                return;
+              }
+              setLoading(true);
+              setError("");
+              try {
+                const value = await request("query.history", {
+                  scope,
+                  local: !!projectId,
+                  project_id: projectId,
+                  event_id: event.id,
+                  limit: 1,
+                });
+                const selected = value.events.find(
+                  (row: Row) => row.id === event.id,
+                );
+                if (!selected) throw new Error("原事件不可用");
+                setDetail(selected);
+              } catch (value) {
+                setError(String(value));
+              } finally {
+                setLoading(false);
+              }
+            }}
+          >
+            {loading ? "正在读取事件…" : detail ? "收起事件" : "展开事件"}
+          </ActionButton>
+        )}
+        {error && <p role="alert">{displayText(error)}</p>}
+      </div>
+      <time dateTime={new Date(event.time).toISOString()}>
+        {displayText(
+          new Date(event.time).toLocaleString("zh-CN", { hour12: false }),
+        )}
+      </time>
+    </div>
+  );
+}
+
+export function CallHistory({
+  request,
+  project,
+  historyScope,
+}: {
+  request: Request;
+  project?: Row;
+  historyScope?: "global" | "project";
+}) {
+  const {
+    error,
+    setError,
+    capture: captureFeedback,
+    beginFeedback,
+    endFeedback,
+  } = useActionFeedback();
+
+  const requestVersion = useRef(0);
+  const actionScopeVersion = useRef(0);
+  const baselines = useRef(new Map<string, number>());
+  const attempts = useRef(
+    new Map<string, { fingerprint: string; id: string }>(),
+  );
+  const [rows, setRows] = useState<HistoryEntry[]>([]),
+    [selected, setSelected] = useState<Row>(),
+    [offset, setOffset] = useState(0),
+    [total, setTotal] = useState(0),
+    [drafts, setDrafts] = useState<
+      Record<string, { evidence: string; effect: string }>
+    >({}),
+    [loaded, setLoaded] = useState(false);
+  const noProject = historyScope === "project" && !project?.id;
+  const draftKey = (row: Row) =>
+    `${project?.id || "global"}:${historyScope || "calls"}:${row.id}`;
+  const draft = selected ? drafts[draftKey(selected)] : undefined;
+  const evidence = draft?.evidence || "";
+  const effect = draft?.effect || "unknown";
+  function editDraft(row: Row, patch: { evidence?: string; effect?: string }) {
+    const key = draftKey(row);
+    if (!baselines.current.has(key)) baselines.current.set(key, row.revision);
+    setDrafts((previous) => ({
+      ...previous,
+      [key]: {
+        ...(previous[key] ?? { evidence: "", effect: "unknown" }),
+        ...patch,
+      },
+    }));
+  }
+  useEffect(() => {
+    actionScopeVersion.current += 1;
+    setSelected(undefined);
+    setRows([]);
+    setLoaded(false);
+    return () => {
+      actionScopeVersion.current += 1;
+    };
+  }, [project?.id, historyScope]);
+  const load = useCallback(async () => {
+    if (historyScope === "project" && !project?.id) {
+      setRows([]);
+      setTotal(0);
+      setSelected(undefined);
+      setLoaded(true);
+      return;
+    }
+    const version = ++requestVersion.current;
+    const query: Row = {
+      local: !!project?.id,
+      project_id: project?.id,
+      offset,
+      limit: 50,
+      view: "summary",
+    };
+    if (historyScope) {
+      query.scope = historyScope;
+      query.include_tool_calls = true;
+    }
+    const r = await request(
+      historyScope ? "query.history" : "query.tool_calls",
+      query,
+    );
+    if (version !== requestVersion.current) return;
+    const entries: HistoryEntry[] = historyScope
+      ? r.records
+      : r.records.map((call: Row) => ({
+          type: "tool_call",
+          time: call.created_at,
+          call,
+        }));
+    setRows(entries);
+    setTotal(r.total);
+    setSelected((old) => {
+      const entry = entries.find(
+        (entry) => entry.type === "tool_call" && entry.call.id === old?.id,
+      );
+      return entry?.type === "tool_call"
+        ? entry.call.metadata_only && old && !old.metadata_only
+          ? old
+          : entry.call
+        : undefined;
+    });
+    setLoaded(true);
+  }, [request, project?.id, offset, historyScope]);
+  useEffect(() => {
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const run = async () => {
+      try {
+        if (document.visibilityState !== "hidden") await load();
+      } catch (e) {
+        if (active) {
+          setLoaded(true);
+          setError(String(e));
+        }
+      } finally {
+        if (active) timer = setTimeout(() => void run(), 1500);
+      }
+    };
+    void run();
+    return () => {
+      active = false;
+      requestVersion.current += 1;
+      clearTimeout(timer);
+    };
+  }, [load, setError]);
+  const act = async (method: string, row: Row, payload: Row) => {
+    captureFeedback();
+    const scopeVersion = actionScopeVersion.current;
+    const key = draftKey(row);
+    if (!baselines.current.has(key)) baselines.current.set(key, row.revision);
+    const params = {
+      local: !!project?.id,
+      project_id: project?.id,
+      target: row.id,
+      expected_revision: baselines.current.get(key),
+      payload,
+    };
+    const attemptKey = `${key}:${method}`;
+    const fingerprint = JSON.stringify(params);
+    if (attempts.current.get(attemptKey)?.fingerprint !== fingerprint)
+      attempts.current.set(attemptKey, {
+        fingerprint,
+        id: crypto.randomUUID(),
+      });
+    try {
+      await request(method, {
+        ...params,
+        command_id: attempts.current.get(attemptKey)!.id,
+      });
+      attempts.current.delete(attemptKey);
+      baselines.current.delete(key);
+      setDrafts((previous) => {
+        const next = { ...previous };
+        delete next[key];
+        return next;
+      });
+      if (actionScopeVersion.current === scopeVersion) await load();
+    } catch (e) {
+      if (actionScopeVersion.current === scopeVersion) setError(String(e));
+    }
+  };
+  return (
+    <section
+      className="panel"
+      aria-label={displayText(historyScope ? "历史记录" : "工具调用记录")}
+    >
+      <div className="panel-heading">
+        <h2>{displayText(historyScope ? "历史记录" : "Tools调用记录")}</h2>
+        <span className="muted">按时间倒序 · 每页 50 条</span>
+        <ActionButton
+          disabled={noProject}
+          onClick={async () => {
+            captureFeedback();
+            beginFeedback();
+            setError("");
+            try {
+              await load();
+            } catch (e) {
+              setError(String(e));
+            } finally {
+              endFeedback();
+            }
+          }}
+        >
+          {displayText(historyScope ? "刷新历史记录" : "刷新调用记录")}
+        </ActionButton>
+      </div>
+      <div className="tool-call-content">
+        <div className="tool-call-history">
+          {rows.length === 0 && (
+            <div className="empty">
+              <p>
+                {displayText(
+                  noProject
+                    ? "请选择当前项目以查看历史记录。"
+                    : !loaded
+                      ? "正在读取历史记录…"
+                      : historyScope
+                        ? "尚无历史记录。"
+                        : "尚无工具调用记录。",
+                )}
+              </p>
+            </div>
+          )}
+          {rows.map((entry, index) => {
+            if (entry.type === "event") {
+              const e = entry.event;
+              return (
+                <HistoryEvent
+                  key={`${historyScope}:${project?.id || "global"}:${e.id}`}
+                  event={e}
+                  position={offset + index + 1}
+                  request={request}
+                  projectId={project?.id}
+                  scope={historyScope}
+                />
+              );
+            }
+            const r = entry.call;
+            return (
+              <div className="tool-call-history-item" key={`tool_call:${r.id}`}>
+                <div className="history-row">
+                  <span className="event-id">#{offset + index + 1}</span>
+                  <div>
+                    <ActionButton
+                      className="history-action"
+                      aria-expanded={selected?.id === r.id}
+                      aria-controls={`tool-call-detail-${r.id}`}
+                      onClick={async () => {
+                        captureFeedback();
+                        if (selected?.id === r.id) {
+                          setSelected(undefined);
+                          return;
+                        }
+                        const scope = actionScopeVersion.current;
+                        const exact = r.metadata_only
+                          ? (
+                              await request("query.tool_calls", {
+                                project_id: project?.id,
+                                local: !!project?.id,
+                                id: r.id,
+                                include_history: true,
+                                limit: 1,
+                              })
+                            ).records[0]
+                          : r;
+                        if (scope === actionScopeVersion.current)
+                          setSelected(exact);
+                      }}
+                    >
+                      <strong>{displayText(r.name)}</strong>
+                    </ActionButton>
+                    <p>
+                      {displayText(historyScope ? "Tools调用 · " : "")}
+                      {displayText(r.data.status)} ·{" "}
+                      {displayText(
+                        r.data.invocation?.agent_instance_id || "手工测试",
+                      )}
+                    </p>
+                  </div>
+                  <time dateTime={new Date(r.created_at).toISOString()}>
+                    {displayText(
+                      new Date(r.created_at).toLocaleString("zh-CN", {
+                        hour12: false,
+                      }),
+                    )}
+                  </time>
+                </div>
+                {selected && selected.id === r.id && (
+                  <article
+                    className="tool-call-details"
+                    id={`tool-call-detail-${r.id}`}
+                    aria-label="调用详情"
+                  >
+                    <h3>{displayText(selected.name)}</h3>
+                    <p>
+                      状态：{displayText(selected.data.status)} · 远端副作用：
+                      {displayText(selected.data.remote_effect)}
+                    </p>
+                    <dl>
+                      <dt>工具修订</dt>
+                      <dd>
+                        {displayText(selected.data.invocation.tool.revision_id)}
+                      </dd>
+                      <dt>接入绑定</dt>
+                      <dd>
+                        {displayText(selected.data.invocation.tool.binding_ref)}
+                      </dd>
+                      <dt>Agent</dt>
+                      <dd>
+                        {displayText(
+                          selected.data.invocation.agent_instance_id ||
+                            "手工测试",
+                        )}
+                      </dd>
+                    </dl>
+                    <details>
+                      <summary>参数与来源</summary>
+                      <pre>
+                        {displayText(
+                          JSON.stringify(selected.data.invocation, null, 2),
+                        )}
+                      </pre>
+                    </details>
+                    <h4>执行回执</h4>
+                    {selected.data.reply_status === "needs_reconciliation" && (
+                      <p role="status">
+                        原生回复结果待核对，系统不会自动重发。
+                      </p>
+                    )}
+                    {selected.data.receipt?.content?.some(
+                      (c: Row) =>
+                        c.type === "resource_link" &&
+                        c.uri?.startsWith("devdesk-tool-artifact:"),
+                    ) && (
+                      <ActionButton
+                        onClick={async () => {
+                          captureFeedback();
+
+                          try {
+                            const result = await command(
+                              request,
+                              "tool.call.artifact",
+                              project,
+                              {},
+                              selected,
+                            );
+                            const bytes = Uint8Array.from(
+                              atob(result.base64),
+                              (c) => c.charCodeAt(0),
+                            );
+                            const url = URL.createObjectURL(
+                              new Blob([bytes], { type: result.mime }),
+                            );
+                            const link = document.createElement("a");
+                            link.href = url;
+                            link.download = `${selected.id}.bin`;
+                            link.click();
+                            setTimeout(() => URL.revokeObjectURL(url), 1000);
+                          } catch (e) {
+                            setError(String(e));
+                          }
+                        }}
+                      >
+                        下载调用文件结果
+                      </ActionButton>
+                    )}
+                    <pre>
+                      {displayText(
+                        JSON.stringify(
+                          selected.data.receipt || {
+                            status: selected.data.status,
+                          },
+                          null,
+                          2,
+                        ),
+                      )}
+                    </pre>
+                    {selected.data.status === "awaiting_approval" && (
+                      <div className="actions">
+                        <ActionButton
+                          onClick={() => {
+                            captureFeedback();
+                            return void act("tool.call.approve", selected, {
+                              approve: true,
+                            });
+                          }}
+                        >
+                          批准此调用
+                        </ActionButton>
+                        <ActionButton
+                          onClick={() => {
+                            captureFeedback();
+                            return void act("tool.call.approve", selected, {
+                              approve: false,
+                            });
+                          }}
+                        >
+                          拒绝此调用
+                        </ActionButton>
+                      </div>
+                    )}
+                    {["prepared", "dispatched", "awaiting_approval"].includes(
+                      selected.data.status,
+                    ) && (
+                      <ActionButton
+                        onClick={() => {
+                          captureFeedback();
+                          return void act("tool.call.cancel", selected, {});
+                        }}
+                      >
+                        取消工具调用
+                      </ActionButton>
+                    )}
+                    {selected.data.status === "needs_reconciliation" && (
+                      <fieldset>
+                        <legend>核对未确认调用</legend>
+                        <p>
+                          系统不会自动重发。先检查执行器实际回执；没有回执时记录人工核对的来源。
+                        </p>
+                        <label>
+                          远端执行事实
+                          <ActionSelect
+                            value={effect}
+                            onChange={(e) => {
+                              captureFeedback();
+                              return editDraft(selected, {
+                                effect: e.target.value,
+                              });
+                            }}
+                          >
+                            <option value="unknown">仍不确定</option>
+                            <option value="not_applied">确认未执行</option>
+                            <option value="applied">确认已执行</option>
+                          </ActionSelect>
+                        </label>
+                        <label>
+                          核对证据
+                          <textarea
+                            value={evidence}
+                            onChange={(e) => {
+                              captureFeedback();
+                              return editDraft(selected, {
+                                evidence: e.target.value,
+                              });
+                            }}
+                          />
+                        </label>
+                        <ActionButton
+                          disabled={!evidence.trim()}
+                          onClick={() => {
+                            captureFeedback();
+                            return void act("tool.call.reconcile", selected, {
+                              remote_effect: effect,
+                              evidence,
+                            });
+                          }}
+                        >
+                          核对调用事实
+                        </ActionButton>
+                      </fieldset>
+                    )}
+                  </article>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div className="pagination">
+          <ActionButton
+            disabled={!offset}
+            onClick={() => {
+              captureFeedback();
+              return setOffset(Math.max(0, offset - 50));
+            }}
+          >
+            上一页
+          </ActionButton>
+          <span>第 {offset / 50 + 1} 页</span>
+          <ActionButton
+            disabled={offset + 50 >= total}
+            onClick={() => {
+              captureFeedback();
+              return setOffset(offset + 50);
+            }}
+          >
+            下一页
+          </ActionButton>
+        </div>
+        {error && <p role="alert">{displayText(error)}</p>}
+      </div>
+    </section>
+  );
+}

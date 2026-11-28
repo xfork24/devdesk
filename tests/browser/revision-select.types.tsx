@@ -1,4 +1,4 @@
-import { RevisionSelect } from "../../web/src/components/configuration-ui";
+import { RevisionSelect } from "../../web/src/kit/configuration-ui";
 
 // This file is checked by tsconfig.test.json, never executed as a browser spec.
 function selectionTypes() {

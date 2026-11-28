@@ -14,7 +14,7 @@ export default defineConfig({
           for (const id of Object.keys(output.modules)) {
             if (
               id.startsWith(pluginRoot) ||
-              /\/src\/(?:App\.tsx|components\/(?:FeatureBranchQueue|RepositorySettings)\.tsx)$/.test(
+              /\/src\/(?:core\/App\.tsx|kit\/(?:FeatureBranchQueue|RepositorySettings)\.tsx)$/.test(
                 id,
               )
             ) {
@@ -31,8 +31,8 @@ export default defineConfig({
     rollupOptions: {
       preserveEntrySignatures: "exports-only",
       input: {
-        app: resolve("src/index.html"),
-        "devdesk-ui": resolve("src/domain-sdk.ts"),
+        app: resolve("src/core/index.html"),
+        "devdesk-ui": resolve("src/sdk/domain-sdk.ts"),
       },
       output: {
         entryFileNames: (chunk) =>

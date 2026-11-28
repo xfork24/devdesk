@@ -1,5 +1,5 @@
-import { AppRoot } from "../../../web/src/App";
-import { useDomain } from "../../../web/src/domain-sdk";
+import { AppRoot } from "../../../web/src/core/App";
+import { useDomain } from "../../../web/src/sdk/domain-sdk";
 
 export function BranchQueue() {
   return <AppRoot domain={useDomain()} initialTab="overview" />;

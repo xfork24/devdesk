@@ -1,0 +1,481 @@
+import { displayText } from "../sdk/display-text";
+import { useReadRequest } from "../sdk/use-read-request";
+import { ActionButton, ActionInput } from "../sdk/ActionFeedback";
+import { useActionFeedback } from "../sdk/action-feedback";
+import { useEffect, useRef, useState } from "react";
+import { DirectoryPicker } from "../sdk/DirectoryPicker";
+import { type Request } from "../sdk/rpc-types";
+import { PermissionProfileHistory } from "./PermissionProfileHistory";
+import { compareConfigurationRecords } from "./configuration-state";
+import { ConfigurationList } from "./ConfigurationList";
+import {
+  profileView,
+  profileSource,
+  usePermissionResources,
+  type PermissionProfile as Profile,
+  type PermissionKind,
+} from "./permission-resources-state";
+
+type Props = {
+  request: Request;
+  refresh: () => Promise<void>;
+  projectId?: string;
+};
+
+const permissionGroups = [
+  ["harness", "Harness"],
+  ["sandbox", "Sandbox"],
+] as const;
+
+export function PermissionResources({
+  request: parentRequest,
+  refresh,
+  projectId,
+}: Props) {
+  const request = useReadRequest(parentRequest);
+  const {
+    message,
+    setMessage,
+    capture: captureFeedback,
+    beginFeedback,
+    endFeedback,
+  } = useActionFeedback();
+
+  const [linkedProfile] = useState(
+    () => new URLSearchParams(location.search).get("permission_ref") || "",
+  );
+  const hydrated = useRef(false);
+  const {
+    catalog,
+    error,
+    reload: loadCatalog,
+  } = usePermissionResources(
+    request,
+    projectId,
+    undefined,
+    linkedProfile || undefined,
+  );
+  const [selected, setSelected] = useState(linkedProfile);
+  const [kind, setKind] = useState<PermissionKind>("harness");
+  const [expanded, setExpanded] = useState({ harness: true, sandbox: false });
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [choosingSource, setChoosingSource] = useState(false);
+  const [sourceDraftRevision, setSourceDraftRevision] = useState<number | null>(
+    null,
+  );
+  const profile = catalog?.profiles.find((p) => p.id === selected);
+  useEffect(() => {
+    if (hydrated.current || !catalog) return;
+    const profiles = [...catalog.profiles].sort(compareConfigurationRecords);
+    const profile = linkedProfile
+      ? profiles.find((p) => p.id === linkedProfile)
+      : (profiles.find((p) => p.target_kind === "harness") ?? profiles[0]);
+    hydrated.current = true;
+    if (profile) {
+      setSelected(profile.id);
+      setKind(profile.target_kind);
+      setExpanded({
+        harness: profile.target_kind === "harness",
+        sandbox: profile.target_kind === "sandbox",
+      });
+      setDraft(JSON.stringify(profileSource(profile), null, 2));
+    }
+  }, [catalog, linkedProfile]);
+  async function reload() {
+    await loadCatalog();
+    await refresh();
+  }
+  async function action(work: () => Promise<void>) {
+    captureFeedback();
+
+    beginFeedback();
+    setBusy(true);
+    setMessage("");
+    try {
+      await work();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : String(e));
+    } finally {
+      endFeedback();
+      setBusy(false);
+    }
+  }
+  const command = (method: string, payload: unknown, extra = {}) =>
+    request(method, {
+      command_id: crypto.randomUUID(),
+      payload,
+      project_id: projectId,
+      ...extra,
+    });
+  function parseDraft() {
+    const value = JSON.parse(draft);
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      throw new Error("权限 JSON 必须是对象");
+    for (const key of Object.keys(value)) {
+      if (
+        !["type", "identity", "revision", "name", "scope", "data"].includes(key)
+      )
+        throw new Error(`未知权限字段：${key}`);
+    }
+    if (value.type !== "permission_profile")
+      throw new Error(
+        "此编辑器使用 permission_profile 源定义与 schema_version 2",
+      );
+    for (const key of Object.keys(value.data)) {
+      if (!["schema_version", "target_kind", "policy"].includes(key))
+        throw new Error(`未知权限字段：${key}`);
+    }
+    return value;
+  }
+  function edit(p: Profile) {
+    setSelected(p.id);
+    setKind(p.target_kind);
+    setExpanded((current) => ({ ...current, [p.target_kind]: true }));
+    setDraft(JSON.stringify(profileSource(p), null, 2));
+    const params = new URLSearchParams(location.search);
+    params.set("permission_ref", p.id);
+    history.replaceState(null, "", `?${params}`);
+  }
+  function fresh(kind: PermissionKind) {
+    hydrated.current = true;
+    setSelected("");
+    setKind(kind);
+    const params = new URLSearchParams(location.search);
+    params.delete("permission_ref");
+    history.replaceState(null, "", `?${params}`);
+    setDraft(
+      JSON.stringify(
+        {
+          type: "permission_profile",
+          identity: `custom-${crypto.randomUUID()}`,
+          revision: 1,
+          name: "新权限",
+          scope: "global",
+          data: {
+            schema_version: 2,
+            target_kind: kind,
+            policy: {
+              filesystem: { mode: "read_only" },
+              network: { mode: "enabled" },
+              ...(kind === "harness"
+                ? { tools: { mode: "all_available" }, approval: "never" }
+                : {}),
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+  }
+  if (!catalog)
+    return (
+      <section>
+        <p role="status">
+          {displayText(error || message || "正在读取版本化权限…")}
+        </p>
+      </section>
+    );
+  return (
+    <section
+      className="panel permission-definitions"
+      aria-label="Permission 定义"
+    >
+      <div className="panel-heading">
+        <h3>Permission 定义</h3>
+      </div>
+      <div className="configuration-layout">
+        <aside
+          className="configuration-list permission-profile-groups"
+          aria-label="权限列表"
+        >
+          {permissionGroups.map(([group, label]) => (
+            <details
+              key={group}
+              className="configuration-disclosure"
+              aria-label={label}
+              open={expanded[group]}
+              onToggle={(event) => {
+                const open = event.currentTarget.open;
+                setExpanded((current) =>
+                  current[group] === open
+                    ? current
+                    : { ...current, [group]: open },
+                );
+              }}
+            >
+              <summary>
+                <span>{label}</span>
+              </summary>
+              <div className="configuration-disclosure-fields">
+                <ConfigurationList
+                  records={catalog.profiles.filter(
+                    (p) => p.target_kind === group,
+                  )}
+                  selectedId={selected}
+                  autoSelectFirst={false}
+                  disabled={busy}
+                  onSelect={(row) => {
+                    const match = catalog.profiles.find((p) => p.id === row.id);
+                    if (match) edit(match);
+                  }}
+                  newAction={{
+                    label: `新建 ${label} 权限`,
+                    selected: !selected && !!draft && kind === group,
+                    onClick: () => fresh(group),
+                  }}
+                />
+              </div>
+            </details>
+          ))}
+        </aside>
+        <section className="permission-detail" aria-label="权限详情">
+          {profile ? (
+            <h4>
+              {displayText(profile.name)} · v{profile.version}
+            </h4>
+          ) : (
+            draft && (
+              <h4>{kind === "harness" ? "Harness" : "Sandbox"} 权限草稿</h4>
+            )
+          )}
+          <p className="muted">
+            保存产生独立修订。应用后，追随目标的新讨论采用新权限，已有讨论在下一轮切换；工程冻结与固定选择保留原版本。
+          </p>
+          {error && (
+            <p role="alert" className="error">
+              {displayText(error)}
+            </p>
+          )}
+          <fieldset disabled={busy} aria-label="权限定义">
+            <label>
+              统一权限 JSON
+              <textarea
+                aria-label="统一权限 JSON"
+                rows={14}
+                value={draft}
+                onChange={(e) => {
+                  captureFeedback();
+                  return setDraft(e.target.value);
+                }}
+              />
+            </label>
+            <div className="actions">
+              <ActionButton
+                type="button"
+                disabled={!draft}
+                onClick={() => {
+                  captureFeedback();
+                  return action(async () => {
+                    const p = parseDraft();
+                    const saved = await command("permission.profile.create", {
+                      identity: p.identity,
+                      name: p.name,
+                      target_kind: p.data.target_kind,
+                      policy: p.data.policy,
+                    });
+                    await reload();
+                    edit(profileView(saved));
+                    setMessage("已创建权限修订，尚未应用绑定。");
+                  });
+                }}
+              >
+                创建独立权限
+              </ActionButton>
+              <ActionButton
+                type="button"
+                disabled={!profile}
+                onClick={() => {
+                  captureFeedback();
+                  return action(async () => {
+                    const p = parseDraft();
+                    const saved = await command(
+                      "permission.profile.revise",
+                      {
+                        name: p.name,
+                        target_kind: p.data.target_kind,
+                        policy: p.data.policy,
+                      },
+                      {
+                        target: profile!.id,
+                        expected_revision: profile!.version,
+                      },
+                    );
+                    await reload();
+                    edit(profileView(saved));
+                    setMessage("新修订已保存，原绑定保持不变。");
+                  });
+                }}
+              >
+                保存权限新修订
+              </ActionButton>
+              <ActionButton
+                type="button"
+                disabled={!profile}
+                onClick={() => {
+                  captureFeedback();
+                  return action(async () => {
+                    const bundle = await request("permission.profile.export", {
+                      id: profile!.id,
+                    });
+                    const url = URL.createObjectURL(
+                      new Blob([JSON.stringify(bundle, null, 2)], {
+                        type: "application/json",
+                      }),
+                    );
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = "permission-profiles.json";
+                    a.click();
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                    setMessage("已导出权限及前序修订。");
+                  });
+                }}
+              >
+                导出权限
+              </ActionButton>
+            </div>
+            <label>
+              导入权限文件
+              <ActionInput
+                aria-label="导入权限文件"
+                type="file"
+                accept="application/json,.json"
+                onChange={(e) => {
+                  captureFeedback();
+
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  e.target.value = "";
+                  void action(async () => {
+                    if (file.size > 4 * 1024 * 1024)
+                      throw new Error("导入文件超过 4MiB");
+                    const value = JSON.parse(await file.text());
+                    await command("permission.profile.import", {
+                      profiles: value.profiles || [value],
+                    });
+                    await reload();
+                    setMessage("权限已导入，尚未改变活动绑定。");
+                  });
+                }}
+              />
+            </label>
+          </fieldset>
+          <PermissionProfileHistory
+            catalog={catalog}
+            profileId={selected}
+            onSelect={edit}
+            disabled={busy}
+          />
+          <details>
+            <summary>预定义来源与历史</summary>
+            <p>
+              当前预设来源
+              <span
+                className="permission-source-path"
+                aria-label="当前预设来源"
+              >
+                {displayText(
+                  catalog.source.is_builtin
+                    ? "Host 内置预设"
+                    : catalog.source.path,
+                )}
+              </span>
+            </p>
+            <p className="muted">
+              “重新加载预设”读取当前来源。“重新加载内置预设”读取 Host
+              内置资源，成功后将它设为当前来源。
+            </p>
+            <div className="actions">
+              <ActionButton
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  captureFeedback();
+                  setSourceDraftRevision(catalog.source.revision);
+                  setChoosingSource(true);
+                }}
+              >
+                打开文件夹
+              </ActionButton>
+              <ActionButton
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  captureFeedback();
+                  return action(async () => {
+                    const result = await command(
+                      "permission.profile.reload",
+                      {},
+                      { expected_revision: catalog.source.revision },
+                    );
+                    await reload();
+                    setMessage(
+                      `预设重新加载完成：新增 ${result.added.length}，相同 ${result.unchanged.length}；活动绑定保持不变。`,
+                    );
+                  });
+                }}
+              >
+                重新加载预设
+              </ActionButton>
+              <ActionButton
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  captureFeedback();
+                  return action(async () => {
+                    const result = await command(
+                      "permission.profile.reload",
+                      {
+                        builtin: true,
+                      },
+                      { expected_revision: catalog.source.revision },
+                    );
+                    await reload();
+                    setMessage(
+                      `内置预设重新加载完成：新增 ${result.added.length}，相同 ${result.unchanged.length}。`,
+                    );
+                  });
+                }}
+              >
+                重新加载内置预设
+              </ActionButton>
+            </div>
+            {choosingSource ? (
+              <DirectoryPicker
+                request={request}
+                initialPath={catalog.source.path}
+                onClose={() => setChoosingSource(false)}
+                onSelect={async (path) => {
+                  await command(
+                    "permission.source.select",
+                    { path },
+                    { expected_revision: sourceDraftRevision },
+                  );
+                  await reload();
+                  setMessage("预设目录已替换，可重新加载预设。");
+                }}
+              />
+            ) : null}
+            <pre>
+              {displayText(
+                JSON.stringify(
+                  {
+                    origins: catalog.origins.filter(
+                      (origin) =>
+                        !selected || origin.definition_id === selected,
+                    ),
+                  },
+                  null,
+                  2,
+                ),
+              )}
+            </pre>
+          </details>
+          <p role="status">{displayText(message)}</p>
+        </section>
+      </div>
+    </section>
+  );
+}

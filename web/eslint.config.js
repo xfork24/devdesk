@@ -33,6 +33,26 @@ export default tseslint.config(
     },
   },
   {
+    // The SDK may only import itself; the kit adds the SDK; the core adds both. The
+    // boundaries are errors, not warnings (plan WS5 W-1, contract G2).
+    files: ["web/src/sdk/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        { patterns: [{ group: ["**/kit/**", "**/core/**"], message: "SDK 不依赖 kit 与 core" }] },
+      ],
+    },
+  },
+  {
+    files: ["web/src/kit/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        { patterns: [{ group: ["**/core/**"], message: "kit 不依赖 core" }] },
+      ],
+    },
+  },
+  {
     files: ["web/src/**/*.{ts,tsx}"],
     plugins: {
       "react-hooks": reactHooks,
