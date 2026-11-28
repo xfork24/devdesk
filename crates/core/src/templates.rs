@@ -183,6 +183,9 @@ fn set_state(s: &mut EngineeringState, generation: u64, defaults: Value) -> Resu
     if reset > 0 {
         data["hard_reset_generation"] = json!(reset);
     }
+    if let Some(reset_id) = template_hard_reset_id(s) {
+        data["hard_reset_id"] = json!(reset_id);
+    }
     if let Some(state) = s
         .governance
         .iter_mut()
@@ -396,7 +399,20 @@ pub fn restore_template_catalog(s: &mut EngineeringState, command_id: &str) -> R
     Ok(result)
 }
 
-/// A destructive factory selection has no custom source or catalog history.
+pub(crate) fn original_factory_member<'a>(
+    state: &'a EngineeringState,
+    source: &ConfigurationRecord,
+) -> Option<&'a ConfigurationRecord> {
+    if !source.is_definition() || !source.immutable || !source.scope.is_global() {
+        return None;
+    }
+    template_catalog_member(state, source).filter(|member| {
+        member.data["template_key"].as_str() == Some(source.id.as_str())
+            && member.data["source_hash"] == template_source_hash(source)
+    })
+}
+
+/// Restore the factory selection while retaining exact sources that installed domains can reference.
 pub fn reset_template_catalog(s: &mut EngineeringState, command_id: &str) -> Result<Value> {
     let generation = template_catalog_generation(s)
         .checked_add(1)
@@ -413,6 +429,24 @@ pub fn reset_template_catalog(s: &mut EngineeringState, command_id: &str) -> Res
             Some((&key, &template_source_hash(&row))),
         );
     }
+    let current: BTreeSet<_> = fresh.governance.iter().map(|row| row.id.clone()).collect();
+    for source in s
+        .governance
+        .iter()
+        .filter(|source| !current.contains(&source.id))
+    {
+        let Some(member) = original_factory_member(s, source) else {
+            continue;
+        };
+        let mut data = member.data.clone();
+        data["generation"] = json!(generation - 1);
+        data["retained_for_domains"] = json!(true);
+        let mut archive = member.clone();
+        archive.id = format!("template-domain-history:{}", configuration_hash(&source.id));
+        update_record(&mut archive, data);
+        fresh.governance.push(source.clone());
+        fresh.governance.push(archive);
+    }
     set_state(&mut fresh, generation, defaults)?;
     let state = fresh
         .governance
@@ -421,6 +455,7 @@ pub fn reset_template_catalog(s: &mut EngineeringState, command_id: &str) -> Res
         .unwrap();
     let mut data = state.data.clone();
     data["hard_reset_generation"] = json!(generation);
+    data["hard_reset_id"] = json!(command_id);
     update_record(state, data);
     *s = fresh;
     let info = template_bundle_info()?;
@@ -433,6 +468,10 @@ pub fn template_hard_reset_generation(s: &EngineeringState) -> u64 {
     template_catalog_state(s)
         .and_then(|r| r.data["hard_reset_generation"].as_u64())
         .unwrap_or(0)
+}
+
+pub(crate) fn template_hard_reset_id(s: &EngineeringState) -> Option<&str> {
+    template_catalog_state(s).and_then(|row| row.data["hard_reset_id"].as_str())
 }
 
 pub fn template_catalog_has_custom_history(s: &EngineeringState) -> Result<bool> {
@@ -603,5 +642,26 @@ mod portable_bundle_tests {
             template_bundle_info().unwrap()["bundle_version"],
             "arbitrary-label"
         );
+        let mut older = source.clone();
+        older.definition_id = "removed-factory-skill".into();
+        older.id = "removed-factory-skill:1".into();
+        state.governance.push(older.clone());
+        add_member(
+            &mut state,
+            &older,
+            1,
+            Some((&older.id, &template_source_hash(&older))),
+        );
+        let mut custom = older.clone();
+        custom.id = "custom-skill:1".into();
+        custom.definition_id = "custom-skill".into();
+        state.governance.push(custom.clone());
+
+        reset_template_catalog(&mut state, "reset-command").unwrap();
+        let archive = state.configuration(&older.id).unwrap();
+        assert!(template_history_retained(&state, archive));
+        assert!(!template_record_current(&state, archive));
+        assert!(state.configuration(&custom.id).is_err());
+        assert_eq!(template_hard_reset_id(&state), Some("reset-command"));
     }
 }

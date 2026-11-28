@@ -78,7 +78,9 @@ pub fn template_record_current(s: &EngineeringState, r: &ConfigurationRecord) ->
 }
 
 pub fn template_history_retained(s: &EngineeringState, r: &ConfigurationRecord) -> bool {
-    template_catalog_member(s, r).is_some_and(|member| member.data["retained_for_sessions"] == true)
+    template_catalog_member(s, r).is_some_and(|member| {
+        member.data["retained_for_sessions"] == true || member.data["retained_for_domains"] == true
+    })
 }
 /// Configuration projections used by workspace selectors belong to the same current directory.
 pub fn template_projection_current(s: &EngineeringState, definition: &Definition) -> bool {

@@ -318,7 +318,7 @@ impl Workspace {
         {
             eprintln!(
                 "{}",
-                json!({"type":"template_reset_recovery","generation":job.generation,"error_code":error.code})
+                json!({"type":"template_reset_recovery","generation":job.generation,"error_code":error.code,"message":error.message,"context":error.context})
             );
         }
         Ok(workspace)

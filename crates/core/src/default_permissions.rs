@@ -21,7 +21,10 @@ pub fn template_permission_defaults(
     {
         if template_catalog_member(s, r).is_some_and(|m| m.data["template_key"].is_string())
             && !s.governance.iter().any(|n| {
-                n.r#type == r.r#type && n.definition_id == r.definition_id && n.version > r.version
+                n.r#type == r.r#type
+                    && n.definition_id == r.definition_id
+                    && n.version > r.version
+                    && !template_history_retained(s, n)
             })
         {
             targets.insert(r.id.clone());

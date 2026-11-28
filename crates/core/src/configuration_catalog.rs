@@ -246,10 +246,28 @@ impl ConfigurationCatalogSnapshot {
             .map(|index| &self.state.governance[*index])
     }
     pub(crate) fn needs_factory_reset_from(&self, global: &Self) -> bool {
-        template_hard_reset_generation(&self.state) < template_hard_reset_generation(&global.state)
+        // Local and global counters can advance independently before a project
+        // is opened by this Host. Only the global reset is authoritative.
+        template_hard_reset_generation(&global.state) > 0 && !self.same_factory_reset_as(global)
     }
-    fn same_factory_reset_as(&self, other: &Self) -> bool {
-        template_hard_reset_generation(&self.state) == template_hard_reset_generation(&other.state)
+    pub fn same_factory_reset_as(&self, other: &Self) -> bool {
+        let generation = template_hard_reset_generation(&self.state);
+        if generation != template_hard_reset_generation(&other.state) {
+            return false;
+        }
+        match (
+            crate::templates::template_hard_reset_id(&self.state),
+            crate::templates::template_hard_reset_id(&other.state),
+        ) {
+            // Older independent resets could reuse both the generation and
+            // the first permission revision. Different contracts disambiguate them.
+            (None, None) if generation > 0 => self.records("permission_binding").all(|binding| {
+                other
+                    .record(&binding.id)
+                    .is_none_or(|other| other.content_hash == binding.content_hash)
+            }),
+            (local, other) => local == other,
+        }
     }
     pub fn records(&self, kind: &str) -> impl Iterator<Item = &ConfigurationRecord> {
         self.kinds

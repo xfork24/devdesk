@@ -60,6 +60,14 @@ impl Workspace {
 
     pub(super) fn finish_template_reset_job(&self, job: &TemplateResetJob) -> Result<()> {
         let _span = performance::Span::new("catalog.reset_resume");
+        if job.completed_at.is_some() {
+            return Ok(());
+        }
+        let global = self.global.configuration_snapshot()?;
+        require(
+            devdesk_core::template_hard_reset_generation(&global.state) == job.generation,
+            "全局目录与待完成的重置代次不一致",
+        )?;
         let mut first_failure = None;
         for target in job
             .targets
@@ -81,15 +89,17 @@ impl Workspace {
                 self.sync_configuration(&engine)?;
                 let view = engine.store.configuration_snapshot()?;
                 require(
-                    devdesk_core::template_hard_reset_generation(view.state.as_ref())
-                        >= job.generation,
+                    view.same_factory_reset_as(&global),
                     "项目目录尚未应用原重置代次",
                 )
             })();
             let failure = result.as_ref().err().map(|error| error.code.as_str());
             job.record_target(self.global.as_ref(), &target.id, failure)?;
             if let Err(error) = result {
-                first_failure.get_or_insert(error);
+                first_failure.get_or_insert(error.with_context(
+                    "apply template reset target",
+                    json!({"target_id":target.id,"command_id":job.command_id}),
+                ));
             } else {
                 performance::record("catalog.reset_target_checked", 0.0);
             }
@@ -754,6 +764,33 @@ mod tests {
             json!({"name":"Old catalog role","data":{"instructions":"Old catalog responsibilities","visibility":{"kind":"global"}}}), None).unwrap();
         let role_id = role["id"].as_str().unwrap();
         w.sync_configuration(&engine).unwrap();
+        // A project reused from another Host can already have a higher local
+        // reset generation, with a different contract at the same binding ID.
+        let local = engine.store.configuration_snapshot().unwrap();
+        let mut records = local.state.governance.clone();
+        let marker = records
+            .iter_mut()
+            .find(|r| r.id == TEMPLATE_CATALOG_STATE)
+            .unwrap();
+        marker.data["generation"] = json!(14);
+        marker.data["hard_reset_generation"] = json!(14);
+        marker.data.as_object_mut().unwrap().remove("hard_reset_id");
+        marker.content_hash = content_digest(&marker.refs, &marker.data);
+        let publication = engine
+            .store
+            .prepare_configuration_reset(&records, local.revision)
+            .unwrap();
+        engine
+            .store
+            .commit_changes(&devdesk_core::concurrency::PreparedChangeSet {
+                command_id: id(),
+                fingerprint: "older-host-project-reset".into(),
+                read_set: publication.read_set,
+                changes: publication.changes,
+                result: json!({}),
+                time: 0,
+            })
+            .unwrap();
         let stale = engine.store.configuration_snapshot().unwrap();
         assert!(stale.record(role_id).is_some());
         let sandbox = current_template_defaults(&stale.state).unwrap()["sandbox_ref"]

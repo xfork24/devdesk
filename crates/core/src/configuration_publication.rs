@@ -728,14 +728,11 @@ pub fn validate_domain_configuration(
         let mut bindings = Vec::new();
         let defaults = current_template_defaults(&catalog)
             .ok_or_else(|| err("invalid_template", "默认模板目录未初始化"))?;
-        for source in installed.governance.iter().filter(|source| {
-            source.immutable
-                && source.scope.is_global()
-                && template_catalog_member(installed, source).is_some_and(|member| {
-                    member.data["template_key"].as_str() == Some(source.id.as_str())
-                        && member.data["source_hash"] == template_source_hash(source)
-                })
-        }) {
+        for source in installed
+            .governance
+            .iter()
+            .filter(|source| crate::templates::original_factory_member(installed, source).is_some())
+        {
             if catalog.configuration(&source.id).is_ok() {
                 continue;
             }
