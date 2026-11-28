@@ -107,6 +107,9 @@
 | N-2（`20f2a9bf`） | 证据合同通用化。合同的 `checks` 以被守护的操作为键（工具的 `qualified_name` 或 `$completion`），内核不再只读 `git.delivery` 一个键，触发点也不再按四个工程工具名写死：任何工具步骤（含领域工具）执行前，内核为守护它的每个合同封存事实、组装输入并调用验证器，拒绝时工具不执行。工作流完成前，每个带 `$completion` 的合同同样被询问；回答按事实摘要记录，事实不变时再次尝试直接沿用。验证器收到 `{contract, operation, context, facts}`：`context` 由合同声明，来源有 `owner`、`input`、`arguments`、`platform` 四种，字段可用 JSON pointer 取值；`facts` 条目由内核类型 `EvidenceFact` 产生，包在验证器的输入 Schema 里描述同一形状，并以一致性测试约束。完成证据不再强制要求平台操作：标注了平台操作的由内核见证，其余是封存的步骤产物，由验证器权衡。软件开发的 `git.delivery` 合同改写成同一形式，验证器改读声明的上下文；`platform` 来源（来源分支、目标）与子流程核对仍在内核的工程部分 |
 | K-6（第一部分）（`ab0b839e`） | 内核的出厂目录从 `plugins/core` 改名为 `kernel/core`：它由 Host 构建时内嵌，不是领域包，不经过 ZIP 的安装与协商。`plugins/` 下只剩领域包。构建脚本、架构守卫、默认值检查、权限检查、引用索引、测试与文档都指向新路径；`kernel/README.md` 说明它与领域包的区别，`plugins/README.md` 只列领域包 |
 | K-6（第二部分）（`68ec9041`） | 工具定义随提供者发布。内核目录 `kernel/core` 发布 41 个 platform 工具和 2 个 Harness 原生能力声明（`builtin-` 前缀），构建时内嵌进 Host，对所有项目可用；新增工程扩展目录 `kernel/engineering`，发布 8 个工程工具（`tests.*`、`git.*`、`workspace.*` 处理器，`engineering-` 前缀），同样内嵌，但只在项目所属的包声明了对应扩展组时才被采用（项目建立与打开时）。软件开发包删去 40 个工具定义，改为引用两类内核源，包的 Capability 与工作流里的引用改用新标识。安装时：包引用工程工具而未声明所在扩展组，返回 `extension_unavailable` 并指明组；包引用本 Host 没有的平台处理器，返回 `handler_unsupported`。领域包的目录视图包含其被给予的工程工具（否则项目的副本会被读作历史源）。领域目录 `software-development/catalog/tools` 移除，引用索引由内核目录与工程扩展目录各自生成 |
+| W-1（`de719983`） | `web/src` 分成 `sdk/`、`kit/`、`core/`：SDK 携带稳定外壳契约（领域上下文、请求边界与缓存失效状态、布局、操作反馈、存储设置插槽、共享读取与展示助手）；kit 携带随 Web Core 演进的内核概念 UI（配置编辑器与状态、工作流视图与经理组件、运行时/接入/模板/权限设置、阅读与 Markdown 助手）；core 携带工作台外壳（App、核心页、领域工作台外壳、入口、样式、浏览器兼容）。ESLint 把边界作为错误执行：SDK 只 import 自己，kit 加 SDK，core 加两者。两条 domain-to-core 的记录随拆分更新（`8c6c6659`），W-7 清零 |
+| W-2（`b2090176`） | kit 入口 `src/kit/kit-main.ts` 输出 `assets/devdesk-kit.mjs`，与 `assets/devdesk-ui.mjs` 并列；类型声明覆盖两个入口。领域 UI 以 `@devdesk/web-kit` 引用，领域构建保持 external |
+| 文档（`496976ab`、`22acfeda`） | `docs/crates/web-integration.md` 的模块链接更新到新布局 |
 | WS4（`057b655a`） | SDK 制品与命令行工具。`sdk/domain/` 组装 `@devdesk/domain-sdk`：包格式 Schema、处理器引导模块（与 Host 内置同一份）、引用索引实现、`devdesk-domain` 命令行工具；发行脚本新增 `sdk` 目标，产出 `devdesk-domain-sdk-<版本>.tar.gz`（含 `catalog.json`，由 `devdesk-host capabilities --print` 生成）。`devdesk-domain` 有 `init`、`check`、`build`、`verify` 四个命令：`check` 在本地执行安装时的全部校验（格式与协议、Schema、扩展组协商、领域工具的命名空间与处理器、引用索引新鲜度），`build` 产出可复现的 ZIP（条目压缩、固定时间戳、按名排序），`verify` 连运行中的 Host 核对 `requires`。Host 新增 `capabilities --print`，不需要数据集。引用索引只保留一份实现：内核的 `configuration_usage.py` 与夹具构建脚本都改调 SDK 的 `usage-index.mjs`，`check-defaults.py` 不再内联第二份算法。软件开发包改为声明式：`domain.json` 与 `catalog/` 目录文件（原先在构建脚本里生成的五个配置源、实体类型与处理器 Schema 都成为包内文件），`build.py` 缩成把 Web 产物交给 CLI 的薄封装。CI 新增两个作业：打包 SDK 制品；只用 SDK 制品与领域目录两个输入构建 runtime-only ZIP（证明构建独立） |
 | W-5（`5cc4a703`） | 呈现目标用 `sdk`（Web SDK 主版本）取代 `api`，新增 `kit`（组件套件对应的 Web Core 版本）与绑定的 `home`（进入领域时打开的首页，取代“第一个绑定”）。Web Core 只加载 `sdk` 与自身一致、`kit` 与自身版本一致的目标，其余目标提示“领域包与 Web Core 版本不兼容”。内核只校验 `sdk` 不小于 1、每个目标最多一个首页；SDK 版本是否可用由 Web Core 判断 |
 
@@ -192,6 +195,10 @@
 | | `cargo clippy --workspace --all-targets --locked -- -D warnings`、`./scripts/check/check-style.sh` | 无警告；rustfmt、ESLint、TypeScript、Prettier、Web 构建通过 |
 | | `python3 tests/entrypoints/lifecycle_contract.py target/fixtures/debug/devdesk-host` 及四组夹具合同、`project_test_configuration -- --ignored` | 通过。测试入口识别仍经真实 Docker worker |
 | | `node tests/entrypoints/domain_packages.mjs target/debug/devdesk-host web/dist/core <带页面的 0.6.0 软件开发包>` | 退出码 0。新增两段：软件开发包的项目目录里有 `engineering-tool-*` 与 `builtin-tool-*`；没有扩展组的领域一个工程工具也没有 |
+| W-1、W-2 | `npm --prefix web run typecheck` | 通过（tsconfig.json 与 tests/browser/tsconfig.json） |
+| | `npm --prefix web run lint` | 通过，含新的错误级边界规则 |
+| | `npm --prefix web run build`（core + software + fixture） | 三个构建全部通过；core 产物含 `assets/devdesk-ui.mjs` 与 `assets/devdesk-kit.mjs` |
+| | `node scripts/check/check-web-boundaries.mjs` | 通过（core-to-domain 0，domain-to-core 2 条记录待 W-7 清除） |
 | WS4（`057b655a`） | `node --test tests/entrypoints/domain_sdk.mjs` | 3 通过。SDK 的引用索引与两个内核目录存储的完全一致；init/check/build 产出可协商的包且两次构建逐字节相同；领域工具指向未注册的处理器时 check 指名拒绝，注册后通过 |
 | | `./scripts/release/package.sh sdk` | 产出制品，内含 cli/、lib/、worker/、schemas/、kernel/ 与 catalog.json |
 | | 独立构建演练（等价于 CI 作业）：SDK 制品 + `plugins/software-development` 目录 + Node/Python | 产出 112 个文件的 runtime-only ZIP，`requires` 与正式构建一致（49 个处理器、两个扩展组） |
@@ -252,6 +259,8 @@
 - **SDK 的引用索引实现要与 Rust 逐字段一致。** 行按 type、reference、path 排序；`*_file` 正文的 JSON 以解析值内联。三个内核与领域目录的存储索引被 SDK 实现逐一复核。
 - **软件包的 UI 构建仍需要 web 源码。** runtime-only 构建已完全独立（CI 作业证明）；领域 UI 从 Web SDK 构建独立随 P2 的 W-7/W-8 落地。
 - **领域包没有声明 `usage_index` 时不做新鲜度检查**，但安装时内核仍按解析后的源重新计算并核对——软件包已声明并纳入 `check --write`。
+- **机械重写 import 的教训。** 拆分目录的 import 重写经历了四轮才收敛：第一轮正则的捕获组指错了引号与路径，第二轮按目录映射漏掉已移动文件，第三轮按文件名匹配成功但保留了扩展名。收敛后的规则是：按文件名（含扩展名）建立旧→新映射，逐条重写后统一剥离扩展名。P2 剩余工作项不再用脚本批量改写，逐文件手工完成。
+- **`App.tsx` 的 `.ts` 后缀动态 import 在 vite 里是合法的**（`allowImportingTsExtensions` 未启用时 tsc 报 TS5097），需要剥离。
 - **报告器的扩展名规则不再由清单校验负责。** 清单只做通用的有界 UTF-8 文件检查；落地时的文件名一直由测试运行器自己决定。
 - **读取项目的钩子与资源时用 `try_read`。** 与 `configuration_scope` 的做法一致：项目 RPC 可能已经持有一份读锁，切换领域时直接返回 `domain_busy`，不等待嵌套的锁。
 - **单独运行适配器的集成测试需要 `--features test-fixtures,fixture-catalog`。** 只开 `test-fixtures` 时出厂目录不含角色与 Agent，依赖默认绑定的用例会失败。`cargo test --workspace` 通过 Host 的开发依赖带上了这两个 feature，所以完整检查不受影响。这正是 T-6 要消除的耦合。
