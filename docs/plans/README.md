@@ -7,11 +7,11 @@
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
 | [架构独立性改造](arch-independency/PLAN.md) | [审阅报告](arch-independency/REPORT.md)、[审计清单](arch-independency/AUDIT.md)；目标契约与领域设计见计划目录（本计划待实施） | 内核改为领域无关，工程能力迁为内置扩展模块；用第二个领域 ecommerce-outbound（下单、库房操作、物流配送三个流程）验证抽象；消除内核、Web Core 与领域包之间的源码级耦合，建立版本协商、脚手架与构建独立；不做兼容层，移除单体测试模式；六个阶段交付（P0 守卫、P1 协议核心、P2 Web 与测试、P3 第二个领域、P4 工程迁移、P5 收尾）；与 Harness 扩展计划的十一处交叠见计划 0.5 节 |
-| [Harness 扩展共享地基](harness-shared-foundation/PLAN.md) | 本计划（待实施） | pi/mcode/zcode/opencode 四条接入线的跨计划权威口径：Provider 能力表、ACP 与 ZCode 线协议、凭据泛化、宿主侧 MCP 工具桥、配方生成面、统一语义口径、全局库 v25 与旧数据集升级；两批次交付（P0 批次前置，pi 先行）；与架构独立性改造的十一处交叠见本计划第 8 章 |
-| [mcode Harness 接入](mcode-harness/PLAN.md) | 本计划（待实施，受 P0 门控） | MiniMax Code CLI 0.7.9 作为新增 Harness（批次 B 先行）；ACP 标准协议、四家模型服务商、宿主 MCP 工具桥；P0 判定 Linux 原生依赖 |
-| [opencode Harness 接入](opencode-harness/PLAN.md) | 本计划（待实施，受 P0 门控） | opencode CLI 2.4.1 作为新增 Harness（批次 B）；与 mcode 共用 ACP 适配器、GitHub 发行二进制、插件钩子策略；禁用后台服务与 `--auto`；P0 确认指令注入通道 |
-| [zcode Harness 接入](zcode-harness/PLAN.md) | 本计划（待实施，受 P0 门控） | ZCode CLI 作为新增 Harness（批次 B）；ZCode Protocol app-server、宿主持有凭据（host 模式）；协议未公开文档化，未跑通不进入 P1 |
-| [pi Harness 接入](pi-harness/PLAN.md) | 本计划（待实施） | pi 1.6.0 作为第三个 Harness（批次 A 先行；Provider 能力表、凭据泛化、全局库 v25 与升级命令等通用管线由此首次落地）；UI 隧道工具桥、四家模型服务商、旧数据集升级；不含根编排 |
+| [Harness 扩展共享地基](harness-shared-foundation/PLAN.md) | [实施与验证](harness-shared-foundation/EXECUTION.md) | 批次 A 的通用管线、Pi 和全局库 v25 已完成 Linux amd64 验收。批次 B 等待 macOS Docker Desktop 验证环境，涵盖共享 ACP、宿主 MCP 桥与通过 P0 的接入线 |
+| [mcode Harness 接入](mcode-harness/PLAN.md) | [G0 证据](harness-shared-foundation/EXECUTION.md#g0-linux-首轮证据) | Linux ACP 与 MCP 往返已验证。冻结 Hook 未触发，仓库指令进入模型，策略与项目隔离退回设计 |
+| [opencode Harness 接入](opencode-harness/PLAN.md) | [G0 证据](harness-shared-foundation/EXECUTION.md#g0-linux-首轮证据) | OpenCode CLI 2.4.1 为批次 B 首候选。Linux 协议、MCP 与私有 Shell 禁用已验证，策略插件、macOS 和 arm64 待验 |
+| [zcode Harness 接入](zcode-harness/PLAN.md) | [G0 证据](harness-shared-foundation/EXECUTION.md#g0-linux-首轮证据) | P0 延期。Linux 断网建会话和订阅已验证，模型装配、冻结策略和再分发条件待核验 |
+| [pi Harness 接入](pi-harness/PLAN.md) | [批次 A 验收](harness-shared-foundation/EXECUTION.md#批次-a-验收) | Pi 1.6.0 已接入。Linux amd64 已验证四家服务商的配置入口、讨论会话、冻结权限、UI 隧道步骤工具和旧数据集升级 |
 | [领域插件化改造](domain-plugins/PLAN.md) | [实施与验证](domain-plugins/EXECUTION.md) | 空领域、独立制品、双端热切换和三种调度的真实软件交付已记录。当前实现见 [v0.5 领域包](../design/domain-packages.md) |
 | [工作台与存储性能优化](workbench-storage-performance/PLAN.md) | [工作台延迟评估](../benchmarks/workbench-latency-2026-11-23.md)、[阶段验收](workbench-storage-performance/VALIDATION.md) | P0、P1 及 Web 分包已验收。完成本机负载诊断，继续使用 SQLite。正式 100 前端容量验收待独立负载环境 |
 | [出厂模型与工程规范整理](default-configuration-refresh/PLAN.md) | [实施与验收](default-configuration-refresh/EXECUTION.md) | 完成。三种出厂 Model、隔离重置、真实 Feature 与三个 Task 闭环通过 |

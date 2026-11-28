@@ -30,3 +30,9 @@ Pi 通过 P0 后进入批次 A。OpenCode 保留为批次 B 的首个候选，�
 Pi 的出厂镜像 ID 为 `sha256:56d6bfe136775f34dc577cf56520ee378a4970fee6cf7589d424dbf31c2e6131`。本地证据目录 `review/harness-g0/native-batch-a/` 保留原生验收报告。24 个 Docker 回归用例与 Pi Host 套件通过。`review/harness-g0/pi/final-legacy/` 保留旧版数据库迁移及升级后端到端证据。
 
 `cargo test --workspace --locked` 在 Linux 上以 4 个测试线程复验，共 781 项通过。样式、Schema、权限资产、出厂目录、模块边界及文档检查通过。Release Host 的数据集、模板、运行准备与 Chromium 入口检查通过。
+
+## 提交与 Linux 发布包补验
+
+2026-11-28，批次 A 提交为 `a138ab0`，保留在 `codex/harness-integration`。用该提交的 `scripts/release/package.sh` 在本地生成 Linux x86_64 Host、Web Core 和 software-development 领域包，三个包均通过 SHA-256 校验。解包后的 Host 在隔离数据集重跑 v24 升级、旧讨论恢复与 Pi 原生套件，全部通过。Chromium 使用解包后的 Web Core，安装并激活独立领域包，核对 Pi Harness、四个模型服务商和免密 Ollama。发布包及日志在 `review/harness-g0/batch-a-package/`。
+
+批次 B 暂挂，macOS Docker Desktop 验证环境就绪后从共享宿主 MCP 桥探针恢复。现有 Harness 计划仅定义 A、B 两批，后期归并仍按共享计划第 8 章执行。

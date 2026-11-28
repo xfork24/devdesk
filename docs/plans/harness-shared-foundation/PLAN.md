@@ -1,6 +1,6 @@
 # Harness 扩展共享地基（pi / mcode / zcode / opencode 四条接入线）
 
-日期：2026-11-25。状态：**批次 A 地基已实现，批次 B 等待入批验证**。范围：四条接入线共同依赖的 Provider 能力表、协议传输、凭据泛化、宿主侧工具桥、配方生成面与全局库地基。本文件不含任何单一 Harness 的协议细节。
+日期：2026-11-25。状态：**批次 A 已通过 Linux amd64 验收，批次 B 等待 macOS 验证环境**。范围：四条接入线共同依赖的 Provider 能力表、协议传输、凭据泛化、宿主侧工具桥、配方生成面与全局库地基。本文件不含任何单一 Harness 的协议细节。
 
 配套计划：[pi 接入](../pi-harness/PLAN.md)、[mcode 接入](../mcode-harness/PLAN.md)、[opencode 接入](../opencode-harness/PLAN.md)、[zcode 接入](../zcode-harness/PLAN.md)。
 
@@ -74,6 +74,8 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
 | Provider 能力表（2.1） | 批次 A 建表并迁移现有判断 | 每个通过 P0 的 provider 增加一行 |
 
 **批次 B，先做共享地基，再接入通过 P0 的 Harness。**
+
+2026-11-28 确认，macOS Docker Desktop 验证环境就绪后恢复批次 B。恢复时先完成第 7 章第 9 项的宿主桥探针，再按入批结果实施。
 
 1. 本计划负责共用的 `harness_acp.rs`、Host MCP 服务端、`harness_bridge.rs` 收件箱与回执路由、唤醒以及配方接口（2.2、2.4、2.5.6）。按入批 Harness 实现所需安装能力。至少一条 ACP 线入批才需交付 ACP 模块。
 2. mcode 和 opencode 均通过 P0 时，先用 opencode 验证 ACP 与 MCP 桥端到端，再接 mcode。仅一条通过时，由该线完成首个 ACP 验收。各线只实现自己的配置、方言和策略资产。
