@@ -353,11 +353,9 @@ function ToolCatalog({
                 <p key={harness.id}>
                   适用 Harness：
                   {displayText(
-                    harness.data.provider === "codex"
-                      ? "Codex Harness"
-                      : harness.data.provider === "dsh"
-                        ? "DeepSeek Harness"
-                        : harness.name,
+                    harness.data.provider === "dsh"
+                      ? "DeepSeek Harness"
+                      : harness.name,
                   )}{" "}
                   {displayText(harness.data.runtime_version || "尚未定义")}
                 </p>

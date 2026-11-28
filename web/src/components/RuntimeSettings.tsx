@@ -170,7 +170,7 @@ export function RuntimeSettings({
             }
           }}
         >
-          <option value="codex">Codex</option>
+          <option value="codex">Codex Harness</option>
           <option value="dsh">DeepSeek Harness</option>
           {additionalHarnesses.map((id) =>
             modelProviders.some((item) => item.harness === id) ||

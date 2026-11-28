@@ -1,5 +1,11 @@
 import { displayText } from "../display-text";
 import { useEffect, useState } from "react";
+import { MODEL_HARNESS_LABELS } from "./ollama-endpoint";
+
+const harnessLabels: Readonly<Record<string, string>> = {
+  ...MODEL_HARNESS_LABELS,
+  codex: "Codex Harness",
+};
 type Preparation = { provider: string; status: string; message: string };
 export function RuntimePreparationStatus({
   request,
@@ -68,14 +74,8 @@ export function RuntimePreparationStatus({
             className={p.status === "failed" ? "error" : "notice"}
             role="status"
           >
-            {displayText(
-              p.provider === "pi"
-                ? "Pi Harness"
-                : p.provider === "dsh"
-                  ? "DeepSeek Harness"
-                  : "Codex",
-            )}{" "}
-            · {displayText(p.message)}
+            {displayText(harnessLabels[p.provider] ?? p.provider)} ·{" "}
+            {displayText(p.message)}
           </div>
         ))}
     </>

@@ -16,6 +16,98 @@ pub(super) fn load_catalog_records(conn: &Connection) -> Result<Vec<Configuratio
     load_records_selected(conn, &catalog_filter())
 }
 
+/// Correct the built-in Codex label after taking the dataset lock. Exact revision
+/// references and executable content are used by existing workflows and grants.
+pub(super) fn update_builtin_codex_name(conn: &Connection) -> Result<()> {
+    const REFERENCE: &str = "builtin-harness-codex-managed:2";
+    const LEGACY_NAME: &str = "Codex";
+    let needed: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM source_definitions WHERE reference=?1 AND name=?2)",
+            [REFERENCE, LEGACY_NAME],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if !needed {
+        return Ok(());
+    }
+    let current = factory_bundle::packaged_harness(HarnessProvider::Codex)?;
+    if current.id != REFERENCE {
+        return Ok(());
+    }
+    let mut legacy = current.clone();
+    legacy.name = LEGACY_NAME.into();
+    let tx = conn.unchecked_transaction().map_err(storage)?;
+    let key = concurrency::ResourceKey::new("source", REFERENCE);
+    let rows = resource_commits::read_on(&tx, &[key])?;
+    if rows[0].value.as_ref() != Some(&json!(legacy.source())) {
+        return Ok(());
+    }
+
+    let original_hash = template_source_hash(&legacy);
+    let updated_hash = template_source_hash(&current);
+    let members = {
+        let mut query = tx.prepare("SELECT id,refs,data FROM governance_records WHERE type='template_catalog_member' AND definition_id=?1 AND name=?2").map_err(storage)?;
+        query
+            .query_map([REFERENCE, LEGACY_NAME], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .map_err(storage)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(storage)?
+    };
+    // SQLite rolls back both the data and these trigger changes on failure.
+    let guards = ["source_immutable_update", "governance_immutable_update"];
+    let definitions = guards.map(|name| {
+        tx.query_row(
+            "SELECT sql FROM sqlite_schema WHERE type='trigger' AND name=?1",
+            [name],
+            |row| row.get::<_, String>(0),
+        )
+    });
+    let [source_guard, governance_guard] = definitions;
+    let source_guard = source_guard.map_err(storage)?;
+    let governance_guard = governance_guard.map_err(storage)?;
+    tx.execute_batch(
+        "DROP TRIGGER source_immutable_update; DROP TRIGGER governance_immutable_update;",
+    )
+    .map_err(storage)?;
+    tx.execute(
+        "UPDATE source_definitions SET name=?1 WHERE reference=?2 AND name=?3",
+        [&current.name, REFERENCE, LEGACY_NAME],
+    )
+    .map_err(storage)?;
+    for (id, refs, data) in members {
+        let refs: References = serde_json::from_str(&refs).map_err(storage)?;
+        let mut data: Value = serde_json::from_str(&data).map_err(storage)?;
+        if data["template_key"] == REFERENCE && data["source_hash"] == original_hash {
+            data["source_hash"] = json!(updated_hash);
+        }
+        tx.execute(
+            "UPDATE governance_records SET name=?1, data=?2, content_hash=?3 WHERE id=?4",
+            rusqlite::params![
+                current.name,
+                data.to_string(),
+                content_digest(&refs, &data),
+                id
+            ],
+        )
+        .map_err(storage)?;
+    }
+    tx.execute_batch(&source_guard).map_err(storage)?;
+    tx.execute_batch(&governance_guard).map_err(storage)?;
+    tx.execute(
+        "UPDATE catalog_clock SET revision=revision+1 WHERE id=1",
+        [],
+    )
+    .map_err(storage)?;
+    tx.commit().map_err(storage)
+}
+
 fn catalog_filter() -> String {
     format!(
         "type IN ({})",
@@ -370,6 +462,45 @@ pub(super) fn restore_records(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn updates_codex_label_in_existing_catalogs_without_changing_the_execution_source() {
+        let current = factory_bundle::packaged_harness(HarnessProvider::Codex).unwrap();
+        let mut legacy = current.clone();
+        legacy.name = "Codex".into();
+        let membership = json!({"kind":"harness","generation":1,"template_key":current.id,"source_hash":template_source_hash(&legacy)});
+        for schema in [
+            include_str!("../../../sql/global/schema.sql"),
+            include_str!("../../../sql/project/schema.sql"),
+        ] {
+            let conn = Connection::open_in_memory().unwrap();
+            conn.execute_batch(schema).unwrap();
+            conn.execute("INSERT INTO source_definitions(identity,revision,type,name,scope,refs,data) VALUES (?1,?2,'harness',?3,'\"global\"',?4,?5)",
+                rusqlite::params![legacy.definition_id, legacy.version, legacy.name, json!(legacy.refs).to_string(), legacy.data.to_string()]).unwrap();
+            conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES ('member','template_catalog_member',?1,'\"global\"',?2,1,?3,'{}',?4,1,1,0)",
+                rusqlite::params![legacy.id, legacy.name, content_digest(&References::new(), &membership), membership.to_string()]).unwrap();
+
+            update_builtin_codex_name(&conn).unwrap();
+            let state = load_catalog_records(&conn).unwrap();
+            let updated = state.iter().find(|row| row.id == current.id).unwrap();
+            assert_eq!(updated.name, "Codex Harness");
+            assert_eq!(updated.content_hash, legacy.content_hash);
+            let member = state.iter().find(|row| row.id == "member").unwrap();
+            assert_eq!(member.name, current.name);
+            assert_eq!(member.data["source_hash"], template_source_hash(&current));
+            assert!(
+                conn.execute("UPDATE source_definitions SET name='Changed'", [])
+                    .is_err()
+            );
+            assert!(
+                conn.execute("UPDATE governance_records SET name='Changed'", [])
+                    .is_err()
+            );
+            let revision = configuration_cache::revision(&conn).unwrap();
+            update_builtin_codex_name(&conn).unwrap();
+            assert_eq!(configuration_cache::revision(&conn).unwrap(), revision);
+        }
+    }
 
     #[test]
     fn exact_decision_inputs_do_not_enter_the_configuration_codec() {

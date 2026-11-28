@@ -63,6 +63,7 @@ impl GlobalStore {
                 .execute_batch(include_str!("../../../sql/global/schema.sql"))
                 .map_err(storage)?;
         }
+        source_store::update_builtin_codex_name(&connection)?;
 
         let store = Self {
             connection: connection_pool::ConnectionPool::new(

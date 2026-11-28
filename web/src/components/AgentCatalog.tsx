@@ -899,7 +899,7 @@ export function ResourceEditor({
                       });
                     }}
                   >
-                    <option value="codex">Codex</option>
+                    <option value="codex">Codex Harness</option>
                     <option value="dsh">DSH</option>
                     {(
                       [

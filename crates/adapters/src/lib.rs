@@ -123,6 +123,7 @@ impl SqliteStore {
         if !payload_store::enabled(&connection)? {
             project_storage::maintain(&mut connection, &root)?;
         }
+        source_store::update_builtin_codex_name(&connection)?;
         Ok(Self {
             connection: connection_pool::ConnectionPool::new_engineering(
                 &root.join("engineering.sqlite3"),

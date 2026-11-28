@@ -2,7 +2,7 @@
   "type": "harness",
   "identity": "builtin-harness-codex-managed",
   "revision": 2,
-  "name": "Codex",
+  "name": "Codex Harness",
   "scope": "global",
   "model_providers": [
     "builtin-model-provider-openai:1"
