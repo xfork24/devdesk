@@ -7,5 +7,5 @@
     "rootDir": "src",
     "outDir": "dist/core/sdk"
   },
-  "include": ["src/domain-sdk.ts"]
+  "include": ["src/sdk/domain-sdk.ts", "src/kit/kit-main.ts"]
 }

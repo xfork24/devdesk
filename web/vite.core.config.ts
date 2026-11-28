@@ -33,12 +33,15 @@ export default defineConfig({
       input: {
         app: resolve("src/core/index.html"),
         "devdesk-ui": resolve("src/sdk/domain-sdk.ts"),
+        "devdesk-kit": resolve("src/kit/kit-main.ts"),
       },
       output: {
         entryFileNames: (chunk) =>
           chunk.name === "devdesk-ui"
             ? "assets/devdesk-ui.mjs"
-            : "assets/[name]-[hash].js",
+            : chunk.name === "devdesk-kit"
+              ? "assets/devdesk-kit.mjs"
+              : "assets/[name]-[hash].js",
       },
     },
   },
