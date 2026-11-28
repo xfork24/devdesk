@@ -697,11 +697,12 @@ pub struct DomainConfiguration {
     pub agent_workflows: BTreeSet<Id>,
 }
 
-/// A package's source graph is resolved against the platform bundle before it
-/// becomes active. ZIP handling and executable asset discovery stay in the adapter.
+/// A package's source graph resolves against the platform bundle. Reopening
+/// an installed package can also resolve originals retained in its dataset.
 pub fn validate_domain_configuration(
     namespace: &str,
     bundle: &ConfigurationBundle,
+    installed_catalog: Option<&EngineeringState>,
 ) -> Result<DomainConfiguration> {
     require(
         configuration_usage_index(&bundle.entries)? == bundle.usage_index
@@ -721,6 +722,34 @@ pub fn validate_domain_configuration(
     // These in-memory bindings only check graph closure. Activation resolves
     // the real enforcement contracts from the installed runtime.
     template_permission_defaults(&mut catalog, &|_, _| Ok("domain-package-validation".into()))?;
+    if let Some(installed) = installed_catalog {
+        // An installed package can reference an exact factory source that the
+        // current Host no longer bundles. Only retain original factory content.
+        let mut bindings = Vec::new();
+        let defaults = current_template_defaults(&catalog)
+            .ok_or_else(|| err("invalid_template", "默认模板目录未初始化"))?;
+        for source in installed.governance.iter().filter(|source| {
+            source.immutable
+                && source.scope.is_global()
+                && template_catalog_member(installed, source).is_some_and(|member| {
+                    member.data["template_key"].as_str() == Some(source.id.as_str())
+                        && member.data["source_hash"] == template_source_hash(source)
+                })
+        }) {
+            if catalog.configuration(&source.id).is_ok() {
+                continue;
+            }
+            catalog.governance.push(source.clone());
+            if source.r#type == "harness" {
+                let target =
+                    permission_target(&catalog, PermissionTargetKind::Harness, &source.id)?;
+                bindings.push(json!({"target":target,"permission_revision_id":defaults["harness_permission_ref"],"expected_revision":0,"enforcement_contract":"domain-package-validation"}));
+            }
+        }
+        if !bindings.is_empty() {
+            apply_permission_bindings(&mut catalog, &bindings)?;
+        }
+    }
     catalog.governance.extend(bundle.entries.iter().cloned());
     for (role, agent) in &bindings {
         let role = catalog.configuration(role)?;

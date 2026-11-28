@@ -254,7 +254,7 @@ struct Package {
 }
 
 impl Package {
-    fn read(bytes: &[u8]) -> Result<Self> {
+    fn read(bytes: &[u8], installed_root: Option<&Path>) -> Result<Self> {
         if bytes.len() > MAX_ARCHIVE {
             return Err(invalid("领域 ZIP 超出大小限制"));
         }
@@ -476,7 +476,23 @@ impl Package {
                         .and_then(|body| std::str::from_utf8(body).ok())
                         .ok_or_else(|| invalid("领域源文件缺失或编码无效"))
                 })?;
-                let configuration = devdesk_core::validate_domain_configuration(&prefix, &bundle)?;
+                let configuration =
+                    match devdesk_core::validate_domain_configuration(&prefix, &bundle, None) {
+                        Err(error) if error.code == "not_found" => {
+                            let Some(root) =
+                                installed_root.filter(|root| root.join("global.sqlite3").is_file())
+                            else {
+                                return Err(error);
+                            };
+                            let installed = GlobalStore::read_configuration(root)?;
+                            devdesk_core::validate_domain_configuration(
+                                &prefix,
+                                &bundle,
+                                Some(&installed.state),
+                            )?
+                        }
+                        result => result?,
+                    };
                 (bundle.entries, bundle.defaults, configuration)
             } else {
                 (vec![], json!({}), Default::default())
@@ -698,7 +714,7 @@ impl DomainPackages {
             Ok(()) => {
                 let package = archive
                     .as_deref()
-                    .map(Package::read)
+                    .map(|bytes| Package::read(bytes, Some(root)))
                     .transpose()?
                     .map(Arc::new);
                 if package.as_ref().map(|p| &p.digest) != installed_digest.as_ref() {
@@ -783,7 +799,7 @@ impl DomainPackages {
     }
 
     pub fn install(&self, bytes: &[u8]) -> Result<Value> {
-        let package = Package::read(bytes)?;
+        let package = Package::read(bytes, None)?;
         let mut db = self.db.lock().unwrap();
         let tx = db.transaction().map_err(storage)?;
         tx.execute(
@@ -832,7 +848,7 @@ impl DomainPackages {
             .optional()
             .map_err(storage)?
             .ok_or_else(|| err("not_found", "领域包尚未安装"))?;
-        let package = Arc::new(Package::read(&archive)?);
+        let package = Arc::new(Package::read(&archive, Some(&self.root))?);
         if package.digest != digest {
             return Err(err("storage", "领域包内容与登记摘要不符"));
         }
@@ -1458,4 +1474,65 @@ fn next_epoch(epoch: u64) -> Result<u64> {
     epoch
         .checked_add(1)
         .ok_or_else(|| err("storage", "领域代次溢出"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn installed_domain_can_resolve_an_exact_removed_factory_harness() {
+        factory_bundle::initialize().unwrap();
+        let mut harness = factory_bundle::packaged_harness(HarnessProvider::Zcode).unwrap();
+        let historical_ref = "builtin-harness-zcode-managed:1";
+        harness.id = historical_ref.into();
+        harness.version = 1;
+        let capability = SourceDefinition {
+            r#type: "capability".into(),
+            identity: "test.domain-capability".into(),
+            revision: 1,
+            name: "Historical reviewer capability".into(),
+            scope: Scope::global(),
+            refs: References::from([
+                (
+                    "model_ref".into(),
+                    json!("builtin-model-zcode-minimax-m3-1-flash:1"),
+                ),
+                ("harness_ref".into(), json!(historical_ref)),
+                ("skills".into(), json!([])),
+                ("tools".into(), json!([])),
+            ]),
+            data: json!({}),
+        }
+        .into_record()
+        .unwrap();
+        let bundle = ConfigurationBundle {
+            bundle_version: "test".into(),
+            types: BTreeMap::new(),
+            usage_index: configuration_usage_index(std::slice::from_ref(&capability)).unwrap(),
+            entries: vec![capability],
+            defaults: json!({}),
+            hash: String::new(),
+        };
+        let mut catalog = EngineeringState {
+            governance: vec![harness.clone()],
+            ..Default::default()
+        };
+        assert!(validate_domain_configuration("test.", &bundle, None).is_err());
+        assert!(validate_domain_configuration("test.", &bundle, Some(&catalog)).is_err());
+        let membership = json!({
+            "kind":"harness", "generation":1, "template_key":historical_ref,
+            "source_hash":template_source_hash(&harness),
+        });
+        catalog.governance.push(ConfigurationRecord {
+            id: "test-membership".into(),
+            r#type: "template_catalog_member".into(),
+            definition_id: historical_ref.into(),
+            content_hash: content_digest(&References::new(), &membership),
+            refs: References::new(),
+            data: membership,
+            ..harness
+        });
+        assert!(validate_domain_configuration("test.", &bundle, Some(&catalog)).is_ok());
+    }
 }
