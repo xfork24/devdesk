@@ -1,9 +1,14 @@
 import { test, expect } from "@playwright/test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-test("DSH 服务商凭据独立，Ollama 免密且模型草稿可保存", async ({
+const acpHarnesses = [
+  ["opencode", "OpenCode"],
+  ["mcode", "mcode"],
+] as const;
+
+test("Harness 服务商凭据独立，Ollama 免密且模型草稿可保存", async ({
   page,
 }, info) => {
   const errors: string[] = [];
@@ -24,6 +29,39 @@ test("DSH 服务商凭据独立，Ollama 免密且模型草稿可保存", async 
   // Vault writes are simulated. This test never stores a key or calls a model.
   await page.route("**/rpc", async (route) => {
     const call = route.request().postDataJSON();
+    if (call.method === "query.model_providers") {
+      const response = await route.fetch();
+      const json = await response.json();
+      const providers: { id: string }[] = json.result.providers;
+      // The historical engineering fixture predates these product sources.
+      for (const [harness] of acpHarnesses) {
+        for (const kind of [
+          "deepseek",
+          "minimax-cn",
+          "ollama",
+          "zai-coding-cn",
+        ]) {
+          const id = `${harness}-${kind}`;
+          if (providers.some((provider) => provider.id === id)) continue;
+          const source = JSON.parse(
+            readFileSync(
+              new URL(
+                `../../plugins/core/model-providers/builtin-model-provider-${id}-v1.json`,
+                import.meta.url,
+              ),
+              "utf8",
+            ),
+          );
+          providers.push({
+            ...source.data,
+            reference: `${source.identity}:${source.revision}`,
+            auth_kind: source.data.requires_key ? "api_key" : "none",
+            models: [],
+          });
+        }
+      }
+      return route.fulfill({ response, json });
+    }
     if (call.method === "codex.auth.models")
       return route.fulfill({
         json: {
@@ -120,12 +158,42 @@ test("DSH 服务商凭据独立，Ollama 免密且模型草稿可保存", async 
   await expect(
     pi.getByText("已保存到系统凭据库", { exact: true }),
   ).toBeVisible();
+  for (const [harness, label] of acpHarnesses) {
+    const section = page.getByRole("region", { name: label, exact: true });
+    const provider = section.getByLabel(`${label} 模型服务商`, { exact: true });
+    await expect(
+      page
+        .getByLabel("默认 Agent Harness")
+        .locator(`option[value="${harness}"]`),
+    ).toHaveText(label);
+    await expect(provider.locator("option")).toHaveCount(4);
+    await provider.selectOption(`${harness}-ollama`);
+    await expect(section.getByLabel("配置或更换 API key")).toHaveCount(0);
+    await provider.selectOption(`${harness}-zai-coding-cn`);
+    await section
+      .getByLabel("配置或更换 API key", { exact: true })
+      .fill("FAKE_ACP_BROWSER_KEY");
+    await section
+      .getByRole("button", { name: "保存密钥", exact: true })
+      .click();
+    await expect(
+      section.getByText("已保存到系统凭据库", { exact: true }),
+    ).toBeVisible();
+  }
   expect(configured).toEqual([
     "zai-coding-cn",
     "minimax-cn",
     "pi-zai-coding-cn",
+    "opencode-zai-coding-cn",
+    "mcode-zai-coding-cn",
   ]);
-  expect(configuredHarnesses).toEqual(["dsh", "dsh", "pi"]);
+  expect(configuredHarnesses).toEqual([
+    "dsh",
+    "dsh",
+    "pi",
+    "opencode",
+    "mcode",
+  ]);
   await select.selectOption("ollama");
   await expect(select.locator('option[value="ollama"]')).toHaveText(
     "本地 Ollama",

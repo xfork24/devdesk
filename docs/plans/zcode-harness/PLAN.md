@@ -1,10 +1,14 @@
 # zcode Harness 接入（ZCode CLI）
 
-日期：2026-11-25。状态：**P0 延期，待补模型、策略和再分发**。范围：接入 ZCode CLI（`zcode-app-cli`，MIT 启动器 + 随包专有运行时）为新增 Harness，能力对齐 DSH：讨论会话、workflow 步骤工具、模型服务商。不含根编排。
+日期：2026-11-25。状态：**发布本地构建配方。** 范围为 ZCode CLI 作为讨论、工作流步骤和模型服务的 Harness。
+
+当前 Host 的 Harness 修订 `builtin-harness-zcode-managed:2` 从官方 ZCode v3.18.2 的 `apps/zcode-cli` 源码构建 `app-server`。配方固定提交 `fec975905a2abd4c07e35c40d51fa097a2258ec9` 和源码归档 SHA-256，构建工具采用 Node.js 24.14.0 和 pnpm 10.33.2。软件开发领域包 0.5.5 的评审 Agent 指向此修订。发布包携带配方，预构建镜像留在本机。[官方 CLI 源码](https://github.com/zai-org/ZCode/tree/v3.18.2/apps/zcode-cli)
+
+2026-11-28 在 `devdesk-project-1` 的正式 Feature 中，固定 ZCode 3.18.2-48 使用本机 MiniMax API Key 调用 `MiniMax-M3.1-Flash`，完成只读最终评审、Host MCP 往返和最终调度。使用同一来源的密钥查询 MiniMax 官方套餐接口，确认有有效的套餐记录。这条真实模型路径满足 Harness 的模型验收门槛。[跨 Harness 验收](../mixed-harness-workflow/EXECUTION.md#054-与现有项目验收)
 
 前置依赖为 [Harness 扩展共享地基](../harness-shared-foundation/PLAN.md) 的通用管线和宿主 MCP 桥。G0 依共享地基第 7 章并行验证，协议、权限与再分发条件通过后，可以在 MCP 桥具备测试闭环时并行接入。架构独立性改造并行推进，zcode 按当前基线实施，后期归并按共享地基第 8 章执行。
 
-> **入批门槛**：私有 `app-server` 协议须按第 3 章完成实测。维护者须在 G0 收口前确认运行时及随包第三方内容可放入 DevDesk 发布镜像，以及须携带的许可证和声明。协议或再分发路线被证伪时退回设计，证据不足时延期。第 5 章的备选接口另行评审。
+> **验收范围**。私有 `app-server` 协议须按第 3 章完成实测。Harness 功能发布可以采用由用户侧从上游准备固定运行时的配方。公开分发预构建镜像时，需核对镜像内运行时及第三方内容的适用许可和随附声明。第 5 章的备选接口另行评审。
 
 ## 0. 已确认决策
 
@@ -51,9 +55,9 @@
 
 ## 2. 方案设计
 
-### 2.1 运行形态与协议
+### 2.1 原型运行形态与协议
 
-- **Harness 源**：`plugins/core/harnesses/builtin-harness-zcode-managed-v1.json`
+- **原型 Harness 源**：早期验收数据中的 `builtin-harness-zcode-managed:1`
   - `data.provider: "zcode"`、`runtime_version: "3.18.2-48"`（npm 发行版本）、`installation.package: "zcode-app-cli"`。**更正**：`compose_execution_recipe` 用 `{package}@{runtime_version}` 拼安装行（`execution_recipe.rs:219-222`），此前「`runtime_version: "0.17.1"` + `package: "zcode-app-cli@3.18.2-48"`」的写法会生成 `zcode-app-cli@3.18.2-48@0.17.1`，镜像构建必然失败。运行时自身版本 `0.17.1` 记录在本计划与验收记录中，不进入 Harness 源的 `runtime_version`。
   - 按 G0 的再分发结论填写 `license` 和 `installation.files`。核对启动器 MIT、运行时 Apache-2.0 及 ZCode 声明，确认 `LICENSES/`、`docs/THIRD_PARTY_CONTENT.md` 和受额外条款约束的内容如何随镜像分发。
   - `installation.environment`：`ZCODE_APP_SERVER_AUTH_MODE=host`、`ZCODE_CLI_SETTINGS_FILE=/state/zcode/setting.json`、`ZCODE_PERSONAL_PROVIDER_CONFIG_FILE=/state/zcode/provider_config.json`、`ZCODE_SESSION_DB_PATH=/state/zcode/db.sqlite`、`ZCODE_CLI_CREDENTIALS_FILE=/state/zcode/credentials.json`（host 模式下不使用独立凭据文件）、`ZCODE_DISABLE_UPDATE_CHECK=1`、`NO_UPDATE_NOTIFIER=1`。
@@ -70,7 +74,7 @@
 |---|---|
 | `session/create {cwd, workspace...}` 应答 | 会话外部 id 建立 |
 | `session/subscribe` | 订阅事件流（后续 `session/event` 通知） |
-| 该轮次**首个 provider 证据**到达时（宿主侧） | 已接纳轮次（`Admitted`，轮次 id 由 Host 在派发时生成）。若 P0 证实 `session/send` 立即回执，则改按既有骨架以应答帧为接纳凭证 |
+| `session/send` 应答 `accepted: true`，后续 `turn.started` 带 `turnId` 和 `inputId` | 应答证明已接纳输入。以派发的 `inputId` 匹配 `turn.started` 冻结的 provider 轮次身份 |
 | `session/event` 通知中的增量文本 | Assistant `Delta`（合批与尾部脱敏复用 Codex 逻辑） |
 | `session/event` 中的工具事件 | Tool `Full` |
 | `session/stop`、`session/cancel` | 停止当前轮次（宿主→服务端） |
@@ -78,8 +82,8 @@
 | `interaction/requestPermission` | `Obs::Interaction{ToolApproval}` |
 | `interaction/requestUserInput` | 一期**不产生** `Obs::Interaction`（见下方「交互的处理边界」）；仅在协议日志留痕 |
 | `interaction/requestProviderRuntimeHeaders` | **宿主凭据下发点**（host auth 模式）：按冻结连接返回请求头（值来自 Provider 绑定；该方法的应答登记为**私有请求**、不落日志，并有 secrets 脱敏兜底，共享地基 2.2.10） |
-| `interaction/respond {type:"respond_permission", permissionRequestId, optionId, response}` | 宿主对权限请求的应答 |
-| 轮次终态事件 | `Terminal`（Completed / Failed / Cancelled）——**终态事件名 P0 必须实测确认**（ZCode Protocol 未文档化，不能凭猜测实现） |
+| 入站 `interaction/requestPermission` 的原 `id`，应答 `result: option.response` | 受控 MCP 工具已实测选 `allow_once` 并收到回执 |
+| `turn.completed` 且 `resultType: "success"`、`turn.failed`、`turn.completed` 且 `resultType: "cancelled"` | 分别为 `Terminal` Completed、Failed 和 Cancelled，以固定版本实测为准 |
 
 - **协议形状注意**：ZCode Protocol 的帧**不带** `jsonrpc` 字段（与 ACP 相反）→ `jsonl.rs` 需要第三种线模式；错误在 `{id, error:{message, code, data}}`。
 - **接纳语义待实测**：P0 确认 `session/send` 的应答时机。若是立即回执，验证回执是否可作接纳凭证。若是轮次末应答，按共享地基 2.2.8 用首个可归属的轮次证据接纳，验证早到审批或 MCP 请求、迟到事件和接纳前后的错误。会话级凭据请求不能单独证明轮次已接纳。
@@ -119,14 +123,16 @@
 
 1. 新建 provider 源：`zcode-minimax-cn`、`zcode-zai-coding-cn`、`zcode-deepseek`、`zcode-ollama`（与 mcode 同样保持公开 id 全局唯一）；新建 Model 源与 `builtin-model-catalog-zcode-v1.json`。
 2. 宿主写 `/state/zcode/provider_config.json`（`ZCODE_PERSONAL_PROVIDER_CONFIG_FILE`）：自定义 provider（`base_url` + API key + 模型规则）。字段语义按包内 `docs/PROVIDER_CONFIG.md` 写（P1 读取该文档定稿）。
-3. 凭据：按共享地基 2.3 泛化后的键 `credentials.zcode.{provider}`；host auth 模式下由宿主在 `interaction/requestProviderRuntimeHeaders` 时下发，容器内不留长期凭据文件。
+3. 凭据使用 `credentials.zcode.{provider}`。MiniMax API Key 由宿主装配到容器内的临时私有模型配置。`interaction/requestProviderRuntimeHeaders` 属于 ZCode 内置账号路径，本轮使用智谱账号夹具验证回调关联和拒绝行为。
 4. 凭据按 `(Harness, 服务商)` 隔离：用户需要为 zcode 单独保存同厂商的 API key（共享地基 2.3.4）。
 
 ## 3. 工作项
 
 ### P0 可行性验证（G0 并行，时间盒 1 个工作日）
 
-本轮 G0 结论为 **延期（Linux 断网建会话与订阅已跑通，宿主模式的自定义模型未进入 Registry，策略、macOS 和再分发待验）**。见 [共享实施记录](../harness-shared-foundation/EXECUTION.md)。
+固定版本通过个人 API key 路由、即时接纳、终态、恢复与 4 次 MCP 往返。私有 `setting.json` 中的 `SessionStart` 留下装载标记，`PreToolUse` 阻止了实际 Bash 写入。用固定镜像对 `zcode.json`、`.zcode/config.json` 和 `.agents/mcp.json` 加入测试声明，按对应的只读挂载掩蔽后，项目 Hook 未执行，项目 MCP 未被访问或投放，宿主指定 MCP 仍取得四份回执。断网智谱账号探针收到绑定 provider、session 和 turn 的 `interaction/requestProviderRuntimeHeaders`，显式拒绝后得到对应的 `turn.failed`。提供合成凭据可进入同一轮的模型请求阶段，并在断网边界失败。实际 MiniMax 使用 Host 冻结的 M Plan API Key 路由。[固定包证据](../harness-shared-foundation/EXECUTION.md#zcode-门槛核对)
+
+再分发保持 **延期**。`3.18.2-48` 的包内说明与四份技能许可证文字不一致，且随包运行时来自独立的 Desktop 发行制品。DevDesk 发布归档保留安装配方，由本地从上游准备运行时。将固定镜像纳入再分发范围仍需发布方确认授权和随附声明。[启动器许可](https://github.com/kingsword09/zcode-cli/blob/main/LICENSE)、[发行包第三方说明](https://github.com/kingsword09/zcode-cli/blob/main/docs/THIRD_PARTY_CONTENT.md)
 
 1. 手工构建锁定版本的 zcode 镜像，记录 `zcode --version`、`zcode doctor`、运行时与制品摘要。独立使用零凭据、断网探针验证 `app-server` 的最小协议往返。
 2. 用真实 CLI 和获授权模型或受控模型夹具跑 `session/create` → `session/subscribe` → `session/send` → 收到流式 `session/event` 和权威终态，并验证 `session/stop`。
@@ -138,7 +144,7 @@
 7. **协议硬性判定**：最小闭环连续 3 次取得权威终态，分类正确。宿主凭据往返和审批形状有可复现证据。冻结策略装载、阻断和仓库配置隔离须通过共享地基第 7 章。
 8. 通用项（共享地基第 7 章）：启动期外联、指令注入和恢复后模型、指令与 MCP 配置的复核。
 9. **再分发硬性判定**：维护者核对固定版本及实际镜像内容的再分发条件，记录许可证、声明及对受额外条款约束内容的处置，必要时由法务确认。
-10. 按共享地基第 7 章记录「通过」「退回设计」「延期」。所有适用必验项和再分发条件确认后才进入 P1。
+10. 按共享地基第 7 章记录功能验收结论。预构建镜像的再分发结论单独记录。
 
 ### P1–P4
 

@@ -25,7 +25,10 @@ pub fn permission_contract(s: &EngineeringState, target: &PermissionTargetRef) -
             // Execution build identity remains frozen separately in RuntimeBinding.
             // A model-catalog/UI/schema change does not change permission semantics.
             let backend = match provider {
-                HarnessProvider::Pi => "pi-extension-v1",
+                HarnessProvider::Pi
+                | HarnessProvider::Opencode
+                | HarnessProvider::Mcode
+                | HarnessProvider::Zcode => permissions::harness_backend(provider),
                 HarnessProvider::Codex => "codex-native-v2",
                 HarnessProvider::Dsh => "dsh-native-v2",
             };
@@ -52,21 +55,39 @@ fn permission_semantics_digest(provider: HarnessProvider) -> &'static str {
     // revisions, bindings, scopes and live assets are still checked on each use.
     static CODEX: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     static DSH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    static OPENCODE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    static ZCODE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    static MCODE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     static PI: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     match provider {
         HarnessProvider::Codex => &CODEX,
         HarnessProvider::Dsh => &DSH,
         HarnessProvider::Pi => &PI,
+        HarnessProvider::Opencode => &OPENCODE,
+        HarnessProvider::Mcode => &MCODE,
+        HarnessProvider::Zcode => &ZCODE,
     }
     .get_or_init(|| compute_permission_semantics_digest(provider))
 }
 
 fn compute_permission_semantics_digest(provider: HarnessProvider) -> String {
+    digest_permission_semantics(
+        provider,
+        &permissions::asset_digests(),
+        include_str!("../../../permissions/backends/manifest.json"),
+    )
+}
+
+fn digest_permission_semantics(
+    provider: HarnessProvider,
+    assets: &BTreeMap<String, String>,
+    manifest: &str,
+) -> String {
     let mut supported = json!(permissions::capabilities(provider));
     supported.as_object_mut().unwrap().remove("version");
     supported.as_object_mut().unwrap().remove("recipe_digest");
     permission_content_hash(
-        &json!({"revision":"portable-permissions/2","provider":provider,"capabilities":supported,"assets":permissions::asset_digests(),"manifest":include_str!("../../../permissions/backends/manifest.json")}),
+        &json!({"revision":"portable-permissions/2","provider":provider,"capabilities":supported,"assets":assets,"manifest":manifest}),
     )
 }
 
@@ -75,11 +96,61 @@ pub fn compile_permission_profiles(
     lock: &VersionedPermissionLock,
     scope: Option<ExecutionScope>,
 ) -> Result<ExecutionPermissions> {
-    compile_permission_profiles_at(s, lock, scope, false)
+    compile_permission_profiles_at(s, lock, scope, PermissionRelease::Current)
 }
 
-/// v24 stored source choices but no asset map. Reconstruct only the recorded
-/// baseline for reads. The old asset map keeps its execution gate closed.
+/// The platform test executor uses a read-only, offline container without a
+/// nested Harness or credentials. Validate its frozen grant across the DSH
+/// runner update without making that old grant executable by a Harness.
+pub fn validate_platform_test_permissions(
+    s: &EngineeringState,
+    lock: &VersionedPermissionLock,
+) -> Result<()> {
+    let scope = ExecutionScope {
+        work_type: WorkType::Workflow,
+        writable_paths: vec![],
+        read_only_paths: vec![],
+    };
+    match compile_permission_profiles(s, lock, Some(scope.clone())) {
+        Err(error) if error.code == "permission_asset_mismatch" => compile_permission_profiles_at(
+            s,
+            lock,
+            Some(scope),
+            PermissionRelease::BeforeDshNetworkFix,
+        )
+        .map(|_| ()),
+        result => result.map(|_| ()),
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PermissionRelease {
+    V24,
+    BatchA,
+    BeforeDshNetworkFix,
+    Current,
+}
+
+const DSH_RUNNER: &str = "dsh/bwrap-runner.sh";
+const ORIGINAL_DSH_RUNNER_DIGEST: &str =
+    "e91f503cd7dd11241ce676b8b0ce7d4c2e6e8b31d6a6182e62701dbf7be49766";
+
+fn pre_dsh_fix_permission_contract(current: &str, provider: HarnessProvider) -> String {
+    let mut assets = permissions::asset_digests();
+    let current_runner = assets
+        .insert(DSH_RUNNER.into(), ORIGINAL_DSH_RUNNER_DIGEST.into())
+        .unwrap();
+    let manifest = include_str!("../../../permissions/backends/manifest.json")
+        .replace(&current_runner, ORIGINAL_DSH_RUNNER_DIGEST);
+    let backend = current.split_once(':').unwrap().0;
+    format!(
+        "{backend}:{}",
+        digest_permission_semantics(provider, &assets, &manifest)
+    )
+}
+
+/// Restore only the shipped asset sets. Keeping the original asset map also
+/// preserves the runtime guard that requires a successor for a stale binding.
 pub(crate) fn restore_permission_profiles(
     s: &EngineeringState,
     lock: &VersionedPermissionLock,
@@ -87,7 +158,43 @@ pub(crate) fn restore_permission_profiles(
     assets: Option<&Value>,
 ) -> Result<ExecutionPermissions> {
     let current = permissions::asset_digests();
-    let v24: BTreeMap<String, String> = [
+    let mut previous = current.clone();
+    previous.insert(DSH_RUNNER.into(), ORIGINAL_DSH_RUNNER_DIGEST.into());
+    let batch_b: BTreeMap<_, _> = previous
+        .iter()
+        .filter(|(name, _)| !name.starts_with("zcode/"))
+        .map(|(name, digest)| (name.clone(), digest.clone()))
+        .collect();
+    let (release, assets) = if assets.is_some_and(|assets| *assets == json!(current)) {
+        (PermissionRelease::Current, current)
+    } else if assets.is_some_and(|assets| *assets == json!(previous)) {
+        (PermissionRelease::BeforeDshNetworkFix, previous)
+    } else if assets.is_some_and(|assets| *assets == json!(batch_b)) {
+        (PermissionRelease::BeforeDshNetworkFix, batch_b)
+    } else {
+        let v24 = v24_asset_digests();
+        if assets.is_none_or(|assets| *assets == json!(v24)) {
+            (PermissionRelease::V24, v24)
+        } else {
+            let mut batch_a = v24;
+            batch_a.insert(
+                "pi/tool-policy.js".into(),
+                "38f7293aa8ff22a7489bfea96dc4023c07e86fcba0ebba3d9e5147c1bf1bdedc".into(),
+            );
+            require(
+                assets.is_some_and(|assets| *assets == json!(batch_a)),
+                "冻结权限资产版本无法还原",
+            )?;
+            (PermissionRelease::BatchA, batch_a)
+        }
+    };
+    let mut compiled = compile_permission_profiles_at(s, lock, Some(scope), release)?;
+    compiled.enforcement.asset_digests = assets;
+    Ok(compiled)
+}
+
+fn v24_asset_digests() -> BTreeMap<String, String> {
+    [
         (
             "docker/apparmor/devdesk-harness-v1.apparmor",
             "3af35216df62da5ff6bfbe54b47506b219f26ccc99c944d84b826d66870cdb2c",
@@ -96,10 +203,7 @@ pub(crate) fn restore_permission_profiles(
             "docker/seccomp/nested-v1.json",
             "59f1355dfae05a77e70c47612c5ff348e73eace00985ade538d87969290f3120",
         ),
-        (
-            "dsh/bwrap-runner.sh",
-            "e91f503cd7dd11241ce676b8b0ce7d4c2e6e8b31d6a6182e62701dbf7be49766",
-        ),
+        (DSH_RUNNER, ORIGINAL_DSH_RUNNER_DIGEST),
         (
             "dsh/tool-policy.mjs",
             "e3e4e2d15a7d12597fb83dc81f4a307430424fdbdd0a109dd91a2d9dd8833e1e",
@@ -107,36 +211,41 @@ pub(crate) fn restore_permission_profiles(
     ]
     .into_iter()
     .map(|(path, digest)| (path.into(), digest.into()))
-    .collect();
-    let historical = assets.is_none_or(|assets| *assets == json!(v24));
-    require(
-        historical || assets.is_some_and(|assets| *assets == json!(current)),
-        "冻结权限资产版本无法还原",
-    )?;
-    let mut compiled = compile_permission_profiles_at(s, lock, Some(scope), historical)?;
-    if historical {
-        compiled.enforcement.asset_digests = v24;
-    }
-    Ok(compiled)
+    .collect()
 }
 
-fn v24_permission_contract(
+fn historical_permission_contract(
+    release: PermissionRelease,
     provider: HarnessProvider,
     kind: PermissionTargetKind,
 ) -> Result<&'static str> {
-    match (kind, provider) {
-        (PermissionTargetKind::Sandbox, _) => {
+    use PermissionRelease::{BatchA, V24};
+    use PermissionTargetKind::{Harness, Sandbox};
+    match (release, kind, provider) {
+        (V24, Sandbox, _) => {
             Ok("docker-worker/v2:3feccb12fca08ceb44e6bf5c812b534559f3eb17b7bc72a1b32dff462e77d3ac")
         }
-        (PermissionTargetKind::Harness, HarnessProvider::Codex) => {
+        (V24, Harness, HarnessProvider::Codex) => {
             Ok("codex-native-v2:3feccb12fca08ceb44e6bf5c812b534559f3eb17b7bc72a1b32dff462e77d3ac")
         }
-        (PermissionTargetKind::Harness, HarnessProvider::Dsh) => {
+        (V24, Harness, HarnessProvider::Dsh) => {
             Ok("dsh-native-v2:cda3d9f5b1e11873902258b101ffa0f60e85b408b18bbab25e87e68d21145176")
+        }
+        (BatchA, Sandbox, _) => {
+            Ok("docker-worker/v2:c41cccb1e32941b4b4a87fe706254e844025d3bc1d221339e106e59b608c5e91")
+        }
+        (BatchA, Harness, HarnessProvider::Codex) => {
+            Ok("codex-native-v2:c41cccb1e32941b4b4a87fe706254e844025d3bc1d221339e106e59b608c5e91")
+        }
+        (BatchA, Harness, HarnessProvider::Dsh) => {
+            Ok("dsh-native-v2:ff588b6d666e95d11e2b78ac06a616757dbff3af46775cf990c1536e95549de2")
+        }
+        (BatchA, Harness, HarnessProvider::Pi) => {
+            Ok("pi-extension-v1:ffd3f381936efd0d295278d586fd72ec755b81cda761be329d72e2fd224f9ba7")
         }
         _ => Err(err(
             "permission_asset_mismatch",
-            "v24 没有此 Harness 的权限资产",
+            "历史版本没有此 Harness 的权限资产",
         )),
     }
 }
@@ -145,15 +254,15 @@ fn compile_permission_profiles_at(
     s: &EngineeringState,
     lock: &VersionedPermissionLock,
     scope: Option<ExecutionScope>,
-    historical: bool,
+    release: PermissionRelease,
 ) -> Result<ExecutionPermissions> {
     let harness: HarnessDefinition = s
         .configuration(&lock.harness.binding.target.revision_id)?
         .decode()?;
     let provider: HarnessProvider =
         serde_json::from_value(json!(harness.provider)).map_err(storage)?;
-    if historical && provider == HarnessProvider::Pi {
-        return Err(err("permission_asset_mismatch", "v24 没有 pi 的权限资产"));
+    if matches!(release, PermissionRelease::V24 | PermissionRelease::BatchA) {
+        historical_permission_contract(release, provider, PermissionTargetKind::Harness)?;
     }
     for bound in [&lock.harness, &lock.sandbox] {
         let mut profile = bound.profile.clone();
@@ -161,10 +270,17 @@ fn compile_permission_profiles_at(
         let current = permission_contract(s, &bound.binding.target)?;
         let contract = if bound.binding_revision_id == bound.profile.id {
             format!("direct-profile:{}", bound.binding.target.content_hash)
-        } else if historical {
-            v24_permission_contract(provider, bound.binding.target.kind)?.to_owned()
-        } else {
+        } else if release == PermissionRelease::Current {
             current
+        } else if release == PermissionRelease::BeforeDshNetworkFix {
+            let contract_provider = if bound.binding.target.kind == PermissionTargetKind::Sandbox {
+                HarnessProvider::Codex
+            } else {
+                provider
+            };
+            pre_dsh_fix_permission_contract(&current, contract_provider)
+        } else {
+            historical_permission_contract(release, provider, bound.binding.target.kind)?.to_owned()
         };
         if profile != bound.profile
             || bound.profile_hash
@@ -684,6 +800,102 @@ fn append_preset_file(
 #[cfg(test)]
 mod contract_tests {
     use super::*;
+
+    #[test]
+    fn batch_a_permission_snapshot_restores_with_original_assets_and_contracts() {
+        factory_bundle::initialize().unwrap();
+        let mut state = EngineeringState::default();
+        devdesk_core::seed_configuration(&mut state);
+        let mut lock = resolve_permission_lock(
+            &state,
+            "builtin-harness-pi-managed:1",
+            &ExecutionPermissionSelection {
+                sandbox_ref: "builtin-sandbox-docker:2".into(),
+                harness: PermissionSelection::Profile {
+                    permission_revision_id: "builtin-permission-harness-full-access:2".into(),
+                },
+                sandbox: PermissionSelection::Profile {
+                    permission_revision_id: "builtin-permission-sandbox-full-access:2".into(),
+                },
+            },
+        )
+        .unwrap();
+        for (bound, contract) in [
+            (
+                &mut lock.harness,
+                "pi-extension-v1:ffd3f381936efd0d295278d586fd72ec755b81cda761be329d72e2fd224f9ba7",
+            ),
+            (
+                &mut lock.sandbox,
+                "docker-worker/v2:c41cccb1e32941b4b4a87fe706254e844025d3bc1d221339e106e59b608c5e91",
+            ),
+        ] {
+            bound.binding_revision_id = format!("historical:{}", bound.profile.id);
+            bound.binding.enforcement_contract = contract.into();
+            bound.binding_hash = content_digest(&References::new(), &json!(bound.binding));
+        }
+        let mut assets = v24_asset_digests();
+        assets.insert(
+            "pi/tool-policy.js".into(),
+            "38f7293aa8ff22a7489bfea96dc4023c07e86fcba0ebba3d9e5147c1bf1bdedc".into(),
+        );
+        let scope = ExecutionScope {
+            work_type: WorkType::Discussion,
+            writable_paths: vec![],
+            read_only_paths: vec![],
+        };
+        let recovered =
+            restore_permission_profiles(&state, &lock, scope.clone(), Some(&json!(assets)))
+                .unwrap();
+        assert_eq!(recovered.enforcement.asset_digests, assets);
+        assert_ne!(
+            recovered.enforcement.asset_digests,
+            permissions::asset_digests()
+        );
+        assert_eq!(recovered.binding_lock, Some(lock.clone()));
+        assert!(compile_permission_profiles(&state, &lock, Some(scope.clone())).is_err());
+        assets.insert("pi/tool-policy.js".into(), "unknown".into());
+        assert!(restore_permission_profiles(&state, &lock, scope, Some(&json!(assets))).is_err());
+    }
+
+    #[test]
+    fn platform_tests_keep_the_frozen_grant_across_the_dsh_runner_update() {
+        factory_bundle::initialize().unwrap();
+        let mut state = EngineeringState::default();
+        devdesk_core::seed_configuration(&mut state);
+        let mut lock = resolve_permission_lock(
+            &state,
+            "builtin-harness-codex-managed:2",
+            &ExecutionPermissionSelection {
+                sandbox_ref: "builtin-sandbox-docker:2".into(),
+                harness: PermissionSelection::Profile {
+                    permission_revision_id: "builtin-permission-harness-full-access:2".into(),
+                },
+                sandbox: PermissionSelection::Profile {
+                    permission_revision_id: "builtin-permission-sandbox-full-access:2".into(),
+                },
+            },
+        )
+        .unwrap();
+        validate_platform_test_permissions(&state, &lock).unwrap();
+        for bound in [&mut lock.harness, &mut lock.sandbox] {
+            let current = permission_contract(&state, &bound.binding.target).unwrap();
+            bound.binding_revision_id = format!("before-dsh-fix:{}", bound.profile.id);
+            bound.binding.enforcement_contract =
+                pre_dsh_fix_permission_contract(&current, HarnessProvider::Codex);
+            bound.binding_hash = content_digest(&References::new(), &json!(bound.binding));
+        }
+        validate_platform_test_permissions(&state, &lock).unwrap();
+        assert!(compile_permission_profiles(&state, &lock, None).is_err());
+
+        let mut invalid = lock.clone();
+        invalid.sandbox.binding.enforcement_contract.push('0');
+        invalid.sandbox.binding_hash =
+            content_digest(&References::new(), &json!(invalid.sandbox.binding));
+        assert!(validate_platform_test_permissions(&state, &invalid).is_err());
+        lock.harness.profile_hash.clear();
+        assert!(validate_platform_test_permissions(&state, &lock).is_err());
+    }
 
     #[test]
     fn shared_embedded_contract_matches_each_provider_without_sharing_policy() {

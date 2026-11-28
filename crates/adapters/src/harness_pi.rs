@@ -394,6 +394,7 @@ mod tests {
         let mut command = std::process::Command::new("/bin/cat");
         command.arg("-u");
         let mut worker = Worker {
+            acp: None,
             worktree: PathBuf::new(),
             permissions: None,
             wire: JsonlProcess::spawn(command).unwrap(),

@@ -1,0 +1,20 @@
+{
+  "type": "tool",
+  "identity": "builtin-tool-zcode-native",
+  "revision": 1,
+  "name": "zcode 内置工具",
+  "scope": "global",
+  "data": {
+    "capabilities": [],
+    "harness_provider": "zcode",
+    "implementation": "harness.native",
+    "input_schema": {
+      "description": "zcode native tools constrained by the frozen DevDesk permissions and work scope.",
+      "type": "object"
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "qualified_name": "zcode.native"
+  }
+}

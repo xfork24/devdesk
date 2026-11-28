@@ -12,6 +12,7 @@ use crate::{
 mod migration;
 #[path = "platform_delivery_projection.rs"]
 mod projection;
+pub(crate) use projection::PROJECTION_PREFLIGHT_NOT_APPLIED;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) enum DeliveryAction {
     Target {

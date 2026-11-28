@@ -6,10 +6,12 @@ from pathlib import Path
 import runpy
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
+from mixed_harness import BINDINGS, RELEASE_REVIEWER, ZCODE_REVIEWER, definitions as mixed_harness_definitions
+
 PACKAGE = Path(__file__).resolve().parent
 REPO = PACKAGE.parents[1]
 DOMAIN = "software-development"
-VERSION = "0.5.2"
+VERSION = "0.5.5"
 DISCOVER = f"{DOMAIN}.tests.discover"
 BRANCH = f"{DOMAIN}.branch.plan"
 CONNECT = f"{DOMAIN}.project.connect"
@@ -39,7 +41,7 @@ def load_catalog():
     return entries, json.loads((catalog / manifest["defaults"]).read_text()), manifest["bundle_version"]
 
 
-def build(target, web):
+def build(target, web, *, extra_sources=(), version=VERSION):
     coordinate = {
         "type": "object", "additionalProperties": False, "required": ["path", "revision"],
         "properties": {"path": {"type": "string", "minLength": 1, "maxLength": 4096},
@@ -106,6 +108,9 @@ def build(target, web):
 
     delivery_sources, defaults, bundle_version = load_catalog()
     entries.extend(delivery_sources)
+    entries.extend(mixed_harness_definitions(delivery_sources))
+    entries.extend(extra_sources)
+    defaults["role_agent_bindings"].update({**BINDINGS, RELEASE_REVIEWER: ZCODE_REVIEWER})
     connection_input = {
         "type": "object", "additionalProperties": False, "required": ["repository"],
         "properties": {"repository": {"type": "string", "minLength": 1, "maxLength": 300},
@@ -171,7 +176,7 @@ def build(target, web):
                                    ("BranchQueue", "DeliveryWorkbench", "EngineeringSettings"), strict=True)
         ]}],
     }
-    manifest = {"format": 1, "id": DOMAIN, "version": VERSION, "entity_types": entity_types,
+    manifest = {"format": 1, "id": DOMAIN, "version": version, "entity_types": entity_types,
                 "files": {path: hashlib.sha256(contents).hexdigest() for path, contents in files.items()},
                 "runtime": {"entry": "runtime/worker.mjs", "worktree_branch": BRANCH, "test_discovery": DISCOVER,
                             "project_connection": CONNECT, "test_reporters": reporters,

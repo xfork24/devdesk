@@ -1,0 +1,35 @@
+{
+  "type": "harness",
+  "identity": "builtin-harness-zcode-managed",
+  "revision": 2,
+  "name": "ZCode Harness",
+  "scope": "global",
+  "model_catalog_ref": "builtin-model-catalog-zcode:1",
+  "model_providers": [
+    "builtin-model-provider-zcode-minimax-cn:1"
+  ],
+  "data": {
+    "capabilities": [
+      "structured-output",
+      "tool-calling",
+      "cancel",
+      "poll",
+      "dynamic-tools",
+      "external-tools",
+      "platform-tools"
+    ],
+    "provider": "zcode",
+    "runtime_version": "3.18.2",
+    "installation": {
+      "license": "Local build of Z.ai ZCode CLI from pinned public source. Apache-2.0 first-party code and applicable third-party notices.",
+      "entrypoint": [
+        "zcode",
+        "app-server"
+      ],
+      "zcode_cli_source": {
+        "commit": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
+        "sha256": "cde82985a3b68e9f4aba1491e65c64a4ef5893e1d0160793d3dfb7f4969cd86d"
+      }
+    }
+  }
+}

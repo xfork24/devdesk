@@ -8,6 +8,25 @@ pub(crate) const PI_TOOL_POLICY: &[u8] =
 pub const LINUX_APPARMOR_POLICY: &str =
     include_str!("../../../permissions/backends/docker/apparmor/devdesk-harness-v1.apparmor");
 
+pub const ACP_TOOL_POLICY: &[u8] =
+    include_bytes!("../../../permissions/backends/acp/tool-policy.mjs");
+
+pub(crate) const ZCODE_BRIDGE: &[u8] =
+    include_bytes!("../../../permissions/backends/zcode/bridge.mjs");
+pub(crate) const ZCODE_POLICY: &[u8] =
+    include_bytes!("../../../permissions/backends/zcode/tool-policy.mjs");
+
+pub(crate) fn harness_backend(provider: HarnessProvider) -> &'static str {
+    match provider {
+        HarnessProvider::Codex => "codex-native-v1",
+        HarnessProvider::Dsh => "dsh-native-v1",
+        HarnessProvider::Pi => "pi-extension-v1",
+        HarnessProvider::Opencode => "opencode-plugin-v1",
+        HarnessProvider::Mcode => "mcode-hooks-v1",
+        HarnessProvider::Zcode => "zcode-hooks-v1",
+    }
+}
+
 pub fn capabilities(provider: HarnessProvider) -> PermissionCapabilities {
     PermissionCapabilities {
         backend: provider.as_str().into(),
@@ -16,13 +35,14 @@ pub fn capabilities(provider: HarnessProvider) -> PermissionCapabilities {
             HarnessProvider::Codex => runtime_preparation::default_codex_recipe_digest(),
             HarnessProvider::Dsh => runtime_preparation::default_dsh_recipe_digest(),
             HarnessProvider::Pi => runtime_preparation::default_pi_recipe_digest(),
+            HarnessProvider::Opencode | HarnessProvider::Mcode | HarnessProvider::Zcode => runtime_preparation::packaged_recipe(provider).recipe_digest(),
         },
         filesystem: vec![
             "full_access".into(),
             "read_only".into(),
             "scoped_worktree_writes".into(),
         ],
-        network: if provider == HarnessProvider::Pi { vec!["enabled".into()] } else { vec!["enabled".into(), "disabled_tools".into()] },
+        network: if provider == HarnessProvider::Pi || provider.traits().tool_transport == ToolTransport::HostMcp { vec!["enabled".into()] } else { vec!["enabled".into(), "disabled_tools".into()] },
         tools: if provider.traits().host_model_route {
             vec!["all_available".into(), "restricted".into()]
         } else {
@@ -35,6 +55,7 @@ pub fn capabilities(provider: HarnessProvider) -> PermissionCapabilities {
             match provider {
                 HarnessProvider::Dsh => "scoped writes must be enforceable by the frozen execution-scope mounts".into(),
                 HarnessProvider::Codex => "scoped writes use the native named permissions profile".into(),
+                HarnessProvider::Opencode | HarnessProvider::Mcode | HarnessProvider::Zcode => "bridge tools require a local Docker daemon; platform tools require the frozen workflow or controller scope".into(),
                 HarnessProvider::Pi => "shell requires full access and a trusted container; read-only and scoped modes use file tools and frozen mounts".into(),
             },
         ],
@@ -64,6 +85,13 @@ fn embedded_asset_digests() -> BTreeMap<String, String> {
             include_bytes!("../../../permissions/backends/dsh/tool-policy.mjs").as_slice(),
         ),
         ("pi/tool-policy.js", PI_TOOL_POLICY),
+        ("acp/tool-policy.mjs", ACP_TOOL_POLICY),
+        (
+            "opencode/plugin.mjs",
+            include_bytes!("../../../permissions/backends/opencode/plugin.mjs").as_slice(),
+        ),
+        ("zcode/bridge.mjs", ZCODE_BRIDGE),
+        ("zcode/tool-policy.mjs", ZCODE_POLICY),
     ]
     .into_iter()
     .map(|(n, b)| (n.into(), format!("{:x}", Sha256::digest(b))))
@@ -87,7 +115,16 @@ pub fn compile_resolved_permissions(
             ));
         }
     }
-    let nested = provider != HarnessProvider::Pi
+    let acp = provider.traits().tool_transport == ToolTransport::HostMcp;
+    let mut protected_metadata = vec![".git".into(), ".codex".into(), ".agents".into()];
+    if provider == HarnessProvider::Zcode {
+        protected_metadata.extend([".zcode".into(), "zcode.json".into()]);
+    }
+    if provider == HarnessProvider::Mcode {
+        protected_metadata.extend([".minimax".into(), ".mcp.json".into()]);
+    }
+    let nested = !acp
+        && provider != HarnessProvider::Pi
         && (harness.policy.filesystem != FilesystemPermission::FullAccess
             || harness.policy.network != NetworkPermission::Enabled);
     let mut result = ExecutionPermissions {
@@ -97,7 +134,7 @@ pub fn compile_resolved_permissions(
         approval,
         scope,
         isolation: SandboxIsolation {
-            protected_metadata: vec![".git".into(), ".codex".into(), ".agents".into()],
+            protected_metadata,
             read_only_root: sandbox.policy.filesystem != FilesystemPermission::FullAccess,
             executable_tmp: true,
             nested_sandbox: nested,
@@ -126,7 +163,13 @@ pub fn compile_resolved_permissions(
                     }
                     (FilesystemPermission::ReadOnly, HarnessProvider::Dsh) => "read-only",
                     (_, HarnessProvider::Dsh) => "workspace-write",
-                    (_, HarnessProvider::Pi) => "frozen-mounts",
+                    (
+                        _,
+                        HarnessProvider::Pi
+                        | HarnessProvider::Opencode
+                        | HarnessProvider::Mcode
+                        | HarnessProvider::Zcode,
+                    ) => "frozen-mounts",
                 }
                 .into(),
                 profile: "devdesk".into(),
@@ -138,11 +181,7 @@ pub fn compile_resolved_permissions(
                 .into(),
             }),
             compiler_version: "permission-compiler/v2".into(),
-            harness_backend: if provider == HarnessProvider::Pi {
-                "pi-extension-v1".into()
-            } else {
-                format!("{}-native-v1", provider.as_str())
-            },
+            harness_backend: harness_backend(provider).into(),
             sandbox_backend: if nested {
                 "docker-nested-v1"
             } else {
@@ -154,6 +193,8 @@ pub fn compile_resolved_permissions(
                     "harness.filesystem".into(),
                     if provider == HarnessProvider::Pi {
                         "pi-extension-and-docker-mounts"
+                    } else if acp {
+                        "acp-policy-and-docker-mounts"
                     } else {
                         "provider-native"
                     }
@@ -161,7 +202,7 @@ pub fn compile_resolved_permissions(
                 ),
                 (
                     "harness.network".into(),
-                    if provider == HarnessProvider::Pi {
+                    if acp || provider == HarnessProvider::Pi {
                         "docker-network"
                     } else {
                         "provider-native-or-confined-runner"
@@ -251,8 +292,16 @@ pub fn validate_execution_permissions(
                 ));
             }
         }
-        HarnessProvider::Pi if p.harness.policy.network != NetworkPermission::Enabled => {
-            return Err(err("permission_unsupported", "pi 缺少独立工具禁网执行器"));
+        HarnessProvider::Pi
+        | HarnessProvider::Opencode
+        | HarnessProvider::Mcode
+        | HarnessProvider::Zcode
+            if p.harness.policy.network != NetworkPermission::Enabled =>
+        {
+            return Err(err(
+                "permission_unsupported",
+                "该 Harness 缺少独立工具禁网执行器",
+            ));
         }
         _ => {}
     }
@@ -424,8 +473,12 @@ pub fn dsh_profile(p: &ExecutionPermissions, instructions: &str, cwd: &str) -> R
     patch.push_str(
         "- insert:\n  - id: devdesk-tool-boundary\n    name: /run/devdesk/tool-policy.mjs\n",
     );
-    if p.harness.policy.network == NetworkPermission::Disabled {
-        patch.push_str("- id: sandbox\n  config:\n    runnerCommand: [/bin/bash, /run/devdesk/runner]\n    runnerFailureSignatures: ['bwrap:']\n");
+    if p.isolation.nested_sandbox {
+        let network = match p.harness.policy.network {
+            NetworkPermission::Enabled => ", --allow-network",
+            NetworkPermission::Disabled | NetworkPermission::Allowlist { .. } => "",
+        };
+        patch.push_str(&format!("- id: sandbox\n  config:\n    runnerCommand: [/bin/bash, /run/devdesk/runner{network}]\n    runnerFailureSignatures: ['bwrap:']\n"));
     }
     Ok(patch)
 }

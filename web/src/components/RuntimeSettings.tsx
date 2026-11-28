@@ -8,8 +8,10 @@ import {
   HarnessProviderSettings,
   type ModelProvider,
 } from "./DshProviderSettings";
+import { MODEL_HARNESS_LABELS } from "./ollama-endpoint";
 
-type Provider = "codex" | "dsh" | "pi";
+type Provider = "codex" | keyof typeof MODEL_HARNESS_LABELS;
+const additionalHarnesses = ["pi", "opencode", "mcode", "zcode"] as const;
 type Installation = {
   id: string;
   key: { provider: Provider; version: string; os: string; arch: string };
@@ -62,7 +64,7 @@ export function RuntimeSettings({
       active = false;
     };
   }, [request, setMessage, modelEpoch]);
-  const piProviders = modelProviders.filter((item) => item.harness === "pi");
+
   const dshProviders = modelProviders.filter((item) => item.harness === "dsh");
   const loginComponents = installations.filter(
     (runtime) =>
@@ -170,9 +172,14 @@ export function RuntimeSettings({
         >
           <option value="codex">Codex</option>
           <option value="dsh">DeepSeek Harness</option>
-          {piProviders.length > 0 || provider === "pi" ? (
-            <option value="pi">Pi Harness</option>
-          ) : null}
+          {additionalHarnesses.map((id) =>
+            modelProviders.some((item) => item.harness === id) ||
+            provider === id ? (
+              <option key={id} value={id}>
+                {MODEL_HARNESS_LABELS[id]}
+              </option>
+            ) : null,
+          )}
         </ActionSelect>
       </div>
       <div className="setting-row">
@@ -411,13 +418,17 @@ export function RuntimeSettings({
         harness="dsh"
         providers={dshProviders}
       />
-      {piProviders.length > 0 ? (
-        <HarnessProviderSettings
-          request={request}
-          harness="pi"
-          providers={piProviders}
-        />
-      ) : null}
+      {additionalHarnesses.map((id) => {
+        const providers = modelProviders.filter((item) => item.harness === id);
+        return providers.length > 0 ? (
+          <HarnessProviderSettings
+            key={id}
+            request={request}
+            harness={id}
+            providers={providers}
+          />
+        ) : null;
+      })}
       {phase && <p role="status">{displayText(phase)}</p>}
       {message && (
         <p role="status" aria-live="polite">

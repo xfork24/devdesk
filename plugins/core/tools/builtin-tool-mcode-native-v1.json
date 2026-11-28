@@ -1,0 +1,20 @@
+{
+  "type": "tool",
+  "identity": "builtin-tool-mcode-native",
+  "revision": 1,
+  "name": "mcode 内置工具",
+  "scope": "global",
+  "data": {
+    "capabilities": [],
+    "harness_provider": "mcode",
+    "implementation": "harness.native",
+    "input_schema": {
+      "description": "mcode native tools constrained by the frozen DevDesk permissions and work scope.",
+      "type": "object"
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "qualified_name": "mcode.native"
+  }
+}

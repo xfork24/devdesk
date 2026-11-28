@@ -293,13 +293,26 @@ def run(origin, action, args):
         defaults = active["defaults"]
         assert {defaults["workflow_ref"], defaults["task_workflow_ref"]} <= set(active["agent_workflows"])
         assert defaults["standard_ref"].rsplit(":", 1)[0] == "software-development.standard-engineering-delivery"
-        if active["active"]["version"] in ("0.5.0", "0.5.1", "0.5.2"):
+        if active["active"]["version"] in ("0.5.0", "0.5.1", "0.5.2", "0.5.3", "0.5.4", "0.5.5"):
             assert defaults["workflow_ref"] == "software-development.workflow-feature-development:6"
             assert defaults["task_workflow_ref"] == "software-development.workflow-task-development:5"
             for row in active["sources"]:
                 if row["id"] in (defaults["workflow_ref"], defaults["task_workflow_ref"]):
                     assert "delivery_policy" not in row["data"]
                     assert row["data"]["operation_evidence"]["git.delivery"]["checks"]["$completion"] == ["delivery_receipt"]
+        if active["active"]["version"] in ("0.5.3", "0.5.4", "0.5.5"):
+            feature = "software-development.workflow-mixed-harness-feature:1"
+            task = "software-development.workflow-mixed-harness-task:1"
+            assert {feature, task} <= set(active["agent_workflows"])
+            definitions = {row["id"]: row["data"] for row in active["sources"]}
+            for original, derived in [(defaults["workflow_ref"], feature), (defaults["task_workflow_ref"], task)]:
+                previous, current = definitions[original], definitions[derived]
+                assert previous["operation_evidence"] == current["operation_evidence"]
+                for old, new in zip(previous["steps"], current["steps"], strict=True):
+                    for key in ("key", "dependencies", "inputs", "outputs", "completion", "confirmation"):
+                        assert old.get(key) == new.get(key), (derived, key, old["key"])
+            implementation = next(row for row in definitions[feature]["steps"] if row["key"] == "implementation")
+            assert implementation["executor"]["workflow_ref"] == task
         coordinate = {"path": path, "revision": revision}
         actual = client.call("query.domain.invoke", epoch=epoch,
                              handler="software-development.tests.discover", input=coordinate)

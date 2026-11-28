@@ -8,6 +8,9 @@ pub struct RuntimePreparation {
     codex: Mutex<()>,
     dsh: Mutex<()>,
     pi: Mutex<()>,
+    opencode: Mutex<()>,
+    mcode: Mutex<()>,
+    zcode: Mutex<()>,
     auth: Mutex<()>,
     auth_cancel: std::sync::atomic::AtomicBool,
     status: RwLock<BTreeMap<String, Value>>,
@@ -18,6 +21,9 @@ impl RuntimePreparation {
             "codex" => &self.codex,
             "dsh" => &self.dsh,
             "pi" => &self.pi,
+            "opencode" => &self.opencode,
+            "mcode" => &self.mcode,
+            "zcode" => &self.zcode,
             _ => &self.auth,
         }
         .lock()
@@ -185,7 +191,11 @@ impl ports::SessionResources for SessionResourceAdapter<'_> {
     ) -> Result<Option<String>> {
         match provider {
             HarnessProvider::Codex => Ok(Some(self.codex_auth.credential_reference()?)),
-            HarnessProvider::Dsh | HarnessProvider::Pi => {
+            HarnessProvider::Dsh
+            | HarnessProvider::Pi
+            | HarnessProvider::Opencode
+            | HarnessProvider::Mcode
+            | HarnessProvider::Zcode => {
                 let c = connection.ok_or_else(|| err("invalid_configuration", "缺少模型连接"))?;
                 let facts = state.provider_facts_any(&c.provider)?;
                 require(facts.harness == provider.as_str(), "服务商归属其他 Harness")?;
@@ -202,7 +212,10 @@ impl ports::SessionResources for SessionResourceAdapter<'_> {
                     "系统凭据库不可用，请检查共享凭据助手或 Secret Service",
                 )?;
                 require(status.configured, format!("请先配置 {} 凭据", facts.label))?;
-                vault.verify_model_reference(&facts, &status.reference)?;
+                // No worker or provider call exists during binding validation.
+                vault
+                    .verify_model_reference(&facts, &status.reference)
+                    .map_err(|error| error.technical_not_applied())?;
                 Ok(Some(status.reference))
             }
         }

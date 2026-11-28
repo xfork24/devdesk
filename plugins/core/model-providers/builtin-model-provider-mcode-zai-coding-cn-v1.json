@@ -1,0 +1,22 @@
+{
+  "type": "model_provider",
+  "identity": "builtin-model-provider-mcode-zai-coding-cn",
+  "revision": 1,
+  "name": "mcode · 智谱 AI 编程订阅 国内",
+  "scope": "global",
+  "data": {
+    "id": "mcode-zai-coding-cn",
+    "label": "智谱 AI 编程订阅 国内",
+    "kind": "cloud_subscription",
+    "harness": "mcode",
+    "endpoint": "https://open.bigmodel.cn/api/coding/paas/v4",
+    "route": "zai-coding-cn",
+    "protocol": "openai-completions",
+    "api_key_env": "MCODE_ZAI_CODING_CN_API_KEY",
+    "requires_key": true,
+    "native": false,
+    "capacity_required": true,
+    "min_output_request": 1,
+    "credential_account": "mcode-zai-coding-cn-api-key-"
+  }
+}

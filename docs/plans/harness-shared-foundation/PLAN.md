@@ -1,6 +1,6 @@
 # Harness 扩展共享地基（pi / mcode / zcode / opencode 四条接入线）
 
-日期：2026-11-25。状态：**批次 A 已通过 Linux amd64 验收，批次 B 等待 macOS 验证环境**。范围：四条接入线共同依赖的 Provider 能力表、协议传输、凭据泛化、宿主侧工具桥、配方生成面与全局库地基。本文件不含任何单一 Harness 的协议细节。
+日期：2026-11-25。状态：**批次 A 已通过 Linux amd64 和 macOS arm64 验收。批次 B 的共享 ACP 和宿主 MCP 桥已接入 OpenCode 与 mcode，并通过 Linux arm64 正式镜像的工作流夹具验收。ZCode 延期。** 范围：四条接入线共同依赖的 Provider 能力表、协议传输、凭据泛化、宿主侧工具桥、配方生成面与全局库地基。
 
 配套计划：[pi 接入](../pi-harness/PLAN.md)、[mcode 接入](../mcode-harness/PLAN.md)、[opencode 接入](../opencode-harness/PLAN.md)、[zcode 接入](../zcode-harness/PLAN.md)。
 
@@ -75,7 +75,7 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
 
 **批次 B，先做共享地基，再接入通过 P0 的 Harness。**
 
-2026-11-28 确认，macOS Docker Desktop 验证环境就绪后恢复批次 B。恢复时先完成第 7 章第 9 项的宿主桥探针，再按入批结果实施。
+2026-11-28，OpenCode 与 mcode 在 macOS Docker Desktop 上使用正式 Linux arm64 镜像完成讨论、工作流、权限拦截、续跑、取消和工具回执验证。ACP 的 HTTP 请求归属由独占本轮的 worker 操作和令牌共同确定。产品桥的 HTTP 回归覆盖首条 ACP 通知前的调用及上一轮令牌迟到重放。[批次 B 产品验收](EXECUTION.md#批次-b-产品验收)
 
 1. 本计划负责共用的 `harness_acp.rs`、Host MCP 服务端、`harness_bridge.rs` 收件箱与回执路由、唤醒以及配方接口（2.2、2.4、2.5.6）。按入批 Harness 实现所需安装能力。至少一条 ACP 线入批才需交付 ACP 模块。
 2. mcode 和 opencode 均通过 P0 时，先用 opencode 验证 ACP 与 MCP 桥端到端，再接 mcode。仅一条通过时，由该线完成首个 ACP 验收。各线只实现自己的配置、方言和策略资产。
@@ -135,7 +135,7 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
      harness_zcode.rs    ZCode Protocol
      harness_acp.rs      ACP 共用适配器（无 provider 分支）
      harness_mcode.rs / harness_opencode.rs   ACP 方言配置 + 各自启动/模型/策略接线
-     harness_bridge.rs   宿主 MCP 桥的 adapters 侧：每会话收件箱、Obs::ToolCall 产出、answer 路由
+     harness_bridge.rs   宿主 MCP 监听器、每轮收件箱、回执与撤销
    ```
 
    全部新文件纳入 `managed_adapter_identity` 的哈希输入。
@@ -160,14 +160,14 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
 1. 线协议模式（新增两种，与既有 Codex 无 `jsonrpc`、DSH 带 `jsonrpc` 并列）：
    - **ACP**（mcode 与 opencode 共用）：`jsonrpc:"2.0"` 必填（复用现有 `rpc2()` 开关）；请求/应答按 `id` 匹配；通知按 `method` 识别。
    - **ZCode Protocol**：**不得**加 `jsonrpc` 字段；帧为 `{id, method, params}` → `{id, result|error}`；通知为 `{method:"session/event", params}`。
-2. 入站请求应答的形状**按 provider 分派**：ACP 审批应答为 `{"outcome":{"outcome":"selected","optionId":…}}`、取消为 `{"outcome":{"outcome":"cancelled"}}`；ZCode 为 `interaction/respond{type:"respond_permission",…}`。在 `jsonl.rs` 提供语义化的 `respond(id, result)` / `respond_error(id, code, message)` 封装，而不是让各 provider 直接拼帧。
-3. **外部请求 id 的字符串化与还原**：`Obs::Interaction.request` 是 `String`，而 ACP/ZCode 的入站 `id` 是数字 → 适配器负责字符串化（`"<provider>:<id>"` 以免不同 provider 的 id 空间碰撞），`answer_interaction` 侧再反解回原始 id 回帧。
+2. 入站请求应答的形状**按 provider 分派**。ACP 审批应答为 `{"outcome":{"outcome":"selected","optionId":…}}`，取消为 `{"outcome":{"outcome":"cancelled"}}`。ZCode 固定版本的 `interaction/requestPermission` 已实测按原请求 `id` 回复 `result: option.response`。`jsonl.rs` 已提供 `respond(id, result)` 和 `respond_error(id, code, message)`。
+3. **外部请求 id 的字符串化与还原**：`Obs::Interaction.request` 是 `String`。保留入站 JSON-RPC `id` 的原类型。ACP 用例包含数字，ZCode 反向请求使用 `server-1` 等字符串。适配器保存原始 id 供 `answer_interaction` 回帧。
 4. **等待应答期间的入站帧处置**：`JsonlProcess::request_for` 在 `capture == false` 时会把任何带 `id`+`method` 的帧**自动回 `-32601`**（`jsonl.rs:558-563`）。Harness worker 必须始终保持 `capture == true`（`journal` 存在即为 true），否则 ACP 的 `session/request_permission` 会被误答。
 5. `Journal` 脱敏补强——新增「按结构脱敏」规则：凡 `headers` 数组/对象中 `name`/键命中 `authorization|token|api[-_]?key|secret` 的条目，其值必须替换为 `[redacted]`（宿主 MCP 桥令牌会以 `headers` 形式出现在 `session/new` 与 settings 写入参数里，现有按键名白名单挡不住）。三种载体形状都要覆盖：ACP 的 `headers:[{name,value}]` 数组、ZCode/opencode 的 `headers:{k:v}` 对象、以及 `mcp.servers` 下的多层嵌套。
 6. **ACP 方言**：`harness_acp.rs` 根据 `AcpDialect` 选择恢复方式、MCP 注入方式、指令注入方式、权限选项映射和工具事件归一。ACP 参数注入 HTTP MCP 时要求 `mcpCapabilities.http`，方言使用私有配置注入时以该路径的实测结果为准。指令通过 ACP `systemPrompt` 注入时须确认 agent 宣告相应能力。
 7. **ACP 恢复与历史重放**：优先在 agent 声明 `sessionCapabilities.resume` 时用 `session/resume`。缺少该能力时，仅在 `agentCapabilities.loadSession == true` 时使用 `session/load`，两者均缺失则给出明确的恢复不可用错误。`session/load` 会在应答前经 `session/update` 重放历史。在等待应答期间按会话识别并有界丢弃历史重放，避免占用 256 帧初始化缓冲，保留需要应答的入站请求和其他初始化证据。恢复后核对冻结模型、注入指令和步骤工具。见 [ACP 会话规范](https://agentclientprotocol.com/protocol/v1/session-setup)。
 8. **宿主合成接纳**：派发时为 `OnFirstEvidence` 生成并保存轮次 id。收到可归属到当前派发的轮次通知、审批请求或经过验证的 MCP 工具请求时，先产出一次 `Obs::Admitted{external_turn: 该 id}`，再处理该证据。空轮次可以用匹配当前请求的成功终态应答接纳。会话级状态更新、恢复重放、其他会话及迟到帧不能作为接纳凭证。首个证据之前的明确拒绝判 `provider_rejected`，接纳后的错误保留已接纳事实，按终态或待核对处理。
-   - **早到请求**：P0 记录审批与 MCP 请求相对首条通知的实际顺序。协议允许请求先到时，用真实请求或协议夹具验证归属与应答。可归属的请求走正常接纳和应答，归属不明的请求及时返回明确错误。会话令牌只鉴别会话和 worker，不能单独证明请求的轮次归属。桥在入队时绑定已核对的轮次与 worker，出队再核对。跨轮次复用传输必须有可验证的关联或静止边界，避免把迟到请求归到下一轮。
+   - **早到请求**：core 每轮分配新的 RuntimeExecution 操作。ACP worker 启动后可发现 MCP 工具，在发送 `session/prompt` 前将桥绑定到唯一轮次。绑定前的调用返回未应用。绑定后的认证调用可以作为首个接纳证据，并在出队和回执时复核轮次。后继轮次使用新的进程、监听器和令牌。
 9. **唤醒**：任何非协议帧来源的观察（桥收件箱）入队时必须调用 `RuntimeWorkers.wakeups.notify()`，否则 provider 在等待结果期间不产生协议帧，worker 不会被轮询。
 10. **私有请求**：zcode 的 `interaction/requestProviderRuntimeHeaders` 应答含 API key → 与 Codex 的 `account/`、`auth/` 同等登记为私有请求（不落日志）；桥令牌与 API key 一律进入 `JsonlProcess` 的 secrets 列表。
 
@@ -182,9 +182,9 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
 
 这是「workflow 步骤工具一期必须打通」的落地物，也是本计划相对 pi 计划最大的新增面。
 
-1. **端点**：Host 新增一个**独立监听器**（不注册到主 API 路由器，避免把整个宿主 API 暴露给容器），仅在存在需要宿主桥的会话时启动；路径含会话 id（如 `/internal/tool-bridge/<session>/mcp`）。监听器落在 host（axum + tokio），经 `ports::ToolBridge`（新增的**传输接口**，不是 core 接纳入口）把调用交给 adapters 的 worker 收件箱。
-2. **鉴权**：每会话随机令牌（≥32 字节），以 `Authorization: Bearer <token>` 传递；worker 只保存令牌摘要并做常数时间比较。
-   - **令牌生命周期 = worker 操作生命周期**：worker 停止或 `cleanup_worker` 时撤销；Host 关闭时全部撤销。令牌只写进容器内进程可见的会话级配置（`write_private`，0600），**不进仓库、不进日志**。
+1. **端点**：adapters 为需要宿主桥的 ACP worker 在本地宿主启动独立的随机端口监听器（Axum + Tokio），仅开放 `/mcp`，使用进程内有界收件箱连接 worker。主 API 路由及 core 端口沿用已有边界。
+2. **鉴权**：每个 worker 操作使用 32 字节随机令牌，以 `Authorization: Bearer <token>` 传递。监听器保存令牌摘要并比较摘要的全部字节。
+   - **令牌生命周期 = 单轮 worker 操作生命周期**：观察终态、取消、worker 停止或清理时撤销。Host 关闭时全部撤销。令牌由私有容器配置或 ACP `mcpServers` 传入，日志脱敏。
    - opencode 与 zcode 的含令牌配置文件位于宿主侧的会话状态目录（`/state/<harness>` 的绑定挂载），会话结束后残留在磁盘 → 清理时必须覆盖或删除，并由撤销保证残留令牌不可用。
 3. **协议**：实现 MCP `initialize`、`notifications/initialized`、`ping`、`tools/list`（含 cursor 分页）、`tools/call`，并处理 `notifications/cancelled` 与 `DELETE`；响应一律 JSON（不开 SSE 流）。协议版本集合与 `crates/adapters/runtime/tool-worker.mjs` 保持一致（`2025-11-25` 的 `Mcp-Session-Id` 头与 `2026-07-28` 的 `_meta` 版本协商）。其余方法与未带令牌的请求一律拒绝。校验 `Host` 头；请求体上限与协议帧一致（1 MiB）。
 4. **工具集合**：`tools/list` 与 pi 隧道从 `dynamic_tools(binding)` 的候选集选择当前会话冻结且可执行的工具，按实际适用的 `tool_refs` 过滤。桥保留 `MCP 暴露名 → (种类, 冻结引用, 原名)` 的反查表。集成绑定工具使用 `definition.qualified_name`，平台和上下文工具使用 `definition.call_name()`。无法消歧、未冻结或无合法执行路径的名字在投放时过滤，收到调用时返回明确拒绝。
@@ -203,7 +203,7 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
 7. **验收底线**：容器内只能访问该桥端点与被授权的外部地址；桥令牌泄漏后撤销即失效；桥发起的工具调用必须与 provider 发起的工具调用**同等可审计**（第 9 条）。
 8. **统一执行口径：桥调用一律经 core 接纳/审计链路**——桥只负责**传输与寻址**，不执行工具、不自造审批、不旁路治理记录。链路与 Codex/DSH 同构：
 
-   1. **投递**：MCP 服务端校验令牌与会话，关联调用身份，经 `ports::ToolBridge` 投递到该会话 worker 的有界收件箱并触发 `wakeups.notify()`。轮次归属按 2.2.8 核对。HTTP 处理器等待回执，超时按工具执行预算加余量设置。
+   1. **投递**：MCP 服务端校验令牌、传输与绑定轮次，关联调用身份，投递到当前 worker 的有界收件箱并触发 `wakeups.notify()`。HTTP 处理器等待回执。派发后超时或连接断开且效果未知时，同一请求身份可重查回执，新请求身份被拒绝。
    2. **观察**：worker 的 `poll()` 在抽取协议帧的同时抽取桥收件箱 → 产出与既有形状**完全一致**的观察：
       `Obs::ToolCall{turn, request:{"kind":"bridge","call_id":"<id>"}, thread:<会话 external_session>, external_turn:<轮次的宿主生成 id>, call:<call_id>, tool:<原名>, arguments:<MCP arguments>, worktree}`。
       `request` 是 `Value`（`ports.rs:220`），用 `kind` 判别传输来源。
@@ -249,6 +249,7 @@ pi 计划的方法**结构上完全可复用**：即「编译期 provider 注册
    - **注入防护**：进入 Dockerfile `RUN` 行的字段一律白名单校验。npm 参数字段只接受枚举开关与受限取值（如 `--include=optional`、`--allow-scripts=<包名列表>`），字符集受限；二进制字段 url 仅 https、无内嵌凭据/查询/片段，sha256 为 64 位十六进制，member 为不含 `..`、非绝对的相对路径；所有插值经 `serde_json::to_string` 转义（与现有 COPY 行一致）。出厂 Harness 源是数据，可经 `harness.create`/`revise` 编辑，不能假定可信。
    - **构建期完整性**：二进制发行物在 `docker build` 内完成 sha256 校验后才落位（`ADD --checksum` 或镜像内 Node 脚本 fetch + verify），不依赖宿主预下载；按 `TARGETARCH` 选择资产；**一份配方覆盖 linux/x86_64 与 linux/aarch64**（摘要覆盖全部平台资产），以维持「一个 Harness 一个 `recipe_digest`」的现有语义。
    - **Schema 与校验同步**：`HarnessInstallation` 是 `deny_unknown_fields`，出厂源在 `crates/adapters/build.rs` 构建期按 Schema 校验 → 新字段同步 JSON Schema 与 `ExecutionRecipe::validate`。
+   - 已实现 `installation.npm_options` 和 `installation.container_releases`。npm 脚本策略使用实测的 npm 11.16.0。二进制配方声明 `amd64`、`arm64` 两套归档，按 `TARGETARCH` 选择，校验 SHA-256 后将指定成员写到 `/usr/local/bin/<entrypoint>`。无新增字段的 Codex、DSH、Pi 由配方摘要常量回归覆盖。
    - P0 验证：支持的最老 Docker 版本上 BuildKit 的 `TARGETARCH` 与 `ADD --checksum` 可用。不可用时的退路是宿主侧下载 + 校验后放入构建上下文（复用 `prepare_codex_auth` 的 curl + sha256 流程），此时按目标平台生成不同配方并让 `recipe_digest` 含平台，需要同步调整单值假设——代价更高，仅在 P0 证明必要时采用。
 
 ### 2.6 前端与测试基建

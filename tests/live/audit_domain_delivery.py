@@ -11,22 +11,31 @@ from pathlib import Path
 from urllib.parse import quote
 from zipfile import ZipFile
 
+from verify_project_regression import check_test
+
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("report", type=Path)
 parser.add_argument("--github-repo", required=True)
+parser.add_argument("--data-root", type=Path, help="Existing Host dataset used by the observed workflow")
 parser.add_argument("--require-packaged-handlers", action="store_true")
 parser.add_argument("--require-delivery-evidence", action="store_true")
 args = parser.parse_args()
 root = args.report.resolve()
 context = json.loads((root / "context.json").read_text())
 views = json.loads((root / "latest-tree.json").read_text())
-project = root / "data" / "projects" / context["project"]
+dataset = (args.data_root or root / "data").resolve()
+project = dataset / "projects" / context["project"]
+if not (project / "engineering.sqlite3").is_file():
+    with sqlite3.connect(f"{(dataset / 'domain-packages.sqlite3').as_uri()}?mode=ro", uri=True) as registry:
+        directory, = registry.execute("SELECT data_root FROM domain_project_storage WHERE project=?",
+                                      (context["project"],)).fetchone()
+    project = Path(directory) / "projects" / context["project"]
 db = sqlite3.connect(f"file:{project / 'engineering.sqlite3'}?mode=ro", uri=True)
 repo = args.github_repo
-assert "test" in repo.lower(), "use a dedicated test repository"
+assert context.get("github_repo") == repo or "test" in repo.lower(), "use the exact designated acceptance repository"
 assert len(views) == 2
 seen = set()
-with sqlite3.connect(f"file:{root / 'data/domain-packages.sqlite3'}?mode=ro", uri=True) as registry:
+with sqlite3.connect(f"{(dataset / 'domain-packages.sqlite3').as_uri()}?mode=ro", uri=True) as registry:
     original_digest, = registry.execute(
         "SELECT digest FROM domain_projects WHERE project=?",
         (context["project"],),
@@ -79,8 +88,143 @@ def outputs(v):
             result[step["step"], key] = payload(item["value"])
     return result
 
-expected_refs = {context["defaults"]["workflow_ref"], context["defaults"]["task_workflow_ref"]}
-assert {v["runtime"]["workflow_ref"] for v in views.values()} == expected_refs
+def check_frozen_test(receipt, revision, *, red=False, configured_files=None):
+    check_test(receipt, revision, red=red)
+    assert receipt["origin"] == "external" and receipt["recipe"]["image"] == receipt["image_digest"]
+    files = receipt["execution"]["files"]
+    declared = receipt["recipe"]["files"] if configured_files is None else configured_files
+    assert sorted(file["path"] for file in files) == sorted(declared)
+    for file in files:
+        actual = subprocess.check_output(["git", "-C", str(project / "repository"),
+                                          "show", revision + ":" + file["path"]])
+        assert actual == file["content"].encode(), file["path"]
+        assert hashlib.sha256(actual).hexdigest() == file["sha256"], file["path"]
+
+def packaged_workflow(ref):
+    source, revision = ref.rsplit(":", 1)
+    with ZipFile(io.BytesIO(archive)) as installed:
+        return json.loads(installed.read(f"configurations/{source}-v{revision}.json"))["data"]
+
+
+def operation_evidence(workflow):
+    return {
+        name: {**policy, "checks": {step: sorted(checks) for step, checks in policy["checks"].items()}}
+        for name, policy in workflow["operation_evidence"].items()
+    }
+
+
+def verify_plan_lineage(view, expected_ref):
+    runtime = view["runtime"]
+    instance = view["record"]["id"]
+    revision = runtime["active_plan_revision_id"]
+    lineage = []
+    while revision is not None:
+        assert revision not in lineage, "Cyclic plan lineage"
+        lineage.append(revision)
+        immutable, raw = db.execute(
+            "SELECT immutable,data FROM governance_records WHERE type='workflow_plan_revision' AND id=?",
+            (revision,),
+        ).fetchone()
+        plan = json.loads(raw)
+        assert immutable and plan["instance_id"] == instance
+        if len(lineage) == 1:
+            assert plan["workflow_ref"] == runtime["workflow_ref"]
+        parent = plan["parent_revision_id"]
+        if parent is None:
+            assert plan["workflow_ref"] == expected_ref
+        else:
+            assert plan["plan"]["base_workflow_ref"] == expected_ref
+        revision = parent
+    assert lineage, "Missing active plan revision"
+    return lineage
+
+
+root_flow = views[context["root"]]
+root_ref = context.get("workflow_ref") or context["defaults"]["workflow_ref"]
+root_steps = packaged_workflow(root_ref)["steps"]
+task_ref = next(step["executor"]["workflow_ref"] for step in root_steps if step["key"] == "implementation")
+parent_step = next(step for step in root_flow["runtime"]["steps"] if step["step"] == "implementation")
+child_id, = (key for key in views if key != context["root"])
+child = views[child_id]
+assert child["runtime"]["parent_execution_id"] == parent_step["id"]
+packaged_refs = {context["root"]: root_ref, child_id: task_ref}
+plan_lineages = {key: verify_plan_lineage(view, packaged_refs[key]) for key, view in views.items()}
+
+def bound_model(binding, agent_ref):
+    if "model" in binding:
+        return binding["model"]
+    assert binding["$source"] == "runtime_binding"
+    assert binding["agent_configuration"]["agent_ref"] == agent_ref
+    with ZipFile(io.BytesIO(archive)) as installed:
+        def configuration(ref, kind):
+            source, revision = ref.rsplit(":", 1)
+            row = json.loads(installed.read(f"configurations/{source}-v{revision}.json"))
+            assert row["type"] == kind and row["identity"] == source and row["revision"] == int(revision)
+            return row
+
+        agent = configuration(agent_ref, "agent")
+        capability = configuration(agent["capability_ref"], "capability")
+    with sqlite3.connect(f"{(dataset / 'global.sqlite3').as_uri()}?mode=ro", uri=True) as catalog:
+        model, = catalog.execute("SELECT data FROM source_definitions WHERE reference=? AND type='model'",
+                                 (capability["model_ref"],)).fetchone()
+    return json.loads(model)["model"]
+
+def mixed_harness_evidence():
+    expected = {
+        context["root"]: {"requirements": "pi", "requirements_review": "dsh", "design": "opencode",
+                          "design_review": "dsh", "planning": "codex", "plan_review": "dsh", "review": "zcode"},
+        next(identity for identity in views if identity != context["root"]):
+            {"tests": "dsh", "implementation": "mcode", "review": "dsh"},
+    }
+    evidence = []
+    for instance, roles in expected.items():
+        by_key = {step["step"]: step for step in views[instance]["runtime"]["steps"]}
+        for key, provider in roles.items():
+            step = by_key[key]
+            row = db.execute(
+                """SELECT sessions.runtime_binding, turns.consumed, turns.status
+                FROM sessions JOIN turns ON turns.session_id = sessions.id
+                WHERE sessions.id = ? AND turns.id = ?""", (step["session_id"], step["turn_id"]),
+            ).fetchone()
+            assert row and row[1:] == (1, "completed"), (instance, key)
+            binding = payload(json.loads(row[0]))
+            assert binding["installation"]["key"]["provider"] == provider, (instance, key)
+            model = "gpt-6.2-sol" if provider == "codex" else "MiniMax-M3.1-Flash"
+            assert bound_model(binding, step["agent_revision_id"]) == model, (instance, key)
+            worker = db.execute(
+                """SELECT e.operation_id, e.container_id, e.image_digest
+                FROM conversation_events AS event JOIN executions AS e
+                ON e.session_id = event.session_id AND event.deduplication_key = e.id || ':stop-proof'
+                WHERE event.turn_id = ? AND event.kind = 'status' AND e.kind = 'harness'
+                AND e.writer_revoked = 1 AND e.container_id IS NOT NULL""", (step["turn_id"],),
+            ).fetchall()
+            assert len(worker) == 1 and re.fullmatch(r"sha256:[a-f0-9]{64}", worker[0][2]), (instance, key)
+            operation, container, image = worker[0]
+            observed = {"instance": instance, "step": key, "harness": provider,
+                        "model": model, "turn": step["turn_id"], "operation": operation,
+                        "container": container, "image": image}
+            if provider == "zcode":
+                bridge_reads = []
+                for call_id, raw in db.execute(
+                    """SELECT id, data FROM governance_records WHERE type='platform_call'
+                    AND json_extract(data, '$.workflow_authority.execution_id')=?
+                    AND json_extract(data, '$.status')='succeeded'
+                    AND json_extract(data, '$.handler')='workflow.outputs.read'""", (step["id"],),
+                ):
+                    caller = payload(json.loads(raw)["request"])["caller"]
+                    assert caller["turn_id"] == step["turn_id"] and caller["operation_id"] == operation
+                    assert caller["request_id"]["kind"] == "bridge"
+                    bridge_reads.append(call_id)
+                assert bridge_reads, "Missing native ZCode reads through the Host MCP bridge"
+                observed["bridge_reads"] = bridge_reads
+            evidence.append(observed)
+    manager = json.loads((root / "latest-manager.json").read_text())["record"]["data"]
+    manager_row, = db.execute("SELECT runtime_binding FROM sessions WHERE id=?", (manager["session_id"],)).fetchone()
+    binding = payload(json.loads(manager_row))
+    assert manager["status"] == "closed" and bound_model(binding, manager["agent_revision_id"]) == "gpt-6.2-sol"
+    assert binding["installation"]["key"]["provider"] == "codex"
+    return evidence
+
 stages = []
 for ident, view in views.items():
     assert view["runtime"]["status"] == "completed"
@@ -95,11 +239,11 @@ for ident, view in views.items():
     seen.add(pr["number"])
     assert source_regression["candidate"] == publish["revision"] == publication["source_revision"]
     assert candidate_regression["candidate"] == publication["revision"]
-    for receipt in (source_regression, candidate_regression):
-        assert receipt["status"] == "succeeded" and receipt["exit_code"] == 0
-        assert receipt["counts"]["tests"] > 0 and receipt["container_id"] and receipt["report_sha256"]
+    configured = ((context.get("test_configuration") or {}).get("regression") or {}).get("files")
+    for receipt, tested in ((source_regression, publish["revision"]), (candidate_regression, publication["revision"])):
+        check_frozen_test(receipt, tested, configured_files=configured)
     assert merged["synchronized"] and merged["sync"]["synchronized"]
-    assert merged["sync"]["revision"] == merged["revision"]
+    assert merged["sync"]["revision"] == merged["revision"] == publication["revision"]
     assert merged["sync"]["previous"] == publication["target_revision"]
     assert merged["pull_request"]["number"] == pr["number"]
     assert merged["pull_request"]["merged"] and merged["pull_request"]["merge_commit"] == merged["revision"]
@@ -118,18 +262,24 @@ for ident, view in views.items():
            "source": publish["revision"], "candidate": publication["revision"], "target": publication["target_revision"],
            "merged": merged["revision"], "tree": publication["tree"], "base_branch": pr["base_branch"],
            "target_protected": reference["protected"], "source_regression": source_regression["operation_id"],
-           "candidate_regression": candidate_regression["operation_id"], "synchronized": True}
+           "candidate_regression": candidate_regression["operation_id"],
+           "regression_counts": {"source": source_regression["counts"], "candidate": candidate_regression["counts"]},
+           "regression_containers": [source_regression["container_id"], candidate_regression["container_id"]],
+           "synchronized": True}
     if ident != context["root"]:
         red, green = values["red", "result"], values["green", "result"]
-        assert red["assertion_failed"] and red["expected_failure"] and red["exit_code"] != 0
-        assert green["exit_code"] == 0 and green["counts"]["failed"] == 0 and not green["expected_failure"]
+        check_frozen_test(red, values["tests_snapshot", "result"]["revision"], red=True)
+        check_frozen_test(green, publish["revision"])
+        assert red["candidate"] != green["candidate"]
         assert green["counts"]["tests"] == red["counts"]["tests"] and red["recipe"] == green["recipe"]
         assert green["container_id"] != red["container_id"]
+        assert red["execution"]["files"] == green["execution"]["files"]
         row["red"] = {"failed": red["counts"]["failed"], "operation": red["operation_id"], "revision":red["candidate"]}
         row["green"] = {"passed":green["counts"]["passed"], "operation":green["operation_id"], "revision":green["candidate"]}
     else:
         assert pr["base_branch"] == context["mainline"]
     stages.append(row)
+assert len({container for row in stages for container in row["regression_containers"]}) == 2 * len(stages)
 
 mode = context.get("mode", "agent")
 drivers = [json.loads(row[0]) for row in db.execute(
@@ -153,8 +303,10 @@ for (raw,) in db.execute(
 if args.require_delivery_evidence:
     expected = {"manual": {"human"}, "rust": {"driver"}, "agent": {"controller", "segment"}}[mode]
     assert dispatch_actors and set(dispatch_actors) <= expected
+execution_ids = {step["id"] for view in views.values() for step in view["runtime"]["steps"]}
 confirmations = {item["execution_id"]: item for (raw,) in db.execute(
-    "SELECT data FROM governance_records WHERE type='workflow_confirmation'") if (item := json.loads(raw))}
+    "SELECT data FROM governance_records WHERE type='workflow_confirmation'")
+    if (item := json.loads(raw))["execution_id"] in execution_ids}
 root_steps = views[context["root"]]["runtime"]["steps"]
 for step in root_steps:
     if step["step"] in {"requirements_review", "design_review", "plan_review", "approval"}:
@@ -162,14 +314,18 @@ for step in root_steps:
         assert confirmed["input_digest"] == step["input_digest"]
         assert confirmed["outputs"] == step["outputs"]
         assert confirmed["override_completion"] is False and confirmed["actor"]["kind"] == "human"
-authorizations = [json.loads(row[0]) for row in db.execute("SELECT data FROM governance_records WHERE type='workflow_human_decision'")]
+authorizations = [item for (raw,) in db.execute("SELECT data FROM governance_records WHERE type='workflow_human_decision'")
+                  if (item := json.loads(raw))["request"].get("arguments", {}).get("instance_id") in views]
 if mode == "agent":
-    assert len(authorizations) >= 4 and all(item["approved"] and item["actor"]["kind"] == "human" for item in authorizations)
+    assert all(item["actor"]["kind"] == "human" for item in authorizations)
+    assert sum(item["approved"] is True for item in authorizations) >= 4
 creation_plans = []
 for (record,) in db.execute("SELECT data FROM governance_records WHERE type='platform_publish_stage'"):
     action = payload(json.loads(record)["action"])
     if action.get("PlannedDeliveryPullRequest"):
         plan = action["PlannedDeliveryPullRequest"]
+        if plan["request"]["merge"] not in views:
+            continue
         assert plan["creation"]["head"] == plan["request"]["head_branch"]
         assert plan["creation"]["base"] == plan["request"]["base_branch"]
         actual = next(row for row in stages if row["instance"] == plan["request"]["merge"])
@@ -181,7 +337,12 @@ reporters = {}
 evidence_decisions = {identity: {} for identity in views}
 observations = {effect: payload(json.loads(data)["result"]) for effect, data in db.execute(
     "SELECT definition_id,data FROM governance_records WHERE type='platform_effect_observation' AND json_extract(data,'$.phase')='domain-authorization'")}
-for effect, call, record in db.execute("SELECT id,definition_id,data FROM governance_records WHERE type='platform_effect_intent'"):
+for effect, call, record in db.execute(
+    """SELECT intent.id,intent.definition_id,intent.data FROM governance_records AS intent
+       JOIN governance_records AS call ON call.id=intent.definition_id AND call.type='platform_call'
+       WHERE intent.type='platform_effect_intent' AND json_extract(call.data,'$.root_instance_id')=?""",
+    (context["root"],),
+):
     plan = payload(json.loads(record)["plan"])
     action = payload(plan["action"])
     if check := plan.get("domain_check"):
@@ -207,21 +368,27 @@ for effect, call, record in db.execute("SELECT id,definition_id,data FROM govern
 if args.require_packaged_handlers:
     assert len(creation_plans) == 2 and len(reporters) >= 6
 if args.require_delivery_evidence:
-    with ZipFile(io.BytesIO(archive)) as installed:
-        for view in views.values():
-            # The package manifest only includes concrete workflow source revisions.
-            ref = view["runtime"]["workflow_ref"]
-            source, revision = ref.rsplit(":", 1)
-            frozen = json.loads(installed.read(f"configurations/{source}-v{revision}.json"))["data"]
-            assert "delivery_policy" not in frozen
-            assert frozen["operation_evidence"]["git.delivery"]["checks"]["$completion"] == ["delivery_receipt"]
+    for identity, view in views.items():
+        frozen = packaged_workflow(packaged_refs[identity])
+        assert "delivery_policy" not in frozen
+        assert frozen["operation_evidence"]["git.delivery"]["checks"]["$completion"] == ["delivery_receipt"]
+        ref = view["runtime"]["workflow_ref"]
+        if ref != packaged_refs[identity]:
+            raw, = db.execute("SELECT data FROM source_definitions WHERE type='workflow' AND reference=?",
+                              (ref,)).fetchone()
+            active = json.loads(raw)
+            assert operation_evidence(active) == operation_evidence(frozen)
+            for policy in ("completion", "review_policies", "rework_policies"):
+                assert active.get(policy) == frozen.get(policy), policy
     for verified in evidence_decisions.values():
         assert set(verified) == {"workspace.target", "git.source.publish", "git.delivery.open", "git.delivery.merge"}
 result = {"domain_digest": package_digest, "domain_version": manifest["version"],
           "root":context["root"], "repository":repo, "mode":mode,
           "workflows":stages,"published_creation_plans":creation_plans,"frozen_reporters":reporters,
           "human_decisions":len(authorizations),"step_confirmations":len(confirmations),
-          "dispatch_actors":dispatch_actors,
+          "dispatch_actors":dispatch_actors,"plan_lineages":plan_lineages,
           "domain_evidence_decisions":evidence_decisions}
+if context.get("standard_ref") == "software-development.standard-mixed-harness-engineering:1":
+    result["native_harness_turns"] = mixed_harness_evidence()
 (root / "delivery-audit.json").write_text(json.dumps(result,indent=2,ensure_ascii=False)+"\n")
 print(json.dumps(result,ensure_ascii=False))

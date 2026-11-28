@@ -1,0 +1,20 @@
+{
+  "type": "tool",
+  "identity": "builtin-tool-opencode-native",
+  "revision": 1,
+  "name": "OpenCode 内置工具",
+  "scope": "global",
+  "data": {
+    "capabilities": [],
+    "harness_provider": "opencode",
+    "implementation": "harness.native",
+    "input_schema": {
+      "description": "OpenCode native tools constrained by the frozen DevDesk permissions and work scope.",
+      "type": "object"
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "qualified_name": "opencode.native"
+  }
+}

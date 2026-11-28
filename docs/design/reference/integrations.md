@@ -9,12 +9,13 @@
 | Codex | 官方 OAuth、app-server | 当前声明根工作流编排能力 |
 | DSH | 受管 SDK 会话与工具桥 | 支持普通讨论和步骤工具 |
 | Pi | 受管 RPC 会话与扩展工具桥 | 支持普通讨论和步骤工具。仓库扩展、原生 MCP 与上下文自动发现关闭 |
-| DeepSeek | DSH 原生路由与 Pi 的 OpenAI 兼容路由 | 凭据与预算按 Harness 选择 |
+| OpenCode、mcode | 受管 ACP v1 会话与宿主 MCP 桥 | 支持普通讨论和有授权的步骤工具。宿主桥要求本地 Docker daemon |
+| DeepSeek | DSH 原生路由，Pi、OpenCode、mcode 的 OpenAI 兼容路由 | 凭据与预算按 Harness 选择 |
 | 智谱国内编程订阅 | OpenAI Chat Completions 兼容端点 | 使用对应订阅配置，不能默换按量端点 |
 | MiniMax 国内订阅 | Anthropic Messages 兼容端点 | 账号、密钥与目录独立 |
 | Ollama | 本机服务的 OpenAI 兼容 API | 默认免密，需指定实际存在的模型与容量 |
 
-DSH 和 Pi 分别登记智谱、MiniMax 与 Ollama 路由。保存的凭据和 Ollama 地址按 Harness 隔离。具体端点见[出厂服务商源](../../../plugins/core/model-providers)，驱动转换见 [model_providers.rs](../../../crates/adapters/src/model_providers.rs)。未知模型需要明确容量声明；填写容量不会修改服务端限制。
+DSH、Pi、OpenCode、mcode 分别登记智谱、MiniMax 与 Ollama 路由。保存的凭据和 Ollama 地址按 Harness 隔离。具体端点见[出厂服务商源](../../../plugins/core/model-providers)，驱动转换见 [model_providers.rs](../../../crates/adapters/src/model_providers.rs)。未知模型需要明确容量声明；填写容量不会修改服务端限制。
 
 ### 本机 Ollama 与容器
 

@@ -3,6 +3,8 @@
   "references": {
     "builtin-tool-codex-native:2": [],
     "builtin-tool-dsh-native:2": [],
+    "builtin-tool-mcode-native:1": [],
+    "builtin-tool-opencode-native:1": [],
     "builtin-tool-pi-native:1": [],
     "builtin-tool-spec-lint:2": [],
     "builtin-tool-workflow-complete:3": [],
@@ -12,6 +14,7 @@
     "builtin-tool-workflow-inspect:3": [],
     "builtin-tool-workflow-outputs-read:3": [],
     "builtin-tool-workflow-step-accept:3": [],
-    "builtin-tool-workflow-step-dispatch:3": []
+    "builtin-tool-workflow-step-dispatch:3": [],
+    "builtin-tool-zcode-native:1": []
   }
 }

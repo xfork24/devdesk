@@ -1326,7 +1326,13 @@ impl Workspace {
         if method == "runtime.prepare" {
             let provider = serde_json::from_value(params["provider"].clone())
                 .map_err(|_| err("invalid_params", "需要 Harness provider"))?;
-            if provider == HarnessProvider::Pi {
+            if matches!(
+                provider,
+                HarnessProvider::Pi
+                    | HarnessProvider::Opencode
+                    | HarnessProvider::Mcode
+                    | HarnessProvider::Zcode
+            ) {
                 let harness = self.global.default_execution_harness(provider)?;
                 return Ok(json!(
                     self.materialize_harness(&self.configuration, &harness)?

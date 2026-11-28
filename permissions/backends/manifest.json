@@ -48,6 +48,32 @@
       "assets": [
         "pi/tool-policy.js"
       ]
+    },
+    {
+      "id": "opencode-plugin-v1",
+      "provider": "opencode",
+      "version": "2.4.1",
+      "assets": [
+        "acp/tool-policy.mjs",
+        "opencode/plugin.mjs"
+      ]
+    },
+    {
+      "id": "mcode-hooks-v1",
+      "provider": "mcode",
+      "version": "0.7.9",
+      "assets": [
+        "acp/tool-policy.mjs"
+      ]
+    },
+    {
+      "id": "zcode-hooks-v1",
+      "provider": "zcode",
+      "version": "3.18.2-48",
+      "assets": [
+        "zcode/bridge.mjs",
+        "zcode/tool-policy.mjs"
+      ]
     }
   ],
   "upstream": {
@@ -68,7 +94,7 @@
       "sha256": "6416b47770785a41ac59073cdc77d9fe98517df2799dc83ef207e622de3053f6"
     },
     "dsh/bwrap-runner.sh": {
-      "sha256": "e91f503cd7dd11241ce676b8b0ce7d4c2e6e8b31d6a6182e62701dbf7be49766"
+      "sha256": "d12f974941c68bf607cd4488f0bfe48c05b7f438611a6d43313c67514c8c2c12"
     },
     "dsh/package.json": {
       "sha256": "cb94ce76ba3ac61277cafd18663342914b75d85693f6888cef7c467cb11a43c3"
@@ -78,6 +104,18 @@
     },
     "pi/tool-policy.js": {
       "sha256": "38f7293aa8ff22a7489bfea96dc4023c07e86fcba0ebba3d9e5147c1bf1bdedc"
+    },
+    "acp/tool-policy.mjs": {
+      "sha256": "72b6a48d85845a6efa924c91170d9d15b08e4c328fed72c9a0d01039581139e3"
+    },
+    "opencode/plugin.mjs": {
+      "sha256": "9c37c879d92a3d148256afbaf4f16a1a06e08739ee21fdb21eeb652ff8484fc4"
+    },
+    "zcode/bridge.mjs": {
+      "sha256": "f5abc7b2d0334dbecbf0af1397b1ac1cec8e99ed554a883645c68fe356cdd11e"
+    },
+    "zcode/tool-policy.mjs": {
+      "sha256": "d89920ca0886ff6ee885079580a31c4d82ded026c1de954043ce15e436ed9a82"
     }
   }
 }

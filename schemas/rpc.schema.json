@@ -136,7 +136,10 @@
       "enum": [
         "codex",
         "dsh",
-        "pi"
+        "pi",
+        "opencode",
+        "mcode",
+        "zcode"
       ]
     },
     "SettingsUpdate": {
@@ -312,7 +315,10 @@
         "provider": {
           "enum": [
             "dsh",
-            "pi"
+            "pi",
+            "opencode",
+            "mcode",
+            "zcode"
           ]
         },
         "api_key": {
@@ -1392,6 +1398,9 @@
                   "codex",
                   "dsh",
                   "pi",
+                  "opencode",
+                  "mcode",
+                  "zcode",
                   "codex-auth"
                 ]
               },
@@ -1423,7 +1432,10 @@
           "enum": [
             "codex",
             "dsh",
-            "pi"
+            "pi",
+            "opencode",
+            "mcode",
+            "zcode"
           ]
         }
       }
@@ -1442,7 +1454,10 @@
           "enum": [
             "codex",
             "dsh",
-            "pi"
+            "pi",
+            "opencode",
+            "mcode",
+            "zcode"
           ]
         },
         "version": {
@@ -1558,7 +1573,7 @@
           "pattern": "^\\S+:[1-9][0-9]*$"
         },
         "installation": {
-          "type": "object"
+          "$ref": "#/$defs/HarnessInstallation"
         }
       },
       "required": [
@@ -1566,6 +1581,179 @@
         "runtime_version"
       ],
       "additionalProperties": false
+    },
+    "HarnessInstallation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "license",
+        "entrypoint"
+      ],
+      "properties": {
+        "package": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9@/._][A-Za-z0-9@/._-]*$"
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entrypoint": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "content"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "native_releases": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/HarnessReleaseArchive"
+          }
+        },
+        "container_releases": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "amd64",
+            "arm64"
+          ],
+          "properties": {
+            "amd64": {
+              "$ref": "#/$defs/HarnessReleaseArchive"
+            },
+            "arm64": {
+              "$ref": "#/$defs/HarnessReleaseArchive"
+            }
+          }
+        },
+        "zcode_cli_source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["commit", "sha256"],
+          "properties": {
+            "commit": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+            "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+          }
+        },
+        "npm_options": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "version"
+          ],
+          "properties": {
+            "version": {
+              "const": "11.16.0"
+            },
+            "include_optional": {
+              "type": "boolean"
+            },
+            "allow_scripts": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "type": "string",
+                "maxLength": 214,
+                "pattern": "^(?:@[A-Za-z0-9][A-Za-z0-9._-]*/)?[A-Za-z0-9][A-Za-z0-9._-]*$"
+              }
+            }
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "package"
+          ],
+          "not": {
+            "anyOf": [
+              {"required": ["container_releases"]},
+              {"required": ["zcode_cli_source"]}
+            ]
+          }
+        },
+        {
+          "required": [
+            "container_releases"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "package"
+                ]
+              },
+              {
+                "required": [
+                  "npm_options"
+                ]
+              },
+              {"required": ["zcode_cli_source"]}
+            ]
+          }
+        },
+        {
+          "required": ["zcode_cli_source"],
+          "not": {
+            "anyOf": [
+              {"required": ["package"]},
+              {"required": ["npm_options"]},
+              {"required": ["container_releases"]}
+            ]
+          }
+        }
+      ]
+    },
+    "HarnessReleaseArchive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "url",
+        "sha256",
+        "member"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^https://"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "member": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      }
     },
     "ToolDefinition": {
       "oneOf": [
@@ -3776,7 +3964,10 @@
           "enum": [
             "codex",
             "dsh",
-            "pi"
+            "pi",
+            "opencode",
+            "mcode",
+            "zcode"
           ]
         },
         "runtime": {
@@ -5390,11 +5581,23 @@
         {
           "type": "object",
           "properties": {
-            "kind": { "const": "entity" },
-            "id": { "type": "string", "minLength": 1 },
-            "project": { "type": "string", "minLength": 1 }
+            "kind": {
+              "const": "entity"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "project": {
+              "type": "string",
+              "minLength": 1
+            }
           },
-          "required": ["kind", "id", "project"],
+          "required": [
+            "kind",
+            "id",
+            "project"
+          ],
           "additionalProperties": false
         }
       ]
@@ -6764,22 +6967,38 @@
     },
     "OperationEvidence": {
       "type": "object",
-      "required": ["verifier", "sources", "checks"],
+      "required": [
+        "verifier",
+        "sources",
+        "checks"
+      ],
       "additionalProperties": false,
       "properties": {
-        "verifier": { "type": "string", "minLength": 1 },
+        "verifier": {
+          "type": "string",
+          "minLength": 1
+        },
         "sources": {
           "type": "object",
           "minProperties": 1,
           "maxProperties": 32,
           "additionalProperties": {
             "type": "object",
-            "required": ["source"],
+            "required": [
+              "source"
+            ],
             "additionalProperties": false,
             "properties": {
-              "source": { "$ref": "#/$defs/PortSource" },
-              "platform_operation": { "type": "string", "minLength": 1 },
-              "human_confirmation": { "type": "boolean" }
+              "source": {
+                "$ref": "#/$defs/PortSource"
+              },
+              "platform_operation": {
+                "type": "string",
+                "minLength": 1
+              },
+              "human_confirmation": {
+                "type": "boolean"
+              }
             }
           }
         },
@@ -6791,7 +7010,9 @@
             "type": "array",
             "minItems": 1,
             "uniqueItems": true,
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           }
         }
       }

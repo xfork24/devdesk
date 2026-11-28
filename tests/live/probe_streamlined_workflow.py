@@ -15,7 +15,7 @@ from workflow_observer import read_workflow_tree, observe_human_request, check_h
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--binary', type=Path, required=True)
-parser.add_argument('--codex-auth-source', type=Path, required=True)
+parser.add_argument('--codex-auth-source', type=Path)
 parser.add_argument('--github-repo', required=True)
 parser.add_argument('--mainline', default='main')
 parser.add_argument('--mode', choices=('manual', 'rust', 'agent'), default='agent')
@@ -26,10 +26,19 @@ parser.add_argument('--report-directory', type=Path, required=True)
 parser.add_argument('--requirement-file', type=Path, required=True)
 parser.add_argument('--resume', action='store_true')
 parser.add_argument('--url', help='Observe an already running Host using report-directory/data; leave it running on exit')
+parser.add_argument('--existing-project', help='Run in the specified existing project on --url')
+parser.add_argument('--standard-ref', help='Exact Standard revision to use on a new run')
+parser.add_argument('--bindings', type=Path, help='Exact Role-to-Agent bindings JSON for the selected Standard')
+parser.add_argument('--test-configuration', type=Path, help='Explicit frozen project regression recipe JSON')
 parser.add_argument('--timeout-seconds', type=int, default=1800, help='Bound observation of this same workflow instance')
 parser.add_argument('--performance', action='store_true', help='Record native timing spans and observer query latency without changing workflow controls')
 args = parser.parse_args()
-assert 'test' in args.github_repo.lower(), 'use a dedicated test repository'
+if args.existing_project and not args.url:
+    parser.error('--existing-project requires a running Host via --url')
+if not args.existing_project and not args.resume and 'test' not in args.github_repo.lower():
+    parser.error('use a dedicated test repository or explicitly identify an existing test project')
+if not args.url and not args.codex_auth_source:
+    parser.error('--codex-auth-source is required when the probe starts its own Host')
 out = args.report_directory.resolve()
 out.mkdir(parents=True, exist_ok=True)
 assert args.resume == (out / 'context.json').exists()
@@ -65,10 +74,11 @@ try:
         assert time.monotonic() < deadline, 'Host startup timeout'
         time.sleep(.1)
     client = Client(urls[0])
-    auth = out / 'data/credentials/codex/auth.json'
-    auth.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(args.codex_auth_source.resolve(), auth)
-    auth.chmod(0o600)
+    if child is not None:
+        auth = out / 'data/credentials/codex/auth.json'
+        auth.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(args.codex_auth_source.resolve(), auth)
+        auth.chmod(0o600)
     if args.resume:
         context = json.loads((out / 'context.json').read_text())
         assert context['domain_digest'] == domain_digest, 'Resume must retain the original domain digest'
@@ -79,13 +89,17 @@ try:
         context.setdefault('resumptions', []).append({'binary_sha256': identity, 'time': time.time()})
     else:
         status = client.rpc('query.domain.active')
-        assert status['active'] is None, 'new dataset must start in the empty domain'
-        installed = client.rpc('domain.install', {'archive': base64.b64encode(domain_archive).decode()})
-        assert installed['digest'] == domain_digest
-        status = client.rpc('domain.activate', {'digest': domain_digest, 'epoch': status['epoch']})
+        if args.existing_project:
+            assert not status['active'] or status['active']['id'] == 'software-development'
+        else:
+            assert status['active'] is None, 'new dataset must start in the empty domain'
+        if (status['active'] or {}).get('digest') != domain_digest:
+            installed = client.rpc('domain.install', {'archive': base64.b64encode(domain_archive).decode()})
+            assert installed['digest'] == domain_digest
+            status = client.rpc('domain.activate', {'digest': domain_digest, 'epoch': status['epoch']})
         client.domain_epoch = status['epoch']
         defaults = status['defaults']
-        project = client.rpc('domain.project.create', {
+        project = args.existing_project or client.rpc('domain.project.create', {
             'epoch': status['epoch'], 'command_id': 'software-domain-live-project',
             'title': 'Software domain acceptance',
             'connection': {'repository': args.github_repo, 'mainline': args.mainline},
@@ -93,7 +107,20 @@ try:
         assert defaults['workflow_ref'].rsplit(':', 1)[0] == 'software-development.workflow-feature-development'
         assert defaults['task_workflow_ref'].rsplit(':', 1)[0] == 'software-development.workflow-task-development'
         assert defaults['standard_ref'].rsplit(':', 1)[0] == 'software-development.standard-engineering-delivery'
-        client.project = project
+        client.open(project)
+        if args.existing_project:
+            existing = client.rpc('query.workspace')['active_project']
+            assert existing['id'] == args.existing_project
+            assert existing['workspace_definition']['repository'] == args.github_repo
+            assert existing['workspace_definition']['mainline'] == args.mainline
+            # Use the normal GitHub reopen action to adopt the active domain's
+            # sources into the existing project before selecting its Standard.
+            reopened = client.rpc('domain.project.create', {
+                'epoch': status['epoch'], 'command_id': 'adopt-domain-' + domain_digest[:16] + '-' + project,
+                'title': existing['title'], 'connection': {'repository': args.github_repo, 'mainline': args.mainline},
+                'reuse_connection': True,
+            })
+            assert reopened['id'] == project, 'GitHub reopen did not reuse the requested project'
         client.wait(lambda: client.rpc('query.workspace'), lambda v: v['repository_ready'], 300)
         client.timeout = 1250
         runtime = client.rpc('runtime.prepare', {'provider': 'codex'})
@@ -101,20 +128,33 @@ try:
         discovery = client.rpc('query.project_test_configuration')
         (out / 'test-discovery.json').write_text(json.dumps(discovery, ensure_ascii=False, indent=2))
         current = client.rpc('query.workspace')['active_project']
-        client.command('project.update', project, current['revision'], {'concurrency': 4})
-        current = client.rpc('query.workspace')['active_project']
+        if not args.existing_project:
+            client.command('project.update', project, current['revision'], {'concurrency': 4})
+            current = client.rpc('query.workspace')['active_project']
         configuration_fields = ['workflow_ref', 'standard_ref', 'role_agent_bindings',
                                 'harness_permission_ref', 'sandbox_ref', 'sandbox_permission_ref', 'orchestration']
         configured = {key: defaults[key] for key in configuration_fields}
+        if args.standard_ref:
+            configured.pop('workflow_ref')
+            configured['standard_ref'] = args.standard_ref
+        if args.bindings:
+            configured['role_agent_bindings'] = json.loads(args.bindings.read_text())
+        if args.test_configuration:
+            configured['test_configuration'] = json.loads(args.test_configuration.read_text())
         configured['orchestration'] = {**configured['orchestration'], 'mode': args.mode}
         configuration = client.command('project.configuration.update', project, current['revision'], configured)
         test_configuration = configuration['data']['test_configuration']
+        if args.existing_project:
+            assert test_configuration and test_configuration['regression'], 'Existing acceptance project must have actual regression tests configured'
         feature = client.command('feature.create', payload={'project_id': project, 'title': args.title,
             'initial_requirement': args.requirement_file.read_text(), 'start_workflow': False, 'configuration_revision_id': configuration['id']})['id']
         client.command('workflow.start', feature, client.feature(feature)['feature']['revision'])
         root = client.rpc('query.workflow_instance', {'owner_id': feature})['record']['id']
         context = {'url': urls[0], 'project': project, 'feature': feature, 'root': root, 'binary_sha256': identity,
                    'defaults': defaults, 'domain_epoch': client.domain_epoch, 'domain_digest': domain_digest, 'test_configuration': test_configuration, 'suite': 'streamlined', 'mainline': args.mainline, 'mode': args.mode, 'human_decisions_by_probe': 0}
+        context['workflow_ref'] = configuration['data']['workflow_ref']
+        context['standard_ref'] = configuration['data']['standard_ref']
+        context['github_repo'] = args.github_repo
     (out / 'context.json').write_text(json.dumps(context, ensure_ascii=False, indent=2))
     def manual_actions(tree):
         # This client only drives the public manual scheduling actions. Human

@@ -1,6 +1,6 @@
 # mcode Harness 接入（MiniMax Code CLI 0.7.9）
 
-日期：2026-11-25。状态：**P0 策略与项目隔离退回设计**。范围：在批次 B 接入 mcode 0.7.9（`@minimax-ai/code`，MIT），交付四家模型服务商、讨论会话和 workflow 步骤工具。根编排不在本期范围。
+日期：2026-11-25。状态：**已接入批次 B，Linux arm64 正式镜像通过讨论、权限及两步依赖工作流验收。** 范围：接入 mcode 0.7.9（`@minimax-ai/code`，MIT），提供四家模型服务商、讨论会话和 workflow 步骤工具。
 
 前置依赖为 [Harness 扩展共享地基](../harness-shared-foundation/PLAN.md) 的通用管线、ACP 适配器、宿主 MCP 桥和 npm 安装能力。G0 依共享地基第 7 章并行验证，首个 ACP 接入者按 0.5 确定。架构独立性改造并行推进，mcode 按当前基线实施，后期归并按共享地基第 8 章执行。
 
@@ -36,7 +36,7 @@
 - **ACP 语义**：`session/update` 的 `sessionUpdate` 取值实测含 `agent_message_chunk`、`agent_thought_chunk`、`user_message_chunk`、`tool_call`、`tool_call_update`、`plan_update`、`plan_removed`、`usage_update`、`current_mode_update`、`config_option_update`、`session_info_update`、`available_commands_update`。`session/prompt` 返回 `stopReason`，取值 `end_turn` / `max_tokens` / `max_turn_requests` / `refusal` / `cancelled`。
 - **客户端能力**：`initialize` 的 `clientCapabilities` 结构为 `{fs:{readTextFile,writeTextFile}, terminal, auth:{terminal}, elicitation?}`；实测该版本 agent 仅回调 `session/request_permission` 与 `elicitation/create`，**未**回调 `fs/*`/`terminal/*`。
 - **步骤工具交付面**：`session/new` 参数结构为 `{cwd, additionalDirectories?, mcpServers?}`，`mcpServers` 元素为 `{type:"http",name,url,headers:[{name,value}]}` / `{type:"sse",...}` / `{type:"acp",name,serverId}` / `{type:"stdio",name,command,args,env}`。→ **动态工具只能以 MCP 服务器形式投放**。包内 ACP schema 虽含 `{type:"acp",name,serverId}` 与 `mcp/connect`、`mcp/message`、`mcp/disconnect`，但 **mcode 0.7.9 未实现**：`configureSessionMcpServers` 只映射 stdio 与 URL 两类，包内没有 `type:"acp"` 分支，也没有 `mcp/connect` 的调用点 → 不能借协议通道转发工具调用，步骤工具只能走宿主 HTTP MCP 桥。
-- **容器内策略钩子**：包内实测 Hook 事件列表 `SessionStart`、`SessionEnd`、`UserPromptSubmit`、`PreToolUse`、`PermissionRequest`、`PostToolUse`、`SubagentStart`、`SubagentStop`、`Stop`、`PreCompact`、`PostCompact`，装载自 `hooks/hooks.json` 的 `modules`（相对路径的 `.js/.mjs/.cjs/.jsx/.ts/.mts/.cts/.tsx`）。→ **可承载 DevDesk 冻结策略拦截**，与 DSH 的 `tool-policy.mjs` 同位。
+- **容器内策略钩子**：ACP 实测读取 `$MINIMAX_DATA_DIR/hooks.json`。顶层 `enabled: true`，事件组下配置 `type: "command"`。`SessionStart` 和 `PreToolUse` 均执行，工具调用收到带拒绝原因的 `hookSpecificOutput`。
 - **数据目录**：运行时读 `MINIMAX_DATA_DIR`（实测存在于包内）→ 可指向容器内 `/state/mcode`；`config.yaml` 位于该目录下。
 - **Linux 原生依赖风险（重要）**：包的 `native/` 目录只含 `darwin/{darwin-arm64,darwin-x64}` 与 `win32/{win32-arm64,win32-x64}` 预编译，**无 linux 预编译**；`postinstall` 脚本 `verify-native-install.mjs` 会在 Linux 上校验 `better-sqlite3` 是否可加载并按 Node ABI 要求 glibc（ABI 137/141/147 → glibc ≥ 2.29；127 → ≥ 2.29），失败即 `process.exitCode=1`。→ 镜像构建**不可**用 `--ignore-scripts`，且必须 `--include=optional --allow-scripts=@minimax-ai/code,better-sqlite3`。
 - **凭据面**：`mcode provider add --name <id> --base-url <url> --model <model-id>`；官方订阅走 OAuth 登录，DevDesk 场景只应使用 API key 型自定义 provider。
@@ -62,7 +62,7 @@
   - 基础镜像 glibc 必须 ≥ 2.29（Debian bookworm 为 2.36 ✓）。
   - **P0 必须实测**：npm tarball 内 `native/` 无 linux 预编译（仅 darwin/win32），需确认 Linux 容器内 mcode 是否仍可启动（可能依赖 WASM 回退 `emscripten-module.wasm`/`quickjs-worker.js`）。若不可启动，方案二：改用「容器内 `npm install` + 运行时从 `native/` 补 linux 预编译」或退回「以官方 Linux 发行物为准」，**该结论决定本计划是否成立**。
 - **会话身份**：ACP `session/new` 的 `sessionId` 存为 `external_session`。恢复按共享地基 2.2.7 协商 `resume` 或 `loadSession`，复核冻结模型、指令与 MCP 服务器列表。
-- **模型与 provider**：Host 写 `/state/mcode/config.yaml`（`MINIMAX_DATA_DIR` 下）声明自定义 provider 与默认模型；或以 `mcode --model provider/model` 启动参数指定。**P0 确定权威来源**（ACP `session/new` 无 model 参数）。
+- **模型与 provider**：Host 写 `MINIMAX_DATA_DIR/config.yaml`，用 `defaultModel: custom_provider:<provider>/<model>` 选择 `custom_provider` 中的模型。固定版本已实测 `api: openai-completions` 及 `options.baseURL/apiKey`。
 
 ### 2.2 协议与事件映射（ACP → `Obs`）
 
@@ -103,8 +103,8 @@
 1. **投放**：宿主在 `session/new`/`session/resume` 的 `mcpServers` 中注入（服务名取短名 `devdesk`，见共享地基 2.4.4）：
    ```json
    [{"type":"http","name":"devdesk",
-     "url":"http://host.docker.internal:<bridge-port>/internal/tool-bridge/<session>/mcp",
-     "headers":[{"name":"Authorization","value":"Bearer <session-token>"}]}]
+     "url":"http://host.docker.internal:<bridge-port>/mcp",
+     "headers":[{"name":"Authorization","value":"Bearer <worker-token>"}]}]
    ```
    动态工具（`dynamic_tools(binding)` 结果）由宿主 MCP 服务端以 `tools/list` 暴露，模型看到的是 MCP 工具。
 2. **执行**：复用共享地基 2.4.8 的投递、core 接纳、按工具类型执行及回执链路。mcode 负责方言接线和宿主桥注入。
@@ -115,12 +115,12 @@
 5. **工具投放**按共享地基 2.4.4，验收集成、上下文和平台工具各自的治理路径。未绑定工具在列表中隐藏。平台工具的授权要求写入 `limitations`，普通讨论中的显式调用返回 `tool_not_authorized`。
 6. **网络边界（已更正）**：Harness 工作容器恒为联网容器（`harness.rs:648`），`--network none` 只用于测试与工具容器，因此不存在「禁网 Profile 下宿主桥不可达」的场景。真实的边界是：mcode 不支持 harness 层工具禁网（`disabled_tools`），校验阶段直接拒绝；**远程 Docker daemon**（`DOCKER_HOST` 非 unix socket）下容器到不了 DevDesk 宿主，存在需要宿主桥的动态工具时在打开阶段直接拒绝。两项写入 `limitations`（共享地基 2.4.6）。
 7. HTTP MCP 路径被 P0 证伪时退回设计。可能的替代传输包括容器内 stdio MCP 代理和宿主 Unix socket，或 ACP 客户端方法承载受限工具集。替代路线须另行评审并重跑步骤工具与权限验收。
-8. **桥的落点与唤醒**（共享地基 2.4.1、2.2.9）：桥的 HTTP 监听在 host（adapters 没有 async 与 HTTP 依赖），经 `ports::ToolBridge` 交给 adapters 的桥收件箱；**入队即 `RuntimeWorkers.wakeups.notify()`**——mcode 等待 MCP 结果期间不产生任何协议帧，不唤醒则调用滞留到超时。
+8. **桥的落点与唤醒**（共享地基 2.4.1、2.2.9）：adapters 的独立监听器将请求投递至当前 worker 的收件箱，并通知 `RuntimeWorkers.wakeups`。mcode 等待 MCP 结果期间，调度无需新的 ACP 帧。
 9. **MCP 工具名**（共享地基 2.4.4）：暴露名满足 `^[A-Za-z0-9_-]{1,64}$`，原名含其他字符时确定性映射并在桥侧反查；P0 记录 mcode 给 MCP 工具加的服务器前缀与模型可见名长度，据此调整指令文本对工具名的引用。
 
 ### 2.4 权限与策略后端
 
-1. **容器内冻结策略**：`permissions/backends/mcode/hooks/hooks.json` + `permissions/backends/mcode/tool-policy.mjs`——读 `/run/devdesk/permission`，在 `PreToolUse` 上拒绝不在冻结 allow/deny 集合内的工具与升级请求（与 `permissions/backends/dsh/tool-policy.mjs` 同构；DSH 版返回 `{content:[{type:"text",...}],isError:true,error:{...}}`，mcode Hook 的返回契约 **P0 实测确定**）。
+1. **容器内冻结策略**：由 Host 写入私有 `$MINIMAX_DATA_DIR/hooks.json`，通过固定 `command` 加载 `permissions/backends/mcode/tool-policy.mjs` 对应资产。脚本读取 `/run/devdesk/permission`，在 `PreToolUse` 上对禁止的调用返回 `hookSpecificOutput.permissionDecision: "deny"`。初始 `SessionStart` 装载标记须绑定到本次运行。
 2. **能力声明** `capabilities(Mcode)`：filesystem 三档；network 仅 `enabled`（无工具级禁网执行器）；tools `all_available` + `restricted`；`limitations` 如实列出：容器内 Hook 非原生权限模式、审批为逐次询问、cwd 固定 `/work`、**不支持 harness 层工具禁网（`disabled_tools`）**、**不支持 Agent 提问（`elicitation/create` 被自动取消）**、**远程 Docker daemon 下步骤工具不可用**、**不支持进程内注册宿主工具（步骤工具走宿主 MCP）**、**平台工具仅在具备 controller 授权或 workflow 执行归属的会话可调用**。
 3. **校验分支** `validate_execution_permissions` 的 mcode 分支：拒绝 `Disabled` 网络；scoped 规则沿用 DSH 的「必须由冻结挂载落实」校验（抽成共用函数）。
 4. **执行合同命名**：按实际执行者命名，后端 `mcode-hooks-v1`，`harness_backend`/`rules` 不使用 `native` 字样。
@@ -139,7 +139,7 @@
 
 ### P0 可行性验证（G0 并行）
 
-本轮 G0 结论为 **退回设计（Linux 协议与 MCP 已跑通，追加探针未触发冻结 Hook，仓库指令进入模型，macOS 待验）**。见 [共享实施记录](../harness-shared-foundation/EXECUTION.md)。
+G0 在 Linux arm64 上实测项目 MCP 默认可启动。只读覆盖 `.minimax` 和 `.mcp.json` 后，项目 MCP 与项目 Hook 的探针均未运行，私有 Hook、用户指令和宿主 MCP 往返继续生效。正式 worker 采用项目配置保护挂载和独立的轮次桥。`AGENTS.md` 仍作为不可信上下文进入模型。[批次 B 产品验收](../harness-shared-foundation/EXECUTION.md#批次-b-产品验收)
 
 1. 手工构建固定版本镜像。验证 2.1 的 npm 脚本白名单实际生效，验证 `better-sqlite3` 在目标 Linux 架构可加载。记录 `mcode --version`，用独立零凭据、断网探针验证 `mcode acp` 启动及最小握手。
 2. 用真实 CLI 和获授权模型或受控模型夹具验证 `initialize` → `session/new` → `session/prompt` → 观察和权威终态。确认 ACP 协商、流式、审批应答形状及取消。
@@ -187,7 +187,7 @@
 
 结果：workflow 步骤工具一期打通。
 
-1. `harness_mcode.rs` 在 `session/new` 及协商成功的恢复请求中注入 `mcpServers`。Host MCP 监听、worker 收件箱、唤醒、回执与撤销复用共享地基 2.4。
+1. `harness_acp_setup.rs` 提供 `session/new` 与恢复所需的 `mcpServers`。Host MCP 监听、worker 收件箱、唤醒、回执与撤销复用共享地基 2.4。
 2. 接入 mcode 的审批选项映射，按 2.3 回答 provider 审批。桥调用沿 core 的工具准入链路。
 3. 按共享地基 2.4.9 在真实镜像验收九条桥判据，同步检查早到调用、写调用超时核对及策略阻断。
 

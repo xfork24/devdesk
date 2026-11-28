@@ -1,0 +1,22 @@
+{
+  "type": "model_provider",
+  "identity": "builtin-model-provider-opencode-ollama",
+  "revision": 1,
+  "name": "OpenCode · 本机 Ollama",
+  "scope": "global",
+  "data": {
+    "id": "opencode-ollama",
+    "label": "本机 Ollama",
+    "kind": "local_server",
+    "harness": "opencode",
+    "endpoint": "http://127.0.0.1:11434/v1",
+    "route": "ollama",
+    "protocol": "openai-completions",
+    "api_key_env": "",
+    "requires_key": false,
+    "native": false,
+    "capacity_required": true,
+    "min_output_request": 1,
+    "credential_account": ""
+  }
+}

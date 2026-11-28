@@ -1,0 +1,18 @@
+{
+  "type": "model",
+  "identity": "builtin-model-opencode-minimax-m3-1-flash",
+  "revision": 1,
+  "name": "OpenCode · MiniMax M3.1 Flash",
+  "scope": "global",
+  "data": {
+    "capabilities": [
+      "structured-output",
+      "tool-calling"
+    ],
+    "context_window": 1000000,
+    "max_output_tokens": 524288,
+    "model": "MiniMax-M3.1-Flash",
+    "parameters": {},
+    "provider": "opencode-minimax-cn"
+  }
+}

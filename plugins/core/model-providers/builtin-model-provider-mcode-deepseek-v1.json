@@ -1,0 +1,23 @@
+{
+  "type": "model_provider",
+  "identity": "builtin-model-provider-mcode-deepseek",
+  "revision": 1,
+  "name": "mcode · DeepSeek 官方 API",
+  "scope": "global",
+  "data": {
+    "id": "mcode-deepseek",
+    "label": "DeepSeek 官方 API",
+    "kind": "cloud_subscription",
+    "harness": "mcode",
+    "endpoint": "https://api.deepseek.com",
+    "route": "deepseek",
+    "protocol": "openai-completions",
+    "api_key_env": "MCODE_DEEPSEEK_API_KEY",
+    "requires_key": true,
+    "native": false,
+    "capacity_required": true,
+    "min_output_request": 1024,
+    "max_output_request": 131072,
+    "credential_account": "mcode-deepseek-api-key-"
+  }
+}

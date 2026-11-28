@@ -394,7 +394,12 @@ impl CredentialVault {
         let Some(reference) = reference else {
             return Ok(self.model_status_value(provider, facts, "", false));
         };
-        let account = self.model_account(facts, reference)?;
+        // A restored dataset can contain a binding owned by its original path
+        // or provider revision. Present it as unconfigured so the operator can
+        // publish a replacement against the existing binding revision.
+        let Ok(account) = self.model_account(facts, reference) else {
+            return Ok(self.model_status_value(provider, facts, "", false));
+        };
 
         #[cfg(target_os = "macos")]
         let configured = if crate::credentials_macos::available() {
@@ -639,6 +644,15 @@ mod tests {
             .reference;
         assert!(first.reference_account(&reference).is_ok());
         assert!(second.reference_account(&reference).is_err());
+        let copied = second
+            .status_model_reference(&deepseek, Some(&reference))
+            .unwrap();
+        assert!(!copied.configured && copied.reference.is_empty());
+        assert!(
+            second
+                .verify_model_reference(&deepseek, &reference)
+                .is_err()
+        );
         assert!(first.reference_account("/tmp/secret").is_err());
         assert!(
             first

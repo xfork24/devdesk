@@ -16,7 +16,7 @@ fn runtime_command(execution: &StepExecution, method: &str, sequence: u64) -> St
     )
 }
 impl Engine {
-    fn observed_workflow_intent(
+    pub(crate) fn observed_workflow_intent(
         &self,
         resources: &WorkflowResources,
         method: &str,
@@ -275,15 +275,10 @@ impl Engine {
                                     } else {
                                         failure_source = tid.clone();
                                         observed_effect = Some(ExecutionFailureEffect::Applied);
-                                        let result: Value = serde_json::from_str(
-                                            observed["assistant"].as_str().unwrap_or(""),
-                                        )
-                                        .map_err(|e| {
-                                            err(
-                                                "output_invalid",
-                                                format!("实际 Agent 输出不是声明的 JSON 封套: {e}"),
-                                            )
-                                        })?;
+                                        let result =
+                                            crate::configured_runtime::agent_output_envelope(
+                                                observed["assistant"].as_str().unwrap_or(""),
+                                            )?;
                                         let runtime =
                                             serde_json::from_value(observed["runtime"].clone())
                                                 .map_err(|e| err("storage", e.to_string()))?;

@@ -1,0 +1,43 @@
+{
+  "type": "harness",
+  "identity": "builtin-harness-mcode-managed",
+  "revision": 1,
+  "name": "mcode Harness",
+  "scope": "global",
+  "model_catalog_ref": "builtin-model-catalog-mcode:1",
+  "model_providers": [
+    "builtin-model-provider-mcode-deepseek:1",
+    "builtin-model-provider-mcode-zai-coding-cn:1",
+    "builtin-model-provider-mcode-minimax-cn:1",
+    "builtin-model-provider-mcode-ollama:1"
+  ],
+  "data": {
+    "capabilities": [
+      "structured-output",
+      "tool-calling",
+      "cancel",
+      "poll",
+      "dynamic-tools",
+      "external-tools",
+      "platform-tools"
+    ],
+    "provider": "mcode",
+    "runtime_version": "0.7.9",
+    "installation": {
+      "license": "MIT",
+      "entrypoint": [
+        "mcode",
+        "acp"
+      ],
+      "package": "@minimax-ai/code",
+      "npm_options": {
+        "version": "11.16.0",
+        "include_optional": true,
+        "allow_scripts": [
+          "@minimax-ai/code",
+          "better-sqlite3"
+        ]
+      }
+    }
+  }
+}

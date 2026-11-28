@@ -1,0 +1,22 @@
+{
+  "type": "model_provider",
+  "identity": "builtin-model-provider-zcode-minimax-cn",
+  "revision": 1,
+  "name": "zcode · MiniMax 订阅 国内",
+  "scope": "global",
+  "data": {
+    "id": "zcode-minimax-cn",
+    "label": "MiniMax 订阅 国内",
+    "kind": "cloud_subscription",
+    "harness": "zcode",
+    "endpoint": "https://api.minimax.cn/v1",
+    "route": "minimax-cn",
+    "protocol": "openai-completions",
+    "api_key_env": "ZCODE_MINIMAX_CN_API_KEY",
+    "requires_key": true,
+    "native": false,
+    "capacity_required": true,
+    "min_output_request": 1,
+    "credential_account": "zcode-minimax-cn-api-key-"
+  }
+}

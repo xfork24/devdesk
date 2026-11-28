@@ -780,8 +780,26 @@ impl Engine {
         root: &WorkflowHeaderFacts,
         resources: &WorkflowResources,
     ) -> Result<StepExecution> {
+        let execution = &resources.execution;
+        let recheck_output = matches!(
+            commit.method,
+            "workflow.step.reconcile" | "workflow.execution.reconcile"
+        ) && commit.command.payload["resolution"]
+            .as_str()
+            .unwrap_or("inspect")
+            == "inspect"
+            && commit.command.payload["execution_id"] == execution.id
+            && !root.instance.cancel_requested
+            && execution.status == StepExecutionStatus::Failed
+            && execution.session_id.is_some()
+            && execution.outputs.is_empty()
+            && execution.failure.as_ref().is_some_and(|failure| {
+                failure.code == "output_invalid"
+                    && failure.effect == ExecutionFailureEffect::Applied
+                    && execution.turn_id.as_ref() == Some(&failure.source_ref)
+            });
         require(
-            resources.execution.status == StepExecutionStatus::NeedsReconciliation,
+            execution.status == StepExecutionStatus::NeedsReconciliation || recheck_output,
             "原执行无需核对",
         )?;
         let previous = one(

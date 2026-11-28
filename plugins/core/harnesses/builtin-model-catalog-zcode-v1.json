@@ -1,0 +1,22 @@
+{
+  "type": "model_catalog",
+  "identity": "builtin-model-catalog-zcode",
+  "revision": 1,
+  "name": "ZCode Model Catalog",
+  "scope": "global",
+  "data": {
+    "recipe_digest": "831e914c1a833df8c520b2e1c260e8cf661b2f92a30e5c2475dfe26215c69faa",
+    "providers": [
+      {
+        "provider_ref": "builtin-model-provider-zcode-minimax-cn:1",
+        "models": [
+          {
+            "id": "MiniMax-M3.1-Flash",
+            "context_window": 1000000,
+            "max_output_tokens": 524288
+          }
+        ]
+      }
+    ]
+  }
+}

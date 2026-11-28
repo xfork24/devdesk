@@ -1,0 +1,18 @@
+{
+  "type": "model",
+  "identity": "builtin-model-opencode-glm-5-3",
+  "revision": 1,
+  "name": "OpenCode · GLM 5.3",
+  "scope": "global",
+  "data": {
+    "capabilities": [
+      "structured-output",
+      "tool-calling"
+    ],
+    "context_window": 1000000,
+    "max_output_tokens": 131072,
+    "model": "glm-5.3",
+    "parameters": {},
+    "provider": "opencode-zai-coding-cn"
+  }
+}

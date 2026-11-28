@@ -44,6 +44,9 @@
 | [src/github_delivery.rs](../../../crates/adapters/src/github_delivery.rs) | [Git、测试和 GitHub 适配器](engineering-resources.md) |
 | [src/global_migration.rs](../../../crates/adapters/src/global_migration.rs) | Explicit offline upgrades for the global database. Keep the dataset lock across the backup and the transaction that replaces the installation table. |
 | [src/harness.rs](../../../crates/adapters/src/harness.rs) | [Harness 协议与 Docker 容器](harness-and-protocols.md) |
+| [src/harness_acp.rs](../../../crates/adapters/src/harness_acp.rs) | ACP v1 client. A native process and its bridge serve exactly one DevDesk Turn. |
+| [src/harness_acp_setup.rs](../../../crates/adapters/src/harness_acp_setup.rs) | Provider-specific model and policy inputs for the shared ACP client. |
+| [src/harness_bridge.rs](../../../crates/adapters/src/harness_bridge.rs) | One authenticated MCP transport per provider process and dispatched Turn. |
 | [src/harness_pi.rs](../../../crates/adapters/src/harness_pi.rs) | Pi's RPC frames and its transport for frozen DevDesk step tools. |
 | [src/harness_startup.rs](../../../crates/adapters/src/harness_startup.rs) | [Harness 协议与 Docker 容器](harness-and-protocols.md) |
 | [src/harness_workspace.rs](../../../crates/adapters/src/harness_workspace.rs) | Materializes worker workspace leases before constructing a container. |

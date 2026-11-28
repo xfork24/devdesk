@@ -119,13 +119,19 @@ impl Engine {
             .arguments
             .get("value")
             .ok_or_else(|| err("invalid_params", "缺少待检查内容"))?;
-        let catalog = self.store.configuration_snapshot()?;
-        let mut report = self.lint_delivery_value(&catalog.state, delivery, value)?;
-        if step
+        let content_report = step
             .outputs
             .values()
-            .any(|p| p.delivery_ref == reference && p.content_checks)
-        {
+            .any(|p| p.delivery_ref == reference && p.content_checks);
+        let transported_report = if content_report {
+            normalize_content_report_draft(value)?
+        } else {
+            None
+        };
+        let catalog = self.store.configuration_snapshot()?;
+        let value = transported_report.as_ref().unwrap_or(value);
+        let mut report = self.lint_delivery_value(&catalog.state, delivery, value)?;
+        if content_report {
             let selected = one(
                 self.store.as_ref(),
                 "governance",
@@ -141,7 +147,7 @@ impl Engine {
             report["content_report_required_checks"] =
                 json!(crate::spec_lint::step_content_checks(instance, step)?);
             report["content_report_instructions"] = json!(
-                "Call spec.lint with exactly {delivery_ref, value}; delivery_ref is this exact Delivery revision and value is the complete report. Report checks must match content_report_required_checks, not the Delivery's generic checks above. Correct the draft in this same Turn; do not substitute a port name or add spec_ref/output_port arguments."
+                "Call spec.lint with exactly {delivery_ref, value}. Use this exact Delivery revision and the complete report. Report checks must match content_report_required_checks. If your tool client changes the types in locator, send the complete report JSON as a single string in value. In the final workflow output, use a JSON object with integer coordinates and string pointers. Use the exact source_ref and value_digest from content_report_sources."
             );
             report["content_report_sources"] = json!(
                 targets
@@ -283,5 +289,96 @@ impl Engine {
             }
         }
         Ok((json!({"outputs":outputs}), reads))
+    }
+}
+
+fn normalize_content_report_draft(value: &Value) -> Result<Option<Value>> {
+    if let Some(encoded) = value.as_str() {
+        require(encoded.len() <= SPEC_VALUE_LIMIT, "内容检查草稿超过 8 MiB")?;
+        let decoded: Value = serde_json::from_str(encoded)
+            .map_err(|e| err("invalid_params", format!("内容检查草稿 JSON 无效: {e}")))?;
+        require(decoded.is_object(), "内容检查草稿 JSON 必须是对象")?;
+        return Ok(Some(decoded));
+    }
+
+    // Untyped tool arguments can serialize integer coordinates as strings.
+    // Normalize only those fields; persisted reports still use the typed contract.
+    let mut draft = value.clone();
+    let mut changed = false;
+    for check in draft
+        .get_mut("checks")
+        .and_then(Value::as_array_mut)
+        .into_iter()
+        .flatten()
+    {
+        for location in check
+            .get_mut("locations")
+            .and_then(Value::as_array_mut)
+            .into_iter()
+            .flatten()
+        {
+            let Some(locator) = location.get_mut("locator").and_then(Value::as_object_mut) else {
+                continue;
+            };
+            if !matches!(
+                locator.get("type").and_then(Value::as_str),
+                Some("lines" | "characters")
+            ) {
+                continue;
+            }
+            for field in ["start", "end"] {
+                if let Some(coordinate) = locator.get_mut(field)
+                    && let Some(raw) = coordinate.as_str()
+                    && let Ok(number) = raw.parse::<usize>()
+                    && number.to_string() == raw
+                {
+                    *coordinate = json!(number);
+                    changed = true;
+                }
+            }
+        }
+    }
+    Ok(changed.then_some(draft))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn content_report_draft_transport_preserves_evidence_coordinates() {
+        let source = json!("first\nsecond");
+        let target = EvidenceTarget {
+            source_ref: "frozen-input".into(),
+            value_digest: configuration_hash(&source),
+            value: source,
+        };
+        let mut draft = json!({"approve":true,"summary":"checked","checks":[{
+            "key":"check","passed":true,"evidence":"read the second line","locations":[{
+                "source_ref":target.source_ref,"value_digest":target.value_digest,
+                "locator":{"type":"lines","start":"2","end":"2"},"quote":"second"
+            }]
+        }]});
+        assert!(serde_json::from_value::<ContentCheckReport>(draft.clone()).is_err());
+        let transported = normalize_content_report_draft(&draft).unwrap().unwrap();
+        let report = serde_json::from_value::<ContentCheckReport>(transported).unwrap();
+        report.checks[0].locations[0]
+            .verify(std::slice::from_ref(&target))
+            .unwrap();
+
+        let location = &mut draft["checks"][0]["locations"][0];
+        location["locator"] = json!({"type":"json_pointer","pointer":""});
+        location.as_object_mut().unwrap().remove("quote");
+        let transported = normalize_content_report_draft(&json!(draft.to_string()))
+            .unwrap()
+            .unwrap();
+        let report = serde_json::from_value::<ContentCheckReport>(transported).unwrap();
+        report.checks[0].locations[0]
+            .verify(std::slice::from_ref(&target))
+            .unwrap();
+
+        draft["checks"][0]["locations"][0]["locator"]["pointer"] = json!({});
+        assert!(normalize_content_report_draft(&draft).unwrap().is_none());
+        assert!(serde_json::from_value::<ContentCheckReport>(draft).is_err());
     }
 }

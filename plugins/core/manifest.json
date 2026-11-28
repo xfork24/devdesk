@@ -16,12 +16,20 @@
       "models/builtin-model-minimax-m3-1-flash-v1.json",
       "models/builtin-model-glm-5-3-v1.json",
       "models/builtin-model-pi-glm-5-3-v1.json",
-      "models/builtin-model-pi-minimax-m3-1-flash-v1.json"
+      "models/builtin-model-pi-minimax-m3-1-flash-v1.json",
+      "models/builtin-model-opencode-glm-5-3-v1.json",
+      "models/builtin-model-opencode-minimax-m3-1-flash-v1.json",
+      "models/builtin-model-mcode-glm-5-3-v1.json",
+      "models/builtin-model-mcode-minimax-m3-1-flash-v1.json",
+      "models/builtin-model-zcode-minimax-m3-1-flash-v1.json"
     ],
     "harness": [
       "harnesses/builtin-harness-dsh-multi-provider-v2.json",
       "harnesses/builtin-harness-codex-managed-v2.json",
-      "harnesses/builtin-harness-pi-managed-v1.json"
+      "harnesses/builtin-harness-pi-managed-v1.json",
+      "harnesses/builtin-harness-opencode-managed-v1.json",
+      "harnesses/builtin-harness-mcode-managed-v1.json",
+      "harnesses/builtin-harness-zcode-managed-v2.json"
     ],
     "sandbox": [
       "sandboxes/builtin-sandbox-docker-v2.json"
@@ -38,7 +46,10 @@
       "tools/builtin-tool-workflow-decision-request-v5.json",
       "tools/builtin-tool-workflow-complete-v3.json",
       "tools/builtin-tool-spec-lint-v2.json",
-      "tools/builtin-tool-pi-native-v1.json"
+      "tools/builtin-tool-pi-native-v1.json",
+      "tools/builtin-tool-opencode-native-v1.json",
+      "tools/builtin-tool-mcode-native-v1.json",
+      "tools/builtin-tool-zcode-native-v1.json"
     ],
     "permission_profile": [
       "permissions/profiles/builtin-permission-harness-full-access-v2.json",
@@ -54,11 +65,23 @@
       "model-providers/builtin-model-provider-pi-deepseek-v1.json",
       "model-providers/builtin-model-provider-pi-ollama-v1.json",
       "model-providers/builtin-model-provider-pi-zai-coding-cn-v1.json",
-      "model-providers/builtin-model-provider-pi-minimax-cn-v1.json"
+      "model-providers/builtin-model-provider-pi-minimax-cn-v1.json",
+      "model-providers/builtin-model-provider-opencode-deepseek-v1.json",
+      "model-providers/builtin-model-provider-opencode-ollama-v1.json",
+      "model-providers/builtin-model-provider-opencode-zai-coding-cn-v1.json",
+      "model-providers/builtin-model-provider-opencode-minimax-cn-v1.json",
+      "model-providers/builtin-model-provider-mcode-deepseek-v1.json",
+      "model-providers/builtin-model-provider-mcode-ollama-v1.json",
+      "model-providers/builtin-model-provider-mcode-zai-coding-cn-v1.json",
+      "model-providers/builtin-model-provider-mcode-minimax-cn-v1.json",
+      "model-providers/builtin-model-provider-zcode-minimax-cn-v1.json"
     ],
     "model_catalog": [
       "harnesses/builtin-model-catalog-dsh-v1.json",
-      "harnesses/builtin-model-catalog-pi-v1.json"
+      "harnesses/builtin-model-catalog-pi-v1.json",
+      "harnesses/builtin-model-catalog-opencode-v1.json",
+      "harnesses/builtin-model-catalog-mcode-v1.json",
+      "harnesses/builtin-model-catalog-zcode-v1.json"
     ]
   },
   "defaults": "defaults.json"

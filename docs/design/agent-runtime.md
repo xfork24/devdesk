@@ -4,7 +4,7 @@ Agent 通过 Harness 与模型交互，Harness 在 Docker Sandbox 中运行。Ho
 
 ## Harness 与 Sandbox
 
-Harness 是模型程序及其协议适配，例如 Codex app-server、DSH SDK 和 Pi RPC。Sandbox 是执行它的隔离环境，包括基础镜像、系统依赖、挂载和网络限制。
+Harness 是模型程序及其协议适配，例如 Codex app-server、DSH SDK、Pi RPC 和 OpenCode、mcode 的 ACP。Sandbox 是执行它的隔离环境，包括基础镜像、系统依赖、挂载和网络限制。
 
 适配器把选定的 Harness 与 Sandbox 组合成执行配方，准备镜像并检查协议。共享镜像可以减少重复安装；每个会话仍有自己的状态目录、进程连接和执行身份。Agent 不获得 Docker daemon socket，不能自行创建任意同级容器。
 
@@ -38,16 +38,16 @@ sequenceDiagram
 
 Docker 适配器通过 `docker start --attach --interactive` 连接容器进程。JSONL 层通过标准输入/输出交换带请求 ID 的消息，并分离协议帧与日志。它不是给每个 Agent 暴露一个任意可调用的 Host HTTP 管理接口。
 
-| 行为 | Codex | DSH | Pi |
-|---|---|---|---|
-| 会话准备 | `thread/start` / `thread/resume` | DSH 会话协议，由驱动转换 | 固定 `--session-id`，用 `get_state` 核对会话与模型 |
-| 发起一轮任务 | `turn/start` | `session/prompt` | `prompt` |
-| 动态工具请求 | `item/tool/call` | `devdesk/tool/call` | 受管扩展发送 `extension_ui_request` |
-| 回复工具 | Host 回复原请求 | Host 回复原请求 | `extension_ui_response` |
+| 行为 | Codex | DSH | Pi | OpenCode / mcode |
+|---|---|---|---|---|
+| 会话准备 | `thread/start` / `thread/resume` | DSH 会话协议，由驱动转换 | 固定 `--session-id`，用 `get_state` 核对会话与模型 | ACP `session/new` / `session/load` |
+| 发起一轮任务 | `turn/start` | `session/prompt` | `prompt` | `session/prompt` |
+| 动态工具请求 | `item/tool/call` | `devdesk/tool/call` | 受管扩展发送 `extension_ui_request` | 独立宿主 MCP 端点的 `tools/call` |
+| 回复工具 | Host 回复原请求 | Host 回复原请求 | `extension_ui_response` | MCP 回执，按 worker 和轮次核对 |
 
 适配器把供应商事件转换成统一的 ConversationObservation。core 处理这些观察结果，检查调用身份，再执行授权范围内的工具或保存会话结果。
 
-Codex 驱动声明根工作流编排能力。DSH 和 Pi 支持普通讨论与有授权的步骤工具。支持范围见[接入参考](reference/integrations.md)。
+Codex 驱动声明根工作流编排能力。DSH、Pi、OpenCode、mcode 支持普通讨论与有授权的步骤工具。支持范围见[接入参考](reference/integrations.md)。
 
 ## PRD 怎样成为正式结果
 

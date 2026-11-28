@@ -1,6 +1,6 @@
 # pi Harness 接入（pi coding agent 1.6.0）
 
-日期：2026-11-25。状态：**批次 A 已实现，Linux amd64 原生验收通过**。范围：接入 pi 1.6.0（`@earendil-works/pi-coding-agent`，MIT）为第三个 Harness，能力对齐 DSH：四家模型服务商、讨论会话、workflow 步骤工具。不含根编排。
+日期：2026-11-25。状态：**批次 A 已实现，Linux amd64 与 macOS arm64 原生验收通过**。范围：接入 pi 1.6.0（`@earendil-works/pi-coding-agent`，MIT）为第三个 Harness，能力对齐 DSH：四家模型服务商、讨论会话、workflow 步骤工具。不含根编排。
 
 > **批次与依赖**：pi 是批次 A 首条接入线，和通用管线一起交付。Provider 能力表、凭据与设置页泛化、全局库 v25、Schema 枚举和 `model_profile_digest` 分派可独立实现，pi 的 UI 隧道待重设计时仍可用 Codex/DSH 验证通用改动。跨计划口径见 [Harness 扩展共享地基](../harness-shared-foundation/PLAN.md)。架构独立性改造并行推进，pi 按当前基线实施，后期归并按共享地基第 8 章执行。
 
@@ -95,7 +95,7 @@
 
 ### P0 可行性验证（G0 并行）
 
-本轮 G0 结论为 **通过（Linux amd64，真实 CLI + 受控模型）**。见 [共享实施记录](../harness-shared-foundation/EXECUTION.md)。
+本轮 G0 结论为 **通过（Linux amd64 和 macOS Docker Desktop arm64，真实 CLI + 受控模型）**。macOS 签名 Host 也通过了 v24→v25 升级、会话恢复、冻结策略、工作流步骤工具和已绑定 HTTP 工具的原生验收。[共享实施记录](../harness-shared-foundation/EXECUTION.md#macos-验证结果)
 
 1. 用手工 Dockerfile 构建固定版本镜像，检查 `pi --version`、`pi --list-models`。用独立零凭据、断网的容器探针验证 `get_state` 往返。合成器是否需要 `--ignore-scripts` 以实测为准。
 2. 用本机 pi 1.6.0 跑一个最小扩展，确认工具 `execute` 里的 `ctx.ui.input` 确实发出 `extension_ui_request` 并能被应答；同一扩展里确认 `ctx.ui.notify` 的装载信号能被 Host 读到（§2.4 的策略装载证明）。

@@ -312,8 +312,9 @@ impl Engine {
             .value
             .as_ref()
             .ok_or_else(|| err("not_found", "原完成轮次缺失"))?;
-        let result: Value = serde_json::from_str(value["assistant"].as_str().unwrap_or(""))
-            .map_err(|e| err("storage", e.to_string()))?;
+        let result = crate::configured_runtime::agent_output_envelope(
+            value["assistant"].as_str().unwrap_or(""),
+        )?;
         require(
             value["turn"]["status"] == "completed"
                 && value["turn"]["session_id"] == sid

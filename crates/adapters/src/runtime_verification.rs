@@ -95,6 +95,20 @@ impl GlobalStore {
             HarnessProvider::Dsh => {
                 command.args(["-c", "exec dsh --profile sdk"]);
             }
+            HarnessProvider::Opencode => {
+                command.args(["-c", "export OPENCODE_DISABLE_MODELS_FETCH=1 OPENCODE_DISABLE_PROJECT_CONFIG=1 OPENCODE_DISABLE_AUTOUPDATE=1; exec opencode acp"]);
+            }
+            HarnessProvider::Mcode => {
+                command.args(["-c", "export MINIMAX_DATA_DIR=/state/mcode CI=1 NO_UPDATE_NOTIFIER=1; exec mcode acp"]);
+            }
+            HarnessProvider::Zcode => {
+                command.args([
+                    "-c",
+                    "exec node --input-type=module -e \"$1\" -- --probe",
+                    "zcode-probe",
+                    std::str::from_utf8(permissions::ZCODE_BRIDGE).map_err(storage)?,
+                ]);
+            }
             HarnessProvider::Pi => {
                 command.args(["-c", "export PI_CODING_AGENT_DIR=/state/pi PI_OFFLINE=1 PI_TELEMETRY=0 PI_SKIP_VERSION_CHECK=1; exec pi --mode rpc -ne --no-approve --no-mcp"]);
             }
@@ -126,9 +140,33 @@ impl GlobalStore {
                             "协议验证需要已声明的原生服务商路由",
                         )
                     })?;
-                wire.request("initialize",json!({"cwd":"/tmp","provider":route.route,"model":"probe-no-inference","maxTokens":route.min_output_request,
-                    "approvalRequests":true,"capabilities":{"userQuestions":true}}))?;
+                wire.request_at_startup(
+                    "initialize",
+                    json!({"cwd":"/tmp","provider":route.route,"model":"probe-no-inference","maxTokens":route.min_output_request,
+                        "approvalRequests":true,"capabilities":{"userQuestions":true}}),
+                    harness::DSH_STARTUP_TIMEOUT,
+                ).map_err(|error| {
+                    if error.code == "needs_reconciliation" {
+                        err("provider_unavailable", error.message).technical_not_applied()
+                    } else {
+                        error
+                    }
+                })?;
                 vec!["initialize"]
+            }
+            HarnessProvider::Opencode | HarnessProvider::Mcode | HarnessProvider::Zcode => {
+                let capabilities = harness::acp::handshake(&mut wire)?;
+                require(
+                    capabilities["mcpCapabilities"]["http"] == true
+                        && (capabilities["sessionCapabilities"].get("resume").is_some()
+                            || capabilities["loadSession"] == true),
+                    "固定 ACP 安装缺少 HTTP MCP 或恢复能力",
+                )?;
+                vec![
+                    "initialize",
+                    "acp-http-mcp-capability",
+                    "acp-resume-capability",
+                ]
             }
             HarnessProvider::Pi => {
                 wire.pi_rpc();

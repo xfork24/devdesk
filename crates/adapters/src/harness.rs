@@ -10,12 +10,20 @@ use ports::{
     WorkerStop,
 };
 use std::{collections::HashMap, sync::Arc};
+#[path = "harness_acp.rs"]
+pub(crate) mod acp;
+#[path = "harness_acp_setup.rs"]
+pub(crate) mod acp_setup;
+#[path = "harness_bridge.rs"]
+mod bridge;
 #[path = "harness_pi.rs"]
 mod pi;
 #[path = "harness_startup.rs"]
 mod startup;
 #[path = "harness_workspace.rs"]
 mod workspace;
+
+pub(crate) const DSH_STARTUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
 // Bump this contract only when the provider protocol or persisted worker state
 // is incompatible. The build digest separately keys installation probes.
@@ -24,6 +32,9 @@ fn managed_adapter_contract(provider: HarnessProvider) -> &'static str {
         HarnessProvider::Codex => "codex-app-server/v1",
         HarnessProvider::Dsh => "dsh-sdk/v1",
         HarnessProvider::Pi => "pi-rpc/v1",
+        HarnessProvider::Opencode => "opencode-acp/v1",
+        HarnessProvider::Mcode => "mcode-acp/v1",
+        HarnessProvider::Zcode => "zcode-app-server/v1",
     }
 }
 
@@ -31,6 +42,21 @@ pub fn managed_adapter_identity(provider: HarnessProvider) -> String {
     let mut hash = Sha256::new();
     hash.update(include_bytes!("harness.rs"));
     hash.update(include_bytes!("harness_pi.rs"));
+    if provider.traits().tool_transport == ToolTransport::HostMcp {
+        hash.update(include_bytes!("harness_acp.rs"));
+        hash.update(include_bytes!("harness_acp_setup.rs"));
+        hash.update(include_bytes!("harness_bridge.rs"));
+        hash.update(include_bytes!(
+            "../../../permissions/backends/acp/tool-policy.mjs"
+        ));
+        hash.update(include_bytes!(
+            "../../../permissions/backends/opencode/plugin.mjs"
+        ));
+    }
+    if provider == HarnessProvider::Zcode {
+        hash.update(permissions::ZCODE_BRIDGE);
+        hash.update(permissions::ZCODE_POLICY);
+    }
     hash.update(permissions::PI_TOOL_POLICY);
     hash.update(include_bytes!("harness_startup.rs"));
     hash.update(include_bytes!("harness_workspace.rs"));
@@ -255,6 +281,7 @@ struct Request {
     answered: bool,
 }
 struct Worker {
+    acp: Option<acp::Acp>,
     worktree: PathBuf,
     permissions: Option<ExecutionPermissions>,
     wire: JsonlProcess,
@@ -511,6 +538,8 @@ impl RuntimeWorkers {
         let mut profile = None;
         let mut runner = None;
         let mut bridge = None;
+        let mut acp_setup = None;
+        let mut profile_target = None;
         let session_id = r
             .session
             .external_session
@@ -623,7 +652,7 @@ impl RuntimeWorkers {
                 write_private(&path,format!("- id: plugin-manager\n  disabled: true\n- id: tool-plugin-manager\n  disabled: true\n- id: session-telemetry-otel\n  disabled: true\n- id: session-log-deepseek\n  disabled: true\n- id: file-upload\n  disabled: true\n- id: schedule\n  disabled: true\n- id: tool-schedule\n  disabled: true\n- id: tool-fs\n  disabled: true\n- id: tool-fs-search\n  disabled: true\n- id: tool-skill\n  disabled: true\n- id: tool-jobs\n  disabled: true\n- id: tool-subagent\n  disabled: true\n- id: tool-subagent-control\n  disabled: true\n- id: tool-agent-team\n  disabled: true\n- id: tool-working-directory\n  disabled: true\n- id: agent-instructions\n  disabled: true\n- id: skill-filesystem\n  disabled: true\n- id: goal-round-driver\n  disabled: true\n- id: plan-mode\n  disabled: true\n- id: system-prompt\n  config:\n    personaPrefix: {persona}\n- id: sandbox\n  config:\n    runnerCommand: [/bin/bash, /run/devdesk/runner]\n    runnerFailureSignatures: ['bwrap:']\n- id: sandbox-policy\n  config:\n    mode: {mode}\n    workspaceRoot: {cwd_yaml}\n    additionalWritableRoots: {roots}\n- insert:\n  - id: devdesk-tool-boundary\n    name: /opt/devdesk/dsh-policy/index.mjs\n").as_bytes())?;
                 if let Some(p) = &binding.permissions {
                     let patch = permissions::dsh_profile(p, &instructions, &cwd)?;
-                    if p.harness.policy.network == NetworkPermission::Enabled {
+                    if !p.isolation.nested_sandbox {
                         runner = None;
                     }
                     write_private(&path, patch.as_bytes())?;
@@ -676,10 +705,35 @@ impl RuntimeWorkers {
                 env = provider_environment(&self.root, &meta, binding, connection, &mut secrets)?;
                 pi::command(session_id, connection, &binding.model)
             }
+            HarnessProvider::Opencode | HarnessProvider::Mcode | HarnessProvider::Zcode => {
+                let connection = model_connection
+                    .as_ref()
+                    .ok_or_else(|| err("invalid_configuration", "缺少冻结 ACP 模型连接"))?;
+                let wakeups = self.wakeups.clone();
+                let mut setup = acp_setup::prepare(
+                    acp_setup::Inputs {
+                        binding,
+                        connection,
+                        state: &state,
+                        meta: &meta,
+                        operation: &r.execution.operation_id,
+                        instructions: &instructions,
+                    },
+                    Arc::new(move || wakeups.notify()),
+                    &mut secrets,
+                )?;
+                env = provider_environment(&self.root, &meta, binding, connection, &mut secrets)?;
+                profile = setup.profile.take();
+                profile_target = setup.profile_target.take();
+                let command = std::mem::take(&mut setup.command);
+                acp_setup = Some(setup);
+                command
+            }
         };
         let sandbox = DockerSandbox::for_dataset(&root, &self.root)?;
         let created = sandbox.create(&ContainerSpec {
-            host_gateway: model_connection.as_ref().is_some_and(|c| c.host_gateway),
+            host_gateway: acp_setup.is_some()
+                || model_connection.as_ref().is_some_and(|c| c.host_gateway),
             permissions: binding.permissions.clone(),
             purpose: ContainerPurpose::Harness,
             project_id: r.session.project_id.clone().unwrap(),
@@ -712,7 +766,7 @@ impl RuntimeWorkers {
             skill_directory,
             command_output_directory,
             sensitive_output: false,
-            profile_target: None,
+            profile_target,
         });
         if let Some(path) = env {
             fs::remove_file(path).map_err(storage)?;
@@ -819,7 +873,12 @@ impl RuntimeWorkers {
                         r.configured_task.is_some() || binding.tool_policy != ToolPolicy::ReadOnly,
                         parameters,
                     )?;
-                    wire.request("initialize",json!({"cwd":cwd,"provider":connection.route,"model":binding.model,"maxTokens":max_tokens,"approvalRequests":true,"capabilities":{"userQuestions":true}}))?;
+                    // The SDK loads its plugins before answering on a cold worker.
+                    wire.request_at_startup(
+                        "initialize",
+                        json!({"cwd":cwd,"provider":connection.route,"model":binding.model,"maxTokens":max_tokens,"approvalRequests":true,"capabilities":{"userQuestions":true}}),
+                        DSH_STARTUP_TIMEOUT,
+                    )?;
                     let sid = r
                         .session
                         .external_session
@@ -838,12 +897,41 @@ impl RuntimeWorkers {
                         .ok_or_else(|| err("invalid_configuration", "pi 缺少模型连接"))?,
                     &binding.model,
                 ),
+                HarnessProvider::Opencode | HarnessProvider::Mcode | HarnessProvider::Zcode => {
+                    let setup = acp_setup.as_mut().expect("ACP setup");
+                    let session = acp::attach(
+                        &mut wire,
+                        r.session.external_session.as_deref(),
+                        std::mem::take(&mut setup.servers),
+                        &setup.model,
+                    )?;
+                    if let Some(marker) = &setup.marker {
+                        let deadline =
+                            std::time::Instant::now() + std::time::Duration::from_secs(5);
+                        while !marker.is_file() && std::time::Instant::now() < deadline {
+                            std::thread::sleep(std::time::Duration::from_millis(20));
+                        }
+                        reject_symlink(marker)?;
+                        if fs::read(marker).as_deref().ok() != Some(b"devdesk.acp.policy.v1") {
+                            return Err(err("policy_not_enforced", "OpenCode 策略未装载"));
+                        }
+                    }
+                    Ok(session)
+                }
             }
         })();
         let sid = match initialized {
             Ok(sid) => sid,
             Err(e) => {
-                let _ = sandbox.stop(&r.execution.operation_id);
+                let stopped = sandbox.stop(&r.execution.operation_id);
+                if provider == HarnessProvider::Dsh
+                    && e.code == "needs_reconciliation"
+                    && stopped.is_ok()
+                {
+                    // The startup worker never sends the reserved Turn. Stop proof
+                    // makes this a failed startup, even if the handshake timed out.
+                    return Err(err("provider_unavailable", e.message).technical_not_applied());
+                }
                 return Err(e);
             }
         };
@@ -852,6 +940,7 @@ impl RuntimeWorkers {
             return Err(err("cancelled", "启动已停止，未发送轮次输入").technical_not_applied());
         }
         let worker = Worker {
+            acp: acp_setup.map(|setup| setup.acp),
             worktree: work.clone(),
             permissions: binding.permissions.clone(),
             wire,
@@ -941,11 +1030,17 @@ impl RuntimeWorkers {
         let mut requires_successor = true;
         if let Some(w) = slot.as_mut() {
             require(w.operation == e.operation_id, "停止请求与 worker 不一致")?;
+            if let Some(acp) = &w.acp {
+                acp.bridge.revoke();
+            }
             if w.activity.as_ref().is_none_or(|a| a.done) {
                 mode = match w.provider {
                     HarnessProvider::Codex => "codex_terminal_then_container_stop",
                     HarnessProvider::Dsh => "dsh_quiescent_then_container_stop",
                     HarnessProvider::Pi => "pi_quiescent_then_container_stop",
+                    HarnessProvider::Opencode | HarnessProvider::Mcode | HarnessProvider::Zcode => {
+                        "acp_quiescent_then_container_stop"
+                    }
                 }
                 .into();
                 requires_successor = false;
@@ -969,6 +1064,11 @@ impl RuntimeWorkers {
                     }
                     .into();
                 }
+            } else if w.acp.is_some() {
+                let _ = w
+                    .wire
+                    .send(&json!({"method":"session/cancel","params":{"sessionId":w.session}}));
+                mode = "acp_cancel_then_container_stop".into();
             } else if w.provider.traits().protocol_interrupt {
                 let acknowledgement =
                     w.wire
@@ -1061,7 +1161,16 @@ impl Worker {
                 json!({"sessionId":self.session,"contentBlocks":[{"type":"text","text":provider_turn_text(r)?}]}),
             ),
             HarnessProvider::Pi => ("prompt", json!({"message":provider_turn_text(r)?})),
+            HarnessProvider::Opencode | HarnessProvider::Mcode | HarnessProvider::Zcode => (
+                "session/prompt",
+                json!({
+                    "sessionId":self.session,"prompt":[{"type":"text","text":provider_turn_text(r)?}],
+                }),
+            ),
         };
+        if let Some(acp) = &self.acp {
+            acp.bridge.arm(&r.turn.id)?;
+        }
         let request = self.wire.submit(method, params)?;
         self.activity.as_mut().unwrap().request = request;
         Ok(())
@@ -1083,7 +1192,9 @@ impl Worker {
         let Some(mut a) = self.activity.take() else {
             return Ok(vec![]);
         };
-        let result = if self.provider.traits().tool_transport == ToolTransport::UiDialog {
+        let result = if self.acp.is_some() {
+            acp::project(self, &mut a, frames)
+        } else if self.provider.traits().tool_transport == ToolTransport::UiDialog {
             pi::project(self, &mut a, frames)
         } else {
             self.project(&mut a, frames)
@@ -1123,7 +1234,12 @@ impl Worker {
                 let external = match self.provider {
                     HarnessProvider::Codex => string(&f["result"]["turn"], "id")?,
                     HarnessProvider::Dsh => string(&f["result"], "messageId")?,
-                    HarnessProvider::Pi => unreachable!("pi has its own event projector"),
+                    HarnessProvider::Pi
+                    | HarnessProvider::Opencode
+                    | HarnessProvider::Mcode
+                    | HarnessProvider::Zcode => {
+                        unreachable!("separate event projector")
+                    }
                 };
                 a.external = Some(external.clone());
                 out.push(Obs::Admitted {
@@ -1218,7 +1334,12 @@ impl Worker {
             let ours = match self.provider {
                 HarnessProvider::Codex => p["threadId"] == self.session,
                 HarnessProvider::Dsh => p["sessionId"] == self.session,
-                HarnessProvider::Pi => unreachable!("pi has its own event projector"),
+                HarnessProvider::Pi
+                | HarnessProvider::Opencode
+                | HarnessProvider::Mcode
+                | HarnessProvider::Zcode => {
+                    unreachable!("separate event projector")
+                }
             };
             if !ours {
                 continue;
@@ -1230,7 +1351,12 @@ impl Worker {
             }
             a.serial += 1;
             match self.provider {
-                HarnessProvider::Pi => unreachable!("pi has its own event projector"),
+                HarnessProvider::Pi
+                | HarnessProvider::Opencode
+                | HarnessProvider::Mcode
+                | HarnessProvider::Zcode => {
+                    unreachable!("separate event projector")
+                }
                 HarnessProvider::Codex => {
                     if p["turnId"]
                         .as_str()
@@ -1430,7 +1556,7 @@ impl Worker {
             } else {
                 json!({"outcome":"rejected"})
             };
-            return self.wire.send(&json!({"id":f["id"],"result":result}));
+            return self.wire.respond(&f["id"], result);
         }
         let scope = if self.provider == HarnessProvider::Codex {
             p["threadId"].as_str()
@@ -1516,6 +1642,17 @@ impl Worker {
         Ok(())
     }
     fn answer_tool(&mut self, request: &Value, receipt: &ToolReceipt) -> Result<()> {
+        if let Some(acp) = &self.acp {
+            require(
+                request["kind"] == "bridge" && request["operation"] == self.operation,
+                "MCP 回执 worker 不符",
+            )?;
+            return acp.bridge.answer(
+                &string(request, "turn")?,
+                &string(request, "call_id")?,
+                receipt,
+            );
+        }
         if self.provider.traits().tool_transport == ToolTransport::UiDialog {
             return pi::answer_tool(self, request, receipt);
         }
@@ -1532,7 +1669,7 @@ impl Worker {
             return Ok(());
         }
         if self.provider == HarnessProvider::Dsh {
-            self.wire.send(&json!({"id":request,"result":receipt}))?;
+            self.wire.respond(request, json!(receipt))?;
             entry.answered = true;
             return Ok(());
         }
@@ -1546,13 +1683,17 @@ impl Worker {
                 content.push(json!({"type":"inputText","text":serialized}));
             }
         }
-        self.wire.send(
-            &json!({"id":request,"result":{"success":receipt.success,"contentItems":content}}),
+        self.wire.respond(
+            request,
+            json!({"success":receipt.success,"contentItems":content}),
         )?;
         entry.answered = true;
         Ok(())
     }
     fn answer(&mut self, i: &PendingInteraction) -> Result<()> {
+        if self.acp.is_some() {
+            return acp::answer(self, i);
+        }
         if matches!(i.answer, Some(InteractionAnswer::ToolApproval { .. }))
             && self
                 .permissions
@@ -2016,12 +2157,18 @@ fn detached_session_journal_does_not_require_a_project_directory() {
 provider!(CodexHarness, Codex);
 provider!(DshHarness, Dsh);
 provider!(PiHarness, Pi);
+provider!(OpencodeHarness, Opencode);
+provider!(McodeHarness, Mcode);
+provider!(ZcodeHarness, Zcode);
 
 /// Route native sessions using their frozen provider binding.
 pub struct RoutingHarness {
     codex: CodexHarness,
     dsh: DshHarness,
     pi: PiHarness,
+    opencode: OpencodeHarness,
+    mcode: McodeHarness,
+    zcode: ZcodeHarness,
 }
 impl RoutingHarness {
     pub fn new(root: &Path) -> Result<Self> {
@@ -2029,7 +2176,10 @@ impl RoutingHarness {
         Ok(Self {
             codex: CodexHarness::new(workers.clone()),
             dsh: DshHarness::new(workers.clone()),
-            pi: PiHarness::new(workers),
+            pi: PiHarness::new(workers.clone()),
+            opencode: OpencodeHarness::new(workers.clone()),
+            mcode: McodeHarness::new(workers.clone()),
+            zcode: ZcodeHarness::new(workers),
         })
     }
     fn route(&self, s: &Session) -> Result<&dyn ports::Harness> {
@@ -2041,6 +2191,9 @@ impl RoutingHarness {
             Some(HarnessProvider::Codex) => Ok(&self.codex),
             Some(HarnessProvider::Dsh) => Ok(&self.dsh),
             Some(HarnessProvider::Pi) => Ok(&self.pi),
+            Some(HarnessProvider::Opencode) => Ok(&self.opencode),
+            Some(HarnessProvider::Mcode) => Ok(&self.mcode),
+            Some(HarnessProvider::Zcode) => Ok(&self.zcode),
             None => Err(err("blocked", "真实 Session 缺少冻结供应商")),
         }
     }
@@ -2157,6 +2310,7 @@ mod protocol_tests {
             let mut command = std::process::Command::new("/bin/cat");
             command.arg("-u");
             let mut worker = Worker {
+                acp: None,
                 worktree: PathBuf::new(),
                 permissions: None,
                 wire: JsonlProcess::spawn(command).unwrap(),
@@ -2193,6 +2347,7 @@ mod protocol_tests {
             let mut command = std::process::Command::new("/bin/cat");
             command.arg("-u");
             let mut worker = Worker {
+                acp: None,
                 worktree: PathBuf::new(),
                 permissions: None,
                 wire: JsonlProcess::spawn(command).unwrap(),
@@ -2255,6 +2410,7 @@ mod protocol_tests {
         let mut command = std::process::Command::new("/bin/cat");
         command.arg("-u");
         let mut worker = Worker {
+            acp: None,
             worktree: PathBuf::new(),
             permissions: None,
             wire: JsonlProcess::spawn(command).unwrap(),
@@ -2368,6 +2524,7 @@ mod protocol_tests {
         let mut command = std::process::Command::new("/bin/cat");
         command.arg("-u");
         let mut worker = Worker {
+            acp: None,
             worktree: PathBuf::new(),
             permissions: None,
             wire: JsonlProcess::spawn(command).unwrap(),

@@ -189,6 +189,32 @@ pub struct DockerSandbox {
     minimum_runtime_free_bytes: u64,
 }
 
+pub(crate) fn require_local_daemon() -> Result<()> {
+    let endpoint = if let Ok(endpoint) = std::env::var("DOCKER_HOST") {
+        endpoint
+    } else {
+        let output = capture(
+            "docker",
+            &[
+                "context".into(),
+                "inspect".into(),
+                "--format".into(),
+                "{{.Endpoints.docker.Host}}".into(),
+            ],
+            Duration::from_secs(5),
+        )?;
+        require(
+            output.code == 0 && !output.truncated,
+            "无法核对 Docker daemon 地址",
+        )?;
+        String::from_utf8_lossy(&output.stdout).trim().to_owned()
+    };
+    require(
+        endpoint.starts_with("unix://"),
+        "宿主路由要求本地 Docker Unix socket",
+    )
+}
+
 impl DockerSandbox {
     fn nested_apparmor(&self) -> Result<Option<String>> {
         let output = self.call(vec![
@@ -631,6 +657,21 @@ impl DockerSandbox {
                     "js",
                     "/run/devdesk/tool-policy.js",
                 )
+            } else if p.enforcement.harness_backend == "zcode-hooks-v1" {
+                (
+                    permissions::ZCODE_POLICY,
+                    "mjs",
+                    "/run/devdesk/tool-policy.mjs",
+                )
+            } else if matches!(
+                p.enforcement.harness_backend.as_str(),
+                "opencode-plugin-v1" | "mcode-hooks-v1"
+            ) {
+                (
+                    permissions::ACP_TOOL_POLICY,
+                    "mjs",
+                    "/run/devdesk/tool-policy.mjs",
+                )
             } else {
                 (
                     include_bytes!("../../../permissions/backends/dsh/tool-policy.mjs").as_slice(),
@@ -658,30 +699,7 @@ impl DockerSandbox {
                 spec.purpose == ContainerPurpose::Harness && spec.network,
                 "宿主模型地址映射仅用于联网 Harness worker",
             )?;
-            let context = std::env::var("DOCKER_HOST")
-                .ok()
-                .map(Ok)
-                .unwrap_or_else(|| {
-                    let out = capture(
-                        "docker",
-                        &[
-                            "context".into(),
-                            "inspect".into(),
-                            "--format".into(),
-                            "{{.Endpoints.docker.Host}}".into(),
-                        ],
-                        Duration::from_secs(5),
-                    )?;
-                    require(
-                        out.code == 0 && !out.truncated,
-                        "无法核对 Docker daemon 地址",
-                    )?;
-                    Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
-                })?;
-            require(
-                context.starts_with("unix://"),
-                "远程 Docker daemon 需要显式配置 worker 可达的 Ollama 地址",
-            )?;
+            require_local_daemon()?;
         }
         let mut args: Vec<String> = vec![
             "create",
@@ -781,7 +799,12 @@ impl DockerSandbox {
             .as_deref()
             .unwrap_or("/run/devdesk/profile");
         require(
-            ["/run/devdesk/profile", "/run/devdesk/test-reporter.mjs"].contains(&profile_target),
+            ["/run/devdesk/profile", "/run/devdesk/test-reporter.mjs"].contains(&profile_target)
+                || (profile_target == "/state/mcode/hooks.json"
+                    && spec
+                        .permissions
+                        .as_ref()
+                        .is_some_and(|p| p.enforcement.harness_backend == "mcode-hooks-v1")),
             "配置挂载目标无效",
         )?;
         if let Some(file) = runner {
@@ -1044,12 +1067,24 @@ done"#;
             .unwrap_or_else(|| vec![".git".into(), ".codex".into(), ".agents".into()]);
         for leaf in protected.iter().map(String::as_str) {
             require(
-                [".git", ".codex", ".agents"].contains(&leaf),
+                [
+                    ".git",
+                    ".codex",
+                    ".agents",
+                    ".minimax",
+                    ".mcp.json",
+                    ".zcode",
+                    "zcode.json",
+                ]
+                .contains(&leaf),
                 "受保护元数据路径不合法",
             )?;
             let target = work.join(leaf);
             reject_symlink(&target)?;
             if !target.exists() && spec.purpose == ContainerPurpose::Harness {
+                if matches!(leaf, ".mcp.json" | "zcode.json") {
+                    continue;
+                }
                 fs::create_dir(&target).map_err(storage)?;
             }
             if target.exists() {
@@ -1058,7 +1093,15 @@ done"#;
                 if target.is_dir() {
                     fs::create_dir_all(&hidden).map_err(storage)?;
                 } else {
-                    fs::write(&hidden, "").map_err(storage)?;
+                    fs::write(
+                        &hidden,
+                        if matches!(leaf, ".mcp.json" | "zcode.json") {
+                            "{}"
+                        } else {
+                            ""
+                        },
+                    )
+                    .map_err(storage)?;
                 }
                 args.extend([
                     "--mount".into(),

@@ -24,6 +24,33 @@ impl Workspace {
                 .filter(|_| prepared.runtime_required())
             {
                 let state = e.store.configuration_snapshot()?.state.clone();
+                let lock = request
+                    .permissions
+                    .as_ref()
+                    .ok_or_else(|| err("permission_unconfigured", "平台工具缺少冻结权限"))?;
+                require(
+                    lock.harness.binding.target.revision_id == runtime.harness_ref
+                        && lock.sandbox.binding.target.revision_id == runtime.sandbox_ref,
+                    "平台工具运行环境与冻结权限目标不符",
+                )?;
+                if matches!(
+                    request.definition.qualified_name.as_str(),
+                    "tests.run" | "tests.project"
+                ) {
+                    permission_profiles::validate_platform_test_permissions(&state, lock)
+                        .map_err(Error::technical_not_applied)?;
+                } else {
+                    permission_profiles::compile_permission_profiles(
+                        &state,
+                        lock,
+                        Some(ExecutionScope {
+                            work_type: WorkType::Workflow,
+                            writable_paths: vec![],
+                            read_only_paths: vec![],
+                        }),
+                    )
+                    .map_err(Error::technical_not_applied)?;
+                }
                 let harness = state.configuration(&runtime.harness_ref)?;
                 let installation = e.materialize_harness_in_sandbox(
                     &self.session_resources(),
@@ -34,19 +61,6 @@ impl Workspace {
                     RuntimeArtifact::DockerImage { image_id } => image_id,
                     _ => return Err(err("unsupported", "测试工具需要确切 Docker 镜像")),
                 };
-                let lock = request
-                    .permissions
-                    .as_ref()
-                    .ok_or_else(|| err("permission_unconfigured", "平台工具缺少冻结权限"))?;
-                let _ = permission_profiles::compile_permission_profiles(
-                    &state,
-                    lock,
-                    Some(ExecutionScope {
-                        work_type: WorkType::Workflow,
-                        writable_paths: vec![],
-                        read_only_paths: vec![],
-                    }),
-                )?;
                 request.runtime = Some(ExecutionInstance {
                     id: prepared.runtime_operation_id().into(),
                     operation_id: prepared.runtime_operation_id().into(),

@@ -135,7 +135,26 @@ python3 tests/entrypoints/pi_harness.py --binary target/debug/devdesk-host \
   --v24-binary /path/to/v24/devdesk-host --reports /tmp/devdesk-pi-upgrade
 ```
 
+同一入口以 `--provider opencode` 或 `--provider mcode` 核验正式 Runtime 配方、续跑、取消、冻结权限、两个依赖步骤的实际平台回执及项目 HTTP 回执。可加 `--v25-binary` 使用批次 A Host 先准备隔离数据集，验证批次 B 更新目录和显式重绑后的历史恢复。
+
+```bash
+python3 tests/entrypoints/pi_harness.py --provider opencode \
+  --binary /path/to/release/devdesk-host --reports /tmp/devdesk-opencode-product
+```
+
+批次 B 的 `harness_g0.py` 在真实容器中运行固定版本的 OpenCode、mcode 或 ZCode，使用宿主回环上的测试模型和 MCP 服务。它在全新的报告目录保留协议与 HTTP 审计供 P0 核对。`--image` 接受预先准备的镜像。磁盘空间有限时，OpenCode 可选 `--executable` 挂载已校验的 Linux 二进制，mcode 和 ZCode 可选 `--installation` 挂载容器内安装后的 npm prefix。相关版本和结果见 [Harness 实施记录](../docs/plans/harness-shared-foundation/EXECUTION.md#macos-验证结果)。
+
+```bash
+python3 tests/entrypoints/harness_g0.py --provider opencode \
+  --image node:24.13.0-bookworm-slim --executable /path/to/verified/linux/opencode \
+  --reports /tmp/devdesk-opencode-g0
+```
+
+Linux 宿主需用 `--listen` 指向本地 Docker 网桥地址。mcode 可以在两次运行中分别验证项目配置发现和 `--mask-project-config` 下的只读覆盖。ZCode 的 `--zcode-account-probe` 在断网容器中验证账号请求关联、宿主拒绝供给的终态，以及夹具认证能进入模型请求阶段。
+
 `tests/live/probe_harness_orchestration.py` 使用实际 Codex 项目经理和业务 Agent，验证运行时绕过、实际平台调用及暂停重启后的后继 Session。`probe_streamlined_workflow.py` 使用独立数据集、专用 GitHub 仓库与真实 Codex、Docker、Git 执行默认 Feature/Task；人工确认精确绑定当前材料，不覆盖拒绝。二者必须显式提供二进制与认证源；临时复制凭据在退出时清理。
+
+`tests/live/probe_mixed_harness_workflow.py` 先验证软件开发 ZIP 中的跨 Harness Standard 可以被项目选择，再以单独的验收 ZIP 运行五步有依赖的 Agent 调度。通过标准输入提供 MiniMax key，并显式指定证书签名的 Host、真实 Codex 认证源、软件开发 ZIP 和新证据目录。它核对每步的冻结 Harness、模型、产物和实际 Codex 调度回执。`--feature-entry` 运行正式 Feature 入口并观察第一个人工门禁。
 
 Standard 捕获、采用、历史冻结与项目隔离由 `crates/adapters/tests/standard_snapshots.rs` 覆盖。当前出厂精简版的真实完整工程使用 `probe_streamlined_workflow.py`；`probe_standard_snapshots.py` 和 `verify_standard_history.py` 保留用于旧版本独立两 Task 的历史证据复核，不作为当前出厂默认验收入口。
 

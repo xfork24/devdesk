@@ -901,9 +901,20 @@ export function ResourceEditor({
                   >
                     <option value="codex">Codex</option>
                     <option value="dsh">DSH</option>
-                    {providers.some((item) => item.harness === "pi") ? (
-                      <option value="pi">Pi</option>
-                    ) : null}
+                    {(
+                      [
+                        ["pi", "Pi"],
+                        ["opencode", "OpenCode"],
+                        ["mcode", "mcode"],
+                        ["zcode", "ZCode"],
+                      ] as const
+                    ).map(([id, label]) =>
+                      providers.some((item) => item.harness === id) ? (
+                        <option key={id} value={id}>
+                          {label}
+                        </option>
+                      ) : null,
+                    )}
                   </ActionSelect>
                 </label>
                 {field("Harness 发行版本", "runtime_version", true)}

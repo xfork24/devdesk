@@ -1,3 +1,11 @@
+export const MODEL_HARNESS_LABELS = {
+  dsh: "DeepSeek Harness",
+  pi: "Pi Harness",
+  opencode: "OpenCode",
+  mcode: "mcode",
+  zcode: "ZCode",
+} as const;
+
 export function ollamaServiceAddress(value: string) {
   return value.trim().replace(/\/+$/, "").replace(/\/v1$/, "");
 }
@@ -27,7 +35,9 @@ export function normalizeOllamaServiceAddress(value: string) {
 }
 
 export function isOllamaProvider(id: unknown) {
-  return id === "ollama" || id === "pi-ollama";
+  return ["ollama", "pi-ollama", "opencode-ollama", "mcode-ollama"].some(
+    (provider) => provider === id,
+  );
 }
 
 export function modelProviderLabel(provider: { id: string; label: string }) {

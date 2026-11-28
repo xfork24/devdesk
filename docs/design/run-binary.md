@@ -14,7 +14,7 @@ Host、Web Core 和领域 ZIP 独立发行。运行已打包的制品无需 Pyth
 
 ## 领域工作台独立发行
 
-解压与操作系统及 CPU 匹配的 `devdesk-core-host-0.5.0-<target>.tar.gz` 和 `devdesk-core-web-0.5.0.tar.gz`。启动后，在工作台「领域管理」页导入并激活 `software-development-0.5.2.zip`。发行渠道提供的 SHA-256 校验文件可用于核对下载内容。
+解压与操作系统及 CPU 匹配的 `devdesk-core-host-0.5.0-<target>.tar.gz` 和 `devdesk-core-web-0.5.0.tar.gz`。启动后，在工作台「领域管理」页导入并激活 `software-development-0.5.5.zip`。发行渠道提供的 SHA-256 校验文件可用于核对下载内容。
 
 ```bash
 ./devdesk-host --data /path/to/new-dataset --web-dir /path/to/devdesk-core-web-0.5.0
@@ -33,6 +33,9 @@ docker pull node@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced3
 | Core Host 0.5.0 | JSON-RPC 2.0、领域协议 1、领域包清单格式 1。支持既有贡献投影及按原摘要回切 |
 | Web Core 0.5.0 | 同时支持 `web.react` API 1 与 API 2。API 1 使用早期动态模块接口。API 2 提供共享 React 实例、组件、布局、项目 RPC 和事件作用域。模块从 `/assets/devdesk-ui.mjs` 获取运行时，类型声明和 JSON Schema 随 Web Core 放在 `sdk/` |
 | 软件开发 ZIP 0.5.2 | 角色讨论使用 Role 与 Agent 定义，按角色汇总经验。需要支持 `query.role_experience` 的 Host |
+| 软件开发 ZIP 0.5.3 | 可选跨 Harness 软件工程 Standard，要求 Host 已接入 Pi、DSH、OpenCode 与 mcode |
+| 软件开发 ZIP 0.5.4 | 跨 Harness Standard 使用本机准备的 ZCode 执行 Feature 最终交付评审 |
+| 软件开发 ZIP 0.5.5 | 新的跨 Harness 交付评审 Agent 使用从官方 CLI 源码本地构建的 ZCode |
 | 软件开发 ZIP 0.5.1 | 使用 API 2 呈现绑定和工作流显式交付证据合同。需要支持 `operation_evidence` 的 Host。可与同一领域的旧版 ZIP 一起安装 |
 
 非浏览器客户端先调用 `POST /session` 建立 Host 会话，随后从 `query.domain.active` 读取活动代次和贡献目录，并监听 `GET /domain-events`。项目事件流和已有项目 RPC 携带 `project_id` 及 `domain_epoch`。声明 `projection: true` 的贡献用 `query.domain.contribution` 读取，其他贡献的包处理器沿用 `query.domain.invoke`。

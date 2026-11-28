@@ -1103,9 +1103,7 @@ impl CliGit {
             "目标在 CAS 后被其他写者推进，保留核对状态",
         )?;
         require(
-            self.git(&path, &["diff-files", "--quiet", "--"], None)?
-                .code
-                == 0,
+            self.worktree_matches_index(&path)?,
             "目标文件存在未暂存修改，不能同步",
         )?;
         let index = self.output(&path, &["write-tree"])?;
@@ -1127,8 +1125,16 @@ impl CliGit {
             "目标 worktree 尚未同步至候选",
         )
     }
-    fn remote_head(&self, repo: &Path, branch: &str) -> Result<Option<String>> {
-        self.remote_head_with_timeout(repo, branch, Duration::from_secs(30))
+    fn worktree_matches_index(&self, path: &Path) -> Result<bool> {
+        // Stale stat data alone can make diff-files reject an unchanged worktree.
+        Ok(self
+            .git(
+                path,
+                &["diff", "--no-ext-diff", "--no-textconv", "--quiet", "--"],
+                None,
+            )?
+            .code
+            == 0)
     }
     fn remote_head_with_timeout(
         &self,
@@ -1155,7 +1161,7 @@ impl CliGit {
         require(valid_oid(oid) && name == reference, "远端 ref 身份不符")?;
         Ok(Some(oid.into()))
     }
-    fn source_remote_head(
+    fn remote_head(
         &self,
         repo: &Path,
         context: &GitContext,
@@ -1163,7 +1169,12 @@ impl CliGit {
     ) -> Result<Option<String>> {
         let timeout = Duration::from_secs(8);
         match self.remote_head_with_timeout(repo, branch, timeout) {
-            Err(error) if error.code == "needs_reconciliation" => {
+            Err(error)
+                if matches!(
+                    error.code.as_str(),
+                    "needs_reconciliation" | "git_command_failed"
+                ) =>
+            {
                 let origin = self.output(repo, &["remote", "get-url", "origin"])?;
                 require(
                     origin == format!("https://github.com/{}.git", context.workspace.repository),
@@ -1171,13 +1182,12 @@ impl CliGit {
                 )?;
                 self.github
                     .exact_branch_head(&context.workspace.repository, branch)
-                    .map_err(|mut error| {
-                        error.message = format!(
-                            "Git ls-remote 读取 {branch} 超过 {} 秒；GitHub API 备用查询失败。{}",
-                            timeout.as_secs(),
-                            error.message
+                    .map_err(|mut fallback| {
+                        fallback.message = format!(
+                            "读取分支 {branch} 时 Git 和 GitHub API 均未取得回执。{}。{}",
+                            error.message, fallback.message
                         );
-                        error
+                        fallback
                     })
             }
             result => result,
@@ -1206,7 +1216,7 @@ impl CliGit {
             "发布分支不属于冻结上下文",
         )?;
         if branch.starts_with("devdesk/candidates/") && stage != PublishStage::DeliveryProjection {
-            let actual = self.remote_head(&repo, branch)?;
+            let actual = self.remote_head(&repo, c, branch)?;
             if actual.as_deref() == Some(revision) {
                 return Ok(RepositoryReceipt::PublishedRef {
                     revision: revision.into(),
@@ -1278,10 +1288,10 @@ impl CliGit {
             }
         };
         let actual = if stage == PublishStage::Source {
-            self.source_remote_head(&repo, c, branch)
+            self.remote_head(&repo, c, branch)
                 .map_err(|error| error.technical_not_applied())?
         } else {
-            self.remote_head(&repo, branch)?
+            self.remote_head(&repo, c, branch)?
         };
         if actual.as_deref() != Some(revision) {
             if stage == PublishStage::Source {
@@ -1303,7 +1313,7 @@ impl CliGit {
                 self.output(&repo, &["push", "--porcelain", "origin", &refspec])
                     .map_err(before_source_push)?;
                 require(
-                    self.source_remote_head(&repo, c, branch)?.as_deref() == Some(revision),
+                    self.remote_head(&repo, c, branch)?.as_deref() == Some(revision),
                     "源分支推送回执未确认",
                 )?;
                 return Ok(RepositoryReceipt::PublishedRef {
@@ -1333,7 +1343,7 @@ impl CliGit {
             )?;
             // Re-read even when the subprocess lost/failed its acknowledgement.
             require(
-                self.remote_head(&repo, branch)?.as_deref() == Some(revision),
+                self.remote_head(&repo, c, branch)?.as_deref() == Some(revision),
                 if output.code == 0 {
                     "远端写入回执未确认"
                 } else {
@@ -1384,7 +1394,7 @@ impl CliGit {
         require(head == expected || head == revision, "主干在同步前已变化")?;
         if head != revision {
             require(
-                self.remote_head(&repo, &c.target.branch)?.as_deref() == Some(revision),
+                self.remote_head(&repo, c, &c.target.branch)?.as_deref() == Some(revision),
                 "远端主干已再次变化，请重新观察后同步",
             )?;
             self.output(&repo, &["fetch", "--no-tags", "origin", revision])?;
@@ -1984,16 +1994,9 @@ impl CliGit {
                 Ok(Some(RepositoryReceipt::Candidate { revision }))
             }
             RepositoryAction::PublishRef {
-                branch,
-                revision,
-                stage,
-                ..
+                branch, revision, ..
             } => {
-                let current = if *stage == PublishStage::Source {
-                    self.source_remote_head(&repo, context, branch)?
-                } else {
-                    self.remote_head(&repo, branch)?
-                };
+                let current = self.remote_head(&repo, context, branch)?;
                 Ok(
                     (current.as_ref() == Some(revision)).then(|| RepositoryReceipt::PublishedRef {
                         revision: revision.clone(),
@@ -2014,7 +2017,7 @@ impl ports::Git for CliGit {
         self.discover_tests(project, mainline)
     }
     fn observe_delivery_target(&self, c: &GitContext) -> Result<Option<String>> {
-        self.remote_head(&self.context(c)?, &c.target.branch)
+        self.remote_head(&self.context(c)?, c, &c.target.branch)
     }
     fn delivery_sync_ready(&self, c: &GitContext, expected: &str, revision: &str) -> Result<bool> {
         let repo = self.context(c)?;
@@ -2037,10 +2040,7 @@ impl ports::Git for CliGit {
         if actual == expected {
             return Ok(false);
         }
-        if self
-            .git(&path, &["diff-files", "--quiet", "--"], None)?
-            .code
-            != 0
+        if !self.worktree_matches_index(&path)?
             || !self
                 .output(&path, &["ls-files", "--others", "--exclude-standard"])?
                 .is_empty()
@@ -2084,7 +2084,7 @@ impl ports::Git for CliGit {
     }
     fn fetch_delivery_target(&self, c: &GitContext, expected: &str) -> Result<()> {
         let repo = self.context(c)?;
-        if self.remote_head(&repo, &c.target.branch)?.as_deref() != Some(expected) {
+        if self.remote_head(&repo, c, &c.target.branch)?.as_deref() != Some(expected) {
             return Err(
                 err("stale_target", "远端目标已变化，必须重新构造并验证候选")
                     .technical_not_applied(),
@@ -2240,7 +2240,7 @@ impl ports::Git for CliGit {
             revision: revision.clone(),
             branch: branch.clone(),
         };
-        match self.source_remote_head(&repo, context, branch)? {
+        match self.remote_head(&repo, context, branch)? {
             Some(actual) if actual == *revision => return Ok(receipt),
             Some(actual) => {
                 return Err(err(
@@ -2276,7 +2276,7 @@ impl ports::Git for CliGit {
         let lease = format!("--force-with-lease={reference}:");
         let refspec = format!("{revision}:{reference}");
         let result = self.output(&repo, &["push", "--porcelain", &lease, "origin", &refspec]);
-        match self.source_remote_head(&repo, context, branch) {
+        match self.remote_head(&repo, context, branch) {
             Ok(Some(actual)) if actual == *revision => Ok(receipt),
             Ok(Some(actual)) => Err(err(
                 "source_publication_conflict",

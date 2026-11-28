@@ -1,0 +1,46 @@
+{
+  "type": "harness",
+  "identity": "builtin-harness-opencode-managed",
+  "revision": 1,
+  "name": "OpenCode Harness",
+  "scope": "global",
+  "model_catalog_ref": "builtin-model-catalog-opencode:1",
+  "model_providers": [
+    "builtin-model-provider-opencode-deepseek:1",
+    "builtin-model-provider-opencode-zai-coding-cn:1",
+    "builtin-model-provider-opencode-minimax-cn:1",
+    "builtin-model-provider-opencode-ollama:1"
+  ],
+  "data": {
+    "capabilities": [
+      "structured-output",
+      "tool-calling",
+      "cancel",
+      "poll",
+      "dynamic-tools",
+      "external-tools",
+      "platform-tools"
+    ],
+    "provider": "opencode",
+    "runtime_version": "2.4.1",
+    "installation": {
+      "license": "MIT",
+      "entrypoint": [
+        "opencode",
+        "acp"
+      ],
+      "container_releases": {
+        "arm64": {
+          "url": "https://github.com/anomalyco/opencode/releases/download/v2.4.1/opencode-linux-arm64.tar.gz",
+          "sha256": "cb28cf94541aeb62a4b2ea5997a99b5dd6bae595a772f36fbe279299f2032a4f",
+          "member": "opencode"
+        },
+        "amd64": {
+          "url": "https://github.com/anomalyco/opencode/releases/download/v2.4.1/opencode-linux-x64.tar.gz",
+          "sha256": "9ddd18e3faf64eaeccf6a0fcbc96a5c7a14520ae5fd5b61e5be51d894f478b47",
+          "member": "opencode"
+        }
+      }
+    }
+  }
+}

@@ -175,6 +175,10 @@ impl EvidenceTarget {
                 })
             }).collect::<Vec<_>>());
             result["sections_truncated"] = serde_json::json!(headings.len() > 8);
+        } else if let Some(object) = self.value.as_object() {
+            result["top_level_locators"] = serde_json::json!(object.keys().take(16).map(|key| {
+                serde_json::json!({"type":"json_pointer","pointer":format!("/{}", key.replace('~', "~0").replace('/', "~1"))})
+            }).collect::<Vec<_>>());
         }
         result
     }

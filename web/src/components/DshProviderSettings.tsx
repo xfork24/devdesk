@@ -16,6 +16,7 @@ import {
 } from "../configuration-client";
 import { type Request, type Row, type ResourceVersion } from "./rpc-types";
 import {
+  MODEL_HARNESS_LABELS,
   isOllamaProvider,
   modelProviderLabel,
   normalizeOllamaServiceAddress,
@@ -48,11 +49,11 @@ export function HarnessProviderSettings({
   providers,
 }: {
   request: Request;
-  harness: "dsh" | "pi";
+  harness: keyof typeof MODEL_HARNESS_LABELS;
   providers: ModelProvider[];
 }) {
   const prefix = harness === "dsh" ? "" : `${harness}-`;
-  const label = harness === "dsh" ? "DeepSeek Harness" : "Pi Harness";
+  const label = MODEL_HARNESS_LABELS[harness];
   const defaultProvider = `${prefix}minimax-cn`;
   const localProvider = `${prefix}ollama`;
   const deepseekProvider = `${prefix}deepseek`;
@@ -211,7 +212,7 @@ export function HarnessProviderSettings({
     harness === "dsh" && provider === deepseekProvider
       ? "deepseek-api-key"
       : `${harness}-provider-api-key`;
-  const providerLabel = harness === "dsh" ? "DSH 模型服务商" : "Pi 模型服务商";
+  const providerLabel = `${harness === "dsh" ? "DSH" : label.replace(/ Harness$/, "")} 模型服务商`;
   return (
     <section
       className="setting-row"

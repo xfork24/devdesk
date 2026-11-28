@@ -25,7 +25,10 @@
               "docker",
               "codex",
               "dsh",
-              "pi"
+              "pi",
+              "opencode",
+              "mcode",
+              "zcode"
             ]
           },
           "assets": {
@@ -76,7 +79,10 @@
                   "enum": [
                     "codex",
                     "dsh",
-                    "pi"
+                    "pi",
+                    "opencode",
+                    "mcode",
+                    "zcode"
                   ]
                 }
               }

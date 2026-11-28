@@ -31,6 +31,60 @@ struct Journal {
 }
 impl Journal {
     fn sanitize(&self, value: &Value, parent: &str) -> Value {
+        if parent.eq_ignore_ascii_case("headers") {
+            return self.sanitize_headers(value);
+        }
+        self.sanitize_value(value, parent)
+    }
+
+    fn sanitize_headers(&self, value: &Value) -> Value {
+        fn sensitive(name: &str) -> bool {
+            let name = name.to_ascii_lowercase();
+            [
+                "authorization",
+                "token",
+                "api-key",
+                "api_key",
+                "apikey",
+                "secret",
+            ]
+            .iter()
+            .any(|part| name.contains(part))
+        }
+
+        match value {
+            Value::Object(headers) => Value::Object(
+                headers
+                    .iter()
+                    .map(|(name, value)| {
+                        let value = if sensitive(name) {
+                            json!("[redacted]")
+                        } else {
+                            self.sanitize_value(value, name)
+                        };
+                        (name.clone(), value)
+                    })
+                    .collect(),
+            ),
+            Value::Array(headers) => Value::Array(
+                headers
+                    .iter()
+                    .map(|header| {
+                        let mut sanitized = self.sanitize_value(header, "header");
+                        if header["name"].as_str().is_some_and(sensitive)
+                            && let Some(value) = sanitized.get_mut("value")
+                        {
+                            *value = json!("[redacted]");
+                        }
+                        sanitized
+                    })
+                    .collect(),
+            ),
+            _ => self.sanitize_value(value, "header"),
+        }
+    }
+
+    fn sanitize_value(&self, value: &Value, parent: &str) -> Value {
         match value {
             Value::Object(map) => Value::Object(
                 map.iter()
@@ -202,6 +256,34 @@ impl Journal {
                 .is_some_and(|title| title.starts_with("devdesk.tool_call.v1 "))
         {
             frame["title"] = json!("devdesk.tool_call.v1 [arguments omitted]");
+        }
+        if frame["method"] == "session/update"
+            && let Some(update) = frame
+                .get_mut("params")
+                .and_then(|params| params.get_mut("update"))
+        {
+            match update["sessionUpdate"].as_str() {
+                Some("tool_call" | "tool_call_update") => {
+                    // ACP echoes MCP arguments and results here. Core retains the
+                    // authoritative tool receipt through the bridge.
+                    *update = json!({
+                        "sessionUpdate": update["sessionUpdate"],
+                        "toolCallId": update["toolCallId"],
+                        "kind": update["kind"],
+                        "status": update["status"],
+                    });
+                }
+                Some("agent_message_chunk" | "agent_thought_chunk" | "user_message_chunk") => {
+                    update["content"] = json!({"omitted":"stream delta"});
+                }
+                _ => {}
+            }
+        } else if frame["method"] == "session/request_permission"
+            && let Some(call) = frame
+                .get_mut("params")
+                .and_then(|params| params.get_mut("toolCall"))
+        {
+            *call = json!({"toolCallId": call["toolCallId"], "kind": call["kind"]});
         }
         // Raw deltas can split a secret across frames. Retain their boundaries, not reconstructable text.
         if frame["params"]["delta"].is_string() {
@@ -544,6 +626,15 @@ impl JsonlProcess {
             )),
         }
     }
+
+    pub fn respond(&mut self, id: &Value, result: Value) -> Result<()> {
+        self.send(&json!({"id":id,"result":result}))
+    }
+
+    pub fn respond_error(&mut self, id: &Value, code: i32, message: &str) -> Result<()> {
+        self.send(&json!({"id":id,"error":{"code":code,"message":message}}))
+    }
+
     pub fn submit(&mut self, method: &str, params: Value) -> Result<u64> {
         let id = self.next;
         self.next += 1;
@@ -585,6 +676,27 @@ impl JsonlProcess {
         self.request_for(method, params, Duration::from_secs(20))
     }
     pub fn request_for(&mut self, method: &str, params: Value, timeout: Duration) -> Result<Value> {
+        self.request_with(method, params, timeout, false)
+    }
+
+    /// No Turn can be dispatched until initialization completes. In particular ACP
+    /// session/load may replay an arbitrary history before sending its response.
+    pub fn request_at_startup(
+        &mut self,
+        method: &str,
+        params: Value,
+        timeout: Duration,
+    ) -> Result<Value> {
+        self.request_with(method, params, timeout, true)
+    }
+
+    fn request_with(
+        &mut self,
+        method: &str,
+        params: Value,
+        timeout: Duration,
+        startup: bool,
+    ) -> Result<Value> {
         let id = self.submit(method, params)?;
         let deadline = Instant::now() + timeout;
         loop {
@@ -625,11 +737,11 @@ impl JsonlProcess {
                     .cloned()
                     .ok_or_else(|| err("provider_io", "协议响应缺少结果"));
             }
-            if self.capture {
+            if self.capture && !startup {
                 require(self.pending.len() < 256, "初始化事件超出限制")?;
                 self.pending.push_back(frame);
             } else if frame.get("method").is_some() && frame.get("id").is_some() {
-                self.send(&json!({"id":frame["id"],"error":{"code":-32601,"message":"Authentication worker does not execute tools"}}))?;
+                self.respond_error(&frame["id"], -32601, "Worker has no active turn")?;
             }
             require(Instant::now() < deadline, "协议调用超时")?;
         }
@@ -843,6 +955,76 @@ mod tests {
             saved["item"]["aggregatedOutput"].as_str().unwrap().len(),
             text.len() - "private-canary".len() + "[redacted]".len()
         );
+    }
+
+    #[test]
+    fn rpc_headers_are_redacted_in_both_wire_shapes() {
+        let file = tempfile::tempfile().unwrap();
+        let journal = Journal {
+            file: Mutex::new(file),
+            timing: None,
+            secrets: vec![],
+            private_requests: Default::default(),
+            stream_tails: Default::default(),
+            command_outputs: None,
+        };
+        let frame = json!({"params": {"mcpServers": [{"headers": [
+            {"name": "Authorization", "value": "bearer-canary"},
+            {"name": "X-API-Key", "value": "api-key-canary"},
+            {"name": "Content-Type", "value": "application/json"}
+        ]}], "mcp": {"servers": {"fixture": {"headers": {
+            "X-Session-Token": "token-canary", "X-Client-Secret": "secret-canary", "Accept": "application/json"
+        }}}}}});
+        let redacted = journal.sanitize(&frame, "");
+        let array = &redacted["params"]["mcpServers"][0]["headers"];
+        assert_eq!(array[0]["value"], "[redacted]");
+        assert_eq!(array[1]["value"], "[redacted]");
+        assert_eq!(array[2]["value"], "application/json");
+        let object = &redacted["params"]["mcp"]["servers"]["fixture"]["headers"];
+        assert_eq!(object["X-Session-Token"], "[redacted]");
+        assert_eq!(object["X-Client-Secret"], "[redacted]");
+        assert_eq!(object["Accept"], "application/json");
+    }
+
+    #[test]
+    fn acp_journal_omits_tool_payloads_and_stream_text() {
+        let path = tempfile::NamedTempFile::new().unwrap();
+        let journal = Journal {
+            file: Mutex::new(path.reopen().unwrap()),
+            timing: None,
+            secrets: vec![],
+            private_requests: Default::default(),
+            stream_tails: Default::default(),
+            command_outputs: None,
+        };
+        for update in [
+            json!({"sessionUpdate":"tool_call","toolCallId":"call-id","title":"input-canary",
+                   "rawInput":{"value":"input-canary"}}),
+            json!({"sessionUpdate":"tool_call_update","toolCallId":"call-id","status":"completed",
+                   "rawOutput":"output-canary","content":[{"text":"output-canary"}]}),
+            json!({"sessionUpdate":"agent_message_chunk","content":{"text":"delta-canary"}}),
+        ] {
+            journal
+                .append(
+                    "in",
+                    &json!({
+                        "method":"session/update","params":{"sessionId":"session","update":update}
+                    }),
+                )
+                .unwrap();
+        }
+        journal
+            .append(
+                "in",
+                &json!({"method":"session/request_permission","params":{
+                    "toolCall":{"toolCallId":"call-id","rawInput":{"value":"approval-canary"}}}
+                }),
+            )
+            .unwrap();
+        let log = std::fs::read_to_string(path.path()).unwrap();
+        assert!(!log.contains("canary"), "{log}");
+        assert!(log.contains("call-id"));
+        assert!(log.contains("completed"));
     }
 
     #[test]

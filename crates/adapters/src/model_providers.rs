@@ -40,6 +40,11 @@ pub fn model_profile_digest(
     let patch = match provider {
         HarnessProvider::Dsh => dsh_model_patch(connection, model)?,
         HarnessProvider::Pi => pi_model_patch(connection, model)?,
+        HarnessProvider::Opencode | HarnessProvider::Mcode | HarnessProvider::Zcode => {
+            crate::harness::acp_setup::model_config(provider, connection, model)?
+                .0
+                .to_string()
+        }
         HarnessProvider::Codex => {
             return Err(err("invalid_configuration", "Codex 使用自身模型路由"));
         }

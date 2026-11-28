@@ -10,6 +10,9 @@ pub enum HarnessProvider {
     Codex,
     Dsh,
     Pi,
+    Opencode,
+    Mcode,
+    Zcode,
 }
 
 /// Compiled providers. Factory sources and the host driver registry validate availability.
@@ -17,6 +20,9 @@ pub const HARNESS_PROVIDERS: &[HarnessProvider] = &[
     HarnessProvider::Codex,
     HarnessProvider::Dsh,
     HarnessProvider::Pi,
+    HarnessProvider::Opencode,
+    HarnessProvider::Mcode,
+    HarnessProvider::Zcode,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,6 +36,7 @@ pub enum InputIdentity {
 pub enum ToolTransport {
     ProtocolRequest,
     UiDialog,
+    HostMcp,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,6 +68,9 @@ impl HarnessProvider {
             Self::Codex => "codex",
             Self::Dsh => "dsh",
             Self::Pi => "pi",
+            Self::Opencode => "opencode",
+            Self::Mcode => "mcode",
+            Self::Zcode => "zcode",
         }
     }
 
@@ -83,6 +93,26 @@ impl HarnessProvider {
                 protocol_interrupt: false,
                 host_model_route: true,
                 tool_transport: ToolTransport::ProtocolRequest,
+                command_output: false,
+                orchestration: false,
+            },
+            Self::Opencode | Self::Mcode => HarnessTraits {
+                identity: InputIdentity::HostTurn,
+                owns_history: true,
+                streams: true,
+                protocol_interrupt: true,
+                host_model_route: true,
+                tool_transport: ToolTransport::HostMcp,
+                command_output: false,
+                orchestration: false,
+            },
+            Self::Zcode => HarnessTraits {
+                identity: InputIdentity::HostTurn,
+                owns_history: true,
+                streams: false,
+                protocol_interrupt: true,
+                host_model_route: true,
+                tool_transport: ToolTransport::HostMcp,
                 command_output: false,
                 orchestration: false,
             },

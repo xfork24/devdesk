@@ -2,6 +2,127 @@
 use crate::*;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Decode the single final object after an optional provider status note.
+/// Output ports and evidence still go through admission.
+pub(crate) fn agent_output_envelope(assistant: &str) -> Result<Value> {
+    let original = assistant.trim();
+    let assistant = without_delivery_assets(original).trim_end();
+    let has_delivery_assets = assistant.len() != original.len();
+    let error = match serde_json::from_str(assistant) {
+        Ok(value) => return Ok(value),
+        Err(error) => error,
+    };
+    let invalid = || {
+        err(
+            "output_invalid",
+            format!("实际 Agent 输出不是声明的 JSON 封套: {error}"),
+        )
+    };
+    // The first stand-alone JSON or fence line starts the only candidate.
+    // A bare object has no delimiters for separating a delivery note.
+    let mut offset = 0;
+    for line in assistant.split_inclusive('\n') {
+        let trimmed = line.trim();
+        if trimmed.starts_with('{') {
+            return serde_json::from_str(&assistant[offset..]).map_err(|_| invalid());
+        }
+        offset += line.len();
+        if trimmed == "```json" {
+            let remainder = &assistant[offset..];
+            let mut body_len = 0;
+            for line in remainder.split_inclusive('\n') {
+                if line.trim() == "```" {
+                    let trailing = remainder[body_len + line.len()..].trim();
+                    // MCode accompanies its file cards with a delivery note.
+                    // No later fence or stand-alone JSON candidate may compete.
+                    if !trailing.is_empty()
+                        && (!has_delivery_assets
+                            || trailing.lines().any(|line| {
+                                let line = line.trim_start();
+                                line.starts_with(['{', '[']) || line.starts_with("```")
+                            }))
+                    {
+                        return Err(invalid());
+                    }
+                    return serde_json::from_str(&remainder[..body_len]).map_err(|_| invalid());
+                }
+                body_len += line.len();
+            }
+            return Err(invalid());
+        }
+        if trimmed.starts_with('[') || trimmed.starts_with("```") {
+            return Err(invalid());
+        }
+    }
+    Err(invalid())
+}
+
+/// MCode appends file cards outside the final response. They stay in the
+/// conversation and do not supply any part of a workflow output.
+fn without_delivery_assets(assistant: &str) -> &str {
+    let Some((body, assets)) = assistant.rsplit_once("\n<deliver-assets>\n") else {
+        return assistant;
+    };
+    let Some(media) = assets.strip_suffix("\n</deliver-assets>") else {
+        return assistant;
+    };
+    if !media.is_empty()
+        && media.lines().all(|line| {
+            line.trim()
+                .strip_prefix("<media type=\"file\" src=\"")
+                .and_then(|line| line.strip_suffix("\" />"))
+                .and_then(|line| line.split_once("\" name=\""))
+                .is_some_and(|(path, name)| {
+                    [path, name]
+                        .into_iter()
+                        .all(|value| !value.is_empty() && !value.contains(['\"', '<', '>']))
+                })
+        })
+    {
+        return body;
+    }
+    assistant
+}
+
+#[test]
+fn formal_agent_output_accepts_one_final_json_fence() {
+    let value = json!({"status":"completed","summary":"done","outputs":{}});
+    let output = value.to_string();
+    assert_eq!(agent_output_envelope(&output).unwrap(), value);
+    assert_eq!(
+        agent_output_envelope(&format!("Lint passed.\n\n{output}")).unwrap(),
+        value
+    );
+    assert_eq!(
+        agent_output_envelope(&format!("Lint passed.\n\n```json\n{output}\n```")).unwrap(),
+        value
+    );
+    let assets = "<deliver-assets>\n<media type=\"file\" src=\"/work/public/screenshots.js\" name=\"public/screenshots.js\" />\n</deliver-assets>";
+    assert_eq!(
+        agent_output_envelope(&format!(
+            "Implementation is complete.\n\n```json\n{output}\n```\n\n**Delivered**\n\n- Source file\n\n{assets}"
+        ))
+        .unwrap(),
+        value
+    );
+    for rejected in [
+        format!("{output}\n```json\n{output}\n```"),
+        format!("Two possible outputs\n{output}\n```json\n{output}\n```"),
+        format!("```json\n{output}\n```\n```json\n{output}\n```"),
+        format!("```json\n{output}\n```\nAnother result"),
+        format!("```json\n{output}"),
+        format!("```json\n{output}\n```\n{output}\n{assets}"),
+        format!("```json\n{output}\n```\n\n```json\n{output}\n```\n{assets}"),
+        format!("```json\n{output}\n```\n<deliver-assets>\n{output}\n</deliver-assets>"),
+        format!("```json\n{output}\n```\n{assets}\nAnother result"),
+    ] {
+        assert_eq!(
+            agent_output_envelope(&rejected).unwrap_err().code,
+            "output_invalid"
+        );
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfiguredWorkflowInstance {
     pub active_plan_revision_id: Id,

@@ -1130,7 +1130,11 @@ fn v2_binding_compiles_into_real_codex_and_dsh_file_and_network_boundaries() {
         fs, thread,
         time::{Duration, Instant},
     };
-    for provider in ["codex", "dsh"] {
+    for (provider, network) in [
+        ("codex", "disabled"),
+        ("dsh", "disabled"),
+        ("dsh", "enabled"),
+    ] {
         let root = tempfile::tempdir().unwrap();
         let (_, e) = global(root.path());
         let state = e.store.snapshot().unwrap();
@@ -1154,7 +1158,7 @@ fn v2_binding_compiles_into_real_codex_and_dsh_file_and_network_boundaries() {
         let h = harness["id"].as_str().unwrap();
         let p=execute(&e,command("permission.profile.create",json!({"identity":format!("native-{provider}"),"name":"Native v2 restrictions","target_kind":"harness","policy":{
             "filesystem":{"mode":"scoped","rules":[{"path":"/","access":"read"},{"path":"/work","access":"read_write"},{"path":"/work/tests","access":"read"}]},
-            "network":{"mode":"disabled"},"tools":if provider=="dsh" {json!({"mode":"restricted","allow":["bash","ask_user_question"],"deny":[]})}else{json!({"mode":"all_available"})},"approval":"never"
+            "network":{"mode":network},"tools":if provider=="dsh" {json!({"mode":"restricted","allow":["bash","ask_user_question"],"deny":[]})}else{json!({"mode":"all_available"})},"approval":"never"
         }}),None,None)).unwrap();
         bind_pair(&e, h, p["id"].as_str().unwrap());
         let plan = compile_permission_profiles(
@@ -1172,7 +1176,23 @@ fn v2_binding_compiles_into_real_codex_and_dsh_file_and_network_boundaries() {
         let state = root.path().join("state");
         fs::create_dir_all(work.join("tests")).unwrap();
         fs::create_dir_all(state.join("codex")).unwrap();
-        let js = "const fs=require('fs');fs.writeFileSync('/work/proof','v2-native-ok');try{fs.writeFileSync('/work/tests/prohibited','bad');process.exit(3)}catch{}let denied=false;try{if(Object.values(require('os').networkInterfaces()).flat().some(i=>!i.internal))process.exit(4);denied=true;}catch(e){if(e.info?.errno===1)denied=true;else throw e;}if(!denied)process.exit(5);console.log('V2_FILE_AND_NETWORK_BOUNDARY_OK')";
+        fs::write(work.join("tests/input"), "visible").unwrap();
+        fs::write(
+            state.join("private-canary"),
+            "must be hidden from DSH shell",
+        )
+        .unwrap();
+        let mut js = String::from(
+            "const fs=require('fs');if(fs.readFileSync('/work/tests/input','utf8')!=='visible')process.exit(2);fs.writeFileSync('/work/proof','v2-native-ok');try{fs.writeFileSync('/work/tests/prohibited','bad');process.exit(3)}catch{}let hasNetwork=false;try{hasNetwork=Object.values(require('os').networkInterfaces()).flat().some(i=>!i.internal)}catch(e){if(e.info?.errno!==1)throw e;}",
+        );
+        if network == "enabled" {
+            js.push_str("if(!hasNetwork)process.exit(4);");
+        } else {
+            js.push_str("if(hasNetwork)process.exit(4);");
+        }
+        if provider == "dsh" {
+            js.push_str("if(fs.existsSync('/state/private-canary')||fs.existsSync('/run/devdesk/runner')||fs.existsSync('/proc/self/environ'))process.exit(5);");
+        }
         let mut profile_file = None;
         let mut runner_file = None;
         let mut credential_env_file = None;
@@ -1188,10 +1208,10 @@ fn v2_binding_compiles_into_real_codex_and_dsh_file_and_network_boundaries() {
                 "--".into(),
                 "node".into(),
                 "-e".into(),
-                js.into(),
+                js,
             ]
         } else {
-            let shell = format!("node -e {}", serde_json::to_string(js).unwrap());
+            let shell = format!("node -e {}", serde_json::to_string(&js).unwrap());
             let module = format!(
                 "import {{writeFileSync}} from 'node:fs';export const name='v2-probe';export const inject=['shell'];export async function apply(ctx){{try{{const ex=await ctx.shell.execute(ctx.shell.resolve({{command:{},workdir:'/work',timeoutMs:8000}}));const result=await ex.result();writeFileSync('/state/probe-result.json',JSON.stringify(result));process.exit(0);}}catch(e){{writeFileSync('/state/probe-result.json',JSON.stringify({{error:String(e)}}));process.exit(1);}}}}",
                 serde_json::to_string(&shell).unwrap()
@@ -1277,12 +1297,15 @@ fn v2_binding_compiles_into_real_codex_and_dsh_file_and_network_boundaries() {
         let exit = receipt.exit_code;
         docker.stop(&spec.operation_id).unwrap();
         docker.remove(&spec.operation_id).unwrap();
-        assert_eq!(exit, 0, "{provider}: {logs}");
+        assert_eq!(exit, 0, "{provider}/{network}: {logs}");
         if provider == "dsh" {
             let result: Value =
                 serde_json::from_slice(&fs::read(state.join("probe-result.json")).unwrap())
                     .unwrap();
-            assert_eq!(result["exitCode"], 0, "{result} {logs}");
+            assert_eq!(
+                result["exitCode"], 0,
+                "{provider}/{network}: {result} {logs}"
+            );
         }
         assert_eq!(
             fs::read_to_string(work.join("proof")).unwrap(),

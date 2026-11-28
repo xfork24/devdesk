@@ -2,7 +2,48 @@
 //! projection is published as a mainline PR, after all source gates have passed.
 use super::*;
 
+pub(crate) const PROJECTION_PREFLIGHT_NOT_APPLIED: &str = "projection_preflight_not_applied";
+
 impl Engine {
+    fn projection_before_publication(
+        &self,
+        effect: &ConfigurationRecord,
+    ) -> Result<Option<ReadSet>> {
+        let mut reads = Vec::new();
+        for name in ["projected-source", "projected-ref", "projected-pr"] {
+            let stage = one(
+                self.store.as_ref(),
+                "governance",
+                &format!("platform-publish-stage:{}:{name}", effect.id),
+            )?;
+            if stage.value.is_some() {
+                return Ok(None);
+            }
+            reads.push(version(&stage));
+        }
+        Ok(Some(ReadSet::new(reads)?))
+    }
+
+    pub(crate) fn unapplied_projection_preflight(
+        &self,
+        effect: &ConfigurationRecord,
+    ) -> Result<Option<ReadSet>> {
+        let Some((observation, Err(error))) = self.platform_observed(effect, "result")? else {
+            return Ok(None);
+        };
+        if !matches!(
+            error.code.as_str(),
+            "git_command_failed" | "needs_reconciliation"
+        ) || !(error.message.starts_with("Git ls-remote")
+            || error.message.starts_with("Git fetch"))
+        {
+            return Ok(None);
+        }
+        self.projection_before_publication(effect)?
+            .map(|reads| reads.merge([observation]))
+            .transpose()
+    }
+
     pub(super) fn delivery_children_gate(
         &self,
         resources: &WorkflowResources,
@@ -81,7 +122,22 @@ impl Engine {
             "交付投影归属或源/目标版本不符",
         )?;
         let stage = |name: &str, action| self.platform_publish_stage(effect, name, action, inspect);
-        self.git.fetch_delivery_target(context, target)?;
+        if inspect && self.unapplied_projection_preflight(effect)?.is_some() {
+            return Err(err(
+                PROJECTION_PREFLIGHT_NOT_APPLIED,
+                "目标读取失败时尚未创建交付投影、远端分支或 PR，可按冻结流程重试",
+            )
+            .technical_not_applied());
+        }
+        if let Err(error) = self.git.fetch_delivery_target(context, target) {
+            return Err(
+                if !inspect && self.projection_before_publication(effect)?.is_some() {
+                    error.technical_not_applied()
+                } else {
+                    error
+                },
+            );
+        }
         let id = crate::material_commands::stable_object_id(
             self.store.as_ref(),
             op,

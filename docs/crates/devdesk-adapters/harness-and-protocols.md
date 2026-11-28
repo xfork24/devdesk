@@ -16,12 +16,14 @@
 
 | core 操作 | 供应商转换 |
 |---|---|
-| 打开或恢复会话 | Codex `thread/start` 或 `thread/resume`，DSH 会话准备，Pi 固定会话 ID 后读取 `get_state` |
-| dispatch_turn | Codex `turn/start`，DSH `session/prompt`，Pi `prompt` |
+| 打开或恢复会话 | Codex `thread/start` 或 `thread/resume`，DSH 会话准备，Pi 固定会话 ID 后读取 `get_state`，OpenCode 与 mcode 使用 ACP `session/new` 或 `session/load` |
+| dispatch_turn | Codex `turn/start`，DSH 与 ACP `session/prompt`，Pi `prompt` |
 | poll_session | 将通知、响应、交互和终态转换成 ConversationObservation |
-| answer_tool_call | 回复 Codex / DSH 原工具请求或 Pi 原扩展对话 |
+| answer_tool_call | 回复 Codex / DSH 原工具请求、Pi 扩展对话，或 OpenCode / mcode 的 MCP 请求 |
 
 [harness_pi.rs](../../../crates/adapters/src/harness_pi.rs) 将 Pi 的输入接纳、消息增量、工具与 `agent_settled` 映射为消费及终态观察。启动时先核对冻结权限扩展的装载确认。宿主工具的参数、授权和回执仍走 core 的工具执行路径。
+
+[harness_acp.rs](../../../crates/adapters/src/harness_acp.rs) 负责 ACP v1 握手、模型核对、恢复、流式输出、审批和终态。[harness_acp_setup.rs](../../../crates/adapters/src/harness_acp_setup.rs) 装配两个供应商各自的配置和冻结策略。[harness_bridge.rs](../../../crates/adapters/src/harness_bridge.rs) 在主 API 之外监听 MCP。worker 在提示派发前把令牌绑定到唯一轮次。调用入队即唤醒调度，终态撤销该轮令牌，回执经既有 core 审计链返回。
 
 `provider_turn_text` 选择已经准备好的任务输入；供应商线程恢复时避免把同一历史正文再重复注入。协议日志和正式响应应分别处理。
 

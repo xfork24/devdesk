@@ -204,6 +204,105 @@ fn installation_version_and_sandbox_inputs_both_determine_composed_content() {
 }
 
 #[test]
+fn new_harness_install_inputs_preserve_factory_recipe_digests() {
+    let directory = tempfile::tempdir().unwrap();
+    let engine = engine(directory.path(), false);
+    let state = engine.store.snapshot().unwrap();
+    let sandbox = state.configuration("builtin-sandbox-docker:2").unwrap();
+    for (id, expected) in [
+        (
+            "builtin-harness-codex-managed:2",
+            "1ed54a1a75797c030eca0d1047a54e8021dbc1a3889a1df573c810a23a575f57",
+        ),
+        (
+            "builtin-harness-dsh-multi-provider:2",
+            "1860c19decc06f5d8ea33677e6010a34524199e573a3c6c140b340ecee85be9c",
+        ),
+        (
+            "builtin-harness-pi-managed:1",
+            "a04608bc0d75d6fc218bf13ebe78a8cf3caf8fa9207d1c67fadd51afe857f0ed",
+        ),
+    ] {
+        let harness = state.configuration(id).unwrap();
+        assert_eq!(
+            compose_execution_recipe(harness, sandbox)
+                .unwrap()
+                .recipe_digest(),
+            expected,
+            "{id}"
+        );
+    }
+}
+
+#[test]
+fn zcode_cli_recipe_locks_the_source_and_rejects_mixed_install_modes() {
+    let directory = tempfile::tempdir().unwrap();
+    let state = engine(directory.path(), false).store.snapshot().unwrap();
+    let sandbox = state.configuration("builtin-sandbox-docker:2").unwrap();
+    let mut harness = serde_json::from_str::<SourceDefinition>(include_str!(
+        "../../../plugins/core/harnesses/builtin-harness-zcode-managed-v2.json"
+    ))
+    .unwrap()
+    .into_record()
+    .unwrap();
+    let recipe = compose_execution_recipe(&harness, sandbox).unwrap();
+    let dockerfile = &recipe.files[0].content;
+    let source = &harness.data["installation"]["zcode_cli_source"];
+    assert!(dockerfile.contains(source["commit"].as_str().unwrap()));
+    assert!(dockerfile.contains(source["sha256"].as_str().unwrap()));
+    assert!(
+        recipe
+            .files
+            .iter()
+            .any(|file| file.path == "zcode/build-cli.sh")
+    );
+    assert!(recipe.image.is_none());
+    harness.data["installation"]["package"] = json!("zcode-app-cli");
+    assert!(compose_execution_recipe(&harness, sandbox).is_err());
+}
+
+#[test]
+fn harness_install_options_are_typed_and_contribute_to_recipe_identity() {
+    let directory = tempfile::tempdir().unwrap();
+    let engine = engine(directory.path(), false);
+    let state = engine.store.snapshot().unwrap();
+    let sandbox = state.configuration("builtin-sandbox-docker:2").unwrap();
+    let mut harness = state
+        .configuration("builtin-harness-pi-managed:1")
+        .unwrap()
+        .clone();
+    harness.data["installation"]["npm_options"] = json!({
+        "version":"11.16.0","include_optional":true,"allow_scripts":["@minimax-ai/code","better-sqlite3"]
+    });
+    let npm = compose_execution_recipe(&harness, sandbox).unwrap();
+    let dockerfile = &npm.files[0].content;
+    assert!(dockerfile.contains("npm@11.16.0"));
+    assert!(dockerfile.contains("\"--strict-allow-scripts\",\"--include=optional\",\"--allow-scripts=@minimax-ai/code,better-sqlite3\""));
+    harness.data["installation"]["npm_options"]["version"] = json!("11.6.2");
+    assert!(compose_execution_recipe(&harness, sandbox).is_err());
+    harness.data["installation"]["npm_options"]["version"] = json!("11.16.0");
+    harness.data["installation"]["npm_options"]["allow_scripts"] =
+        json!(["@scope/name,--ignore-scripts"]);
+    assert!(compose_execution_recipe(&harness, sandbox).is_err());
+
+    let installation = harness.data["installation"].as_object_mut().unwrap();
+    installation.remove("package");
+    installation.remove("npm_options");
+    installation.insert("container_releases".into(), json!({
+        "amd64":{"url":"https://example.org/amd64.tar.gz","sha256":"a".repeat(64),"member":"bin/pi"},
+        "arm64":{"url":"https://example.org/arm64.tar.gz","sha256":"b".repeat(64),"member":"bin/pi"}
+    }));
+    let archive = compose_execution_recipe(&harness, sandbox).unwrap();
+    assert!(archive.files[0].content.contains("ARG TARGETARCH"));
+    assert_ne!(archive.recipe_digest(), npm.recipe_digest());
+    harness.data["installation"]["container_releases"]["amd64"]["sha256"] = json!("c".repeat(64));
+    let changed = compose_execution_recipe(&harness, sandbox).unwrap();
+    assert_ne!(archive.recipe_digest(), changed.recipe_digest());
+    harness.data["installation"]["container_releases"]["arm64"]["member"] = json!("../pi");
+    assert!(compose_execution_recipe(&harness, sandbox).is_err());
+}
+
+#[test]
 #[ignore = "requires an explicit native Codex binary and a dedicated DEVDESK_RUNTIME_CACHE; no OAuth/model calls"]
 fn native_login_asset_is_shared_and_recovered_without_downloading_or_sharing_credentials() {
     use devdesk_adapters::GlobalStore;

@@ -1,0 +1,22 @@
+{
+  "type": "model_provider",
+  "identity": "builtin-model-provider-opencode-minimax-cn",
+  "revision": 1,
+  "name": "OpenCode · MiniMax 订阅 国内",
+  "scope": "global",
+  "data": {
+    "id": "opencode-minimax-cn",
+    "label": "MiniMax 订阅 国内",
+    "kind": "cloud_subscription",
+    "harness": "opencode",
+    "endpoint": "https://api.minimax.cn/anthropic",
+    "route": "minimax-cn",
+    "protocol": "anthropic-messages",
+    "api_key_env": "OPENCODE_MINIMAX_CN_API_KEY",
+    "requires_key": true,
+    "native": false,
+    "capacity_required": true,
+    "min_output_request": 1,
+    "credential_account": "opencode-minimax-cn-api-key-"
+  }
+}

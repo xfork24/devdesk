@@ -4,12 +4,25 @@
 use crate::{
     concurrency::*,
     governance::{record, update_record},
+    platform_delivery::{DeliveryAction, PROJECTION_PREFLIGHT_NOT_APPLIED},
     platform_facts::{PlatformAction, PlatformPlan, one, restored},
     workflow_commits::{WorkflowCommit, WorkflowHeaderFacts},
     workflow_outputs::WorkflowOutputProof,
     workflow_resources::{WorkflowResources, version},
     *,
 };
+
+fn proved_unapplied_delivery(action: &PlatformAction, error: &Error) -> bool {
+    matches!(action, PlatformAction::Delivery(action) if matches!(
+        (action.as_ref(), error.code.as_str()),
+        (DeliveryAction::Merge { .. }, "stale_target")
+            | (DeliveryAction::Open { .. }, "obsolete_protection_preflight")
+            | (DeliveryAction::OpenSource { projection: Some(_), .. }, PROJECTION_PREFLIGHT_NOT_APPLIED)
+    )) && error.execution_failure.as_ref().is_some_and(|failure| {
+        failure.kind == ExecutionFailureKind::Technical
+            && failure.effect == ExecutionFailureEffect::NotApplied
+    })
+}
 
 #[derive(Serialize, Deserialize)]
 enum ReconciliationFact {
@@ -44,6 +57,89 @@ enum ReconciliationFact {
     },
 }
 impl Engine {
+    fn unadmitted_workflow_operation(
+        &self,
+        resources: &WorkflowResources,
+    ) -> Result<Option<(Id, ReadSet)>> {
+        let execution = &resources.execution;
+        if execution.session_id.is_some()
+            || execution.turn_id.is_some()
+            || execution.tool_call_id.is_some()
+            || !execution.outputs.is_empty()
+        {
+            return Ok(None);
+        }
+        let Some(failure) = &execution.failure else {
+            return Ok(None);
+        };
+        let definition = resources
+            .instance
+            .plan
+            .document
+            .steps
+            .iter()
+            .find(|step| step.node_id == execution.node_id)
+            .ok_or_else(|| err("storage", "原核对步骤定义缺失"))?;
+        let method = match definition.executor {
+            StepExecutor::Agent { .. } => "session.open",
+            StepExecutor::Tool { .. } if failure.code == "permission_asset_mismatch" => {
+                "workflow.tool.execute"
+            }
+            _ => return Ok(None),
+        };
+        let intent = self.observed_workflow_intent(resources, method, 1)?;
+        if !intent.value.as_ref().is_some_and(|raw| {
+            raw["id"] == failure.source_ref
+                && raw["data"]["status"] == "failed"
+                && raw["data"]["result"].is_null()
+        }) {
+            return Ok(None);
+        }
+        let reads = ReadSet::new(vec![version(&intent)])?;
+        if method == "session.open" {
+            return Ok(Some((failure.source_ref.clone(), reads)));
+        }
+
+        // The Host checks these permissions after freezing the request and before
+        // committing a call. The original call must still have only that preparation.
+        let facts = self
+            .store
+            .workflow_intent_facts(&failure.source_ref, false)?
+            .ok_or_else(|| err("not_found", "原工具意图缺失"))?;
+        require(
+            facts.row.revision == intent.revision,
+            "原工具意图版本已变化",
+        )?;
+        let command: Command = serde_json::from_value(facts.record.data["command"].clone())
+            .map_err(|error| err("storage", error.to_string()))?;
+        let preparation = one(
+            self.store.as_ref(),
+            "governance",
+            &format!(
+                "platform-preparation:{}",
+                configuration_hash(&command.command_id)
+            ),
+        )?;
+        if preparation.value.is_none() {
+            return Ok(None);
+        }
+        let grant = restored(self, &preparation)?;
+        if grant.r#type != "platform_call_preparation"
+            || grant.definition_id != execution.id
+            || grant.data["status"] != "prepared"
+            || grant.data["command"] != json!(command)
+            || grant.data["request"]["instance_id"] != resources.record.id
+            || grant.data["request"]["execution_id"] != execution.id
+            || self.replay_workflow_tool(&command)?.is_some()
+        {
+            return Ok(None);
+        }
+        Ok(Some((
+            failure.source_ref.clone(),
+            reads.merge([version(&preparation)])?,
+        )))
+    }
+
     pub(crate) fn drive_native_workflow_reconciliations(&self) -> Result<()> {
         let began = std::time::Instant::now();
         let mut count = 0;
@@ -125,6 +221,9 @@ impl Engine {
             if let Some(tid) = &resources.execution.turn_id {
                 let turn = one(self.store.as_ref(), "tool_turn", tid)?;
                 basis = basis.merge([version(&turn)])?;
+            }
+            if let Some((_, reads)) = self.unadmitted_workflow_operation(&resources)? {
+                basis = basis.merge(reads.versions().iter().cloned())?;
             }
             let mut row = record(
                 "workflow_reconciliation_attempt",
@@ -323,6 +422,16 @@ impl Engine {
                 "已核对并停止原 worker，供应商终态仍未知；保留原执行，等待有证据的人工处置",
             ));
         }
+        if let Some((source, reads)) = self.unadmitted_workflow_operation(resources)? {
+            require(
+                reads
+                    .versions()
+                    .iter()
+                    .all(|version| basis.versions().contains(version)),
+                "原启动准备回执已变化",
+            )?;
+            return Ok(ReconciliationFact::NotApplied { source });
+        }
         let id = attempt.data["call_id"]
             .as_str()
             .ok_or_else(|| err("needs_reconciliation", "原执行没有可核对的工具或原生轮次"))?;
@@ -385,15 +494,7 @@ impl Engine {
                 self.inspect_platform_reconciliation(&effect, &plan.action)
             })();
             return match inspected {
-                Err(error)
-                    if matches!(&plan.action, PlatformAction::Delivery(action) if
-                        (matches!(action.as_ref(),crate::platform_delivery::DeliveryAction::Merge {..}) && error.code=="stale_target")
-                        || (matches!(action.as_ref(),crate::platform_delivery::DeliveryAction::Open {..}) && error.code=="obsolete_protection_preflight"))
-                        && error.execution_failure.as_ref().is_some_and(|f| {
-                            f.kind == ExecutionFailureKind::Technical
-                                && f.effect == ExecutionFailureEffect::NotApplied
-                        }) =>
-                {
+                Err(error) if proved_unapplied_delivery(&plan.action, &error) => {
                     Ok(ReconciliationFact::PlatformNotApplied {
                         source: effect.id,
                         error,
@@ -500,18 +601,10 @@ impl Engine {
             .value
             .is_some();
         let mut next = resources.execution.clone();
+        let recheck_output = next.status == StepExecutionStatus::Failed;
         let mut files = vec![];
         match fact {
             ReconciliationFact::PlatformNotApplied { source, error } => {
-                require(
-                    ["stale_target", "obsolete_protection_preflight"]
-                        .contains(&error.code.as_str())
-                        && error.execution_failure.as_ref().is_some_and(|f| {
-                            f.kind == ExecutionFailureKind::Technical
-                                && f.effect == ExecutionFailureEffect::NotApplied
-                        }),
-                    "缺少平台操作未应用的确切观察",
-                )?;
                 let selected = one(
                     self.store.as_ref(),
                     "governance",
@@ -529,9 +622,7 @@ impl Engine {
                         && call.r#type == "platform_call"
                         && call.data["request"]["instance_id"] == resources.record.id
                         && call.data["request"]["execution_id"] == resources.execution.id
-                        && matches!(&plan.action, PlatformAction::Delivery(action) if
-                            (matches!(action.as_ref(),crate::platform_delivery::DeliveryAction::Merge {..}) && error.code=="stale_target")
-                            || (matches!(action.as_ref(),crate::platform_delivery::DeliveryAction::Open {..}) && error.code=="obsolete_protection_preflight")),
+                        && proved_unapplied_delivery(&plan.action, &error),
                     "未应用观察不属于原平台请求",
                 )?;
                 if error.code == "obsolete_protection_preflight"
@@ -543,6 +634,17 @@ impl Engine {
                         .legacy_unapplied_pr_preflight(&effect, context)?
                         .ok_or_else(|| {
                             err("revision_conflict", "旧预检的未写入证明已变化，请重新核对")
+                        })?;
+                    commit.witness(proof.versions().iter().cloned())?;
+                }
+                if error.code == PROJECTION_PREFLIGHT_NOT_APPLIED {
+                    let proof = self
+                        .unapplied_projection_preflight(&effect)?
+                        .ok_or_else(|| {
+                            err(
+                                "revision_conflict",
+                                "交付投影的未发布证明已变化，请重新核对",
+                            )
                         })?;
                     commit.witness(proof.versions().iter().cloned())?;
                 }
@@ -694,9 +796,21 @@ impl Engine {
                 if stopped {
                     next.status = StepExecutionStatus::Cancelled;
                 } else {
-                    let value: Value =
-                        serde_json::from_str(observation["assistant"].as_str().unwrap_or(""))
-                            .map_err(|e| err("output_invalid", e.to_string()))?;
+                    let value = crate::configured_runtime::agent_output_envelope(
+                        observation["assistant"].as_str().unwrap_or(""),
+                    )?;
+                    if recheck_output {
+                        require(
+                            observation["turn"]["session_id"] == attempt.data["session_id"]
+                                && observation["turn"]["project_id"] == root.instance.project_id
+                                && observation["task_source"]["data"]["source"]["execution_id"]
+                                    == next.id
+                                && observation["task_source"]["data"]["source"]["instance_id"]
+                                    == root.record.id
+                                && value["status"] == "completed",
+                            "重新核对需保留原会话、步骤与实际完成结论",
+                        )?;
+                    }
                     let runtime = serde_json::from_value(observation["runtime"].clone())
                         .map_err(|e| err("storage", e.to_string()))?;
                     files = self.prepare_native_outputs(
@@ -833,6 +947,19 @@ impl Engine {
                 .unwrap_or_else(|| "原执行结果已通过显式核对".into());
         }
         commit.step(resources, &mut next)?;
+        if recheck_output
+            && matches!(
+                next.status,
+                StepExecutionStatus::AwaitingAcceptance | StepExecutionStatus::WaitingConfirmation
+            )
+        {
+            if root.instance.status != StepExecutionStatus::Running {
+                let mut header = root.instance.as_ref().clone();
+                header.status = StepExecutionStatus::Running;
+                commit.header(root, &header)?;
+            }
+            self.reopen_native_ancestors(&mut commit, root)?;
+        }
         let mut data = request.data.clone();
         data["status"] = json!("completed");
         data["observation_id"] = json!(observed.resource.id);
