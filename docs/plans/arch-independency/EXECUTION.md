@@ -50,7 +50,9 @@
 | release 夹具 Host 的构建、签名与 6 组合同 | 通过 |
 | 浏览器用例，release 轮 | 160 通过，0 失败 |
 
-完整脚本在镜像预热处退出。该脚本只做一次拉取来预热 Sandbox 基础镜像，而这个镜像本地已经存在。随后在同一提交的独立检出中补跑了剩余步骤，唯一的差别是拉取失败时沿用本地镜像。网络恢复后可以直接重跑完整脚本复核。
+完整脚本在镜像预热处退出：`prepare_browser_runtime.py` 的 `docker pull` 连不上 Docker Hub，而所需镜像本地已存在（与 P0 门禁同样的网络限制）。在 `753e4b6f` 的独立检出中补跑了剩余步骤：debug 轮浏览器 159 通过、release 轮 160 通过、release 夹具 Host 的六组合同全部通过，唯一的差别是拉取失败时沿用本地镜像。网络恢复后可以直接重跑完整脚本复核。
+
+领域制品验收（`node tests/entrypoints/domain_release.mjs dist`）不在 check.sh 内，需要发行制品；发行工作流（含新的 SDK 打包与独立构建作业）在 CI 上执行同一批用例。
 
 ### P1 阶段门禁
 
@@ -62,8 +64,10 @@
 | 夹具 Host 的生命周期、事件尾流、数据集协议、模板重置、运行环境准备 | 通过 |
 | `cargo test --workspace --locked` | 通过（60 个套件，808 通过，0 失败，39 忽略） |
 | `check-style.sh`（rustfmt、clippy、ESLint、TypeScript、Prettier、Web 构建） | 通过 |
-| 浏览器用例与 release 轮 | 见下方门禁记录 |
-| 领域制品验收（`domain_release.mjs`）与 live 探针 | 见下方门禁记录 |
+| `cargo test --workspace --locked` | 60 个套件全部通过，0 失败（合计 808 通过，39 忽略） |
+| 浏览器用例，debug 轮 | 159 通过，0 失败 |
+| release 夹具 Host 的六组合同（生命周期、事件尾流、HTTP standalone、模板重置、数据集协议、运行环境准备） | 通过 |
+| 浏览器用例，release 轮 | 160 通过，0 失败 |
 
 ### 与计划的偏差
 
