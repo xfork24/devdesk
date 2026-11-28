@@ -1,6 +1,6 @@
 # Harness 接入实施记录
 
-2026-11-28。工作分支 `codex/harness-integration`，起点 `444ebea`。五份计划共用 `/home/hengliu/workspace/devdesk-harness-integration`。架构独立性改造在独立分支推进，按计划第 8 章后期合并。
+2026-11-28。接续分支 `origin/harness-integration`，起点 `444ebea`。Linux 实施使用本地 `codex/harness-integration` worktree，批次 A 代码在 `a138ab0`，发布包补验在 `233f423`。架构独立性改造在独立分支推进，按计划第 8 章后期合并。
 
 ## G0 Linux 首轮证据
 
@@ -35,4 +35,26 @@ Pi 的出厂镜像 ID 为 `sha256:56d6bfe136775f34dc577cf56520ee378a4970fee6cf75
 
 2026-11-28，批次 A 提交为 `a138ab0`，保留在 `codex/harness-integration`。用该提交的 `scripts/release/package.sh` 在本地生成 Linux x86_64 Host、Web Core 和 software-development 领域包，三个包均通过 SHA-256 校验。解包后的 Host 在隔离数据集重跑 v24 升级、旧讨论恢复与 Pi 原生套件，全部通过。Chromium 使用解包后的 Web Core，安装并激活独立领域包，核对 Pi Harness、四个模型服务商和免密 Ollama。发布包及日志在 `review/harness-g0/batch-a-package/`。
 
-批次 B 暂挂，macOS Docker Desktop 验证环境就绪后从共享宿主 MCP 桥探针恢复。现有 Harness 计划仅定义 A、B 两批，后期归并仍按共享计划第 8 章执行。
+## macOS 接续
+
+在 macOS 的仓库中检出远端接续分支，再记录宿主架构、Docker context 和 Docker 服务端平台。
+
+```bash
+git fetch origin
+git switch harness-integration
+uname -m
+docker context show
+docker version --format '{{.Server.Os}}/{{.Server.Arch}}'
+```
+
+1. 用本机 Docker Desktop 和隔离夹具恢复 G0 的宿主 MCP 探针。在宿主 `127.0.0.1` 启动探针，从实际运行 Harness 的容器经 `host.docker.internal` 测 `initialize`、`tools/list`、`tools/call`。分别记录连通性和真实 CLI 的工具往返，再测恢复、早到调用、上一轮迟到请求、超时与重试。Linux 的网桥监听地址只适用于原验证环境。验收以第 7 章第 9 项及第 2.4.9 节为准。[共享计划](PLAN.md)
+2. 先复验 OpenCode 2.4.1。Linux 已跑通的命令是 `opencode acp`，固定版本拒绝 `--standalone`。模型配置用 `providers.<id>.package/settings`，MCP 用 `mcp.servers`，直出工具设置为 `codemode: false`、`oauth: false`、`protocol: "legacy"`。补齐目标镜像架构、私有进程与会话目录隔离、策略插件装载证明和实际阻断，再决定是否入批。[OpenCode P0](../opencode-harness/PLAN.md)
+3. mcode 需要重验冻结 Hook 及仓库配置隔离。ZCode 需要重验自定义模型、权威终态、策略及再分发条件。批次 B 的共享 ACP 和宿主 MCP 桥实现待入批结果明确后开展。[mcode P0](../mcode-harness/PLAN.md)、[ZCode P0](../zcode-harness/PLAN.md)
+
+批次 A 的 Pi 原生回归入口随分支提供，可先在 macOS 用新证据目录复验。探针用隔离数据集和受控模型。Linux 原始 G0 脚本、镜像、数据集、日志和发布档案保留在原机的 `review/harness-g0/`，远端检出只包含已跟踪的源码、夹具及本报告。
+
+```bash
+cargo build --locked -p devdesk-host
+python3 tests/entrypoints/pi_harness.py --binary target/debug/devdesk-host \
+  --reports /tmp/devdesk-pi-macos
+```
