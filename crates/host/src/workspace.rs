@@ -598,6 +598,9 @@ impl Workspace {
                 "项目数据库未包含对应的有效 Project",
             )?;
         }
+        if let Some(packages) = self.domains.get() {
+            crate::domains::adopt_extension_tools(packages.as_ref().map_err(Clone::clone)?, &e)?;
+        }
         self.configuration.recover_configuration_transfers(&e)?;
         self.sync_configuration(&e)?;
         e.bootstrap()?;

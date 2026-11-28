@@ -89,6 +89,7 @@
 | K-7 | 版本号：工作区、Web Core 与软件开发包都升到 0.6.0，`domain_protocol` 为 2、清单格式为 2。制品名随版本变化：`devdesk-core-host-0.6.0-<target>.tar.gz`、`devdesk-core-web-0.6.0.tar.gz`、`software-development-0.6.0.zip`。Web 的组件套件版本为 `0.6`，软件开发包的呈现目标随之声明 `kit: "0.6"`。运行指南的兼容矩阵改为三个工件的当前合同，删去了旧版 ZIP 的行 |
 | N-2 | 证据合同通用化。合同的 `checks` 以被守护的操作为键（工具的 `qualified_name` 或 `$completion`），内核不再只读 `git.delivery` 一个键，触发点也不再按四个工程工具名写死：任何工具步骤（含领域工具）执行前，内核为守护它的每个合同封存事实、组装输入并调用验证器，拒绝时工具不执行。工作流完成前，每个带 `$completion` 的合同同样被询问；回答按事实摘要记录，事实不变时再次尝试直接沿用。验证器收到 `{contract, operation, context, facts}`：`context` 由合同声明，来源有 `owner`、`input`、`arguments`、`platform` 四种，字段可用 JSON pointer 取值；`facts` 条目由内核类型 `EvidenceFact` 产生，包在验证器的输入 Schema 里描述同一形状，并以一致性测试约束。完成证据不再强制要求平台操作：标注了平台操作的由内核见证，其余是封存的步骤产物，由验证器权衡。软件开发的 `git.delivery` 合同改写成同一形式，验证器改读声明的上下文；`platform` 来源（来源分支、目标）与子流程核对仍在内核的工程部分 |
 | K-6（第一部分） | 内核的出厂目录从 `plugins/core` 改名为 `kernel/core`：它由 Host 构建时内嵌，不是领域包，不经过 ZIP 的安装与协商。`plugins/` 下只剩领域包。构建脚本、架构守卫、默认值检查、权限检查、引用索引、测试与文档都指向新路径；`kernel/README.md` 说明它与领域包的区别，`plugins/README.md` 只列领域包 |
+| K-6（第二部分） | 工具定义随提供者发布。内核目录 `kernel/core` 发布 41 个 platform 工具和 2 个 Harness 原生能力声明（`builtin-` 前缀），构建时内嵌进 Host，对所有项目可用；新增工程扩展目录 `kernel/engineering`，发布 8 个工程工具（`tests.*`、`git.*`、`workspace.*` 处理器，`engineering-` 前缀），同样内嵌，但只在项目所属的包声明了对应扩展组时才被采用（项目建立与打开时）。软件开发包删去 40 个工具定义，改为引用两类内核源，包的 Capability 与工作流里的引用改用新标识。安装时：包引用工程工具而未声明所在扩展组，返回 `extension_unavailable` 并指明组；包引用本 Host 没有的平台处理器，返回 `handler_unsupported`。领域包的目录视图包含其被给予的工程工具（否则项目的副本会被读作历史源）。领域目录 `software-development/catalog/tools` 移除，引用索引由内核目录与工程扩展目录各自生成 |
 | W-5 | 呈现目标用 `sdk`（Web SDK 主版本）取代 `api`，新增 `kit`（组件套件对应的 Web Core 版本）与绑定的 `home`（进入领域时打开的首页，取代“第一个绑定”）。Web Core 只加载 `sdk` 与自身一致、`kit` 与自身版本一致的目标，其余目标提示“领域包与 Web Core 版本不兼容”。内核只校验 `sdk` 不小于 1、每个目标最多一个首页；SDK 版本是否可用由 Web Core 判断 |
 
 ### 初步验收
@@ -167,6 +168,12 @@
 | | `cargo test --workspace --locked` | 60 个套件，807 通过，0 失败，39 忽略 |
 | | `cargo clippy --workspace --all-targets --locked -- -D warnings`、`./scripts/check/check-style.sh` | 无警告；rustfmt、ESLint、TypeScript、Prettier、Web 构建通过 |
 | | `python3 tests/entrypoints/lifecycle_contract.py target/fixtures/debug/devdesk-host` 及四组夹具合同、`project_test_configuration -- --ignored`、`node tests/entrypoints/domain_packages.mjs` | 通过，退出码 0 |
+| K-6（第二部分） | `cargo test -p devdesk-adapters --locked --lib domain_packages::tests` | 15 通过。新增两项：声明扩展组的包得到恰好 8 个工程工具（按处理器列出），未声明的包一个也得不到；软件开发包验证器 Schema 里的证据条目形状与内核的 `EvidenceFact` 一致 |
+| | `scripts/check/configuration_usage.py`、`check-defaults.py` | 通过。各自生成并核对两个内核目录的引用索引（core-v1 43 条、engineering-v1 8 条），闭合检查覆盖软件开发包对它们的引用 |
+| | `cargo test --workspace --locked` | 60 个套件，808 通过，0 失败，39 忽略 |
+| | `cargo clippy --workspace --all-targets --locked -- -D warnings`、`./scripts/check/check-style.sh` | 无警告；rustfmt、ESLint、TypeScript、Prettier、Web 构建通过 |
+| | `python3 tests/entrypoints/lifecycle_contract.py target/fixtures/debug/devdesk-host` 及四组夹具合同、`project_test_configuration -- --ignored` | 通过。测试入口识别仍经真实 Docker worker |
+| | `node tests/entrypoints/domain_packages.mjs target/debug/devdesk-host web/dist/core <带页面的 0.6.0 软件开发包>` | 退出码 0。新增两段：软件开发包的项目目录里有 `engineering-tool-*` 与 `builtin-tool-*`；没有扩展组的领域一个工程工具也没有 |
 | W-5 | `cargo test -p devdesk-adapters --locked --lib domain_packages::tests` | 10 通过。新增一项：一个目标标记两个首页后被拒绝 |
 | | `cargo test --workspace --locked` | 60 个套件，794 通过，0 失败，39 忽略 |
 | | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 无警告 |
@@ -211,6 +218,10 @@
 - **完成前的拒绝需要被记录。** 只返回错误的话，驱动器每一轮都会重新询问验证器。回答按事实摘要记录并沿用，才有“事实不变不自动重试”。
 - **仓库交付合同还有三处留在内核的工程部分**，随工程扩展模块迁出：`platform` 来源（来源分支与目标）、名为 `children` 的事实触发的子流程核对、人工确认与发布参数的绑定。内核仍以 `git.delivery` 这个键区分该合同。
 - **按步骤 key 守护非工具步骤尚未实现。** 触发点在工具步骤的准备里。电商设计里的三个门禁守护的都是工具。
+- **“领域目录视图”是包源与项目副本之间的桥。** 项目里的全局定义是否算“当前”，由组合出的领域目录视图决定：视图里没有、项目里有的定义被读作历史源。工程工具随包按组提供后，视图也要包含它们，否则刚被采用的工程工具立刻显示为过时。这条规则随“目录即视图”的设计在 P2 复核。
+- **包对内核源的引用闭合在安装时核对。** `validate_domain_configuration` 现在收第三个参数：包可以引用的内核源（内核目录全部源，加上包要求的扩展组的工程工具）。这代替了“引用闭合只对包自己的源成立”的隐含约定。
+- **软件开发包的 Capability 引用了 40 个内核工具。** 引用改写为新的 `builtin-tool-*` / `engineering-tool-*` 标识后，包的 `requires.handlers` 推导不变——构建脚本从两个内核目录读取工具定义。
+- **`requires.handlers` 含义未变，但来源变了。** 包不再“发布”平台工具，只“采用”；49 个处理器的清单正好是内核目录 41 个加工程 8 个里被引用的部分。
 - **报告器的扩展名规则不再由清单校验负责。** 清单只做通用的有界 UTF-8 文件检查；落地时的文件名一直由测试运行器自己决定。
 - **读取项目的钩子与资源时用 `try_read`。** 与 `configuration_scope` 的做法一致：项目 RPC 可能已经持有一份读锁，切换领域时直接返回 `domain_busy`，不等待嵌套的锁。
 - **单独运行适配器的集成测试需要 `--features test-fixtures,fixture-catalog`。** 只开 `test-fixtures` 时出厂目录不含角色与 Agent，依赖默认绑定的用例会失败。`cargo test --workspace` 通过 Host 的开发依赖带上了这两个 feature，所以完整检查不受影响。这正是 T-6 要消除的耦合。

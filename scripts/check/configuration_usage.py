@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2] / "kernel/core"
+ROOTS = [Path(__file__).resolve().parents[2] / part for part in ("kernel/core", "kernel/engineering")]
 
 
 def usage_index(sources: list[dict]) -> dict:
@@ -77,15 +77,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--write", action="store_true", help="update the packaged index")
     args = parser.parse_args()
-    manifest = json.loads((ROOT / "manifest.json").read_text())
-    sources = [json.loads((ROOT / path).read_text()) for paths in manifest["types"].values() for path in paths]
-    expected = {"schema_version": 1, "references": usage_index(sources)}
-    path = ROOT / manifest["usage_index"]
-    if args.write:
-        path.write_text(json.dumps(expected, ensure_ascii=False, indent=2) + "\n")
-    elif json.loads(path.read_text()) != expected:
-        raise SystemExit("Packaged usage index is stale; run python3 scripts/check/configuration_usage.py --write")
-    print(f"configuration-usage: OK — {len(expected['references'])} exact revisions")
+    for root in ROOTS:
+        manifest = json.loads((root / "manifest.json").read_text())
+        sources = [json.loads((root / path).read_text()) for paths in manifest["types"].values() for path in paths]
+        expected = {"schema_version": 1, "references": usage_index(sources)}
+        path = root / manifest["usage_index"]
+        if args.write:
+            path.write_text(json.dumps(expected, ensure_ascii=False, indent=2) + "\n")
+        elif json.loads(path.read_text()) != expected:
+            raise SystemExit(f"Packaged usage index is stale; run python3 scripts/check/configuration_usage.py --write ({root.name})")
+        print(f"configuration-usage: OK — {manifest['bundle_version']}, {len(expected['references'])} exact revisions")
 
 
 if __name__ == "__main__":

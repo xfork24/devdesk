@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "references": {
+    "engineering-tool-checkpoint:2": [],
+    "engineering-tool-delivery-merge:2": [],
+    "engineering-tool-delivery-open:3": [],
+    "engineering-tool-project-tests:3": [],
+    "engineering-tool-source-publish:2": [],
+    "engineering-tool-target:2": [],
+    "engineering-tool-tests-run:3": [],
+    "engineering-tool-workspace-current:2": []
+  }
+}

@@ -146,7 +146,7 @@
         ],
         "executor": {
           "type": "tool",
-          "tool_ref": "software-development.tool-workspace-current:2",
+          "tool_ref": "engineering-tool-workspace-current:2",
           "arguments": {}
         },
         "outputs": {
@@ -456,7 +456,7 @@
         ],
         "executor": {
           "type": "tool",
-          "tool_ref": "software-development.tool-tasks-create:2",
+          "tool_ref": "builtin-tool-tasks-create:2",
           "arguments": {
             "tasks": {
               "type": "source",
@@ -542,7 +542,7 @@
         ],
         "executor": {
           "type": "tool",
-          "tool_ref": "software-development.tool-workspace-current:2",
+          "tool_ref": "engineering-tool-workspace-current:2",
           "arguments": {}
         },
         "outputs": {
@@ -565,7 +565,7 @@
         ],
         "executor": {
           "type": "tool",
-          "tool_ref": "software-development.simplified-tool-checkpoint:2",
+          "tool_ref": "engineering-tool-checkpoint:2",
           "arguments": {
             "workspace": {
               "type": "source",
@@ -737,7 +737,7 @@
         ],
         "executor": {
           "type": "tool",
-          "tool_ref": "software-development.simplified-tool-project-tests:3",
+          "tool_ref": "engineering-tool-project-tests:3",
           "arguments": {
             "workspace": {
               "type": "source",
@@ -792,7 +792,7 @@
         ],
         "executor": {
           "type": "tool",
-          "tool_ref": "software-development.simplified-tool-source-publish:2",
+          "tool_ref": "engineering-tool-source-publish:2",
           "arguments": {
             "workspace": {
               "type": "source",
@@ -824,7 +824,7 @@
         ],
         "executor": {
           "type": "tool",
-          "tool_ref": "software-development.simplified-tool-target:2",
+          "tool_ref": "engineering-tool-target:2",
           "arguments": {
             "workspace": {
               "type": "source",
@@ -856,7 +856,7 @@
         ],
         "executor": {
           "type": "tool",
-          "tool_ref": "software-development.simplified-tool-delivery-open:3",
+          "tool_ref": "engineering-tool-delivery-open:3",
           "arguments": {
             "workspace": {
               "type": "source",
@@ -903,7 +903,7 @@
         ],
         "executor": {
           "type": "tool",
-          "tool_ref": "software-development.simplified-tool-project-tests:3",
+          "tool_ref": "engineering-tool-project-tests:3",
           "arguments": {
             "workspace": {
               "type": "source",
@@ -958,7 +958,7 @@
         ],
         "executor": {
           "type": "tool",
-          "tool_ref": "software-development.tool-materials-capture:2",
+          "tool_ref": "builtin-tool-materials-capture:2",
           "arguments": {
             "publication": {
               "type": "source",
@@ -1049,7 +1049,7 @@
         ],
         "executor": {
           "type": "tool",
-          "tool_ref": "software-development.simplified-tool-delivery-merge:2",
+          "tool_ref": "engineering-tool-delivery-merge:2",
           "arguments": {
             "workspace": {
               "type": "source",

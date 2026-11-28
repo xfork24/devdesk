@@ -699,9 +699,12 @@ pub struct DomainConfiguration {
 
 /// A package's source graph is resolved against the platform bundle before it
 /// becomes active. ZIP handling and executable asset discovery stay in the adapter.
+/// Checks that a package's sources close over what they may use: their own definitions and
+/// `provided`, the kernel's sources the package may reference.
 pub fn validate_domain_configuration(
     namespace: &str,
     bundle: &ConfigurationBundle,
+    provided: &[ConfigurationRecord],
 ) -> Result<DomainConfiguration> {
     require(
         configuration_usage_index(&bundle.entries)? == bundle.usage_index
@@ -721,6 +724,7 @@ pub fn validate_domain_configuration(
     // These in-memory bindings only check graph closure. Activation resolves
     // the real enforcement contracts from the installed runtime.
     template_permission_defaults(&mut catalog, &|_, _| Ok("domain-package-validation".into()))?;
+    catalog.governance.extend(provided.iter().cloned());
     catalog.governance.extend(bundle.entries.iter().cloned());
     for (role, agent) in &bindings {
         let role = catalog.configuration(role)?;

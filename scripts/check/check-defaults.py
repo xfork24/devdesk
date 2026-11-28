@@ -86,6 +86,7 @@ def check_catalog(directory, dependencies, domain=None):
 if __name__ == "__main__":
     try:
         core = check_catalog(ROOT.parent / "kernel/core", set())
-        check_catalog(ROOT / "software-development/catalog", core, "software-development")
+        engineering = check_catalog(ROOT.parent / "kernel/engineering", set())
+        check_catalog(ROOT / "software-development/catalog", core | engineering, "software-development")
     except (OSError, KeyError, ValueError) as error:
         raise SystemExit(f"check-defaults: {error}") from error

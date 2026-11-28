@@ -222,6 +222,9 @@ try {
     epoch: manuscriptEpoch, project_id: removable.id, command_id: crypto.randomUUID(),
   }), { id: removable.id, removed: true });
   assert.equal(await listed(), false);
+  // A package without an extension group gets none of the engineering tools the kernel has.
+  assert(!(await rpc(page, "query.configuration_index", { domain_epoch: manuscriptEpoch }))
+    .records.some((row) => row.id.startsWith("engineering-")));
 
   await second.getByRole("button", { name: "Manuscript", exact: true }).click();
   await second.getByLabel("领域处理器").waitFor();
@@ -341,6 +344,12 @@ try {
   assert.equal((await rpc(page, "query.project_directory")).total_projects, 0);
   assert((await rpc(page, "query.project_directory", scope)).projects.some((row) => row.id === project));
   assert((await rpc(page, "query.configuration_index", scopedProject)).records.every((row) => !automation.has(row.id)));
+  // The kernel publishes the kernel and engineering tools; a project of a package that
+  // requires the engineering groups is given the engineering ones.
+  const projectIndex = (await rpc(page, "query.configuration_index", scopedProject)).records.map((row) => row.id);
+  assert(projectIndex.includes("engineering-tool-workspace-current:2"),
+    JSON.stringify(projectIndex.filter((id) => id.startsWith("engineering-"))));
+  assert(projectIndex.includes("builtin-tool-workflow-start:4"));
   assert((await rpc(page, "query.workflows", scopedProject)).records.every((row) => !automation.has(row.id)));
   const githubRepo = process.env.DEVDESK_DOMAIN_TEST_GITHUB_REPO;
   const retainedRepository = "fixture/keep-test";

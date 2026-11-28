@@ -1,0 +1,27 @@
+{
+  "type": "tool",
+  "identity": "engineering-tool-target",
+  "revision": 2,
+  "name": "Inspect and Sync Target Branch",
+  "scope": "global",
+  "data": {
+    "qualified_name": "workspace.target",
+    "implementation": "platform",
+    "input_schema": {
+      "type": "object",
+      "required": [
+        "workspace"
+      ],
+      "properties": {
+        "workspace": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "capabilities": []
+  }
+}

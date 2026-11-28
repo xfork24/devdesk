@@ -585,7 +585,12 @@ impl Package {
                         .and_then(|body| std::str::from_utf8(body).ok())
                         .ok_or_else(|| invalid("领域源文件缺失或编码无效"))
                 })?;
-                let configuration = devdesk_core::validate_domain_configuration(&prefix, &bundle)?;
+                check_engineering_references(&bundle.entries, &manifest.requires.extensions)?;
+                let configuration = devdesk_core::validate_domain_configuration(
+                    &prefix,
+                    &bundle,
+                    &provided_sources(&manifest)?,
+                )?;
                 (bundle.entries, bundle.defaults, configuration)
             } else {
                 (vec![], json!({}), Default::default())
@@ -714,6 +719,61 @@ fn check_tools(prefix: &str, manifest: &Manifest, sources: &[ConfigurationRecord
                 return Err(err(
                     "handler_unsupported",
                     format!("领域包发布了本 Host 没有的平台处理器 {name} 上的工具"),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The engineering tools a package may use: those of the extension groups it requires.
+fn engineering_tools(required: &[String]) -> Result<Vec<ConfigurationRecord>> {
+    Ok(factory_bundle::engineering_bundle()?
+        .entries
+        .iter()
+        .filter(|source| {
+            devdesk_core::extensions::group_of_handler(
+                source.data["qualified_name"].as_str().unwrap_or_default(),
+            )
+            .is_some_and(|group| required.contains(&group.reference()))
+        })
+        .cloned()
+        .collect())
+}
+
+/// The kernel's sources a package's configuration may reference: everything the kernel
+/// publishes, and the engineering tools of the groups the package requires.
+fn provided_sources(manifest: &Manifest) -> Result<Vec<ConfigurationRecord>> {
+    crate::factory_bundle::initialize()?;
+    let mut provided = devdesk_core::builtin_sources()?;
+    provided.extend(engineering_tools(&manifest.requires.extensions)?);
+    Ok(provided)
+}
+
+/// A package may use an engineering tool only through the group it belongs to. Naming the
+/// group it did not require says more than the unresolved reference the check would find.
+fn check_engineering_references(
+    sources: &[ConfigurationRecord],
+    required: &[String],
+) -> Result<()> {
+    let tools = factory_bundle::engineering_bundle()?.entries.clone();
+    for source in sources {
+        for edge in configuration_edges(source)? {
+            let Some(tool) = tools.iter().find(|tool| tool.id == edge.to) else {
+                continue;
+            };
+            let handler = tool.data["qualified_name"].as_str().unwrap_or_default();
+            if let Some(group) = devdesk_core::extensions::group_of_handler(handler)
+                && !required.contains(&group.reference())
+            {
+                return Err(err(
+                    "extension_unavailable",
+                    format!(
+                        "领域源 {} 引用的 {} 由扩展组 {} 提供，领域包没有声明依赖",
+                        source.definition_id,
+                        edge.to,
+                        group.reference()
+                    ),
                 ));
             }
         }
@@ -1286,6 +1346,20 @@ impl DomainPackages {
         Ok(package.hook(group, hook).is_some())
     }
 
+    /// The kernel's engineering tool definitions for projects of the active package: those
+    /// of the extension groups the package requires. The package adopts them like its own
+    /// sources; a package that requires no group gets none.
+    pub fn extension_sources(&self) -> Result<Vec<ConfigurationRecord>> {
+        let active = self.active.read().unwrap();
+        let required = active
+            .package
+            .as_deref()
+            .map(|package| package.manifest.requires.extensions.clone())
+            .unwrap_or_default();
+        drop(active);
+        engineering_tools(&required)
+    }
+
     /// Whether the active package declared that it requires the extension `group`.
     pub fn requires(&self, group: &str) -> Result<bool> {
         Ok(self
@@ -1543,10 +1617,18 @@ impl DomainPackages {
         let sources = active
             .package
             .as_ref()
-            .map(|package| DomainConfigurationSources {
-                records: package.sources.clone(),
-                automation: package.automation_sources.clone(),
-            });
+            .map(|package| {
+                // The directory of a domain holds the package's sources and the engineering
+                // tools the kernel gives it; otherwise a project's copy of those tools reads
+                // as a source of a former generation.
+                let mut records = package.sources.to_vec();
+                records.extend(engineering_tools(&package.manifest.requires.extensions)?);
+                Ok(DomainConfigurationSources {
+                    records: records.into(),
+                    automation: package.automation_sources.clone(),
+                })
+            })
+            .transpose()?;
         Ok((visibility, sources))
     }
 
@@ -2268,6 +2350,69 @@ mod tests {
             "the published tool still needs the group: {}",
             error.message
         );
+    }
+
+    #[test]
+    fn a_package_that_requires_an_extension_group_is_given_its_tools() {
+        crate::factory_bundle::initialize().unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let packages = DomainPackages::open(temporary.path()).unwrap();
+        let installed = packages.install(SOFTWARE).unwrap();
+        let digest = installed["digest"].as_str().unwrap();
+        {
+            let db = packages.db.lock().unwrap();
+            db.execute(
+                "UPDATE active_domain SET epoch=1,digest=? WHERE singleton=1",
+                [digest],
+            )
+            .unwrap();
+        }
+        let packages = DomainPackages::open(temporary.path()).unwrap();
+        let tools = packages.extension_sources().unwrap();
+        let mut handlers: Vec<_> = tools
+            .iter()
+            .map(|tool| {
+                (
+                    tool.id.as_str(),
+                    tool.data["qualified_name"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        handlers.sort();
+        assert_eq!(
+            handlers,
+            [
+                ("engineering-tool-checkpoint:2", "workspace.checkpoint"),
+                ("engineering-tool-delivery-merge:2", "git.delivery.merge"),
+                ("engineering-tool-delivery-open:3", "git.delivery.open"),
+                ("engineering-tool-project-tests:3", "tests.project"),
+                ("engineering-tool-source-publish:2", "git.source.publish"),
+                ("engineering-tool-target:2", "workspace.target"),
+                ("engineering-tool-tests-run:3", "tests.run"),
+                ("engineering-tool-workspace-current:2", "workspace.current"),
+            ]
+        );
+        // A package that requires no group is given none of them.
+        let plain = archive(
+            json!({
+                "format": 2, "id": "sample", "version": "1", "domain_protocol": 2,
+                "requires": {}, "extensions": {},
+                "runtime": {"entry": ENTRY, "handlers": {"sample.read": handler(None)}},
+            }),
+            &[],
+        );
+        let installed = packages.install(&plain).unwrap();
+        let other = installed["digest"].as_str().unwrap();
+        {
+            let db = packages.db.lock().unwrap();
+            db.execute(
+                "UPDATE active_domain SET epoch=2,digest=? WHERE singleton=1",
+                [other],
+            )
+            .unwrap();
+        }
+        let packages = DomainPackages::open(temporary.path()).unwrap();
+        assert!(packages.extension_sources().unwrap().is_empty());
     }
 
     #[test]

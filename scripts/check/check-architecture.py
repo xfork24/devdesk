@@ -128,7 +128,7 @@ def kernel_domain_errors(root: Path) -> list[str]:
          re.compile(rf'plugins/(?:{alternation})\b') if domains else None, False),
         ('names a domain package namespace',
          re.compile(rf'"(?:{alternation})(?:[."])') if domains else None, False),
-        ('names the factory directory', re.compile(r'\.\./kernel"|kernel/core[/"]'), True),
+        ('names the factory directory', re.compile(r'\.\./kernel"|kernel/(?:core|engineering)[/"]'), True),
         ('names a retired factory identity', re.compile('|'.join(map(re.escape, retired))), False),
     ]
     loader = (root / FACTORY_BUNDLE_LOADER).resolve()

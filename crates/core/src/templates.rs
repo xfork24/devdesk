@@ -41,6 +41,11 @@ fn bundle() -> Result<&'static ConfigurationBundle> {
         .get()
         .ok_or_else(|| err("configuration_required", "外层尚未提供出厂配置资源"))
 }
+/// The kernel's own published sources, as a package may reference them.
+pub fn builtin_sources() -> Result<Vec<ConfigurationRecord>> {
+    Ok(bundle()?.entries.clone())
+}
+
 pub(crate) fn builtin_configuration_usages(
     reference: &str,
 ) -> Result<Vec<ConfigurationReferenceUsage>> {

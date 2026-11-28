@@ -2,6 +2,7 @@
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 include!(concat!(env!("OUT_DIR"), "/template_files.rs"));
+include!(concat!(env!("OUT_DIR"), "/engineering_files.rs"));
 fn resource(path: &str) -> Result<&'static str> {
     require(
         !path.is_empty()
@@ -27,6 +28,26 @@ pub fn initialize() -> Result<()> {
         })
         .clone()
 }
+/// The engineering extension's bundle. The kernel embeds it like the factory bundle, but
+/// it is not installed for everyone: a project gets its tools when the domain package it
+/// belongs to requires one of the groups they belong to.
+pub fn engineering_bundle() -> Result<&'static devdesk_core::ConfigurationBundle> {
+    static BUNDLE: std::sync::OnceLock<Result<devdesk_core::ConfigurationBundle>> =
+        std::sync::OnceLock::new();
+    BUNDLE
+        .get_or_init(|| {
+            read_bundle(|path| {
+                ENGINEERING_FILES
+                    .iter()
+                    .find(|(name, _)| *name == path)
+                    .map(|(_, body)| *body)
+                    .ok_or_else(|| err("invalid_template", format!("缺少工程扩展文件 {path}")))
+            })
+        })
+        .as_ref()
+        .map_err(|error| error.clone())
+}
+
 pub(crate) fn read_bundle<'a>(
     resource: impl Fn(&str) -> Result<&'a str>,
 ) -> Result<devdesk_core::ConfigurationBundle> {

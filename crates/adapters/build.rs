@@ -9,6 +9,11 @@ fn main() {
     let core = root.join("core");
     let fixture = root.join("../tests/fixtures/configuration/engineering-catalog.json");
     println!("cargo:rerun-if-changed={}", core.display());
+    let engineering = read_catalog(&root.join("engineering"));
+    println!(
+        "cargo:rerun-if-changed={}",
+        root.join("engineering").display()
+    );
     println!(
         "cargo:rerun-if-changed={}",
         root.join("../schemas").display()
@@ -38,6 +43,18 @@ fn main() {
     code.push_str("];\n");
     fs::write(
         PathBuf::from(env::var("OUT_DIR").unwrap()).join("template_files.rs"),
+        code,
+    )
+    .unwrap();
+    // The engineering extension is the kernel's as well. It reaches a project only through
+    // a package that requires one of its groups, so it is embedded apart from the factory.
+    let mut code = String::from("pub const ENGINEERING_FILES: &[(&str, &str)] = &[\n");
+    for (name, contents) in engineering {
+        code.push_str(&format!("({name:?}, {contents:?}),\n"));
+    }
+    code.push_str("];\n");
+    fs::write(
+        PathBuf::from(env::var("OUT_DIR").unwrap()).join("engineering_files.rs"),
         code,
     )
     .unwrap();

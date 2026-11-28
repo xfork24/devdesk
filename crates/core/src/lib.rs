@@ -151,7 +151,7 @@ pub use configuration::{
 use environment::now;
 pub use environment::{id, with_application_environment};
 pub use templates::{
-    copy_template_catalog, current_template_defaults, initialize_template_catalog,
+    builtin_sources, copy_template_catalog, current_template_defaults, initialize_template_catalog,
     register_template_members, reset_template_catalog, restore_template_catalog,
     template_bundle_info, template_catalog_counts, template_catalog_has_custom_history,
     template_catalog_pristine, template_factory_counts, template_hard_reset_generation,

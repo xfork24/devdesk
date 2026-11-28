@@ -47,6 +47,20 @@ impl DomainReader for ProjectReader {
     }
 }
 
+/// Gives a project sources the kernel provides for the extension groups the active package
+/// requires. The package only says which groups it uses; the kernel embeds the definitions.
+pub(super) fn adopt_extension_tools(
+    packages: &DomainPackages,
+    engine: &devdesk_core::Engine,
+) -> devdesk_domain::Result<()> {
+    let sources = packages.extension_sources()?;
+    if sources.is_empty() {
+        Ok(())
+    } else {
+        engine.adopt_domain_sources(&sources)
+    }
+}
+
 pub(super) fn method(name: &str) -> bool {
     name.starts_with("domain.")
         || name.starts_with("query.domain.")
@@ -217,6 +231,8 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
             let title = text("title")?;
             let command = command_identity(&params)?;
             let expected_epoch = epoch()?;
+            // Read before the closure: the closure holds the package registry's read lease.
+            let extension = packages.extension_sources()?;
             packages.with_sources(expected_epoch, params.get("connection"), |digest, sources, plan| {
                 let mut payload = json!({"title":title});
                 let mut existing_project = None;
@@ -290,6 +306,9 @@ pub(super) fn dispatch(app: &App, name: &str, params: Value) -> devdesk_domain::
                     result => (result?, false),
                 };
                 engine.adopt_domain_sources(sources)?;
+                if !extension.is_empty() {
+                    engine.adopt_domain_sources(&extension)?;
+                }
                 if let Some(plan) = plan
                     && git.is_some()
                 {
