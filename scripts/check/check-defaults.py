@@ -4,9 +4,6 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from configuration_usage import usage_index
-
 ROOT = Path(__file__).resolve().parents[2] / "plugins"
 REFERENCE_FIELDS = (
     "capability_ref",
@@ -68,12 +65,22 @@ def check_catalog(directory, dependencies, domain=None):
         resolve(role, "default role")
         resolve(agent, f"default agent for {role}")
 
+    # The stored usage index is checked by configuration_usage.py, against the SDK's
+    # implementation of the algorithm.
     if index := manifest.get("usage_index"):
         owned.add(index)
-        if json.loads((directory / index).read_text()) != {
-            "schema_version": 1, "references": usage_index(sources),
-        }:
-            raise ValueError("core usage index is stale; run python3 scripts/check/configuration_usage.py --write")
+    for relative in sum(manifest["types"].values(), []):
+        source = json.loads((directory / relative).read_text())
+        # A _file body lives next to its source, possibly outside the catalog directory;
+        # such a file is owned at the package level, which the caller has already accepted.
+        for field, value in source["data"].items():
+            if field.endswith("_file"):
+                try:
+                    owned.add(
+                        (directory / relative).parent.joinpath(value).resolve().relative_to(directory).as_posix()
+                    )
+                except ValueError:
+                    pass
     orphans = sorted(path.relative_to(directory).as_posix() for path in directory.rglob("*")
                      if path.is_file() and path.relative_to(directory).as_posix() not in owned)
     if orphans:

@@ -1,0 +1,114 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "operation",
+    "context",
+    "facts"
+  ],
+  "properties": {
+    "contract": {
+      "const": "git.delivery"
+    },
+    "operation": {
+      "enum": [
+        "workspace.target",
+        "git.source.publish",
+        "git.delivery.open",
+        "git.delivery.merge",
+        "$completion"
+      ]
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_revision",
+        "source_branch",
+        "destination",
+        "candidate_revision",
+        "test_configuration"
+      ],
+      "properties": {
+        "source_revision": {
+          "type": "string",
+          "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "source_branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "destination": {
+          "enum": [
+            "mainline",
+            "parent_work"
+          ]
+        },
+        "candidate_revision": {
+          "type": [
+            "null",
+            "string"
+          ]
+        },
+        "test_configuration": {
+          "type": [
+            "null",
+            "object"
+          ]
+        }
+      }
+    },
+    "facts": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 32,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "step",
+          "execution_id",
+          "input_digest",
+          "output_digest",
+          "result"
+        ],
+        "properties": {
+          "step": {
+            "type": "string",
+            "minLength": 1
+          },
+          "execution_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "input_digest": {
+            "type": "string",
+            "minLength": 1
+          },
+          "output_digest": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workspace_revision": {
+            "type": "string",
+            "minLength": 1
+          },
+          "result": {},
+          "platform_operation": {
+            "type": "string",
+            "minLength": 1
+          },
+          "platform_call_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "human_confirmation": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

@@ -27,49 +27,53 @@
       "skills/builtin-skill-software-design-v1.json"
     ],
     "spec": [
-      "specs/builtin-spec-stage-prd-v4.json",
-      "specs/builtin-spec-delivery-review-v3.json",
-      "specs/builtin-spec-delivery-test-report-v3.json",
       "specs/builtin-spec-delivery-diff-v3.json",
-      "specs/builtin-spec-delivery-workspace-snapshot-v3.json",
+      "specs/builtin-spec-delivery-review-v3.json",
       "specs/builtin-spec-delivery-task-creation-report-v3.json",
       "specs/builtin-spec-delivery-task-record-v3.json",
-      "specs/builtin-spec-task-plan-v2.json",
+      "specs/builtin-spec-delivery-test-report-v3.json",
+      "specs/builtin-spec-delivery-workspace-snapshot-v3.json",
       "specs/builtin-spec-design-document-v2.json",
-      "specs/builtin-spec-test-design-v2.json",
-      "specs/builtin-spec-implementation-report-v2.json",
-      "specs/builtin-spec-task-code-review-v2.json",
       "specs/builtin-spec-feature-code-review-v2.json",
-      "specs/builtin-spec-platform-evidence-v2.json"
+      "specs/builtin-spec-implementation-report-v2.json",
+      "specs/builtin-spec-platform-evidence-v2.json",
+      "specs/builtin-spec-stage-prd-v4.json",
+      "specs/builtin-spec-task-code-review-v2.json",
+      "specs/builtin-spec-task-plan-v2.json",
+      "specs/builtin-spec-test-design-v2.json",
+      "specs/software-development.preflight-contract-v1.json"
     ],
     "standard": [
       "standards/builtin-standard-engineering-delivery-v6.json"
     ],
     "workflow": [
+      "workflows/builtin-workflow-feature-development-v6.json",
       "workflows/builtin-workflow-task-development-v5.json",
-      "workflows/builtin-workflow-feature-development-v6.json"
+      "workflows/software-development.repository-preflight-v1.json"
     ],
     "delivery_type": [
-      "deliveries/builtin-delivery-prd-v5.json",
-      "deliveries/builtin-delivery-review-v4.json",
-      "deliveries/builtin-delivery-workspace-snapshot-v3.json",
-      "deliveries/builtin-delivery-task-creation-report-v3.json",
-      "deliveries/builtin-delivery-task-record-v3.json",
-      "deliveries/builtin-delivery-design-document-v2.json",
-      "deliveries/builtin-delivery-task-plan-v2.json",
-      "deliveries/builtin-delivery-test-design-v2.json",
-      "deliveries/builtin-delivery-implementation-report-v2.json",
-      "deliveries/builtin-delivery-project-test-configuration-v2.json",
-      "deliveries/builtin-delivery-source-branch-publication-v2.json",
-      "deliveries/builtin-delivery-pull-request-v2.json",
-      "deliveries/builtin-delivery-merge-sync-v2.json",
       "deliveries/builtin-delivery-code-checkpoint-v2.json",
-      "deliveries/builtin-delivery-regression-test-receipt-v2.json",
-      "deliveries/builtin-delivery-merge-approval-packet-v2.json",
+      "deliveries/builtin-delivery-design-document-v2.json",
       "deliveries/builtin-delivery-git-diff-v2.json",
-      "deliveries/builtin-delivery-target-branch-baseline-v2.json",
+      "deliveries/builtin-delivery-implementation-report-v2.json",
       "deliveries/builtin-delivery-independent-test-report-v2.json",
-      "deliveries/builtin-delivery-task-merge-receipts-v2.json"
+      "deliveries/builtin-delivery-merge-approval-packet-v2.json",
+      "deliveries/builtin-delivery-merge-sync-v2.json",
+      "deliveries/builtin-delivery-prd-v5.json",
+      "deliveries/builtin-delivery-project-test-configuration-v2.json",
+      "deliveries/builtin-delivery-pull-request-v2.json",
+      "deliveries/builtin-delivery-regression-test-receipt-v2.json",
+      "deliveries/builtin-delivery-review-v4.json",
+      "deliveries/builtin-delivery-source-branch-publication-v2.json",
+      "deliveries/builtin-delivery-target-branch-baseline-v2.json",
+      "deliveries/builtin-delivery-task-creation-report-v3.json",
+      "deliveries/builtin-delivery-task-merge-receipts-v2.json",
+      "deliveries/builtin-delivery-task-plan-v2.json",
+      "deliveries/builtin-delivery-task-record-v3.json",
+      "deliveries/builtin-delivery-test-design-v2.json",
+      "deliveries/builtin-delivery-workspace-snapshot-v3.json",
+      "deliveries/software-development.repository-revision-v1.json",
+      "deliveries/software-development.test-configuration-v1.json"
     ],
     "capability": [
       "capabilities/builtin-capability-sol-high-codex-v6.json",
@@ -114,12 +118,15 @@
       "agents/builtin-agent-gpt-6-2-sol-tester-v4.json",
       "agents/builtin-agent-gpt-6-2-sol-reviewer-v4.json"
     ],
-    "tool": [],
+    "tool": [
+      "tools/software-development.detect-test-entry-v1.json"
+    ],
     "permission_profile": [
       "permissions/profiles/simplified-permission-read-v2.json",
       "permissions/profiles/simplified-permission-tests-v3.json",
       "permissions/profiles/simplified-permission-implementation-v3.json"
     ]
   },
-  "defaults": "defaults.json"
+  "defaults": "defaults.json",
+  "usage_index": "usage-index.json"
 }

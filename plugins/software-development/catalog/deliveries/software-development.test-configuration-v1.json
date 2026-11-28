@@ -1,0 +1,20 @@
+{
+  "type": "delivery_type",
+  "identity": "software-development.test-configuration",
+  "revision": 1,
+  "scope": "global",
+  "name": "Test Configuration",
+  "data": {
+    "format": "json",
+    "content_schema_file": "../schemas/project-test-configuration.schema.json",
+    "producer": {
+      "kind": "platform",
+      "tools": [
+        "software-development.detect-test-entry"
+      ]
+    }
+  },
+  "spec_refs": [
+    "software-development.preflight-contract:1"
+  ]
+}

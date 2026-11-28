@@ -799,6 +799,21 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         );
         return Ok(());
     }
+    // The capability catalog without a dataset: what a domain package's build may rely on.
+    if let [command, options @ ..] = args.as_slice()
+        && command == "capabilities"
+    {
+        match options {
+            [action] if action == "--print" => {
+                let mut catalog =
+                    serde_json::to_value(devdesk_core::domain_protocol::Capabilities::current())?;
+                catalog["host_version"] = json!(env!("CARGO_PKG_VERSION"));
+                println!("{}", serde_json::to_string_pretty(&catalog)?);
+            }
+            _ => return Err("Usage: devdesk-host capabilities --print".into()),
+        }
+        return Ok(());
+    }
     if let [command, options @ ..] = args.as_slice()
         && command == "sandbox-policy"
     {

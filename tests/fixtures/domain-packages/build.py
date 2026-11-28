@@ -1,8 +1,8 @@
 """Build deterministic ZIPs for the real Host/Docker and dual-client acceptance."""
 import hashlib
 import json
-import runpy
 from pathlib import Path
+import subprocess
 import sys
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
@@ -245,7 +245,12 @@ def package(target, identity, title, handler, core, sdk=1):
                 "outputs": {"observation": {"step": "title", "port": "observation"}},
             }),
         ])
-        usage = runpy.run_path(str(ROOT.parents[2] / "scripts/check/configuration_usage.py"))["usage_index"]
+        # The usage index has one implementation, the SDK's; the fixture's sources are
+        # piped through it exactly as they are written into the bundle.
+        usage = json.loads(subprocess.run(
+            ["node", str(ROOT.parents[2] / "sdk/domain/cli/usage-index.mjs"), "--stdin"],
+            input=json.dumps(sources), capture_output=True, text=True, check=True,
+        ).stdout)
         # A bundle manifest lists every source type, as the factory's does; unused ones stay empty.
         types = {kind: [] for kind in json.loads(
             (ROOT.parents[2] / "schemas/template-manifest.schema.json").read_text())["properties"]["types"]["required"]}
@@ -261,7 +266,7 @@ def package(target, identity, title, handler, core, sdk=1):
             "role_agent_bindings": {f"{identity}.editor:1": f"{identity}.editor-agent:1",
                                     f"{identity}.proof-reader:1": f"{identity}.proof-reader-agent:1"},
         }).encode()
-        files["configurations/usage.json"] = json.dumps({"references": usage(sources)}).encode()
+        files["configurations/usage.json"] = json.dumps(usage).encode()
     # Handlers the fixture reaches: the kernel tools its sources adopt. Its own tools are
     # domain tools and name its own handlers.
     handlers = platform_handlers(sources)

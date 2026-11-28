@@ -1,0 +1,21 @@
+{
+  "name": "@devdesk/domain-sdk",
+  "version": "0.6.0",
+  "private": true,
+  "type": "module",
+  "description": "DevDesk domain SDK: package format schemas, handler bootstrap, devdesk-domain CLI",
+  "bin": {
+    "devdesk-domain": "cli/devdesk-domain.mjs"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "files": [
+    "cli",
+    "lib",
+    "worker",
+    "schemas",
+    "kernel",
+    "catalog.json"
+  ]
+}

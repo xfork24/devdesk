@@ -1,0 +1,70 @@
+{
+  "type": "workflow",
+  "identity": "software-development.repository-preflight",
+  "revision": 1,
+  "scope": "global",
+  "name": "Repository Preflight",
+  "data": {
+    "schema_version": 6,
+    "stages": [
+      {
+        "key": "prepare",
+        "name": "Prepare"
+      }
+    ],
+    "inputs": {
+      "repository": {
+        "delivery_ref": "software-development.repository-revision:1"
+      }
+    },
+    "steps": [
+      {
+        "key": "discover",
+        "name": "Discover tests",
+        "stage": "prepare",
+        "inputs": {
+          "repository": {
+            "type": "source",
+            "source": {
+              "step": "$input",
+              "port": "repository"
+            }
+          }
+        },
+        "executor": {
+          "type": "tool",
+          "tool_ref": "software-development.detect-test-entry:1",
+          "arguments": {
+            "path": {
+              "type": "source",
+              "source": {
+                "step": "$input",
+                "port": "repository",
+                "pointer": "/path"
+              }
+            },
+            "revision": {
+              "type": "source",
+              "source": {
+                "step": "$input",
+                "port": "repository",
+                "pointer": "/revision"
+              }
+            }
+          }
+        },
+        "outputs": {
+          "test_configuration": {
+            "delivery_ref": "software-development.test-configuration:1"
+          }
+        }
+      }
+    ],
+    "outputs": {
+      "test_configuration": {
+        "step": "discover",
+        "port": "test_configuration"
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "type": "spec",
+  "identity": "software-development.preflight-contract",
+  "revision": 1,
+  "scope": "global",
+  "name": "Preflight Contract",
+  "data": {
+    "schema_version": 3,
+    "body": "Identify a test command from tracked files at the exact commit. Runtime selection owns the image.",
+    "checks": [
+      {
+        "key": "revision",
+        "name": "Revision",
+        "instructions": "Preserve the exact selected Git commit."
+      }
+    ]
+  }
+}

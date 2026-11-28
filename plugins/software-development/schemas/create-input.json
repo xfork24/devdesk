@@ -1,0 +1,47 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request",
+    "marker"
+  ],
+  "properties": {
+    "marker": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "request": {
+      "type": "object",
+      "required": [
+        "merge",
+        "head_branch",
+        "base_branch",
+        "candidate",
+        "expected_target"
+      ],
+      "properties": {
+        "merge": {
+          "type": "string",
+          "minLength": 1
+        },
+        "head_branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "base_branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "candidate": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected_target": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

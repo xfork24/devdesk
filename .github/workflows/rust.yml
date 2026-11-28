@@ -37,7 +37,7 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
-      - run: node --test tests/entrypoints/domain_worker.mjs
+      - run: node --test tests/entrypoints/domain_sdk.mjs tests/entrypoints/domain_worker.mjs
       - run: ./scripts/check/check-architecture.sh
       - run: python3 scripts/check/check-docs.py
       - run: ./scripts/check/check-defaults.sh

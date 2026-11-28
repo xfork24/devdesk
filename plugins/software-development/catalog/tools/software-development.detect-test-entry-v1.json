@@ -1,0 +1,32 @@
+{
+  "type": "tool",
+  "identity": "software-development.detect-test-entry",
+  "revision": 1,
+  "scope": "global",
+  "name": "Detect Test Entry",
+  "data": {
+    "qualified_name": "software-development.detect-test-entry",
+    "implementation": "domain",
+    "handler": "software-development.tests.discover",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "revision"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+        }
+      }
+    },
+    "output_schema_file": "../schemas/project-test-configuration.schema.json"
+  }
+}

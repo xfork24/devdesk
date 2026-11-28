@@ -1,0 +1,142 @@
+{
+  "id": "software-development",
+  "version": "0.6.0",
+  "requires": {
+    "extensions": [
+      "engineering.git/1",
+      "engineering.tests/1"
+    ]
+  },
+  "entity_types": "configurations/entity-types/repository.json",
+  "extensions": {
+    "engineering.git/1": {
+      "handlers": {
+        "worktree_branch": "software-development.branch.plan",
+        "pull_request_creation": "software-development.pull-request.create"
+      }
+    },
+    "engineering.tests/1": {
+      "handlers": {
+        "test_discovery": "software-development.tests.discover"
+      },
+      "resources": {
+        "reporters": {
+          "node_test": "runtime/node-reporter.mjs",
+          "python_unittest": "runtime/project-tests.py",
+          "command": "runtime/project-tests.py"
+        }
+      }
+    }
+  },
+  "runtime": {
+    "entry": "runtime/worker.mjs",
+    "project_connection": "software-development.project.connect",
+    "handlers": {
+      "software-development.pull-request.create": {
+        "input_schema": {
+          "$file": "schemas/create-input.json"
+        },
+        "output_schema": {
+          "$file": "schemas/create-output.json"
+        }
+      },
+      "software-development.project.connect": {
+        "input_schema": {
+          "$file": "schemas/connect-input.json"
+        },
+        "output_schema": {
+          "$file": "schemas/connect-output.json"
+        }
+      },
+      "software-development.branch.plan": {
+        "input_schema": {
+          "$file": "schemas/plan-input.json"
+        },
+        "output_schema": {
+          "$file": "schemas/plan-output.json"
+        }
+      },
+      "software-development.tests.discover": {
+        "core": "engineering.git.snapshot",
+        "git_snapshot": {
+          "files": [
+            ".devdesk/tests.json",
+            "package.json",
+            "pyproject.toml",
+            "pytest.ini",
+            "setup.cfg",
+            "Cargo.toml",
+            "go.mod"
+          ],
+          "searches": {
+            "rust_tests": {
+              "glob": "*.rs",
+              "needles": [
+                "#[test",
+                "#[tokio::test",
+                "#[async_std::test"
+              ]
+            }
+          }
+        },
+        "input_schema": {
+          "$file": "schemas/discover-input.json"
+        },
+        "output_schema": {
+          "$file": "schemas/discover-output.json"
+        }
+      },
+      "software-development.delivery.authorize": {
+        "input_schema": {
+          "$file": "schemas/authorize-input.json"
+        },
+        "output_schema": {
+          "$file": "schemas/authorize-output.json"
+        }
+      }
+    }
+  },
+  "ui": {
+    "contributions": "ui/contributions.json",
+    "targets": [
+      {
+        "renderer": "web.react",
+        "sdk": 1,
+        "kit": "0.6",
+        "styles": [
+          "ui/web/workbench.css"
+        ],
+        "bindings": [
+          {
+            "contribution": "software-development.branches",
+            "entry": "ui/web/workbench.mjs",
+            "export": "BranchQueue",
+            "home": true
+          },
+          {
+            "contribution": "software-development.delivery",
+            "entry": "ui/web/workbench.mjs",
+            "export": "DeliveryWorkbench",
+            "home": false
+          },
+          {
+            "contribution": "software-development.engineering-settings",
+            "entry": "ui/web/workbench.mjs",
+            "export": "EngineeringSettings",
+            "home": false
+          }
+        ]
+      }
+    ]
+  },
+  "assets": [
+    {
+      "directory": "entity-types",
+      "prefix": "configurations/entity-types"
+    }
+  ],
+  "exclude": [
+    "web",
+    "build.py"
+  ]
+}

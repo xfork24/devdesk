@@ -134,7 +134,11 @@ try {
     const row = page.getByRole("listitem").filter({
       hasText: `${installReply.result.id} ${installReply.result.version}`,
     });
-    const activated = page.waitForResponse((r) => r.url().endsWith("/rpc") && r.request().postDataJSON()?.method === "domain.activate");
+    // A first activation reopens every project of the domain; give that time.
+    const activated = page.waitForResponse(
+      (r) => r.url().endsWith("/rpc") && r.request().postDataJSON()?.method === "domain.activate",
+      { timeout: 30_000 },
+    );
     await row.getByRole("button", { name: "激活", exact: true }).click();
     const activationReply = await (await activated).json();
     assert(!activationReply.error, JSON.stringify(activationReply.error));

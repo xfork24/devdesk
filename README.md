@@ -71,6 +71,7 @@ npm --prefix web ci
 | `web/` | Web Core、共享 SDK、软件领域使用的 UI 组件 |
 | `kernel/core/` | 随 Host 发布的领域无关默认配置和内核处理器的工具定义 |
 | `kernel/engineering/` | 随 Host 发布的工程扩展工具定义，领域包声明扩展组时才提供给它的项目 |
+| `sdk/domain/` | 领域 SDK：包格式 Schema、处理器引导模块、引用索引与 `devdesk-domain` 命令行工具（init/check/build/verify） |
 | `plugins/software-development/` | 软件开发目录、运行端、Web 贡献及 ZIP 构建入口 |
 | `schemas/` · `sql/` | 结构合同和 SQLite 基线 |
 | `docs/` · `scripts/` · `tests/` | 设计、代码手册、构建、发布和验收 |

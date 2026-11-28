@@ -37,6 +37,58 @@ jobs:
           name: core-host-${{ matrix.os }}
           path: dist/devdesk-core-host-*.tar.gz*
 
+  domain-sdk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: core-host
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-host-ubuntu-latest
+          path: dist
+      - run: pip install jsonschema
+      - run: ./scripts/release/package.sh sdk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: domain-sdk
+          path: dist/devdesk-domain-sdk-*.tar.gz*
+
+  # Build independence: the runtime-only archive is built from the SDK artifact and the
+  # domain directory alone. The checkout carries nothing else.
+  independent-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: domain-sdk
+    steps:
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: pip install jsonschema
+      - uses: actions/download-artifact@v4
+        with:
+          name: domain-sdk
+          path: sdk-artifact
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: plugins/software-development
+          persist-credentials: false
+      - name: Build the runtime-only archive from the SDK artifact and the domain directory
+        run: |
+          mkdir sdk-input
+          tar -C sdk-input -xzf sdk-artifact/devdesk-domain-sdk-*.tar.gz --strip-components 1
+          DEVDESK_SDK="$PWD/sdk-input" \
+            python3 plugins/software-development/build.py --runtime-only software-development.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: independent-runtime-archive
+          path: software-development.zip
+
   workbench:
     runs-on: ubuntu-latest
     timeout-minutes: 25

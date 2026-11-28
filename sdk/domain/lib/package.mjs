@@ -25,24 +25,42 @@ const json = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 const byName = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 const posix = (file) => file.split(path.sep).join("/");
 
-function addTree(files, root, prefix, base) {
+function addTree(files, root, prefix, base, skip, { depth, sources, exclude }) {
   if (!existsSync(root)) throw new Failure(`目录不存在：${root}`);
   for (const entry of readdirSync(root, { withFileTypes: true })) {
-    if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+    // An asset's source directory is carried only through that asset; `exclude` names
+    // top level directories of the package, such as build inputs.
+    if (entry.name.startsWith(".") || skip.has(entry.name)) continue;
+    if (depth === 0 && exclude.has(entry.name)) continue;
+    if (sources.has(path.resolve(root, entry.name))) continue;
     const file = path.join(root, entry.name);
-    if (entry.isDirectory()) addTree(files, file, prefix, base);
+    if (entry.isDirectory())
+      addTree(files, file, prefix, base, skip, {
+        depth: depth + 1,
+        sources,
+        exclude,
+      });
     else if (entry.isFile())
       files.set(path.posix.join(prefix, posix(path.relative(base, file))), file);
   }
 }
 
-// The package's files on disk, by their path inside the package. `assets` bring in what is
-// built elsewhere, such as a Web bundle, under a fixed prefix.
-export function collectFiles(directory, assets = []) {
+// The package's files on disk, by their path inside the package. catalog/ is consumed and
+// re-emitted under configurations/, schemas/ is read through $file, and an asset's source
+// directory is carried only through that asset. `exclude` names more, such as build inputs.
+export function collectFiles(directory, assets = [], exclude = []) {
   const files = new Map();
-  addTree(files, directory, "", directory);
-  for (const asset of assets)
-    addTree(files, path.resolve(directory, asset.directory), asset.prefix, path.resolve(directory, asset.directory));
+  const skip = new Set(["node_modules", "__pycache__", "catalog", "schemas"]);
+  const context = {
+    depth: 0,
+    sources: new Set(assets.map((asset) => path.resolve(directory, asset.directory))),
+    exclude: new Set(exclude),
+  };
+  addTree(files, directory, "", directory, skip, context);
+  for (const asset of assets) {
+    const source = path.resolve(directory, asset.directory);
+    addTree(files, source, asset.prefix, source, skip, { ...context, depth: 1 });
+  }
   files.delete("domain.json");
   files.delete("README.md");
   return files;
@@ -65,13 +83,17 @@ export function readCatalog(directory, types) {
       const file = path.join(root, relative);
       owned.add(relative);
       const source = readJson(file);
-      // A long body lives next to its source and is inlined from a `*_file` field.
+      // A long body lives next to its source and is inlined from a `*_file` field. A body
+      // that is itself JSON is inlined as the parsed value, so a schema keeps its shape.
       for (const [field, value] of Object.entries(source.data)) {
         if (!field.endsWith("_file")) continue;
         const body = path.resolve(path.dirname(file), value);
         owned.add(posix(path.relative(root, body)));
         delete source.data[field];
-        source.data[field.slice(0, -"_file".length)] = readFileSync(body, "utf8");
+        const text = readFileSync(body, "utf8");
+        source.data[field.slice(0, -"_file".length)] = text.trimStart().startsWith("{")
+          ? JSON.parse(text)
+          : text;
       }
       if (source.type !== type)
         throw new Failure(`catalog/${relative} 的类型是 ${source.type}，清单把它列在 ${type} 下`);
@@ -85,7 +107,7 @@ export function readCatalog(directory, types) {
   }
   if (manifest.usage_index) owned.add(manifest.usage_index);
   const present = new Map();
-  addTree(present, root, "", root);
+  addTree(present, root, "", root, new Set(), { depth: 0, sources: new Set(), exclude: new Set() });
   for (const name of present.keys())
     if (!owned.has(name)) throw new Failure(`catalog/${name} 没有被 manifest.json 收录`);
   files.set(
@@ -113,13 +135,17 @@ export function readCatalog(directory, types) {
 
 // The manifest the Host installs, with what a package leaves to its build filled in: the
 // format, the platform handlers its tools reach, and the digest of every file it carries.
-export function assemble(directory, sdk) {
+// `assets` bring in what was built elsewhere under a fixed prefix; `strip` removes a top
+// level block and the files under it, for a runtime-only package.
+export function assemble(directory, sdk, { assets = [], strip = [] } = {}) {
   const declared = readJson(path.join(directory, "domain.json"));
   const files = new Map(
-    [...collectFiles(directory, declared.assets)].map(([name, file]) => [name, readFileSync(file)]),
+    [...collectFiles(directory, [...(declared.assets ?? []), ...assets], declared.exclude)].map(
+      ([name, file]) => [name, readFileSync(file)],
+    ),
   );
   let catalog = { sources: [], usage: null, declaredUsage: null };
-  if (files.has("catalog/manifest.json")) {
+  if (existsSync(path.join(directory, "catalog", "manifest.json"))) {
     const types = readJson(path.join(sdk.schemas, "template-manifest.schema.json"))
       .properties.types.required;
     catalog = readCatalog(directory, types);
@@ -127,7 +153,21 @@ export function assemble(directory, sdk) {
     for (const [name, body] of catalog.files) files.set(name, body);
   }
   const requires = declared.requires ?? {};
-  const { assets, ...described } = declared;
+  const { assets: declaredAssets, ...described } = declared;
+  // A schema may live next to the declaration it belongs to: `{"$file": "..."}` reads the
+  // file, relative to the package root, when the manifest is written.
+  const dereference = (value) => {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      if (typeof value.$file === "string")
+        return JSON.parse(readFileSync(path.join(directory, value.$file), "utf8"));
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, dereference(item)]));
+    }
+    if (Array.isArray(value)) return value.map(dereference);
+    return value;
+  };
+  for (const body of Object.values(described.runtime?.handlers ?? {}))
+    for (const field of ["input_schema", "output_schema"])
+      if (body[field]) body[field] = dereference(body[field]);
   const manifest = {
     format: sdk.catalog.package_format,
     id: declared.id,
@@ -135,20 +175,29 @@ export function assemble(directory, sdk) {
     domain_protocol: sdk.catalog.domain_protocol,
     requires: {
       host: requires.host ?? sdk.catalog.host_version,
-      handlers: adoptedHandlers(catalog.sources, sdk).sort(byName),
+      // The build derives the handlers from the package's tool references; the ones the
+      // package names itself are kept, so a call the build cannot see is still negotiated.
+      handlers: [...new Set([...(requires.handlers ?? []), ...adoptedHandlers(catalog.sources, sdk)])].sort(byName),
       extensions: [...(requires.extensions ?? [])].sort(byName),
       ...(requires.rpc ? { rpc: [...requires.rpc].sort(byName) } : {}),
     },
     ...Object.fromEntries(
-      ["entity_types", "extensions", "runtime", "ui"].filter((key) => key in described).map((key) => [key, described[key]]),
-    ),
-    files: Object.fromEntries(
-      [...files].map(([name, body]) => [
-        name,
-        createHash("sha256").update(body).digest("hex"),
-      ]),
+      ["entity_types", "extensions", "runtime", "ui"]
+        .filter((key) => key in described && !strip.includes(key))
+        .map((key) => [key, described[key]]),
     ),
   };
+  // Stripping happens before the digests: a runtime-only package does not carry the files
+  // its presentation target would have pulled in.
+  for (const block of strip)
+    for (const name of [...files.keys()])
+      if (name === `${block}` || name.startsWith(`${block}/`)) files.delete(name);
+  manifest.files = Object.fromEntries(
+    [...files].map(([name, body]) => [
+      name,
+      createHash("sha256").update(body).digest("hex"),
+    ]),
+  );
   files.set("manifest.json", json(manifest));
   return { manifest, files, sources: catalog.sources, usage: catalog.usage, declaredUsage: catalog.declaredUsage };
 }

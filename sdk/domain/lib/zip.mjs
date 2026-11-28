@@ -1,6 +1,6 @@
 // A ZIP writer without dependencies. Entries are stored uncompressed with a fixed timestamp
 // and written in name order, so the same package always produces the same archive.
-import { crc32, inflateRawSync } from "node:zlib";
+import { crc32, deflateRawSync, inflateRawSync } from "node:zlib";
 
 const FIXED_TIME = 0; // 00:00:00
 const FIXED_DATE = 0x21; // 1980-01-01, the earliest date DOS can encode
@@ -13,20 +13,21 @@ export function zip(entries) {
   let offset = 0;
   for (const name of names) {
     const encoded = Buffer.from(name, "utf8");
-    const data = Buffer.isBuffer(entries[name])
+    const raw = Buffer.isBuffer(entries[name])
       ? entries[name]
       : Buffer.from(entries[name]);
-    const checksum = crc32(data);
+    const data = deflateRawSync(raw, { level: 9 });
+    const checksum = crc32(raw);
     const header = Buffer.alloc(30);
     header.writeUInt32LE(0x04034b50, 0);
     header.writeUInt16LE(20, 4);
     header.writeUInt16LE(UTF8, 6);
-    header.writeUInt16LE(0, 8); // stored
+    header.writeUInt16LE(8, 8); // deflate
     header.writeUInt16LE(FIXED_TIME, 10);
     header.writeUInt16LE(FIXED_DATE, 12);
     header.writeUInt32LE(checksum, 14);
     header.writeUInt32LE(data.length, 18);
-    header.writeUInt32LE(data.length, 22);
+    header.writeUInt32LE(raw.length, 22);
     header.writeUInt16LE(encoded.length, 26);
     local.push(header, encoded, data);
 
@@ -35,12 +36,12 @@ export function zip(entries) {
     entry.writeUInt16LE(20, 4); // made by
     entry.writeUInt16LE(20, 6); // needed to read
     entry.writeUInt16LE(UTF8, 8);
-    entry.writeUInt16LE(0, 10);
+    entry.writeUInt16LE(8, 10);
     entry.writeUInt16LE(FIXED_TIME, 12);
     entry.writeUInt16LE(FIXED_DATE, 14);
     entry.writeUInt32LE(checksum, 16);
     entry.writeUInt32LE(data.length, 20);
-    entry.writeUInt32LE(data.length, 24);
+    entry.writeUInt32LE(raw.length, 24);
     entry.writeUInt16LE(encoded.length, 28);
     entry.writeUInt32LE(offset, 42);
     directory.push(entry, encoded);

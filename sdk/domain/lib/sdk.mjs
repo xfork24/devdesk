@@ -20,12 +20,14 @@ export function loadSdk({ flag, env = process.env } = {}) {
     if (candidate && existsSync(path.join(path.resolve(candidate), "catalog.json"))) {
       const root = path.resolve(candidate);
       const beside = (...names) =>
-        names.map((name) => path.join(root, name)).find((file) => existsSync(file));
-      const schemas = beside("schemas", "../schemas");
-      const kernel = beside("kernel", "../kernel");
+        names
+          .flatMap((name) => [0, 1, 2].map((up) => path.join(root, ...Array(up).fill(".."), name)))
+          .find((file) => existsSync(file));
+      const schemas = beside("schemas");
+      const kernel = beside("kernel");
       const bootstrap = beside(
-        "worker/bootstrap.mjs",
-        "../crates/adapters/runtime/domain-worker.mjs",
+        path.join("worker", "bootstrap.mjs"),
+        path.join("crates", "adapters", "runtime", "domain-worker.mjs"),
       );
       if (!schemas || !kernel || !bootstrap)
         throw new Failure(`SDK 目录 ${root} 不完整：需要 schemas/、kernel/ 和处理器引导模块`);

@@ -50,7 +50,7 @@ node --test tests/entrypoints/domain_delivery_evidence.mjs
 node tests/entrypoints/domain_release.mjs "$DEVDESK_RELEASE_OUT"
 ```
 
-`node --test tests/entrypoints/domain_worker.mjs` 用本机的 Node 运行内核的领域 worker 引导模块，覆盖握手、处理器调用、处理器拒绝与 worker 失败，不需要 Docker；`check.sh` 与 Rust 的 CI 作业会执行它。
+`node --test tests/entrypoints/domain_worker.mjs` 用本机的 Node 运行内核的领域 worker 引导模块，覆盖握手、处理器调用、处理器拒绝与 worker 失败，不需要 Docker。`node --test tests/entrypoints/domain_sdk.mjs` 验证 SDK 命令行工具：引用索引与内核目录一致、init/check/build 可复现、领域工具必须指向本包注册的处理器。两者都由 `check.sh` 与 Rust 的 CI 作业执行。
 
 用 `domain_packages.mjs` 配合解压后的 Host、Web Core 目录和软件 ZIP，验证浏览器与 Python 协议客户端操作同一领域目录、对象、流程和代次，以及真正的 Docker 处理器调用。制品验收也覆盖既有领域版本回切和重启恢复。运行前准备[领域 worker 镜像](../docs/design/run-binary.md#领域工作台独立发行)。
 

@@ -1,0 +1,5407 @@
+{
+  "schema_version": 1,
+  "references": {
+    "builtin-tool-codex-native:2": [
+      {
+        "reference": "software-development.capability-analyst-gpt-6-2-sol-codex:3",
+        "name": "Requirements Analysis Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-architect-gpt-6-2-sol-codex:3",
+        "name": "Software Design Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-developer-gpt-6-2-sol-codex:3",
+        "name": "Software Development Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-reviewer-gpt-6-2-sol-codex:4",
+        "name": "Independent Review Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-sol-high-codex:6",
+        "name": "General Engineering Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-tester-gpt-6-2-sol-codex:4",
+        "name": "Test Engineering Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-configuration-catalog:2": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/27",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/27",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/27",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-configuration-change-apply:2": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/31",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/31",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/31",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-configuration-change-preview:2": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/30",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/30",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/30",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-configuration-read:2": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/28",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/28",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/28",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-configuration-transfer-apply:3": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/33",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/33",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/33",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-configuration-transfer-cancel:3": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/34",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/34",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/34",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-configuration-transfer-stage:2": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/32",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/32",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/32",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-configuration-transfer-status:2": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/35",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/35",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/35",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-configuration-usage:2": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/29",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/29",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/29",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-dsh-native:2": [
+      {
+        "reference": "software-development.capability-analyst-glm-dsh:6",
+        "name": "Requirements Analysis Capability · GLM 5.3",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-analyst-minimax-dsh:6",
+        "name": "Requirements Analysis Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-architect-glm-dsh:6",
+        "name": "Software Design Capability · GLM 5.3",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-architect-minimax-dsh:6",
+        "name": "Software Design Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-developer-glm-dsh:6",
+        "name": "Software Development Capability · GLM 5.3",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-developer-minimax-dsh:6",
+        "name": "Software Development Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-glm-dsh:4",
+        "name": "General Engineering Capability · GLM 5.3",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-minimax-dsh:4",
+        "name": "General Engineering Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-reviewer-glm-dsh:7",
+        "name": "Independent Review Capability · GLM 5.3",
+        "type": "capability",
+        "version": 7,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-reviewer-minimax-dsh:7",
+        "name": "Independent Review Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 7,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-tester-glm-dsh:6",
+        "name": "Test Engineering Capability · GLM 5.3",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-tester-minimax-dsh:6",
+        "name": "Test Engineering Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/tools/0",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-materials-capture:2": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/17/executor/tool_ref",
+        "kind": "step_tool",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "approval",
+          "name": "Approve Main Branch Merge"
+        }
+      }
+    ],
+    "builtin-tool-project-artifact-read:2": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/25",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/25",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/25",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-project-overview:2": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/22",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/22",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/22",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-project-record-read:2": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/24",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/24",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/24",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-project-records-list:2": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/23",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/23",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/23",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-project-resources:2": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/26",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/26",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/26",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-spec-lint:2": [
+      {
+        "reference": "software-development.capability-analyst-gpt-6-2-sol-codex:3",
+        "name": "Requirements Analysis Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/tools/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-architect-gpt-6-2-sol-codex:3",
+        "name": "Software Design Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/tools/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-developer-gpt-6-2-sol-codex:3",
+        "name": "Software Development Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/tools/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/36",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/36",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/36",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-reviewer-gpt-6-2-sol-codex:4",
+        "name": "Independent Review Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-tester-gpt-6-2-sol-codex:4",
+        "name": "Test Engineering Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/2",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-tasks-create:2": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/7/executor/tool_ref",
+        "kind": "step_tool",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "tasks",
+          "name": "Register Approved Task Graph"
+        }
+      }
+    ],
+    "builtin-tool-workflow-cancel:3": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/14",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/14",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/14",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-workflow-change-apply:5": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/16",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/16",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/16",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-workflow-change-preview:4": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/15",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/15",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/15",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-workflow-complete:3": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/20",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/20",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/20",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-workflow-controller-notify:2": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/38",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/38",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/38",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-workflow-controller-wait:2": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/37",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/37",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/37",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-workflow-decision-request:5": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/18",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/18",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/18",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-workflow-events-read:2": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/3",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/3",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/3",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-workflow-execution-inspect:2": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/5",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/5",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/5",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-workflow-execution-reconcile:3": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/19",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/19",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/19",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-workflow-execution-stop:3": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/11",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/11",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/11",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-workflow-inspect:3": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/2",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-workflow-materials-import:3": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/17",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/17",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/17",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-workflow-outputs-read:3": [
+      {
+        "reference": "software-development.capability-analyst-gpt-6-2-sol-codex:3",
+        "name": "Requirements Analysis Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/tools/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-architect-gpt-6-2-sol-codex:3",
+        "name": "Software Design Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/tools/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-developer-gpt-6-2-sol-codex:3",
+        "name": "Software Development Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/tools/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/4",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/4",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/4",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-reviewer-gpt-6-2-sol-codex:4",
+        "name": "Independent Review Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-sol-high-codex:6",
+        "name": "General Engineering Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/tools/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-tester-gpt-6-2-sol-codex:4",
+        "name": "Test Engineering Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/1",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-workflow-pause:3": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/12",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/12",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/12",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-workflow-resume:3": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/13",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/13",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/13",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-workflow-rework-preview:2": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/39",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/39",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/39",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-workflow-segment-dispatch:5": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/21",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/21",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/21",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-workflow-start:4": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/1",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-workflow-step-accept:3": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/7",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/7",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/7",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-workflow-step-dispatch:3": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/6",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/6",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/6",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-workflow-step-input:3": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/8",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/8",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/8",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-workflow-step-retry:3": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/9",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/9",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/9",
+        "kind": "reference"
+      }
+    ],
+    "builtin-tool-workflow-step-rework:4": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/10",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/tools/10",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/tools/10",
+        "kind": "reference"
+      }
+    ],
+    "engineering-tool-checkpoint:2": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/10/executor/tool_ref",
+        "kind": "step_tool",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "workspace",
+          "name": "Capture Feature Checkpoint and Diff"
+        }
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/2/executor/tool_ref",
+        "kind": "step_tool",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "tests_snapshot",
+          "name": "Capture Test Checkpoint"
+        }
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/5/executor/tool_ref",
+        "kind": "step_tool",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation_snapshot",
+          "name": "Capture Implementation Checkpoint and Diff"
+        }
+      }
+    ],
+    "engineering-tool-delivery-merge:2": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/18/executor/tool_ref",
+        "kind": "step_tool",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "merge",
+          "name": "Merge into Main and Sync Workspace"
+        }
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/13/executor/tool_ref",
+        "kind": "step_tool",
+        "stage": {
+          "key": "integration",
+          "name": "合入"
+        },
+        "step": {
+          "key": "merge",
+          "name": "Merge Task and Record Completion"
+        }
+      }
+    ],
+    "engineering-tool-delivery-open:3": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/15/executor/tool_ref",
+        "kind": "step_tool",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "publication",
+          "name": "Prepare Merge Candidate and Open Pull Request"
+        }
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/11/executor/tool_ref",
+        "kind": "step_tool",
+        "stage": {
+          "key": "submission",
+          "name": "提交"
+        },
+        "step": {
+          "key": "publication",
+          "name": "Open Task Pull Request"
+        }
+      }
+    ],
+    "engineering-tool-project-tests:3": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/12/executor/tool_ref",
+        "kind": "step_tool",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "regression",
+          "name": "Run Feature Source Regression Tests"
+        }
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/16/executor/tool_ref",
+        "kind": "step_tool",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "merge_regression",
+          "name": "Run Merge Candidate Regression Tests"
+        }
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/12/executor/tool_ref",
+        "kind": "step_tool",
+        "stage": {
+          "key": "integration",
+          "name": "合入"
+        },
+        "step": {
+          "key": "merge_regression",
+          "name": "Run Merge Candidate Regression Tests"
+        }
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/8/executor/tool_ref",
+        "kind": "step_tool",
+        "stage": {
+          "key": "acceptance",
+          "name": "验收"
+        },
+        "step": {
+          "key": "regression",
+          "name": "Run Task Source Regression Tests"
+        }
+      }
+    ],
+    "engineering-tool-source-publish:2": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/13/executor/tool_ref",
+        "kind": "step_tool",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "source_publish",
+          "name": "Commit and Push Feature Branch"
+        }
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/9/executor/tool_ref",
+        "kind": "step_tool",
+        "stage": {
+          "key": "submission",
+          "name": "提交"
+        },
+        "step": {
+          "key": "source_publish",
+          "name": "Commit and Push Task Branch"
+        }
+      }
+    ],
+    "engineering-tool-target:2": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/14/executor/tool_ref",
+        "kind": "step_tool",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "target",
+          "name": "Resolve Main Branch Baseline"
+        }
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/10/executor/tool_ref",
+        "kind": "step_tool",
+        "stage": {
+          "key": "submission",
+          "name": "提交"
+        },
+        "step": {
+          "key": "target",
+          "name": "Resolve Feature Branch Baseline"
+        }
+      }
+    ],
+    "engineering-tool-tests-run:3": [
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/3/executor/tool_ref",
+        "kind": "step_tool",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "red",
+          "name": "Run Red Tests"
+        }
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/6/executor/tool_ref",
+        "kind": "step_tool",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "green",
+          "name": "Run Independent Green Tests"
+        }
+      }
+    ],
+    "engineering-tool-workspace-current:2": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/2/executor/tool_ref",
+        "kind": "step_tool",
+        "stage": {
+          "key": "design",
+          "name": "设计"
+        },
+        "step": {
+          "key": "source_workspace",
+          "name": "Capture Source Baseline"
+        }
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/9/executor/tool_ref",
+        "kind": "step_tool",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "workspace_current",
+          "name": "Read Integrated Feature Workspace"
+        }
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/0/executor/tool_ref",
+        "kind": "step_tool",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "workspace",
+          "name": "Prepare Task Baseline"
+        }
+      }
+    ],
+    "software-development.delivery-code-checkpoint:2": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/10/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "workspace",
+          "name": "Capture Feature Checkpoint and Diff"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/11/inputs/workspace",
+        "kind": "step_input",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "review",
+          "name": "Review Feature Changes"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/12/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "regression",
+          "name": "Run Feature Source Regression Tests"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/13/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "source_publish",
+          "name": "Commit and Push Feature Branch"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/14/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "target",
+          "name": "Resolve Main Branch Baseline"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/15/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "publication",
+          "name": "Prepare Merge Candidate and Open Pull Request"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/18/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "merge",
+          "name": "Merge into Main and Sync Workspace"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/10/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "submission",
+          "name": "提交"
+        },
+        "step": {
+          "key": "target",
+          "name": "Resolve Feature Branch Baseline"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/11/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "submission",
+          "name": "提交"
+        },
+        "step": {
+          "key": "publication",
+          "name": "Open Task Pull Request"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/13/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "integration",
+          "name": "合入"
+        },
+        "step": {
+          "key": "merge",
+          "name": "Merge Task and Record Completion"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/2/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "tests_snapshot",
+          "name": "Capture Test Checkpoint"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/3/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "red",
+          "name": "Run Red Tests"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/4/inputs/workspace",
+        "kind": "step_input",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation",
+          "name": "Implement and Verify Task"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/5/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation_snapshot",
+          "name": "Capture Implementation Checkpoint and Diff"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/5/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation_snapshot",
+          "name": "Capture Implementation Checkpoint and Diff"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/6/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "green",
+          "name": "Run Independent Green Tests"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/7/inputs/changes",
+        "kind": "step_input",
+        "stage": {
+          "key": "acceptance",
+          "name": "验收"
+        },
+        "step": {
+          "key": "review",
+          "name": "Review Task Changes Independently"
+        },
+        "port": "changes"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/7/inputs/workspace",
+        "kind": "step_input",
+        "stage": {
+          "key": "acceptance",
+          "name": "验收"
+        },
+        "step": {
+          "key": "review",
+          "name": "Review Task Changes Independently"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/8/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "acceptance",
+          "name": "验收"
+        },
+        "step": {
+          "key": "regression",
+          "name": "Run Task Source Regression Tests"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/9/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "submission",
+          "name": "提交"
+        },
+        "step": {
+          "key": "source_publish",
+          "name": "Commit and Push Task Branch"
+        },
+        "port": "workspace"
+      }
+    ],
+    "software-development.delivery-design-document:2": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/11/inputs/design",
+        "kind": "step_input",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "review",
+          "name": "Review Feature Changes"
+        },
+        "port": "design"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/3/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "design",
+          "name": "设计"
+        },
+        "step": {
+          "key": "design",
+          "name": "Design Architecture and Interfaces"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/4/inputs/design",
+        "kind": "step_input",
+        "stage": {
+          "key": "design",
+          "name": "设计"
+        },
+        "step": {
+          "key": "design_review",
+          "name": "Review and Approve Design"
+        },
+        "port": "design"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/5/inputs/design",
+        "kind": "step_input",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "planning",
+          "name": "Plan Tasks and Dependencies"
+        },
+        "port": "design"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/6/inputs/design",
+        "kind": "step_input",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "plan_review",
+          "name": "Review and Approve Task Plan"
+        },
+        "port": "design"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/8/inputs/design",
+        "kind": "step_input",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation",
+          "name": "Execute Task Dependency Graph"
+        },
+        "port": "design"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/inputs/design/delivery_ref",
+        "kind": "workflow_input",
+        "port": "design"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/1/inputs/design",
+        "kind": "step_input",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "tests",
+          "name": "Design Independent Behavioral Tests"
+        },
+        "port": "design"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/4/inputs/design",
+        "kind": "step_input",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation",
+          "name": "Implement and Verify Task"
+        },
+        "port": "design"
+      }
+    ],
+    "software-development.delivery-git-diff:2": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/10/outputs/diff/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "workspace",
+          "name": "Capture Feature Checkpoint and Diff"
+        },
+        "port": "diff"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/10/outputs/scope_diff/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "workspace",
+          "name": "Capture Feature Checkpoint and Diff"
+        },
+        "port": "scope_diff"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/11/inputs/diff",
+        "kind": "step_input",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "review",
+          "name": "Review Feature Changes"
+        },
+        "port": "diff"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/2/outputs/diff/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "tests_snapshot",
+          "name": "Capture Test Checkpoint"
+        },
+        "port": "diff"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/5/outputs/diff/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation_snapshot",
+          "name": "Capture Implementation Checkpoint and Diff"
+        },
+        "port": "diff"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/5/outputs/scope_diff/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation_snapshot",
+          "name": "Capture Implementation Checkpoint and Diff"
+        },
+        "port": "scope_diff"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/7/inputs/diff",
+        "kind": "step_input",
+        "stage": {
+          "key": "acceptance",
+          "name": "验收"
+        },
+        "step": {
+          "key": "review",
+          "name": "Review Task Changes Independently"
+        },
+        "port": "diff"
+      }
+    ],
+    "software-development.delivery-implementation-report:2": [
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/4/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation",
+          "name": "Implement and Verify Task"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/7/inputs/implementation",
+        "kind": "step_input",
+        "stage": {
+          "key": "acceptance",
+          "name": "验收"
+        },
+        "step": {
+          "key": "review",
+          "name": "Review Task Changes Independently"
+        },
+        "port": "implementation"
+      }
+    ],
+    "software-development.delivery-independent-test-report:2": [
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/3/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "red",
+          "name": "Run Red Tests"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/4/inputs/red",
+        "kind": "step_input",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation",
+          "name": "Implement and Verify Task"
+        },
+        "port": "red"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/6/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "green",
+          "name": "Run Independent Green Tests"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/7/inputs/green",
+        "kind": "step_input",
+        "stage": {
+          "key": "acceptance",
+          "name": "验收"
+        },
+        "step": {
+          "key": "review",
+          "name": "Review Task Changes Independently"
+        },
+        "port": "green"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/7/inputs/red",
+        "kind": "step_input",
+        "stage": {
+          "key": "acceptance",
+          "name": "验收"
+        },
+        "step": {
+          "key": "review",
+          "name": "Review Task Changes Independently"
+        },
+        "port": "red"
+      }
+    ],
+    "software-development.delivery-merge-approval-packet:2": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/17/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "approval",
+          "name": "Approve Main Branch Merge"
+        },
+        "port": "result"
+      }
+    ],
+    "software-development.delivery-merge-sync:2": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/outputs/result",
+        "kind": "workflow_output",
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/18/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "merge",
+          "name": "Merge into Main and Sync Workspace"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/outputs/result",
+        "kind": "workflow_output",
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/13/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "integration",
+          "name": "合入"
+        },
+        "step": {
+          "key": "merge",
+          "name": "Merge Task and Record Completion"
+        },
+        "port": "result"
+      }
+    ],
+    "software-development.delivery-prd:5": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/0/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "requirements",
+          "name": "需求"
+        },
+        "step": {
+          "key": "requirements",
+          "name": "Draft Product Requirements"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/1/inputs/work",
+        "kind": "step_input",
+        "stage": {
+          "key": "requirements",
+          "name": "需求"
+        },
+        "step": {
+          "key": "requirements_review",
+          "name": "Review and Approve PRD"
+        },
+        "port": "work"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/11/inputs/requirements",
+        "kind": "step_input",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "review",
+          "name": "Review Feature Changes"
+        },
+        "port": "requirements"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/3/inputs/requirements",
+        "kind": "step_input",
+        "stage": {
+          "key": "design",
+          "name": "设计"
+        },
+        "step": {
+          "key": "design",
+          "name": "Design Architecture and Interfaces"
+        },
+        "port": "requirements"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/4/inputs/requirements",
+        "kind": "step_input",
+        "stage": {
+          "key": "design",
+          "name": "设计"
+        },
+        "step": {
+          "key": "design_review",
+          "name": "Review and Approve Design"
+        },
+        "port": "requirements"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/5/inputs/requirements",
+        "kind": "step_input",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "planning",
+          "name": "Plan Tasks and Dependencies"
+        },
+        "port": "requirements"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/6/inputs/requirements",
+        "kind": "step_input",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "plan_review",
+          "name": "Review and Approve Task Plan"
+        },
+        "port": "requirements"
+      }
+    ],
+    "software-development.delivery-project-test-configuration:2": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/inputs/test_configuration/delivery_ref",
+        "kind": "workflow_input",
+        "port": "test_configuration"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/3/inputs/test_configuration",
+        "kind": "step_input",
+        "stage": {
+          "key": "design",
+          "name": "设计"
+        },
+        "step": {
+          "key": "design",
+          "name": "Design Architecture and Interfaces"
+        },
+        "port": "test_configuration"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/4/inputs/test_configuration",
+        "kind": "step_input",
+        "stage": {
+          "key": "design",
+          "name": "设计"
+        },
+        "step": {
+          "key": "design_review",
+          "name": "Review and Approve Design"
+        },
+        "port": "test_configuration"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/5/inputs/test_configuration",
+        "kind": "step_input",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "planning",
+          "name": "Plan Tasks and Dependencies"
+        },
+        "port": "test_configuration"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/6/inputs/test_configuration",
+        "kind": "step_input",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "plan_review",
+          "name": "Review and Approve Task Plan"
+        },
+        "port": "test_configuration"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/8/inputs/test_configuration",
+        "kind": "step_input",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation",
+          "name": "Execute Task Dependency Graph"
+        },
+        "port": "test_configuration"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/inputs/test_configuration/delivery_ref",
+        "kind": "workflow_input",
+        "port": "test_configuration"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/1/inputs/test_configuration",
+        "kind": "step_input",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "tests",
+          "name": "Design Independent Behavioral Tests"
+        },
+        "port": "test_configuration"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/4/inputs/test_configuration",
+        "kind": "step_input",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation",
+          "name": "Implement and Verify Task"
+        },
+        "port": "test_configuration"
+      }
+    ],
+    "software-development.delivery-pull-request:2": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/15/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "publication",
+          "name": "Prepare Merge Candidate and Open Pull Request"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/16/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "merge_regression",
+          "name": "Run Merge Candidate Regression Tests"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/17/executor/arguments/publication",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "approval",
+          "name": "Approve Main Branch Merge"
+        },
+        "port": "publication"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/17/inputs/publication",
+        "kind": "step_input",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "approval",
+          "name": "Approve Main Branch Merge"
+        },
+        "port": "publication"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/18/executor/arguments/publication",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "merge",
+          "name": "Merge into Main and Sync Workspace"
+        },
+        "port": "publication"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/11/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "submission",
+          "name": "提交"
+        },
+        "step": {
+          "key": "publication",
+          "name": "Open Task Pull Request"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/12/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "integration",
+          "name": "合入"
+        },
+        "step": {
+          "key": "merge_regression",
+          "name": "Run Merge Candidate Regression Tests"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/13/executor/arguments/publication",
+        "kind": "step_argument",
+        "stage": {
+          "key": "integration",
+          "name": "合入"
+        },
+        "step": {
+          "key": "merge",
+          "name": "Merge Task and Record Completion"
+        },
+        "port": "publication"
+      }
+    ],
+    "software-development.delivery-regression-test-receipt:2": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/12/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "regression",
+          "name": "Run Feature Source Regression Tests"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/16/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "merge_regression",
+          "name": "Run Merge Candidate Regression Tests"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/17/executor/arguments/merge_regression",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "approval",
+          "name": "Approve Main Branch Merge"
+        },
+        "port": "merge_regression"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/17/executor/arguments/source_regression",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "approval",
+          "name": "Approve Main Branch Merge"
+        },
+        "port": "source_regression"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/17/inputs/merge_regression",
+        "kind": "step_input",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "approval",
+          "name": "Approve Main Branch Merge"
+        },
+        "port": "merge_regression"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/17/inputs/source_regression",
+        "kind": "step_input",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "approval",
+          "name": "Approve Main Branch Merge"
+        },
+        "port": "source_regression"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/12/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "integration",
+          "name": "合入"
+        },
+        "step": {
+          "key": "merge_regression",
+          "name": "Run Merge Candidate Regression Tests"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/8/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "acceptance",
+          "name": "验收"
+        },
+        "step": {
+          "key": "regression",
+          "name": "Run Task Source Regression Tests"
+        },
+        "port": "result"
+      }
+    ],
+    "software-development.delivery-review:4": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/1/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "requirements",
+          "name": "需求"
+        },
+        "step": {
+          "key": "requirements_review",
+          "name": "Review and Approve PRD"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/11/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "review",
+          "name": "Review Feature Changes"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/17/executor/arguments/review",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "approval",
+          "name": "Approve Main Branch Merge"
+        },
+        "port": "review"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/17/inputs/review",
+        "kind": "step_input",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "approval",
+          "name": "Approve Main Branch Merge"
+        },
+        "port": "review"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/4/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "design",
+          "name": "设计"
+        },
+        "step": {
+          "key": "design_review",
+          "name": "Review and Approve Design"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/6/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "plan_review",
+          "name": "Review and Approve Task Plan"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/7/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "acceptance",
+          "name": "验收"
+        },
+        "step": {
+          "key": "review",
+          "name": "Review Task Changes Independently"
+        },
+        "port": "result"
+      }
+    ],
+    "software-development.delivery-source-branch-publication:2": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/13/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "source_publish",
+          "name": "Commit and Push Feature Branch"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/9/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "submission",
+          "name": "提交"
+        },
+        "step": {
+          "key": "source_publish",
+          "name": "Commit and Push Task Branch"
+        },
+        "port": "result"
+      }
+    ],
+    "software-development.delivery-target-branch-baseline:2": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/14/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "target",
+          "name": "Resolve Main Branch Baseline"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/15/executor/arguments/target",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "publication",
+          "name": "Prepare Merge Candidate and Open Pull Request"
+        },
+        "port": "target"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/10/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "submission",
+          "name": "提交"
+        },
+        "step": {
+          "key": "target",
+          "name": "Resolve Feature Branch Baseline"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/11/executor/arguments/target",
+        "kind": "step_argument",
+        "stage": {
+          "key": "submission",
+          "name": "提交"
+        },
+        "step": {
+          "key": "publication",
+          "name": "Open Task Pull Request"
+        },
+        "port": "target"
+      }
+    ],
+    "software-development.delivery-task-creation-report:3": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/7/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "tasks",
+          "name": "Register Approved Task Graph"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/8/executor/foreach/source",
+        "kind": "step_collection",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation",
+          "name": "Execute Task Dependency Graph"
+        }
+      }
+    ],
+    "software-development.delivery-task-merge-receipts:2": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/11/inputs/tasks",
+        "kind": "step_input",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "review",
+          "name": "Review Feature Changes"
+        },
+        "port": "tasks"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/8/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation",
+          "name": "Execute Task Dependency Graph"
+        },
+        "port": "result"
+      }
+    ],
+    "software-development.delivery-task-plan:2": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/11/inputs/plan",
+        "kind": "step_input",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "review",
+          "name": "Review Feature Changes"
+        },
+        "port": "plan"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/5/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "planning",
+          "name": "Plan Tasks and Dependencies"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/6/inputs/plan",
+        "kind": "step_input",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "plan_review",
+          "name": "Review and Approve Task Plan"
+        },
+        "port": "plan"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/7/executor/arguments/tasks",
+        "kind": "step_argument",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "tasks",
+          "name": "Register Approved Task Graph"
+        },
+        "port": "tasks"
+      }
+    ],
+    "software-development.delivery-task-record:3": [
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/inputs/item/delivery_ref",
+        "kind": "workflow_input",
+        "port": "item"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/0/executor/arguments/owner_id",
+        "kind": "step_argument",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "workspace",
+          "name": "Prepare Task Baseline"
+        },
+        "port": "owner_id"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/1/inputs/task",
+        "kind": "step_input",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "tests",
+          "name": "Design Independent Behavioral Tests"
+        },
+        "port": "task"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/4/inputs/task",
+        "kind": "step_input",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation",
+          "name": "Implement and Verify Task"
+        },
+        "port": "task"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/7/inputs/task",
+        "kind": "step_input",
+        "stage": {
+          "key": "acceptance",
+          "name": "验收"
+        },
+        "step": {
+          "key": "review",
+          "name": "Review Task Changes Independently"
+        },
+        "port": "task"
+      }
+    ],
+    "software-development.delivery-test-design:2": [
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/1/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "tests",
+          "name": "Design Independent Behavioral Tests"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/2/executor/arguments/interfaces",
+        "kind": "step_argument",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "tests_snapshot",
+          "name": "Capture Test Checkpoint"
+        },
+        "port": "interfaces"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/3/executor/arguments/recipe",
+        "kind": "step_argument",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "red",
+          "name": "Run Red Tests"
+        },
+        "port": "recipe"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/4/inputs/recipe",
+        "kind": "step_input",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation",
+          "name": "Implement and Verify Task"
+        },
+        "port": "recipe"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/6/executor/arguments/recipe",
+        "kind": "step_argument",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "green",
+          "name": "Run Independent Green Tests"
+        },
+        "port": "recipe"
+      }
+    ],
+    "software-development.delivery-workspace-snapshot:3": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/10/executor/arguments/diff_base",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "workspace",
+          "name": "Capture Feature Checkpoint and Diff"
+        },
+        "port": "diff_base"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/10/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "workspace",
+          "name": "Capture Feature Checkpoint and Diff"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/11/inputs/baseline",
+        "kind": "step_input",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "review",
+          "name": "Review Feature Changes"
+        },
+        "port": "baseline"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/2/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "design",
+          "name": "设计"
+        },
+        "step": {
+          "key": "source_workspace",
+          "name": "Capture Source Baseline"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/3/inputs/workspace",
+        "kind": "step_input",
+        "stage": {
+          "key": "design",
+          "name": "设计"
+        },
+        "step": {
+          "key": "design",
+          "name": "Design Architecture and Interfaces"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/5/inputs/workspace",
+        "kind": "step_input",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "planning",
+          "name": "Plan Tasks and Dependencies"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/9/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "workspace_current",
+          "name": "Read Integrated Feature Workspace"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/0/outputs/result/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "workspace",
+          "name": "Prepare Task Baseline"
+        },
+        "port": "result"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/1/inputs/workspace",
+        "kind": "step_input",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "tests",
+          "name": "Design Independent Behavioral Tests"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/2/executor/arguments/workspace",
+        "kind": "step_argument",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "tests_snapshot",
+          "name": "Capture Test Checkpoint"
+        },
+        "port": "workspace"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/5/executor/arguments/diff_base",
+        "kind": "step_argument",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation_snapshot",
+          "name": "Capture Implementation Checkpoint and Diff"
+        },
+        "port": "diff_base"
+      }
+    ],
+    "software-development.detect-test-entry:1": [
+      {
+        "reference": "software-development.repository-preflight:1",
+        "name": "Repository Preflight",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/0/executor/tool_ref",
+        "kind": "step_tool",
+        "stage": {
+          "key": "prepare",
+          "name": "Prepare"
+        },
+        "step": {
+          "key": "discover",
+          "name": "Discover tests"
+        }
+      }
+    ],
+    "software-development.preflight-contract:1": [
+      {
+        "reference": "software-development.repository-revision:1",
+        "name": "Repository Revision",
+        "type": "delivery_type",
+        "version": 1,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.test-configuration:1",
+        "name": "Test Configuration",
+        "type": "delivery_type",
+        "version": 1,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      }
+    ],
+    "software-development.repository-revision:1": [
+      {
+        "reference": "software-development.repository-preflight:1",
+        "name": "Repository Preflight",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/inputs/repository/delivery_ref",
+        "kind": "workflow_input",
+        "port": "repository"
+      },
+      {
+        "reference": "software-development.repository-preflight:1",
+        "name": "Repository Preflight",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/0/executor/arguments/path",
+        "kind": "step_argument",
+        "stage": {
+          "key": "prepare",
+          "name": "Prepare"
+        },
+        "step": {
+          "key": "discover",
+          "name": "Discover tests"
+        },
+        "port": "path"
+      },
+      {
+        "reference": "software-development.repository-preflight:1",
+        "name": "Repository Preflight",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/0/executor/arguments/revision",
+        "kind": "step_argument",
+        "stage": {
+          "key": "prepare",
+          "name": "Prepare"
+        },
+        "step": {
+          "key": "discover",
+          "name": "Discover tests"
+        },
+        "port": "revision"
+      },
+      {
+        "reference": "software-development.repository-preflight:1",
+        "name": "Repository Preflight",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/0/inputs/repository",
+        "kind": "step_input",
+        "stage": {
+          "key": "prepare",
+          "name": "Prepare"
+        },
+        "step": {
+          "key": "discover",
+          "name": "Discover tests"
+        },
+        "port": "repository"
+      }
+    ],
+    "software-development.role-project-manager:1": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/orchestrator_role_ref",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/orchestrator_role_ref",
+        "kind": "reference"
+      }
+    ],
+    "software-development.skill-code-review:1": [
+      {
+        "reference": "software-development.capability-reviewer-glm-dsh:7",
+        "name": "Independent Review Capability · GLM 5.3",
+        "type": "capability",
+        "version": 7,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-reviewer-gpt-6-2-sol-codex:4",
+        "name": "Independent Review Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-reviewer-minimax-dsh:7",
+        "name": "Independent Review Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 7,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      }
+    ],
+    "software-development.skill-deliverable-validation:1": [
+      {
+        "reference": "software-development.capability-analyst-glm-dsh:6",
+        "name": "Requirements Analysis Capability · GLM 5.3",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-analyst-gpt-6-2-sol-codex:3",
+        "name": "Requirements Analysis Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-analyst-minimax-dsh:6",
+        "name": "Requirements Analysis Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-architect-glm-dsh:6",
+        "name": "Software Design Capability · GLM 5.3",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-architect-gpt-6-2-sol-codex:3",
+        "name": "Software Design Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-architect-minimax-dsh:6",
+        "name": "Software Design Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-developer-glm-dsh:6",
+        "name": "Software Development Capability · GLM 5.3",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-developer-gpt-6-2-sol-codex:3",
+        "name": "Software Development Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-developer-minimax-dsh:6",
+        "name": "Software Development Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/skills/3",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/skills/3",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-reviewer-glm-dsh:7",
+        "name": "Independent Review Capability · GLM 5.3",
+        "type": "capability",
+        "version": 7,
+        "scope": "global",
+        "path": "/skills/3",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-reviewer-gpt-6-2-sol-codex:4",
+        "name": "Independent Review Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-reviewer-minimax-dsh:7",
+        "name": "Independent Review Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 7,
+        "scope": "global",
+        "path": "/skills/3",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-tester-glm-dsh:6",
+        "name": "Test Engineering Capability · GLM 5.3",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/3",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-tester-gpt-6-2-sol-codex:4",
+        "name": "Test Engineering Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-tester-minimax-dsh:6",
+        "name": "Test Engineering Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/3",
+        "kind": "reference"
+      }
+    ],
+    "software-development.skill-engineering-context:4": [
+      {
+        "reference": "software-development.capability-analyst-glm-dsh:6",
+        "name": "Requirements Analysis Capability · GLM 5.3",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-analyst-gpt-6-2-sol-codex:3",
+        "name": "Requirements Analysis Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-analyst-minimax-dsh:6",
+        "name": "Requirements Analysis Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-architect-glm-dsh:6",
+        "name": "Software Design Capability · GLM 5.3",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-architect-gpt-6-2-sol-codex:3",
+        "name": "Software Design Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-architect-minimax-dsh:6",
+        "name": "Software Design Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-developer-glm-dsh:6",
+        "name": "Software Development Capability · GLM 5.3",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-developer-gpt-6-2-sol-codex:3",
+        "name": "Software Development Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-developer-minimax-dsh:6",
+        "name": "Software Development Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-glm-dsh:4",
+        "name": "General Engineering Capability · GLM 5.3",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-minimax-dsh:4",
+        "name": "General Engineering Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-reviewer-glm-dsh:7",
+        "name": "Independent Review Capability · GLM 5.3",
+        "type": "capability",
+        "version": 7,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-reviewer-gpt-6-2-sol-codex:4",
+        "name": "Independent Review Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-reviewer-minimax-dsh:7",
+        "name": "Independent Review Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 7,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-sol-high-codex:6",
+        "name": "General Engineering Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-tester-glm-dsh:6",
+        "name": "Test Engineering Capability · GLM 5.3",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-tester-gpt-6-2-sol-codex:4",
+        "name": "Test Engineering Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-tester-minimax-dsh:6",
+        "name": "Test Engineering Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/0",
+        "kind": "reference"
+      }
+    ],
+    "software-development.skill-independent-review:3": [
+      {
+        "reference": "software-development.capability-reviewer-glm-dsh:7",
+        "name": "Independent Review Capability · GLM 5.3",
+        "type": "capability",
+        "version": 7,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-reviewer-gpt-6-2-sol-codex:4",
+        "name": "Independent Review Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/skills/3",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-reviewer-minimax-dsh:7",
+        "name": "Independent Review Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 7,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      }
+    ],
+    "software-development.skill-project-operations:1": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/skills/5",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/skills/5",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/skills/5",
+        "kind": "reference"
+      }
+    ],
+    "software-development.skill-release-verification:3": [
+      {
+        "reference": "software-development.capability-tester-glm-dsh:6",
+        "name": "Test Engineering Capability · GLM 5.3",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-tester-gpt-6-2-sol-codex:4",
+        "name": "Test Engineering Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/skills/3",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-tester-minimax-dsh:6",
+        "name": "Test Engineering Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      }
+    ],
+    "software-development.skill-requirements-analysis:1": [
+      {
+        "reference": "software-development.capability-analyst-glm-dsh:6",
+        "name": "Requirements Analysis Capability · GLM 5.3",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-analyst-gpt-6-2-sol-codex:3",
+        "name": "Requirements Analysis Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-analyst-minimax-dsh:6",
+        "name": "Requirements Analysis Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      }
+    ],
+    "software-development.skill-software-delivery:1": [
+      {
+        "reference": "software-development.capability-glm-dsh:4",
+        "name": "General Engineering Capability · GLM 5.3",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-minimax-dsh:4",
+        "name": "General Engineering Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-sol-high-codex:6",
+        "name": "General Engineering Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      }
+    ],
+    "software-development.skill-software-design:1": [
+      {
+        "reference": "software-development.capability-architect-glm-dsh:6",
+        "name": "Software Design Capability · GLM 5.3",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-architect-gpt-6-2-sol-codex:3",
+        "name": "Software Design Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-architect-minimax-dsh:6",
+        "name": "Software Design Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      }
+    ],
+    "software-development.skill-task-planning:1": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      }
+    ],
+    "software-development.skill-test-design:3": [
+      {
+        "reference": "software-development.capability-tester-glm-dsh:6",
+        "name": "Test Engineering Capability · GLM 5.3",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-tester-gpt-6-2-sol-codex:4",
+        "name": "Test Engineering Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-tester-minimax-dsh:6",
+        "name": "Test Engineering Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      }
+    ],
+    "software-development.skill-test-driven-development:1": [
+      {
+        "reference": "software-development.capability-developer-glm-dsh:6",
+        "name": "Software Development Capability · GLM 5.3",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-developer-gpt-6-2-sol-codex:3",
+        "name": "Software Development Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-developer-minimax-dsh:6",
+        "name": "Software Development Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/skills/1",
+        "kind": "reference"
+      }
+    ],
+    "software-development.skill-workflow-coordination:1": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/skills/3",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/skills/2",
+        "kind": "reference"
+      }
+    ],
+    "software-development.skill-workflow-orchestration:6": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/skills/4",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/skills/4",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/skills/4",
+        "kind": "reference"
+      }
+    ],
+    "software-development.spec-delivery-diff:3": [
+      {
+        "reference": "software-development.delivery-git-diff:2",
+        "name": "Diff",
+        "type": "delivery_type",
+        "version": 2,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      }
+    ],
+    "software-development.spec-delivery-review:3": [
+      {
+        "reference": "software-development.capability-reviewer-glm-dsh:7",
+        "name": "Independent Review Capability · GLM 5.3",
+        "type": "capability",
+        "version": 7,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-reviewer-gpt-6-2-sol-codex:4",
+        "name": "Independent Review Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-reviewer-minimax-dsh:7",
+        "name": "Independent Review Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 7,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.delivery-review:4",
+        "name": "Review Report",
+        "type": "delivery_type",
+        "version": 4,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      }
+    ],
+    "software-development.spec-delivery-task-creation-report:3": [
+      {
+        "reference": "software-development.delivery-task-creation-report:3",
+        "name": "Task Creation Report",
+        "type": "delivery_type",
+        "version": 3,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      }
+    ],
+    "software-development.spec-delivery-task-record:3": [
+      {
+        "reference": "software-development.delivery-task-record:3",
+        "name": "Task Record",
+        "type": "delivery_type",
+        "version": 3,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      }
+    ],
+    "software-development.spec-delivery-test-report:3": [
+      {
+        "reference": "software-development.delivery-independent-test-report:2",
+        "name": "Test Report",
+        "type": "delivery_type",
+        "version": 2,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      }
+    ],
+    "software-development.spec-delivery-workspace-snapshot:3": [
+      {
+        "reference": "software-development.delivery-workspace-snapshot:3",
+        "name": "Workspace Snapshot",
+        "type": "delivery_type",
+        "version": 3,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      }
+    ],
+    "software-development.spec-design-document:2": [
+      {
+        "reference": "software-development.capability-architect-glm-dsh:6",
+        "name": "Software Design Capability · GLM 5.3",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-architect-gpt-6-2-sol-codex:3",
+        "name": "Software Design Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-architect-minimax-dsh:6",
+        "name": "Software Design Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.delivery-design-document:2",
+        "name": "Design Document",
+        "type": "delivery_type",
+        "version": 2,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/3/spec_refs/0",
+        "kind": "step_spec",
+        "stage": {
+          "key": "design",
+          "name": "设计"
+        },
+        "step": {
+          "key": "design",
+          "name": "Design Architecture and Interfaces"
+        }
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/4/spec_refs/0",
+        "kind": "step_spec",
+        "stage": {
+          "key": "design",
+          "name": "设计"
+        },
+        "step": {
+          "key": "design_review",
+          "name": "Review and Approve Design"
+        }
+      }
+    ],
+    "software-development.spec-feature-code-review:2": [
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/11/spec_refs/0",
+        "kind": "step_spec",
+        "stage": {
+          "key": "delivery",
+          "name": "Feature 交付"
+        },
+        "step": {
+          "key": "review",
+          "name": "Review Feature Changes"
+        }
+      }
+    ],
+    "software-development.spec-implementation-report:2": [
+      {
+        "reference": "software-development.capability-developer-glm-dsh:6",
+        "name": "Software Development Capability · GLM 5.3",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-developer-gpt-6-2-sol-codex:3",
+        "name": "Software Development Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-developer-minimax-dsh:6",
+        "name": "Software Development Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.delivery-implementation-report:2",
+        "name": "Implementation Report",
+        "type": "delivery_type",
+        "version": 2,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/4/spec_refs/0",
+        "kind": "step_spec",
+        "stage": {
+          "key": "implementation",
+          "name": "实施"
+        },
+        "step": {
+          "key": "implementation",
+          "name": "Implement and Verify Task"
+        }
+      }
+    ],
+    "software-development.spec-platform-evidence:2": [
+      {
+        "reference": "software-development.delivery-code-checkpoint:2",
+        "name": "Code Checkpoint",
+        "type": "delivery_type",
+        "version": 2,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.delivery-merge-approval-packet:2",
+        "name": "Merge Approval Packet",
+        "type": "delivery_type",
+        "version": 2,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.delivery-merge-sync:2",
+        "name": "Merge and Sync Receipt",
+        "type": "delivery_type",
+        "version": 2,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.delivery-project-test-configuration:2",
+        "name": "Project Test Configuration",
+        "type": "delivery_type",
+        "version": 2,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.delivery-pull-request:2",
+        "name": "Pull Request Record",
+        "type": "delivery_type",
+        "version": 2,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.delivery-regression-test-receipt:2",
+        "name": "Regression Test Receipt",
+        "type": "delivery_type",
+        "version": 2,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.delivery-source-branch-publication:2",
+        "name": "Source Branch Publication Receipt",
+        "type": "delivery_type",
+        "version": 2,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.delivery-target-branch-baseline:2",
+        "name": "Target Branch Baseline",
+        "type": "delivery_type",
+        "version": 2,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.delivery-task-merge-receipts:2",
+        "name": "Task Merge Receipts",
+        "type": "delivery_type",
+        "version": 2,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      }
+    ],
+    "software-development.spec-stage-prd:4": [
+      {
+        "reference": "software-development.capability-analyst-glm-dsh:6",
+        "name": "Requirements Analysis Capability · GLM 5.3",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-analyst-gpt-6-2-sol-codex:3",
+        "name": "Requirements Analysis Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 3,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-analyst-minimax-dsh:6",
+        "name": "Requirements Analysis Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.delivery-prd:5",
+        "name": "PRD",
+        "type": "delivery_type",
+        "version": 5,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/0/spec_refs/0",
+        "kind": "step_spec",
+        "stage": {
+          "key": "requirements",
+          "name": "需求"
+        },
+        "step": {
+          "key": "requirements",
+          "name": "Draft Product Requirements"
+        }
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/1/spec_refs/0",
+        "kind": "step_spec",
+        "stage": {
+          "key": "requirements",
+          "name": "需求"
+        },
+        "step": {
+          "key": "requirements_review",
+          "name": "Review and Approve PRD"
+        }
+      }
+    ],
+    "software-development.spec-task-code-review:2": [
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/7/spec_refs/0",
+        "kind": "step_spec",
+        "stage": {
+          "key": "acceptance",
+          "name": "验收"
+        },
+        "step": {
+          "key": "review",
+          "name": "Review Task Changes Independently"
+        }
+      }
+    ],
+    "software-development.spec-task-plan:2": [
+      {
+        "reference": "software-development.capability-project-manager-glm-dsh:11",
+        "name": "Project Management Capability · GLM 5.3",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-gpt-6-2-sol-codex:4",
+        "name": "Project Management Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-project-manager-minimax-dsh:11",
+        "name": "Project Management Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 11,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.delivery-task-plan:2",
+        "name": "Task Plan",
+        "type": "delivery_type",
+        "version": 2,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/5/spec_refs/0",
+        "kind": "step_spec",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "planning",
+          "name": "Plan Tasks and Dependencies"
+        }
+      },
+      {
+        "reference": "software-development.workflow-feature-development:6",
+        "name": "Feature Development",
+        "type": "workflow",
+        "version": 6,
+        "scope": "global",
+        "path": "/data/steps/6/spec_refs/0",
+        "kind": "step_spec",
+        "stage": {
+          "key": "planning",
+          "name": "任务规划"
+        },
+        "step": {
+          "key": "plan_review",
+          "name": "Review and Approve Task Plan"
+        }
+      }
+    ],
+    "software-development.spec-test-design:2": [
+      {
+        "reference": "software-development.capability-tester-glm-dsh:6",
+        "name": "Test Engineering Capability · GLM 5.3",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-tester-gpt-6-2-sol-codex:4",
+        "name": "Test Engineering Capability · GPT-6.2 Sol High",
+        "type": "capability",
+        "version": 4,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.capability-tester-minimax-dsh:6",
+        "name": "Test Engineering Capability · MiniMax M3.1 Flash",
+        "type": "capability",
+        "version": 6,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.delivery-test-design:2",
+        "name": "Test Design",
+        "type": "delivery_type",
+        "version": 2,
+        "scope": "global",
+        "path": "/spec_refs/0",
+        "kind": "reference"
+      },
+      {
+        "reference": "software-development.workflow-task-development:5",
+        "name": "Task Development",
+        "type": "workflow",
+        "version": 5,
+        "scope": "global",
+        "path": "/data/steps/1/spec_refs/0",
+        "kind": "step_spec",
+        "stage": {
+          "key": "tests",
+          "name": "独立测试"
+        },
+        "step": {
+          "key": "tests",
+          "name": "Design Independent Behavioral Tests"
+        }
+      }
+    ],
+    "software-development.test-configuration:1": [
+      {
+        "reference": "software-development.repository-preflight:1",
+        "name": "Repository Preflight",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/outputs/test_configuration",
+        "kind": "workflow_output",
+        "port": "test_configuration"
+      },
+      {
+        "reference": "software-development.repository-preflight:1",
+        "name": "Repository Preflight",
+        "type": "workflow",
+        "version": 1,
+        "scope": "global",
+        "path": "/data/steps/0/outputs/test_configuration/delivery_ref",
+        "kind": "step_output",
+        "stage": {
+          "key": "prepare",
+          "name": "Prepare"
+        },
+        "step": {
+          "key": "discover",
+          "name": "Discover tests"
+        },
+        "port": "test_configuration"
+      }
+    ]
+  }
+}

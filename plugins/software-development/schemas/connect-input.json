@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "repository"
+  ],
+  "properties": {
+    "repository": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "mainline": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    }
+  }
+}

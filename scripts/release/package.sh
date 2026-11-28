@@ -4,7 +4,7 @@ cd "$(dirname "$0")/../.."
 
 usage() {
   printf 'Usage: %s host [--profile size|speed|symbols]\n' "$0"
-  printf '       %s web|software-development\n' "$0"
+  printf '       %s web|software-development|sdk\n' "$0"
 }
 
 target="${1:-}"
@@ -33,7 +33,7 @@ case "$target" in
       exit 2
     fi
     ;;
-  web|software-development)
+  web|software-development|sdk)
     if [[ $# != 1 ]]; then
       usage >&2
       exit 2
@@ -82,6 +82,23 @@ case "$target" in
     npm --prefix web run build:software
     artifact="software-development-$(python3 plugins/software-development/build.py --version).zip"
     python3 plugins/software-development/build.py "$stage/$artifact"
+    ;;
+  sdk)
+    if ! command -v cargo >/dev/null && [ -f "$HOME/.cargo/env" ]; then source "$HOME/.cargo/env"; fi
+    cargo build --locked -p devdesk-host
+    host="${CARGO_TARGET_DIR:-target}/debug/devdesk-host"
+    ./scripts/platform/macos/sign-macos.sh "$host"
+    version=$(node -p 'require("./sdk/domain/package.json").version')
+    name="devdesk-domain-sdk-$version"
+    mkdir -p "$stage/$name/schemas" "$stage/$name/kernel"
+    cp -R sdk/domain/cli sdk/domain/lib sdk/domain/worker sdk/domain/package.json "$stage/$name/"
+    cp schemas/domain-package.schema.json schemas/domain-contributions.schema.json \
+       schemas/domain-entity-types.schema.json schemas/template-manifest.schema.json \
+       schemas/source-definition.schema.json "$stage/$name/schemas/"
+    cp -R kernel/core kernel/engineering "$stage/$name/kernel/"
+    "$host" capabilities --print > "$stage/$name/catalog.json"
+    artifact="$name.tar.gz"
+    COPYFILE_DISABLE=1 tar -czf "$stage/$artifact" -C "$stage" "$name"
     ;;
 esac
 (
